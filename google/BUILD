@@ -12,6 +12,7 @@ py_library(
         "//tools/log",
         "@pypi//google_api_python_client",
         "@pypi//google_auth_oauthlib",
+        "@pypi//google_cloud_pubsub",
     ],
 )
 
@@ -50,5 +51,18 @@ py_library(
         "//tools/global_handle_exception:exception_handler",
         "//tools/log",
         "@pypi//flask",
+    ],
+)
+
+py_library(
+    name = "pubsub_publisher",
+    srcs = [
+        "pubsub_publisher.py",
+        "//google:authentication_utils",
+    ],
+    deps = [
+        "//tools/log",
+        "@pypi//google_api_python_client",
+        "@pypi//google_cloud_pubsub",
     ],
 )
