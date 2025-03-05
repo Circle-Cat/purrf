@@ -10,6 +10,7 @@ google_bp = Blueprint("google", __name__)
 
 executor = ThreadPoolExecutor(max_workers=5)
 
+
 @google_bp.route("/api/chat/spaces/messages")
 def history_messages():
     """API endpoint to trigger the fetching of messages for all SPACE type chat spaces and store them in Redis asynchronously."""
@@ -18,6 +19,7 @@ def history_messages():
     return jsonify({
         "message": "Message retrieval triggered asynchronously."
     }), http.client.ACCEPTED
+
 
 @google_bp.route("/api/chat/spaces")
 def get_chat_spaces_route():

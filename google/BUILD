@@ -13,6 +13,7 @@ py_library(
         "@pypi//google_api_python_client",
         "@pypi//google_auth_oauthlib",
         "@pypi//google_cloud_pubsub",
+        "@pypi//grpcio",
     ],
 )
 
