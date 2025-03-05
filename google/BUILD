@@ -1,9 +1,6 @@
-load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("@rules_python//python:defs.bzl", "py_library")
 
-package(default_visibility = [
-    "//purrf/google:__pkg__",
-    "//tests/google:__pkg__",
-])
+package(default_visibility = ["//visibility:public"])
 
 py_library(
     name = "authentication_utils",
@@ -26,5 +23,32 @@ py_library(
     ],
     deps = [
         "//tools/log",
+    ],
+)
+
+py_library(
+    name = "fetch_history_chat_message",
+    srcs = [
+        "constants.py",
+        "fetch_history_chat_message.py",
+    ],
+    deps = [
+        ":authentication_utils",
+        ":chat_utils",
+        "//redis_dal:redis_utils",
+        "//tools/log",
+    ],
+)
+
+py_library(
+    name = "google_api",
+    srcs = ["google_api.py"],
+    deps = [
+        "fetch_history_chat_message",
+        ":authentication_utils",
+        ":chat_utils",
+        "//tools/global_handle_exception:exception_handler",
+        "//tools/log",
+        "@pypi//flask",
     ],
 )

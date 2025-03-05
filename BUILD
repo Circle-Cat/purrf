@@ -28,6 +28,7 @@ py_binary(
     srcs = ["app.py"],
     main = "app.py",
     deps = [
+        "//google:google_api",
         "@pypi//flask",
     ],
 )
@@ -41,7 +42,7 @@ py_test(
 )
 
 py_oci_image(
-    name = "flask_image",
+    name = "purrf_image",
     base = "@python_base",
     binary = ":purrf",
     entrypoint = ["/purrf"],
@@ -65,7 +66,7 @@ platform(
 
 platform_transition_filegroup(
     name = "platform_image",
-    srcs = [":flask_image"],
+    srcs = [":purrf_image"],
     target_platform = select({
         "@platforms//cpu:arm64": ":aarch64_linux",
         "@platforms//cpu:x86_64": ":x86_64_linux",
@@ -93,7 +94,7 @@ genrule(
 
 # dynamic oci_push
 oci_push(
-    name = "flask_image_push_dynamic",
+    name = "purrf_image_push_dynamic",
     image = ":platform_image",
     remote_tags = ":dynamic_tags",
     repository_file = ":dynamic_repository",
