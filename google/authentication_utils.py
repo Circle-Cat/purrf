@@ -46,6 +46,7 @@ class GoogleClientFactory:
     _people_client = None
     _subscriber_client = None
     _publisher_client = None
+    _workspaceevents_client = None
 
     def __new__(cls, *args, **kwargs):
         """
@@ -175,3 +176,17 @@ class GoogleClientFactory:
         if self._publisher_client is None:
             self._publisher_client = PublisherClient()
         return self._publisher_client
+
+    def create_workspaceevents_client(self):
+        """Creates a Google Workspace Events API client.
+
+        This method initializes and returns a client for interacting with the Google Workspace Events API.
+        If the client has not been created yet, it is instantiated using the `_create_client` method.
+
+        Returns:
+            googleapiclient.discovery.Resource: The Google Workspace Events API client instance.
+        """
+
+        if self._workspaceevents_client is None:
+            self._workspaceevents_client = self._create_client("workspaceevents", "v1")
+        return self._workspaceevents_client
