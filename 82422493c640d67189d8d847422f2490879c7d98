@@ -18,6 +18,24 @@
       "serverId": "064ee66a-ae46-499d-ad6e-e0a180e6bf4d"
     },
     {
+      "unresolved": false,
+      "key": {
+        "uuid": "b15e0d50_2a3f93ea",
+        "filename": "google/chat_subscription.py",
+        "patchSetId": 1
+      },
+      "lineNbr": 1,
+      "author": {
+        "id": 1000007
+      },
+      "writtenOn": "2025-03-07T09:12:09Z",
+      "side": 1,
+      "message": "Done",
+      "parentUuid": "75fabd84_5d3ae6fd",
+      "revId": "82422493c640d67189d8d847422f2490879c7d98",
+      "serverId": "064ee66a-ae46-499d-ad6e-e0a180e6bf4d"
+    },
+    {
       "unresolved": true,
       "key": {
         "uuid": "71dc9ec9_9098148f",
@@ -31,6 +49,24 @@
       "writtenOn": "2025-03-06T02:40:18Z",
       "side": 1,
       "message": "Move create_work_space_events_subscription into chat_utils.py",
+      "revId": "82422493c640d67189d8d847422f2490879c7d98",
+      "serverId": "064ee66a-ae46-499d-ad6e-e0a180e6bf4d"
+    },
+    {
+      "unresolved": false,
+      "key": {
+        "uuid": "c225a4ba_6dc57f6a",
+        "filename": "google/chat_subscription.py",
+        "patchSetId": 1
+      },
+      "lineNbr": 2,
+      "author": {
+        "id": 1000007
+      },
+      "writtenOn": "2025-03-07T09:12:09Z",
+      "side": 1,
+      "message": "Done",
+      "parentUuid": "71dc9ec9_9098148f",
       "revId": "82422493c640d67189d8d847422f2490879c7d98",
       "serverId": "064ee66a-ae46-499d-ad6e-e0a180e6bf4d"
     },
@@ -52,6 +88,24 @@
       "serverId": "064ee66a-ae46-499d-ad6e-e0a180e6bf4d"
     },
     {
+      "unresolved": false,
+      "key": {
+        "uuid": "66df1519_7c3a1512",
+        "filename": "google/chat_subscription.py",
+        "patchSetId": 1
+      },
+      "lineNbr": 24,
+      "author": {
+        "id": 1000007
+      },
+      "writtenOn": "2025-03-07T09:12:09Z",
+      "side": 1,
+      "message": "Done",
+      "parentUuid": "5980be30_e9f38f4d",
+      "revId": "82422493c640d67189d8d847422f2490879c7d98",
+      "serverId": "064ee66a-ae46-499d-ad6e-e0a180e6bf4d"
+    },
+    {
       "unresolved": true,
       "key": {
         "uuid": "2a39f03a_df38bac1",
@@ -65,6 +119,24 @@
       "writtenOn": "2025-03-06T02:40:18Z",
       "side": 1,
       "message": "Missing credentials. Refer this issue: https://stackoverflow.com/questions/75704771/google-drive-api-attributeerror-credentials-object-has-no-attribute-request",
+      "revId": "82422493c640d67189d8d847422f2490879c7d98",
+      "serverId": "064ee66a-ae46-499d-ad6e-e0a180e6bf4d"
+    },
+    {
+      "unresolved": false,
+      "key": {
+        "uuid": "79190dc5_7a04446e",
+        "filename": "google/chat_subscription.py",
+        "patchSetId": 1
+      },
+      "lineNbr": 26,
+      "author": {
+        "id": 1000007
+      },
+      "writtenOn": "2025-03-07T09:12:09Z",
+      "side": 1,
+      "message": "Done",
+      "parentUuid": "2a39f03a_df38bac1",
       "revId": "82422493c640d67189d8d847422f2490879c7d98",
       "serverId": "064ee66a-ae46-499d-ad6e-e0a180e6bf4d"
     },
@@ -86,6 +158,24 @@
       "serverId": "064ee66a-ae46-499d-ad6e-e0a180e6bf4d"
     },
     {
+      "unresolved": false,
+      "key": {
+        "uuid": "88fd6c66_d3a6735c",
+        "filename": "google/chat_subscription.py",
+        "patchSetId": 1
+      },
+      "lineNbr": 32,
+      "author": {
+        "id": 1000007
+      },
+      "writtenOn": "2025-03-07T09:12:09Z",
+      "side": 1,
+      "message": "Done",
+      "parentUuid": "9f0feed3_38ab9dd6",
+      "revId": "82422493c640d67189d8d847422f2490879c7d98",
+      "serverId": "064ee66a-ae46-499d-ad6e-e0a180e6bf4d"
+    },
+    {
       "unresolved": true,
       "key": {
         "uuid": "632f339e_86969a78",
@@ -99,6 +189,24 @@
       "writtenOn": "2025-03-06T02:40:18Z",
       "side": 1,
       "message": "Delete this.",
+      "revId": "82422493c640d67189d8d847422f2490879c7d98",
+      "serverId": "064ee66a-ae46-499d-ad6e-e0a180e6bf4d"
+    },
+    {
+      "unresolved": false,
+      "key": {
+        "uuid": "eb40a916_cadf6b4c",
+        "filename": "google/chat_subscription.py",
+        "patchSetId": 1
+      },
+      "lineNbr": 39,
+      "author": {
+        "id": 1000007
+      },
+      "writtenOn": "2025-03-07T09:12:09Z",
+      "side": 1,
+      "message": "Done",
+      "parentUuid": "632f339e_86969a78",
       "revId": "82422493c640d67189d8d847422f2490879c7d98",
       "serverId": "064ee66a-ae46-499d-ad6e-e0a180e6bf4d"
     }
