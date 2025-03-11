@@ -25,6 +25,7 @@ py_library(
         "constants.py",
     ],
     deps = [
+        "//google:authentication_utils",
         "//tools/log",
         "@pypi//tenacity",
     ],

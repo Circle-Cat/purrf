@@ -57,6 +57,7 @@ zipp==3.21.0
 
 #redis
 redis==5.2.1
+python-dateutil==2.9.0.post0
 
 #retry
 tenacity==9.1.2

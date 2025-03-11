@@ -29,6 +29,8 @@ py_binary(
     main = "app.py",
     deps = [
         "//google:google_api",
+        "//redis_dal:redis_api",
+        "//tools/global_handle_exception:exception_handler",
         "@pypi//flask",
     ],
 )
