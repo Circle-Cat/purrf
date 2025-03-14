@@ -76,8 +76,8 @@ class TestChatUtils(TestCase):
             NO_CLIENT_ERROR_MSG.format(client_name=CHAT_API_NAME),
         )
 
-    def test_list_directory_all_people_ldap_success(self):
-        mock_client = Mock()
+    @patch("google.authentication_utils.GoogleClientFactory.create_people_client")
+    def test_list_directory_all_people_ldap_success(self, mock_client):
         mock_people_response = {
             "people": [
                 {
@@ -99,24 +99,27 @@ class TestChatUtils(TestCase):
             ],
             "nextPageToken": None,
         }
-        mock_client.people.return_value.listDirectoryPeople.return_value.execute.return_value = mock_people_response
 
-        result = list_directory_all_people_ldap(mock_client)
+        mock_client.return_value.people.return_value.listDirectoryPeople.return_value.execute.return_value = mock_people_response
+
+        result = list_directory_all_people_ldap()
 
         expected_result = {"id1": "user1", "id2": "user2"}
         self.assertEqual(result, expected_result)
-        mock_client.people.return_value.listDirectoryPeople.assert_called_once_with(
+
+        mock_client.return_value.people.return_value.listDirectoryPeople.assert_called_once_with(
             readMask="emailAddresses",
             pageSize=DEFAULT_PAGE_SIZE,
             sources=["DIRECTORY_SOURCE_TYPE_DOMAIN_PROFILE"],
             pageToken=None,
         )
 
-    def test_list_directory_all_people_ldap_invalid_client(self):
-        mock_client = None
+    @patch("google.authentication_utils.GoogleClientFactory.create_people_client")
+    def test_list_directory_all_people_ldap_invalid_client(self, mock_client):
+        mock_client.return_value = None
 
         with self.assertRaises(ValueError) as context:
-            list_directory_all_people_ldap(mock_client)
+            list_directory_all_people_ldap()
         self.assertEqual(
             str(context.exception),
             NO_CLIENT_ERROR_MSG.format(client_name=PEOPLE_API_NAME),

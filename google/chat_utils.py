@@ -72,7 +72,7 @@ def get_chat_spaces(space_type, page_size):
     return space_display_names
 
 
-def list_directory_all_people_ldap(client_people):
+def list_directory_all_people_ldap():
     """
     Retrieves a dictionary of sender IDs to LDAP identifiers from the Google People API.
 
@@ -86,9 +86,6 @@ def list_directory_all_people_ldap(client_people):
     4.  Stores the sender ID and LDAP identifier in a dictionary.
     5.  Logs the number of people retrieved from the directory.
 
-    Args:
-        client_people (googleapiclient.discovery.Resource): A Google People API client.
-
     Returns:
         dict: A dictionary mapping sender IDs (str) to LDAP identifiers (str).
 
@@ -98,7 +95,7 @@ def list_directory_all_people_ldap(client_people):
         KeyError: If the expected data structure is not present in the API response.
         IndexError: If the email address list is empty.
     """
-
+    client_people = GoogleClientFactory().create_people_client()
     if not client_people:
         raise ValueError(NO_CLIENT_ERROR_MSG.format(client_name=PEOPLE_API_NAME))
 
