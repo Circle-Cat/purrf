@@ -13,6 +13,7 @@ py_test(
     name = "test_chat_utils",
     srcs = ["test_chat_utils.py"],
     deps = [
+        "//google:authentication_utils",
         "//google:chat_utils",
     ],
 )
