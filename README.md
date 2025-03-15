@@ -64,36 +64,45 @@ bazel build //:format
 bazel run //:format
 ```
 
-## Accessing Google Cloud External APIs
-This project integrates with Google Cloud external APIs, such as Google Chat API. To authenticate and authorize access, you need to use OAuth 2.0 client IDs.
+Here’s the updated version with Markdown formatting:
 
-### Obtaining OAuth 2.0 Client IDs
-- Create a Google Cloud Project: If you don't have one, create a project in the Google Cloud Console.
-- Enable APIs: In your project, enable the APIs you need (e.g., Google Chat API).
-- Create Credentials:
-  - In the Google Cloud Console, go to "APIs & Services" > "Credentials".
-  - Click "Create Credentials" > "OAuth client ID".
-  - Select "Desktop app" as the application type.
-  - Download the generated client_secrets.json file.
+---
 
-### Authenticating with OAuth 2.0 Client IDs
-You can use the gcloud command-line tool for authentication.
+# Accessing Google Cloud External APIs
 
-Install gcloud: If not installed, follow the Google Cloud documentation.
-<https://cloud.google.com/sdk/docs/install>
+This project integrates with Google Cloud external APIs, such as the Google Chat API. During development, authentication and authorization are handled using a Service Account to impersonate a user login.
 
-Run the Authentication Command:
+## Authenticating with a Service Account
 
-```bash
+To authenticate and access Google Cloud APIs, you can use a Service Account with impersonation. This allows the Service Account to act on behalf of a user。
 
-gcloud auth application-default login --client-id-file=/path/to/client_secrets.json --scopes=[https://www.googleapis.com/auth/chat.spaces.readonly,https://www.googleapis.com/auth/cloud-platform]
+## Steps for Development
 
-```
-Replace /path/to/client_secrets.json with the path to your client_secrets.json file.
+Follow these steps to set up your development environment:
 
-Adjust the --scopes parameter to include the necessary API scopes.
+1. **Set Up a Service Account**:
+   - Download the `service_secrets.json` key file into this workspace.
 
-**Important Notes**
-- Securely store your client_secrets.json file.
-- Use appropriate scopes based on the APIs you need to access.
-- Alternatively, service account key files can be used for authentication.
+2. **Configure Authentication**:
+   - Set the `GOOGLE_APPLICATION_CREDENTIALS` environment variable to point to your Service Account key file. Run this command in your terminal:
+     ```bash
+     export GOOGLE_APPLICATION_CREDENTIALS=/path/to/service_secrets.json
+     ```
+     Replace `/path/to/service_secrets.json` with the actual path where you stored the file in your workspace.
+
+3. **Run Project**:
+   - Use the following command to execute your project, specifying the user email to impersonate and other optional environment variables:
+     ```bash
+     USER_EMAIL=<your-gmail> LOG_LEVEL=DEBUG REDIS_HOST=<redis-host> REDIS_PORT=6379 REDIS_PASSWORD=<redis-password> bazel run //path/to/your/binary:binary-name
+     ```
+     - **Explanation of Variables**:
+       - `LOG_LEVEL=DEBUG`: Sets the logging level to `DEBUG` for detailed output during development (optional, defaults to `INFO` if omitted).
+       - `REDIS_HOST=<redis-host>`, `REDIS_PORT=6379`, `REDIS_PASSWORD=<redis-password>`: Configuration for interacting with a Redis instance.
+     - **Note on Redis Variables**: If your development task doesn’t involve interacting with Redis, you can skip setting `REDIS_HOST`, `REDIS_PORT`, and `REDIS_PASSWORD`. The project will still run without these variables.
+
+## Important Notes
+
+- **Secure Storage**: Store your `service_secrets.json` file securely and **NEVER committing it to gerrit**
+
+- **Scopes**: Use appropriate OAuth 2.0 scopes based on the APIs you need to access (e.g., `https://www.googleapis.com/auth/chat.messages.readonly` for Google Chat). These should be configured in code.
+- **Development Only**: This impersonation approach is intended for development. In production, using workload identity.

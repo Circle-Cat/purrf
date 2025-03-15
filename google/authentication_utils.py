@@ -1,7 +1,6 @@
 from googleapiclient.discovery import build
 from google.auth import default
 from google.oauth2.service_account import Credentials as ServiceAccountCredentials
-from google.oauth2.credentials import Credentials as UserCredentials
 from tools.log.logger import setup_logger
 from google.constants import (
     CHAT_API_NAME,
@@ -9,13 +8,15 @@ from google.constants import (
     PEOPLE_API_NAME,
     PEOPLE_API_VERSION,
     CREDENTIALS_SUCCESS_MSG,
-    USING_SERVICE_ACCOUNT_CREDENTIALS_MSG,
-    USING_USER_CREDENTIALS_MSG,
-    USING_OTHER_CREDENTIALS_MSG,
-    NO_CREDENTIALS_ERROR_MSG,
     SERVICE_CREATED_MSG,
+    IMPERSONATE_USER_MSG,
+    USING_CREDENTIALS_MSG,
+    USER_EMAIL,
+    NO_CREDENTIALS_ERROR_MSG,
+    SCOPES_LIST,
 )
 import logging
+import os
 
 setup_logger()
 
@@ -65,37 +66,32 @@ class GoogleClientFactory:
     def _get_credentials(self):
         """Retrieves Google Cloud credentials using Application Default Credentials (ADC).
 
-        This function attempts to retrieve credentials using ADC. It supports both service account
-        and user credentials.
+        This method fetches credentials via ADC, supporting both service account and user credentials.
+        It caches the credentials to avoid redundant fetches and optionally impersonates a user if
+        configured with a user email.
 
         Returns:
-            google.auth.credentials.Credentials: The retrieved credentials object, or None.
+            google.auth.credentials.Credentials: The retrieved credentials object, or None if retrieval fails.
+
         Raises:
-            google.auth.exceptions.DefaultCredentialsError: If ADC fails to retrieve credentials.
-            Exception: For any other unexpected errors during credential retrieval or delegation.
-
-        Example:
-            credentials = get_credentials()
-            if credentials:
-                # Use credentials to access Google Cloud services
-                pass
-            else:
-                print("Failed to retrieve credentials.")
+            google.auth.exceptions.DefaultCredentialsError: If ADC cannot locate valid credentials.
+            Exception: For unexpected errors during credential retrieval or impersonation.
         """
+        if self._credentials is not None:
+            return self._credentials
 
-        if self._credentials is None:
-            self._credentials, project_id = default()
-            logging.info(CREDENTIALS_SUCCESS_MSG.format(project_id=project_id))
-            if isinstance(self._credentials, ServiceAccountCredentials):
-                logging.info(USING_SERVICE_ACCOUNT_CREDENTIALS_MSG)
-            elif isinstance(self._credentials, UserCredentials):
-                logging.info(USING_USER_CREDENTIALS_MSG)
-            else:
-                logging.info(
-                    USING_OTHER_CREDENTIALS_MSG.format(
-                        credentials_type=type(self._credentials)
-                    )
-                )
+        self._credentials, project_id = default(scopes=SCOPES_LIST)
+        logging.info(CREDENTIALS_SUCCESS_MSG.format(project_id=project_id))
+
+        user_email = os.environ.get(USER_EMAIL)
+        if user_email and isinstance(self._credentials, ServiceAccountCredentials):
+            self._credentials = self._credentials.with_subject(user_email)
+            logging.info(IMPERSONATE_USER_MSG.format(user_email=user_email))
+
+        logging.info(
+            USING_CREDENTIALS_MSG.format(credentials_type=type(self._credentials))
+        )
+
         return self._credentials
 
     def _create_client(self, api_name: str, api_version: str):
