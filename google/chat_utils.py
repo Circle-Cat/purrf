@@ -5,6 +5,7 @@
 
 from tools.log.logger import setup_logger
 import logging
+from google.authentication_utils import GoogleClientFactory
 from google.constants import (
     RETRIEVED_SPACES_INFO_MSG,
     NO_CLIENT_ERROR_MSG,
@@ -12,6 +13,8 @@ from google.constants import (
     PEOPLE_API_NAME,
     DEFAULT_PAGE_SIZE,
     RETRIEVED_PEOPLE_INFO_MSG,
+    RETRIEVED_ID_INFO_MSG,
+    NO_EMAIL_FOUND_ERROR_MSG,
 )
 from google.authentication_utils import GoogleClientFactory
 
@@ -126,3 +129,41 @@ def list_directory_all_people_ldap():
 
     logging.info(RETRIEVED_PEOPLE_INFO_MSG.format(count=len(formatted_people)))
     return formatted_people
+
+
+def get_ldap_by_id(user_id):
+    """
+    Retrieves the LDAP identifier (local part of the email) for a given person ID using the Google People API.
+
+    This function fetches the profile of a person identified by their ID and extracts the local part of their
+    email address to return as the LDAP identifier.
+
+    Args:
+        user_id (str): The unique identifier of the person in the Google People API.
+
+    Returns:
+        str or None: The LDAP identifier (local part of the email) if found, otherwise None.
+
+    Raises:
+        ValueError: If no valid People API client is provided.
+        googleapiclient.errors.HttpError: If an error occurs during the API call.
+    """
+
+    client = GoogleClientFactory()
+    client_people = client.create_people_client()
+
+    profile = (
+        client_people.people()
+        .get(resourceName=f"people/{user_id}", personFields="emailAddresses")
+        .execute()
+    )
+
+    email_addresses = profile.get("emailAddresses", [])
+    if email_addresses:
+        email = email_addresses[0].get("value", "")
+        if email:
+            local_part = email.split("@")[0]
+            logging.info(RETRIEVED_ID_INFO_MSG.format(local_part=local_part, id=user_id))
+            return local_part
+    logging.warning(NO_EMAIL_FOUND_ERROR_MSG.format(id=user_id))
+    return None
