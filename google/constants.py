@@ -25,9 +25,11 @@ USING_CREDENTIALS_MSG = "Using Credentials type: {credentials_type}."
 IMPERSONATE_USER_MSG = "Impersonating user: {user_email}."
 SERVICE_CREATED_MSG = "Created {api_name} client successfully."
 NO_CLIENT_ERROR_MSG = "No valid {client_name} client provided."
+NO_EMAIL_FOUND_ERROR_MSG = "No email found for person ID: {id}."
 
 RETRIEVED_SPACES_INFO_MSG = "Retrieved {count} {space_type} type Chat spaces."
 RETRIEVED_PEOPLE_INFO_MSG = "Retrieved {count} people from directory."
+RETRIEVED_ID_INFO_MSG = "Retrieved LDAP '{local_part}' for ID '{id}'."
 
 FETCHING_MESSAGES_INFO_MSG = "Fetching messages for space ID: {space_id}."
 FETCHED_MESSAGES_INFO_MSG = "Fetched {count} messages for space ID: {space_id}."
