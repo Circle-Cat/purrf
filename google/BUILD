@@ -52,6 +52,7 @@ py_library(
         "fetch_history_chat_message",
         ":authentication_utils",
         ":chat_utils",
+        ":pubsub_subscriber_store",
         "//tools/global_handle_exception:exception_handler",
         "//tools/log",
         "@pypi//flask",
@@ -67,6 +68,22 @@ py_library(
     deps = [
         "//tools/log",
         "@pypi//google_api_python_client",
+        "@pypi//google_cloud_pubsub",
+    ],
+)
+
+py_library(
+    name = "pubsub_subscriber_store",
+    srcs = [
+        "constants.py",
+        "pubsub_subscriber_store.py",
+    ],
+    deps = [
+        "//google:authentication_utils",
+        "//redis_dal:redis_utils",
+        "//tools/log",
+        "@pypi//google_api_python_client",
+        "@pypi//google_auth_oauthlib",
         "@pypi//google_cloud_pubsub",
     ],
 )

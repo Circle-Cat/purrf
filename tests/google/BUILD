@@ -35,3 +35,13 @@ py_test(
         "//google:pubsub_publisher",
     ],
 )
+
+py_test(
+    name = "test_pubsub_subscriber_store",
+    srcs = ["test_pubsub_subscriber_store.py"],
+    deps = [
+        "//google:chat_utils",
+        "//google:pubsub_subscriber_store",
+        "//redis_dal:redis_utils",
+    ],
+)

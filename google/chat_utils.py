@@ -163,7 +163,9 @@ def get_ldap_by_id(user_id):
         email = email_addresses[0].get("value", "")
         if email:
             local_part = email.split("@")[0]
-            logging.info(RETRIEVED_ID_INFO_MSG.format(local_part=local_part, id=user_id))
+            logging.info(
+                RETRIEVED_ID_INFO_MSG.format(local_part=local_part, id=user_id)
+            )
             return local_part
     logging.warning(NO_EMAIL_FOUND_ERROR_MSG.format(id=user_id))
     return None
