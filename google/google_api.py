@@ -2,8 +2,12 @@
 
 from flask import jsonify, Blueprint, request
 from google.fetch_history_chat_message import fetch_history_messages
+from google.pubsub_subscriber_store import pull_messages
+from http import HTTPStatus
 from google.chat_utils import get_chat_spaces
 from http import HTTPStatus
+from concurrent.futures import ThreadPoolExecutor
+from google.constants import PULL_PROCESS_STARTED_MSG
 
 google_bp = Blueprint("google", __name__)
 
@@ -25,3 +29,18 @@ def get_chat_spaces_route():
 
     spaces = get_chat_spaces(space_type, page_size)
     return jsonify({"spaces": spaces}), HTTPStatus.OK
+
+
+@google_bp.route("/api/chat/pull", methods=["POST"])
+def api_chat_pull_route():
+    data = request.get_json() or {}
+    subscription_id = data.get("subscription_id")
+    project_id = data.get("project_id")
+
+    executor.submit(pull_messages, project_id, subscription_id)
+
+    return jsonify({
+        "status": PULL_PROCESS_STARTED_MSG.format(
+            subscription_id=subscription_id, project_id=project_id
+        )
+    }), HTTPStatus.ACCEPTED

@@ -9,6 +9,7 @@ CHAT_API_NAME = "chat"
 CHAT_API_VERSION = "v1"
 PEOPLE_API_NAME = "people"
 PEOPLE_API_VERSION = "v1"
+SUBSCRIBER_API_NAME = "subscriber"
 
 USER_EMAIL = "USER_EMAIL"
 
@@ -40,3 +41,14 @@ SENDER_LDAP_NOT_FOUND_DEBUG_MSG = (
 STORED_MESSAGES_INFO_MSG = (
     "{stored_count} out of {total_count} messages stored in Redis successfully."
 )
+PULL_PROCESS_STARTED_MSG = "Pull message process started for subscription_id: {subscription_id} and project_id: {project_id}"
+MISSING_FIELDS_MSG = (
+    "Missing required field(s): {fields}, for method {method}, request data = {data}"
+)
+EXPIRATION_REMINDER_EVENT = "google.workspace.events.subscription.v1.expirationReminder"
+
+EVENT_TYPES = {
+    "google.workspace.chat.message.v1.created",
+    "google.workspace.chat.message.v1.updated",
+    "google.workspace.chat.message.v1.deleted",
+}
