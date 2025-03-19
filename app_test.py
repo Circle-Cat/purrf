@@ -1,6 +1,7 @@
 """Test for purrf"""
 
 import http.client
+from http import HTTPStatus
 from unittest import TestCase, main
 from unittest.mock import patch
 
@@ -8,6 +9,7 @@ from app import app
 
 
 FETCH_HISTORY_MESSAGES_API = "/api/chat/spaces/messages"
+HEALTH_API = "/health"
 
 
 class TestAppRoutes(TestCase):
@@ -28,6 +30,12 @@ class TestAppRoutes(TestCase):
     def test_history_messages_error(self, mock_submit):
         response = self.client.get(FETCH_HISTORY_MESSAGES_API)
         self.assertEqual(response.status_code, http.client.INTERNAL_SERVER_ERROR)
+
+    def test_health_check(self):
+        """Testing health check endpoint"""
+        response = self.client.get(HEALTH_API)
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.assertEqual(response.json, {"status": "success"})
 
 
 if __name__ == "__main__":
