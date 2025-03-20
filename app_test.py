@@ -1,25 +1,34 @@
 """Test for purrf"""
 
-import unittest
+import http.client
+from unittest import TestCase, main
+from unittest.mock import patch
 
 from app import app
 
 
-class TestAppRoutes(unittest.TestCase):
-    """Testing all controllers"""
+FETCH_HISTORY_MESSAGES_API = "/api/chat/spaces/messages"
 
+
+class TestAppRoutes(TestCase):
     def setUp(self):
-        self.app = app.test_client()
-        self.app.testing = True
+        self.client = app.test_client()
+        app.testing = True
 
-    def test_welcome(self):
-        """Testing welcome endpoint"""
-        response = self.app.get("/")
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(
-            response.data.decode("utf-8"), "Welcome to Bazel built Flask!"
-        )  # Check response body
+    @patch("google.google_api.executor.submit")
+    @patch("google.google_api.fetch_history_messages")
+    def test_history_messages_integration(self, mock_fetch, mock_submit):
+        response = self.client.get(FETCH_HISTORY_MESSAGES_API)
+
+        self.assertEqual(response.status_code, http.client.ACCEPTED)
+
+        mock_submit.assert_called_once_with(mock_fetch)
+
+    @patch("google.google_api.executor.submit", side_effect=Exception())
+    def test_history_messages_error(self, mock_submit):
+        response = self.client.get(FETCH_HISTORY_MESSAGES_API)
+        self.assertEqual(response.status_code, http.client.INTERNAL_SERVER_ERROR)
 
 
 if __name__ == "__main__":
-    unittest.main()
+    main()

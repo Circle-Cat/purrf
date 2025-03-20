@@ -17,3 +17,11 @@ py_test(
         "//google:chat_utils",
     ],
 )
+
+py_test(
+    name = "test_fetch_history_chat_message",
+    srcs = ["test_fetch_history_chat_message.py"],
+    deps = [
+        "//google:fetch_history_chat_message",
+    ],
+)
