@@ -13,15 +13,15 @@ from google.constants import (
     DEFAULT_PAGE_SIZE,
     RETRIEVED_PEOPLE_INFO_MSG,
 )
+from google.authentication_utils import GoogleClientFactory
 
 setup_logger()
 
 
-def get_chat_spaces(client_chat, space_type, page_size):
+def get_chat_spaces(space_type, page_size):
     """Retrieves a dictionary of Google Chat spaces with their display names.
 
     Args:
-        client_chat (google.apps.chat_v1.services.chat_service.client.ChatServiceClient): Google Chat Client.
         space_type (str): The type of spaces to filter (e.g., SPACE, ROOM).
         page_size (int): The number of spaces to retrieve per page.
 
@@ -37,7 +37,7 @@ def get_chat_spaces(client_chat, space_type, page_size):
         ValueError: If no valid chat client provided.
         googleapiclient.errors.HttpError: If an error occurs during the API call.
     """
-
+    client_chat = GoogleClientFactory().create_chat_client()
     if not client_chat:
         raise ValueError(NO_CLIENT_ERROR_MSG.format(client_name=CHAT_API_NAME))
 
