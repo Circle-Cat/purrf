@@ -30,7 +30,7 @@ RETRIEVED_SPACES_INFO_MSG = "Retrieved {count} {space_type} type Chat spaces."
 RETRIEVED_PEOPLE_INFO_MSG = "Retrieved {count} people from directory."
 
 FETCHING_MESSAGES_INFO_MSG = "Fetching messages for space ID: {space_id}."
-FETCHED_MESSAGES_INFO_MSG = "Fetching {count} messages for space ID: {space_id}."
+FETCHED_MESSAGES_INFO_MSG = "Fetched {count} messages for space ID: {space_id}."
 FETCHED_ALL_MESSAGES_INFO_MSG = "{count} messages fetched for all spaces."
 SENDER_LDAP_NOT_FOUND_DEBUG_MSG = (
     "Sender LDAP not found for sender ID: {sender_id}, message: {message}."
