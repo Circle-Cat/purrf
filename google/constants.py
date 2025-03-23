@@ -27,6 +27,8 @@ IMPERSONATE_USER_MSG = "Impersonating user: {user_email}."
 SERVICE_CREATED_MSG = "Created {api_name} client successfully."
 NO_CLIENT_ERROR_MSG = "No valid {client_name} client provided."
 NO_EMAIL_FOUND_ERROR_MSG = "No email found for person ID: {id}."
+NO_TOPIC_ID_ERROR_MSG = "No valid {topic_id} topic id provided"
+NO_PARAMETER_ERROR_MSG = "Missing required parameters"
 
 RETRIEVED_SPACES_INFO_MSG = "Retrieved {count} {space_type} type Chat spaces."
 RETRIEVED_PEOPLE_INFO_MSG = "Retrieved {count} people from directory."
