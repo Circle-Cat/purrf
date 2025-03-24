@@ -18,6 +18,24 @@
       "serverId": "064ee66a-ae46-499d-ad6e-e0a180e6bf4d"
     },
     {
+      "unresolved": false,
+      "key": {
+        "uuid": "fa25cb76_9f0700c4",
+        "filename": "google/google_api.py",
+        "patchSetId": 4
+      },
+      "lineNbr": 25,
+      "author": {
+        "id": 1000065
+      },
+      "writtenOn": "2025-03-24T06:59:26Z",
+      "side": 1,
+      "message": "Done",
+      "parentUuid": "8c796b27_3c858e70",
+      "revId": "4c08d11689fb653e4e783916a13a5bb20fd4c534",
+      "serverId": "064ee66a-ae46-499d-ad6e-e0a180e6bf4d"
+    },
+    {
       "unresolved": true,
       "key": {
         "uuid": "c17eae05_0818b260",
@@ -31,6 +49,24 @@
       "writtenOn": "2025-03-21T01:58:46Z",
       "side": 1,
       "message": "Great. But can we define those as constants?",
+      "revId": "4c08d11689fb653e4e783916a13a5bb20fd4c534",
+      "serverId": "064ee66a-ae46-499d-ad6e-e0a180e6bf4d"
+    },
+    {
+      "unresolved": false,
+      "key": {
+        "uuid": "589b2c2f_5da101cd",
+        "filename": "google/google_api.py",
+        "patchSetId": 4
+      },
+      "lineNbr": 32,
+      "author": {
+        "id": 1000065
+      },
+      "writtenOn": "2025-03-24T06:59:26Z",
+      "side": 1,
+      "message": "Done",
+      "parentUuid": "c17eae05_0818b260",
       "revId": "4c08d11689fb653e4e783916a13a5bb20fd4c534",
       "serverId": "064ee66a-ae46-499d-ad6e-e0a180e6bf4d"
     },
@@ -52,6 +88,24 @@
       "serverId": "064ee66a-ae46-499d-ad6e-e0a180e6bf4d"
     },
     {
+      "unresolved": false,
+      "key": {
+        "uuid": "e31317f4_9a1968d4",
+        "filename": "google/google_api.py",
+        "patchSetId": 4
+      },
+      "lineNbr": 36,
+      "author": {
+        "id": 1000065
+      },
+      "writtenOn": "2025-03-24T06:59:26Z",
+      "side": 1,
+      "message": "Done",
+      "parentUuid": "dd4fee61_c34a15d9",
+      "revId": "4c08d11689fb653e4e783916a13a5bb20fd4c534",
+      "serverId": "064ee66a-ae46-499d-ad6e-e0a180e6bf4d"
+    },
+    {
       "unresolved": true,
       "key": {
         "uuid": "ef856cb5_7f4ac7fb",
@@ -65,6 +119,24 @@
       "writtenOn": "2025-03-21T01:58:46Z",
       "side": 1,
       "message": "Delete this. In app.py, we register google_bp to app, so that will be the entry point.",
+      "revId": "4c08d11689fb653e4e783916a13a5bb20fd4c534",
+      "serverId": "064ee66a-ae46-499d-ad6e-e0a180e6bf4d"
+    },
+    {
+      "unresolved": false,
+      "key": {
+        "uuid": "c1642091_159b4dc1",
+        "filename": "google/google_api.py",
+        "patchSetId": 4
+      },
+      "lineNbr": 38,
+      "author": {
+        "id": 1000065
+      },
+      "writtenOn": "2025-03-24T06:59:26Z",
+      "side": 1,
+      "message": "Done",
+      "parentUuid": "ef856cb5_7f4ac7fb",
       "revId": "4c08d11689fb653e4e783916a13a5bb20fd4c534",
       "serverId": "064ee66a-ae46-499d-ad6e-e0a180e6bf4d"
     },
@@ -86,6 +158,24 @@
       "serverId": "064ee66a-ae46-499d-ad6e-e0a180e6bf4d"
     },
     {
+      "unresolved": false,
+      "key": {
+        "uuid": "8d240043_e94d2edd",
+        "filename": "google/pubsub_subscriber_store.py",
+        "patchSetId": 4
+      },
+      "lineNbr": 10,
+      "author": {
+        "id": 1000065
+      },
+      "writtenOn": "2025-03-24T06:59:26Z",
+      "side": 1,
+      "message": "Done",
+      "parentUuid": "1e934510_b2075e3d",
+      "revId": "4c08d11689fb653e4e783916a13a5bb20fd4c534",
+      "serverId": "064ee66a-ae46-499d-ad6e-e0a180e6bf4d"
+    },
+    {
       "unresolved": true,
       "key": {
         "uuid": "1c35ca22_4f7af7bd",
@@ -99,6 +189,24 @@
       "writtenOn": "2025-03-21T01:58:46Z",
       "side": 1,
       "message": "Refactor the \"google.workspace.events.subscription.v1.expirationReminder\" as a constant",
+      "revId": "4c08d11689fb653e4e783916a13a5bb20fd4c534",
+      "serverId": "064ee66a-ae46-499d-ad6e-e0a180e6bf4d"
+    },
+    {
+      "unresolved": false,
+      "key": {
+        "uuid": "bda40dda_8eb24794",
+        "filename": "google/pubsub_subscriber_store.py",
+        "patchSetId": 4
+      },
+      "lineNbr": 64,
+      "author": {
+        "id": 1000065
+      },
+      "writtenOn": "2025-03-24T06:59:26Z",
+      "side": 1,
+      "message": "Done",
+      "parentUuid": "1c35ca22_4f7af7bd",
       "revId": "4c08d11689fb653e4e783916a13a5bb20fd4c534",
       "serverId": "064ee66a-ae46-499d-ad6e-e0a180e6bf4d"
     },
@@ -137,6 +245,42 @@
       "serverId": "064ee66a-ae46-499d-ad6e-e0a180e6bf4d"
     },
     {
+      "unresolved": false,
+      "key": {
+        "uuid": "760eb2be_bb4d72c9",
+        "filename": "google/pubsub_subscriber_store.py",
+        "patchSetId": 4
+      },
+      "lineNbr": 92,
+      "author": {
+        "id": 1000065
+      },
+      "writtenOn": "2025-03-24T06:59:26Z",
+      "side": 1,
+      "message": "Done",
+      "parentUuid": "9e9c2fc4_d3196cc7",
+      "revId": "4c08d11689fb653e4e783916a13a5bb20fd4c534",
+      "serverId": "064ee66a-ae46-499d-ad6e-e0a180e6bf4d"
+    },
+    {
+      "unresolved": false,
+      "key": {
+        "uuid": "aa05f635_ffe394a8",
+        "filename": "google/pubsub_subscriber_store.py",
+        "patchSetId": 4
+      },
+      "lineNbr": 92,
+      "author": {
+        "id": 1000065
+      },
+      "writtenOn": "2025-03-24T06:59:26Z",
+      "side": 1,
+      "message": "Done",
+      "parentUuid": "72bf7c82_6acb62fc",
+      "revId": "4c08d11689fb653e4e783916a13a5bb20fd4c534",
+      "serverId": "064ee66a-ae46-499d-ad6e-e0a180e6bf4d"
+    },
+    {
       "unresolved": true,
       "key": {
         "uuid": "84395dbf_ad094038",
@@ -150,6 +294,24 @@
       "writtenOn": "2025-03-21T01:58:46Z",
       "side": 1,
       "message": "This key is already in redis_dal/constants.py.",
+      "revId": "4c08d11689fb653e4e783916a13a5bb20fd4c534",
+      "serverId": "064ee66a-ae46-499d-ad6e-e0a180e6bf4d"
+    },
+    {
+      "unresolved": false,
+      "key": {
+        "uuid": "21350c6b_4eacb9f4",
+        "filename": "google/pubsub_subscriber_store.py",
+        "patchSetId": 4
+      },
+      "lineNbr": 101,
+      "author": {
+        "id": 1000065
+      },
+      "writtenOn": "2025-03-24T06:59:26Z",
+      "side": 1,
+      "message": "Done",
+      "parentUuid": "84395dbf_ad094038",
       "revId": "4c08d11689fb653e4e783916a13a5bb20fd4c534",
       "serverId": "064ee66a-ae46-499d-ad6e-e0a180e6bf4d"
     }
