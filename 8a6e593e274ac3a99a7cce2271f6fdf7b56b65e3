@@ -3,6 +3,23 @@
     {
       "unresolved": true,
       "key": {
+        "uuid": "d2145947_95eb112b",
+        "filename": "google/pubsub_subscriber_store.py",
+        "patchSetId": 5
+      },
+      "lineNbr": 17,
+      "author": {
+        "id": 1000007
+      },
+      "writtenOn": "2025-03-25T01:14:29Z",
+      "side": 1,
+      "message": "How about moving this global variable into the method?",
+      "revId": "8a6e593e274ac3a99a7cce2271f6fdf7b56b65e3",
+      "serverId": "064ee66a-ae46-499d-ad6e-e0a180e6bf4d"
+    },
+    {
+      "unresolved": true,
+      "key": {
         "uuid": "d5ea3952_7e2d6392",
         "filename": "google/pubsub_subscriber_store.py",
         "patchSetId": 5
@@ -14,6 +31,24 @@
       "writtenOn": "2025-03-25T01:10:13Z",
       "side": 1,
       "message": "space_name format is like `spaces/{spce_id}`",
+      "revId": "8a6e593e274ac3a99a7cce2271f6fdf7b56b65e3",
+      "serverId": "064ee66a-ae46-499d-ad6e-e0a180e6bf4d"
+    },
+    {
+      "unresolved": true,
+      "key": {
+        "uuid": "5aaff320_6df9cf39",
+        "filename": "google/pubsub_subscriber_store.py",
+        "patchSetId": 5
+      },
+      "lineNbr": 110,
+      "author": {
+        "id": 1000007
+      },
+      "writtenOn": "2025-03-25T01:14:29Z",
+      "side": 1,
+      "message": "REDIS_KEY_FORMAT format is `spaces/{space_id}:ldap:{sender_ldap}`",
+      "parentUuid": "d5ea3952_7e2d6392",
       "revId": "8a6e593e274ac3a99a7cce2271f6fdf7b56b65e3",
       "serverId": "064ee66a-ae46-499d-ad6e-e0a180e6bf4d"
     }
