@@ -1,5 +1,6 @@
 from googleapiclient.discovery import build
 from google.auth import default
+from google.cloud.pubsub_v1 import SubscriberClient
 from google.oauth2.service_account import Credentials as ServiceAccountCredentials
 from tools.log.logger import setup_logger
 from google.constants import (
@@ -43,6 +44,7 @@ class GoogleClientFactory:
     _credentials = None
     _chat_client = None
     _people_client = None
+    _subscriber_client = None
 
     def __new__(cls, *args, **kwargs):
         """
@@ -148,3 +150,15 @@ class GoogleClientFactory:
                 PEOPLE_API_NAME, PEOPLE_API_VERSION
             )
         return self._people_client
+
+    def create_subscriber_client(self):
+        """
+        Creates a Google Cloud Pub/Sub subscriber client.
+
+        Returns:
+            pubsub_v1.SubscriberClient object if successful, else None.
+        """
+
+        if self._subscriber_client is None:
+            self._subscriber_client = SubscriberClient()
+        return self._subscriber_client

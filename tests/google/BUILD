@@ -5,7 +5,9 @@ py_test(
     srcs = ["test_authentication_utils.py"],
     deps = [
         "//google:authentication_utils",
+        "@pypi//google_api_python_client",
         "@pypi//google_auth_oauthlib",
+        "@pypi//google_cloud_pubsub",
     ],
 )
 
@@ -23,5 +25,13 @@ py_test(
     srcs = ["test_fetch_history_chat_message.py"],
     deps = [
         "//google:fetch_history_chat_message",
+    ],
+)
+
+py_test(
+    name = "test_pubsub_publisher",
+    srcs = ["test_pubsub_publisher.py"],
+    deps = [
+        "//google:pubsub_publisher",
     ],
 )
