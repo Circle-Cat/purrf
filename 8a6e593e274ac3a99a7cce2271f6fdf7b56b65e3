@@ -18,6 +18,24 @@
       "serverId": "064ee66a-ae46-499d-ad6e-e0a180e6bf4d"
     },
     {
+      "unresolved": false,
+      "key": {
+        "uuid": "5a30b161_fbf7c0ec",
+        "filename": "google/pubsub_subscriber_store.py",
+        "patchSetId": 5
+      },
+      "lineNbr": 17,
+      "author": {
+        "id": 1000065
+      },
+      "writtenOn": "2025-03-28T08:04:38Z",
+      "side": 1,
+      "message": "Done",
+      "parentUuid": "d2145947_95eb112b",
+      "revId": "8a6e593e274ac3a99a7cce2271f6fdf7b56b65e3",
+      "serverId": "064ee66a-ae46-499d-ad6e-e0a180e6bf4d"
+    },
+    {
       "unresolved": true,
       "key": {
         "uuid": "d5ea3952_7e2d6392",
@@ -53,6 +71,24 @@
       "serverId": "064ee66a-ae46-499d-ad6e-e0a180e6bf4d"
     },
     {
+      "unresolved": false,
+      "key": {
+        "uuid": "23ce42bc_db79a506",
+        "filename": "google/pubsub_subscriber_store.py",
+        "patchSetId": 5
+      },
+      "lineNbr": 110,
+      "author": {
+        "id": 1000065
+      },
+      "writtenOn": "2025-03-28T08:04:38Z",
+      "side": 1,
+      "message": "Done",
+      "parentUuid": "5aaff320_6df9cf39",
+      "revId": "8a6e593e274ac3a99a7cce2271f6fdf7b56b65e3",
+      "serverId": "064ee66a-ae46-499d-ad6e-e0a180e6bf4d"
+    },
+    {
       "unresolved": true,
       "key": {
         "uuid": "1e787c46_a06516e0",
@@ -66,6 +102,24 @@
       "writtenOn": "2025-03-25T01:19:04Z",
       "side": 1,
       "message": "How about just use `create_workspaceevents_client` in authentication_utils.py",
+      "revId": "8a6e593e274ac3a99a7cce2271f6fdf7b56b65e3",
+      "serverId": "064ee66a-ae46-499d-ad6e-e0a180e6bf4d"
+    },
+    {
+      "unresolved": false,
+      "key": {
+        "uuid": "ad4b873e_2fe678d8",
+        "filename": "google/pubsub_subscriber_store.py",
+        "patchSetId": 5
+      },
+      "lineNbr": 132,
+      "author": {
+        "id": 1000065
+      },
+      "writtenOn": "2025-03-28T08:04:38Z",
+      "side": 1,
+      "message": "Done",
+      "parentUuid": "1e787c46_a06516e0",
       "revId": "8a6e593e274ac3a99a7cce2271f6fdf7b56b65e3",
       "serverId": "064ee66a-ae46-499d-ad6e-e0a180e6bf4d"
     }
