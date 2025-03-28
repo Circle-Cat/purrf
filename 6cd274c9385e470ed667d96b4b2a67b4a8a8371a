@@ -52,6 +52,23 @@
       "parentUuid": "024f0d8e_bca84f22",
       "revId": "6cd274c9385e470ed667d96b4b2a67b4a8a8371a",
       "serverId": "064ee66a-ae46-499d-ad6e-e0a180e6bf4d"
+    },
+    {
+      "unresolved": true,
+      "key": {
+        "uuid": "5d96e308_875bb8c1",
+        "filename": "google/pubsub_publisher.py",
+        "patchSetId": 8
+      },
+      "lineNbr": 71,
+      "author": {
+        "id": 1000007
+      },
+      "writtenOn": "2025-03-28T10:51:10Z",
+      "side": 1,
+      "message": "I saw the screenshot on Jira. Could you also add the response to the log? In my experience, if this execution isn’t successful (not throwing an error, just not working as we expected), the next code will still run normally.",
+      "revId": "6cd274c9385e470ed667d96b4b2a67b4a8a8371a",
+      "serverId": "064ee66a-ae46-499d-ad6e-e0a180e6bf4d"
     }
   ]
 }
