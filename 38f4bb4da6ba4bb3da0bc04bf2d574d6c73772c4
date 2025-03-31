@@ -22,6 +22,30 @@
       },
       "revId": "38f4bb4da6ba4bb3da0bc04bf2d574d6c73772c4",
       "serverId": "064ee66a-ae46-499d-ad6e-e0a180e6bf4d"
+    },
+    {
+      "unresolved": false,
+      "key": {
+        "uuid": "d7fdd4b3_c1ad1dfc",
+        "filename": "google/chat_utils.py",
+        "patchSetId": 8
+      },
+      "lineNbr": 134,
+      "author": {
+        "id": 1000077
+      },
+      "writtenOn": "2025-03-31T18:22:27Z",
+      "side": 1,
+      "message": "Done",
+      "parentUuid": "8c7d66af_cd270542",
+      "range": {
+        "startLine": 134,
+        "startChar": 0,
+        "endLine": 134,
+        "endChar": 23
+      },
+      "revId": "38f4bb4da6ba4bb3da0bc04bf2d574d6c73772c4",
+      "serverId": "064ee66a-ae46-499d-ad6e-e0a180e6bf4d"
     }
   ]
 }
