@@ -60,6 +60,29 @@
     {
       "unresolved": true,
       "key": {
+        "uuid": "f94324a4_599483a1",
+        "filename": "google/pubsub_subscriber_store.py",
+        "patchSetId": 7
+      },
+      "lineNbr": 116,
+      "author": {
+        "id": 1000074
+      },
+      "writtenOn": "2025-03-31T00:00:13Z",
+      "side": 1,
+      "message": "It seems that streaming_pull_future.result() will not through timeout error and may block indefinitely, so using streaming_pull_future.result(timeout\u003d60) is a safer option to prevent the listener from getting stuck.",
+      "range": {
+        "startLine": 110,
+        "startChar": 0,
+        "endLine": 116,
+        "endChar": 38
+      },
+      "revId": "cc149ad1955cb11e6138fed22977a86ff82a0327",
+      "serverId": "064ee66a-ae46-499d-ad6e-e0a180e6bf4d"
+    },
+    {
+      "unresolved": true,
+      "key": {
         "uuid": "060b67ff_cb9eee3b",
         "filename": "google/pubsub_subscriber_store.py",
         "patchSetId": 7
