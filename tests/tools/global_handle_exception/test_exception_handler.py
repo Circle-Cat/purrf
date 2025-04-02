@@ -1,6 +1,6 @@
 import unittest
 from flask import Flask
-import http.client
+from http import HTTPStatus
 import logging
 from io import StringIO
 from tools.log.logger import setup_logger
@@ -38,7 +38,7 @@ class TestExceptionHandler(unittest.TestCase):
         e = ValueError(VALUE_ERROR)
         with self.app.app_context():
             response, status_code = handle_exception(e)
-            self.assertEqual(status_code, http.client.BAD_REQUEST)
+            self.assertEqual(status_code, HTTPStatus.BAD_REQUEST)
             self.assertEqual(response.get_json(), {ERROR_MESSAGE: VALUE_ERROR})
             self.assertIn(
                 VALUE_ERROR_LOG_MSG.format(error_msg=VALUE_ERROR),
@@ -49,7 +49,7 @@ class TestExceptionHandler(unittest.TestCase):
         e = RuntimeError(RUNTIME_ERROR)
         with self.app.app_context():
             response, status_code = handle_exception(e)
-            self.assertEqual(status_code, http.client.SERVICE_UNAVAILABLE)
+            self.assertEqual(status_code, HTTPStatus.SERVICE_UNAVAILABLE)
             self.assertEqual(response.get_json(), {ERROR_MESSAGE: RUNTIME_ERROR})
             self.assertIn(
                 RUNTIME_ERROR_LOG_MSG.format(error_msg=RUNTIME_ERROR),
@@ -60,7 +60,7 @@ class TestExceptionHandler(unittest.TestCase):
         e = Exception(EXCEPTION)
         with self.app.app_context():
             response, status_code = handle_exception(e)
-            self.assertEqual(status_code, http.client.INTERNAL_SERVER_ERROR)
+            self.assertEqual(status_code, HTTPStatus.INTERNAL_SERVER_ERROR)
             self.assertEqual(response.get_json(), {ERROR_MESSAGE: EXCEPTION})
             self.assertIn(
                 UNEXPECTED_ERROR_LOG_MSG.format(error_msg=EXCEPTION),
@@ -77,7 +77,7 @@ class TestExceptionHandler(unittest.TestCase):
                     raise ValueError(VALUE_ERROR)
 
                 response = client.get(TEST_ROUTE)
-                self.assertEqual(response.status_code, http.client.BAD_REQUEST)
+                self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
                 self.assertEqual(response.get_json(), {ERROR_MESSAGE: VALUE_ERROR})
 
 

@@ -1,6 +1,5 @@
 """Test for purrf"""
 
-import http.client
 from http import HTTPStatus
 from unittest import TestCase, main
 from unittest.mock import patch
@@ -22,14 +21,14 @@ class TestAppRoutes(TestCase):
     def test_history_messages_integration(self, mock_fetch, mock_submit):
         response = self.client.post(FETCH_HISTORY_MESSAGES_API)
 
-        self.assertEqual(response.status_code, http.client.ACCEPTED)
+        self.assertEqual(response.status_code, HTTPStatus.ACCEPTED)
 
         mock_submit.assert_called_once_with(mock_fetch)
 
     @patch("google.google_api.executor.submit", side_effect=Exception())
     def test_history_messages_error(self, mock_submit):
         response = self.client.post(FETCH_HISTORY_MESSAGES_API)
-        self.assertEqual(response.status_code, http.client.INTERNAL_SERVER_ERROR)
+        self.assertEqual(response.status_code, HTTPStatus.INTERNAL_SERVER_ERROR)
 
     def test_health_check(self):
         """Testing health check endpoint"""

@@ -1,5 +1,5 @@
 from flask import jsonify
-import http.client
+from http import HTTPStatus
 from tools.log.logger import setup_logger
 import logging
 from tools.global_handle_exception.constants import (
@@ -43,13 +43,13 @@ def handle_exception(e):
     status_code: int
     if isinstance(e, ValueError):
         logging.error(VALUE_ERROR_LOG_MSG.format(error_msg=str(e)))
-        status_code = http.client.BAD_REQUEST
+        status_code = HTTPStatus.BAD_REQUEST
     elif isinstance(e, RuntimeError):
         logging.error(RUNTIME_ERROR_LOG_MSG.format(error_msg=str(e)))
-        status_code = http.client.SERVICE_UNAVAILABLE
+        status_code = HTTPStatus.SERVICE_UNAVAILABLE
     else:
         logging.error(UNEXPECTED_ERROR_LOG_MSG.format(error_msg=str(e)))
-        status_code = http.client.INTERNAL_SERVER_ERROR
+        status_code = HTTPStatus.INTERNAL_SERVER_ERROR
     return jsonify(response), status_code
 
 

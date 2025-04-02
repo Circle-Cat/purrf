@@ -3,7 +3,7 @@
 from flask import jsonify, Blueprint, request
 from google.fetch_history_chat_message import fetch_history_messages
 from google.chat_utils import get_chat_spaces
-import http.client
+from http import HTTPStatus
 from concurrent.futures import ThreadPoolExecutor
 
 google_bp = Blueprint("google", __name__)
@@ -18,7 +18,7 @@ def history_messages():
     executor.submit(fetch_history_messages)
     return jsonify({
         "message": "Message retrieval triggered asynchronously."
-    }), http.client.ACCEPTED
+    }), HTTPStatus.ACCEPTED
 
 
 @google_bp.route("/api/chat/spaces", methods=["GET"])
@@ -29,4 +29,4 @@ def get_chat_spaces_route():
     page_size = int(request.args.get("page_size", 100))
 
     spaces = get_chat_spaces(space_type, page_size)
-    return jsonify({"spaces": spaces}), 200
+    return jsonify({"spaces": spaces}), HTTPStatus.OK
