@@ -24,6 +24,30 @@
       "serverId": "064ee66a-ae46-499d-ad6e-e0a180e6bf4d"
     },
     {
+      "unresolved": false,
+      "key": {
+        "uuid": "0e42a945_d01b4277",
+        "filename": "/COMMIT_MSG",
+        "patchSetId": 7
+      },
+      "lineNbr": 9,
+      "author": {
+        "id": 1000065
+      },
+      "writtenOn": "2025-04-02T04:32:37Z",
+      "side": 1,
+      "message": "Done",
+      "parentUuid": "f795882b_81da61b6",
+      "range": {
+        "startLine": 9,
+        "startChar": 29,
+        "endLine": 9,
+        "endChar": 43
+      },
+      "revId": "cc149ad1955cb11e6138fed22977a86ff82a0327",
+      "serverId": "064ee66a-ae46-499d-ad6e-e0a180e6bf4d"
+    },
+    {
       "unresolved": true,
       "key": {
         "uuid": "a947c0b8_5f95eb7e",
@@ -43,6 +67,24 @@
     {
       "unresolved": true,
       "key": {
+        "uuid": "781127d2_84a87f61",
+        "filename": "google/google_api.py",
+        "patchSetId": 7
+      },
+      "lineNbr": 36,
+      "author": {
+        "id": 1000065
+      },
+      "writtenOn": "2025-04-02T04:32:37Z",
+      "side": 1,
+      "message": "I think it catches successfully when I entered an empty subscription_id, it returns the following message:\n  \"status\": \"Missing required field(s): subscription_id\"",
+      "parentUuid": "a947c0b8_5f95eb7e",
+      "revId": "cc149ad1955cb11e6138fed22977a86ff82a0327",
+      "serverId": "064ee66a-ae46-499d-ad6e-e0a180e6bf4d"
+    },
+    {
+      "unresolved": true,
+      "key": {
         "uuid": "24b0e11a_9724e67e",
         "filename": "google/pubsub_subscriber_store.py",
         "patchSetId": 7
@@ -54,6 +96,24 @@
       "writtenOn": "2025-03-28T11:06:47Z",
       "side": 1,
       "message": "I’d like to ask, what is the output of this log statement?",
+      "revId": "cc149ad1955cb11e6138fed22977a86ff82a0327",
+      "serverId": "064ee66a-ae46-499d-ad6e-e0a180e6bf4d"
+    },
+    {
+      "unresolved": true,
+      "key": {
+        "uuid": "ad52916a_06371640",
+        "filename": "google/pubsub_subscriber_store.py",
+        "patchSetId": 7
+      },
+      "lineNbr": 105,
+      "author": {
+        "id": 1000065
+      },
+      "writtenOn": "2025-04-02T04:32:37Z",
+      "side": 1,
+      "message": "INFO - \u003cfunction store_messages at 0x7270710014e0\u003e",
+      "parentUuid": "24b0e11a_9724e67e",
       "revId": "cc149ad1955cb11e6138fed22977a86ff82a0327",
       "serverId": "064ee66a-ae46-499d-ad6e-e0a180e6bf4d"
     },
@@ -83,6 +143,30 @@
     {
       "unresolved": true,
       "key": {
+        "uuid": "41124df8_c909102e",
+        "filename": "google/pubsub_subscriber_store.py",
+        "patchSetId": 7
+      },
+      "lineNbr": 116,
+      "author": {
+        "id": 1000065
+      },
+      "writtenOn": "2025-04-02T04:32:37Z",
+      "side": 1,
+      "message": "I think we need to listen the subscription indefinitely to continuously pull the message from pubsub. Adding the timeout will stop us from listening the pubsub.",
+      "parentUuid": "f94324a4_599483a1",
+      "range": {
+        "startLine": 110,
+        "startChar": 0,
+        "endLine": 116,
+        "endChar": 38
+      },
+      "revId": "cc149ad1955cb11e6138fed22977a86ff82a0327",
+      "serverId": "064ee66a-ae46-499d-ad6e-e0a180e6bf4d"
+    },
+    {
+      "unresolved": true,
+      "key": {
         "uuid": "060b67ff_cb9eee3b",
         "filename": "google/pubsub_subscriber_store.py",
         "patchSetId": 7
@@ -94,6 +178,24 @@
       "writtenOn": "2025-03-28T11:06:47Z",
       "side": 1,
       "message": "Can you show me an example of this? Because when I did my research, I only found this.\nhttps://developers.google.cn/workspace/events/guides/update-subscription#python_1",
+      "revId": "cc149ad1955cb11e6138fed22977a86ff82a0327",
+      "serverId": "064ee66a-ae46-499d-ad6e-e0a180e6bf4d"
+    },
+    {
+      "unresolved": true,
+      "key": {
+        "uuid": "ab00fe07_dec627ef",
+        "filename": "google/pubsub_subscriber_store.py",
+        "patchSetId": 7
+      },
+      "lineNbr": 125,
+      "author": {
+        "id": 1000065
+      },
+      "writtenOn": "2025-04-02T04:32:37Z",
+      "side": 1,
+      "message": "I was reading this sample code, however, I think the doc you shared provided a better format and I updated it.\nhttps://cloud.google.com/pubsub/docs/samples/pubsub-update-push-configuration?hl\u003den",
+      "parentUuid": "060b67ff_cb9eee3b",
       "revId": "cc149ad1955cb11e6138fed22977a86ff82a0327",
       "serverId": "064ee66a-ae46-499d-ad6e-e0a180e6bf4d"
     }
