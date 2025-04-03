@@ -1,0 +1,89 @@
+{
+  "comments": [
+    {
+      "unresolved": true,
+      "key": {
+        "uuid": "915b5687_65d7f808",
+        "filename": "google/pubsub_subscriber_store.py",
+        "patchSetId": 16
+      },
+      "lineNbr": 80,
+      "author": {
+        "id": 1000007
+      },
+      "writtenOn": "2025-04-03T01:04:32Z",
+      "side": 1,
+      "message": "How about defining EVENT_TYPES as a set, so that you don’t need to convert the list to a set each time?",
+      "revId": "5920115619422013d79d5550d737c59a581c5791",
+      "serverId": "064ee66a-ae46-499d-ad6e-e0a180e6bf4d"
+    },
+    {
+      "unresolved": true,
+      "key": {
+        "uuid": "f9c58d3f_8f4c6ea9",
+        "filename": "google/pubsub_subscriber_store.py",
+        "patchSetId": 16
+      },
+      "lineNbr": 91,
+      "author": {
+        "id": 1000007
+      },
+      "writtenOn": "2025-04-03T01:04:32Z",
+      "side": 1,
+      "message": "Could you please explain what this log does?",
+      "revId": "5920115619422013d79d5550d737c59a581c5791",
+      "serverId": "064ee66a-ae46-499d-ad6e-e0a180e6bf4d"
+    },
+    {
+      "unresolved": true,
+      "key": {
+        "uuid": "c94963ed_5be60b32",
+        "filename": "google/pubsub_subscriber_store.py",
+        "patchSetId": 16
+      },
+      "lineNbr": 101,
+      "author": {
+        "id": 1000007
+      },
+      "writtenOn": "2025-04-03T01:04:32Z",
+      "side": 1,
+      "message": "How about using \u0027error\u0027 instead of \u0027info\u0027? Because, in my opinion, this stop is not what we expected. The stop occurred due to a timeout error.",
+      "revId": "5920115619422013d79d5550d737c59a581c5791",
+      "serverId": "064ee66a-ae46-499d-ad6e-e0a180e6bf4d"
+    },
+    {
+      "unresolved": true,
+      "key": {
+        "uuid": "c9aa52b8_2e7b2a9b",
+        "filename": "google/pubsub_subscriber_store.py",
+        "patchSetId": 16
+      },
+      "lineNbr": 121,
+      "author": {
+        "id": 1000007
+      },
+      "writtenOn": "2025-04-03T01:04:32Z",
+      "side": 1,
+      "message": "Use log.",
+      "revId": "5920115619422013d79d5550d737c59a581c5791",
+      "serverId": "064ee66a-ae46-499d-ad6e-e0a180e6bf4d"
+    },
+    {
+      "unresolved": true,
+      "key": {
+        "uuid": "f45c52e6_9d07339d",
+        "filename": "tests/google/test_pubsub_subscriber_store.py",
+        "patchSetId": 16
+      },
+      "lineNbr": 45,
+      "author": {
+        "id": 1000007
+      },
+      "writtenOn": "2025-04-03T01:04:32Z",
+      "side": 1,
+      "message": "Based on the recent feedback I\u0027ve received, I\u0027ve realized that it\u0027s not always necessary to verify the log content during testing. Unit tests should focus more on the logic of the method itself.\nhttps://testing.googleblog.com/2015/01/testing-on-toilet-change-detector-tests.html",
+      "revId": "5920115619422013d79d5550d737c59a581c5791",
+      "serverId": "064ee66a-ae46-499d-ad6e-e0a180e6bf4d"
+    }
+  ]
+}
