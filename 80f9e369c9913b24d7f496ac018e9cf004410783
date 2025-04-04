@@ -1,0 +1,27 @@
+{
+  "comments": [
+    {
+      "unresolved": true,
+      "key": {
+        "uuid": "fe6b4a25_02c2c656",
+        "filename": "google/chat_utils.py",
+        "patchSetId": 9
+      },
+      "lineNbr": 158,
+      "author": {
+        "id": 1000003
+      },
+      "writtenOn": "2025-04-04T07:25:44Z",
+      "side": 1,
+      "message": "as a followup, we need to add error handling to client calls. cc @yuji@u.circlecat.org",
+      "range": {
+        "startLine": 156,
+        "startChar": 8,
+        "endLine": 158,
+        "endChar": 18
+      },
+      "revId": "80f9e369c9913b24d7f496ac018e9cf004410783",
+      "serverId": "064ee66a-ae46-499d-ad6e-e0a180e6bf4d"
+    }
+  ]
+}
