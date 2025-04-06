@@ -20,7 +20,7 @@ class TestAppRoutes(TestCase):
     @patch("google.google_api.executor.submit")
     @patch("google.google_api.fetch_history_messages")
     def test_history_messages_integration(self, mock_fetch, mock_submit):
-        response = self.client.get(FETCH_HISTORY_MESSAGES_API)
+        response = self.client.post(FETCH_HISTORY_MESSAGES_API)
 
         self.assertEqual(response.status_code, http.client.ACCEPTED)
 
@@ -28,7 +28,7 @@ class TestAppRoutes(TestCase):
 
     @patch("google.google_api.executor.submit", side_effect=Exception())
     def test_history_messages_error(self, mock_submit):
-        response = self.client.get(FETCH_HISTORY_MESSAGES_API)
+        response = self.client.post(FETCH_HISTORY_MESSAGES_API)
         self.assertEqual(response.status_code, http.client.INTERNAL_SERVER_ERROR)
 
     def test_health_check(self):

@@ -11,7 +11,7 @@ google_bp = Blueprint("google", __name__)
 executor = ThreadPoolExecutor(max_workers=5)
 
 
-@google_bp.route("/api/chat/spaces/messages")
+@google_bp.route("/api/chat/spaces/messages", methods=["POST"])
 def history_messages():
     """API endpoint to trigger the fetching of messages for all SPACE type chat spaces and store them in Redis asynchronously."""
 
@@ -21,7 +21,7 @@ def history_messages():
     }), http.client.ACCEPTED
 
 
-@google_bp.route("/api/chat/spaces")
+@google_bp.route("/api/chat/spaces", methods=["GET"])
 def get_chat_spaces_route():
     """API endpoint to retrieve chat spaces of a specified type and page size."""
 
