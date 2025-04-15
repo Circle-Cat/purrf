@@ -15,7 +15,7 @@ USER_EMAIL = "USER_EMAIL"
 DEFAULT_SPACE_TYPE = "SPACE"
 DEFAULT_PAGE_SIZE = 1000
 
-MESSAGE_TYPE_CREATE = "create"
+MESSAGE_TYPE_CREATE = "created"
 
 CREDENTIALS_SUCCESS_MSG = (
     "Credentials retrieved successfully. Project ID: {project_id}."

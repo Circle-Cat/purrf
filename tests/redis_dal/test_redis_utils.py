@@ -1,65 +1,175 @@
-import unittest
+from unittest import TestCase, main
 from unittest.mock import patch, Mock
 from redis_dal.constants import (
-    REDIS_KEY_FORMAT,
-    REDIS_MESSAGE_STORED_DEBUG_MSG,
+    TYPE_CREATE,
+    TYPE_UPDATE,
+    TYPE_DELETE,
+    MESSAGE,
+    NAME,
+    MESSAGE_SENDER,
+    CREATE_TIME,
+    MESSAGE_TEXT,
+    MESSAGE_THREAD,
+    MESSAGE_SPACE,
+    MESSAGE_LAST_UPDATE_TIME,
+    MESSAGE_DELETION_METADATA,
+    MESSAGE_DELETION_TYPE,
+    VALUE,
+    MESSAGE_THREAD_ID,
+    CHAT_INDEX_KEY_FORMAT,
+    MESSAGE_ATTACHMENT,
 )
-from io import StringIO
-import logging
-from tools.log.logger import setup_logger
-from redis_dal.redis_utils import store_messages
+from redis_dal.redis_utils import store_messages, StoredMessage
 from datetime import datetime
+import json
+
+TEST_MESSAGE_NAME = "spaces/test_space/messages/test_message"
+TEST_USER = {"name": "users/test_user", "type": "HUMAN"}
+TEST_THREAD = {"name": "spaces/test_space/threads/test_thread"}
+TEST_THREAD_ID = "test_thread"
+TEST_SPACE = {"name": "spaces/test_space"}
+TEST_SPACE_ID = "test_space"
+TEST_ATTACHMENT = [
+    {
+        "name": f"{TEST_MESSAGE_NAME}/attachments/1",
+        "contentName": "test_doc.pdf",
+        "contentType": "application/pdf",
+        "driveDataRef": {"driveFileId": "123456"},
+        "source": "DRIVE_FILE",
+    }
+]
+TEST_MESSAGE_TEXT = "Hello, World!"
+TEST_TIME = datetime.utcnow().isoformat() + "Z"
+TEST_SENDER_LDAP = "sender_name"
+TEST_MOCK_CREATED_MESSAGE = {
+    NAME: TEST_MESSAGE_NAME,
+    MESSAGE_SENDER: TEST_USER,
+    CREATE_TIME: TEST_TIME,
+    MESSAGE_TEXT: TEST_MESSAGE_TEXT,
+    MESSAGE_THREAD: TEST_THREAD,
+    MESSAGE_SPACE: TEST_SPACE,
+    MESSAGE_ATTACHMENT: TEST_ATTACHMENT,
+}
+
+TEST_MOCK_UPDATED_MESSAGE = {
+    **TEST_MOCK_CREATED_MESSAGE,
+    MESSAGE_LAST_UPDATE_TIME: TEST_TIME,
+}
+
+TEST_MOCK_DELETED_MESSAGE = {
+    NAME: TEST_MESSAGE_NAME,
+    CREATE_TIME: TEST_TIME,
+}
 
 
-class TestStoreMessages(unittest.TestCase):
+def create_stored_message(texts, deleted=False):
+    return json.dumps(
+        StoredMessage(
+            sender=TEST_SENDER_LDAP,
+            threadId=TEST_THREAD_ID,
+            text=texts,
+            deleted=deleted,
+            attachment=TEST_ATTACHMENT,
+        ).__dict__
+    )
+
+
+TEST_STORED_CREATED_MESSAGE = create_stored_message([
+    {VALUE: TEST_MESSAGE_TEXT, CREATE_TIME: TEST_TIME}
+])
+
+TEST_STORED_UPDATED_MESSAGE = create_stored_message([
+    {VALUE: TEST_MESSAGE_TEXT, CREATE_TIME: TEST_TIME},
+    {VALUE: TEST_MESSAGE_TEXT, CREATE_TIME: TEST_TIME},
+])
+
+TEST_STORED_DELETED_MESSAGE = create_stored_message(
+    [{VALUE: TEST_MESSAGE_TEXT, CREATE_TIME: TEST_TIME}], deleted=True
+)
+
+
+class TestStoreMessages(TestCase):
     def setUp(self):
-        self.log_capture_string = StringIO()
-        ch = logging.StreamHandler(self.log_capture_string)
-        setup_logger()
-        root_logger = logging.getLogger()
-        ch.setFormatter(root_logger.handlers[0].formatter)
-        logging.getLogger().addHandler(ch)
-        logging.getLogger().setLevel(logging.DEBUG)
+        """Setup mock Redis client before each test"""
+        self.patcher = patch(
+            "redis_dal.redis_client_factory.RedisClientFactory.create_redis_client"
+        )
+        self.mock_create_redis_client = self.patcher.start()
+        self.mock_redis_client = Mock()
+        self.mock_create_redis_client.return_value = self.mock_redis_client
 
     def tearDown(self):
-        logging.getLogger().handlers = []
+        """Stop patching after each test"""
+        self.patcher.stop()
 
-    @patch("redis_dal.redis_client_factory.RedisClientFactory.create_redis_client")
-    def test_store_messages_success(self, mock_create_redis_client):
-        mock_redis_client = Mock()
-        mock_create_redis_client.return_value = mock_redis_client
+    def test_store_created_messages_success(self):
+        store_messages(TEST_SENDER_LDAP, TEST_MOCK_CREATED_MESSAGE, TYPE_CREATE)
 
-        sender_ldap = "test_user"
-        message = {
-            "createTime": "2023-10-27T10:00:00Z",
-            "space": {"name": "spaces/dasdaeeurw"},
-            "text": "Hello, world!",
-        }
-        message_type = "create"
+        index_redis_key = CHAT_INDEX_KEY_FORMAT.format(
+            space_id=TEST_SPACE_ID, sender_ldap=TEST_SENDER_LDAP
+        )
+        score = datetime.fromisoformat(TEST_TIME).timestamp()
+        redis_member = str({NAME: TEST_MESSAGE_NAME})
 
-        store_messages(sender_ldap, message, message_type)
-
-        space_id = message["space"]["name"].split("/")[1]
-        redis_key = REDIS_KEY_FORMAT.format(space_id=space_id, sender_ldap=sender_ldap)
-        score = datetime.fromisoformat(message["createTime"]).timestamp()
-        redis_member = str({"message": message, "type": message_type})
-
-        mock_redis_client.zadd.assert_called_once_with(redis_key, {redis_member: score})
-
-        log_output = self.log_capture_string.getvalue()
-        self.assertIn(
-            REDIS_MESSAGE_STORED_DEBUG_MSG.format(redis_key=redis_key, score=score),
-            log_output,
+        self.mock_redis_client.zadd.assert_called_once_with(
+            index_redis_key, {redis_member: score}
+        )
+        self.mock_redis_client.set.assert_called_once_with(
+            TEST_MESSAGE_NAME, TEST_STORED_CREATED_MESSAGE
         )
 
-    def test_store_messages_invalid_create_time(self):
-        sender_ldap = "test_user"
-        message = {"createTime": "invalid_time", "space": {"name": "MySpace"}}
-        message_type = "create"
+    def test_store_updated_messages_success(self):
+        self.mock_redis_client.get.return_value = TEST_STORED_CREATED_MESSAGE
 
-        with self.assertRaises(ValueError):
-            store_messages(sender_ldap, message, message_type)
+        store_messages(TEST_SENDER_LDAP, TEST_MOCK_UPDATED_MESSAGE, TYPE_UPDATE)
+
+        self.mock_redis_client.get.assert_called_once_with(TEST_MESSAGE_NAME)
+        self.mock_redis_client.set.assert_called_once_with(
+            TEST_MESSAGE_NAME, TEST_STORED_UPDATED_MESSAGE
+        )
+
+    def test_store_deleted_messages_success(self):
+        self.mock_redis_client.get.return_value = TEST_STORED_CREATED_MESSAGE
+
+        store_messages(TEST_SENDER_LDAP, TEST_MOCK_DELETED_MESSAGE, TYPE_DELETE)
+
+        index_redis_key = CHAT_INDEX_KEY_FORMAT.format(
+            space_id=TEST_SPACE_ID, sender_ldap=TEST_SENDER_LDAP
+        )
+        score = datetime.fromisoformat(TEST_TIME).timestamp()
+        redis_member = str({NAME: TEST_MESSAGE_NAME})
+
+        self.mock_redis_client.get.assert_called_once_with(TEST_MESSAGE_NAME)
+        self.mock_redis_client.set.assert_called_once_with(
+            TEST_MESSAGE_NAME, TEST_STORED_DELETED_MESSAGE
+        )
+        self.mock_redis_client.zrem.assert_called_once_with(
+            index_redis_key, redis_member
+        )
+
+    def test_store_updated_message_does_not_exist(self):
+        self.mock_redis_client.get.return_value = None
+
+        store_messages(TEST_SENDER_LDAP, TEST_MOCK_UPDATED_MESSAGE, TYPE_UPDATE)
+
+        self.mock_redis_client.get.assert_called_once_with(TEST_MESSAGE_NAME)
+        self.mock_redis_client.set.assert_not_called()
+
+    def test_store_deleted_message_does_not_exist(self):
+        self.mock_redis_client.get.return_value = None
+
+        store_messages(TEST_SENDER_LDAP, TEST_MOCK_DELETED_MESSAGE, TYPE_DELETE)
+
+        self.mock_redis_client.get.assert_called_once_with(TEST_MESSAGE_NAME)
+        self.mock_redis_client.zrem.assert_not_called()
+        self.mock_redis_client.set.assert_not_called()
+
+    def test_store_created_message_invalid_format(self):
+        store_messages(TEST_SENDER_LDAP, "{invalid_json}", TYPE_CREATE)
+
+        self.mock_redis_client.zadd.assert_not_called()
+        self.mock_redis_client.set.assert_not_called()
 
 
 if __name__ == "__main__":
-    unittest.main()
+    main()
