@@ -106,7 +106,7 @@ def fetch_history_messages():
 
     stored_count = 0
     for message in messages:
-        sender_id = message.get("sender", {}).get("name").split("/")[1]
+        _, sender_id = message.get("sender", {}).get("name").split("/")
         sender_ldap = people_dict.get(sender_id, "")
         if not sender_ldap:
             logging.debug(
@@ -118,8 +118,12 @@ def fetch_history_messages():
 
         store_messages(sender_ldap, message, MESSAGE_TYPE_CREATE)
         stored_count += 1
+
     logging.info(
         STORED_MESSAGES_INFO_MSG.format(
             stored_count=stored_count, total_count=len(messages)
         )
+    )
+    return STORED_MESSAGES_INFO_MSG.format(
+        stored_count=stored_count, total_count=len(messages)
     )
