@@ -5,6 +5,13 @@
 
 from tools.log.logger import setup_logger
 import logging
+from googleapiclient.errors import HttpError
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+    retry_if_exception_type,
+)
 from google.constants import (
     RETRIEVED_SPACES_INFO_MSG,
     NO_CLIENT_ERROR_MSG,
@@ -16,6 +23,16 @@ from google.constants import (
 from google.authentication_utils import GoogleClientFactory
 
 setup_logger()
+
+
+@retry(
+    retry=retry_if_exception_type(HttpError),
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=1, max=3),
+    reraise=True,
+)
+def _execute_request(request):
+    return request.execute()
 
 
 def get_chat_spaces(space_type, page_size):
@@ -45,16 +62,29 @@ def get_chat_spaces(space_type, page_size):
     page_token = None
 
     while True:
-        response = (
-            client_chat.spaces()
-            .list(
-                pageSize=page_size,
-                filter=f'space_type = "{space_type}"',
-                pageToken=page_token,
-            )
-            .execute()
+        req = client_chat.spaces().list(
+            pageSize=page_size,
+            filter=f'space_type = "{space_type}"',
+            pageToken=page_token,
         )
-        spaces = response.get("spaces", [])
+        try:
+            response = _execute_request(req)
+        except HttpError as e:
+            logging.error(
+                "External API error when fetching chat spaces (type=%s, page_token=%s): %s",
+                space_type,
+                page_token,
+                e,
+                exc_info=True,
+            )
+            raise RuntimeError("Unable to fetch chat spaces, external API error") from e
+
+        spaces = response.get("spaces")
+        if not spaces:
+            raise ValueError(
+                "Google Chat API response missing 'spaces' field in method get_chat_spaces"
+            )
+
         for space in spaces:
             space_id = space.get("name").split("/")[1]
             display_name = space.get("displayName")
@@ -103,17 +133,29 @@ def list_directory_all_people_ldap():
     formatted_people = {}
     page_token = None
     while True:
-        response = (
-            client_people.people()
-            .listDirectoryPeople(
-                readMask="emailAddresses",
-                pageSize=DEFAULT_PAGE_SIZE,
-                sources=["DIRECTORY_SOURCE_TYPE_DOMAIN_PROFILE"],
-                pageToken=page_token,
-            )
-            .execute()
+        req = client_people.people().listDirectoryPeople(
+            readMask="emailAddresses",
+            pageSize=DEFAULT_PAGE_SIZE,
+            sources=["DIRECTORY_SOURCE_TYPE_DOMAIN_PROFILE"],
+            pageToken=page_token,
         )
-        people = response.get("people", [])
+        try:
+            response = _execute_request(req)
+        except HttpError as e:
+            logging.error(
+                "Error fetching directory people (page_token=%s): %s",
+                page_token,
+                e,
+                exc_info=True,
+            )
+            raise RuntimeError("Unable to fetch directory people") from e
+
+        people = response.get("people")
+        if people is None:
+            raise ValueError(
+                "list_directory_all_people_ldap is missing 'people' field "
+            )
+
         directory_people.extend(people)
         page_token = response.get("nextPageToken")
         if not page_token:
@@ -123,6 +165,9 @@ def list_directory_all_people_ldap():
         id = emailAddresses_data.get("metadata", {}).get("source", {}).get("id", {})
         ldap = emailAddresses_data.get("value", "").split("@")[0]
         formatted_people[id] = ldap
+
+    if not formatted_people:
+        raise ValueError("No directory people were found in the domain.")
 
     logging.info(RETRIEVED_PEOPLE_INFO_MSG.format(count=len(formatted_people)))
     return formatted_people

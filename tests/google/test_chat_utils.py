@@ -76,6 +76,20 @@ class TestChatUtils(TestCase):
             NO_CLIENT_ERROR_MSG.format(client_name=CHAT_API_NAME),
         )
 
+    @patch("google.authentication_utils.GoogleClientFactory.create_chat_client")
+    def test_get_chat_spaces_empty_result_raises_error(self, mock_client):
+        mock_execute = (
+            mock_client.return_value.spaces.return_value.list.return_value.execute
+        )
+        mock_execute.return_value = {"spaces": [], "nextPageToken": None}
+
+        with self.assertRaises(ValueError) as context:
+            get_chat_spaces(space_type, DEFAULT_PAGE_SIZE)
+        self.assertIn(
+            "Google Chat API response missing 'spaces' field in method get_chat_spaces",
+            str(context.exception),
+        )
+
     @patch("google.authentication_utils.GoogleClientFactory.create_people_client")
     def test_list_directory_all_people_ldap_success(self, mock_client):
         mock_people_response = {
@@ -124,6 +138,21 @@ class TestChatUtils(TestCase):
             str(context.exception),
             NO_CLIENT_ERROR_MSG.format(client_name=PEOPLE_API_NAME),
         )
+
+    @patch("google.authentication_utils.GoogleClientFactory.create_people_client")
+    def test_list_directory_all_people_ldap_empty_result_raises_error(
+        self, mock_client
+    ):
+        """
+        Test that list_directory_all_people_ldap raises ValueError
+        if no directory people are returned.
+        """
+        mock_execute = mock_client.return_value.people.return_value.listDirectoryPeople.return_value.execute
+        mock_execute.return_value = {"people": [], "nextPageToken": None}
+
+        with self.assertRaises(ValueError) as context:
+            list_directory_all_people_ldap()
+        self.assertIn("No directory people were found", str(context.exception))
 
 
 if __name__ == "__main__":

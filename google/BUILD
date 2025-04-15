@@ -26,6 +26,7 @@ py_library(
     ],
     deps = [
         "//tools/log",
+        "@pypi//tenacity",
     ],
 )
 
