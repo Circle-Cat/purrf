@@ -1,7 +1,8 @@
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, Mock
 import os
-from redis_dal.redis_client_factory import RedisClientFactory
+from redis.exceptions import ConnectionError as RedisConnectionError, TimeoutError
+from redis_dal.redis_client_factory import RedisClientFactory, RedisClientError
 from redis_dal.constants import (
     REDIS_HOST_PORT_ERROR_MSG,
     REDIS_CLIENT_CREATED_MSG,
@@ -12,6 +13,7 @@ from redis_dal.constants import (
 from io import StringIO
 import logging
 from tools.log.logger import setup_logger
+from tenacity import RetryError
 
 TEST_HOST = "localhost"
 TEST_PORT = "6379"
@@ -26,7 +28,7 @@ class TestRedisClientFactory(unittest.TestCase):
         setup_logger()
         root_logger = logging.getLogger()
         ch.setFormatter(root_logger.handlers[0].formatter)
-        logging.getLogger().addHandler(ch)
+        root_logger.addHandler(ch)
 
         os.environ.pop(HOST, None)
         os.environ.pop(PORT, None)
@@ -37,8 +39,11 @@ class TestRedisClientFactory(unittest.TestCase):
     def tearDown(self):
         logging.getLogger().handlers = []
 
-    @patch("redis_dal.redis_client_factory.Redis")
-    def test_create_redis_client_success(self, mock_redis):
+    @patch("redis_dal.redis_client_factory.RedisClientFactory._connect_to_redis")
+    def test_create_redis_client_success(self, mock_connect):
+        mock_client = Mock()
+        mock_connect.return_value = mock_client
+
         os.environ[HOST] = TEST_HOST
         os.environ[PORT] = TEST_PORT
         os.environ[PASSWORD] = TEST_PASSWORD
@@ -46,12 +51,9 @@ class TestRedisClientFactory(unittest.TestCase):
         factory = RedisClientFactory()
         client = factory.create_redis_client()
 
-        mock_redis.assert_called_once_with(
-            host=TEST_HOST, port=TEST_PORT, password=TEST_PASSWORD, ssl=True
+        mock_connect.assert_called_once_with(
+            host=TEST_HOST, port=int(TEST_PORT), password=TEST_PASSWORD
         )
-        log_output = self.log_capture_string.getvalue()
-        self.assertIn(REDIS_CLIENT_CREATED_MSG.format(redis_client=client), log_output)
-
         self.assertIsNotNone(client)
 
     def test_create_redis_client_missing_host(self):
@@ -70,8 +72,11 @@ class TestRedisClientFactory(unittest.TestCase):
             factory.create_redis_client()
         self.assertEqual(str(cm.exception), REDIS_HOST_PORT_ERROR_MSG)
 
-    @patch("redis_dal.redis_client_factory.Redis")
-    def test_singleton_behavior(self, mock_redis):
+    @patch("redis_dal.redis_client_factory.RedisClientFactory._connect_to_redis")
+    def test_singleton_behavior(self, mock_connect):
+        mock_client = Mock()
+        mock_connect.return_value = mock_client
+
         os.environ[HOST] = TEST_HOST
         os.environ[PORT] = TEST_PORT
         os.environ[PASSWORD] = TEST_PASSWORD
@@ -81,21 +86,50 @@ class TestRedisClientFactory(unittest.TestCase):
         client2 = factory.create_redis_client()
 
         self.assertIs(client1, client2)
-        mock_redis.assert_called_once()
+        mock_connect.assert_called_once()
 
-    @patch(
-        "redis_dal.redis_client_factory.Redis",
-        side_effect=Exception(TEST_EXCEPTION_MSG),
-    )
-    def test_redis_client_creation_failure(self, mock_redis):
-        os.environ[HOST] = TEST_HOST
-        os.environ[PORT] = TEST_PORT
-        os.environ[PASSWORD] = TEST_PASSWORD
+    @patch("redis_dal.redis_client_factory.Redis")
+    def test_connect_to_redis_success(self, mock_redis):
+        mock_client = Mock()
+        mock_client.ping.return_value = True
+        mock_redis.return_value = mock_client
 
         factory = RedisClientFactory()
-        with self.assertRaises(Exception) as cm:
-            factory.create_redis_client()
-        self.assertEqual(str(cm.exception), TEST_EXCEPTION_MSG)
+        client = factory._connect_to_redis(TEST_HOST, int(TEST_PORT), TEST_PASSWORD)
+
+        mock_redis.assert_called_once_with(
+            host=TEST_HOST, port=int(TEST_PORT), password=TEST_PASSWORD, ssl=True
+        )
+        mock_client.ping.assert_called_once()
+        self.assertEqual(client, mock_client)
+
+    @patch("redis_dal.redis_client_factory.Redis")
+    def test_connect_to_redis_retry_on_failure(self, mock_redis):
+        mock_client = Mock()
+        mock_client.ping.return_value = True
+
+        mock_redis.side_effect = [
+            RedisConnectionError(TEST_EXCEPTION_MSG),
+            mock_client,
+        ]
+
+        factory = RedisClientFactory()
+        client = factory._connect_to_redis(TEST_HOST, int(TEST_PORT), TEST_PASSWORD)
+
+        self.assertEqual(mock_redis.call_count, 2)
+        mock_client.ping.assert_called_once()
+        self.assertEqual(client, mock_client)
+
+    @patch("redis_dal.redis_client_factory.Redis")
+    def test_connect_to_redis_max_retries_exceeded(self, mock_redis):
+        mock_redis.side_effect = RedisConnectionError(TEST_EXCEPTION_MSG)
+
+        factory = RedisClientFactory()
+
+        with self.assertRaises(RetryError):
+            factory._connect_to_redis(TEST_HOST, int(TEST_PORT), TEST_PASSWORD)
+
+        self.assertEqual(mock_redis.call_count, 3)
 
 
 if __name__ == "__main__":

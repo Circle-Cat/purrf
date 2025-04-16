@@ -24,6 +24,7 @@ py_library(
         "//redis_dal:constants",
         "//tools/log",
         "@pypi//redis",
+        "@pypi//tenacity",
     ],
 )
 
