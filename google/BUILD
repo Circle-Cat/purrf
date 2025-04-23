@@ -14,6 +14,7 @@ py_library(
         "@pypi//google_auth_oauthlib",
         "@pypi//google_cloud_pubsub",
         "@pypi//grpcio",
+        "@pypi//tenacity",
     ],
 )
 
@@ -59,9 +60,9 @@ py_library(
     name = "pubsub_publisher",
     srcs = [
         "pubsub_publisher.py",
-        "//google:authentication_utils",
     ],
     deps = [
+        "//google:authentication_utils",
         "//tools/log",
         "@pypi//google_api_python_client",
         "@pypi//google_cloud_pubsub",

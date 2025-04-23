@@ -57,3 +57,6 @@ zipp==3.21.0
 
 #redis
 redis==5.2.1
+
+#retry
+tenacity==9.1.2
