@@ -3,6 +3,7 @@ from google.auth import default
 from google.cloud.pubsub_v1 import SubscriberClient, PublisherClient
 from google.oauth2.service_account import Credentials as ServiceAccountCredentials
 from tools.log.logger import setup_logger
+from tenacity import retry, stop_after_attempt, wait_exponential
 from google.constants import (
     CHAT_API_NAME,
     CHAT_API_VERSION,
@@ -98,16 +99,23 @@ class GoogleClientFactory:
 
         return self._credentials
 
+    @retry(
+        reraise=True,
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=3),
+    )
     def _create_client(self, api_name: str, api_version: str):
         """Creates a Google API client using Application Default Credentials (ADC).
         This function retrieves credentials using ADC and builds a Google API client.
+        It includes automatic retry logic in case of failure (e.g., network issues, API rate limits).
+        The method will retry up to 3 times with exponential backoff (waiting between 1 and 3 seconds before each retry).
 
         Args:
             api_name (str): The name of the API (e.g., "chat", "pubsub").
             api_version (str): The version of the API (e.g., "v1", "v1beta1").
 
         Returns:
-            googleapiclient.discovery.Resource: The API client, or None if an error occurs.
+            googleapiclient.discovery.Resource: The API client, or None if an error occurs after all retries.
 
         Raises:
             google.auth.exceptions.DefaultCredentialsError: If ADC fails to retrieve credentials.

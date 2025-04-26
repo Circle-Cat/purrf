@@ -163,20 +163,36 @@ class TestExceptionHandler(unittest.TestCase):
 
     @patch("google.authentication_utils.build")
     @patch("google.authentication_utils.default")
-    def test_create_client_build_exception(self, mock_auth_default, mock_build):
+    def test_create_client_retry_fail(self, mock_auth_default, mock_build):
         mock_credentials = Mock(spec=ServiceAccountCredentials)
         mock_auth_default.return_value = (mock_credentials, TEST_PROJECT_NAME)
-        mock_build.side_effect = Exception(TEST_BUILD_FAILED_MSG)
-
-        factory = GoogleClientFactory()
+        mock_service = Mock()
+        mock_build.side_effect = [
+            Exception(TEST_BUILD_FAILED_MSG),
+            Exception(TEST_BUILD_FAILED_MSG),
+            Exception(TEST_BUILD_FAILED_MSG),
+        ]
 
         with self.assertRaises(Exception) as context:
-            factory._create_client(CHAT_API_NAME, CHAT_API_VERSION)
+            GoogleClientFactory()._create_client(CHAT_API_NAME, CHAT_API_VERSION)
+
         self.assertEqual(str(context.exception), TEST_BUILD_FAILED_MSG)
         mock_auth_default.assert_called_once()
-        mock_build.assert_called_once_with(
-            CHAT_API_NAME, CHAT_API_VERSION, credentials=mock_credentials
-        )
+        self.assertEqual(mock_build.call_count, 3)
+
+    @patch("google.authentication_utils.build")
+    @patch("google.authentication_utils.default")
+    def test_create_client_retry_success(self, mock_auth_default, mock_build):
+        mock_credentials = Mock(spec=ServiceAccountCredentials)
+        mock_auth_default.return_value = (mock_credentials, TEST_PROJECT_NAME)
+        mock_service = Mock()
+        mock_build.side_effect = [Exception(TEST_BUILD_FAILED_MSG), mock_service]
+
+        result = GoogleClientFactory().create_people_client()
+
+        self.assertEqual(result, mock_service)
+        self.assertEqual(mock_build.call_count, 2)
+        mock_auth_default.assert_called_once()
 
     @patch("google.authentication_utils.build")
     @patch("google.authentication_utils.default")
