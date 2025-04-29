@@ -86,9 +86,17 @@ class GoogleClientFactory:
             return self._credentials
 
         self._credentials, project_id = default(scopes=SCOPES_LIST)
+        if not self._credentials:
+            logging.error(NO_CREDENTIALS_ERROR_MSG)
+            raise ValueError("No credentials found.")
+
         logging.info(CREDENTIALS_SUCCESS_MSG.format(project_id=project_id))
 
         user_email = os.environ.get(USER_EMAIL)
+
+        if not user_email and isinstance(self._credentials, ServiceAccountCredentials):
+            raise ValueError("Missing user email for service account impersonation.")
+
         if user_email and isinstance(self._credentials, ServiceAccountCredentials):
             self._credentials = self._credentials.with_subject(user_email)
             logging.info(IMPERSONATE_USER_MSG.format(user_email=user_email))
@@ -133,8 +141,10 @@ class GoogleClientFactory:
         credentials = self._get_credentials()
         if credentials is None:
             logging.error(NO_CREDENTIALS_ERROR_MSG)
-            return None
+            raise ValueError("Credentials are not available for creating the client.")
         service = build(api_name, api_version, credentials=credentials)
+        if service is None:
+            raise ValueError(f"Failed to create client for {api_name}.")
         logging.info(SERVICE_CREATED_MSG.format(api_name=api_name))
         return service
 

@@ -22,6 +22,9 @@ from google.authentication_utils import GoogleClientFactory
 
 TEST_PROJECT_NAME = "test-project"
 TEST_BUILD_FAILED_MSG = "Build failed"
+TEST_MISSING_USER_EMAIL_FAILED_MSG = (
+    "Missing user email for service account impersonation."
+)
 TEST_USER_EMAIL = "test@example.com"
 TEST_IMPERSONATED_CREDENTIALS = "impersonated_credentials"
 
@@ -85,15 +88,18 @@ class TestExceptionHandler(unittest.TestCase):
         mock_auth_default.return_value = (None, None)
 
         factory = GoogleClientFactory()
-        result = factory._get_credentials()
+        with self.assertRaises(ValueError) as context:
+            factory._get_credentials()
 
-        self.assertIsNone(result)
+        self.assertIn("No credentials found", str(context.exception))
         mock_auth_default.assert_called_once()
 
+    @patch.dict(os.environ, {USER_EMAIL: TEST_USER_EMAIL})
     @patch("google.authentication_utils.default")
     @patch("google.authentication_utils.build")
     def test_create_client_success(self, mock_build, mock_auth_default):
         mock_credentials = Mock(spec=ServiceAccountCredentials)
+        mock_credentials.with_subject.return_value = mock_credentials
         mock_auth_default.return_value = (mock_credentials, TEST_PROJECT_NAME)
         mock_service = Mock()
         mock_build.return_value = mock_service
@@ -113,16 +119,19 @@ class TestExceptionHandler(unittest.TestCase):
         mock_auth_default.return_value = (None, None)
 
         factory = GoogleClientFactory()
-        result = factory._create_client(CHAT_API_NAME, CHAT_API_VERSION)
+        with self.assertRaises(ValueError) as context:
+            factory._create_client(CHAT_API_NAME, CHAT_API_VERSION)
 
-        self.assertIsNone(result)
-        mock_auth_default.assert_called_once()
+        self.assertIn("No credentials found", str(context.exception))
+        self.assertEqual(mock_auth_default.call_count, 3)
         mock_build.assert_not_called()
 
+    @patch.dict(os.environ, {USER_EMAIL: TEST_USER_EMAIL})
     @patch("google.authentication_utils.build")
     @patch("google.authentication_utils.default")
     def test_create_chat_client_success(self, mock_auth_default, mock_build):
         mock_credentials = Mock(spec=ServiceAccountCredentials)
+        mock_credentials.with_subject.return_value = mock_credentials
         mock_auth_default.return_value = (mock_credentials, TEST_PROJECT_NAME)
         mock_service = Mock()
         mock_build.return_value = mock_service
@@ -140,10 +149,12 @@ class TestExceptionHandler(unittest.TestCase):
         self.assertEqual(second_result, mock_service)
         self.assertEqual(mock_build.call_count, 1)
 
+    @patch.dict(os.environ, {USER_EMAIL: TEST_USER_EMAIL})
     @patch("google.authentication_utils.build")
     @patch("google.authentication_utils.default")
     def test_create_people_client_success(self, mock_auth_default, mock_build):
         mock_credentials = Mock(spec=ServiceAccountCredentials)
+        mock_credentials.with_subject.return_value = mock_credentials
         mock_auth_default.return_value = (mock_credentials, TEST_PROJECT_NAME)
         mock_service = Mock()
         mock_build.return_value = mock_service
@@ -161,6 +172,7 @@ class TestExceptionHandler(unittest.TestCase):
         self.assertEqual(second_result, mock_service)
         self.assertEqual(mock_build.call_count, 1)
 
+    @patch.dict(os.environ, {USER_EMAIL: TEST_USER_EMAIL})
     @patch("google.authentication_utils.build")
     @patch("google.authentication_utils.default")
     def test_create_client_retry_fail(self, mock_auth_default, mock_build):
@@ -184,6 +196,7 @@ class TestExceptionHandler(unittest.TestCase):
     @patch("google.authentication_utils.default")
     def test_create_client_retry_success(self, mock_auth_default, mock_build):
         mock_credentials = Mock(spec=ServiceAccountCredentials)
+        mock_credentials.with_subject.return_value = mock_credentials
         mock_auth_default.return_value = (mock_credentials, TEST_PROJECT_NAME)
         mock_service = Mock()
         mock_build.side_effect = [Exception(TEST_BUILD_FAILED_MSG), mock_service]
@@ -194,10 +207,12 @@ class TestExceptionHandler(unittest.TestCase):
         self.assertEqual(mock_build.call_count, 2)
         mock_auth_default.assert_called_once()
 
+    @patch.dict(os.environ, {USER_EMAIL: TEST_USER_EMAIL})
     @patch("google.authentication_utils.build")
     @patch("google.authentication_utils.default")
     def test_singleton_behavior(self, mock_auth_default, mock_build):
         mock_credentials = Mock(spec=ServiceAccountCredentials)
+        mock_credentials.with_subject.return_value = mock_credentials
         mock_auth_default.return_value = (mock_credentials, TEST_PROJECT_NAME)
         mock_service = Mock()
         mock_build.return_value = mock_service
