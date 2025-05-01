@@ -26,6 +26,7 @@ py_library(
         "constants.py",
     ],
     deps = [
+        "//google:authentication_utils",
         "//tools/log",
         "@pypi//google_api_python_client",
         "@pypi//google_cloud_pubsub",
