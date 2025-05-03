@@ -1,17 +1,6 @@
 load("@rules_python//python:defs.bzl", "py_test")
 
 py_test(
-    name = "test_authentication_utils",
-    srcs = ["test_authentication_utils.py"],
-    deps = [
-        "//google:authentication_utils",
-        "@pypi//google_api_python_client",
-        "@pypi//google_auth_oauthlib",
-        "@pypi//google_cloud_pubsub",
-    ],
-)
-
-py_test(
     name = "test_chat_utils",
     srcs = ["test_chat_utils.py"],
     deps = [

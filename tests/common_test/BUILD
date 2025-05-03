@@ -7,3 +7,14 @@ py_test(
         "//src/common:logger",
     ],
 )
+
+py_test(
+    name = "google_client_test",
+    srcs = ["google_client_test.py"],
+    deps = [
+        "//src/common:google_client",
+        "@pypi//google_api_python_client",
+        "@pypi//google_auth_oauthlib",
+        "@pypi//google_cloud_pubsub",
+    ],
+)
