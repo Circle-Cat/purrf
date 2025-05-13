@@ -8,14 +8,14 @@ py_library(
 )
 
 py_library(
-    name = "logger",
-    srcs = ["logger.py"],
-    deps = ["//src/common:environment_constants"],
+    name = "constants",
+    srcs = ["constants.py"],
 )
 
 py_library(
-    name = "constants",
-    srcs = ["constants.py"],
+    name = "logger",
+    srcs = ["logger.py"],
+    deps = ["//src/common:environment_constants"],
 )
 
 py_library(
@@ -71,6 +71,21 @@ py_library(
         "//src/common:constants",
         "//src/common:logger",
         "@pypi//requests",
+        "@pypi//tenacity",
+    ],
+)
+
+py_library(
+    name = "microsoft_client",
+    srcs = [
+        "microsoft_client.py",
+    ],
+    deps = [
+        "//src/common:api_response_wrapper",
+        "//src/common:constants",
+        "//src/common:logger",
+        "@pypi//azure_identity",
+        "@pypi//msgraph_sdk",
         "@pypi//tenacity",
     ],
 )

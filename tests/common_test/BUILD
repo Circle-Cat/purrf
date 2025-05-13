@@ -49,3 +49,11 @@ py_test(
         "//src/common:gerrit_client",
     ],
 )
+
+py_test(
+    name = "microsoft_client_test",
+    srcs = ["microsoft_client_test.py"],
+    deps = [
+        "//src/common:microsoft_client",
+    ],
+)

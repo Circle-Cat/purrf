@@ -13,3 +13,23 @@ py_library(
         "@pypi//tenacity",
     ],
 )
+
+py_library(
+    name = "microsoft_ldap_fetcher",
+    srcs = [
+        "microsoft_ldap_fetcher.py",
+    ],
+    deps = [
+        "//src/common:microsoft_client",
+        "//src/common:redis_client",
+    ],
+)
+
+py_library(
+    name = "historical_api",
+    srcs = ["historical_api.py"],
+    deps = [
+        "//src/historical_data:microsoft_ldap_fetcher",
+        "@pypi//flask",
+    ],
+)
