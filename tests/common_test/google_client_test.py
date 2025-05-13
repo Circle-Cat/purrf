@@ -23,6 +23,7 @@ CLIENT_CONFIGS = [
         "v1",
         "_workspaceevents_client",
     ),
+    ("create_calendar_client", "calendar", "v3", "_calendar_client"),
 ]
 
 ENV_VAR_TEST_CASES = [
@@ -41,6 +42,7 @@ class TestGoogleClientFactory(TestCase):
         GoogleClientFactory._workspaceevents_client = None
         GoogleClientFactory._subscriber_client = None
         GoogleClientFactory._publisher_client = None
+        GoogleClientFactory._calendar_client = None
 
     def test_client_creation_flow(self):
         for function_name, api_name, api_version, cache_attr in CLIENT_CONFIGS:
