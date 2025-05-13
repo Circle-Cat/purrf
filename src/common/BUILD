@@ -33,3 +33,14 @@ py_library(
         "@pypi//tenacity",
     ],
 )
+
+py_library(
+    name = "redis_client",
+    srcs = ["redis_client.py"],
+    deps = [
+        "//src/common:constants",
+        "//src/common:logger",
+        "@pypi//redis",
+        "@pypi//tenacity",
+    ],
+)

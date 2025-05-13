@@ -18,3 +18,12 @@ py_test(
         "@pypi//google_cloud_pubsub",
     ],
 )
+
+py_test(
+    name = "redis_client_test",
+    srcs = ["redis_client_test.py"],
+    deps = [
+        "//src/common:redis_client",
+        "@pypi//redis",
+    ],
+)
