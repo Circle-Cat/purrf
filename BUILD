@@ -20,7 +20,10 @@ alias(
 
 py_library(
     name = "all_files",
-    srcs = glob(["**/*.py"]),
+    srcs = glob(
+        ["**/*.py"],
+        allow_empty = True,
+    ),
 )
 
 py_oci_image(
@@ -69,8 +72,11 @@ genrule(
     name = "dynamic_tags",
     outs = ["final_tags.txt"],
     cmd = """
-    TAG=$${TAG:-latest}  # if TAG not defined, use default value; or pass in TAG through environment parameters
-    echo "$$TAG" > $@
+    TAG_1=$${TAG_1:-latest} # if TAG not defined, use default value; or pass in TAG through environment parameters
+    TAG_2=$${TAG_2:-latest}
+
+    echo "$$TAG_1" > $@
+    echo "$$TAG_2" >> $@
     """,
 )
 
