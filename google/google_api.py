@@ -5,6 +5,8 @@ from google.fetch_history_chat_message import fetch_history_messages
 from google.pubsub_subscriber_store import pull_messages
 from http import HTTPStatus
 from google.chat_utils import get_chat_spaces
+from google.pubsub_publisher import subscribe_chat
+import http.client
 from http import HTTPStatus
 from concurrent.futures import ThreadPoolExecutor
 from google.constants import PULL_PROCESS_STARTED_MSG
@@ -44,3 +46,34 @@ def api_chat_pull_route():
             subscription_id=subscription_id, project_id=project_id
         )
     }), HTTPStatus.ACCEPTED
+
+
+@google_bp.route("/api/chat/spaces/subscribe", methods=["POST"])
+def subscribe():
+    """API endpoint to subscribe to chat space events.
+
+    Request JSON Payload:
+        {
+            "project_id": "your-project-id"
+            "topic_id": "your-topic-id",
+            "subscription_id": "your-subscription-id",
+            "space_id": "your-space-id"
+        }
+
+    Returns:
+        JSON response indicating success or failure of subscription.
+    """
+    data = request.get_json()
+    project_id = data.get("project_id")
+    topic_id = data.get("topic_id")
+    subscription_id = data.get("subscription_id")
+    space_id = data.get("space_id")
+
+    success, response = subscribe_chat(
+        project_id, topic_id, subscription_id, space_id, request_data=data
+    )
+    return jsonify({
+        "space_id": space_id,
+        "is_success": success,
+        "response": response,
+    }), HTTPStatus.OK

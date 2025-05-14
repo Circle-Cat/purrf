@@ -55,6 +55,7 @@ py_library(
         "fetch_history_chat_message",
         ":authentication_utils",
         ":chat_utils",
+        ":pubsub_publisher",
         ":pubsub_subscriber_store",
         "//tools/global_handle_exception:exception_handler",
         "//tools/log",
@@ -72,6 +73,7 @@ py_library(
         "//tools/log",
         "@pypi//google_api_python_client",
         "@pypi//google_cloud_pubsub",
+        "@pypi//tenacity",
     ],
 )
 

@@ -6,8 +6,10 @@
 
 from tools.log.logger import setup_logger
 from google.authentication_utils import GoogleClientFactory
+from tenacity import retry, stop_after_attempt, wait_exponential
 from google.cloud.pubsub_v1.types import Subscription
 import logging
+from google.constants import EVENT_TYPES
 
 setup_logger()
 
@@ -110,3 +112,78 @@ def create_subscription(project_id, topic_id, subscription_id):
 
     logging.info(f"Subscription created: {subscription_path}")
     return subscription_path
+
+
+@retry(
+    reraise=True,
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=1, max=3),
+)
+def subscribe_chat(project_id, topic_id, subscription_id, space_id, request_data=None):
+    """Subscribes to events for a given Google Chat space.
+
+    This function:
+    1. Creates a Pub/Sub topic if it does not exist.
+    2. Creates a subscription for the topic.
+    3. Registers the space for workspace subscriptions.
+
+    Args:
+        project_id (str): Google Cloud Project ID.
+        topic_id (str): Pub/Sub topic ID.
+        subscription_id (str): Pub/Sub subscription ID.
+        space_id (str): Google Chat space ID.
+
+    Returns:
+        - A dictionary containing the response from the Google Workspace API for the subscription request.
+        - The created Pub/Sub subscription object.
+    """
+    if not project_id or not topic_id or not subscription_id or not space_id:
+        missing_params = []
+        if not project_id:
+            missing_params.append("project_id")
+        if not topic_id:
+            missing_params.append("topic_id")
+        if not subscription_id:
+            missing_params.append("subscription_id")
+        if not space_id:
+            missing_params.append("space_id")
+        missing = ", ".join(missing_params)
+        logging.error(
+            "Missing required parameters: {missing}. Request data: {request_data}"
+        )
+        raise ValueError(
+            "Missing required parameters: {missing}. Request data: {request_data}"
+        )
+    try:
+        pubsub_topic = create_pubsub_topic(project_id, topic_id)
+    except Exception as e:
+        logging.error(f"Failed to create Pub/Sub topic '{topic_id}': {e}")
+        raise
+    try:
+        pubsub_subscription = create_subscription(project_id, topic_id, subscription_id)
+    except Exception as e:
+        logging.error(f"Failed to create Pub/Sub subscription '{subscription_id}': {e}")
+        raise
+    try:
+        response = create_workspaces_subscriptions(
+            project_id, topic_id, space_id, EVENT_TYPES
+        )
+    except Exception as e:
+        logging.error(
+            f"Failed to create Pub/Sub workspace subscription '{space_id}': {e}"
+        )
+        raise
+
+    success = (
+        response.get("done") is True
+        and response.get("response", {}).get("state") == "ACTIVE"
+    )
+    if success:
+        logging.info(
+            f"Subscription successful | project_id: {project_id} | space_id: {space_id} | topic: {topic_id} | subscription: {subscription_id}"
+        )
+    else:
+        logging.warning(
+            f"Subscription failed | project_id: {project_id} | space_id: {space_id} | topic: {topic_id} | subscription: {subscription_id}"
+        )
+    return success, response
