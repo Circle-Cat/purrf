@@ -61,3 +61,16 @@ py_library(
         "//src/common:logger",
     ],
 )
+
+py_library(
+    name = "gerrit_client",
+    srcs = [
+        "gerrit_client.py",
+    ],
+    deps = [
+        "//src/common:constants",
+        "//src/common:logger",
+        "@pypi//requests",
+        "@pypi//tenacity",
+    ],
+)

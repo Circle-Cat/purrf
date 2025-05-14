@@ -41,3 +41,11 @@ py_test(
         "@pypi//flask",
     ],
 )
+
+py_test(
+    name = "gerrit_client_test",
+    srcs = ["gerrit_client_test.py"],
+    deps = [
+        "//src/common:gerrit_client",
+    ],
+)
