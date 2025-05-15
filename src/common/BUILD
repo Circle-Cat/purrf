@@ -44,3 +44,20 @@ py_library(
         "@pypi//tenacity",
     ],
 )
+
+py_library(
+    name = "api_response_wrapper",
+    srcs = [
+        "api_response_wrapper.py",
+        "@pypi//flask",
+    ],
+)
+
+py_library(
+    name = "error_handler",
+    srcs = [
+        "error_handler.py",
+        "//src/common:api_response_wrapper",
+        "//src/common:logger",
+    ],
+)

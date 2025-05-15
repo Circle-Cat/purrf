@@ -1,7 +1,7 @@
 load("@aspect_bazel_lib//lib:transitions.bzl", "platform_transition_filegroup")
 load("@pypi//:requirements.bzl", "requirement")
 load("@rules_oci//oci:defs.bzl", "oci_load", "oci_push")
-load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("@rules_python//python:defs.bzl", "py_library")
 load("//:py_layer.bzl", "py_oci_image")
 
 package(default_visibility = ["//purrf:__subpackages__"])
@@ -23,30 +23,10 @@ py_library(
     srcs = glob(["**/*.py"]),
 )
 
-py_binary(
-    name = "purrf",
-    srcs = ["app.py"],
-    main = "app.py",
-    deps = [
-        "//google:google_api",
-        "//redis_dal:redis_api",
-        "//tools/global_handle_exception:exception_handler",
-        "@pypi//flask",
-    ],
-)
-
-py_test(
-    name = "app_test",
-    srcs = ["app_test.py"],
-    deps = [
-        ":purrf",
-    ],
-)
-
 py_oci_image(
     name = "purrf_image",
     base = "@python_base",
-    binary = ":purrf",
+    binary = "//src:purrf",
     entrypoint = ["/purrf"],
 )
 

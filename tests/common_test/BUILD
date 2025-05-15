@@ -13,9 +13,6 @@ py_test(
     srcs = ["google_client_test.py"],
     deps = [
         "//src/common:google_client",
-        "@pypi//google_api_python_client",
-        "@pypi//google_auth_oauthlib",
-        "@pypi//google_cloud_pubsub",
     ],
 )
 
@@ -24,6 +21,23 @@ py_test(
     srcs = ["redis_client_test.py"],
     deps = [
         "//src/common:redis_client",
-        "@pypi//redis",
+    ],
+)
+
+py_test(
+    name = "api_response_wrapper_test",
+    srcs = ["api_response_wrapper_test.py"],
+    deps = [
+        "//src/common:api_response_wrapper",
+        "@pypi//flask",
+    ],
+)
+
+py_test(
+    name = "error_handler_test",
+    srcs = ["error_handler_test.py"],
+    deps = [
+        "//src/common:error_handler",
+        "@pypi//flask",
     ],
 )
