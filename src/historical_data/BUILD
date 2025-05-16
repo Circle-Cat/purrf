@@ -3,6 +3,11 @@ load("@rules_python//python:defs.bzl", "py_library")
 package(default_visibility = ["//visibility:public"])
 
 py_library(
+    name = "constants",
+    srcs = ["constants.py"],
+)
+
+py_library(
     name = "google_calendar_history_fetcher",
     srcs = [
         "google_calendar_history_fetcher.py",
@@ -10,6 +15,7 @@ py_library(
     deps = [
         "//src/common:google_client",
         "//src/common:logger",
+        "//src/historical_data:constants",
         "@pypi//tenacity",
     ],
 )
