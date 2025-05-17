@@ -3,6 +3,10 @@ from http import HTTPStatus
 from src.historical_data.microsoft_ldap_fetcher import sync_microsoft_members_to_redis
 from src.historical_data.gerrit_history_fetcher import fetch_and_store_changes
 from src.common.api_response_wrapper import api_response
+from src.historical_data.microsoft_chat_history_fetcher import (
+    sync_microsoft_chat_messages_by_chat_id,
+)
+
 
 history_bp = Blueprint("history", __name__, url_prefix="/api")
 
@@ -34,5 +38,17 @@ async def backfill_gerrit_changes():
         success=True,
         message="Saved successfully.",
         data="",
+        status_code=HTTPStatus.OK,
+    )
+
+
+@history_bp.route("/microsoft/fetch/history/messages/<chatId>", methods=["POST"])
+async def backfill_microsoft_chat_messages(chatId):
+    """API endpoint to backfill Microsoft Teams Chat messages into Redis."""
+    response = await sync_microsoft_chat_messages_by_chat_id(chatId)
+    return api_response(
+        success=True,
+        message="Saved successfully.",
+        data=response,
         status_code=HTTPStatus.OK,
     )
