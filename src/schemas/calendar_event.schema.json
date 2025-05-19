@@ -1,0 +1,43 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "CalendarEventDetail",
+  "type": "object",
+  "required": ["event_id", "calendar_id", "title", "start", "end", "attendees", "is_recurring", "organizer"],
+  "properties": {
+    "event_id": {
+      "type": "string"
+    },
+    "calendar_id": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "start": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "end": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "attendees": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "format": "email"
+      }
+    },
+    "is_recurring": {
+      "type": "boolean"
+    },
+    "organizer": {
+      "type": "string",
+      "format": "email"
+    }
+  },
+  "additionalProperties": false
+}
