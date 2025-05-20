@@ -57,3 +57,11 @@ py_test(
         "//src/common:microsoft_client",
     ],
 )
+
+py_test(
+    name = "validation_test",
+    srcs = ["validation_test.py"],
+    deps = [
+        "//src/common:validation",
+    ],
+)
