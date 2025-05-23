@@ -30,7 +30,7 @@ py_oci_image(
     name = "purrf_image",
     base = "@python_base",
     binary = "//src:purrf",
-    entrypoint = ["/purrf"],
+    entrypoint = ["/src/purrf"],
 )
 
 platform(
