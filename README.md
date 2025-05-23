@@ -54,6 +54,9 @@ gcloud config se project {google_project_id}
 - REDIS_HOST
 - REDIS_PORT
 - REDIS_PASSWORD
+- GERRIT_URL
+- GERRIT_USER
+- GERRIT_HTTP_PASS
 
 ####  Running the project
 
