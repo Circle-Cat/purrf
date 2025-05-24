@@ -57,3 +57,12 @@ MICROSOFT_USER_INFO_FILTER = "endswith(mail,'circlecat.org')"
 MICROSOFT_USER_INFO_SELECT_FIELDS = ["displayName", "mail", "accountEnabled"]
 MICROSOFT_CONSISTENCY_HEADER = "ConsistencyLevel"
 MICROSOFT_CONSISTENCY_VALUE = "eventual"
+
+MICROSOFT_TEAMS_CHAT_SUBSCRIPTION_MAX_LIFETIME = 4320
+MICROSOFT_TEAMS_CHAT_MESSAGES_SUBSCRIPTION_RESOURCE = "/chats/{chat_id}/messages"
+
+
+class MicrosoftChatMessagesChangeType(str, Enum):
+    CREATED = "created"
+    UPDATED = "updated"
+    DELETED = "deleted"

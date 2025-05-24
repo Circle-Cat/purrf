@@ -1,0 +1,27 @@
+load("@rules_python//python:defs.bzl", "py_library")
+
+package(default_visibility = ["//visibility:public"])
+
+py_library(
+    name = "microsoft_chat_watcher",
+    srcs = [
+        "microsoft_chat_watcher.py",
+    ],
+    deps = [
+        "//src/common:constants",
+        "//src/common:microsoft_client",
+        "@pypi//tenacity",
+    ],
+)
+
+py_library(
+    name = "notification_api",
+    srcs = [
+        "notification_api.py",
+    ],
+    deps = [
+        "//src/common:api_response_wrapper",
+        "//src/notification_management:microsoft_chat_watcher",
+        "@pypi//flask",
+    ],
+)

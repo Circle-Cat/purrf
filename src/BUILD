@@ -9,6 +9,7 @@ py_binary(
     deps = [
         "//src/common:error_handler",
         "//src/historical_data:historical_api",
+        "//src/notification_management:notification_api",
         "@pypi//flask",
     ],
 )

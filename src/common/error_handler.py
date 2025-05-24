@@ -33,7 +33,7 @@ def handle_exception(e):
     else:
         status_code = HTTPStatus.INTERNAL_SERVER_ERROR
 
-    logger.error("Exception occurred: ", str(e))
+    logger.error("Exception occurred: %s", str(e))
 
     return api_response(success=False, message=str(e), status_code=status_code)
 

@@ -5,10 +5,13 @@ from http import HTTPStatus
 from src.common.error_handler import register_error_handlers
 from src.common.api_response_wrapper import api_response
 from src.historical_data.historical_api import history_bp
+from src.notification_management.notification_api import notification_bp
+
 
 app = Flask(__name__)
 register_error_handlers(app)
 app.register_blueprint(history_bp)
+app.register_blueprint(notification_bp)
 
 
 @app.route("/health", methods=["GET"])
