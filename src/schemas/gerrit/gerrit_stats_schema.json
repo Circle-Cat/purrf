@@ -1,0 +1,41 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Gerrit User All-Time Stats",
+  "description": "Aggregated contribution metrics for a given LDAP over all time",
+  "type": "object",
+  "properties": {
+    "cl_merged": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Total CLs merged by the user"
+    },
+    "cl_abandoned": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Total CLs abandoned by the user"
+    },
+    "cl_under_review": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Current open CL count"
+    },
+    "loc_merged": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Total lines of code merged"
+    },
+    "cl_reviewed": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Total CLs on which the user commented"
+    }
+  },
+  "required": [
+    "cl_merged",
+    "cl_abandoned",
+    "cl_under_review",
+    "loc_merged",
+    "cl_reviewed"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,56 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Gerrit User Weekly Stats by Project",
+  "description": "Contribution metrics for a given LDAP in a given project over a specific week",
+  "type": "object",
+  "properties": {
+    "project": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Gerrit project name"
+    },
+    "start_date": {
+      "type": "string",
+      "format": "date",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+      "description": "ISO week start date (YYYY-MM-DD)"
+    },
+    "end_date": {
+      "type": "string",
+      "format": "date",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+      "description": "ISO week end date (YYYY-MM-DD)"
+    },
+    "cl_merged": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "cl_abandoned": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "loc_merged": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "cl_reviewed": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "cl_under_review": {
+      "type": "integer",
+      "minimum": 0
+    }
+  },
+  "required": [
+    "project",
+    "start_date",
+    "end_date",
+    "cl_merged",
+    "cl_abandoned",
+    "loc_merged",
+    "cl_reviewed",
+    "cl_under_review"
+  ],
+  "additionalProperties": false
+}
