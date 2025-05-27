@@ -36,6 +36,7 @@ class GoogleClientFactory:
     _workspaceevents_client = None
     _subscriber_client = None
     _publisher_client = None
+    _calendar_client = None
 
     def __new__(cls, *args, **kwargs):
         """
@@ -235,3 +236,14 @@ class GoogleClientFactory:
         if not self._publisher_client:
             self._publisher_client = PublisherClient()
         return self._publisher_client
+
+    def create_calendar_client(self):
+        """
+        Creates a Google Calendar API client.
+
+        Returns:
+            googleapiclient.discovery.Resource: The Calendar API client instance.
+        """
+        if self._calendar_client is None:
+            self._calendar_client = self._create_client("calendar", "v3")
+        return self._calendar_client
