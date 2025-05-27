@@ -77,3 +77,40 @@ class PullStatus(Enum):
 
     def format_message(self, **kwargs) -> str:
         return self.default_message_template.format(**kwargs)
+
+
+# Constants for Gerrit
+class GerritChangeStatus(str, Enum):
+    OPEN = "open"
+    NEW = "new"
+    PENDING = "pending"
+    REVIEWED = "reviewed"
+    MERGED = "merged"
+    ABANDONED = "abandoned"
+
+
+ALL_GERRIT_STATUSES: list[str] = [status.value for status in GerritChangeStatus]
+
+GERRIT_UNDER_REVIEW = "under_review"
+
+GERRIT_UNDER_REVIEW_STATUSES = {
+    GerritChangeStatus.OPEN,
+    GerritChangeStatus.NEW,
+    GerritChangeStatus.PENDING,
+}
+GERRIT_UNDER_REVIEW_STATUS_VALUES = {s.value for s in GERRIT_UNDER_REVIEW_STATUSES}
+
+GERRIT_STATUS_TO_FIELD = {
+    GerritChangeStatus.MERGED: "cl_merged",
+    GerritChangeStatus.ABANDONED: "cl_abandoned",
+    GERRIT_UNDER_REVIEW: "cl_under_review",
+}
+
+GERRIT_CL_REVIEWED_FIELD = "cl_reviewed"
+GERRIT_LOC_MERGED_FIELD = "loc_merged"
+GERRIT_DATE_BUCKET_TEMPLATE = "{start}_{end}"
+
+# Gerrit Redis key templates
+GERRIT_STATS_ALL_TIME_KEY = "gerrit:stats:{ldap}"
+GERRIT_STATS_MONTHLY_BUCKET_KEY = "gerrit:stats:{ldap}:{bucket}"
+GERRIT_STATS_PROJECT_BUCKET_KEY = "gerrit:stats:{ldap}:{project}:{bucket}"

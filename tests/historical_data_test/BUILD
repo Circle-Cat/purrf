@@ -31,3 +31,13 @@ py_test(
         "//src/historical_data:google_chat_history_fetcher",
     ],
 )
+
+py_test(
+    name = "gerrit_history_fetcher_test",
+    srcs = ["gerrit_history_fetcher_test.py"],
+    deps = [
+        "//src/common:gerrit_client",
+        "//src/historical_data:gerrit_history_fetcher",
+        "@pypi//redis",
+    ],
+)
