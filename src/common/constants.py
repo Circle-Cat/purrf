@@ -1,11 +1,15 @@
 from enum import Enum
 
-GOOGLE_SCOPES_LIST = [
+GOOGLE_USER_SCOPES_LIST = [
     "https://www.googleapis.com/auth/directory.readonly",
     "https://www.googleapis.com/auth/chat.spaces.readonly",
     "https://www.googleapis.com/auth/chat.memberships.readonly",
     "https://www.googleapis.com/auth/chat.messages.readonly",
     "https://www.googleapis.com/auth/calendar.readonly",
+]
+
+GOOGLE_ADMIN_SCOPES_LIST = [
+    "https://www.googleapis.com/auth/admin.reports.audit.readonly",
 ]
 
 MICROSOFT_SCOPES_LIST = ["https://graph.microsoft.com/.default"]
