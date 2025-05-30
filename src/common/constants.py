@@ -35,6 +35,8 @@ DELETED_GOOGLE_CHAT_MESSAGES_INDEX_KEY = "google:chat:deleted:{sender_ldap}:{spa
 
 MICROSOFT_LDAP_KEY = "ldap:{account_status}"
 
+PUBSUB_PULL_MESSAGES_STATUS_KEY = "pull_status:{subscription_id}"
+
 
 class MicrosoftAccountStatus(str, Enum):
     ACTIVE = "active"
@@ -66,3 +68,17 @@ class MicrosoftChatMessagesChangeType(str, Enum):
     CREATED = "created"
     UPDATED = "updated"
     DELETED = "deleted"
+
+
+class PullStatus(Enum):
+    RUNNING = ("running", "Pulling started for {subscription_id}.")
+    FAILED = ("failed", "Pulling failed for {subscription_id}: {error}.")
+    STOPPED = ("stopped", "Pulling explicitly stopped for {subscription_id}.")
+    NOT_STARTED = ("not_started", "Pulling has not started for {subscription_id}.")
+
+    def __init__(self, code, default_message_template):
+        self.code = code
+        self.default_message_template = default_message_template
+
+    def format_message(self, **kwargs) -> str:
+        return self.default_message_template.format(**kwargs)
