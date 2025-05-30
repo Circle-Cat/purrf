@@ -7,3 +7,19 @@ py_test(
         "//src/historical_data:google_calendar_history_fetcher",
     ],
 )
+
+py_test(
+    name = "microsoft_ldap_fetcher_test",
+    srcs = ["microsoft_ldap_fetcher_test.py"],
+    deps = [
+        "//src/historical_data:microsoft_ldap_fetcher",
+    ],
+)
+
+py_test(
+    name = "historical_api_test",
+    srcs = ["historical_api_test.py"],
+    deps = [
+        "//src/historical_data:historical_api",
+    ],
+)

@@ -45,7 +45,7 @@ bazel build //path/to/submodule:specific_target
 
 ```bash
 gcloud auth application-default login
-gcloud config se project {google_project_id}
+gcloud config set project {google_project_id}
 ```
 ####  Export Environment Variables
 - USER_EMAIL
@@ -57,6 +57,9 @@ gcloud config se project {google_project_id}
 - GERRIT_URL
 - GERRIT_USER
 - GERRIT_HTTP_PASS
+- AZURE_CLIENT_ID
+- AZURE_CLIENT_SECRET
+- AZURE_TENANT_ID
 
 ####  Running the project
 

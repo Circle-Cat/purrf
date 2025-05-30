@@ -8,6 +8,7 @@ py_binary(
     main = "app.py",
     deps = [
         "//src/common:error_handler",
+        "//src/historical_data:historical_api",
         "@pypi//flask",
     ],
 )
