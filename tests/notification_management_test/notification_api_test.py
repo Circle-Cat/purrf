@@ -1,6 +1,6 @@
 from http import HTTPStatus
 from unittest import IsolatedAsyncioTestCase, main
-from unittest.mock import patch, AsyncMock
+from unittest.mock import patch, AsyncMock, MagicMock
 from flask import Flask, jsonify
 from src.notification_management.notification_api import notification_bp
 from src.common.constants import MicrosoftAccountStatus, EVENT_TYPES
@@ -101,6 +101,21 @@ class TestNotificationApi(IsolatedAsyncioTestCase):
             payload["space_id"],
             set(payload["event_types"]),
         )
+
+    @patch("src.notification_management.notification_api.GerritWatcher")
+    def test_register_gerrit_webhook_success(self, mock_watcher_cls):
+        mock_instance = MagicMock()
+        mock_instance.register_webhook.return_value = {"foo": "bar"}
+        mock_watcher_cls.return_value = mock_instance
+
+        resp = self.client.post("/api/gerrit/webhook/register")
+        data = resp.get_json()
+
+        self.assertEqual(resp.status_code, HTTPStatus.OK)
+        self.assertIsNotNone(data)
+        self.assertEqual(data.get("message"), "Gerrit Webhook registered successfully.")
+        self.assertEqual(data.get("data"), {"foo": "bar"})
+        mock_instance.register_webhook.assert_called_once()
 
 
 if __name__ == "__main__":

@@ -6,6 +6,7 @@ from src.notification_management.microsoft_chat_watcher import (
 from src.notification_management.google_chat_watcher import (
     create_workspaces_subscriptions,
 )
+from src.notification_management.gerrit_watcher import GerritWatcher
 from src.common.api_response_wrapper import api_response
 from src.common.constants import EVENT_TYPES
 
@@ -78,4 +79,27 @@ def subscribe():
         success=True,
         message=response,
         status_code=HTTPStatus.CREATED,
+    )
+
+
+@notification_bp.route("/gerrit/webhook/register", methods=["POST"])
+def register_gerrit_webhook():
+    """
+    Registers a Gerrit webhook for receiving change events.
+
+    This endpoint uses the GerritWatcher class to create (or retrieve)
+    a webhook subscription via Gerrit's Webhooks plugin. It targets
+    the configured project and sends events to the URL specified in
+    GERRIT_WEBHOOK_TARGET_URL.
+
+    Returns:
+        A standardized API response containing the webhook registration
+        result or existing configuration.
+    """
+    result = GerritWatcher().register_webhook()
+    return api_response(
+        success=True,
+        message="Gerrit Webhook registered successfully.",
+        data=result,
+        status_code=HTTPStatus.OK,
     )
