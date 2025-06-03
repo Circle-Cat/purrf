@@ -6,6 +6,15 @@ from src.common.google_client import GoogleClientFactory
 from datetime import datetime
 from src.historical_data.constants import MEET_URL_REGEX
 import re
+from src.common.redis_client import RedisClientFactory
+from src.common.validation import validate_data
+from src.common.constants import (
+    GOOGLE_CALENDAR_LIST_INDEX_KEY,
+    GOOGLE_USER_CALENDARS_INDEX_KEY,
+    GOOGLE_CALENDAR_LIST_KEY,
+)
+import time
+import json
 
 logger = get_logger()
 
@@ -104,7 +113,9 @@ def get_calendar_events(calendar_id: str, start_time: str, end_time: str):
                 try:
                     attendance_data = get_event_attendance(meet_code)
                 except Exception as e:
-                    logger.warning(f"Failed to fetch attendance for event {event_id}: {e}")
+                    logger.warning(
+                        f"Failed to fetch attendance for event {event_id}: {e}"
+                    )
 
             events.append({
                 "event_id": event_id,
@@ -247,3 +258,61 @@ def get_meeting_code_from_event(event):
     except Exception as e:
         logger.exception(f"Error extracting meeting code from event: {e}")
         return None
+
+
+@retry(
+    reraise=True,
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=1, max=3),
+)
+def cache_calendars():
+    """
+    Caches calendar metadata from the Google Calendar API into Redis.
+
+    Raises:
+        Any exception raised by `get_calendar_list` or Redis operations will be retried up to 3 times with exponential backoff.
+    """
+    calendar_list = get_calendar_list()
+
+    filtered_calendar_list = []
+    ldap = None
+    for calendar in calendar_list:
+        calendar_id = calendar.get("calendar_id", "")
+        if calendar_id.endswith("@circlecat.org"):  # Skip personal user calendars
+            ldap = calendar_id.split("@")[0]
+            continue
+        elif calendar_id.endswith("@group.v.calendar.google.com"):  # Skip system-generated Google group calendars
+            continue
+        filtered_calendar_list.append(calendar)
+
+    if ldap is None:
+        logger.warning(
+            "No calendar_id ending with @circlecat.org found; skipping caching."
+        )
+        return
+
+    for calendar in filtered_calendar_list:
+        try:
+            validate_data(calendar, "calendar.schema.json")
+        except Exception as e:
+            logger.warning(f"Invalid calendar skipped: {e}")
+            continue
+
+        calendar_id = calendar["calendar_id"]
+        score = time.time()
+
+        factory = RedisClientFactory()
+        redis_client = factory.create_redis_client()
+        pipeline = redis_client.pipeline()
+        pipeline.sadd(
+            GOOGLE_CALENDAR_LIST_INDEX_KEY, calendar_id
+        )
+        pipeline.zadd(
+            GOOGLE_USER_CALENDARS_INDEX_KEY.format(ldap=ldap), {calendar_id: score}
+        )
+        pipeline.set(
+            GOOGLE_CALENDAR_LIST_KEY.format(calendar_id=calendar_id),
+            json.dumps(calendar),
+        )
+        pipeline.execute()
+        logger.debug(f"Cached calendar {calendar_id} for purrf")
