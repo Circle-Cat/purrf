@@ -1,4 +1,6 @@
+from google.api_core.exceptions import NotFound
 from src.common.redis_client import RedisClientFactory
+from src.common.google_client import GoogleClientFactory
 from src.common.constants import PullStatus, PUBSUB_PULL_MESSAGES_STATUS_KEY
 from src.common.logger import get_logger
 from dataclasses import dataclass
@@ -102,6 +104,143 @@ class PubSubPuller:
             logger.error(
                 f"Failed to update Redis status for {self.subscription_id}: {e}"
             )
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=3),
+        retry=retry_if_exception_type(Exception),
+        reraise=True,
+    )
+    def _delete_redis_pull_status(self):
+        """
+        Deleted the pull status in Redis Hash.
+        """
+        redis_client = RedisClientFactory().create_redis_client()
+        if not redis_client:
+            raise ValueError(
+                "Redis client not available. Cannot delete obsolete pull status."
+            )
+        try:
+            status_redis_key = PUBSUB_PULL_MESSAGES_STATUS_KEY.format(
+                subscription_id=self.subscription_id
+            )
+            redis_client.delete(status_redis_key)
+            logger.debug(f"Redis status deleted for {self.subscription_id}")
+        except Exception as e:
+            logger.error(
+                f"Failed to delete Redis status for {self.subscription_id}: {e}"
+            )
+            raise RuntimeError(
+                f"Failed to delete Redis status for {self.subscription_id}"
+            )
+
+    def _pull_target(self, callback):
+        """
+        Internal method that runs the message pulling logic in a background thread.
+
+        This method sets up and starts an asynchronous streaming pull from a
+        Google Cloud Pub/Sub subscription. It updates internal and Redis-based
+        status markers, and handles both expected and unexpected termination
+        of the pull process.
+
+        Args:
+            callback (Callable): A user-provided function that will be invoked
+                for each received message.
+
+        Behavior:
+            - Initializes a Pub/Sub subscriber client and constructs the subscription path.
+            - Starts streaming pull via `subscriber.subscribe`.
+            - Blocks on `future.result()` until the stream is interrupted or stopped.
+            - On successful start, sets the `_is_pulling` flag and updates Redis to RUNNING.
+            - On `NotFound`, logs the error and deletes Redis status key.
+            - On any other exception, logs the error and marks Redis status as FAILED.
+            - In the `finally` block, always clears `_is_pulling` flag to ensure proper shutdown.
+        """
+        try:
+            subscriber = GoogleClientFactory().create_subscriber_client()
+            subscription_path = subscriber.subscription_path(
+                self.project_id, self.subscription_id
+            )
+            self._streaming_pull_future = subscriber.subscribe(
+                subscription_path, callback=callback
+            )
+            logger.info(f"Subscription {self.subscription_id} listening started.")
+            self._is_pulling.set()
+            self._update_redis_pull_status(PullStatus.RUNNING)
+            self._streaming_pull_future.result()
+
+        except NotFound as nf_exc:
+            logger.error(f"Subscription {self.subscription_id} not found: {nf_exc}")
+            self._delete_redis_pull_status()
+
+        except Exception as e:
+            logger.error(f"Streaming pull for {self.subscription_id} interrupted: {e}")
+            self._update_redis_pull_status(PullStatus.FAILED, error=str(e))
+
+        finally:
+            with self._lock:
+                if self._is_pulling.is_set():
+                    self._is_pulling.clear()
+                    logger.debug(
+                        f"_is_pulling flag cleared for {self.subscription_id} in _pull_target finally."
+                    )
+
+    def _check_subscription_exist(self):
+        """
+        Checks if the subscription configured for this Pub/Sub Puller instance
+        exists within the specified Google Cloud project.
+        """
+        subscriber = GoogleClientFactory().create_subscriber_client()
+        subscription_path = subscriber.subscription_path(
+            self.project_id, self.subscription_id
+        )
+        try:
+            subscriber.get_subscription(subscription=subscription_path)
+            return True
+        except NotFound:
+            return False
+
+    def start_pulling_messages(self, callback):
+        """
+        Starts asynchronous message pulling for this subscription.
+
+        Behavior:
+        - If already pulling (`_is_pulling` is set), it logs and exits.
+        - If `_is_pulling` is not set but there is an active future, it attempts to stop the previous pull to avoid stale state.
+        - Uses a background thread to subscribe to the stream and handle incoming messages asynchronously.
+        - Handles graceful shutdown and failure reporting via Redis and internal state flags.
+
+        Args:
+            callback (Callable): A function that processes received Pub/Sub messages..
+        """
+        if callback is None:
+            raise ValueError(
+                "A message processing callback must be provided to start_pulling_messages."
+            )
+
+        is_exist = self._check_subscription_exist()
+        if not is_exist:
+            raise ValueError(
+                "Resource not found. Please check the project ID and subscription ID."
+            )
+
+        with self._lock:
+            if self._streaming_pull_future and not self._streaming_pull_future.done():
+                if self._is_pulling.is_set():
+                    logger.info(
+                        f"Subscription {self.subscription_id} is already actively pulling messages."
+                    )
+                    return
+                else:
+                    logger.warning(
+                        f"Detected stale streaming pull future for {self.subscription_id}, cancelling it..."
+                    )
+                    self.stop_pulling_messages()
+
+        pull_thread = threading.Thread(
+            target=self._pull_target, args=(callback,), daemon=True
+        )
+        pull_thread.start()
 
     def check_pulling_messages_status(self) -> PullStatusResponse:
         """
