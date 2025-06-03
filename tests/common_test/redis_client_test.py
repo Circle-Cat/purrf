@@ -94,6 +94,7 @@ class TestRedisClientFactory(TestCase):
             port=int(TEST_REDIS_PORT),
             password=TEST_REDIS_PASSWORD,
             ssl=True,
+            decode_responses=True,
         )
         mock_client.ping.assert_called_once()
         self.assertEqual(client, mock_client)

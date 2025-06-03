@@ -78,7 +78,9 @@ class RedisClientFactory:
             RedisConnectionError: If a connection-related error occurs.
             TimeoutError: If a timeout occurs during connection.
         """
-        client = Redis(host=host, port=port, password=password, ssl=True)
+        client = Redis(
+            host=host, port=port, password=password, ssl=True, decode_responses=True
+        )
         client.ping()
         return client
 
