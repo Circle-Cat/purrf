@@ -12,6 +12,10 @@ from src.common.constants import (
     GOOGLE_CALENDAR_LIST_INDEX_KEY,
     GOOGLE_USER_CALENDARS_INDEX_KEY,
     GOOGLE_CALENDAR_LIST_KEY,
+    GOOGLE_USER_EVENTS_INDEX_KEY,
+    GOOGLE_USER_CALENDAR_EVENTS_INDEX_KEY,
+    GOOGLE_CALENDAR_EVENTS_INDEX_KEY,
+    GOOGLE_CALENDAR_EVENT_DETAIL_KEY,
 )
 import time
 import json
@@ -281,7 +285,9 @@ def cache_calendars():
         if calendar_id.endswith("@circlecat.org"):  # Skip personal user calendars
             ldap = calendar_id.split("@")[0]
             continue
-        elif calendar_id.endswith("@group.v.calendar.google.com"):  # Skip system-generated Google group calendars
+        elif calendar_id.endswith(
+            "@group.v.calendar.google.com"
+        ):  # Skip system-generated Google group calendars
             continue
         filtered_calendar_list.append(calendar)
 
@@ -304,9 +310,7 @@ def cache_calendars():
         factory = RedisClientFactory()
         redis_client = factory.create_redis_client()
         pipeline = redis_client.pipeline()
-        pipeline.sadd(
-            GOOGLE_CALENDAR_LIST_INDEX_KEY, calendar_id
-        )
+        pipeline.sadd(GOOGLE_CALENDAR_LIST_INDEX_KEY, calendar_id)
         pipeline.zadd(
             GOOGLE_USER_CALENDARS_INDEX_KEY.format(ldap=ldap), {calendar_id: score}
         )
@@ -316,3 +320,76 @@ def cache_calendars():
         )
         pipeline.execute()
         logger.debug(f"Cached calendar {calendar_id} for purrf")
+
+
+@retry(
+    reraise=True,
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=1, max=3),
+)
+def cache_events(calendar_id: str, time_min: str, time_max: str):
+    """
+    Caches calendar events metadata from the Google Calendar API and Reports API into Redis.
+
+    Raises:
+        Any exception raised by `get_calendar_events` or Redis operations will be retried up to 3 times with exponential backoff.
+    """
+    events = get_calendar_events(calendar_id, time_min, time_max)
+
+    factory = RedisClientFactory()
+    redis_client = factory.create_redis_client()
+
+    for event in events:
+        try:
+            validate_data(event, "calendar_event.schema.json")
+        except Exception as e:
+            logger.warning(f"Invalid event skipped in calendar {calendar_id}: {e}")
+            continue
+
+        event_id = event["event_id"]
+        attendees = event.get("attendees") or []
+        ldaps = []
+        for attendee in attendees:
+            email = attendee.get("email", "")
+            if email.endswith("@circlecat.org"):
+                ldap = email.split("@")[0]
+                ldaps.append(ldap)
+
+        if not ldaps:
+            logger.warning(
+                f"No @circlecat.org attendee found for event {event_id}; skipping."
+            )
+            continue
+
+        try:
+            score = datetime.fromisoformat(event["start"]).timestamp()
+        except Exception as e:
+            logger.warning(f"Invalid start time for event {event_id}: {e}")
+            continue
+
+        pipeline = redis_client.pipeline()
+
+        for ldap in ldaps:
+            pipeline.zadd(
+                GOOGLE_USER_EVENTS_INDEX_KEY.format(ldap=ldap), {event_id: score}
+            )
+            pipeline.zadd(
+                GOOGLE_USER_CALENDAR_EVENTS_INDEX_KEY.format(
+                    ldap=ldap, calendar_id=calendar_id
+                ),
+                {event_id: score},
+            )
+
+        pipeline.zadd(
+            GOOGLE_CALENDAR_EVENTS_INDEX_KEY.format(calendar_id=calendar_id),
+            {event_id: score},
+        )
+        pipeline.set(
+            GOOGLE_CALENDAR_EVENT_DETAIL_KEY.format(event_id=event_id),
+            json.dumps(event),
+        )
+        pipeline.execute()
+
+        logger.debug(
+            f"Cached event {event_id} for user {ldap} in calendar {calendar_id}"
+        )
