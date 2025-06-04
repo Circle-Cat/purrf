@@ -175,3 +175,13 @@ cython_debug/
 .bazelversion
 # User-specific .bazelrc
 user.bazelrc
+
+# Local Terraform state files
+terraform/terraform.tfstate
+terraform/terraform.tfstate.backup
+
+# Terraform plugin directory
+.terraform/
+
+# Terraform zip build artifacts
+terraform/zip/
