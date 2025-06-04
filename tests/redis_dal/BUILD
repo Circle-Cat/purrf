@@ -1,14 +1,6 @@
 load("@rules_python//python:defs.bzl", "py_test")
 
 py_test(
-    name = "test_redis_utils",
-    srcs = ["test_redis_utils.py"],
-    deps = [
-        "//redis_dal:redis_utils",
-    ],
-)
-
-py_test(
     name = "test_redis_query_utils",
     srcs = ["test_redis_query_utils.py"],
     deps = [

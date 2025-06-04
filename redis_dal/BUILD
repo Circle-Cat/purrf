@@ -39,12 +39,3 @@ py_library(
         "@pypi//redis",
     ],
 )
-
-py_library(
-    name = "redis_utils",
-    srcs = ["redis_utils.py"],
-    deps = [
-        ":redis_client_factory",
-        "@pypi//redis",
-    ],
-)

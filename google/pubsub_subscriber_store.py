@@ -1,6 +1,6 @@
 import json
 from google.authentication_utils import GoogleClientFactory
-from redis_dal.redis_utils import store_messages
+from src.utils.google_chat_message_store import store_messages
 from google.chat_utils import get_ldap_by_id
 import logging
 from google.constants import (
