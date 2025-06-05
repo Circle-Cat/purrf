@@ -1,7 +1,6 @@
 """google chat service"""
 
 from flask import jsonify, Blueprint, request
-from google.fetch_history_chat_message import fetch_history_messages
 from google.pubsub_subscriber_store import pull_messages
 from http import HTTPStatus
 from src.utils.google_chat_utils import get_chat_spaces
@@ -12,14 +11,6 @@ from concurrent.futures import ThreadPoolExecutor
 from google.constants import PULL_PROCESS_STARTED_MSG
 
 google_bp = Blueprint("google", __name__)
-
-
-@google_bp.route("/api/chat/spaces/messages", methods=["POST"])
-def history_messages():
-    """API endpoint to trigger the fetching of messages for all SPACE type chat spaces and store them in Redis asynchronously."""
-
-    response = fetch_history_messages()
-    return jsonify({"response": response}), HTTPStatus.OK
 
 
 @google_bp.route("/api/chat/spaces", methods=["GET"])

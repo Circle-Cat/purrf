@@ -19,25 +19,9 @@ py_library(
 )
 
 py_library(
-    name = "fetch_history_chat_message",
-    srcs = [
-        "constants.py",
-        "fetch_history_chat_message.py",
-    ],
-    deps = [
-        ":authentication_utils",
-        "//src/historical_data:google_chat_history_fetcher",
-        "//src/utils:google_chat_message_store",
-        "//src/utils:google_chat_utils",
-        "//tools/log",
-    ],
-)
-
-py_library(
     name = "google_api",
     srcs = ["google_api.py"],
     deps = [
-        "fetch_history_chat_message",
         ":authentication_utils",
         ":pubsub_publisher",
         ":pubsub_subscriber_store",
