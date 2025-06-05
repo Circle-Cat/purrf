@@ -23,3 +23,11 @@ py_test(
         "//src/historical_data:historical_api",
     ],
 )
+
+py_test(
+    name = "google_chat_history_fetcher_test",
+    srcs = ["google_chat_history_fetcher_test.py"],
+    deps = [
+        "//src/historical_data:google_chat_history_fetcher",
+    ],
+)

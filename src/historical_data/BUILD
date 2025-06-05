@@ -39,3 +39,13 @@ py_library(
         "@pypi//flask",
     ],
 )
+
+py_library(
+    name = "google_chat_history_fetcher",
+    srcs = [
+        "google_chat_history_fetcher.py",
+    ],
+    deps = [
+        "//src/common:google_client",
+    ],
+)

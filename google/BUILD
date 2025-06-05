@@ -43,6 +43,7 @@ py_library(
     deps = [
         ":authentication_utils",
         ":chat_utils",
+        "//src/historical_data:google_chat_history_fetcher",
         "//src/utils:google_chat_message_store",
         "//src/utils:google_chat_utils",
         "//tools/log",
