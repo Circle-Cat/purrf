@@ -1,7 +1,8 @@
 from redis_dal.redis_client_factory import RedisClientFactory
 from datetime import datetime, timezone
 from dateutil.relativedelta import relativedelta
-from google.chat_utils import get_chat_spaces, list_directory_all_people_ldap
+from google.chat_utils import list_directory_all_people_ldap
+from src.utils.google_chat_utils import get_chat_spaces
 import logging
 import time
 from typing import List, Dict, Optional

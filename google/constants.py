@@ -30,7 +30,6 @@ NO_EMAIL_FOUND_ERROR_MSG = "No email found for person ID: {id}."
 NO_TOPIC_ID_ERROR_MSG = "No valid {topic_id} topic id provided"
 NO_PARAMETER_ERROR_MSG = "Missing required parameters"
 
-RETRIEVED_SPACES_INFO_MSG = "Retrieved {count} {space_type} type Chat spaces."
 RETRIEVED_PEOPLE_INFO_MSG = "Retrieved {count} people from directory."
 RETRIEVED_ID_INFO_MSG = "Retrieved LDAP '{local_part}' for ID '{id}'."
 
