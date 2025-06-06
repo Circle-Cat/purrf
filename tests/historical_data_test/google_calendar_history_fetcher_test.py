@@ -154,7 +154,10 @@ class TestGetCalendarList(TestCase):
         self.assertEqual(events, expected)
         self.assertEqual(mock_events.list.call_count, 2)
 
-    @patch("src.historical_data.google_calendar_history_fetcher.GoogleClientFactory", side_effect=Exception("Simulated API Failure"))
+    @patch(
+        "src.historical_data.google_calendar_history_fetcher.GoogleClientFactory",
+        side_effect=Exception("Simulated API Failure"),
+    )
     def test_get_calendar_events_exception(self, mock_factory):
         calendar_id = "dummy_calendar_id"
         time_min = "2023-01-01T00:00:00Z"
@@ -166,7 +169,9 @@ class TestGetCalendarList(TestCase):
         self.assertEqual(str(context.exception), "Simulated API Failure")
 
     @patch("src.historical_data.google_calendar_history_fetcher.GoogleClientFactory")
-    def test_get_calendar_events_retries_on_failure_then_succeeds(self, mock_factory_class):
+    def test_get_calendar_events_retries_on_failure_then_succeeds(
+        self, mock_factory_class
+    ):
         mock_factory = MagicMock()
         mock_service = MagicMock()
         mock_events = mock_service.events.return_value

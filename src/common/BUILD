@@ -91,6 +91,18 @@ py_library(
 )
 
 py_library(
+    name = "jira_client",
+    srcs = [
+        "jira_client.py",
+    ],
+    deps = [
+        "//src/common:logger",
+        "@pypi//jira",
+        "@pypi//tenacity",
+    ],
+)
+
+py_library(
     name = "validation",
     srcs = ["validation.py"],
     data = [

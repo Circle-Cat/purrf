@@ -59,6 +59,14 @@ py_test(
 )
 
 py_test(
+    name = "jira_client_test",
+    srcs = ["jira_client_test.py"],
+    deps = [
+        "//src/common:jira_client",
+    ],
+)
+
+py_test(
     name = "validation_test",
     srcs = ["validation_test.py"],
     deps = [
