@@ -29,8 +29,15 @@ py_library(
 py_oci_image(
     name = "purrf_image",
     base = "@python_base",
-    binary = "//src:purrf",
-    entrypoint = ["/src/purrf"],
+    binary = "//src:uvicorn",
+    cmd = [
+        "--host=0.0.0.0",
+        "--port=5001",
+    ],
+    entrypoint = [
+        "/src/uvicorn",
+        "src.app:asgi_app",
+    ],
 )
 
 platform(
