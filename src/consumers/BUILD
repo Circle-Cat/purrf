@@ -36,3 +36,15 @@ py_library(
         "@pypi//flask",
     ],
 )
+
+py_library(
+    name = "google_chat_consumer",
+    srcs = [
+        "google_chat_consumer.py",
+    ],
+    deps = [
+        "//src/common:google_client",
+        "//src/common:logger",
+        "@pypi//tenacity",
+    ],
+)

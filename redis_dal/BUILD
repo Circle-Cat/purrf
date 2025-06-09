@@ -34,7 +34,6 @@ py_library(
     deps = [
         ":constants",
         ":redis_client_factory",
-        "//google:chat_utils",
         "//src/historical_data:google_chat_history_fetcher",
         "//src/utils:google_chat_utils",
         "@pypi//python_dateutil",

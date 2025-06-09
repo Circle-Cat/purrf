@@ -1,7 +1,7 @@
 import json
 from google.authentication_utils import GoogleClientFactory
 from src.utils.google_chat_message_store import store_messages
-from google.chat_utils import get_ldap_by_id
+from src.consumers.google_chat_consumer import get_ldap_by_id
 import logging
 from google.constants import (
     SUBSCRIBER_API_NAME,
