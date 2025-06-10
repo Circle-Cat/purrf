@@ -89,3 +89,15 @@ py_library(
         "@pypi//tenacity",
     ],
 )
+
+py_library(
+    name = "validation",
+    srcs = ["validation.py"],
+    data = [
+        "//src/schemas",
+    ],
+    deps = [
+        "//src/common:logger",
+        "@pypi//jsonschema",
+    ],
+)
