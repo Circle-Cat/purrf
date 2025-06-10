@@ -5,6 +5,7 @@ from src.frontend_service.chat_query_utils import count_messages_in_date_range
 from src.frontend_service.gerrit_loader import (
     get_gerrit_stats as load_gerrit_stats,
 )
+from src.frontend_service.calendar_loader import get_calendars_for_user
 from src.common.constants import MicrosoftAccountStatus
 from src.common.api_response_wrapper import api_response
 from src.utils.google_chat_utils import get_chat_spaces
@@ -129,5 +130,19 @@ async def get_gerrit_stats():
         success=True,
         message="Fetched Gerrit stats successfully.",
         data=response,
+        status_code=HTTPStatus.OK,
+    )
+
+
+@frontend_bp.route("/google/calendar/calendars", methods=["GET"])
+def get_user_calendars_api():
+    """API endpoint to get Google Calendar list for a user from Redis."""
+    ldap = request.args.get("ldap", "purrf")
+    calendar_data = get_calendars_for_user(ldap)
+
+    return api_response(
+        success=True,
+        message=f"Calendar list for user {ldap} fetched successfully.",
+        data=calendar_data,
         status_code=HTTPStatus.OK,
     )

@@ -43,3 +43,11 @@ py_test(
         "//src/frontend_service:gerrit_loader",
     ],
 )
+
+py_test(
+    name = "calendar_loader_test",
+    srcs = ["calendar_loader_test.py"],
+    deps = [
+        "//src/frontend_service:calendar_loader",
+    ],
+)

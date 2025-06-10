@@ -8,6 +8,7 @@ py_library(
     deps = [
         "//src/common:api_response_wrapper",
         "//src/common:constants",
+        "//src/frontend_service:calendar_loader",
         "//src/frontend_service:chat_query_utils",
         "//src/frontend_service:gerrit_loader",
         "//src/frontend_service:ldap_loader",
@@ -61,5 +62,16 @@ py_library(
         "//src/common:constants",
         "//src/common:redis_client",
         "//src/frontend_service:ldap_loader",
+    ],
+)
+
+py_library(
+    name = "calendar_loader",
+    srcs = [
+        "calendar_loader.py",
+    ],
+    deps = [
+        "//src/common:constants",
+        "//src/common:redis_client",
     ],
 )

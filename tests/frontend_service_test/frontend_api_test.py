@@ -8,6 +8,7 @@ from src.common.constants import MicrosoftAccountStatus
 MICROSOFT_LDAP_FETCHER_API = "/api/microsoft/{status}/ldaps"
 MICROSOFT_CHAT_TOPICS_FETCHER_API = "/api/microsoft/chat/topics"
 GOOGLE_CHAT_COUNT_API = "/api/google/chat/count"
+GOOGLE_CALENDAR_CALENDARS_API = "/api/google/calendar/calendars"
 
 
 class TestAppRoutes(TestCase):
@@ -123,6 +124,20 @@ class TestAppRoutes(TestCase):
         response = self.client.get(MICROSOFT_CHAT_TOPICS_FETCHER_API)
 
         self.assertEqual(response.status_code, HTTPStatus.OK)
+
+    @patch("src.frontend_service.frontend_api.get_calendars_for_user")
+    def test_get_google_calendar_calendars_success(self, mock_get_calendars):
+        mock_result = [
+            {"calendar_id": "alice@circlecat.org", "summary": "Alice"},
+            {"calendar_id": "bob@circlecat.org", "summary": "Bob"},
+        ]
+        mock_get_calendars.return_value = mock_result
+
+        response = self.client.get(f"{GOOGLE_CALENDAR_CALENDARS_API}?ldap=purrf")
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.assertEqual(response.json["data"], mock_result)
+        self.assertIn("purrf", response.json["message"])
+        mock_get_calendars.assert_called_once_with("purrf")
 
 
 if __name__ == "__main__":
