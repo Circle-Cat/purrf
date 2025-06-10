@@ -1,5 +1,6 @@
 """purrf service"""
 
+from asgiref.wsgi import WsgiToAsgi
 from flask import Flask, jsonify
 from http import HTTPStatus
 from src.common.error_handler import register_error_handlers
@@ -32,5 +33,9 @@ def health_check():
     )
 
 
+# Used when running via uvicorn as a production server.
+asgi_app = WsgiToAsgi(app)
+
+# Used when running directly using Flask development server.
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5001)
