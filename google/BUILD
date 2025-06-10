@@ -43,7 +43,7 @@ py_library(
     deps = [
         ":authentication_utils",
         ":chat_utils",
-        "//redis_dal:redis_utils",
+        "//src/utils:google_chat_message_store",
         "//tools/log",
     ],
 )
@@ -85,7 +85,7 @@ py_library(
     ],
     deps = [
         "//google:authentication_utils",
-        "//redis_dal:redis_utils",
+        "//src/utils:google_chat_message_store",
         "//tools/log",
         "@pypi//google_api_python_client",
         "@pypi//google_auth_oauthlib",

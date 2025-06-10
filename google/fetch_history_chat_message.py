@@ -1,6 +1,6 @@
 from google.authentication_utils import GoogleClientFactory
 from google.chat_utils import get_chat_spaces, list_directory_all_people_ldap
-from redis_dal.redis_utils import store_messages
+from src.utils.google_chat_message_store import store_messages
 from tools.log.logger import setup_logger
 import logging
 from google.constants import (

@@ -31,6 +31,6 @@ py_test(
     deps = [
         "//google:chat_utils",
         "//google:pubsub_subscriber_store",
-        "//redis_dal:redis_utils",
+        "//src/utils:google_chat_message_store",
     ],
 )

@@ -10,24 +10,12 @@ GOOGLE_SCOPES_LIST = [
 
 MICROSOFT_SCOPES_LIST = ["https://graph.microsoft.com/.default"]
 
-GOOGLE_CHAT_EVENT_TYPE_CREATE = "created"
-GOOGLE_CHAT_EVENT_TYPE_UPDATE = "updated"
-GOOGLE_CHAT_EVENT_TYPE_DELETE = "deleted"
 
-# Constants for google chat message field names
-MESSAGE = "message"
-NAME = "name"
-MESSAGE_SENDER = "sender"
-CREATE_TIME = "createTime"
-MESSAGE_TEXT = "text"
-MESSAGE_THREAD = "thread"
-MESSAGE_SPACE = "space"
-MESSAGE_LAST_UPDATE_TIME = "lastUpdateTime"
-MESSAGE_DELETION_METADATA = "deletionMetadata"
-MESSAGE_DELETION_TYPE = "deletionType"
-VALUE = "value"
-MESSAGE_THREAD_ID = "threadId"
-MESSAGE_ATTACHMENT = "attachment"
+class GoogleChatEventType(str, Enum):
+    CREATED = "created"
+    UPDATED = "updated"
+    DELETED = "deleted"
+
 
 # Constants for Redis keys
 CREATED_GOOGLE_CHAT_MESSAGES_INDEX_KEY = "google:chat:created:{sender_ldap}:{space_id}"
