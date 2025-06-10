@@ -63,6 +63,20 @@ class TestAppRoutes(TestCase):
 
         mock_fetch_history_messages.assert_called_once()
 
+    @patch("src.historical_data.historical_api.pull_calendar_history")
+    def test_pull_calendar_history_success(self, mock_pull_calendar_history):
+        mock_pull_calendar_history.return_value = None
+
+        response = self.client.post("/api/google/calendar/history/pull", json={})
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.assertIn("Google Calendar history pulled", response.json["message"])
+
+        args, kwargs = mock_pull_calendar_history.call_args
+        self.assertEqual(len(args), 2)
+        self.assertTrue(isinstance(args[0], str))
+        self.assertTrue(isinstance(args[1], str))
+
 
 if __name__ == "__main__":
     main()

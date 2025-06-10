@@ -38,9 +38,11 @@ py_library(
     srcs = ["historical_api.py"],
     deps = [
         "//src/historical_data:gerrit_history_fetcher",
+        "//src/historical_data:google_calendar_history_fetcher",
         "//src/historical_data:google_chat_history_fetcher",
         "//src/historical_data:microsoft_chat_history_fetcher",
         "//src/historical_data:microsoft_ldap_fetcher",
+        "//src/utils:date_time_parser",
         "@pypi//flask",
     ],
 )

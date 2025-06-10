@@ -393,3 +393,30 @@ def cache_events(calendar_id: str, time_min: str, time_max: str):
         logger.debug(
             f"Cached event {event_id} for user {ldap} in calendar {calendar_id}"
         )
+
+
+@retry(
+    reraise=True,
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=1, max=3),
+)
+def pull_calendar_history(time_min: str = None, time_max: str = None):
+    """
+    Pulls and caches historical calendar event data for all calendars.
+
+    Args:
+        time_min (str): The ISO 8601 start time (inclusive) for fetching calendar events.
+        time_max (str): The ISO 8601 end time (exclusive) for fetching calendar events.
+
+    Raises:
+        RuntimeError: If a Redis client cannot be obtained.
+        Any exception raised by `cache_calendars()` or `cache_events()` will be retried up to 3 times using exponential backoff due to the `@retry` decorator.
+    """
+    cache_calendars()
+    redis_client = RedisClientFactory().create_redis_client()
+    if not redis_client:
+        raise RuntimeError("Redis client not available")
+
+    calendar_ids = redis_client.smembers(GOOGLE_CALENDAR_LIST_INDEX_KEY)
+    for calendar_id in calendar_ids:
+        cache_events(calendar_id, time_min, time_max)

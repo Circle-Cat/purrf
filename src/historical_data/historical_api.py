@@ -3,11 +3,12 @@ from http import HTTPStatus
 from src.historical_data.microsoft_ldap_fetcher import sync_microsoft_members_to_redis
 from src.historical_data.gerrit_history_fetcher import fetch_and_store_changes
 from src.historical_data.google_chat_history_fetcher import fetch_history_messages
+from src.historical_data.google_calendar_history_fetcher import pull_calendar_history
 from src.common.api_response_wrapper import api_response
 from src.historical_data.microsoft_chat_history_fetcher import (
     sync_microsoft_chat_messages_by_chat_id,
 )
-
+from src.utils.date_time_parser import get_start_end_timestamps
 
 history_bp = Blueprint("history", __name__, url_prefix="/api")
 
@@ -65,5 +66,34 @@ def history_messages():
         success=True,
         message="Saved successfully.",
         data=response,
+        status_code=HTTPStatus.OK,
+    )
+
+
+@history_bp.route("/google/calendar/history/pull", methods=["POST"])
+def pull_calendar_history_api():
+    """
+    Endpoint to trigger fetching and caching Google Calendar history.
+
+    Request JSON params (optional):
+      - start_date: ISO format string, start of time range (default: now - 24h)
+      - end_date: ISO format string, end of time range (default: now)
+    """
+    data = request.get_json(silent=True) or {}
+
+    start_date_str = data.get("start_date")  # Expecting "YYYY-MM-DD"
+    end_date_str = data.get("end_date")  # Expecting "YYYY-MM-DD"
+
+    start_dt_utc, end_dt_utc = get_start_end_timestamps(start_date_str, end_date_str)
+
+    time_min = start_dt_utc.isoformat().replace("+00:00", "Z")
+    time_max = end_dt_utc.isoformat().replace("+00:00", "Z")
+
+    pull_calendar_history(time_min, time_max)
+
+    return api_response(
+        success=True,
+        message=f"Google Calendar history pulled and cached from {time_min} to {time_max}.",
+        data=None,
         status_code=HTTPStatus.OK,
     )
