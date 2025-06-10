@@ -3,8 +3,12 @@ from google.cloud.pubsub_v1 import SubscriberClient, PublisherClient
 from googleapiclient.discovery import build
 from google.auth import default
 from tenacity import retry, stop_after_attempt, wait_exponential
-from src.common.environment_constants import USER_EMAIL, SERVICE_ACCOUNT_EMAIL
-from src.common.constants import GOOGLE_SCOPES_LIST
+from src.common.environment_constants import (
+    USER_EMAIL,
+    SERVICE_ACCOUNT_EMAIL,
+    ADMIN_EMAIL,
+)
+from src.common.constants import GOOGLE_USER_SCOPES_LIST, GOOGLE_ADMIN_SCOPES_LIST
 from src.common.logger import get_logger
 import os
 
@@ -30,13 +34,6 @@ class GoogleClientFactory:
     """
 
     _instance = None
-    _credentials = None
-    _chat_client = None
-    _people_client = None
-    _workspaceevents_client = None
-    _subscriber_client = None
-    _publisher_client = None
-    _calendar_client = None
 
     def __new__(cls, *args, **kwargs):
         """
@@ -57,7 +54,20 @@ class GoogleClientFactory:
             )
         return cls._instance
 
-    def _get_impersonate_credentials(self):
+    def __init__(self):
+        if not hasattr(self, "_initialized"):
+            self._credentials = {}
+            self._chat_client = None
+            self._people_client = None
+            self._workspaceevents_client = None
+            self._subscriber_client = None
+            self._publisher_client = None
+            self._calendar_client = None
+            self._reports_client = None
+
+            self._initialized = True
+
+    def _get_impersonate_credentials(self, user_email=None, scopes=None):
         """Retrieves and caches Google Cloud credentials with impersonation using ADC.
 
         This method fetches credentials via ADC, and impersonates a user if a user email is provided,
@@ -72,18 +82,19 @@ class GoogleClientFactory:
             ValueError: If user impersonation fails.
             Exception: For unexpected errors during credential retrieval or impersonation.
         """
-        if self._credentials:
-            logger.info("Credentials are already cached.")
-            return self._credentials
-
-        user_email = os.environ.get(USER_EMAIL)
-        service_account_email = os.environ.get(SERVICE_ACCOUNT_EMAIL)
-        if not user_email:
+        email = user_email or os.environ.get(USER_EMAIL)
+        scopes = scopes or GOOGLE_USER_SCOPES_LIST
+        if not email:
             logger.error(
                 f"Impersonation failed: environment variable {USER_EMAIL} is not set."
             )
             raise ValueError(f"Please set environment variable: {USER_EMAIL}.")
 
+        if email in self._credentials:
+            logger.info("Credentials are already cached.")
+            return self._credentials[email]
+
+        service_account_email = os.environ.get(SERVICE_ACCOUNT_EMAIL)
         if not service_account_email:
             logger.error(
                 f"Impersonation failed: environment variable {SERVICE_ACCOUNT_EMAIL} is not set."
@@ -92,28 +103,28 @@ class GoogleClientFactory:
                 f"Please set environment variable: {SERVICE_ACCOUNT_EMAIL}."
             )
 
-        self._credentials, project_id = default()
-        if not self._credentials:
+        self._credentials[email], project_id = default()
+        if not self._credentials[email]:
             logger.error(
                 "Failed to obtain ADC credentials: no valid default credentials found."
             )
             raise ValueError("Google authentication service unavailable.")
 
-        credentials_type = type(self._credentials)
+        credentials_type = type(self._credentials[email])
         logger.info(
             f"Credentials retrieved successfully. Project ID: {project_id}. Credentials type: {credentials_type}"
         )
 
         try:
-            self._credentials = ImpersonatedCredentials(
-                source_credentials=self._credentials,
+            self._credentials[email] = ImpersonatedCredentials(
+                source_credentials=self._credentials[email],
                 target_principal=service_account_email,
-                target_scopes=GOOGLE_SCOPES_LIST,
-                subject=user_email,
+                target_scopes=scopes,
+                subject=email,
             )
 
             logger.info(
-                f"Successfully impersonated user: {user_email} using service account: {service_account_email}"
+                f"Successfully impersonated user: {email} using service account: {service_account_email}"
             )
 
         except Exception as e:
@@ -124,26 +135,26 @@ class GoogleClientFactory:
             )
             logger.error(
                 f"Impersonation troubleshooting details:\n"
-                f"1. User email ('{user_email}') may be invalid or not in the Google Workspace domain.\n"
+                f"1. User email ('{email}') may be invalid or not in the Google Workspace domain.\n"
                 f"2. Target service account ('{service_account_email}') may not have domain-wide delegation enabled.\n"
                 f"3. Source credentials (from gcloud auth application-default login) may lack 'roles/iam.serviceAccountTokenCreator' role on the target service account.\n"
                 f"   To fix, contact admin to grant your account this role.\n"
                 f"4. IAM Credentials API may not be enabled (run: gcloud services enable iamcredentials.googleapis.com).\n"
-                f"5. OAuth scopes ({GOOGLE_SCOPES_LIST}) may not be authorized for domain-wide delegation.\n"
+                f"5. OAuth scopes ({GOOGLE_USER_SCOPES_LIST}) may not be authorized for domain-wide delegation.\n"
                 f"For more details, refer to: https://cloud.google.com/iam/docs/service-account-impersonation"
             )
             raise ValueError(
                 "Authentication failed. Please contact support for assistance."
             )
 
-        return self._credentials
+        return self._credentials[email]
 
     @retry(
         reraise=True,
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=3),
     )
-    def _create_client(self, api_name: str, api_version: str):
+    def _create_client(self, api_name: str, api_version: str, user_email=None, scopes=None):
         """Creates a Google API client using Application Default Credentials (ADC).
         This function retrieves credentials using ADC and builds a Google API client.
         It includes automatic retry logic in case of failure (e.g., network issues, API rate limits).
@@ -168,8 +179,7 @@ class GoogleClientFactory:
             else:
                 print("Failed to create Chat client.")
         """
-
-        credentials = self._get_impersonate_credentials()
+        credentials = self._get_impersonate_credentials(user_email=user_email, scopes=scopes)
         if not credentials:
             raise ValueError("Credentials are not available for creating the client.")
         service = build(api_name, api_version, credentials=credentials)
@@ -247,3 +257,17 @@ class GoogleClientFactory:
         if self._calendar_client is None:
             self._calendar_client = self._create_client("calendar", "v3")
         return self._calendar_client
+
+    def create_reports_client(self):
+        """
+        Creates a Google Admin SDK Reports API client.
+
+        Returns:
+            googleapiclient.discovery.Resource: The Reports API client.
+        """
+        if self._reports_client is None:
+            admin_email = os.environ.get(ADMIN_EMAIL)
+            self._reports_client = self._create_client(
+                "admin", "reports_v1", admin_email, GOOGLE_ADMIN_SCOPES_LIST
+            )
+        return self._reports_client

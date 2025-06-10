@@ -3,8 +3,11 @@ from unittest.mock import patch, Mock, call
 from google.oauth2.service_account import Credentials as ServiceAccountCredentials
 from google.oauth2.credentials import Credentials as UserCredentials
 from google.cloud.pubsub_v1 import SubscriberClient, PublisherClient
-from src.common.environment_constants import USER_EMAIL, SERVICE_ACCOUNT_EMAIL
-from src.common.constants import GOOGLE_SCOPES_LIST
+from src.common.environment_constants import (
+    USER_EMAIL,
+    SERVICE_ACCOUNT_EMAIL,
+    ADMIN_EMAIL,
+)
 from src.common.google_client import GoogleClientFactory
 from src.common.logger import get_logger
 import os
@@ -14,6 +17,7 @@ logger = get_logger()
 TEST_PROJECT_NAME = "test-project"
 TEST_USER_EMAIL = "test@example.com"
 TEST_SERVICE_ACCOUNT_EMAIL = "test-service-account@project.iam.gserviceaccount.com"
+TEST_ADMIN_EMAIL = "admin@example.com"
 CLIENT_CONFIGS = [
     ("create_chat_client", "chat", "v1", "_chat_client"),
     ("create_people_client", "people", "v1", "_people_client"),
@@ -24,6 +28,7 @@ CLIENT_CONFIGS = [
         "_workspaceevents_client",
     ),
     ("create_calendar_client", "calendar", "v3", "_calendar_client"),
+    ("create_reports_client", "admin", "reports_v1", "_reports_client"),
 ]
 
 ENV_VAR_TEST_CASES = [
@@ -59,6 +64,7 @@ class TestGoogleClientFactory(TestCase):
                     {
                         USER_EMAIL: TEST_USER_EMAIL,
                         SERVICE_ACCOUNT_EMAIL: TEST_SERVICE_ACCOUNT_EMAIL,
+                        ADMIN_EMAIL: TEST_ADMIN_EMAIL,
                     },
                 ),
             ):
@@ -97,6 +103,7 @@ class TestGoogleClientFactory(TestCase):
                     {
                         USER_EMAIL: TEST_USER_EMAIL,
                         SERVICE_ACCOUNT_EMAIL: TEST_SERVICE_ACCOUNT_EMAIL,
+                        ADMIN_EMAIL: TEST_ADMIN_EMAIL,
                     },
                 ),
             ):
@@ -133,6 +140,7 @@ class TestGoogleClientFactory(TestCase):
                     {
                         USER_EMAIL: TEST_USER_EMAIL,
                         SERVICE_ACCOUNT_EMAIL: TEST_SERVICE_ACCOUNT_EMAIL,
+                        ADMIN_EMAIL: TEST_ADMIN_EMAIL,
                     },
                 ),
                 patch("src.common.google_client.default") as mock_default,
@@ -165,6 +173,8 @@ class TestGoogleClientFactory(TestCase):
                     mock_env[USER_EMAIL] = TEST_USER_EMAIL
                 if SERVICE_ACCOUNT_EMAIL not in missing_vars:
                     mock_env[SERVICE_ACCOUNT_EMAIL] = TEST_SERVICE_ACCOUNT_EMAIL
+                if ADMIN_EMAIL not in missing_vars:
+                    mock_env[ADMIN_EMAIL] = TEST_ADMIN_EMAIL
 
                 mock_credentials = Mock(spec=ServiceAccountCredentials)
                 mock_default.return_value = (mock_credentials, TEST_PROJECT_NAME)
