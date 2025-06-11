@@ -545,10 +545,7 @@ class TestGetCalendarList(TestCase):
     @patch("src.historical_data.google_calendar_history_fetcher.validate_data")
     @patch("src.historical_data.google_calendar_history_fetcher.get_calendar_events")
     def test_cache_events_success(
-        self,
-        mock_get_calendar_events,
-        mock_validate_data,
-        mock_redis_factory
+        self, mock_get_calendar_events, mock_validate_data, mock_redis_factory
     ):
         mock_redis = MagicMock()
         mock_pipeline = MagicMock()

@@ -34,3 +34,12 @@ py_test(
         "//src/frontend_service:microsoft_chat_topics_loader",
     ],
 )
+
+py_test(
+    name = "gerrit_loader_test",
+    srcs = ["gerrit_loader_test.py"],
+    deps = [
+        "//src/common:constants",
+        "//src/frontend_service:gerrit_loader",
+    ],
+)

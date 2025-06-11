@@ -1,6 +1,9 @@
 from unittest import TestCase, main
-from unittest.mock import patch, Mock, call
-from src.frontend_service.ldap_loader import get_all_ldaps_and_displaynames
+from unittest.mock import patch, Mock, call, MagicMock
+from src.frontend_service.ldap_loader import (
+    get_all_ldaps_and_displaynames,
+    get_all_active_ldap_users,
+)
 from src.common.constants import (
     MicrosoftAccountStatus,
     MICROSOFT_LDAP_KEY,
@@ -81,6 +84,33 @@ class TestLdapLoader(TestCase):
             get_all_ldaps_and_displaynames("unsupported_status")
         self.assertEqual(mock_create_redis_client.call_count, 3)
         mock_redis.hgetall.assert_not_called()
+
+    @patch("src.frontend_service.ldap_loader.RedisClientFactory")
+    def test_get_all_active_ldap_users_bytes_and_str(self, mock_redis_factory):
+        mock_client = MagicMock()
+        mock_client.hkeys.return_value = ["user1", "user2", "user3"]
+        mock_redis_factory.return_value.create_redis_client.return_value = mock_client
+
+        result = get_all_active_ldap_users()
+
+        self.assertEqual(result, ["user1", "user2", "user3"])
+
+    @patch("src.frontend_service.ldap_loader.RedisClientFactory")
+    def test_get_all_active_ldap_users_empty(self, mock_redis_factory):
+        mock_client = MagicMock()
+        mock_client.hkeys.return_value = []
+        mock_redis_factory.return_value.create_redis_client.return_value = mock_client
+
+        result = get_all_active_ldap_users()
+
+        self.assertEqual(result, [])
+
+    @patch("src.frontend_service.ldap_loader.RedisClientFactory")
+    def test_get_all_active_ldap_users_no_client(self, mock_redis_factory):
+        mock_redis_factory.return_value.create_redis_client.return_value = None
+
+        with self.assertRaises(ValueError):
+            get_all_active_ldap_users()
 
 
 if __name__ == "__main__":

@@ -8,7 +8,6 @@ from src.common.api_response_wrapper import api_response
 from src.historical_data.historical_api import history_bp
 from src.notification_management.notification_api import notification_bp
 from src.frontend_service.frontend_api import frontend_bp
-
 from src.consumers.consumer_api import consumers_bp
 
 app = Flask(__name__)

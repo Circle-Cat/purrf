@@ -105,7 +105,9 @@ class TestAppRoutes(TestCase):
         mock_spaces = [{"name": "spaces/abc123", "spaceType": "SPACE"}]
         mock_get_chat_spaces.return_value = mock_spaces
 
-        response = self.client.get("/api/google/chat/spaces?space_type=SPACE&page_size=50")
+        response = self.client.get(
+            "/api/google/chat/spaces?space_type=SPACE&page_size=50"
+        )
         self.assertEqual(response.status_code, HTTPStatus.OK)
 
         json_data = response.get_json()

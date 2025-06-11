@@ -59,3 +59,23 @@ def get_all_ldaps_and_displaynames(status: MicrosoftAccountStatus) -> dict[str, 
             result.update(entries)
 
     return result
+
+
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=1, max=3),
+    retry=retry_if_exception_type(Exception),
+    reraise=True,
+)
+def get_all_active_ldap_users() -> list[str]:
+    """
+    Returns all active Microsoft LDAPs by pulling the field names from the Redis hash.
+    """
+    redis_client = RedisClientFactory().create_redis_client()
+    if not redis_client:
+        raise ValueError("Redis client not created.")
+
+    redis_key = MICROSOFT_LDAP_KEY.format(
+        account_status=MicrosoftAccountStatus.ACTIVE.value
+    )
+    return redis_client.hkeys(redis_key)

@@ -9,9 +9,10 @@ py_library(
         "//src/common:api_response_wrapper",
         "//src/common:constants",
         "//src/frontend_service:chat_query_utils",
-        "//src/utils:google_chat_utils",
+        "//src/frontend_service:gerrit_loader",
         "//src/frontend_service:ldap_loader",
         "//src/frontend_service:microsoft_chat_topics_loader",
+        "//src/utils:google_chat_utils",
         "@pypi//flask",
     ],
 )
@@ -48,5 +49,17 @@ py_library(
         "//src/common:microsoft_client",
         "//src/common:redis_client",
         "//src/historical_data:microsoft_chat_history_fetcher",
+    ],
+)
+
+py_library(
+    name = "gerrit_loader",
+    srcs = [
+        "gerrit_loader.py",
+    ],
+    deps = [
+        "//src/common:constants",
+        "//src/common:redis_client",
+        "//src/frontend_service:ldap_loader",
     ],
 )
