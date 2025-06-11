@@ -154,7 +154,9 @@ class GoogleClientFactory:
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=3),
     )
-    def _create_client(self, api_name: str, api_version: str, user_email=None, scopes=None):
+    def _create_client(
+        self, api_name: str, api_version: str, user_email=None, scopes=None
+    ):
         """Creates a Google API client using Application Default Credentials (ADC).
         This function retrieves credentials using ADC and builds a Google API client.
         It includes automatic retry logic in case of failure (e.g., network issues, API rate limits).
@@ -179,7 +181,9 @@ class GoogleClientFactory:
             else:
                 print("Failed to create Chat client.")
         """
-        credentials = self._get_impersonate_credentials(user_email=user_email, scopes=scopes)
+        credentials = self._get_impersonate_credentials(
+            user_email=user_email, scopes=scopes
+        )
         if not credentials:
             raise ValueError("Credentials are not available for creating the client.")
         service = build(api_name, api_version, credentials=credentials)

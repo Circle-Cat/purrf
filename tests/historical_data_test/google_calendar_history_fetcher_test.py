@@ -3,7 +3,11 @@ from unittest.mock import patch, MagicMock
 from src.historical_data.google_calendar_history_fetcher import (
     get_calendar_list,
     get_calendar_events,
+    get_event_attendance,
+    get_meeting_code_from_event,
 )
+from googleapiclient.errors import HttpError
+import re
 
 MOCK_CALENDAR_LIST_PAGE_1 = {
     "items": [
@@ -40,6 +44,36 @@ MOCK_EVENTS_PAGE_1 = {
 }
 MOCK_EVENTS_PAGE_2 = {
     "items": [{"id": "event3"}],
+}
+
+MOCK_REPORTS_RESPONSE = {
+    "items": [
+        {
+            "actor": {"email": "admin@example.com"},
+            "events": [
+                {
+                    "actor": {"email": "user1@example.com"},
+                    "type": "call_ended",
+                    "parameters": [
+                        {"name": "duration_seconds", "intValue": "120"},
+                        {"name": "start_timestamp_seconds", "intValue": "1716712800"},
+                        {"name": "identifier", "value": "user1@example.com"},
+                    ],
+                }
+            ],
+        }
+    ]
+}
+
+MOCK_EVENT = {
+    "conferenceData": {
+        "entryPoints": [
+            {
+                "entryPointType": "video",
+                "uri": "https://meet.google.com/abc-def-ghi",
+            }
+        ]
+    }
 }
 
 
@@ -153,6 +187,98 @@ class TestGetCalendarList(TestCase):
 
         self.assertEqual(events, [{"id": "recovered_event"}])
         self.assertEqual(mock_events.list.return_value.execute.call_count, 2)
+
+    @patch("src.historical_data.google_calendar_history_fetcher.logger")
+    @patch("src.historical_data.google_calendar_history_fetcher.GoogleClientFactory")
+    def test_get_event_attendance_success(self, mock_factory_class, mock_logger):
+        mock_factory = MagicMock()
+        mock_service = MagicMock()
+        mock_activities = mock_service.activities.return_value
+        mock_list = mock_activities.list.return_value
+        mock_list.execute.return_value = MOCK_REPORTS_RESPONSE
+
+        mock_factory.get_reports_client.return_value = mock_service
+        mock_factory_class.return_value = mock_factory
+
+        meeting_code = "abcdefghi"
+        attendance = get_event_attendance(meeting_code)
+
+        self.assertEqual(len(attendance), 1)
+        self.assertEqual(attendance[0]["email"], "user1@example.com")
+        self.assertEqual(attendance[0]["duration_seconds"], 120)
+        self.assertTrue(
+            attendance[0]["join_time"].endswith("Z")
+            or "T" in attendance[0]["join_time"]
+        )
+        self.assertTrue(
+            attendance[0]["leave_time"].endswith("Z")
+            or "T" in attendance[0]["leave_time"]
+        )
+
+    @patch("src.historical_data.google_calendar_history_fetcher.logger")
+    @patch("src.historical_data.google_calendar_history_fetcher.GoogleClientFactory")
+    def test_get_event_attendance_error(self, mock_factory_class, mock_logger):
+        mock_factory = MagicMock()
+        mock_service = MagicMock()
+        mock_activities = mock_service.activities.return_value
+        mock_list = mock_activities.list.return_value
+        mock_list.execute.side_effect = HttpError(
+            resp=MagicMock(status=500), content=b"Internal Error"
+        )
+
+        mock_factory.get_reports_client.return_value = mock_service
+        mock_factory_class.return_value = mock_factory
+
+        meeting_code = "errorcode"
+
+        with self.assertRaises(HttpError):
+            get_event_attendance(meeting_code)
+
+        self.assertEqual(mock_list.execute.call_count, 3)
+
+    @patch("src.historical_data.google_calendar_history_fetcher.logger")
+    @patch("src.historical_data.google_calendar_history_fetcher.GoogleClientFactory")
+    def test_get_event_attendance_retries_then_succeeds(
+        self, mock_factory_class, mock_logger
+    ):
+        mock_factory = MagicMock()
+        mock_service = MagicMock()
+        mock_activities = mock_service.activities.return_value
+        mock_list = mock_activities.list.return_value
+
+        mock_list.execute.side_effect = [
+            HttpError(resp=MagicMock(status=500), content=b"Temporary Error"),
+            MOCK_REPORTS_RESPONSE,
+        ]
+
+        mock_factory.get_reports_client.return_value = mock_service
+        mock_factory_class.return_value = mock_factory
+
+        meeting_code = "retry-meeting"
+        attendance = get_event_attendance(meeting_code)
+
+        self.assertEqual(len(attendance), 1)
+        self.assertEqual(attendance[0]["email"], "user1@example.com")
+        self.assertEqual(mock_list.execute.call_count, 2)
+
+    @patch("src.historical_data.google_calendar_history_fetcher.logger")
+    def test_get_meeting_code_from_event_success(self, mock_logger):
+        code = get_meeting_code_from_event(MOCK_EVENT)
+        self.assertEqual(code, "abcdefghi")
+
+    @patch("src.historical_data.google_calendar_history_fetcher.logger")
+    def test_get_meeting_code_from_event_no_uri(self, mock_logger):
+        event = {"conferenceData": {"entryPoints": []}}
+        code = get_meeting_code_from_event(event)
+        self.assertIsNone(code)
+        mock_logger.warning.assert_called()
+
+    @patch("src.historical_data.google_calendar_history_fetcher.logger")
+    def test_get_meeting_code_from_event_exception(self, mock_logger):
+        event = None
+        code = get_meeting_code_from_event(event)
+        self.assertIsNone(code)
+        mock_logger.exception.assert_called()
 
 
 if __name__ == "__main__":
