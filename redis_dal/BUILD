@@ -35,6 +35,7 @@ py_library(
         ":constants",
         ":redis_client_factory",
         "//google:chat_utils",
+        "//src/utils:google_chat_utils",
         "@pypi//python_dateutil",
         "@pypi//redis",
     ],

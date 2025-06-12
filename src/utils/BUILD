@@ -12,3 +12,14 @@ py_library(
         "//src/common:redis_client",
     ],
 )
+
+py_library(
+    name = "google_chat_utils",
+    srcs = [
+        "google_chat_utils.py",
+    ],
+    deps = [
+        "//src/common:google_client",
+        "@pypi//tenacity",
+    ],
+)

@@ -44,6 +44,7 @@ py_library(
         ":authentication_utils",
         ":chat_utils",
         "//src/utils:google_chat_message_store",
+        "//src/utils:google_chat_utils",
         "//tools/log",
     ],
 )
