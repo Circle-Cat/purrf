@@ -10,6 +10,7 @@ py_library(
     deps = [
         "//src/common:constants",
         "//src/common:microsoft_client",
+        "//src/common:redis_client",
         "@pypi//tenacity",
     ],
 )
