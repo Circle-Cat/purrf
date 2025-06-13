@@ -50,7 +50,7 @@ def get_calendar_list():
         return calendars
 
     except Exception as e:
-        logger.error(f"Unexpected error fetching calendars")
+        logger.error(f"Unexpected error fetching calendars", e)
         return []
 
 
@@ -90,7 +90,33 @@ def get_calendar_events(calendar_id: str, start_time: str, end_time: str):
             .execute()
         )
 
-        events.extend(events_result.get("items", []))
+        for event in events_result.get("items", []):
+            event_id = event.get("id")
+            title = event.get("summary", "")
+            description = event.get("description", "")
+            start = event.get("start", {}).get("dateTime")
+            end = event.get("end", {}).get("dateTime")
+            organizer = event.get("organizer", {}).get("email", "")
+            is_recurring = "recurringEventId" in event
+
+            meet_code = get_meeting_code_from_event(event)
+            if meet_code:
+                try:
+                    attendance_data = get_event_attendance(meet_code)
+                except Exception as e:
+                    logger.warning(f"Failed to fetch attendance for event {event_id}: {e}")
+
+            events.append({
+                "event_id": event_id,
+                "calendar_id": calendar_id,
+                "title": title,
+                "description": description,
+                "start": start,
+                "end": end,
+                "attendees": attendance_data,
+                "is_recurring": is_recurring,
+                "organizer": organizer,
+            })
 
         page_token = events_result.get("nextPageToken")
         if not page_token:
@@ -115,7 +141,7 @@ def get_event_attendance(meeting_code: str):
         A list of dictionaries containing participant details: email, duration, join/leave times.
     """
     factory = GoogleClientFactory()
-    service = factory.get_reports_client()
+    service = factory.create_reports_client()
     attendance_details = []
     next_page_token = None
 

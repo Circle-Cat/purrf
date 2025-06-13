@@ -25,10 +25,28 @@
       "format": "date-time"
     },
     "attendees": {
-      "type": "array",
+      "type": ["array", "null"],
       "items": {
-        "type": "string",
-        "format": "email"
+        "type": "object",
+        "required": ["email"],
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "duration_seconds": {
+            "type": "integer"
+          },
+          "join_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "leave_time": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
       }
     },
     "is_recurring": {
