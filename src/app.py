@@ -7,6 +7,7 @@ from src.common.error_handler import register_error_handlers
 from src.common.api_response_wrapper import api_response
 from src.historical_data.historical_api import history_bp
 from src.notification_management.notification_api import notification_bp
+from src.frontend_service.frontend_api import frontend_bp
 
 from src.consumers.consumer_api import consumers_bp
 
@@ -14,6 +15,7 @@ app = Flask(__name__)
 register_error_handlers(app)
 app.register_blueprint(history_bp)
 app.register_blueprint(notification_bp)
+app.register_blueprint(frontend_bp)
 app.register_blueprint(consumers_bp)
 
 
