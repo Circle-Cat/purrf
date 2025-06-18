@@ -26,3 +26,13 @@ py_library(
         "@pypi//flask",
     ],
 )
+
+py_library(
+    name = "gerrit_watcher",
+    srcs = [
+        "gerrit_watcher.py",
+    ],
+    deps = [
+        "//src/common:gerrit_client",
+    ],
+)

@@ -13,3 +13,14 @@ py_library(
         "@pypi//redis",
     ],
 )
+
+py_library(
+    name = "gerrit_producer",
+    srcs = [
+        "gerrit_producer/main.py",
+    ],
+    deps = [
+        "@pypi//functions_framework",
+        "@pypi//google_cloud_pubsub",
+    ],
+)
