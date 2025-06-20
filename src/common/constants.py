@@ -28,6 +28,8 @@ MICROSOFT_SUBSCRIPTION_CLIENT_STATE_SECRET_KEY = (
     "microsoft:client_state:{subscription_id}"
 )
 MICROSOFT_LDAP_KEY = "ldap:{account_status}"
+MICROSOFT_CHAT_MESSAGES_INDEX_KEY = "microsoft:chat:{message_status}:{sender_ldap}"
+MICROSOFT_CHAT_MESSAGES_DETAILS_KEY = "microsoft:messages:{message_id}"
 
 PUBSUB_PULL_MESSAGES_STATUS_KEY = "pull_status:{subscription_id}"
 
@@ -50,9 +52,11 @@ class MicrosoftAccountStatus(str, Enum):
 
 
 MICROSOFT_USER_INFO_FILTER = "endswith(mail,'circlecat.org')"
-MICROSOFT_USER_INFO_SELECT_FIELDS = ["displayName", "mail", "accountEnabled"]
+MICROSOFT_USER_INFO_SELECT_FIELDS = ["displayName", "mail", "accountEnabled", "id"]
 MICROSOFT_CONSISTENCY_HEADER = "ConsistencyLevel"
 MICROSOFT_CONSISTENCY_VALUE = "eventual"
+MICROSOFT_TEAMS_MESSAGES_SORTER = ["createdDateTime desc"]
+MICROSOFT_TEAMS_MESSAGES_MAX_RESULT = 50
 
 MICROSOFT_TEAMS_CHAT_SUBSCRIPTION_CLIENT_STATE_BYTE_LENGTH = 32
 MICROSOFT_TEAMS_CHAT_SUBSCRIPTION_MAX_LIFETIME = 4320
@@ -63,6 +67,15 @@ class MicrosoftChatMessagesChangeType(str, Enum):
     CREATED = "created"
     UPDATED = "updated"
     DELETED = "deleted"
+
+    @classmethod
+    def is_supported(cls, value: str) -> bool:
+        return value in cls._value2member_map_
+
+
+class MicrosoftChatMessageAttachmentType(str, Enum):
+    REFERENCE_LINK = "reference"
+    MESSAGE_REFERENCE = "messageReference"
 
 
 class PullStatus(Enum):

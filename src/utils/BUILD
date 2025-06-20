@@ -23,3 +23,16 @@ py_library(
         "@pypi//tenacity",
     ],
 )
+
+py_library(
+    name = "microsoft_chat_message_store",
+    srcs = [
+        "microsoft_chat_message_store.py",
+    ],
+    deps = [
+        "//src/common:constants",
+        "//src/common:microsoft_client",
+        "//src/common:redis_client",
+        "@pypi//tenacity",
+    ],
+)

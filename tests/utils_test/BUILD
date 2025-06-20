@@ -15,3 +15,11 @@ py_test(
         "//src/utils:google_chat_utils",
     ],
 )
+
+py_test(
+    name = "microsoft_chat_message_store_test",
+    srcs = ["microsoft_chat_message_store_test.py"],
+    deps = [
+        "//src/utils:microsoft_chat_message_store",
+    ],
+)
