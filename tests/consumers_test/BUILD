@@ -23,3 +23,11 @@ py_test(
         "//src/consumers:pubsub_pull_manager",
     ],
 )
+
+py_test(
+    name = "microsoft_chat_consumer_test",
+    srcs = ["microsoft_chat_consumer_test.py"],
+    deps = [
+        "//src/consumers:microsoft_chat_consumer",
+    ],
+)

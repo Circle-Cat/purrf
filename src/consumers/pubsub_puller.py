@@ -2,6 +2,7 @@ from google.api_core.exceptions import NotFound
 from src.common.redis_client import RedisClientFactory
 from src.common.google_client import GoogleClientFactory
 from src.common.constants import PullStatus, PUBSUB_PULL_MESSAGES_STATUS_KEY
+from src.common.asyncio_event_loop_manager import AsyncioEventLoopManager
 from src.common.logger import get_logger
 from dataclasses import dataclass
 from tenacity import (
@@ -13,8 +14,8 @@ from tenacity import (
 import concurrent.futures
 import datetime as dt
 import threading
+import inspect
 import time
-
 
 logger = get_logger()
 
@@ -134,6 +135,25 @@ class PubSubPuller:
                 f"Failed to delete Redis status for {self.subscription_id}"
             )
 
+    def _wrap_callback_if_async(self, callback):
+        """
+        Wrap async callbacks to run in the background event loop.
+
+        If the callback is a coroutine function, wrap it to run using
+        AsyncioEventLoopManager. Otherwise, return it as-is.
+
+        Args:
+            callback (Callable): The original callback function.
+
+        Returns:
+            Callable: A sync wrapper if async, or the original callback.
+        """
+
+        if inspect.iscoroutinefunction(callback):
+            loop_mgr = AsyncioEventLoopManager()
+            return lambda msg: loop_mgr.run_async_in_background_loop(callback(msg))
+        return callback
+
     def _pull_target(self, callback):
         """
         Internal method that runs the message pulling logic in a background thread.
@@ -161,8 +181,10 @@ class PubSubPuller:
             subscription_path = subscriber.subscription_path(
                 self.project_id, self.subscription_id
             )
+
+            wrapped_callback = self._wrap_callback_if_async(callback)
             self._streaming_pull_future = subscriber.subscribe(
-                subscription_path, callback=callback
+                subscription_path, callback=wrapped_callback
             )
             logger.info(f"Subscription {self.subscription_id} listening started.")
             self._is_pulling.set()

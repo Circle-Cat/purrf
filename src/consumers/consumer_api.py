@@ -1,6 +1,7 @@
 from flask import Blueprint
 from http import HTTPStatus
 from src.consumers.pubsub_pull_manager import check_pulling_status, stop_pulling_process
+from src.consumers.microsoft_chat_consumer import pull_microsoft_message
 from src.common.api_response_wrapper import api_response
 
 consumers_bp = Blueprint("consumers", __name__, url_prefix="/api")
@@ -50,5 +51,27 @@ def stop_pulling(project_id, subscription_id):
         success=True,
         message="Successfully.",
         data=data,
+        status_code=HTTPStatus.OK,
+    )
+
+
+@consumers_bp.route("/microsoft/pull/<project_id>/<subscription_id>", methods=["POST"])
+def start_microsoft_pulling(project_id, subscription_id):
+    """
+    HTTP POST endpoint to trigger the message pulling process for a given
+    Pub/Sub subscription.
+
+    Args:
+        project_id (str): The Google Cloud project ID from URL path.
+        subscription_id (str): The Pub/Sub subscription ID from URL path.
+
+    Returns:
+        Response: JSON response indicating success status and HTTP 200 code.
+    """
+    pull_microsoft_message(project_id, subscription_id)
+    return api_response(
+        success=True,
+        message="Successfully.",
+        data=None,
         status_code=HTTPStatus.OK,
     )

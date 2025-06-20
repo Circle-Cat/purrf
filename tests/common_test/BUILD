@@ -73,3 +73,11 @@ py_test(
         "//src/common:validation",
     ],
 )
+
+py_test(
+    name = "asyncio_event_loop_manager_test",
+    srcs = ["asyncio_event_loop_manager_test.py"],
+    deps = [
+        "//src/common:asyncio_event_loop_manager",
+    ],
+)

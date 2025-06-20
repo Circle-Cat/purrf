@@ -2,6 +2,7 @@ from unittest import TestCase, main
 from unittest.mock import patch, MagicMock, Mock
 from src.consumers.pubsub_puller import PubSubPuller, PullStatusResponse
 from src.common.constants import PullStatus, PUBSUB_PULL_MESSAGES_STATUS_KEY
+from src.common.asyncio_event_loop_manager import AsyncioEventLoopManager
 from google.api_core.exceptions import NotFound
 import concurrent.futures
 
@@ -582,6 +583,32 @@ class TestPubSubPuller(TestCase):
         mock_check_subscription_exist.assert_called_once()
         mock_thread.assert_called_once()
         mock_stop_pulling_messages.assert_called_once()
+
+    def test_wrap_sync_callback_returns_original(self):
+        def sync_callback(msg):
+            return f"processed {msg}"
+
+        puller = PubSubPuller(self.project_id, self.subscription_id)
+
+        wrapped = puller._wrap_callback_if_async(sync_callback)
+        self.assertIs(wrapped, sync_callback)
+
+    @patch.object(AsyncioEventLoopManager, "run_async_in_background_loop")
+    def test_wrap_async_callback_returns_wrapped(self, mock_run_in_loop):
+        async def async_callback(msg):
+            return f"processed {msg}"
+
+        mock_run_in_loop.return_value = "done"
+
+        puller = PubSubPuller(self.project_id, self.subscription_id)
+        wrapped = puller._wrap_callback_if_async(async_callback)
+
+        self.assertTrue(callable(wrapped))
+        self.assertNotEqual(wrapped, async_callback)
+
+        result = wrapped("message")
+        mock_run_in_loop.assert_called_once()
+        self.assertEqual(result, "done")
 
 
 if __name__ == "__main__":

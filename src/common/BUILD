@@ -113,3 +113,11 @@ py_library(
         "@pypi//jsonschema",
     ],
 )
+
+py_library(
+    name = "asyncio_event_loop_manager",
+    srcs = ["asyncio_event_loop_manager.py"],
+    deps = [
+        "//src/common:logger",
+    ],
+)
