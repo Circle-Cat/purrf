@@ -35,6 +35,7 @@ py_library(
     name = "historical_api",
     srcs = ["historical_api.py"],
     deps = [
+        "//src/historical_data:gerrit_history_fetcher",
         "//src/historical_data:microsoft_ldap_fetcher",
         "@pypi//flask",
     ],
@@ -47,5 +48,16 @@ py_library(
     ],
     deps = [
         "//src/common:google_client",
+    ],
+)
+
+py_library(
+    name = "gerrit_history_fetcher",
+    srcs = [
+        "gerrit_history_fetcher.py",
+    ],
+    deps = [
+        "//src/common:gerrit_client",
+        "//src/common:redis_client",
     ],
 )
