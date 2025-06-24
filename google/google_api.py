@@ -4,7 +4,7 @@ from flask import jsonify, Blueprint, request
 from google.fetch_history_chat_message import fetch_history_messages
 from google.pubsub_subscriber_store import pull_messages
 from http import HTTPStatus
-from google.chat_utils import get_chat_spaces
+from src.utils.google_chat_utils import get_chat_spaces
 from google.pubsub_publisher import subscribe_chat
 import http.client
 from http import HTTPStatus

@@ -19,22 +19,6 @@ py_library(
 )
 
 py_library(
-    name = "chat_utils",
-    srcs = [
-        "authentication_utils.py",
-        "chat_utils.py",
-        "constants.py",
-    ],
-    deps = [
-        "//google:authentication_utils",
-        "//tools/log",
-        "@pypi//google_api_python_client",
-        "@pypi//google_cloud_pubsub",
-        "@pypi//tenacity",
-    ],
-)
-
-py_library(
     name = "fetch_history_chat_message",
     srcs = [
         "constants.py",
@@ -42,7 +26,6 @@ py_library(
     ],
     deps = [
         ":authentication_utils",
-        ":chat_utils",
         "//src/historical_data:google_chat_history_fetcher",
         "//src/utils:google_chat_message_store",
         "//src/utils:google_chat_utils",
@@ -56,9 +39,9 @@ py_library(
     deps = [
         "fetch_history_chat_message",
         ":authentication_utils",
-        ":chat_utils",
         ":pubsub_publisher",
         ":pubsub_subscriber_store",
+        "//src/utils:google_chat_utils",
         "//tools/global_handle_exception:exception_handler",
         "//tools/log",
         "@pypi//flask",
@@ -87,6 +70,7 @@ py_library(
     ],
     deps = [
         "//google:authentication_utils",
+        "//src/consumers:google_chat_consumer",
         "//src/utils:google_chat_message_store",
         "//tools/log",
         "@pypi//google_api_python_client",
