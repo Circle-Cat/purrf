@@ -483,3 +483,76 @@ async def sync_near_real_time_message_to_redis(change_type, resource):
         raise RuntimeError(
             f"Failed to execute Redis pipeline for near real-time sync message_id={message_id}."
         )
+
+
+def sync_history_chat_messages_to_redis(messages, all_ldaps):
+    """
+    Synchronizes a list of Microsoft chat messages (history) to Redis.
+
+    This method iterates through a provided list of messages. For each valid,
+    non-deleted message, it processes its content, sender information, and attachments.
+    It uses the `_handle_created_messages` helper function to prepare and add
+    the message data and its index entry to a Redis pipeline.
+    Messages that are marked as deleted, lack sender information, or whose senders
+    are not found in the provided LDAP mapping are skipped.
+
+    Args:
+        messages: A list of microsoft.graph.chatMessage objects.
+        all_ldaps: A dictionary mapping sender Microsoft Graph user IDs to their
+                   corresponding LDAP identifiers. This mapping is used to determine the
+                   sender's LDAP for storing in Redis.
+
+    Returns:
+        A tuple containing two integers:
+        - The total number of messages successfully processed and added to Redis.
+        - The total number of messages skipped due to being deleted, missing sender info,
+          or not being present in the LDAP mapping.
+
+    Raises:
+        ValueError: If the `messages` list or `all_ldaps` dictionary is empty, or if
+                    a Redis client cannot be created.
+    """
+    if not messages:
+        logger.debug("No Microsoft chat messages list provided.")
+        raise ValueError("No Microsoft chat messages list provided.")
+    if not all_ldaps:
+        logger.debug("No display name LDAP mapping provided.")
+        raise ValueError("No display name LDAP mapping provided.")
+
+    redis_client = RedisClientFactory().create_redis_client()
+    if not redis_client:
+        raise ValueError("Redis client not created.")
+
+    pipe = redis_client.pipeline()
+    total_processed = 0
+    total_skipped = 0
+    for message in messages:
+        message_id = message.id
+        if ChatMessageType.Message != message.message_type:
+            total_skipped += 1
+            logger.debug(f"Skipping message {message_id}: Sent by system.")
+            continue
+        if message.deleted_date_time:
+            total_skipped += 1
+            logger.debug(f"Message ID {message.id}: Deleted message, skipping.")
+            continue
+
+        sender_info = message.from_.user if message.from_ else None
+        sender_id = sender_info.id if sender_info else None
+        sender_ldap = all_ldaps.get(sender_id)
+        if not sender_ldap:
+            total_skipped += 1
+            logger.debug(
+                f"Message ID {message.id}: Sender ID {sender_id} not found in LDAP mapping, sender is not currently in the organization."
+            )
+            continue
+
+        _handle_created_messages(message, sender_ldap, pipe)
+        total_processed += 1
+
+    _execute_request(pipe)
+
+    logger.debug(
+        f"Total {total_processed} Microsoft chat messages processed, {total_skipped} messages skipped."
+    )
+    return total_processed, total_skipped

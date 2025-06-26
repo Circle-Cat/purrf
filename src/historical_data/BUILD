@@ -36,6 +36,7 @@ py_library(
     srcs = ["historical_api.py"],
     deps = [
         "//src/historical_data:gerrit_history_fetcher",
+        "//src/historical_data:microsoft_chat_history_fetcher",
         "//src/historical_data:microsoft_ldap_fetcher",
         "@pypi//flask",
     ],
@@ -59,5 +60,17 @@ py_library(
     deps = [
         "//src/common:gerrit_client",
         "//src/common:redis_client",
+    ],
+)
+
+py_library(
+    name = "microsoft_chat_history_fetcher",
+    srcs = [
+        "microsoft_chat_history_fetcher.py",
+    ],
+    deps = [
+        "//src/common:microsoft_client",
+        "//src/historical_data:microsoft_ldap_fetcher",
+        "//src/utils:microsoft_chat_message_store",
     ],
 )

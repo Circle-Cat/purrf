@@ -41,3 +41,11 @@ py_test(
         "@pypi//redis",
     ],
 )
+
+py_test(
+    name = "microsoft_chat_history_fetcher_test",
+    srcs = ["microsoft_chat_history_fetcher_test.py"],
+    deps = [
+        "//src/historical_data:microsoft_chat_history_fetcher",
+    ],
+)

@@ -13,6 +13,7 @@ from src.utils.microsoft_chat_message_store import (
     _handle_created_messages,
     _handle_update_message,
     sync_near_real_time_message_to_redis,
+    sync_history_chat_messages_to_redis,
     MicrosoftChatMessagesChangeType,
     MicrosoftChatMessageAttachmentType,
     StoredMicrosoftChatMessage,
@@ -38,6 +39,7 @@ class TestMicrosoftChatMessageStore(IsolatedAsyncioTestCase):
         message_type=ChatMessageType.Message,
         created_date_time=TEST_DATATIME,
         last_modified_date_time=TEST_DATATIME,
+        deleted_date_time=None,
         body=SimpleNamespace(content_type="text", content="Hello world"),
         attachments=[
             SimpleNamespace(
@@ -50,6 +52,19 @@ class TestMicrosoftChatMessageStore(IsolatedAsyncioTestCase):
             ),
         ],
         from_=SimpleNamespace(user=SimpleNamespace(id=TEST_USER_ID)),
+    )
+    TEST_DELETED_MESSAGE = SimpleNamespace(
+        id=TEST_MESSAGE_ID,
+        message_type=ChatMessageType.Message,
+        created_date_time=TEST_DATATIME,
+        last_modified_date_time=TEST_DATATIME,
+        deleted_date_time=TEST_DATATIME,
+        body=None,
+        attachments=None,
+        from_=SimpleNamespace(user=SimpleNamespace(id=TEST_USER_ID)),
+    )
+    TEST_SYSTEM_MESSAGE = SimpleNamespace(
+        id=TEST_MESSAGE_ID, message_type=ChatMessageType.SystemEventMessage
     )
 
     TEST_SAVED_MESSAGE_DICT = {
@@ -71,6 +86,8 @@ class TestMicrosoftChatMessageStore(IsolatedAsyncioTestCase):
         {"change_type": "", "resource": TEST_RESOURCE},
         {"change_type": "unsupported_type", "resource": TEST_RESOURCE},
     ]
+
+    TEST_ALL_LDAPS = {TEST_USER_ID: TEST_USER_LDAP}
 
     async def test_get_ldap_by_id_success(self):
         mock_graph_client = MagicMock()
@@ -346,6 +363,44 @@ class TestMicrosoftChatMessageStore(IsolatedAsyncioTestCase):
         mock_handle_created.assert_not_called()
         mock_handle_update.assert_not_called()
         mock_handle_deleted.assert_not_called()
+
+    @patch("src.utils.microsoft_chat_message_store._execute_request")
+    @patch("src.utils.microsoft_chat_message_store._handle_created_messages")
+    @patch("src.utils.microsoft_chat_message_store.RedisClientFactory")
+    def test_sync_messages(self, mock_factory, mock_handle_created, mock_execute):
+        messages = [
+            self.TEST_SYSTEM_MESSAGE,
+            self.TEST_DELETED_MESSAGE,
+            self.TEST_MESSAGE,
+        ]
+
+        processed, skipped = sync_history_chat_messages_to_redis(
+            messages, self.TEST_ALL_LDAPS
+        )
+
+        self.assertEqual(processed, 1)
+        self.assertEqual(skipped, 2)
+
+        mock_handle_created.assert_called_once()
+        mock_execute.assert_called_once()
+
+    @patch("src.utils.microsoft_chat_message_store.RedisClientFactory")
+    def test_empty_messages_raises(self, mock_factory):
+        with self.assertRaises(ValueError):
+            sync_history_chat_messages_to_redis([], self.TEST_ALL_LDAPS)
+
+    @patch("src.utils.microsoft_chat_message_store.RedisClientFactory")
+    def test_empty_ldap_raises(self, mock_factory):
+        with self.assertRaises(ValueError):
+            sync_history_chat_messages_to_redis([self.TEST_SYSTEM_MESSAGE], {})
+
+    @patch("src.utils.microsoft_chat_message_store.RedisClientFactory")
+    def test_redis_client_none_raises(self, mock_factory):
+        mock_factory().create_redis_client.return_value = None
+        with self.assertRaises(ValueError):
+            sync_history_chat_messages_to_redis(
+                [self.TEST_SYSTEM_MESSAGE], self.TEST_ALL_LDAPS
+            )
 
 
 if __name__ == "__main__":
