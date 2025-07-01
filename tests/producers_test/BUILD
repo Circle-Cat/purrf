@@ -7,3 +7,11 @@ py_test(
         "//src/producers:microsoft_chat_producer",
     ],
 )
+
+py_test(
+    name = "gerrit_producer_test",
+    srcs = ["gerrit_producer_test.py"],
+    deps = [
+        "//src/producers:gerrit_producer",
+    ],
+)
