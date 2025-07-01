@@ -4,9 +4,11 @@ from unittest.mock import patch
 from flask import Flask
 from src.consumers.consumer_api import consumers_bp
 
+
 PUBSUB_PULL_STATUS_CHECK_API = "/api/pubsub/pull/status/{project_id}/{subscription_id}"
 PUBSUB_PULL_STATUS_STOP_API = "/api/pubsub/pull/{project_id}/{subscription_id}"
 START_MICROSOFT_PULLING_API = "/api/microsoft/pull/{project_id}/{subscription_id}"
+START_GOOGLE_PULLING_API = "/api/google/chat/pull/{project_id}/{subscription_id}"
 TEST_PROJECT_ID = "test-project"
 TEST_SUBSCRIPTION_ID = "test-subscription"
 
@@ -68,6 +70,29 @@ class TestAppRoutes(TestCase):
         self.assertEqual(response.json["data"], mock_result)
 
         mock_start_pulling.assert_called_once_with(
+            TEST_PROJECT_ID, TEST_SUBSCRIPTION_ID
+        )
+
+    @patch("src.consumers.consumer_api.pull_messages")
+    def test_start_google_pull(self, mock_pull_messages):
+        mock_pull_messages.return_value = None
+        response = self.client.post(
+            START_GOOGLE_PULLING_API.format(
+                project_id=TEST_PROJECT_ID, subscription_id=TEST_SUBSCRIPTION_ID
+            )
+        )
+
+        self.assertEqual(response.status_code, HTTPStatus.ACCEPTED)
+
+        body = response.get_json()
+        expected_msg = (
+            f"Started pulling google chat messages for subscription "
+            f"'{TEST_SUBSCRIPTION_ID}' in project '{TEST_PROJECT_ID}'."
+        )
+        self.assertEqual(body.get("message"), expected_msg)
+        self.assertEqual(body.get("data"), {})
+
+        mock_pull_messages.assert_called_once_with(
             TEST_PROJECT_ID, TEST_SUBSCRIPTION_ID
         )
 

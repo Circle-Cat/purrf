@@ -2,6 +2,7 @@ from flask import Blueprint
 from http import HTTPStatus
 from src.consumers.pubsub_pull_manager import check_pulling_status, stop_pulling_process
 from src.consumers.microsoft_chat_consumer import pull_microsoft_message
+from src.consumers.google_chat_consumer import pull_messages
 from src.common.api_response_wrapper import api_response
 
 consumers_bp = Blueprint("consumers", __name__, url_prefix="/api")
@@ -74,4 +75,30 @@ def start_microsoft_pulling(project_id, subscription_id):
         message="Successfully.",
         data=None,
         status_code=HTTPStatus.OK,
+    )
+
+
+@consumers_bp.route("google/chat/pull/<project_id>/<subscription_id>", methods=["POST"])
+def start_google_chat_pulling(project_id, subscription_id):
+    """
+    HTTP POST endpoint to initiate message pulling from a given Pub/Sub subscription.
+
+    Args:
+        project_id (str): The Google Cloud project ID, passed as a URL path parameter.
+        subscription_id (str): The Pub/Sub subscription ID, passed as a URL path parameter.
+
+    Returns:
+        Response: A standardized JSON response indicating that the pull process has started.
+    """
+
+    pull_messages(project_id, subscription_id)
+
+    return api_response(
+        success=True,
+        message=(
+            f"Started pulling google chat messages for subscription "
+            f"'{subscription_id}' in project '{project_id}'."
+        ),
+        data=None,
+        status_code=HTTPStatus.ACCEPTED,
     )
