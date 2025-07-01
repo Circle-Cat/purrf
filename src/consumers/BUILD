@@ -35,6 +35,7 @@ py_library(
         "//src/common:api_response_wrapper",
         "//src/common:google_client",
         "//src/consumers:google_chat_consumer",
+        "//src/consumers:gerrit_consumer",
         "//src/consumers:microsoft_chat_consumer",
         "//src/consumers:pubsub_pull_manager",
         "@pypi//flask",
@@ -64,5 +65,18 @@ py_library(
     deps = [
         "//src/consumers:pubsub_puller",
         "//src/utils:microsoft_chat_message_store",
+    ],
+)
+
+py_library(
+    name = "gerrit_consumer",
+    srcs = [
+        "gerrit_consumer.py",
+    ],
+    deps = [
+        "//src/common:logger",
+        "//src/common:redis_client",
+        "//src/consumers:pubsub_puller",
+        "//src/historical_data:gerrit_history_fetcher",
     ],
 )

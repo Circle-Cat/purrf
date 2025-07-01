@@ -39,3 +39,11 @@ py_test(
         "//src/consumers:consumer_api",
     ],
 )
+
+py_test(
+    name = "gerrit_consumer_test",
+    srcs = ["gerrit_consumer_test.py"],
+    deps = [
+        "//src/consumers:gerrit_consumer",
+    ],
+)

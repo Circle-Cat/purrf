@@ -1,6 +1,5 @@
-import os
 import calendar
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Generator
 from src.common.logger import get_logger
 from src.common.redis_client import RedisClientFactory
@@ -17,6 +16,8 @@ from src.common.constants import (
     GERRIT_STATS_ALL_TIME_KEY,
     GERRIT_STATS_MONTHLY_BUCKET_KEY,
     GERRIT_STATS_PROJECT_BUCKET_KEY,
+    GERRIT_DEDUPE_REVIEWED_KEY,
+    GERRIT_CHANGE_STATUS_KEY,
 )
 
 logger = get_logger()
@@ -141,18 +142,31 @@ def store_change(change: dict) -> None:
 
     ldap = change.get("owner", {}).get("username")
     state = change.get("status", "").lower()
-    insertions = change.get("insertions", 0)
     project = change.get("project")
-    bucket = compute_buckets(change.get("created", ""))
+    change_number = change.get("_number") or change.get("number")
+    if "insertions" in change:
+        insertions = change["insertions"]
+    else:
+        insertions = change.get("patchSet", {}).get("sizeInsertions", 0)
 
-    tab = GERRIT_UNDER_REVIEW if state in GERRIT_UNDER_REVIEW_STATUS_VALUES else state
-    cl_tab = GERRIT_STATUS_TO_FIELD.get(tab, f"cl_{tab}")
+    if "created" in change:
+        created_str = change["created"]
+    else:
+        ts = change.get("createdOn")
+        created_str = (
+            datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S") if ts else ""
+        )
+    bucket = compute_buckets(created_str)
+
+    new_tab = (
+        GERRIT_UNDER_REVIEW if state in GERRIT_UNDER_REVIEW_STATUS_VALUES else state
+    )
+    new_cl_tab = GERRIT_STATUS_TO_FIELD.get(new_tab, f"cl_{new_tab}")
 
     logger.debug("ldap: %s", ldap)
-    logger.debug("cl_%s", tab)
+    logger.debug("cl_%s", new_tab)
     logger.debug("bucket: %s", bucket)
 
-    pipe = redis_client.pipeline()
     # all-time stats
     all_time_stats_key = GERRIT_STATS_ALL_TIME_KEY.format(ldap=ldap)
     # monthly bucket
@@ -164,33 +178,60 @@ def store_change(change: dict) -> None:
         ldap=ldap, project=project, bucket=bucket
     )
 
-    if tab == GerritChangeStatus.MERGED.value:
-        pipe.hincrby(all_time_stats_key, GERRIT_LOC_MERGED_FIELD, insertions)
-        pipe.hincrby(monthly_bucket_key, GERRIT_LOC_MERGED_FIELD, insertions)
-        pipe.hincrby(project_scoped_bucket_key, GERRIT_LOC_MERGED_FIELD, insertions)
+    pipe = redis_client.pipeline()
 
-    pipe.hincrby(all_time_stats_key, cl_tab, 1)
-    pipe.hincrby(monthly_bucket_key, cl_tab, 1)
-    pipe.hincrby(project_scoped_bucket_key, cl_tab, 1)
-
+    review_dedupe_key = GERRIT_DEDUPE_REVIEWED_KEY.format(change_number=change_number)
     participants = {
         m["author"]["username"]
         for m in change.get("messages", [])
         if m.get("author", {}).get("username") and m["author"]["username"] != ldap
     }
+    existing = redis_client.smembers(review_dedupe_key) or set()
 
-    for user in participants:
-        k_all = GERRIT_STATS_ALL_TIME_KEY.format(ldap=user)
-        k_month = GERRIT_STATS_MONTHLY_BUCKET_KEY.format(ldap=user, bucket=bucket)
-        k_proj = GERRIT_STATS_PROJECT_BUCKET_KEY.format(
-            ldap=user, project=project, bucket=bucket
-        )
+    for user in participants - existing:
+        bump_cl_reviewed(pipe, user, project, bucket)
 
-        pipe.hincrby(k_all, GERRIT_CL_REVIEWED_FIELD, 1)
-        pipe.hincrby(k_month, GERRIT_CL_REVIEWED_FIELD, 1)
-        pipe.hincrby(k_proj, GERRIT_CL_REVIEWED_FIELD, 1)
+    pipe.expire(review_dedupe_key, 60 * 60 * 24 * 90)
+    pipe.execute()
+
+    prev_tab = redis_client.hget(GERRIT_CHANGE_STATUS_KEY, change_number)
+    if prev_tab == new_tab:
+        logger.debug("CL %s already seen as %s; skipping", change_number, new_tab)
+        return
+
+    pipe = redis_client.pipeline()
+    if prev_tab:
+        old_field = GERRIT_STATUS_TO_FIELD.get(prev_tab, f"cl_{prev_tab}")
+        pipe.hincrby(all_time_stats_key, old_field, -1)
+        pipe.hincrby(monthly_bucket_key, old_field, -1)
+        pipe.hincrby(project_scoped_bucket_key, old_field, -1)
+
+    pipe.hincrby(all_time_stats_key, new_cl_tab, 1)
+    pipe.hincrby(monthly_bucket_key, new_cl_tab, 1)
+    pipe.hincrby(project_scoped_bucket_key, new_cl_tab, 1)
+
+    if new_tab == GerritChangeStatus.MERGED.value:
+        pipe.hincrby(all_time_stats_key, GERRIT_LOC_MERGED_FIELD, insertions)
+        pipe.hincrby(monthly_bucket_key, GERRIT_LOC_MERGED_FIELD, insertions)
+        pipe.hincrby(project_scoped_bucket_key, GERRIT_LOC_MERGED_FIELD, insertions)
+
+    pipe.hset(GERRIT_CHANGE_STATUS_KEY, change_number, new_tab)
 
     pipe.execute()
+
+
+def bump_cl_reviewed(pipe, user: str, project: str, bucket: str) -> None:
+    """
+    Add +1 to cl_reviewed for a given user across all‐time, monthly, and project scopes.
+    """
+    key_all = GERRIT_STATS_ALL_TIME_KEY.format(ldap=user)
+    key_month = GERRIT_STATS_MONTHLY_BUCKET_KEY.format(ldap=user, bucket=bucket)
+    key_proj = GERRIT_STATS_PROJECT_BUCKET_KEY.format(
+        ldap=user, project=project, bucket=bucket
+    )
+
+    for k in (key_all, key_month, key_proj):
+        pipe.hincrby(k, GERRIT_CL_REVIEWED_FIELD, 1)
 
 
 def fetch_and_store_changes(

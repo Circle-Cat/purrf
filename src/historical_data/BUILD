@@ -67,6 +67,7 @@ py_library(
         "gerrit_history_fetcher.py",
     ],
     deps = [
+        "//src/common:constants",
         "//src/common:gerrit_client",
         "//src/common:redis_client",
     ],
