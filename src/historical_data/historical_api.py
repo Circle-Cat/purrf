@@ -3,6 +3,7 @@ from http import HTTPStatus
 from src.historical_data.microsoft_ldap_fetcher import sync_microsoft_members_to_redis
 from src.historical_data.gerrit_history_fetcher import fetch_and_store_changes
 from src.historical_data.google_chat_history_fetcher import fetch_history_messages
+from src.historical_data.jira_history_fetcher import process_backfill_jira_issues
 from src.historical_data.jira_history_fetcher import process_sync_jira_projects
 from src.historical_data.google_calendar_history_fetcher import pull_calendar_history
 from src.common.api_response_wrapper import api_response
@@ -67,6 +68,20 @@ def history_messages():
         success=True,
         message="Saved successfully.",
         data=response,
+        status_code=HTTPStatus.OK,
+    )
+
+
+@history_bp.route("/jira/backfill", methods=["POST"])
+def backfill_jira_issues():
+    """Backfill all Jira issues into Redis. This endpoint does not accept
+    any parameters.
+    """
+    result = process_backfill_jira_issues()
+    return api_response(
+        success=True,
+        message="Imported successfully",
+        data={"imported_issues": result},
         status_code=HTTPStatus.OK,
     )
 

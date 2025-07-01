@@ -144,6 +144,48 @@ GERRIT_STATS_MONTHLY_BUCKET_KEY = "gerrit:stats:{ldap}:{bucket}"
 GERRIT_STATS_PROJECT_BUCKET_KEY = "gerrit:stats:{ldap}:{project}:{bucket}"
 
 
+# Constants for Jira
+class JiraIssueStatus(str, Enum):
+    TODO = "todo"
+    IN_PROGRESS = "in_progress"
+    DONE = "done"
+
+
+# Jira status ID mapping to standard statuses
+JIRA_STATUS_ID_MAP: dict[str, str] = {
+    "4": JiraIssueStatus.TODO,
+    "10000": JiraIssueStatus.TODO,
+    "10301": JiraIssueStatus.TODO,
+    "10302": JiraIssueStatus.TODO,
+    "3": JiraIssueStatus.IN_PROGRESS,
+    "10303": JiraIssueStatus.IN_PROGRESS,
+    "10304": JiraIssueStatus.IN_PROGRESS,
+    "10305": JiraIssueStatus.IN_PROGRESS,
+    "10307": JiraIssueStatus.IN_PROGRESS,
+    "10309": JiraIssueStatus.IN_PROGRESS,
+    "10500": JiraIssueStatus.IN_PROGRESS,
+    "5": JiraIssueStatus.IN_PROGRESS,
+    "10200": JiraIssueStatus.IN_PROGRESS,
+    "6": JiraIssueStatus.DONE,
+    "10001": JiraIssueStatus.DONE,
+    "10201": JiraIssueStatus.DONE,
+    "10306": JiraIssueStatus.DONE,
+}
+
+ALL_JIRA_STATUSES: list[str] = [status.value for status in JiraIssueStatus]
+
+# Excluded status ID (obsolete)
+JIRA_EXCLUDED_STATUS_ID = "10100"
+
+# Jira Redis key templates
+JIRA_ISSUE_DETAILS_KEY = "jira:issue:{issue_id}"
+JIRA_LDAP_PROJECT_STATUS_INDEX_KEY = (
+    "jira:ldap:{ldap}:project:{project_id}:status:{status}"
+)
+
+# Jira API configuration
+JIRA_MAX_RESULTS_DEFAULT = 1000
+JIRA_STORY_POINT_FIELD = "customfield_10106"
 # Jira Redis key templates
 JIRA_PROJECTS_KEY = "jira:project"
 GERRIT_STAT_FIELDS = [
