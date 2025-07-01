@@ -36,6 +36,7 @@ py_library(
     srcs = ["historical_api.py"],
     deps = [
         "//src/historical_data:gerrit_history_fetcher",
+        "//src/historical_data:google_chat_history_fetcher",
         "//src/historical_data:microsoft_chat_history_fetcher",
         "//src/historical_data:microsoft_ldap_fetcher",
         "@pypi//flask",
@@ -48,7 +49,10 @@ py_library(
         "google_chat_history_fetcher.py",
     ],
     deps = [
+        "//src/common:constants",
         "//src/common:google_client",
+        "//src/utils:google_chat_message_store",
+        "//src/utils:google_chat_utils",
     ],
 )
 

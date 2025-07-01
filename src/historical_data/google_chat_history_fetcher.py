@@ -1,6 +1,9 @@
+from src.utils.google_chat_utils import get_chat_spaces
+from src.utils.google_chat_message_store import store_messages
 from src.common.google_client import GoogleClientFactory
 from src.common.logger import get_logger
 from googleapiclient.errors import HttpError
+from src.common.constants import GoogleChatEventType
 from tenacity import (
     retry,
     stop_after_attempt,
@@ -95,3 +98,111 @@ def list_directory_all_people_ldap():
         len(formatted_people),
     )
     return formatted_people
+
+
+def fetch_messages_by_spaces_id(space_id):
+    """
+    Retrieves messages from a specific Google Chat space.
+    This function fetches all messages from a given Google Chat space using the provided chat client.
+    It handles pagination to retrieve all messages.
+
+    Steps:
+    1.  Validates the created chat client.
+    2.  Fetches messages from the specified space in batches using pagination.
+    3.  Aggregates the messages into a single list.
+    4.  Logs the number of messages retrieved.
+
+    Args:
+        space_id (str): The ID of the Google Chat space to fetch messages from.
+
+    Returns:
+        list: A list of message objects (dict) retrieved from the chat space.
+        Returns None if the client is invalid.
+
+    Raises:
+        googleapiclient.errors.HttpError: If an error occurs during the API call.
+        KeyError: If the expected data structure is not present in the API response.
+        ValueError: If no valid chat client provided.
+    """
+    client_chat = GoogleClientFactory().create_chat_client()
+    if not client_chat:
+        raise ValueError(
+            "Failed to fetch historical chat messages: Google Chat client is unavailable."
+        )
+    logger.debug("Fetching messages from Google Chat space: %s", space_id)
+    result = []
+    page_token = None
+    while True:
+        req = (
+            client_chat.spaces()
+            .messages()
+            .list(
+                parent=f"spaces/{space_id}",
+                pageSize=100,
+                pageToken=page_token,
+            )
+        )
+        try:
+            response = _execute_request(req)
+        except HttpError as e:
+            logger.error(
+                "Error fetching chat messages (page_token=%s): %s",
+                page_token,
+                e,
+                exc_info=True,
+            )
+            raise RuntimeError("Unable to fetch Google Chat messages") from e
+        messages = response.get("messages", [])
+        result.extend(messages)
+        page_token = response.get("nextPageToken")
+        if not page_token:
+            break
+    logger.info(
+        "Fetched %d messages from Google Chat in space: %s", len(result), space_id
+    )
+    return result
+
+
+def fetch_history_messages():
+    """
+    Processes chat spaces by fetching messages and storing them in Redis.
+
+    Steps:
+    1.  Retrieves Google Chat and People API clients using the GoogleClientFactory.
+    2.  Fetches a list of chat space IDs.
+    3.  Iterates through each space ID, retrieves messages, and aggregates them.
+    4.  Loads a dictionary mapping sender IDs to their LDAP identifiers.
+    5.  Processes each message:
+        a.  Extracts the sender ID and retrieves the corresponding LDAP.
+        b.  Skips messages if the sender's LDAP is not found, indicating an external account.
+        c.  Stores the message in Redis using the 'store_messages' function.
+    6.  Logs the number of messages fetched and successfully stored.
+
+    Returns:
+        None.
+    """
+    messages = []
+    space_id_list = get_chat_spaces("SPACE", 100)
+    for space_id in space_id_list.keys():
+        result = fetch_messages_by_spaces_id(space_id)
+        messages.extend(result)
+        logger.debug("Fetched %d messages from space %s", len(result), space_id)
+    logger.info("Fetched total of %d messages from all spaces", len(messages))
+    people_dict = list_directory_all_people_ldap()
+    saved_count = 0
+    for message in messages:
+        _, sender_id = message.get("sender", {}).get("name").split("/")
+        sender_ldap = people_dict.get(sender_id, "")
+        if not sender_ldap:
+            logger.debug(
+                "No LDAP found for sender_id=%s in message: %s", sender_id, message
+            )
+            continue
+        store_messages(sender_ldap, message, GoogleChatEventType.CREATED.value)
+        saved_count += 1
+    logger.info(
+        "Stored %d out of %d messages with valid sender LDAP",
+        saved_count,
+        len(messages),
+    )
+    return {"saved_messages_count": saved_count, "total_messges_count": len(messages)}

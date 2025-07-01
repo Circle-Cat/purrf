@@ -8,6 +8,7 @@ from src.common.constants import MicrosoftAccountStatus
 
 MICROSOFT_LDAP_FETCHER_API = "/api/microsoft/backfill/ldaps"
 MICROSOFT_CHAT_FETCHER_API = "/microsoft/fetch/history/messages/{chat_id}"
+GOOGLE_CHAT_FETCHER_API = "/api/google/chat/spaces/messages"
 TEST_CHAT_ID = "chat131"
 
 
@@ -32,7 +33,7 @@ class TestAppRoutes(TestCase):
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertEqual(response.json["data"], mock_result)
 
-        mock_sync_microsoft_members_to_redis.assert_called_once_with()
+        mock_sync_microsoft_members_to_redis.assert_called_once()
 
     @patch("src.historical_data.historical_api.sync_microsoft_chat_messages_by_chat_id")
     def backfill_microsoft_chat_messages(
@@ -48,7 +49,19 @@ class TestAppRoutes(TestCase):
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertEqual(response.json["data"], mock_result)
 
-        mock_sync_microsoft_chat_messages_by_chat_id.assert_called_once_with()
+        mock_sync_microsoft_chat_messages_by_chat_id.assert_called_once()
+
+    @patch("src.historical_data.historical_api.fetch_history_messages")
+    def test_history_messages(self, mock_fetch_history_messages):
+        mock_result = {"saved_messages_count": 3, "total_messges_count": 5}
+        mock_fetch_history_messages.return_value = mock_result
+
+        response = self.client.post(GOOGLE_CHAT_FETCHER_API)
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.assertEqual(response.json["data"], mock_result)
+
+        mock_fetch_history_messages.assert_called_once()
 
 
 if __name__ == "__main__":
