@@ -6,6 +6,7 @@ from src.frontend_service.frontend_api import frontend_bp
 from src.common.constants import MicrosoftAccountStatus
 
 MICROSOFT_LDAP_FETCHER_API = "/api/microsoft/{status}/ldaps"
+MICROSOFT_CHAT_TOPICS_FETCHER_API = "/api/microsoft/chat/topics"
 GOOGLE_CHAT_COUNT_API = "/api/google/chat/count"
 
 
@@ -112,6 +113,15 @@ class TestAppRoutes(TestCase):
         self.assertEqual(json_data["data"], mock_spaces)
 
         mock_get_chat_spaces.assert_called_once_with("SPACE", 50)
+
+    @patch("src.frontend_service.frontend_api.get_microsoft_chat_topics")
+    def test_all_microsoft_chat_topics(self, mock_get):
+        mock_get.return_value = {}
+
+        response = self.client.get(MICROSOFT_CHAT_TOPICS_FETCHER_API)
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+
 
 if __name__ == "__main__":
     main()

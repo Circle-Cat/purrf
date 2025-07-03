@@ -5,6 +5,7 @@ from src.frontend_service.chat_query_utils import count_messages_in_date_range
 from src.common.constants import MicrosoftAccountStatus
 from src.common.api_response_wrapper import api_response
 from src.utils.google_chat_utils import get_chat_spaces
+from src.frontend_service.microsoft_chat_topics_loader import get_microsoft_chat_topics
 
 frontend_bp = Blueprint("frontend", __name__, url_prefix="/api")
 
@@ -92,5 +93,18 @@ def get_chat_spaces_route():
         success=True,
         message="Retrieve chat spaces successfully.",
         data=spaces,
+        status_code=HTTPStatus.OK,
+    )
+
+
+@frontend_bp.route("/microsoft/chat/topics", methods=["GET"])
+async def all_microsoft_chat_topics():
+    """Fetch Microsoft chat topics from Redis."""
+    response = await get_microsoft_chat_topics()
+
+    return api_response(
+        success=True,
+        message="Successfully.",
+        data=response,
         status_code=HTTPStatus.OK,
     )

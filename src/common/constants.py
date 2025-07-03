@@ -41,7 +41,7 @@ MICROSOFT_SUBSCRIPTION_CLIENT_STATE_SECRET_KEY = (
 MICROSOFT_LDAP_KEY = "ldap:{account_status}"
 MICROSOFT_CHAT_MESSAGES_INDEX_KEY = "microsoft:chat:{message_status}:{sender_ldap}"
 MICROSOFT_CHAT_MESSAGES_DETAILS_KEY = "microsoft:messages:{message_id}"
-
+MICROSOFT_CHAT_TOPICS = "microsoft:chat:topics"
 PUBSUB_PULL_MESSAGES_STATUS_KEY = "pull_status:{subscription_id}"
 
 

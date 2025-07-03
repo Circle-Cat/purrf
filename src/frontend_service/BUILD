@@ -11,6 +11,7 @@ py_library(
         "//src/frontend_service:chat_query_utils",
         "//src/utils:google_chat_utils",
         "//src/frontend_service:ldap_loader",
+        "//src/frontend_service:microsoft_chat_topics_loader",
         "@pypi//flask",
     ],
 )
@@ -35,5 +36,17 @@ py_library(
         "//src/frontend_service:ldap_loader",
         "//src/utils:google_chat_utils",
         "@pypi//python_dateutil",
+    ],
+)
+
+py_library(
+    name = "microsoft_chat_topics_loader",
+    srcs = ["microsoft_chat_topics_loader.py"],
+    deps = [
+        "//src/common:constants",
+        "//src/common:logger",
+        "//src/common:microsoft_client",
+        "//src/common:redis_client",
+        "//src/historical_data:microsoft_chat_history_fetcher",
     ],
 )
