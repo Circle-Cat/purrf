@@ -4,6 +4,7 @@ from src.frontend_service.ldap_loader import get_all_ldaps_and_displaynames
 from src.frontend_service.chat_query_utils import count_messages_in_date_range
 from src.common.constants import MicrosoftAccountStatus
 from src.common.api_response_wrapper import api_response
+from src.utils.google_chat_utils import get_chat_spaces
 
 frontend_bp = Blueprint("frontend", __name__, url_prefix="/api")
 
@@ -76,5 +77,20 @@ def count_messages():
         success=True,
         message="Messages counted successfully.",
         data=result,
+        status_code=HTTPStatus.OK,
+    )
+
+@frontend_bp.route("/google/chat/spaces", methods=["GET"])
+def get_chat_spaces_route():
+    """API endpoint to retrieve chat spaces of a specified type and page size."""
+
+    space_type = request.args.get("space_type", "SPACE")
+    page_size = int(request.args.get("page_size", 100))
+
+    spaces = get_chat_spaces(space_type, page_size)
+    return api_response(
+        success=True,
+        message="Retrieve chat spaces successfully.",
+        data=spaces,
         status_code=HTTPStatus.OK,
     )

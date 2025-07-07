@@ -99,6 +99,19 @@ class TestAppRoutes(TestCase):
         self.assertEqual(response.json["data"]["bob"]["space1"], 0)
         self.assertEqual(response.json["data"]["bob"]["space2"], 2)
 
+    @patch("src.frontend_service.frontend_api.get_chat_spaces")
+    def test_get_chat_spaces_route_success(self, mock_get_chat_spaces):
+        mock_spaces = [{"name": "spaces/abc123", "spaceType": "SPACE"}]
+        mock_get_chat_spaces.return_value = mock_spaces
+
+        response = self.client.get("/api/google/chat/spaces?space_type=SPACE&page_size=50")
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+
+        json_data = response.get_json()
+        self.assertEqual(json_data["message"], "Retrieve chat spaces successfully.")
+        self.assertEqual(json_data["data"], mock_spaces)
+
+        mock_get_chat_spaces.assert_called_once_with("SPACE", 50)
 
 if __name__ == "__main__":
     main()
