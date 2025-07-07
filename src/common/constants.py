@@ -21,6 +21,12 @@ class GoogleChatEventType(str, Enum):
     DELETED = "deleted"
 
 
+BASE_EVENT_TYPE = "google.workspace.chat.message.v1"
+
+EVENT_TYPES = {
+    f"{BASE_EVENT_TYPE}.{event_type.value}" for event_type in GoogleChatEventType
+}
+
 # Constants for Redis keys
 CREATED_GOOGLE_CHAT_MESSAGES_INDEX_KEY = "google:chat:created:{sender_ldap}:{space_id}"
 DELETED_GOOGLE_CHAT_MESSAGES_INDEX_KEY = "google:chat:deleted:{sender_ldap}:{space_id}"

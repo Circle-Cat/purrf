@@ -23,26 +23,11 @@ py_library(
     srcs = ["google_api.py"],
     deps = [
         ":authentication_utils",
-        ":pubsub_publisher",
         ":pubsub_subscriber_store",
         "//src/utils:google_chat_utils",
         "//tools/global_handle_exception:exception_handler",
         "//tools/log",
         "@pypi//flask",
-    ],
-)
-
-py_library(
-    name = "pubsub_publisher",
-    srcs = [
-        "pubsub_publisher.py",
-    ],
-    deps = [
-        "//google:authentication_utils",
-        "//tools/log",
-        "@pypi//google_api_python_client",
-        "@pypi//google_cloud_pubsub",
-        "@pypi//tenacity",
     ],
 )
 

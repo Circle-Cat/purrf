@@ -1,14 +1,6 @@
 load("@rules_python//python:defs.bzl", "py_test")
 
 py_test(
-    name = "test_pubsub_publisher",
-    srcs = ["test_pubsub_publisher.py"],
-    deps = [
-        "//google:pubsub_publisher",
-    ],
-)
-
-py_test(
     name = "test_pubsub_subscriber_store",
     srcs = ["test_pubsub_subscriber_store.py"],
     deps = [

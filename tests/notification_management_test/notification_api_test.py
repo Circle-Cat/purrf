@@ -3,7 +3,7 @@ from unittest import IsolatedAsyncioTestCase, main
 from unittest.mock import patch, AsyncMock
 from flask import Flask, jsonify
 from src.notification_management.notification_api import notification_bp
-from src.common.constants import MicrosoftAccountStatus
+from src.common.constants import MicrosoftAccountStatus, EVENT_TYPES
 import json
 import asyncio
 
@@ -71,6 +71,36 @@ class TestNotificationApi(IsolatedAsyncioTestCase):
             )
         except ValueError as e:
             self.assertIn("lifecycle_notification_url", str(e))
+
+    @patch(
+        "src.notification_management.notification_api.create_workspaces_subscriptions"
+    )
+    def test_subscribe_success(self, mock_create_subscription):
+        payload = {
+            "project_id": "test-project",
+            "topic_id": "test-topic",
+            "space_id": "test-space",
+            "event_types": list(EVENT_TYPES),
+        }
+
+        mock_create_subscription.return_value = {"subscription_id": "mock-subscription"}
+
+        response = self.client.post(
+            "/api/google/chat/spaces/subscribe",
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, HTTPStatus.CREATED)
+        data = response.get_json()
+        self.assertEqual(data["message"]["subscription_id"], "mock-subscription")
+
+        mock_create_subscription.assert_called_once_with(
+            payload["project_id"],
+            payload["topic_id"],
+            payload["space_id"],
+            set(payload["event_types"]),
+        )
 
 
 if __name__ == "__main__":

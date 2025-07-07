@@ -3,7 +3,11 @@ from http import HTTPStatus
 from src.notification_management.microsoft_chat_watcher import (
     subscribe_chat_messages,
 )
+from src.notification_management.google_chat_watcher import (
+    create_workspaces_subscriptions,
+)
 from src.common.api_response_wrapper import api_response
+from src.common.constants import EVENT_TYPES
 
 notification_bp = Blueprint("notification", __name__, url_prefix="/api")
 
@@ -43,5 +47,35 @@ async def subscribe_microsoft_chat_messages():
         success=True,
         message=message,
         data=data,
+        status_code=HTTPStatus.CREATED,
+    )
+
+
+@notification_bp.route("/google/chat/spaces/subscribe", methods=["POST"])
+def subscribe():
+    """API endpoint to subscribe to chat space events.
+
+    Request JSON Payload:
+        {
+            "project_id": "your-project-id"
+            "topic_id": "your-topic-id",
+            "space_id": "your-space-id"
+        }
+
+    Returns:
+        JSON response indicating success or failure of subscription.
+    """
+    data = request.get_json()
+    project_id = data.get("project_id")
+    topic_id = data.get("topic_id")
+    space_id = data.get("space_id")
+    event_types = EVENT_TYPES
+
+    response = create_workspaces_subscriptions(
+        project_id, topic_id, space_id, event_types
+    )
+    return api_response(
+        success=True,
+        message=response,
         status_code=HTTPStatus.CREATED,
     )

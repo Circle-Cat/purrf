@@ -104,7 +104,9 @@ def get_calendar_events(calendar_id: str, start_time: str, end_time: str):
                 try:
                     attendance_data = get_event_attendance(meet_code)
                 except Exception as e:
-                    logger.warning(f"Failed to fetch attendance for event {event_id}: {e}")
+                    logger.warning(
+                        f"Failed to fetch attendance for event {event_id}: {e}"
+                    )
 
             events.append({
                 "event_id": event_id,
