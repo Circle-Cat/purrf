@@ -26,3 +26,11 @@ py_test(
         "//src/frontend_service:chat_query_utils",
     ],
 )
+
+py_test(
+    name = "microsoft_chat_topics_loader_test",
+    srcs = ["microsoft_chat_topics_loader_test.py"],
+    deps = [
+        "//src/frontend_service:microsoft_chat_topics_loader",
+    ],
+)
