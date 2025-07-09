@@ -30,6 +30,11 @@ EVENT_TYPES = {
 # Constants for Redis keys
 CREATED_GOOGLE_CHAT_MESSAGES_INDEX_KEY = "google:chat:created:{sender_ldap}:{space_id}"
 DELETED_GOOGLE_CHAT_MESSAGES_INDEX_KEY = "google:chat:deleted:{sender_ldap}:{space_id}"
+
+GOOGLE_CALENDAR_LIST_INDEX_KEY = "calendarlist"
+GOOGLE_USER_CALENDARS_INDEX_KEY = "user:{ldap}:calendars"
+GOOGLE_CALENDAR_LIST_KEY = "calendarlist:{calendar_id}"
+
 MICROSOFT_SUBSCRIPTION_CLIENT_STATE_SECRET_KEY = (
     "microsoft:client_state:{subscription_id}"
 )

@@ -15,6 +15,8 @@ py_library(
     deps = [
         "//src/common:google_client",
         "//src/common:logger",
+        "//src/common:redis_client",
+        "//src/common:validation",
         "//src/historical_data:constants",
         "@pypi//tenacity",
     ],
