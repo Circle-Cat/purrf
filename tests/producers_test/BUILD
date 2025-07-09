@@ -15,3 +15,11 @@ py_test(
         "//src/producers:gerrit_producer",
     ],
 )
+
+py_test(
+    name = "microsoft_lifecycle_notification_handler_test",
+    srcs = ["microsoft_lifecycle_notification_handler_test.py"],
+    deps = [
+        "//src/producers:microsoft_lifecycle_notification_handler",
+    ],
+)

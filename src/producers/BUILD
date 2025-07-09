@@ -24,3 +24,17 @@ py_library(
         "@pypi//google_cloud_pubsub",
     ],
 )
+
+py_library(
+    name = "microsoft_lifecycle_notification_handler",
+    srcs = [
+        "microsoft_lifecycle_notification_handler/main.py",
+    ],
+    deps = [
+        "@pypi//azure_identity",
+        "@pypi//functions_framework",
+        "@pypi//jsonschema",
+        "@pypi//msgraph_sdk",
+        "@pypi//redis",
+    ],
+)
