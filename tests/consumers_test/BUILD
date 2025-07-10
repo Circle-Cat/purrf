@@ -31,3 +31,11 @@ py_test(
         "//src/consumers:microsoft_chat_consumer",
     ],
 )
+
+py_test(
+    name = "consumer_api_test",
+    srcs = ["consumer_api_test.py"],
+    deps = [
+        "//src/consumers:consumer_api",
+    ],
+)

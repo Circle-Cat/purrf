@@ -1,6 +1,6 @@
 from http import HTTPStatus
 from unittest import TestCase, main
-from unittest.mock import patch, Mock
+from unittest.mock import patch
 from flask import Flask
 from src.consumers.consumer_api import consumers_bp
 
@@ -20,8 +20,8 @@ class TestAppRoutes(TestCase):
         app.testing = True
 
     @patch("src.consumers.consumer_api.check_pulling_status")
-    def test_backfill_microsoft_ldaps(self, mock_check_pulling_status):
-        mock_result = Mock()
+    def test_check_pulling_messages(self, mock_check_pulling_status):
+        mock_result = {}
         mock_check_pulling_status.return_value = mock_result
 
         response = self.client.get(
@@ -37,13 +37,13 @@ class TestAppRoutes(TestCase):
             TEST_PROJECT_ID, TEST_SUBSCRIPTION_ID
         )
 
-    @patch("src.consumers.consumer_api.stop_pulling")
-    def test_backfill_microsoft_ldaps(self, mock_stop_pulling):
-        mock_result = Mock()
+    @patch("src.consumers.consumer_api.stop_pulling_process")
+    def test_stop_pulling(self, mock_stop_pulling):
+        mock_result = {}
         mock_stop_pulling.return_value = mock_result
 
         response = self.client.delete(
-            PUBSUB_PULL_STATUS_CHECK_API.format(
+            PUBSUB_PULL_STATUS_STOP_API.format(
                 project_id=TEST_PROJECT_ID, subscription_id=TEST_SUBSCRIPTION_ID
             )
         )
@@ -54,8 +54,8 @@ class TestAppRoutes(TestCase):
         mock_stop_pulling.assert_called_once_with(TEST_PROJECT_ID, TEST_SUBSCRIPTION_ID)
 
     @patch("src.consumers.consumer_api.pull_microsoft_message")
-    def test_backfill_microsoft_ldaps(self, mock_start_pulling):
-        mock_result = Mock()
+    def test_start_microsoft_pulling(self, mock_start_pulling):
+        mock_result = {}
         mock_start_pulling.return_value = mock_result
 
         response = self.client.post(
@@ -67,7 +67,9 @@ class TestAppRoutes(TestCase):
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertEqual(response.json["data"], mock_result)
 
-        mock_stop_pulling.assert_called_once_with(TEST_PROJECT_ID, TEST_SUBSCRIPTION_ID)
+        mock_start_pulling.assert_called_once_with(
+            TEST_PROJECT_ID, TEST_SUBSCRIPTION_ID
+        )
 
 
 if __name__ == "__main__":
