@@ -3,6 +3,7 @@ from http import HTTPStatus
 from src.historical_data.microsoft_ldap_fetcher import sync_microsoft_members_to_redis
 from src.historical_data.gerrit_history_fetcher import fetch_and_store_changes
 from src.historical_data.google_chat_history_fetcher import fetch_history_messages
+from src.historical_data.jira_history_fetcher import process_update_jira_issues
 from src.historical_data.jira_history_fetcher import process_backfill_jira_issues
 from src.historical_data.jira_history_fetcher import process_sync_jira_projects
 from src.historical_data.google_calendar_history_fetcher import pull_calendar_history
@@ -82,6 +83,31 @@ def backfill_jira_issues():
         success=True,
         message="Imported successfully",
         data={"imported_issues": result},
+        status_code=HTTPStatus.OK,
+    )
+
+
+@history_bp.route("/jira/update", methods=["POST"])
+def update_jira_issues():
+    """
+    Incrementally update Jira issues in Redis for issues created or updated within the last N hours.
+    This endpoint performs an incremental sync (created + updated).
+    Query parameter: hours (int)
+    """
+    hours = request.args.get("hours", default=None, type=int)
+    if hours is None or hours <= 0:
+        return api_response(
+            success=False,
+            message="Missing or invalid 'hours' query parameter.",
+            data={},
+            status_code=HTTPStatus.BAD_REQUEST,
+        )
+
+    result = process_update_jira_issues(hours)
+    return api_response(
+        success=True,
+        message="Updated successfully",
+        data={"updated_issues": result},
         status_code=HTTPStatus.OK,
     )
 
