@@ -34,6 +34,10 @@ DELETED_GOOGLE_CHAT_MESSAGES_INDEX_KEY = "google:chat:deleted:{sender_ldap}:{spa
 GOOGLE_CALENDAR_LIST_INDEX_KEY = "calendarlist"
 GOOGLE_USER_CALENDARS_INDEX_KEY = "user:{ldap}:calendars"
 GOOGLE_CALENDAR_LIST_KEY = "calendarlist:{calendar_id}"
+GOOGLE_USER_EVENTS_INDEX_KEY = "user:{ldap}:events"
+GOOGLE_USER_CALENDAR_EVENTS_INDEX_KEY = "user:{ldap}:calendar:{calendar_id}"
+GOOGLE_CALENDAR_EVENTS_INDEX_KEY = "calendar:{calendar_id}:events"
+GOOGLE_CALENDAR_EVENT_DETAIL_KEY = "event:{event_id}"
 
 MICROSOFT_SUBSCRIPTION_CLIENT_STATE_SECRET_KEY = (
     "microsoft:client_state:{subscription_id}"

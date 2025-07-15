@@ -6,6 +6,7 @@ from src.historical_data.google_calendar_history_fetcher import (
     get_event_attendance,
     get_meeting_code_from_event,
     cache_calendars,
+    cache_events,
 )
 from googleapiclient.errors import HttpError
 
@@ -125,6 +126,17 @@ MOCK_EVENT = {
             }
         ]
     }
+}
+
+MOCK_EVENT_RETURN_VALUE = {
+    "event_id": "evt123",
+    "calendar_id": "team@circlecat.org",
+    "title": "Meeting",
+    "start": "2024-06-17T10:00:00",
+    "end": "2024-06-17T11:00:00",
+    "attendees": [{"email": "alice@circlecat.org"}],
+    "is_recurring": False,
+    "organizer": "org@circlecat.org",
 }
 
 
@@ -528,6 +540,125 @@ class TestGetCalendarList(TestCase):
             cache_calendars()
 
         self.assertEqual(mock_get_calendar_list.call_count, 3)
+
+    @patch("src.historical_data.google_calendar_history_fetcher.RedisClientFactory")
+    @patch("src.historical_data.google_calendar_history_fetcher.validate_data")
+    @patch("src.historical_data.google_calendar_history_fetcher.get_calendar_events")
+    def test_cache_events_success(
+        self,
+        mock_get_calendar_events,
+        mock_validate_data,
+        mock_redis_factory
+    ):
+        mock_redis = MagicMock()
+        mock_pipeline = MagicMock()
+        mock_redis.pipeline.return_value = mock_pipeline
+        mock_redis_factory.return_value.create_redis_client.return_value = mock_redis
+
+        mock_get_calendar_events.return_value = [MOCK_EVENT_RETURN_VALUE]
+
+        cache_events(
+            "team@circlecat.org", "2025-06-01T00:00:00Z", "2025-06-30T23:59:59Z"
+        )
+
+        mock_redis.pipeline.assert_called_once()
+        mock_pipeline.zadd.assert_any_call(f"user:alice:events", {"evt123": ANY})
+        mock_pipeline.set.assert_called_once()
+        mock_pipeline.execute.assert_called_once()
+
+    @patch("src.historical_data.google_calendar_history_fetcher.logger")
+    @patch("src.historical_data.google_calendar_history_fetcher.RedisClientFactory")
+    @patch("src.historical_data.google_calendar_history_fetcher.validate_data")
+    @patch("src.historical_data.google_calendar_history_fetcher.get_calendar_events")
+    def test_cache_events_no_circlecat_attendee(
+        self, mock_get_events, mock_validate, mock_factory, mock_logger
+    ):
+        mock_get_events.return_value = [
+            {
+                "event_id": "evt456",
+                "calendar_id": "team@circlecat.org",
+                "title": "Private",
+                "start": "2024-06-17T14:00:00",
+                "end": "2024-06-17T15:00:00",
+                "attendees": [{"email": "bob@gmail.com"}],
+                "is_recurring": False,
+                "organizer": "bob@gmail.com",
+            }
+        ]
+
+        cache_events(
+            "team@circlecat.org", "2024-06-01T00:00:00Z", "2024-06-30T00:00:00Z"
+        )
+
+        mock_logger.warning.assert_any_call(
+            "No @circlecat.org attendee found for event evt456; skipping."
+        )
+
+    @patch("src.historical_data.google_calendar_history_fetcher.logger")
+    @patch("src.historical_data.google_calendar_history_fetcher.RedisClientFactory")
+    @patch("src.historical_data.google_calendar_history_fetcher.validate_data")
+    @patch("src.historical_data.google_calendar_history_fetcher.get_calendar_events")
+    def test_cache_events_invalid_event_skipped(
+        self,
+        mock_get_calendar_events,
+        mock_validate_data,
+        mock_redis_factory,
+        mock_logger,
+    ):
+        mock_redis = MagicMock()
+        mock_redis_factory.return_value.create_redis_client.return_value = mock_redis
+
+        mock_get_calendar_events.return_value = [MOCK_EVENT_RETURN_VALUE]
+        mock_validate_data.side_effect = Exception("invalid schema")
+
+        cache_events(
+            "alice@circlecat.org", "2025-06-01T00:00:00Z", "2025-06-30T23:59:59Z"
+        )
+
+        mock_logger.warning.assert_called_once()
+        mock_redis.set.assert_not_called()
+        mock_redis.zadd.assert_not_called()
+
+    @patch("src.historical_data.google_calendar_history_fetcher.RedisClientFactory")
+    @patch("src.historical_data.google_calendar_history_fetcher.validate_data")
+    @patch("src.historical_data.google_calendar_history_fetcher.get_calendar_events")
+    def test_cache_events_retries_then_succeeds(
+        self,
+        mock_get_calendar_events,
+        mock_validate_data,
+        mock_redis_factory,
+    ):
+        mock_redis = MagicMock()
+        mock_pipeline = MagicMock()
+        mock_redis.pipeline.return_value = mock_pipeline
+        mock_redis_factory.return_value.create_redis_client.return_value = mock_redis
+
+        mock_get_calendar_events.side_effect = [
+            Exception("Temporary error"),
+            Exception("Temporary error"),
+            [MOCK_EVENT_RETURN_VALUE],
+        ]
+
+        cache_events(
+            "team@circlecat.org", "2025-06-01T00:00:00Z", "2025-06-30T23:59:59Z"
+        )
+
+        self.assertEqual(mock_get_calendar_events.call_count, 3)
+        mock_validate_data.assert_called_once()
+        mock_pipeline.execute.assert_called_once()
+        self.assertEqual(mock_pipeline.set.call_count, 1)
+        self.assertEqual(mock_pipeline.zadd.call_count, 3)
+
+    @patch("src.historical_data.google_calendar_history_fetcher.get_calendar_events")
+    def test_cache_events_fetch_failure_retries(self, mock_get_calendar_events):
+        mock_get_calendar_events.side_effect = Exception("API failure")
+
+        with self.assertRaises(Exception):
+            cache_events(
+                "alice@circlecat.org", "2025-06-01T00:00:00Z", "2025-06-30T23:59:59Z"
+            )
+
+        self.assertEqual(mock_get_calendar_events.call_count, 3)
 
 
 if __name__ == "__main__":
