@@ -143,6 +143,9 @@ GERRIT_STATS_ALL_TIME_KEY = "gerrit:stats:{ldap}"
 GERRIT_STATS_MONTHLY_BUCKET_KEY = "gerrit:stats:{ldap}:{bucket}"
 GERRIT_STATS_PROJECT_BUCKET_KEY = "gerrit:stats:{ldap}:{project}:{bucket}"
 
+
+# Jira Redis key templates
+JIRA_PROJECTS_KEY = "jira:project"
 GERRIT_STAT_FIELDS = [
     "cl_merged",
     "cl_abandoned",

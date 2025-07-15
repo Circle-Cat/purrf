@@ -49,3 +49,11 @@ py_test(
         "//src/historical_data:microsoft_chat_history_fetcher",
     ],
 )
+
+py_test(
+    name = "jira_history_fetcher_test",
+    srcs = ["jira_history_fetcher_test.py"],
+    deps = [
+        "//src/historical_data:jira_history_fetcher",
+    ],
+)

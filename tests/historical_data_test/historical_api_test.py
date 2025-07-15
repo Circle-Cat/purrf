@@ -1,7 +1,7 @@
 from http import HTTPStatus
 from unittest import TestCase, main
 from unittest.mock import patch
-from flask import Flask, jsonify
+from flask import Flask
 from src.historical_data.historical_api import history_bp
 from src.common.constants import MicrosoftAccountStatus
 
@@ -9,6 +9,7 @@ from src.common.constants import MicrosoftAccountStatus
 MICROSOFT_LDAP_FETCHER_API = "/api/microsoft/backfill/ldaps"
 MICROSOFT_CHAT_FETCHER_API = "/microsoft/fetch/history/messages/{chat_id}"
 GOOGLE_CHAT_FETCHER_API = "/api/google/chat/spaces/messages"
+JIRA_PROJECT_API = "/api/jira/project"
 TEST_CHAT_ID = "chat131"
 
 
@@ -62,6 +63,19 @@ class TestAppRoutes(TestCase):
         self.assertEqual(response.json["data"], mock_result)
 
         mock_fetch_history_messages.assert_called_once()
+
+    @patch("src.historical_data.historical_api.process_sync_jira_projects")
+    def test_sync_jira_projects(self, mock_process_sync_jira_projects):
+        mock_result = 5
+        mock_process_sync_jira_projects.return_value = mock_result
+
+        response = self.client.post(JIRA_PROJECT_API)
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.assertEqual(response.json["data"], {"imported_projects": mock_result})
+        self.assertEqual(response.json["message"], "Imported successfully")
+
+        mock_process_sync_jira_projects.assert_called_once()
 
     @patch("src.historical_data.historical_api.pull_calendar_history")
     def test_pull_calendar_history_success(self, mock_pull_calendar_history):

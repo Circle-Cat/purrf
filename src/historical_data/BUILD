@@ -40,6 +40,7 @@ py_library(
         "//src/historical_data:gerrit_history_fetcher",
         "//src/historical_data:google_calendar_history_fetcher",
         "//src/historical_data:google_chat_history_fetcher",
+        "//src/historical_data:jira_history_fetcher",
         "//src/historical_data:microsoft_chat_history_fetcher",
         "//src/historical_data:microsoft_ldap_fetcher",
         "//src/utils:date_time_parser",
@@ -80,5 +81,20 @@ py_library(
         "//src/common:microsoft_client",
         "//src/historical_data:microsoft_ldap_fetcher",
         "//src/utils:microsoft_chat_message_store",
+    ],
+)
+
+py_library(
+    name = "jira_history_fetcher",
+    srcs = [
+        "jira_history_fetcher.py",
+    ],
+    deps = [
+        "//src/common:constants",
+        "//src/common:jira_client",
+        "//src/common:logger",
+        "//src/common:redis_client",
+        "//src/frontend_service:ldap_loader",
+        "@pypi//jira",
     ],
 )

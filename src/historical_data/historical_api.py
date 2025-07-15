@@ -3,6 +3,7 @@ from http import HTTPStatus
 from src.historical_data.microsoft_ldap_fetcher import sync_microsoft_members_to_redis
 from src.historical_data.gerrit_history_fetcher import fetch_and_store_changes
 from src.historical_data.google_chat_history_fetcher import fetch_history_messages
+from src.historical_data.jira_history_fetcher import process_sync_jira_projects
 from src.historical_data.google_calendar_history_fetcher import pull_calendar_history
 from src.common.api_response_wrapper import api_response
 from src.historical_data.microsoft_chat_history_fetcher import (
@@ -66,6 +67,18 @@ def history_messages():
         success=True,
         message="Saved successfully.",
         data=response,
+        status_code=HTTPStatus.OK,
+    )
+
+
+@history_bp.route("/jira/project", methods=["POST"])
+def sync_jira_projects():
+    """Import all Jira project IDs and their display names into Redis."""
+    result = process_sync_jira_projects()
+    return api_response(
+        success=True,
+        message="Imported successfully",
+        data={"imported_projects": result},
         status_code=HTTPStatus.OK,
     )
 
