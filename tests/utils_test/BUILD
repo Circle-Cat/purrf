@@ -23,3 +23,11 @@ py_test(
         "//src/utils:microsoft_chat_message_store",
     ],
 )
+
+py_test(
+    name = "date_time_parser_test",
+    srcs = ["date_time_parser_test.py"],
+    deps = [
+        "//src/utils:date_time_parser",
+    ],
+)

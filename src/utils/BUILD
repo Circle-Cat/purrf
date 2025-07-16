@@ -36,3 +36,14 @@ py_library(
         "@pypi//tenacity",
     ],
 )
+
+py_library(
+    name = "date_time_parser",
+    srcs = [
+        "date_time_parser.py",
+    ],
+    deps = [
+        "//src/common:constants",
+        "@pypi//python_dateutil",
+    ],
+)

@@ -142,3 +142,5 @@ GERRIT_DATE_BUCKET_TEMPLATE = "{start}_{end}"
 GERRIT_STATS_ALL_TIME_KEY = "gerrit:stats:{ldap}"
 GERRIT_STATS_MONTHLY_BUCKET_KEY = "gerrit:stats:{ldap}:{bucket}"
 GERRIT_STATS_PROJECT_BUCKET_KEY = "gerrit:stats:{ldap}:{project}:{bucket}"
+
+DATE_FORMAT_YMD = "%Y-%m-%d"
