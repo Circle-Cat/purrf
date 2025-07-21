@@ -11,6 +11,8 @@ from src.common.constants import MicrosoftAccountStatus
 from src.common.api_response_wrapper import api_response
 from src.utils.google_chat_utils import get_chat_spaces
 from src.frontend_service.microsoft_chat_topics_loader import get_microsoft_chat_topics
+from src.frontend_service.jira_loader import get_issue_ids_in_timerange
+
 
 frontend_bp = Blueprint("frontend", __name__, url_prefix="/api")
 
@@ -112,6 +114,46 @@ async def all_microsoft_chat_topics():
         success=True,
         message="Successfully.",
         data=response,
+        status_code=HTTPStatus.OK,
+    )
+
+
+@frontend_bp.route("/jira/brief", methods=["POST"])
+def get_issue_ids():
+    """
+    Get Jira issue IDs in Redis by status: done, in_progress, todo, and all.
+
+    Request body (JSON):
+        {
+            "status": "<status>",  # required, one of "done", "in_progress", "todo", "all"
+            "ldaps": ["<ldap>", ...],  # required
+            "project_ids": ["<project_id>", ...],  # required
+            "start_date": "<yyyy-mm-dd>",  # required for "done"/"all"
+            "end_date": "<yyyy-mm-dd>"     # required for "done"/"all"
+        }
+
+    Returns:
+        Response (JSON): Standard API response with issue IDs grouped by status, ldap and project.
+    """
+    data = request.get_json(force=True)
+    status = data.get("status")
+    ldaps = data.get("ldaps")
+    project_ids = data.get("project_ids")
+    start_date = data.get("start_date")
+    end_date = data.get("end_date")
+
+    result = get_issue_ids_in_timerange(
+        status=status,
+        ldaps=ldaps,
+        project_ids=project_ids,
+        start_date=start_date,
+        end_date=end_date,
+    )
+
+    return api_response(
+        success=True,
+        message="Issue IDs retrieved successfully.",
+        data=result,
         status_code=HTTPStatus.OK,
     )
 

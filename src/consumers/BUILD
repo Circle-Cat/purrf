@@ -34,8 +34,8 @@ py_library(
     deps = [
         "//src/common:api_response_wrapper",
         "//src/common:google_client",
-        "//src/consumers:google_chat_consumer",
         "//src/consumers:gerrit_consumer",
+        "//src/consumers:google_chat_consumer",
         "//src/consumers:microsoft_chat_consumer",
         "//src/consumers:pubsub_pull_manager",
         "@pypi//flask",

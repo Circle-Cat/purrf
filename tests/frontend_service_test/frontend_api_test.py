@@ -8,6 +8,7 @@ from src.common.constants import MicrosoftAccountStatus
 MICROSOFT_LDAP_FETCHER_API = "/api/microsoft/{status}/ldaps"
 MICROSOFT_CHAT_TOPICS_FETCHER_API = "/api/microsoft/chat/topics"
 GOOGLE_CHAT_COUNT_API = "/api/google/chat/count"
+JIRA_BRIEF_API = "/api/jira/brief"
 GOOGLE_CALENDAR_CALENDARS_API = "/api/google/calendar/calendars"
 JIRA_ISSUE_DETAIL_BATCH_API = "/api/jira/detail/batch"
 
@@ -125,6 +126,24 @@ class TestAppRoutes(TestCase):
         response = self.client.get(MICROSOFT_CHAT_TOPICS_FETCHER_API)
 
         self.assertEqual(response.status_code, HTTPStatus.OK)
+
+    @patch("src.frontend_service.frontend_api.get_issue_ids_in_timerange")
+    def test_jira_brief_success(self, mock_process):
+        mock_result = {"todo": {"alice": {"projectA": [101, 102]}}}
+        mock_process.return_value = mock_result
+        response = self.client.post(
+            JIRA_BRIEF_API,
+            json={"status": "todo", "ldaps": ["alice"], "project_ids": ["projectA"]},
+        )
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.assertEqual(response.json["data"], mock_result)
+        mock_process.assert_called_once_with(
+            status="todo",
+            ldaps=["alice"],
+            project_ids=["projectA"],
+            start_date=None,
+            end_date=None,
+        )
 
     @patch("src.frontend_service.frontend_api.get_calendars_for_user")
     def test_get_google_calendar_calendars_success(self, mock_get_calendars):
