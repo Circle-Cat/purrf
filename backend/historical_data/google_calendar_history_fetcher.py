@@ -14,7 +14,7 @@ from backend.common.constants import (
     GOOGLE_CALENDAR_EVENTS_INDEX_KEY,
     GOOGLE_CALENDAR_EVENT_DETAIL_KEY,
 )
-import time
+from backend.frontend_service.ldap_loader import get_all_active_ldap_users
 import json
 
 logger = get_logger()
@@ -106,13 +106,16 @@ def get_calendar_events(calendar_id: str, start_time: str, end_time: str):
             description = event.get("description", "")
             start = event.get("start", {}).get("dateTime")
             end = event.get("end", {}).get("dateTime")
+            attendance_data = None
             organizer = event.get("organizer", {}).get("email", "")
             is_recurring = "recurringEventId" in event
 
             meet_code = get_meeting_code_from_event(event)
             if meet_code:
                 try:
-                    attendance_data = get_event_attendance(meet_code)
+                    attendance_data = get_event_attendance(
+                        meet_code, is_recurring, event_id
+                    )
                 except Exception as e:
                     logger.warning(
                         f"Failed to fetch attendance for event {event_id}: {e}"
@@ -142,12 +145,16 @@ def get_calendar_events(calendar_id: str, start_time: str, end_time: str):
     stop=stop_after_attempt(3),
     wait=wait_exponential(multiplier=1, min=1, max=3),
 )
-def get_event_attendance(meeting_code: str):
+def get_event_attendance(
+    meeting_code: str, is_recurring: bool = False, event_id: str = None
+):
     """
     Fetches actual Google Meet attendance (participants) for a calendar event using the Reports API.
 
     Args:
         meeting_code: The unique code for the Google Meet session.
+        is_recurring: Whether the event is part of a recurring series.
+        event_id: The full event ID (e.g., 4gnl5pmrltdb8so1e273gmgqp0_20250702T013000Z)
 
     Returns:
         A list of dictionaries containing participant details: email, duration, join/leave times.
@@ -156,6 +163,20 @@ def get_event_attendance(meeting_code: str):
     service = factory.create_reports_client()
     attendance_details = []
     next_page_token = None
+
+    recurrence_instance_date = None
+    if is_recurring and event_id:
+        try:
+            recurrence_suffix = event_id.split("_")[
+                -1
+            ]  # e.g., '20250702T013000Z' → '2025-07-02'
+            recurrence_instance_date = datetime.strptime(
+                recurrence_suffix, "%Y%m%dT%H%M%SZ"
+            ).date()
+        except Exception as e:
+            logger.warning(
+                f"Failed to parse recurrence date from event_id: {event_id}: {e}"
+            )
 
     while True:
         response = (
@@ -209,6 +230,11 @@ def get_event_attendance(meeting_code: str):
                     if start_ts and duration_seconds
                     else None
                 )
+
+                if recurrence_instance_date and join_time:
+                    join_date = datetime.fromisoformat(join_time).date()
+                    if join_date != recurrence_instance_date:
+                        continue
 
                 attendance_details.append({
                     "email": email,
@@ -301,21 +327,56 @@ def cache_calendars():
             continue
 
         calendar_id = calendar["calendar_id"]
-        score = time.time()
 
         factory = RedisClientFactory()
         redis_client = factory.create_redis_client()
         pipeline = redis_client.pipeline()
         pipeline.sadd(GOOGLE_CALENDAR_LIST_INDEX_KEY, calendar_id)
-        pipeline.zadd(
-            GOOGLE_USER_CALENDARS_INDEX_KEY.format(ldap=ldap), {calendar_id: score}
-        )
+        pipeline.sadd(GOOGLE_USER_CALENDARS_INDEX_KEY.format(ldap=ldap), calendar_id)
         pipeline.set(
             GOOGLE_CALENDAR_LIST_KEY.format(calendar_id=calendar_id),
             json.dumps(calendar),
         )
         pipeline.execute()
         logger.debug(f"Cached calendar {calendar_id} for purrf")
+
+
+@retry(
+    reraise=True,
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=1, max=3),
+)
+def cache_all_user_calendars_to_redis():
+    """
+    Caches all user calendar into Redis.
+
+    Raises:
+        Any exception raised by `get_calendar_list` or Redis operations will be retried
+        up to 3 times with exponential backoff.
+    """
+    factory = RedisClientFactory()
+    redis_client = factory.create_redis_client()
+    pipeline = redis_client.pipeline()
+
+    ldap_users = get_all_active_ldap_users()
+
+    for ldap in ldap_users:
+        calendar_id = f"{ldap}@circlecat.org"
+        calendar_metadata = {
+            "calendar_id": calendar_id,
+            "summary": "Personal",
+            "description": "User's default calendar",
+        }
+
+        pipeline.sadd(GOOGLE_CALENDAR_LIST_INDEX_KEY, calendar_id)
+        pipeline.sadd(GOOGLE_USER_CALENDARS_INDEX_KEY.format(ldap=ldap), calendar_id)
+        pipeline.set(
+            GOOGLE_CALENDAR_LIST_KEY.format(calendar_id=calendar_id),
+            json.dumps(calendar_metadata),
+        )
+
+    pipeline.execute()
+    logger.info(f"Cached personal calendars for {len(ldap_users)} users.")
 
 
 @retry(
@@ -409,6 +470,7 @@ def pull_calendar_history(time_min: str = None, time_max: str = None):
         Any exception raised by `cache_calendars()` or `cache_events()` will be retried up to 3 times using exponential backoff due to the `@retry` decorator.
     """
     cache_calendars()
+    cache_all_user_calendars_to_redis()
     redis_client = RedisClientFactory().create_redis_client()
     if not redis_client:
         raise RuntimeError("Redis client not available")

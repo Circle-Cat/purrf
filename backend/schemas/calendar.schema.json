@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "CalendarDetail",
   "type": "object",
-  "required": ["calendar_id", "summary", "timeZone"],
+  "required": ["calendar_id", "summary"],
   "properties": {
     "calendar_id": {
       "type": "string"

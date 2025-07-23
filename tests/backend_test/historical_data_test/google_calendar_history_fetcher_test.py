@@ -6,6 +6,7 @@ from backend.historical_data.google_calendar_history_fetcher import (
     get_event_attendance,
     get_meeting_code_from_event,
     cache_calendars,
+    cache_all_user_calendars_to_redis,
     cache_events,
     pull_calendar_history,
 )
@@ -456,8 +457,13 @@ class TestGetCalendarList(TestCase):
         cache_calendars()
 
         assert mock_validate_data.call_count == 1
-        mock_pipeline.sadd.assert_called_once()
-        mock_pipeline.zadd.assert_called_once()
+        mock_validate_data.assert_called_once()
+        mock_pipeline.sadd.assert_any_call(
+            "calendarlist", "work_calendar@group.calendar.google.com"
+        )
+        mock_pipeline.sadd.assert_any_call(
+            "user:user:calendars", "work_calendar@group.calendar.google.com"
+        )
         mock_pipeline.set.assert_called_once()
         mock_pipeline.execute.assert_called_once()
 
@@ -547,8 +553,14 @@ class TestGetCalendarList(TestCase):
 
         self.assertEqual(mock_get_calendar_list.call_count, 3)
 
-        self.assertTrue(mock_pipeline.zadd.called)
-        self.assertTrue(mock_pipeline.set.called)
+        mock_validate_data.assert_called_once()
+        mock_pipeline.sadd.assert_any_call(
+            "calendarlist", "work_calendar@group.calendar.google.com"
+        )
+        mock_pipeline.sadd.assert_any_call(
+            "user:user:calendars", "work_calendar@group.calendar.google.com"
+        )
+        mock_pipeline.set.assert_called_once()
         mock_pipeline.execute.assert_called_once()
 
     @patch("backend.historical_data.google_calendar_history_fetcher.get_calendar_list")
@@ -559,6 +571,106 @@ class TestGetCalendarList(TestCase):
             cache_calendars()
 
         self.assertEqual(mock_get_calendar_list.call_count, 3)
+
+    @patch("backend.historical_data.google_calendar_history_fetcher.logger")
+    @patch("backend.historical_data.google_calendar_history_fetcher.RedisClientFactory")
+    @patch(
+        "backend.historical_data.google_calendar_history_fetcher.get_all_active_ldap_users"
+    )
+    def test_cache_all_user_calendars_to_redis_success(
+        self,
+        mock_get_all_active_ldap_users,
+        mock_redis_factory,
+        mock_logger,
+    ):
+        mock_get_all_active_ldap_users.return_value = ["alice", "bob"]
+
+        mock_redis = MagicMock()
+        mock_pipeline = MagicMock()
+        mock_redis.pipeline.return_value = mock_pipeline
+        mock_redis_factory.return_value.create_redis_client.return_value = mock_redis
+
+        cache_all_user_calendars_to_redis()
+
+        assert mock_pipeline.sadd.call_count == 4
+        assert mock_pipeline.set.call_count == 2
+        mock_pipeline.execute.assert_called_once()
+
+        mock_pipeline.sadd.assert_any_call("calendarlist", "alice@circlecat.org")
+        mock_pipeline.sadd.assert_any_call(
+            "user:alice:calendars", "alice@circlecat.org"
+        )
+
+        mock_pipeline.sadd.assert_any_call("calendarlist", "bob@circlecat.org")
+        mock_pipeline.sadd.assert_any_call("user:bob:calendars", "bob@circlecat.org")
+
+        mock_logger.info.assert_called_with("Cached personal calendars for 2 users.")
+
+    @patch("backend.historical_data.google_calendar_history_fetcher.logger")
+    @patch("backend.historical_data.google_calendar_history_fetcher.RedisClientFactory")
+    @patch(
+        "backend.historical_data.google_calendar_history_fetcher.get_all_active_ldap_users"
+    )
+    def test_cache_all_user_calendars_to_redis_empty_ldap_list(
+        self,
+        mock_get_all_active_ldap_users,
+        mock_redis_factory,
+        mock_logger,
+    ):
+        mock_get_all_active_ldap_users.return_value = []
+        cache_all_user_calendars_to_redis()
+        mock_logger.info.assert_called_with("Cached personal calendars for 0 users.")
+
+    @patch("backend.historical_data.google_calendar_history_fetcher.RedisClientFactory")
+    @patch(
+        "backend.historical_data.google_calendar_history_fetcher.get_all_active_ldap_users"
+    )
+    def test_cache_all_user_calendars_to_redis_retries_then_succeeds(
+        self,
+        mock_get_all_active_ldap_users,
+        mock_redis_factory,
+    ):
+        mock_redis = MagicMock()
+        mock_pipeline = MagicMock()
+
+        mock_pipeline.execute.side_effect = [
+            RuntimeError("fail1"),
+            RuntimeError("fail2"),
+            None,
+        ]
+        mock_redis.pipeline.return_value = mock_pipeline
+        mock_redis_factory.return_value.create_redis_client.return_value = mock_redis
+
+        mock_get_all_active_ldap_users.return_value = [
+            {"primaryEmail": "user1@circlecat.org"},
+        ]
+
+        cache_all_user_calendars_to_redis()
+
+        assert mock_pipeline.execute.call_count == 3
+
+    @patch("backend.historical_data.google_calendar_history_fetcher.RedisClientFactory")
+    @patch(
+        "backend.historical_data.google_calendar_history_fetcher.get_all_active_ldap_users"
+    )
+    def test_cache_all_user_calendars_to_redis_retries_3_times_and_fails(
+        self,
+        mock_get_all_active_ldap_users,
+        mock_redis_factory,
+    ):
+        mock_redis = MagicMock()
+        mock_pipeline = MagicMock()
+
+        mock_pipeline.execute.side_effect = RuntimeError("all retries fail")
+        mock_redis.pipeline.return_value = mock_pipeline
+        mock_redis_factory.return_value.create_redis_client.return_value = mock_redis
+
+        mock_get_all_active_ldap_users.return_value = ["user1"]
+
+        with self.assertRaises(RuntimeError):
+            cache_all_user_calendars_to_redis()
+
+        self.assertEqual(mock_pipeline.execute.call_count, 3)
 
     @patch("backend.historical_data.google_calendar_history_fetcher.RedisClientFactory")
     @patch("backend.historical_data.google_calendar_history_fetcher.validate_data")
@@ -686,11 +798,18 @@ class TestGetCalendarList(TestCase):
 
         self.assertEqual(mock_get_calendar_events.call_count, 3)
 
+    @patch(
+        "backend.historical_data.google_calendar_history_fetcher.cache_all_user_calendars_to_redis"
+    )
     @patch("backend.historical_data.google_calendar_history_fetcher.cache_calendars")
     @patch("backend.historical_data.google_calendar_history_fetcher.cache_events")
     @patch("backend.historical_data.google_calendar_history_fetcher.RedisClientFactory")
     def test_pull_calendar_history_success(
-        self, mock_redis_factory, mock_cache_events, mock_cache_calendars
+        self,
+        mock_redis_factory,
+        mock_cache_events,
+        mock_cache_calendars,
+        mock_cache_all_user_calendars_to_redis,
     ):
         mock_redis = MagicMock()
         mock_redis_factory.return_value.create_redis_client.return_value = mock_redis
@@ -706,6 +825,7 @@ class TestGetCalendarList(TestCase):
         pull_calendar_history("2025-06-01T00:00:00Z", "2025-06-02T00:00:00Z")
 
         mock_cache_calendars.assert_called_once()
+        mock_cache_all_user_calendars_to_redis.assert_called_once()
         mock_redis_factory.return_value.create_redis_client.assert_called_once()
         mock_redis.smembers.assert_called_once_with("calendarlist")
 
@@ -720,19 +840,29 @@ class TestGetCalendarList(TestCase):
             self.assertEqual(args[1], "2025-06-01T00:00:00Z")
             self.assertEqual(args[2], "2025-06-02T00:00:00Z")
 
+    @patch(
+        "backend.historical_data.google_calendar_history_fetcher.cache_all_user_calendars_to_redis"
+    )
     @patch("backend.historical_data.google_calendar_history_fetcher.cache_calendars")
     @patch("backend.historical_data.google_calendar_history_fetcher.RedisClientFactory")
     def test_pull_calendar_history_no_redis_client(
-        self, mock_redis_factory, mock_cache_calendars
+        self,
+        mock_redis_factory,
+        mock_cache_calendars,
+        mock_cache_all_user_calendars_to_redis,
     ):
         mock_redis_factory.return_value.create_redis_client.return_value = None
         mock_cache_calendars.return_value = None
+        mock_cache_all_user_calendars_to_redis.return_value = None
 
         with self.assertRaises(RuntimeError) as context:
             pull_calendar_history("2025-06-01T00:00:00Z", "2025-06-02T00:00:00Z")
 
         self.assertEqual(str(context.exception), "Redis client not available")
 
+    @patch(
+        "backend.historical_data.google_calendar_history_fetcher.cache_all_user_calendars_to_redis"
+    )
     @patch("backend.historical_data.google_calendar_history_fetcher.cache_calendars")
     @patch("backend.historical_data.google_calendar_history_fetcher.RedisClientFactory")
     @patch("backend.historical_data.google_calendar_history_fetcher.cache_events")
@@ -741,10 +871,12 @@ class TestGetCalendarList(TestCase):
         mock_cache_events,
         mock_redis_factory,
         mock_cache_calendars,
+        mock_cache_all_user_calendars_to_redis,
     ):
         mock_redis = MagicMock()
         mock_redis_factory.return_value.create_redis_client.return_value = mock_redis
         mock_cache_calendars.return_value = None
+        mock_cache_all_user_calendars_to_redis.return_value = None
 
         mock_redis.smembers.return_value = set()
 
@@ -752,13 +884,21 @@ class TestGetCalendarList(TestCase):
 
         mock_cache_events.assert_not_called()
 
+    @patch(
+        "backend.historical_data.google_calendar_history_fetcher.cache_all_user_calendars_to_redis"
+    )
     @patch("backend.historical_data.google_calendar_history_fetcher.cache_calendars")
     @patch("backend.historical_data.google_calendar_history_fetcher.RedisClientFactory")
     @patch("backend.historical_data.google_calendar_history_fetcher.cache_events")
     def test_pull_calendar_history_retries_then_succeeds(
-        self, mock_cache_events, mock_redis_factory, mock_cache_calendars
+        self,
+        mock_cache_events,
+        mock_redis_factory,
+        mock_cache_calendars,
+        mock_cache_all_user_calendars_to_redis,
     ):
         mock_cache_calendars.return_value = None
+        mock_cache_all_user_calendars_to_redis.return_value = None
 
         mock_redis = MagicMock()
         mock_redis_factory.return_value.create_redis_client.return_value = mock_redis
@@ -776,13 +916,21 @@ class TestGetCalendarList(TestCase):
 
         self.assertEqual(mock_cache_events.call_count, 3)
 
+    @patch(
+        "backend.historical_data.google_calendar_history_fetcher.cache_all_user_calendars_to_redis"
+    )
     @patch("backend.historical_data.google_calendar_history_fetcher.cache_calendars")
     @patch("backend.historical_data.google_calendar_history_fetcher.RedisClientFactory")
     @patch("backend.historical_data.google_calendar_history_fetcher.cache_events")
     def test_pull_calendar_history_retries_then_fails(
-        self, mock_cache_events, mock_redis_factory, mock_cache_calendars
+        self,
+        mock_cache_events,
+        mock_redis_factory,
+        mock_cache_calendars,
+        mock_cache_all_user_calendars_to_redis,
     ):
         mock_cache_calendars.return_value = None
+        mock_cache_all_user_calendars_to_redis.return_value = None
 
         mock_redis = MagicMock()
         mock_redis_factory.return_value.create_redis_client.return_value = mock_redis

@@ -49,6 +49,7 @@ gcloud config set project {google_project_id}
 ```
 ####  Export Environment Variables
 - USER_EMAIL
+- ADMIN_EMAIL
 - SERVICE_ACCOUNT_EMAIL
 - LOG_LEVEL
 - REDIS_HOST
