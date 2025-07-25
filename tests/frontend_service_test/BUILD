@@ -51,3 +51,11 @@ py_test(
         "//src/frontend_service:calendar_loader",
     ],
 )
+
+py_test(
+    name = "jira_loader_test",
+    srcs = ["jira_loader_test.py"],
+    deps = [
+        "//src/frontend_service:jira_loader",
+    ],
+)

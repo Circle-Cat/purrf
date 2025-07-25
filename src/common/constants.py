@@ -182,6 +182,7 @@ JIRA_ISSUE_DETAILS_KEY = "jira:issue:{issue_id}"
 JIRA_LDAP_PROJECT_STATUS_INDEX_KEY = (
     "jira:ldap:{ldap}:project:{project_id}:status:{status}"
 )
+JIRA_PROJECTS_KEY = "jira:project"
 
 # Jira API configuration
 JIRA_MAX_RESULTS_DEFAULT = 1000
