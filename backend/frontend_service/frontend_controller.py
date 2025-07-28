@@ -1,7 +1,10 @@
 from flask import Blueprint, request
 from http import HTTPStatus
 from backend.frontend_service.chat_query_utils import count_messages_in_date_range
-from backend.frontend_service.jira_loader import process_get_issue_detail_batch
+from backend.frontend_service.jira_loader import (
+    process_get_issue_detail_batch,
+    get_issue_ids_in_timerange,
+)
 from backend.frontend_service.gerrit_loader import (
     get_gerrit_stats as load_gerrit_stats,
 )
@@ -12,7 +15,6 @@ from backend.frontend_service.calendar_loader import (
 from backend.common.constants import MicrosoftAccountStatus, MicrosoftGroups
 from backend.common.api_response_wrapper import api_response
 from backend.utils.google_chat_utils import get_chat_spaces
-from backend.frontend_service.jira_loader import get_issue_ids_in_timerange
 
 
 frontend_bp = Blueprint("frontend", __name__, url_prefix="/api")
@@ -24,6 +26,7 @@ class FrontendController:
         ldap_service,
         microsoft_chat_analytics_service,
         microsoft_meeting_chat_topic_cache_service,
+        jira_analytics_service,
     ):
         """
         Initialize the FrontendController with required dependencies.
@@ -38,6 +41,7 @@ class FrontendController:
         self.microsoft_meeting_chat_topic_cache_service = (
             microsoft_meeting_chat_topic_cache_service
         )
+        self.jira_analytics_service = jira_analytics_service
 
     def register_routes(self, blueprint):
         """
@@ -59,6 +63,11 @@ class FrontendController:
         blueprint.add_url_rule(
             "/microsoft/chat/topics",
             view_func=self.all_microsoft_chat_topics,
+            methods=["GET"],
+        )
+        blueprint.add_url_rule(
+            "/jira/projects",
+            view_func=self.get_all_jira_projects_api,
             methods=["GET"],
         )
 
@@ -143,6 +152,17 @@ class FrontendController:
             success=True,
             message="Successfully.",
             data=response,
+            status_code=HTTPStatus.OK,
+        )
+
+    def get_all_jira_projects_api(self):
+        """API endpoint to get a mapping of all project IDs to their names."""
+        jira_data = self.jira_analytics_service.get_all_jira_projects()
+
+        return api_response(
+            success=True,
+            message="Fetch jira projects successful",
+            data=jira_data,
             status_code=HTTPStatus.OK,
         )
 

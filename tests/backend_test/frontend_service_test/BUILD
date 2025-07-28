@@ -75,3 +75,11 @@ py_test(
         "//backend/frontend_service:microsoft_chat_analytics_service",
     ],
 )
+
+py_test(
+    name = "jira_analytics_service_test",
+    srcs = ["jira_analytics_service_test.py"],
+    deps = [
+        "//backend/frontend_service:jira_analytics_service",
+    ],
+)

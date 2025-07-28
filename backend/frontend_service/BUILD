@@ -104,3 +104,13 @@ py_library(
         "//backend/common:constants",
     ],
 )
+
+py_library(
+    name = "jira_analytics_service",
+    srcs = [
+        "jira_analytics_service.py",
+    ],
+    deps = [
+        "//backend/common:constants",
+    ],
+)

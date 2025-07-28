@@ -26,6 +26,7 @@ from backend.historical_data.microsoft_member_sync_service import (
     MicrosoftMemberSyncService,
 )
 from backend.frontend_service.ldap_service import LdapService
+from backend.frontend_service.jira_analytics_service import JiraAnalyticsService
 from backend.frontend_service.frontend_controller import FrontendController
 from backend.frontend_service.microsoft_chat_analytics_service import (
     MicrosoftChatAnalyticsService,
@@ -132,9 +133,14 @@ class AppDependencyBuilder:
                 retry_utils=self.retry_utils,
             )
         )
-
+        self.jira_analytics_service = JiraAnalyticsService(
+            logger=self.logger,
+            redis_client=self.redis_client,
+            retry_utils=self.retry_utils,
+        )
         self.frontend_controller = FrontendController(
             ldap_service=self.ldap_service,
             microsoft_chat_analytics_service=self.microsoft_chat_analytics_service,
             microsoft_meeting_chat_topic_cache_service=self.microsoft_meeting_chat_topic_cache_service,
+            jira_analytics_service=self.jira_analytics_service,
         )

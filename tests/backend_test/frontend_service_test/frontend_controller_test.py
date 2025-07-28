@@ -16,6 +16,7 @@ JIRA_BRIEF_API = "/api/jira/brief"
 GOOGLE_CALENDAR_CALENDARS_API = "/api/google/calendar/calendars"
 JIRA_ISSUE_DETAIL_BATCH_API = "/api/jira/detail/batch"
 GOOGLE_CALENDAR_EVENTS_API = "/api/google/calendar/events"
+JIRA_PROJECT_API = "/api/jira/projects"
 
 
 class TestFrontendController(TestCase):
@@ -23,10 +24,12 @@ class TestFrontendController(TestCase):
         self.ldap_service = MagicMock()
         self.microsoft_chat_analytics_service = MagicMock()
         self.microsoft_meeting_chat_topic_cache_service = AsyncMock()
+        self.mock_jira_analytics_service = MagicMock()
         self.controller = FrontendController(
             ldap_service=self.ldap_service,
             microsoft_chat_analytics_service=self.microsoft_chat_analytics_service,
             microsoft_meeting_chat_topic_cache_service=self.microsoft_meeting_chat_topic_cache_service,
+            jira_analytics_service=self.mock_jira_analytics_service,
         )
         self.app = Flask(__name__)
         self.app_context = self.app.app_context()
@@ -138,6 +141,20 @@ class TestFrontendController(TestCase):
             self.assertEqual(response.json["data"], mock_data)
 
             self.microsoft_meeting_chat_topic_cache_service.get_microsoft_chat_topics.assert_called_once()
+
+    def test_get_all_jira_projects_success(self):
+        mock_result = {"10503": "Intern Practice", "24998": "Purrf"}
+        self.mock_jira_analytics_service.get_all_jira_projects.return_value = (
+            mock_result
+        )
+
+        with self.app.test_request_context(JIRA_PROJECT_API):
+            response = self.controller.get_all_jira_projects_api()
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.assertEqual(response.json["data"], mock_result)
+        self.assertIn("Fetch jira project", response.json["message"])
+        self.mock_jira_analytics_service.get_all_jira_projects.assert_called_once()
 
 
 class TestAppRoutes(TestCase):
