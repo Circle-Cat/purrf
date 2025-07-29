@@ -23,3 +23,11 @@ py_test(
         "//src/notification_management:google_chat_watcher",
     ],
 )
+
+py_test(
+    name = "gerrit_watcher_test",
+    srcs = ["gerrit_watcher_test.py"],
+    deps = [
+        "//src/notification_management:gerrit_watcher",
+    ],
+)
