@@ -34,6 +34,7 @@ py_library(
     deps = [
         "//src/common:api_response_wrapper",
         "//src/common:google_client",
+        "//src/consumers:google_chat_consumer",
         "//src/consumers:microsoft_chat_consumer",
         "//src/consumers:pubsub_pull_manager",
         "@pypi//flask",
@@ -46,8 +47,11 @@ py_library(
         "google_chat_consumer.py",
     ],
     deps = [
+        "//src/common:constants",
         "//src/common:google_client",
         "//src/common:logger",
+        "//src/consumers:pubsub_puller",
+        "//src/utils:google_chat_message_store",
         "@pypi//tenacity",
     ],
 )
