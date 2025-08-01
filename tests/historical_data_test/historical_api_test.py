@@ -9,6 +9,7 @@ from src.common.constants import MicrosoftAccountStatus
 MICROSOFT_LDAP_FETCHER_API = "/api/microsoft/backfill/ldaps"
 MICROSOFT_CHAT_FETCHER_API = "/microsoft/fetch/history/messages/{chat_id}"
 GOOGLE_CHAT_FETCHER_API = "/api/google/chat/spaces/messages"
+JIRA_BACKFILL_API = "/api/jira/backfill"
 JIRA_PROJECT_API = "/api/jira/project"
 TEST_CHAT_ID = "chat131"
 
@@ -63,6 +64,19 @@ class TestAppRoutes(TestCase):
         self.assertEqual(response.json["data"], mock_result)
 
         mock_fetch_history_messages.assert_called_once()
+
+    @patch("src.historical_data.historical_api.process_backfill_jira_issues")
+    def test_backfill_jira_issues(self, mock_process_backfill_jira_issues):
+        mock_result = 150
+        mock_process_backfill_jira_issues.return_value = mock_result
+
+        response = self.client.post(JIRA_BACKFILL_API)
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        response_data = response.get_json()
+        self.assertEqual(response_data["data"]["imported_issues"], 150)
+
+        mock_process_backfill_jira_issues.assert_called_once()
 
     @patch("src.historical_data.historical_api.process_sync_jira_projects")
     def test_sync_jira_projects(self, mock_process_sync_jira_projects):
