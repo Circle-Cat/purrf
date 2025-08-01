@@ -47,3 +47,13 @@ py_library(
         "@pypi//python_dateutil",
     ],
 )
+
+py_library(
+    name = "retry_utils",
+    srcs = [
+        "retry_utils.py",
+    ],
+    deps = [
+        "@pypi//tenacity",
+    ],
+)
