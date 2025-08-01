@@ -102,3 +102,25 @@ def start_google_chat_pulling(project_id, subscription_id):
         data=None,
         status_code=HTTPStatus.ACCEPTED,
     )
+
+
+@consumers_bp.route("/gerrit/pull/<project_id>/<subscription_id>", methods=["POST"])
+def start_gerrit_pulling(project_id: str, subscription_id: str):
+    """
+    HTTP POST endpoint to trigger the Gerrit Pub/Sub pulling process
+    for a given project and subscription.
+
+    Args:
+        project_id (str): The Google Cloud project ID from URL path.
+        subscription_id (str): The Pub/Sub subscription ID from URL path.
+
+    Returns:
+        JSON response with pull status and HTTP 200 code.
+    """
+    pull_gerrit(project_id, subscription_id)
+    return api_response(
+        success=True,
+        message="Gerrit pull started.",
+        data=None,
+        status_code=HTTPStatus.OK,
+    )

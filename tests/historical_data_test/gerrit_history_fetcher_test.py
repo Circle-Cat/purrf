@@ -1,4 +1,3 @@
-import os
 import unittest
 from unittest.mock import patch, MagicMock
 
@@ -19,7 +18,7 @@ from src.common.constants import (
     GERRIT_STATS_ALL_TIME_KEY,
     GERRIT_STATS_MONTHLY_BUCKET_KEY,
     GERRIT_STATS_PROJECT_BUCKET_KEY,
-    GERRIT_DATE_BUCKET_TEMPLATE,
+    GERRIT_CHANGE_STATUS_KEY,
 )
 
 
@@ -81,9 +80,11 @@ class TestGerritHistoryFetcher(unittest.TestCase):
         self.assertEqual(bucket, "2025-05-01_2025-05-31")
 
     def test_store_change_in_redis(self):
+        """Merged change should run dedupe pipeline (no messages) and then status update pipeline."""
+        mock_redis = MagicMock()
         mock_pipe = MagicMock()
-        mock_redis_client = MagicMock()
-        mock_redis_client.pipeline.return_value = mock_pipe
+        mock_redis.pipeline.return_value = mock_pipe
+        mock_redis.hget.return_value = None
 
         change = {
             "owner": {"username": "alice"},
@@ -91,19 +92,20 @@ class TestGerritHistoryFetcher(unittest.TestCase):
             "insertions": 10,
             "project": "projX",
             "created": "2025-05-14 00:00:00.000000",
+            "messages": [],
+            "_number": 42,
         }
+
         with patch.object(
-            RedisClientFactory, "create_redis_client", return_value=mock_redis_client
+            RedisClientFactory, "create_redis_client", return_value=mock_redis
         ):
             store_change(change)
 
-        mock_redis_client.pipeline.assert_called_once()
-        actual_calls = [call.args for call in mock_pipe.hincrby.call_args_list]
         bucket = compute_buckets(change["created"])
         expected = [
             (
                 GERRIT_STATS_ALL_TIME_KEY.format(ldap="alice"),
-                GERRIT_STATUS_TO_FIELD[GerritChangeStatus.MERGED],
+                GERRIT_STATUS_TO_FIELD[GerritChangeStatus.MERGED.value],
                 1,
             ),
             (
@@ -113,7 +115,7 @@ class TestGerritHistoryFetcher(unittest.TestCase):
             ),
             (
                 GERRIT_STATS_MONTHLY_BUCKET_KEY.format(ldap="alice", bucket=bucket),
-                GERRIT_STATUS_TO_FIELD[GerritChangeStatus.MERGED],
+                GERRIT_STATUS_TO_FIELD[GerritChangeStatus.MERGED.value],
                 1,
             ),
             (
@@ -125,7 +127,7 @@ class TestGerritHistoryFetcher(unittest.TestCase):
                 GERRIT_STATS_PROJECT_BUCKET_KEY.format(
                     ldap="alice", project="projX", bucket=bucket
                 ),
-                GERRIT_STATUS_TO_FIELD[GerritChangeStatus.MERGED],
+                GERRIT_STATUS_TO_FIELD[GerritChangeStatus.MERGED.value],
                 1,
             ),
             (
@@ -136,9 +138,15 @@ class TestGerritHistoryFetcher(unittest.TestCase):
                 10,
             ),
         ]
+        actual = [c.args for c in mock_pipe.hincrby.call_args_list]
         for exp in expected:
-            self.assertIn(exp, actual_calls)
-        mock_pipe.execute.assert_called_once()
+            self.assertIn(exp, actual)
+
+        mock_pipe.hset.assert_called_with(
+            GERRIT_CHANGE_STATUS_KEY, 42, GerritChangeStatus.MERGED.value
+        )
+        self.assertEqual(mock_pipe.execute.call_count, 2)
+        self.assertEqual(mock_redis.pipeline.call_count, 2)
 
     def test_fetch_and_store_end_to_end(self):
         fake_pages = [
@@ -150,6 +158,7 @@ class TestGerritHistoryFetcher(unittest.TestCase):
                     "project": "p",
                     "created": "2025-05-14 00:00:00.000000",
                     "messages": [{"author": {"username": "charlie"}}],
+                    "_number": 12345,
                 }
             ],
             [],
@@ -160,6 +169,8 @@ class TestGerritHistoryFetcher(unittest.TestCase):
         mock_pipe = MagicMock()
         mock_redis_client = MagicMock()
         mock_redis_client.pipeline.return_value = mock_pipe
+        mock_redis_client.smembers.return_value = set()  # Charlie is new
+        mock_redis_client.hget.return_value = None
 
         with (
             patch.object(
@@ -178,15 +189,16 @@ class TestGerritHistoryFetcher(unittest.TestCase):
                 page_size=1,
             )
 
-        mock_redis_client.pipeline.assert_called_once()
-        actual_calls = [call.args for call in mock_pipe.hincrby.call_args_list]
+        self.assertEqual(mock_redis_client.pipeline.call_count, 2)
+        calls = [c.args for c in mock_pipe.hincrby.call_args_list]
+
         self.assertIn(
             (
                 GERRIT_STATS_ALL_TIME_KEY.format(ldap="bob"),
                 GERRIT_STATUS_TO_FIELD[GERRIT_UNDER_REVIEW],
                 1,
             ),
-            actual_calls,
+            calls,
         )
         self.assertIn(
             (
@@ -194,7 +206,7 @@ class TestGerritHistoryFetcher(unittest.TestCase):
                 GERRIT_CL_REVIEWED_FIELD,
                 1,
             ),
-            actual_calls,
+            calls,
         )
 
     def test_fetch_changes_with_no_filters(self):
@@ -230,16 +242,23 @@ class TestGerritHistoryFetcher(unittest.TestCase):
         )
 
     def test_store_change_with_multiple_reviewers(self):
+        """
+        Each distinct reviewer not in smembers() gets cl_reviewed +1
+        across all-time, monthly, and project buckets.
+        """
+        mock_redis = MagicMock()
         mock_pipe = MagicMock()
-        mock_redis_client = MagicMock()
-        mock_redis_client.pipeline.return_value = mock_pipe
+        mock_redis.pipeline.return_value = mock_pipe
+        mock_redis.hget.return_value = None
+        mock_redis.smembers.return_value = set()
 
         change = {
             "owner": {"username": "dev1"},
             "status": GerritChangeStatus.NEW.value,
-            "insertions": 5,
             "project": "demo",
             "created": "2025-05-10 08:00:00.000000",
+            "_number": 100,
+            "insertions": 5,
             "messages": [
                 {"author": {"username": "rev1"}},
                 {"author": {"username": "rev2"}},
@@ -248,25 +267,72 @@ class TestGerritHistoryFetcher(unittest.TestCase):
         }
 
         with patch.object(
-            RedisClientFactory, "create_redis_client", return_value=mock_redis_client
+            RedisClientFactory, "create_redis_client", return_value=mock_redis
         ):
             store_change(change)
 
-        expected_calls = [
+        calls = [c.args for c in mock_pipe.hincrby.call_args_list]
+        bucket = compute_buckets(change["created"])
+
+        self.assertIn(
             (
                 GERRIT_STATS_ALL_TIME_KEY.format(ldap="rev1"),
                 GERRIT_CL_REVIEWED_FIELD,
                 1,
             ),
+            calls,
+        )
+        self.assertIn(
+            (
+                GERRIT_STATS_MONTHLY_BUCKET_KEY.format(ldap="rev1", bucket=bucket),
+                GERRIT_CL_REVIEWED_FIELD,
+                1,
+            ),
+            calls,
+        )
+        self.assertIn(
+            (
+                GERRIT_STATS_PROJECT_BUCKET_KEY.format(
+                    ldap="rev1", project="demo", bucket=bucket
+                ),
+                GERRIT_CL_REVIEWED_FIELD,
+                1,
+            ),
+            calls,
+        )
+
+        self.assertIn(
             (
                 GERRIT_STATS_ALL_TIME_KEY.format(ldap="rev2"),
                 GERRIT_CL_REVIEWED_FIELD,
                 1,
             ),
-        ]
-        actual_calls = [c.args for c in mock_pipe.hincrby.call_args_list]
-        for exp in expected_calls:
-            self.assertIn(exp, actual_calls)
+            calls,
+        )
+        self.assertIn(
+            (
+                GERRIT_STATS_MONTHLY_BUCKET_KEY.format(ldap="rev2", bucket=bucket),
+                GERRIT_CL_REVIEWED_FIELD,
+                1,
+            ),
+            calls,
+        )
+        self.assertIn(
+            (
+                GERRIT_STATS_PROJECT_BUCKET_KEY.format(
+                    ldap="rev2", project="demo", bucket=bucket
+                ),
+                GERRIT_CL_REVIEWED_FIELD,
+                1,
+            ),
+            calls,
+        )
+
+        mock_pipe.expire.assert_called_once_with(
+            "gerrit:dedupe:reviewed:100", 60 * 60 * 24 * 90
+        )
+        self.assertEqual(mock_redis.pipeline.call_count, 2)
+        self.assertEqual(mock_pipe.execute.call_count, 2)
 
     def test_compute_buckets_invalid_timestamp(self):
         result = compute_buckets("bad input")

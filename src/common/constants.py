@@ -144,7 +144,8 @@ GERRIT_DATE_BUCKET_TEMPLATE = "{start}_{end}"
 GERRIT_STATS_ALL_TIME_KEY = "gerrit:stats:{ldap}"
 GERRIT_STATS_MONTHLY_BUCKET_KEY = "gerrit:stats:{ldap}:{bucket}"
 GERRIT_STATS_PROJECT_BUCKET_KEY = "gerrit:stats:{ldap}:{project}:{bucket}"
-
+GERRIT_CHANGE_STATUS_KEY = "gerrit:change_status"
+GERRIT_DEDUPE_REVIEWED_KEY = "gerrit:dedupe:reviewed:{change_number}"
 
 # Jira Redis key templates
 JIRA_PROJECTS_KEY = "jira:project"
