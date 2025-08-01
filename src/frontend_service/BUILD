@@ -11,6 +11,7 @@ py_library(
         "//src/frontend_service:calendar_loader",
         "//src/frontend_service:chat_query_utils",
         "//src/frontend_service:gerrit_loader",
+        "//src/frontend_service:jira_loader",
         "//src/frontend_service:ldap_loader",
         "//src/frontend_service:microsoft_chat_topics_loader",
         "//src/utils:google_chat_utils",
@@ -72,6 +73,16 @@ py_library(
     ],
     deps = [
         "//src/common:constants",
+        "//src/common:redis_client",
+    ],
+)
+
+py_library(
+    name = "jira_loader",
+    srcs = ["jira_loader.py"],
+    deps = [
+        "//src/common:constants",
+        "//src/common:logger",
         "//src/common:redis_client",
     ],
 )

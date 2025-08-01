@@ -2,6 +2,7 @@ from flask import Blueprint, request
 from http import HTTPStatus
 from src.frontend_service.ldap_loader import get_all_ldaps_and_displaynames
 from src.frontend_service.chat_query_utils import count_messages_in_date_range
+from src.frontend_service.jira_loader import process_get_issue_detail_batch
 from src.frontend_service.gerrit_loader import (
     get_gerrit_stats as load_gerrit_stats,
 )
@@ -144,5 +145,37 @@ def get_user_calendars_api():
         success=True,
         message=f"Calendar list for user {ldap} fetched successfully.",
         data=calendar_data,
+        status_code=HTTPStatus.OK,
+    )
+
+
+@frontend_bp.route("/jira/detail/batch", methods=["POST"])
+def get_issue_detail_batch():
+    """
+    Get Jira issue details in batch from Redis.
+
+    Fetch the full metadata of multiple Jira issues from Redis, given a list
+    of issue_ids.
+
+    Request Body (JSON):
+        A list of issue_ids.
+
+    Returns:
+        JSON response with success flag, message, and data containing issue
+        details.
+
+    Raises:
+        400 Bad Request: If issue_ids is missing or invalid
+        500 Internal Server Error: If Redis operations fail
+    """
+    data = request.get_json()
+    issue_ids = data.get("issue_ids") if data else None
+
+    result = process_get_issue_detail_batch(issue_ids)
+
+    return api_response(
+        success=True,
+        message="Query successful",
+        data=result,
         status_code=HTTPStatus.OK,
     )

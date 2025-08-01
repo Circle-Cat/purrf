@@ -9,6 +9,7 @@ MICROSOFT_LDAP_FETCHER_API = "/api/microsoft/{status}/ldaps"
 MICROSOFT_CHAT_TOPICS_FETCHER_API = "/api/microsoft/chat/topics"
 GOOGLE_CHAT_COUNT_API = "/api/google/chat/count"
 GOOGLE_CALENDAR_CALENDARS_API = "/api/google/calendar/calendars"
+JIRA_ISSUE_DETAIL_BATCH_API = "/api/jira/detail/batch"
 
 
 class TestAppRoutes(TestCase):
@@ -138,6 +139,28 @@ class TestAppRoutes(TestCase):
         self.assertEqual(response.json["data"], mock_result)
         self.assertIn("purrf", response.json["message"])
         mock_get_calendars.assert_called_once_with("purrf")
+
+    @patch("src.frontend_service.frontend_api.process_get_issue_detail_batch")
+    def test_get_issue_detail_batch_success(self, mock_process):
+        mock_result = {
+            "abc123": {
+                "ldap": "test_ldap",
+                "finish_date": 20991231,
+                "issue_key": "TEST-999",
+                "story_point": 42,
+                "project_id": 112233,
+                "project_name": "test_proj_name",
+                "issue_status": "testing",
+                "issue_title": "This is an issue for unit test",
+            }
+        }
+        mock_process.return_value = mock_result
+        response = self.client.post(
+            "/api/jira/detail/batch", json={"issue_ids": ["abc123"]}
+        )
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.assertEqual(response.json["data"], mock_result)
+        mock_process.assert_called_once_with(["abc123"])
 
 
 if __name__ == "__main__":
