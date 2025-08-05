@@ -11,6 +11,7 @@ GOOGLE_CHAT_COUNT_API = "/api/google/chat/count"
 JIRA_BRIEF_API = "/api/jira/brief"
 GOOGLE_CALENDAR_CALENDARS_API = "/api/google/calendar/calendars"
 JIRA_ISSUE_DETAIL_BATCH_API = "/api/jira/detail/batch"
+GOOGLE_CALENDAR_EVENTS_API = "/api/google/calendar/events"
 
 
 class TestAppRoutes(TestCase):
@@ -181,6 +182,53 @@ class TestAppRoutes(TestCase):
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertEqual(response.json["data"], mock_result)
         mock_process.assert_called_once_with(["abc123"])
+
+    @patch("backend.frontend_service.frontend_api.get_all_events")
+    def test_get_all_events_success(self, mock_get_all_events):
+        mock_data = {
+            "user1": [
+                {
+                    "event_id": "event123",
+                    "summary": "Team Sync",
+                    "calendar_id": "personal",
+                    "is_recurring": True,
+                    "attendance": [
+                        {
+                            "join_time": "2025-08-01T10:00:00",
+                            "leave_time": "2025-08-01T10:30:00",
+                        },
+                    ],
+                }
+            ]
+        }
+        mock_get_all_events.return_value = mock_data
+
+        params = {
+            "calendar_id": "personal",
+            "ldaps": "user1",
+            "start_date": "2025-07-01T00:00:00",
+            "end_date": "2025-08-02T00:00:00",
+        }
+
+        response = self.client.get(GOOGLE_CALENDAR_EVENTS_API, query_string=params)
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+
+        data = response.get_json()
+        self.assertEqual(data["message"], "Calendar events fetched successfully.")
+        self.assertEqual(data["data"], mock_data)
+
+    def test_get_all_events_missing_params(self):
+        response = self.client.get(
+            GOOGLE_CALENDAR_EVENTS_API,
+            query_string={
+                "ldaps": "user1",
+                "start_date": "2025-07-01T00:00:00",
+                "end_date": "2025-08-02T00:00:00",
+            },
+        )
+        self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
+        data = response.get_json()
+        self.assertIn("Missing required query parameters", data["message"])
 
 
 if __name__ == "__main__":

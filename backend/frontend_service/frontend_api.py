@@ -6,7 +6,10 @@ from backend.frontend_service.jira_loader import process_get_issue_detail_batch
 from backend.frontend_service.gerrit_loader import (
     get_gerrit_stats as load_gerrit_stats,
 )
-from backend.frontend_service.calendar_loader import get_all_calendars
+from backend.frontend_service.calendar_loader import (
+    get_all_calendars,
+    get_all_events,
+)
 from backend.common.constants import MicrosoftAccountStatus
 from backend.common.api_response_wrapper import api_response
 from backend.utils.google_chat_utils import get_chat_spaces
@@ -181,7 +184,7 @@ async def get_gerrit_stats():
 
 @frontend_bp.route("/google/calendar/calendars", methods=["GET"])
 def get_all_calendars_api():
-    """API endpoint to get Google Calendar list for a user from Redis."""
+    """API endpoint to get Google Calendar list from Redis."""
     calendar_data = get_all_calendars()
 
     return api_response(
@@ -220,5 +223,42 @@ def get_issue_detail_batch():
         success=True,
         message="Query successful",
         data=result,
+        status_code=HTTPStatus.OK,
+    )
+
+
+@frontend_bp.route("/google/calendar/events", methods=["GET"])
+def get_all_events_api():
+    """
+    API endpoint to get Google Calendar events for users from Redis.
+
+    Query Parameters:
+        calendar_id (str): The calendar ID to fetch events from.
+        ldaps (str): Comma-separated list of LDAP usernames.
+        start_date (str): ISO 8601 start datetime (inclusive).
+        end_date (str): ISO 8601 end datetime (exclusive).
+
+    Returns:
+        JSON: A dictionary mapping each LDAP to a list of event attendance details.
+    """
+    calendar_id = request.args.get("calendar_id")
+    ldaps_str = request.args.get("ldaps", "")
+    start_date = request.args.get("start_date")
+    end_date = request.args.get("end_date")
+
+    if not calendar_id or not start_date or not end_date:
+        return api_response(
+            success=False,
+            message="Missing required query parameters: calendar_id, start_date, end_date.",
+            status_code=HTTPStatus.BAD_REQUEST,
+        )
+
+    ldaps = [ldap.strip() for ldap in ldaps_str.split(",") if ldap.strip()]
+
+    calendar_data = get_all_events(calendar_id, ldaps, start_date, end_date)
+    return api_response(
+        success=True,
+        message="Calendar events fetched successfully.",
+        data=calendar_data,
         status_code=HTTPStatus.OK,
     )
