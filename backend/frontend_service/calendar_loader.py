@@ -6,10 +6,8 @@ from tenacity import (
 )
 from backend.common.redis_client import RedisClientFactory
 from backend.common.constants import (
-    GOOGLE_USER_CALENDARS_INDEX_KEY,
-    GOOGLE_CALENDAR_LIST_KEY,
+    GOOGLE_CALENDAR_LIST_INDEX_KEY,
 )
-import json
 
 
 @retry(
@@ -18,45 +16,22 @@ import json
     retry=retry_if_exception_type(Exception),
     reraise=True,
 )
-def get_calendars_for_user(ldap: str) -> list[dict]:
+def get_all_calendars() -> list[dict[str, str]]:
     """
-    Retrieve the calendar list for a specific user from Redis.
-
-    Args:
-        ldap (str): The user's LDAP.
+    Retrieve the calendar list from Redis.
 
     Returns:
-        list[dict]: A list of calendar metadata dictionaries.
+        list[dict[str, str]]: A list of dictionaries with 'id' and 'name' keys.
 
     Raises:
         ValueError: If Redis client is not created or LDAP is missing.
     """
-    if not ldap:
-        raise ValueError("Missing LDAP.")
-
     redis_client = RedisClientFactory().create_redis_client()
     if not redis_client:
         raise ValueError("Redis client not created.")
 
-    calendar_ids = redis_client.zrange(
-        GOOGLE_USER_CALENDARS_INDEX_KEY.format(ldap=ldap), 0, -1
-    )
-    if not calendar_ids:
-        return []
+    calendar_data = redis_client.hgetall(GOOGLE_CALENDAR_LIST_INDEX_KEY)
 
-    keys = [
-        GOOGLE_CALENDAR_LIST_KEY.format(calendar_id=calendar_id)
-        for calendar_id in calendar_ids
-    ]
-
-    with redis_client.pipeline() as pipe:
-        for key in keys:
-            pipe.get(key)
-        results = pipe.execute()
-
-    calendars = []
-    for raw in results:
-        if raw:
-            calendars.append(json.loads(raw))
+    calendars = [{"id": key, "name": value} for key, value in calendar_data.items()]
 
     return calendars

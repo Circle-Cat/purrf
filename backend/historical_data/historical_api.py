@@ -16,6 +16,7 @@ from backend.historical_data.microsoft_chat_history_fetcher import (
     sync_microsoft_chat_messages_by_chat_id,
 )
 from backend.utils.date_time_util import get_start_end_timestamps
+from datetime import datetime, timedelta, timezone
 
 history_bp = Blueprint("history", __name__, url_prefix="/api")
 
@@ -142,7 +143,15 @@ def pull_calendar_history_api():
     start_date_str = data.get("start_date")  # Expecting "YYYY-MM-DD"
     end_date_str = data.get("end_date")  # Expecting "YYYY-MM-DD"
 
-    start_dt_utc, end_dt_utc = get_start_end_timestamps(start_date_str, end_date_str)
+    if not start_date_str and not end_date_str:
+        end_dt_utc = datetime.now(timezone.utc).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        start_dt_utc = end_dt_utc - timedelta(days=1)
+    else:
+        start_dt_utc, end_dt_utc = get_start_end_timestamps(
+            start_date_str, end_date_str
+        )
 
     time_min = start_dt_utc.isoformat().replace("+00:00", "Z")
     time_max = end_dt_utc.isoformat().replace("+00:00", "Z")

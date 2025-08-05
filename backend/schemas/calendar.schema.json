@@ -9,12 +9,6 @@
     },
     "summary": {
       "type": "string"
-    },
-    "description": {
-      "type": "string"
-    },
-    "timeZone": {
-      "type": "string"
     }
   },
   "additionalProperties": false

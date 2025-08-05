@@ -145,19 +145,20 @@ class TestAppRoutes(TestCase):
             end_date=None,
         )
 
-    @patch("backend.frontend_service.frontend_api.get_calendars_for_user")
-    def test_get_google_calendar_calendars_success(self, mock_get_calendars):
+    @patch("backend.frontend_service.frontend_api.get_all_calendars")
+    def test_get_google_calendar_calendars_success(self, mock_get_all_calendars):
         mock_result = [
-            {"calendar_id": "alice@circlecat.org", "summary": "Alice"},
-            {"calendar_id": "bob@circlecat.org", "summary": "Bob"},
+            {"id": "calendar_id_1", "name": "Work"},
+            {"id": "calendar_id_2", "name": "Personal"},
         ]
-        mock_get_calendars.return_value = mock_result
+        mock_get_all_calendars.return_value = mock_result
 
-        response = self.client.get(f"{GOOGLE_CALENDAR_CALENDARS_API}?ldap=purrf")
+        response = self.client.get(f"{GOOGLE_CALENDAR_CALENDARS_API}")
         self.assertEqual(response.status_code, HTTPStatus.OK)
-        self.assertEqual(response.json["data"], mock_result)
-        self.assertIn("purrf", response.json["message"])
-        mock_get_calendars.assert_called_once_with("purrf")
+        data = response.get_json()
+        self.assertEqual(data["message"], "Calendar list fetched successfully.")
+        self.assertEqual(len(data["data"]), 2)
+        self.assertEqual(data["data"][0]["id"], "calendar_id_1")
 
     @patch("backend.frontend_service.frontend_api.process_get_issue_detail_batch")
     def test_get_issue_detail_batch_success(self, mock_process):

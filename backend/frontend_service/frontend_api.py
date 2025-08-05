@@ -6,7 +6,7 @@ from backend.frontend_service.jira_loader import process_get_issue_detail_batch
 from backend.frontend_service.gerrit_loader import (
     get_gerrit_stats as load_gerrit_stats,
 )
-from backend.frontend_service.calendar_loader import get_calendars_for_user
+from backend.frontend_service.calendar_loader import get_all_calendars
 from backend.common.constants import MicrosoftAccountStatus
 from backend.common.api_response_wrapper import api_response
 from backend.utils.google_chat_utils import get_chat_spaces
@@ -180,14 +180,13 @@ async def get_gerrit_stats():
 
 
 @frontend_bp.route("/google/calendar/calendars", methods=["GET"])
-def get_user_calendars_api():
+def get_all_calendars_api():
     """API endpoint to get Google Calendar list for a user from Redis."""
-    ldap = request.args.get("ldap", "purrf")
-    calendar_data = get_calendars_for_user(ldap)
+    calendar_data = get_all_calendars()
 
     return api_response(
         success=True,
-        message=f"Calendar list for user {ldap} fetched successfully.",
+        message="Calendar list fetched successfully.",
         data=calendar_data,
         status_code=HTTPStatus.OK,
     )
