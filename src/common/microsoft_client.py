@@ -7,6 +7,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 logger = get_logger()
 
 
+# TODO: Delete this class after migrating all Microsoft-related functionality.
 class MicrosoftClientFactory:
     """
     A singleton factory class for managing asynchronous Azure credentials and creating Microsoft Graph API clients.

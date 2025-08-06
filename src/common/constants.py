@@ -147,6 +147,7 @@ GERRIT_STATS_PROJECT_BUCKET_KEY = "gerrit:stats:{ldap}:{project}:{bucket}"
 GERRIT_CHANGE_STATUS_KEY = "gerrit:change_status"
 GERRIT_DEDUPE_REVIEWED_KEY = "gerrit:dedupe:reviewed:{change_number}"
 
+
 # Constants for Jira
 class JiraIssueStatus(str, Enum):
     TODO = "todo"

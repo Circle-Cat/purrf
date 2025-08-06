@@ -81,3 +81,11 @@ py_test(
         "//src/common:asyncio_event_loop_manager",
     ],
 )
+
+py_test(
+    name = "microsoft_graph_service_client_test",
+    srcs = ["microsoft_graph_service_client_test.py"],
+    deps = [
+        "//src/common:microsoft_graph_service_client",
+    ],
+)

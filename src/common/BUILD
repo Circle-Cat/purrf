@@ -121,3 +121,15 @@ py_library(
         "//src/common:logger",
     ],
 )
+
+py_library(
+    name = "microsoft_graph_service_client",
+    srcs = [
+        "microsoft_graph_service_client.py",
+    ],
+    deps = [
+        "//src/common:constants",
+        "@pypi//azure_identity",
+        "@pypi//msgraph_sdk",
+    ],
+)
