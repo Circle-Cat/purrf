@@ -1,9 +1,156 @@
 from redis import Redis
 from src.common.logger import get_logger
 from src.common.redis_client import RedisClientFactory
-from src.common.constants import JIRA_PROJECTS_KEY, JIRA_ISSUE_DETAILS_KEY
+from src.common.constants import (
+    JIRA_LDAP_PROJECT_STATUS_INDEX_KEY,
+    JiraIssueStatus,
+    JIRA_PROJECTS_KEY,
+    JIRA_ISSUE_DETAILS_KEY,
+)
+from src.utils.date_time_parser import get_start_end_timestamps
 
 logger = get_logger()
+
+
+# TODO: [PUR-134] Move datetime-related methods in Jira module into a utility class
+def _convert_datetime_to_score(dt) -> int:
+    """
+    Convert datetime to YYYYMMDD integer for Redis scoring.
+
+    Args:
+        dt: datetime object
+
+    Returns:
+        Integer in YYYYMMDD format
+    """
+    return int(dt.strftime("%Y%m%d"))
+
+
+def get_issue_ids_in_timerange(
+    status: str,
+    ldaps: list[str] | None = None,
+    project_ids: list[str] | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> dict[str, dict[str, dict[str, list[int]]]]:
+    """
+    Process the request to get issue IDs from Redis.
+
+    Args:
+        status (str): The Jira issue status ("done", "in_progress", "todo", "all").
+        ldaps (list[str] or None): List of LDAP identifiers to filter by. Required.
+        project_ids (list[str] or None): List of project IDs to filter by. Required.
+        start_date (str or None): Start date in "YYYY-MM-DD" format. Required for "done" or "all".
+        end_date (str or None): End date in "YYYY-MM-DD" format. Required for "done" or "all".
+
+    Returns:
+        dict: Issue IDs grouped by status, ldap and project:
+            {
+                "<status>": {
+                    "<ldap>": {
+                        "<project_id>": ["<issue_id>", ...],
+                    },
+                },
+            }
+
+    Raises:
+        ValueError: If required parameters are missing or invalid.
+    """
+
+    try:
+        validated_status = JiraIssueStatus(status)
+    except ValueError as e:
+        raise ValueError(f"Invalid status: {status}") from e
+
+    if not ldaps:
+        raise ValueError("ldaps is required")
+
+    if not project_ids:
+        raise ValueError("project_ids is required")
+
+    if validated_status in (JiraIssueStatus.DONE, JiraIssueStatus.ALL):
+        start_dt, end_dt = get_start_end_timestamps(start_date, end_date)
+        start_date_score = _convert_datetime_to_score(start_dt)
+        end_date_score = _convert_datetime_to_score(end_dt)
+    else:
+        start_date_score = end_date_score = None
+
+    logger.info(
+        f"Processing get issue IDs request: status={status}, ldaps={ldaps}, "
+        f"project_ids={project_ids}, start_date_score={start_date_score}, end_date_score={end_date_score}"
+    )
+
+    redis_client = RedisClientFactory().create_redis_client()
+
+    if validated_status == JiraIssueStatus.ALL:
+        result = {}
+        for single_status in [
+            JiraIssueStatus.TODO,
+            JiraIssueStatus.IN_PROGRESS,
+            JiraIssueStatus.DONE,
+        ]:
+            result[single_status.value] = _get_issues_for_status(
+                redis_client,
+                single_status,
+                ldaps,
+                project_ids,
+                start_date_score,
+                end_date_score,
+            )
+        return result
+
+    return {
+        validated_status.value: _get_issues_for_status(
+            redis_client,
+            validated_status,
+            ldaps,
+            project_ids,
+            start_date_score,
+            end_date_score,
+        )
+    }
+
+
+def _get_issues_for_status(
+    redis_client,
+    status: JiraIssueStatus,
+    ldaps: list[str],
+    project_ids: list[str],
+    start_date_score: int | None = None,
+    end_date_score: int | None = None,
+) -> dict[str, dict[str, list[int]]]:
+    """
+    Get issue IDs for a specific status from Redis using pipeline for better performance.
+    """
+    pipeline = redis_client.pipeline()
+    result_key_pairs = []  # [(ldap, project_id), ...]
+    for ldap in ldaps:
+        for project_id in project_ids:
+            redis_key = JIRA_LDAP_PROJECT_STATUS_INDEX_KEY.format(
+                ldap=ldap, project_id=project_id, status=status.value
+            )
+            result_key_pairs.append((ldap, project_id))
+            if status == JiraIssueStatus.DONE and start_date_score and end_date_score:
+                pipeline.zrangebyscore(redis_key, start_date_score, end_date_score)
+            else:
+                pipeline.smembers(redis_key)
+    try:
+        pipeline_results = pipeline.execute()
+    except Exception as e:
+        logger.error(f"Redis pipeline execution failed: {e}")
+        raise
+    result = {ldap: {} for ldap in ldaps}
+    for i, (ldap, project_id) in enumerate(result_key_pairs):
+        issue_ids = pipeline_results[i]
+        try:
+            if issue_ids:
+                result[ldap][project_id] = [int(issue_id) for issue_id in issue_ids]
+            else:
+                result[ldap][project_id] = []
+        except Exception as e:
+            logger.warning(f"Failed to process results for {ldap}/{project_id}: {e}")
+            raise
+    return result
 
 
 def _validate_issue_ids(issue_ids):

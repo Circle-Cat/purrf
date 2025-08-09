@@ -55,6 +55,18 @@ py_library(
 )
 
 py_library(
+    name = "jira_loader",
+    srcs = [
+        "jira_loader.py",
+    ],
+    deps = [
+        "//src/common:constants",
+        "//src/common:redis_client",
+        "//src/utils:date_time_parser",
+    ],
+)
+
+py_library(
     name = "gerrit_loader",
     srcs = [
         "gerrit_loader.py",
@@ -73,16 +85,6 @@ py_library(
     ],
     deps = [
         "//src/common:constants",
-        "//src/common:redis_client",
-    ],
-)
-
-py_library(
-    name = "jira_loader",
-    srcs = ["jira_loader.py"],
-    deps = [
-        "//src/common:constants",
-        "//src/common:logger",
         "//src/common:redis_client",
     ],
 )

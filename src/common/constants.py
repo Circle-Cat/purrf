@@ -153,6 +153,7 @@ class JiraIssueStatus(str, Enum):
     TODO = "todo"
     IN_PROGRESS = "in_progress"
     DONE = "done"
+    ALL = "all"
 
 
 # Jira status ID mapping to standard statuses
