@@ -1,9 +1,12 @@
 bazel_dep(name = "rules_python", version = "0.40.0")
 bazel_dep(name = "rules_oci", version = "2.0.0")
-bazel_dep(name = "platforms", version = "0.0.10")
-bazel_dep(name = "aspect_bazel_lib", version = "2.7.8")
+bazel_dep(name = "platforms", version = "0.0.11")
+bazel_dep(name = "aspect_bazel_lib", version = "2.14.0")
 bazel_dep(name = "aspect_rules_lint", version = "1.0.9")  # rules_lint
 bazel_dep(name = "buildifier_prebuilt", version = "7.3.1")
+
+bazel_dep(name = "aspect_rules_js", version = "2.4.0", dev_dependency = True)
+bazel_dep(name = "rules_nodejs", version = "6.3.0", dev_dependency = True)
 
 pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
 pip.parse(
@@ -23,6 +26,28 @@ oci.pull(
     ],
     tag = "3.11-slim",
 )
+oci.pull(
+    name = "nginx",
+    image = "docker.io/library/nginx",
+    platforms = [
+        "linux/arm64/v8",
+        "linux/amd64",
+    ],
+    tag = "1.29.0-alpine-slim",
+)
 use_repo(oci, "python_base")
 use_repo(oci, "python_base_linux_amd64")
 use_repo(oci, "python_base_linux_arm64_v8")
+use_repo(oci, "nginx", "nginx_linux_amd64", "nginx_linux_arm64_v8")
+
+node = use_extension("@rules_nodejs//nodejs:extensions.bzl", "node")
+node.toolchain(node_version = "18.19.1")  # Specify Node.js version
+
+npm = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm")
+npm.npm_translate_lock(
+    name = "npm",
+    data = ["//frontend:package.json"],
+    pnpm_lock = "//frontend:pnpm-lock.yaml",
+    verify_node_modules_ignored = "//frontend:.bazelignore",
+)
+use_repo(npm, "npm")

@@ -61,10 +61,34 @@ gcloud config set project {google_project_id}
 - AZURE_CLIENT_SECRET
 - AZURE_TENANT_ID
 
-####  Running the project
+####  Running the backend project
 
 ```bash
 bazel run //src:purrf
+```
+
+####  Running the frontend project
+
+```bash
+bazel run //frontend:dev_server
+```
+### Development with Hot Reload (Vite + ibazel)
+
+### Install ibazel
+
+```bash
+go install github.com/bazelbuild/bazel-watcher/cmd/ibazel@latest
+```
+### Run
+
+```bash
+ibazel run //frontend:dev_server
+```
+
+#### Locally preview the frontend production build
+
+```bash
+bazel run //frontend:vite_preview
 ```
 
 ### Before push the code
@@ -91,7 +115,15 @@ bazel run //:format
 
 ### Build and Push OCI Image
 
+### Backend
 ```bash
 bazel build //:purrf_image
 bazel run //:flask_image_push_dynamic --action_env=REPO=xxxx --action_env=TAG=xxxx
+```
+
+### Frontend
+```bash
+bazel build //frontend:dist
+bazel build //:frontend_image
+bazel run //:frontend_image_push_dynamic --action_env=REPO=xxxx --action_env=TAG=xxxx
 ```
