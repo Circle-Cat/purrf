@@ -31,3 +31,14 @@ py_test(
         "//src/utils:date_time_parser",
     ],
 )
+
+py_test(
+    name = "retry_utils_test",
+    srcs = [
+        "retry_utils_test.py",
+    ],
+    deps = [
+        "//src/utils:retry_utils",
+        "@pypi//tenacity",
+    ],
+)
