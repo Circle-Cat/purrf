@@ -7,7 +7,7 @@ from backend.common.constants import (
     JIRA_PROJECTS_KEY,
     JIRA_ISSUE_DETAILS_KEY,
 )
-from backend.utils.date_time_parser import get_start_end_timestamps
+from backend.utils.date_time_util import get_start_end_timestamps
 
 logger = get_logger()
 

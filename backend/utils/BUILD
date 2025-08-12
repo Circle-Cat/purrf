@@ -38,9 +38,9 @@ py_library(
 )
 
 py_library(
-    name = "date_time_parser",
+    name = "date_time_util",
     srcs = [
-        "date_time_parser.py",
+        "date_time_util.py",
     ],
     deps = [
         "//backend/common:constants",

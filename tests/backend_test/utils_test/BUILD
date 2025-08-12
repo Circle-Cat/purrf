@@ -25,10 +25,10 @@ py_test(
 )
 
 py_test(
-    name = "date_time_parser_test",
-    srcs = ["date_time_parser_test.py"],
+    name = "date_time_util_test",
+    srcs = ["date_time_util_test.py"],
     deps = [
-        "//backend/utils:date_time_parser",
+        "//backend/utils:date_time_util",
     ],
 )
 
