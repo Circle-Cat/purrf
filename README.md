@@ -64,7 +64,7 @@ gcloud config set project {google_project_id}
 ####  Running the backend project
 
 ```bash
-bazel run //src:purrf
+bazel run //backend:purrf
 ```
 
 ####  Running the frontend project
