@@ -80,3 +80,10 @@ py_library(
         "//backend/historical_data:gerrit_history_fetcher",
     ],
 )
+
+py_library(
+    name = "pubsub_puller_factory",
+    srcs = [
+        "pubsub_puller_factory.py",
+    ],
+)
