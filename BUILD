@@ -1,10 +1,19 @@
 load("@aspect_bazel_lib//lib:transitions.bzl", "platform_transition_filegroup")
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("@npm//:defs.bzl", "npm_link_all_packages", "npm_link_targets")
 load("@pypi//:requirements.bzl", "requirement")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
 load("@rules_python//python:defs.bzl", "py_library")
 load("//:py_layer.bzl", "py_oci_image")
 
-package(default_visibility = ["//purrf:__subpackages__"])
+package(default_visibility = ["//visibility:public"])
+
+npm_link_all_packages(name = "node_modules")
+
+filegroup(
+    name = "npm_deps",
+    srcs = npm_link_targets(),
+)
 
 exports_files(
     [

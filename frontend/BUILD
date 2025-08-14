@@ -1,42 +1,33 @@
-load("@npm//:defs.bzl", "npm_link_all_packages", "npm_link_targets")
-load("@npm//frontend:vite/package_json.bzl", vite_bin = "bin")
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("@npm//:vite/package_json.bzl", vite_bin = "bin")
 
 package(default_visibility = ["//visibility:public"])
 
-npm_link_all_packages(name = "node_modules")
-
-filegroup(
-    name = "vite_config",
-    srcs = ["vite.config.js"],
-)
-
-filegroup(
+js_library(
     name = "root_files",
     srcs = [
         "index.html",
-        "package.json",
     ],
 )
 
-filegroup(
+js_library(
     name = "source_files",
     srcs = glob(["src/**"]),
 )
 
-filegroup(
+js_library(
     name = "public_assets",
     srcs = glob(["public/**"]),
 )
 
-filegroup(
-    name = "npm_deps",
-    srcs = npm_link_targets(),
+js_library(
+    name = "vite_config",
+    srcs = ["vite.config.js"],
 )
 
-filegroup(
+js_library(
     name = "all_srcs",
     srcs = [
-        ":npm_deps",
         ":public_assets",
         ":root_files",
         ":source_files",
@@ -46,7 +37,10 @@ filegroup(
 
 vite_bin.vite(
     name = "dist",
-    srcs = [":all_srcs"],
+    srcs = [
+        ":all_srcs",
+        "//:npm_deps",
+    ],
     args = [
         "build",
         "--mode=production",
@@ -72,7 +66,10 @@ vite_bin.vite_binary(
 vite_bin.vite_binary(
     name = "dev_server",
     chdir = package_name(),
-    data = [":all_srcs"],
+    data = [
+        ":all_srcs",
+        "//:npm_deps",
+    ],
     # Under ibazel, let vite hot-reload changed files rather than restart it
     tags = ["ibazel_notify_changes"],
 )

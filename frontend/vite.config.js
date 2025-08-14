@@ -1,13 +1,12 @@
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react(
-  )],
+  plugins: [react()],
   server: {
     host: true,
-    hmr: true, 
+    hmr: true,
     port: 5173,
     proxy: {
       "/api": {
@@ -16,9 +15,9 @@ export default defineConfig({
       },
     },
     // Set up your coding workspace host.
-    // allowedHosts: [""],
+    allowedHosts: ["4173--main--purrf-format--yuji-ws.ccat.dev"],
     watch: {
-      usePolling: true
-    }
-  }
-})
+      usePolling: true,
+    },
+  },
+});

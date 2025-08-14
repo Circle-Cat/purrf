@@ -46,8 +46,8 @@ node.toolchain(node_version = "18.19.1")  # Specify Node.js version
 npm = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm")
 npm.npm_translate_lock(
     name = "npm",
-    data = ["//frontend:package.json"],
-    pnpm_lock = "//frontend:pnpm-lock.yaml",
-    verify_node_modules_ignored = "//frontend:.bazelignore",
+    data = [":package.json"],
+    pnpm_lock = ":pnpm-lock.yaml",
+    verify_node_modules_ignored = ".bazelignore",
 )
 use_repo(npm, "npm")
