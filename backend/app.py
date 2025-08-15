@@ -1,42 +1,81 @@
 """purrf service"""
 
 from asgiref.wsgi import WsgiToAsgi
-from flask import Flask, jsonify
+from flask import Flask, Blueprint
 from http import HTTPStatus
 from backend.common.error_handler import register_error_handlers
 from backend.common.api_response_wrapper import api_response
 from backend.historical_data.historical_api import history_bp
-from backend.notification_management.notification_api import notification_bp
+from backend.notification_management.notification_controller import notification_bp
 from backend.frontend_service.frontend_api import frontend_bp
 from backend.consumers.consumer_api import consumers_bp
 
-app = Flask(__name__)
-register_error_handlers(app)
-app.register_blueprint(history_bp)
-app.register_blueprint(notification_bp)
-app.register_blueprint(frontend_bp)
-app.register_blueprint(consumers_bp)
 
-
-@app.route("/health", methods=["GET"])
-def health_check():
+def create_app(
+    notification_controller,
+) -> Flask:
     """
-    Health check endpoint.
+    Create and configure the Flask application.
 
-    This endpoint is used to verify that the application is running and responsive.
-    It returns a standardized success response with HTTP 200 OK status.
+    This function initializes the Flask app, sets up error handlers,
+    registers blueprints for different services (notification,
+    frontend, consumers, history), and sets up required clients
+    (Redis, Microsoft, Gerrit, Jira) if they are not provided.
+
+    Args:
+        history_controller:
+        ... another controller instance
 
     Returns:
-        flask.Response: A Flask JSON response indicating the service is healthy.
+        Flask app instance configured with required services.
     """
-    return api_response(
-        success=True, message="Success.", data=None, status_code=HTTPStatus.OK
+    # Initialize the Flask app
+    app = Flask(__name__)
+    register_error_handlers(app)
+
+    # Register existing blueprints for various services
+    # TODO: Deleted them after migration.
+    app.register_blueprint(notification_bp)
+    app.register_blueprint(frontend_bp)
+    app.register_blueprint(consumers_bp)
+    app.register_blueprint(history_bp)
+    # ---
+
+    # Register new  blueprint
+    all_api_bp = Blueprint("all_api", __name__, url_prefix="/api")
+
+    notification_controller.register_routes(all_api_bp)
+
+    app.register_blueprint(all_api_bp)
+
+    @app.route("/health", methods=["GET"])
+    def health_check():
+        """
+        Health check endpoint to verify if the application is running.
+
+        Returns:
+            API response with success status and HTTP 200 OK.
+        """
+        return api_response(
+            success=True, message="Success.", data=None, status_code=HTTPStatus.OK
+        )
+
+    return app
+
+
+if __name__ == "__main__":
+    import os
+    from asgiref.wsgi import WsgiToAsgi
+    from backend.utils.app_dependency_builder import AppDependencyBuilder
+
+    builder = AppDependencyBuilder()
+    app = create_app(
+        notification_controller=builder.notification_controller,
     )
 
-
-# Used when running via uvicorn as a production server.
-asgi_app = WsgiToAsgi(app)
-
-# Used when running directly using Flask development server.
-if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=5001)
+    # Used when running via uvicorn as a production server.
+    if os.getenv("MOD") == "production":
+        asgi_app = WsgiToAsgi(app)
+    else:
+        # Used when running directly using Flask development server.
+        app.run(debug=True, host="0.0.0.0", port=5001)

@@ -57,3 +57,19 @@ py_library(
         "@pypi//tenacity",
     ],
 )
+
+py_library(
+    name = "app_dependency_builder",
+    srcs = [
+        "app_dependency_builder.py",
+    ],
+    deps = [
+        "//backend/common:logger",
+        "//backend/common:microsoft_graph_service_client",
+        "//backend/common:redis_client",
+        "//backend/notification_management:microsoft_chat_subscription_service",
+        "//backend/notification_management:notification_controller",
+        "//backend/service:microsoft_service",
+        "//backend/utils:retry_utils",
+    ],
+)
