@@ -11,11 +11,71 @@
 # and not a supported public API of rules_lint. It may be broken and we don't make any
 # promises to fix issues with using it.
 # We recommend using Aspect CLI instead!
+#
+# Examples:
+#   1. Lint all default targets (auto-query):
+#        ./lint.sh check_all
+#
+#   2. Lint specific targets:
+#        ./lint.sh //frontend/... //backend:api_lib
+#
+#   3. Lint in auto-fix mode (auto-query):
+#        ./lint.sh --fix check_all
+#
+#   4. Lint in auto-fix mode for specific targets:
+#        ./lint.sh --fix //frontend:app_lib
+#
+
 set -o errexit -o pipefail -o nounset
+
 if [ "$#" -eq 0 ]; then
-	echo "usage: lint.sh [target pattern...]"
-	exit 1
+	echo "No targets specified. You can use 'check_all' to lint all default targets."
+    echo "Example usages:"
+    echo "  ./lint.sh check_all                # Lint all default targets"
+    echo "  ./lint.sh --fix check_all          # Lint and auto-fix all targets"
+    echo "  ./lint.sh //frontend/...           # Lint specific targets"
+    echo "  ./lint.sh --fix //frontend:app_lib # Lint and auto-fix specific targets"
+    exit 1
 fi
+
+# Regex pattern to match Bazel target kinds that should be linted.
+# This includes targets ending with _test, _binary, or _library.
+TARGET_KINDS='".*_(test|binary|library)"'
+
+# Bazel package paths to search for targets.
+# This includes backend, frontend, and test directories.
+TARGET_PATHS='//backend/... + //frontend/... + //tests/...'
+
+args_without_all=()
+need_all=false
+
+# Iterate through input arguments
+for arg in "$@"; do
+    if [ "$arg" == "check_all" ]; then
+        need_all=true
+    else
+        args_without_all+=("$arg")
+    fi
+done
+
+# If "check_all" was requested, query all Bazel targets
+if [ "$need_all" = true ]; then
+    echo "Querying all files..."
+    readarray -t all_targets < <(bazel query "kind($TARGET_KINDS, $TARGET_PATHS)" | sort -u)
+    if [ "${#all_targets[@]}" -eq 0 ]; then
+        echo "No targets found with the query. Exiting."
+        exit 1
+    fi
+	# Append the queried targets to the argument list
+    args_without_all+=("${all_targets[@]}")
+fi
+
+# Reset positional parameters to the new argument list
+set -- "${args_without_all[@]}"
+
+echo "Final arguments:"
+printf '  %s\n' "$@"
+
 fix=""
 buildevents=$(mktemp)
 filter='.namedSetOfFiles | values | .files[] | select(.name | endswith($ext)) | ((.pathPrefix | join("/")) + "/" + .name)'
