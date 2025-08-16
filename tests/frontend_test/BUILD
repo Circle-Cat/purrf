@@ -2,8 +2,16 @@ load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@npm//:vitest/package_json.bzl", vitest_bin = "bin")
 
 js_library(
+    name = "vitest_config",
+    srcs = ["vitest.config.mjs"],
+)
+
+js_library(
     name = "frontend_unit_test_files",
-    srcs = glob(["**/*test.js"]),
+    srcs = glob([
+        "**/*test.js",
+        "**/*test.jsx",
+    ]),
 )
 
 vitest_bin.vitest_test(
@@ -12,6 +20,7 @@ vitest_bin.vitest_test(
     chdir = package_name(),
     data = [
         ":frontend_unit_test_files",
+        ":vitest_config",
         "//:npm_deps",
         "//frontend:all_srcs",
     ],

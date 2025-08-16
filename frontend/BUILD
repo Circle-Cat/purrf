@@ -22,7 +22,7 @@ js_library(
 
 js_library(
     name = "vite_config",
-    srcs = ["vite.config.js"],
+    srcs = ["vite.config.mjs"],
 )
 
 js_library(
@@ -58,7 +58,7 @@ vite_bin.vite_binary(
     ],
     chdir = package_name(),
     data = [
-        "vite.config.js",
+        "vite.config.mjs",
         ":dist",
     ],
 )

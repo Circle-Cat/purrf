@@ -1,0 +1,25 @@
+.card {
+    background-color: var(--bg-color-light);
+    border-radius: 8px;
+    box-shadow: 0 2px 4px var(--border-color-light);
+    padding: 20px;
+    text-align: center;
+    flex: 1 1 auto;
+    min-width: 180px;
+    max-width: 250px;
+    margin: 10px;
+}
+
+.card-title {
+    font-size: 14px;
+    color: var(--text-color-medium);
+    margin-bottom: 8px;
+    text-align: left;
+}
+
+.card-value {
+    font-size: 28px;
+    font-weight: bold;
+    color: var(--text-color-dark);
+    text-align: left;
+}
