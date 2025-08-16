@@ -47,3 +47,11 @@ py_test(
         "//backend/consumers:gerrit_consumer",
     ],
 )
+
+py_test(
+    name = "pubsub_puller_factory_test",
+    srcs = ["pubsub_puller_factory_test.py"],
+    deps = [
+        "//backend/consumers:pubsub_puller_factory",
+    ],
+)
