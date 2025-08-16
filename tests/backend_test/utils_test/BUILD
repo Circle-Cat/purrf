@@ -50,3 +50,11 @@ py_test(
         "//backend/utils:app_dependency_builder",
     ],
 )
+
+py_test(
+    name = "microsoft_chat_message_util_test",
+    srcs = ["microsoft_chat_message_util_test.py"],
+    deps = [
+        "//backend/utils:microsoft_chat_message_util",
+    ],
+)

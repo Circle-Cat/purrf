@@ -95,6 +95,21 @@ class MicrosoftChatMessageAttachmentType(str, Enum):
     MESSAGE_REFERENCE = "messageReference"
 
 
+class MicrosoftChatMessageType(str, Enum):
+    Message = ("message",)
+    ChatEvent = ("chatEvent",)
+    Typing = ("typing",)
+    UnknownFutureValue = ("unknownFutureValue",)
+    SystemEventMessage = ("systemEventMessage",)
+
+
+class MicrosoftChatType(str, Enum):
+    OneOnOne = ("oneOnOne",)
+    Group = ("group",)
+    Meeting = ("meeting",)
+    UnknownFutureValue = ("unknownFutureValue",)
+
+
 class PullStatus(Enum):
     RUNNING = ("running", "Pulling started for {subscription_id}.")
     FAILED = ("failed", "Pulling failed for {subscription_id}: {error}.")

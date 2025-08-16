@@ -73,3 +73,13 @@ py_library(
         "//backend/utils:retry_utils",
     ],
 )
+
+py_library(
+    name = "microsoft_chat_message_util",
+    srcs = [
+        "microsoft_chat_message_util.py",
+    ],
+    deps = [
+        "//backend/common:constants",
+    ],
+)
