@@ -103,7 +103,7 @@ To check code format, run:
 
 ```bash
 bazel clean
-bash lint.sh all_files
+bash lint.sh check_all
 ```
 **Note:** If `lint.sh` fails with checksum verification errors (e.g., "sha256sum: command not found"), ensure you have the necessary **jq** installed.
 
