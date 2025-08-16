@@ -1,4 +1,6 @@
+import traceback
 from http import HTTPStatus
+from flask import request, has_request_context
 from backend.common.api_response_wrapper import api_response
 from backend.common.logger import get_logger
 
@@ -33,8 +35,19 @@ def handle_exception(e):
     else:
         status_code = HTTPStatus.INTERNAL_SERVER_ERROR
 
-    logger.error("Exception occurred: %s", str(e))
+    if has_request_context():
+        parts = request.path.strip("/").split("/")
+        platform = parts[1] if len(parts) > 1 else "unknown"
+    else:
+        platform = "unknown"
 
+    logger.error(
+        "Exception occurred [%s] on platform [%s]: %s\nTraceback:\n%s",
+        type(e).__name__,
+        platform,
+        str(e),
+        traceback.format_exc(),
+    )
     return api_response(success=False, message=str(e), status_code=status_code)
 
 
