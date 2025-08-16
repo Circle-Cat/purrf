@@ -94,7 +94,7 @@ bazel run //frontend:vite_preview
 ### Before push the code
 Run all test methods:
 ```bash
-bazel test ...
+bazel test ... --define=run_test=true
 ```
 
 Remember to check if code format is up to standard.

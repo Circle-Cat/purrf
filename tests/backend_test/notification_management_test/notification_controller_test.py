@@ -1,13 +1,59 @@
+import json
 from http import HTTPStatus
+
 from unittest import IsolatedAsyncioTestCase, main
 from unittest.mock import patch, AsyncMock, MagicMock
-from flask import Flask, jsonify
-from backend.notification_management.notification_api import notification_bp
-from backend.common.constants import MicrosoftAccountStatus, EVENT_TYPES
-import json
-import asyncio
+from flask import Flask
 
-SUBSCRIBE_MICROSOFT_CHAT_MESSAGES_API = "/api/microsoft/chat/subscribe"
+from backend.notification_management.notification_controller import (
+    notification_bp,
+    NotificationController,
+)
+from backend.common.constants import EVENT_TYPES
+
+
+class TestNotificationController(IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.microsoft_chat_subscription_service = AsyncMock()
+        self.controller = NotificationController(
+            microsoft_chat_subscription_service=self.microsoft_chat_subscription_service
+        )
+
+        self.app = Flask(__name__)
+        self.app_context = self.app.app_context()
+        self.app_context.push()
+
+    async def asyncTearDown(self):
+        self.app_context.pop()
+
+    async def test_subscribe_microsoft_chat_messages_success(self):
+        mock_return_value = (
+            "Subscription created successfully for chat_id 19:meeting_ID@thread.skype.",
+            {
+                "expiration_timestamp": "2025-05-27T12:34:56.000Z",
+                "chat_id": "19:meeting_ID@thread.skype",
+                "subscription_id": "abc123",
+            },
+        )
+        self.microsoft_chat_subscription_service.subscribe_chat_messages.return_value = mock_return_value
+
+        payload = {
+            "chat_id": "19:meeting_ID@thread.skype",
+            "notification_url": "https://example.com/notifications",
+            "lifecycle_notification_url": "https://example.com/lifecycle",
+        }
+
+        with self.app.test_request_context(
+            "/microsoft/chat/subscribe",
+            method="POST",
+            data=json.dumps(payload),
+            content_type="application/json",
+        ):
+            response = await self.controller.subscribe_microsoft_chat_messages()
+
+        self.assertEqual(response.status_code, HTTPStatus.CREATED)
+        self.assertEqual(response.json["message"], mock_return_value[0])
+        self.assertEqual(response.json["data"], mock_return_value[1])
 
 
 class TestNotificationApi(IsolatedAsyncioTestCase):
@@ -19,61 +65,7 @@ class TestNotificationApi(IsolatedAsyncioTestCase):
         app.testing = True
 
     @patch(
-        "backend.notification_management.notification_api.subscribe_chat_messages",
-        new_callable=AsyncMock,
-    )
-    async def test_subscribe_success(self, mock_subscribe):
-        """Test the /api/microsoft/chat/subscribe endpoint for a successful subscription."""
-        mock_subscribe.return_value = (
-            "Subscription created successfully for chat_id 19:meeting_ID@thread.skype.",
-            {
-                "expiration_timestamp": "2025-05-27T12:34:56.000Z",
-                "chat_id": "19:meeting_ID@thread.skype",
-                "subscription_id": "abc123",
-            },
-        )
-        payload = {
-            "chat_id": "19:meeting_ID@thread.skype",
-            "notification_url": "https://example.com/notifications",
-            "lifecycle_notification_url": "https://example.com/lifecycle",
-        }
-
-        loop = asyncio.get_event_loop()
-        response = await loop.run_in_executor(
-            None,
-            lambda: self.client.post(
-                SUBSCRIBE_MICROSOFT_CHAT_MESSAGES_API,
-                data=json.dumps(payload),
-                content_type="application/json",
-            ),
-        )
-        self.assertEqual(response.status_code, HTTPStatus.CREATED)
-        data = response.get_json()
-        self.assertEqual(data["message"], mock_subscribe.return_value[0])
-        self.assertEqual(data["data"], mock_subscribe.return_value[1])
-
-    async def test_subscribe_missing_param(self):
-        """Test the /api/microsoft/chat/subscribe endpoint for missing required parameter lifecycle_notification_url."""
-        payload = {
-            "chat_id": "19:meeting_ID@thread.skype",
-            "notification_url": "https://example.com/notifications",
-        }
-
-        loop = asyncio.get_event_loop()
-        try:
-            response = await loop.run_in_executor(
-                None,
-                lambda: self.client.post(
-                    SUBSCRIBE_MICROSOFT_CHAT_MESSAGES_API,
-                    data=json.dumps(payload),
-                    content_type="application/json",
-                ),
-            )
-        except ValueError as e:
-            self.assertIn("lifecycle_notification_url", str(e))
-
-    @patch(
-        "backend.notification_management.notification_api.create_workspaces_subscriptions"
+        "backend.notification_management.notification_controller.create_workspaces_subscriptions"
     )
     def test_subscribe_success(self, mock_create_subscription):
         payload = {
@@ -102,7 +94,7 @@ class TestNotificationApi(IsolatedAsyncioTestCase):
             set(payload["event_types"]),
         )
 
-    @patch("backend.notification_management.notification_api.GerritWatcher")
+    @patch("backend.notification_management.notification_controller.GerritWatcher")
     def test_register_gerrit_webhook_success(self, mock_watcher_cls):
         mock_instance = MagicMock()
         mock_instance.register_webhook.return_value = {"foo": "bar"}

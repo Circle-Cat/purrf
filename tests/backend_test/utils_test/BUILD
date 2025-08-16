@@ -42,3 +42,11 @@ py_test(
         "@pypi//tenacity",
     ],
 )
+
+py_test(
+    name = "app_dependency_builder_test",
+    srcs = ["app_dependency_builder_test.py"],
+    deps = [
+        "//backend/utils:app_dependency_builder",
+    ],
+)

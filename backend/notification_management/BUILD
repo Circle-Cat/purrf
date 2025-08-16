@@ -3,29 +3,25 @@ load("@rules_python//python:defs.bzl", "py_library")
 package(default_visibility = ["//visibility:public"])
 
 py_library(
-    name = "microsoft_chat_watcher",
+    name = "microsoft_chat_subscription_service",
     srcs = [
-        "microsoft_chat_watcher.py",
+        "microsoft_chat_subscription_service.py",
     ],
     deps = [
         "//backend/common:constants",
-        "//backend/common:microsoft_client",
-        "//backend/common:redis_client",
-        "@pypi//tenacity",
     ],
 )
 
 py_library(
-    name = "notification_api",
+    name = "notification_controller",
     srcs = [
-        "notification_api.py",
+        "notification_controller.py",
     ],
     deps = [
         "//backend/common:api_response_wrapper",
         "//backend/common:constants",
         "//backend/notification_management:gerrit_watcher",
         "//backend/notification_management:google_chat_watcher",
-        "//backend/notification_management:microsoft_chat_watcher",
         "@pypi//flask",
     ],
 )
