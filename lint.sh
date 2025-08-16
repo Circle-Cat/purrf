@@ -89,7 +89,7 @@ MSYS_NT*) machine=Windows ;;
 *) machine="UNKNOWN:${unameOut}" ;;
 esac
 args=()
-args=("--aspects=$(echo //tools/lint:linters.bzl%ruff)")
+args=("--aspects=$(echo //tools/lint:linters.bzl%{ruff,eslint} | tr ' ' ',')")
 args+=(
 	# Allow lints of code that fails some validation action
 	# See https://github.com/aspect-build/rules_ts/pull/574#issuecomment-2073632879

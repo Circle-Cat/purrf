@@ -22,6 +22,18 @@ exports_files(
     visibility = ["//tools/lint:lint_access_file_group"],  #lint file group
 )
 
+js_library(
+    name = "eslintrc",
+    srcs = ["eslint.config.mjs"],
+    deps = [
+        ":node_modules/@eslint/js",
+        ":node_modules/eslint",
+        ":node_modules/eslint-plugin-react-hooks",
+        ":node_modules/eslint-plugin-react-refresh",
+        ":node_modules/globals",
+    ],
+)
+
 alias(
     name = "format",
     actual = "//tools/format",
