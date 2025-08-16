@@ -62,7 +62,7 @@ py_library(
     deps = [
         "//backend/common:constants",
         "//backend/common:redis_client",
-        "//backend/utils:date_time_parser",
+        "//backend/utils:date_time_util",
     ],
 )
 

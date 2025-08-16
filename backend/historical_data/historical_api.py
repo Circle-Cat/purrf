@@ -11,7 +11,7 @@ from backend.common.api_response_wrapper import api_response
 from backend.historical_data.microsoft_chat_history_fetcher import (
     sync_microsoft_chat_messages_by_chat_id,
 )
-from backend.utils.date_time_parser import get_start_end_timestamps
+from backend.utils.date_time_util import get_start_end_timestamps
 
 history_bp = Blueprint("history", __name__, url_prefix="/api")
 

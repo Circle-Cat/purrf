@@ -43,7 +43,7 @@ py_library(
         "//backend/historical_data:jira_history_fetcher",
         "//backend/historical_data:microsoft_chat_history_fetcher",
         "//backend/historical_data:microsoft_ldap_fetcher",
-        "//backend/utils:date_time_parser",
+        "//backend/utils:date_time_util",
         "@pypi//flask",
     ],
 )
