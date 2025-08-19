@@ -38,12 +38,14 @@ class TestAppRoutes(TestCase):
 
         mock_sync_microsoft_members_to_redis.assert_called_once()
 
-    @patch("backend.historical_data.historical_api.sync_microsoft_chat_messages_by_chat_id")
+    @patch(
+        "backend.historical_data.historical_api.sync_microsoft_chat_messages_by_chat_id"
+    )
     def backfill_microsoft_chat_messages(
         self, mock_sync_microsoft_chat_messages_by_chat_id
     ):
         mock_result = {"total_processed": 5, "total_skipped": 0}
-        mock_sync_microsoft_members_to_redis.return_value = mock_result
+        mock_sync_microsoft_chat_messages_by_chat_id.return_value = mock_result
 
         response = self.client.post(
             MICROSOFT_CHAT_FETCHER_API.format(chat_id=TEST_CHAT_ID)
@@ -124,7 +126,7 @@ class TestAppRoutes(TestCase):
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertIn("Google Calendar history pulled", response.json["message"])
 
-        args, kwargs = mock_pull_calendar_history.call_args
+        args, _ = mock_pull_calendar_history.call_args
         self.assertEqual(len(args), 2)
         self.assertTrue(isinstance(args[0], str))
         self.assertTrue(isinstance(args[1], str))

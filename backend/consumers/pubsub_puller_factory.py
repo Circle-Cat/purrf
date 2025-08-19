@@ -10,7 +10,7 @@ class PubSubPullerFactory:
     managing resources and preventing redundant connections.
     """
 
-    def __init__(self, puller_creator: Callable[..., "PubSubPuller"], logger: "Logger"):
+    def __init__(self, puller_creator: Callable, logger):
         """
         Initializes the PubSubPullerFactory with a callable object to create puller instances.
 
@@ -25,9 +25,7 @@ class PubSubPullerFactory:
         self.logger = logger
         self.pubsub_puller_instances = {}
 
-    def get_puller_instance(
-        self, project_id: str, subscription_id: str
-    ) -> "PubSubPuller":
+    def get_puller_instance(self, project_id: str, subscription_id: str):
         """
         Retrieve a PubSubPuller instance for a specific project and subscription.
 

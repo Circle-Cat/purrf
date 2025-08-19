@@ -1,5 +1,5 @@
 from unittest import TestCase, main
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 from backend.historical_data.google_chat_history_fetcher import (
     list_directory_all_people_ldap,
     fetch_messages_by_spaces_id,

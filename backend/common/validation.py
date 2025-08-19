@@ -1,6 +1,6 @@
 import json
 import os
-from jsonschema import validate, Draft7Validator, ValidationError, SchemaError
+from jsonschema import validate, ValidationError, SchemaError
 from backend.common.logger import get_logger
 
 logger = get_logger()
@@ -28,7 +28,7 @@ def load_schema(schema_filename: str) -> dict:
         with open(schema_path, "r", encoding="utf-8") as f:
             schema = json.load(f)
         return schema
-    except FileNotFoundError as e:
+    except FileNotFoundError:
         logger.error(f"Schema file not found: {schema_path}")
         raise
     except json.JSONDecodeError as e:

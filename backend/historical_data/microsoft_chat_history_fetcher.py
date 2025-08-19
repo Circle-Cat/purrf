@@ -12,7 +12,9 @@ from tenacity import (
 )
 
 from backend.historical_data.microsoft_ldap_fetcher import get_all_microsoft_members
-from backend.utils.microsoft_chat_message_store import sync_history_chat_messages_to_redis
+from backend.utils.microsoft_chat_message_store import (
+    sync_history_chat_messages_to_redis,
+)
 from backend.common.constants import (
     MICROSOFT_TEAMS_MESSAGES_SORTER,
     MICROSOFT_TEAMS_MESSAGES_MAX_RESULT,

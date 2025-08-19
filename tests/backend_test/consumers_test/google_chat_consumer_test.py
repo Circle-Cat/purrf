@@ -1,5 +1,5 @@
 from unittest import TestCase, main
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import patch, MagicMock
 from backend.consumers.google_chat_consumer import (
     get_ldap_by_id,
     pull_messages,

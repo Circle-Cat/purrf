@@ -1,8 +1,12 @@
 from flask import Blueprint
 from http import HTTPStatus
-from backend.consumers.pubsub_pull_manager import check_pulling_status, stop_pulling_process
+from backend.consumers.pubsub_pull_manager import (
+    check_pulling_status,
+    stop_pulling_process,
+)
 from backend.consumers.microsoft_chat_consumer import pull_microsoft_message
 from backend.consumers.google_chat_consumer import pull_messages
+from backend.consumers.gerrit_consumer import pull_gerrit
 from backend.common.api_response_wrapper import api_response
 
 consumers_bp = Blueprint("consumers", __name__, url_prefix="/api")

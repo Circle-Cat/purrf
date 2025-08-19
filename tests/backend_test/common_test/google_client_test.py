@@ -1,5 +1,5 @@
 from unittest import TestCase, main
-from unittest.mock import patch, Mock, call
+from unittest.mock import patch, Mock
 from google.oauth2.service_account import Credentials as ServiceAccountCredentials
 from google.oauth2.credentials import Credentials as UserCredentials
 from google.cloud.pubsub_v1 import SubscriberClient, PublisherClient
@@ -157,7 +157,7 @@ class TestGoogleClientFactory(TestCase):
                 mock_build.side_effect = [Exception, Mock()]
 
                 factory = GoogleClientFactory()
-                client = getattr(factory, function_name)()
+                _ = getattr(factory, function_name)()
 
                 self.assertEqual(mock_build.call_count, 2)
 

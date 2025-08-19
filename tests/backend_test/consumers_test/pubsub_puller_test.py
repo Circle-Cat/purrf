@@ -5,6 +5,7 @@ from backend.common.constants import PullStatus, PUBSUB_PULL_MESSAGES_STATUS_KEY
 from backend.common.asyncio_event_loop_manager import AsyncioEventLoopManager
 from google.api_core.exceptions import NotFound
 import concurrent.futures
+import time
 
 
 class TestPubSubPuller(TestCase):
@@ -343,7 +344,9 @@ class TestPubSubPuller(TestCase):
         self.assertFalse(puller._is_pulling.is_set())
         mock_check_pulling_messages_status.assert_called_once()
 
-    @patch("backend.consumers.pubsub_puller.GoogleClientFactory.create_subscriber_client")
+    @patch(
+        "backend.consumers.pubsub_puller.GoogleClientFactory.create_subscriber_client"
+    )
     def test_check_subscription_exist_true(self, mock_create_subscriber_client):
         mock_subscriber = MagicMock()
         mock_create_subscriber_client.return_value = mock_subscriber
@@ -358,7 +361,9 @@ class TestPubSubPuller(TestCase):
         result = puller._check_subscription_exist()
         self.assertTrue(result)
 
-    @patch("backend.consumers.pubsub_puller.GoogleClientFactory.create_subscriber_client")
+    @patch(
+        "backend.consumers.pubsub_puller.GoogleClientFactory.create_subscriber_client"
+    )
     def test_check_subscription_exist_false(self, mock_create_subscriber_client):
         mock_subscriber = MagicMock()
         mock_create_subscriber_client.return_value = mock_subscriber
@@ -414,7 +419,9 @@ class TestPubSubPuller(TestCase):
         self.assertEqual(mock_redis.delete.call_count, 3)
 
     @patch.object(PubSubPuller, "_update_redis_pull_status")
-    @patch("backend.consumers.pubsub_puller.GoogleClientFactory.create_subscriber_client")
+    @patch(
+        "backend.consumers.pubsub_puller.GoogleClientFactory.create_subscriber_client"
+    )
     def test_pull_target_success(
         self, mock_create_subscriber_client, mock_update_status
     ):
@@ -440,12 +447,13 @@ class TestPubSubPuller(TestCase):
 
     @patch.object(PubSubPuller, "_delete_redis_pull_status")
     @patch.object(PubSubPuller, "_update_redis_pull_status")
-    @patch("backend.consumers.pubsub_puller.GoogleClientFactory.create_subscriber_client")
+    @patch(
+        "backend.consumers.pubsub_puller.GoogleClientFactory.create_subscriber_client"
+    )
     def test_pull_target_with_not_found_error(
         self, mock_create_subscriber_client, mock_update_status, mock_delete_status
     ):
         mock_subscriber = MagicMock()
-        mock_future = MagicMock()
         mock_subscriber.subscription_path.return_value = self.subscription_path
         mock_create_subscriber_client.return_value = mock_subscriber
         mock_subscriber.subscribe.side_effect = NotFound("Subscription not found")
@@ -464,7 +472,9 @@ class TestPubSubPuller(TestCase):
             mock_clear.assert_not_called()
 
     @patch.object(PubSubPuller, "_update_redis_pull_status")
-    @patch("backend.consumers.pubsub_puller.GoogleClientFactory.create_subscriber_client")
+    @patch(
+        "backend.consumers.pubsub_puller.GoogleClientFactory.create_subscriber_client"
+    )
     def test_pull_target_with_expection(
         self, mock_create_subscriber_client, mock_update_status
     ):
@@ -493,7 +503,9 @@ class TestPubSubPuller(TestCase):
             mock_clear.assert_called_once()
 
     @patch.object(PubSubPuller, "_check_subscription_exist", return_value=True)
-    @patch("backend.consumers.pubsub_puller.GoogleClientFactory.create_subscriber_client")
+    @patch(
+        "backend.consumers.pubsub_puller.GoogleClientFactory.create_subscriber_client"
+    )
     @patch("backend.consumers.pubsub_puller.threading.Thread")
     def test_start_pulling_messages_success(
         self, mock_thread, mock_create_subscriber_client, mock_check_subscription_exist
@@ -538,7 +550,9 @@ class TestPubSubPuller(TestCase):
         self.assertFalse(puller._is_pulling.is_set())
 
     @patch.object(PubSubPuller, "_check_subscription_exist", return_value=True)
-    @patch("backend.consumers.pubsub_puller.GoogleClientFactory.create_subscriber_client")
+    @patch(
+        "backend.consumers.pubsub_puller.GoogleClientFactory.create_subscriber_client"
+    )
     @patch("backend.consumers.pubsub_puller.threading.Thread")
     def test_start_pulling_messages_already_pulling(
         self, mock_thread, mock_create_subscriber_client, mock_check_subscription_exist
@@ -561,7 +575,9 @@ class TestPubSubPuller(TestCase):
 
     @patch.object(PubSubPuller, "stop_pulling_messages")
     @patch.object(PubSubPuller, "_check_subscription_exist", return_value=True)
-    @patch("backend.consumers.pubsub_puller.GoogleClientFactory.create_subscriber_client")
+    @patch(
+        "backend.consumers.pubsub_puller.GoogleClientFactory.create_subscriber_client"
+    )
     @patch("backend.consumers.pubsub_puller.threading.Thread")
     def test_start_pulling_messages_stale(
         self,

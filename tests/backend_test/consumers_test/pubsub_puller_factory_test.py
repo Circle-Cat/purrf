@@ -1,4 +1,4 @@
-from unittest import TestCase, main
+from unittest import TestCase
 from unittest.mock import Mock
 from backend.consumers.pubsub_puller_factory import PubSubPullerFactory
 

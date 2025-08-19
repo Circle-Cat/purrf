@@ -14,7 +14,10 @@ from backend.frontend_service.microsoft_chat_topics_loader import (
     get_microsoft_chat_topics,
     cache_chat_topics,
 )
-from backend.common.environment_constants import MICROSOFT_ADMIN_LDAP, MICROSOFT_USER_LDAP
+from backend.common.environment_constants import (
+    MICROSOFT_ADMIN_LDAP,
+    MICROSOFT_USER_LDAP,
+)
 
 
 class TestMicrosoftChatTopicsLoader(IsolatedAsyncioTestCase):
@@ -114,7 +117,9 @@ class TestMicrosoftChatTopicsLoader(IsolatedAsyncioTestCase):
         os.environ,
         {MICROSOFT_ADMIN_LDAP: TEST_ADMIN_LDAP, MICROSOFT_USER_LDAP: TEST_USER_LDAP},
     )
-    @patch("backend.frontend_service.microsoft_chat_topics_loader.MicrosoftClientFactory")
+    @patch(
+        "backend.frontend_service.microsoft_chat_topics_loader.MicrosoftClientFactory"
+    )
     @patch(
         "backend.frontend_service.microsoft_chat_topics_loader.list_all_id_ldap_mapping",
         new_callable=AsyncMock,
@@ -146,7 +151,9 @@ class TestMicrosoftChatTopicsLoader(IsolatedAsyncioTestCase):
         os.environ,
         {MICROSOFT_ADMIN_LDAP: TEST_ADMIN_LDAP, MICROSOFT_USER_LDAP: TEST_USER_LDAP},
     )
-    @patch("backend.frontend_service.microsoft_chat_topics_loader.MicrosoftClientFactory")
+    @patch(
+        "backend.frontend_service.microsoft_chat_topics_loader.MicrosoftClientFactory"
+    )
     @patch(
         "backend.frontend_service.microsoft_chat_topics_loader.list_all_id_ldap_mapping",
         new_callable=AsyncMock,

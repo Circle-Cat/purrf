@@ -1,7 +1,7 @@
 from unittest import TestCase, main
 from unittest.mock import patch, Mock
-from redis.exceptions import ConnectionError as RedisConnectionError, TimeoutError
-from backend.common.redis_client import RedisClientFactory, RedisClientError
+from redis.exceptions import ConnectionError as RedisConnectionError
+from backend.common.redis_client import RedisClientFactory
 from backend.common.environment_constants import (
     REDIS_HOST,
     REDIS_PASSWORD,

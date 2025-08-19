@@ -1,7 +1,6 @@
 from unittest import TestCase, main
 from unittest.mock import patch, mock_open
 from backend.common.validation import validate_data
-import jsonschema
 
 
 class TestValidateData(TestCase):

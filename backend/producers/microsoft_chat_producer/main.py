@@ -158,7 +158,7 @@ def notification_webhook(request):
         for event in events:
             is_validated = _validate_payload(event)
             if not is_validated:
-                logger.error(f"Event payload validation failed.")
+                logger.error("Event payload validation failed.")
                 return "", HTTPStatus.BAD_REQUEST
 
             microsoft_subscription_id = event.get(

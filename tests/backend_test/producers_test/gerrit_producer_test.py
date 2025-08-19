@@ -1,12 +1,10 @@
 import os
-import json
 import unittest
 from unittest.mock import patch, Mock
 from http import HTTPStatus
 from backend.producers.gerrit_producer import main
 from backend.producers.gerrit_producer.main import (
     gerrit_event_webhook,
-    publisher_client,
 )
 
 
@@ -55,7 +53,9 @@ class TestGerritEventWebhook(unittest.TestCase):
             "TOPIC_ID": "test-topic",
         },
     )
-    @patch("backend.producers.gerrit_producer.main.EXPECTED_SECRET", new="expected-secret")
+    @patch(
+        "backend.producers.gerrit_producer.main.EXPECTED_SECRET", new="expected-secret"
+    )
     @patch("backend.producers.gerrit_producer.main.PublisherClient")
     @patch.object(main, "publisher_client", new=None)
     def test_invalid_secret_returns_401(self, mock_pubsub_client):

@@ -1,7 +1,10 @@
 from unittest import TestCase, main
-from unittest.mock import patch, MagicMock
-from backend.consumers.pubsub_puller import PubSubPuller, PullStatusResponse
-from backend.consumers.pubsub_pull_manager import check_pulling_status, stop_pulling_process
+from unittest.mock import patch
+from backend.consumers.pubsub_puller import PullStatusResponse
+from backend.consumers.pubsub_pull_manager import (
+    check_pulling_status,
+    stop_pulling_process,
+)
 
 
 class TestPubsubPullManager(TestCase):
@@ -31,25 +34,25 @@ class TestPubsubPullManager(TestCase):
     @patch("backend.consumers.pubsub_pull_manager.PubSubPuller")
     def test_empty_project_id(self, mock_puller):
         """Test ValueError when project_id is empty."""
-        with self.assertRaises(ValueError) as context:
+        with self.assertRaises(ValueError):
             check_pulling_status("", self.valid_subscription_id)
 
     @patch("backend.consumers.pubsub_pull_manager.PubSubPuller")
     def test_none_project_id(self, mock_puller):
         """Test ValueError when project_id is None."""
-        with self.assertRaises(ValueError) as context:
+        with self.assertRaises(ValueError):
             check_pulling_status(None, self.valid_subscription_id)
 
     @patch("backend.consumers.pubsub_pull_manager.PubSubPuller")
     def test_empty_subscription_id(self, mock_puller):
         """Test ValueError when subscription_id is empty."""
-        with self.assertRaises(ValueError) as context:
+        with self.assertRaises(ValueError):
             check_pulling_status(self.valid_project_id, "")
 
     @patch("backend.consumers.pubsub_pull_manager.PubSubPuller")
     def test_none_subscription_id(self, mock_puller):
         """Test ValueError when subscription_id is None."""
-        with self.assertRaises(ValueError) as context:
+        with self.assertRaises(ValueError):
             check_pulling_status(self.valid_project_id, None)
 
     @patch("backend.consumers.pubsub_pull_manager.PubSubPuller")

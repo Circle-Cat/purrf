@@ -15,7 +15,6 @@ import concurrent.futures
 import datetime as dt
 import threading
 import inspect
-import time
 
 logger = get_logger()
 
@@ -393,7 +392,7 @@ class PubSubPuller:
                         f"Subscription {self.subscription_id} listening cancelled and stream closed gracefully."
                     )
                     self._update_redis_pull_status(PullStatus.STOPPED)
-                except concurrent.futures.CancelledError as e:
+                except concurrent.futures.CancelledError:
                     logger.info(
                         f"Subscription {self.subscription_id} Future was successfully cancelled."
                     )

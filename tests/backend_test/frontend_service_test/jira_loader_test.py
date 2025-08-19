@@ -11,7 +11,9 @@ from backend.common.constants import JiraIssueStatus
 
 
 class TestJiraLoader(TestCase):
-    @patch("backend.frontend_service.jira_loader.RedisClientFactory.create_redis_client")
+    @patch(
+        "backend.frontend_service.jira_loader.RedisClientFactory.create_redis_client"
+    )
     def test_get_issue_ids_in_timerange_todo(self, mock_create_redis_client):
         mock_redis = Mock()
         mock_pipeline = Mock()
@@ -24,7 +26,9 @@ class TestJiraLoader(TestCase):
         )
         self.assertEqual(result, {"todo": {"alice": {"projectA": [101, 102]}}})
 
-    @patch("backend.frontend_service.jira_loader.RedisClientFactory.create_redis_client")
+    @patch(
+        "backend.frontend_service.jira_loader.RedisClientFactory.create_redis_client"
+    )
     def test_get_issue_ids_in_timerange_done_with_dates(self, mock_create_redis_client):
         mock_redis = Mock()
         mock_pipeline = Mock()
@@ -42,7 +46,9 @@ class TestJiraLoader(TestCase):
         self.assertEqual(result, {"done": {"bob": {"projectB": [201, 202]}}})
 
     @patch("backend.frontend_service.jira_loader._get_issues_for_status")
-    @patch("backend.frontend_service.jira_loader.RedisClientFactory.create_redis_client")
+    @patch(
+        "backend.frontend_service.jira_loader.RedisClientFactory.create_redis_client"
+    )
     def test_get_issue_ids_in_timerange_all(
         self, mock_create_redis_client, mock_get_issues
     ):
@@ -160,7 +166,9 @@ class TestBuildFinalResult(TestCase):
 class TestProcessGetIssueDetailBatch(TestCase):
     """Integration tests for process_get_issue_detail_batch."""
 
-    @patch("backend.frontend_service.jira_loader.RedisClientFactory.create_redis_client")
+    @patch(
+        "backend.frontend_service.jira_loader.RedisClientFactory.create_redis_client"
+    )
     def test_success_case(self, mock_create_redis_client):
         """Test successful execution."""
         mock_redis = Mock()
@@ -201,7 +209,9 @@ class TestProcessGetIssueDetailBatch(TestCase):
         with self.assertRaises(ValueError):
             process_get_issue_detail_batch(["abc"])
 
-    @patch("backend.frontend_service.jira_loader.RedisClientFactory.create_redis_client")
+    @patch(
+        "backend.frontend_service.jira_loader.RedisClientFactory.create_redis_client"
+    )
     def test_redis_exception(self, mock_create_redis_client):
         """Test Redis exception handling."""
         mock_redis = Mock()

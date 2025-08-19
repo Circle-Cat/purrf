@@ -116,7 +116,6 @@ def _handle_update_message(sender_ldap: str, message: dict):
         raise ValueError(
             "Failed to create Redis client when updating new Google Chat message."
         )
-    _, space_id, _, message_id = message_name.split("/")
     saved_data = client_redis.get(message_name)
     if not saved_data:
         raise ValueError(f"No saved data found for message {message_name}.")

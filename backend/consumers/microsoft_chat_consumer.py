@@ -1,4 +1,6 @@
-from backend.utils.microsoft_chat_message_store import sync_near_real_time_message_to_redis
+from backend.utils.microsoft_chat_message_store import (
+    sync_near_real_time_message_to_redis,
+)
 from backend.consumers.pubsub_puller import PubSubPuller
 from backend.common.logger import get_logger
 import json

@@ -10,7 +10,6 @@ from backend.common.constants import (
     MicrosoftChatMessagesChangeType,
     MICROSOFT_CHAT_MESSAGES_INDEX_KEY,
     MICROSOFT_CHAT_MESSAGES_DETAILS_KEY,
-    MICROSOFT_LDAP_KEY,
     MicrosoftChatMessageAttachmentType,
 )
 from tenacity import retry, stop_after_attempt, wait_exponential
@@ -250,7 +249,6 @@ def _handle_created_messages(message, sender_ldap, pipeline):
     message_id = message.id
     created_date_time = message.created_date_time
     body = message.body
-    content_type = body.content_type if body else None
     content = body.content if body else ""
     attachments = message.attachments
 

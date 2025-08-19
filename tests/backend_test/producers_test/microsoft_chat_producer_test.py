@@ -1,15 +1,11 @@
 import unittest
 from unittest.mock import patch, Mock
 from http import HTTPStatus
-import json
-import redis.exceptions
 from concurrent.futures import TimeoutError
 from backend.producers.microsoft_chat_producer import main
 from backend.producers.microsoft_chat_producer.main import (
     notification_webhook,
     _validate_payload,
-    redis_client,
-    publisher_client,
     logger,
 )
 import os
@@ -69,21 +65,21 @@ class TestNotificationWebhook(unittest.TestCase):
     def test_none_json_body(self):
         request = self.make_request(json_data=None)
 
-        response, status = notification_webhook(request)
+        _, status = notification_webhook(request)
 
         self.assertEqual(status, HTTPStatus.BAD_REQUEST)
 
     def test_invalid_json_body(self):
         request = self.make_request(json_data=self.invalid_value_not_list)
 
-        response, status = notification_webhook(request)
+        _, status = notification_webhook(request)
 
         self.assertEqual(status, HTTPStatus.BAD_REQUEST)
 
     def test_empty_notification_value(self):
         request = self.make_request(json_data=self.invalid_value_empty)
 
-        response, status = notification_webhook(request)
+        _, status = notification_webhook(request)
 
         self.assertEqual(status, HTTPStatus.BAD_REQUEST)
 
@@ -105,7 +101,7 @@ class TestNotificationWebhook(unittest.TestCase):
 
         request = self.make_request(json_data=self.valid_notofiction)
 
-        response, status = notification_webhook(request)
+        _, status = notification_webhook(request)
 
         self.assertEqual(status, HTTPStatus.INTERNAL_SERVER_ERROR)
 
@@ -135,7 +131,7 @@ class TestNotificationWebhook(unittest.TestCase):
 
         request = self.make_request(json_data=self.valid_notofiction)
 
-        response, status = notification_webhook(request)
+        _, status = notification_webhook(request)
 
         self.assertEqual(status, HTTPStatus.INTERNAL_SERVER_ERROR)
         mock_pipeline.get.assert_called_once()
@@ -178,7 +174,7 @@ class TestNotificationWebhook(unittest.TestCase):
 
         request = self.make_request(json_data=self.valid_notofiction)
 
-        response, status = notification_webhook(request)
+        _, status = notification_webhook(request)
 
         self.assertEqual(status, HTTPStatus.ACCEPTED)
 
@@ -191,9 +187,6 @@ class TestNotificationWebhook(unittest.TestCase):
         mock_publisher_cls.assert_called_once()
         mock_publisher_client_instance.topic_path.assert_called_once()
 
-        expected_message_data = json.dumps(self.valid_notofiction["value"][0]).encode(
-            "utf-8"
-        )
         mock_publisher_client_instance.publish.assert_called_once()
         mock_future.result.assert_called_once_with(timeout=3)
 
@@ -230,7 +223,7 @@ class TestNotificationWebhook(unittest.TestCase):
 
         request = self.make_request(json_data=self.valid_notofiction)
 
-        response, status = notification_webhook(request)
+        _, status = notification_webhook(request)
 
         self.assertEqual(status, HTTPStatus.INTERNAL_SERVER_ERROR)
 
@@ -243,9 +236,6 @@ class TestNotificationWebhook(unittest.TestCase):
         mock_publisher_cls.assert_called_once()
         mock_publisher_client_instance.topic_path.assert_called_once()
 
-        expected_message_data = json.dumps(self.valid_notofiction["value"][0]).encode(
-            "utf-8"
-        )
         mock_publisher_client_instance.publish.assert_called_once()
         mock_future.result.assert_called_once_with(timeout=3)
 

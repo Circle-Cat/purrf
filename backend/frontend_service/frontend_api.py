@@ -10,7 +10,9 @@ from backend.frontend_service.calendar_loader import get_calendars_for_user
 from backend.common.constants import MicrosoftAccountStatus
 from backend.common.api_response_wrapper import api_response
 from backend.utils.google_chat_utils import get_chat_spaces
-from backend.frontend_service.microsoft_chat_topics_loader import get_microsoft_chat_topics
+from backend.frontend_service.microsoft_chat_topics_loader import (
+    get_microsoft_chat_topics,
+)
 from backend.frontend_service.jira_loader import get_issue_ids_in_timerange
 
 

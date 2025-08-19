@@ -43,7 +43,6 @@ class TestStoreIssuesInRedis(TestCase):
     """Test Redis storage functionality."""
 
     def setUp(self):
-        """Set up test data."""
         self.sample_issues = [
             {
                 "issue_id": "12345",
@@ -62,25 +61,24 @@ class TestStoreIssuesInRedis(TestCase):
     def test_stores_issues_successfully(self):
         """Should store issues and return success count."""
         mock_pipeline = MagicMock()
+        mock_redis_client = MagicMock()
+        mock_redis_client.pipeline.return_value = mock_pipeline
 
-        result = store_issues_in_redis(self.sample_issues, mock_pipeline)
+        result = store_issues_in_redis(self.sample_issues, mock_redis_client)
 
         self.assertEqual(result, 1)
-
-        # Verify that the pipeline commands were executed
-        self.assertTrue(mock_pipeline.json.called)
-        self.assertTrue(mock_pipeline.json().set.called)
+        mock_redis_client.pipeline.assert_called_once()
+        mock_pipeline.json().set.assert_called_once()
+        mock_pipeline.execute.assert_called_once()
 
     def test_handles_empty_input_gracefully(self):
-        """Should handle empty issue list without errors."""
-        mock_pipeline = MagicMock()
+        """Should skip Redis when no issues provided."""
+        mock_redis_client = MagicMock()
 
-        result = store_issues_in_redis([], mock_pipeline)
+        result = store_issues_in_redis([], mock_redis_client)
 
         self.assertEqual(result, 0)
-
-        # Verify that no pipeline commands were executed for empty input
-        self.assertFalse(mock_pipeline.json.called)
+        mock_redis_client.pipeline.assert_not_called()
 
 
 class TestFetchIncrementalIssues(TestCase):
@@ -256,7 +254,9 @@ class TestProcessUpdateJiraIssues(TestCase):
     """Test complete incremental update process."""
 
     @patch("backend.historical_data.jira_history_fetcher.store_issues_in_redis")
-    @patch("backend.historical_data.jira_history_fetcher.update_incremental_issue_indexes")
+    @patch(
+        "backend.historical_data.jira_history_fetcher.update_incremental_issue_indexes"
+    )
     @patch("backend.historical_data.jira_history_fetcher.fetch_incremental_issues")
     @patch("backend.historical_data.jira_history_fetcher.RedisClientFactory")
     @patch("backend.historical_data.jira_history_fetcher.JiraClientFactory")
@@ -396,48 +396,6 @@ class TestFetchIssuesWithMetadata(TestCase):
         self.assertEqual(len(result["valid_issues"]), 0)
 
 
-class TestStoreIssuesInRedis(TestCase):
-    """Test Redis storage functionality."""
-
-    def setUp(self):
-        self.sample_issues = [
-            {
-                "issue_id": "12345",
-                "redis_data": {
-                    "issue_key": "PROJ-123",
-                    "issue_title": "Test Issue",
-                    "project_id": "10001",
-                    "story_point": 5,
-                    "issue_status": JiraIssueStatus.TODO,
-                    "ldap": "test_user",
-                    "finish_date": None,
-                },
-            }
-        ]
-
-    def test_stores_issues_successfully(self):
-        """Should store issues and return success count."""
-        mock_pipeline = MagicMock()
-        mock_redis_client = MagicMock()
-        mock_redis_client.pipeline.return_value = mock_pipeline
-
-        result = store_issues_in_redis(self.sample_issues, mock_redis_client)
-
-        self.assertEqual(result, 1)
-        mock_redis_client.pipeline.assert_called_once()
-        mock_pipeline.json().set.assert_called_once()
-        mock_pipeline.execute.assert_called_once()
-
-    def test_handles_empty_input_gracefully(self):
-        """Should skip Redis when no issues provided."""
-        mock_redis_client = MagicMock()
-
-        result = store_issues_in_redis([], mock_redis_client)
-
-        self.assertEqual(result, 0)
-        mock_redis_client.pipeline.assert_not_called()
-
-
 class TestFetchAndStoreIssuesForLdap(TestCase):
     """Test user-level issue processing workflow."""
 
@@ -495,8 +453,12 @@ class TestFetchAndStoreIssuesForLdap(TestCase):
 class TestProcessBackfillJiraIssues(TestCase):
     """Test complete backfill process."""
 
-    @patch("backend.historical_data.jira_history_fetcher.get_all_ldaps_and_displaynames")
-    @patch("backend.historical_data.jira_history_fetcher.fetch_and_store_issues_for_ldap")
+    @patch(
+        "backend.historical_data.jira_history_fetcher.get_all_ldaps_and_displaynames"
+    )
+    @patch(
+        "backend.historical_data.jira_history_fetcher.fetch_and_store_issues_for_ldap"
+    )
     @patch("backend.historical_data.jira_history_fetcher.JiraClientFactory")
     @patch("backend.historical_data.jira_history_fetcher.RedisClientFactory")
     def test_processes_all_users_and_aggregates_results(
@@ -536,7 +498,9 @@ class TestProcessBackfillJiraIssues(TestCase):
             any_order=True,
         )
 
-    @patch("backend.historical_data.jira_history_fetcher.get_all_ldaps_and_displaynames")
+    @patch(
+        "backend.historical_data.jira_history_fetcher.get_all_ldaps_and_displaynames"
+    )
     def test_raises_error_when_no_users_found(self, mock_get_ldaps):
         """Should raise RuntimeError when no users are found."""
         mock_get_ldaps.return_value = {}
@@ -581,7 +545,8 @@ class TestStoreJiraProjectsInRedis(TestCase):
     """Test Redis storage functionality."""
 
     @patch(
-        "backend.historical_data.jira_history_fetcher.JIRA_PROJECTS_KEY", "mock:project:key"
+        "backend.historical_data.jira_history_fetcher.JIRA_PROJECTS_KEY",
+        "mock:project:key",
     )
     def test_store_jira_projects_success(self):
         """Should store projects in Redis with complete overwrite."""
@@ -597,7 +562,8 @@ class TestStoreJiraProjectsInRedis(TestCase):
         )
 
     @patch(
-        "backend.historical_data.jira_history_fetcher.JIRA_PROJECTS_KEY", "mock:project:key"
+        "backend.historical_data.jira_history_fetcher.JIRA_PROJECTS_KEY",
+        "mock:project:key",
     )
     def test_store_empty_dict(self):
         """Should handle empty project dict gracefully."""
@@ -619,7 +585,8 @@ class TestProcessSyncJiraProjects(TestCase):
     """Test complete synchronization process."""
 
     @patch(
-        "backend.historical_data.jira_history_fetcher.JIRA_PROJECTS_KEY", "mock:project:key"
+        "backend.historical_data.jira_history_fetcher.JIRA_PROJECTS_KEY",
+        "mock:project:key",
     )
     @patch("backend.historical_data.jira_history_fetcher.RedisClientFactory")
     @patch("backend.historical_data.jira_history_fetcher.JiraClientFactory")
@@ -650,7 +617,8 @@ class TestProcessSyncJiraProjects(TestCase):
         )
 
     @patch(
-        "backend.historical_data.jira_history_fetcher.JIRA_PROJECTS_KEY", "mock:project:key"
+        "backend.historical_data.jira_history_fetcher.JIRA_PROJECTS_KEY",
+        "mock:project:key",
     )
     @patch("backend.historical_data.jira_history_fetcher.RedisClientFactory")
     @patch("backend.historical_data.jira_history_fetcher.JiraClientFactory")

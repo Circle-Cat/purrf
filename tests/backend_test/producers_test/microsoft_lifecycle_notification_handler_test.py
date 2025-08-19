@@ -106,7 +106,9 @@ class TestMicrosoftLifecycleNotificationHandler(IsolatedAsyncioTestCase):
     @patch(
         "backend.producers.microsoft_lifecycle_notification_handler.main._init_redis_client"
     )
-    @patch("backend.producers.microsoft_lifecycle_notification_handler.main.redis_client")
+    @patch(
+        "backend.producers.microsoft_lifecycle_notification_handler.main.redis_client"
+    )
     def test_validate_identity_success(self, mock_redis_client, mock_init_redis):
         mock_pipeline = MagicMock()
         mock_pipeline.execute.return_value = [TEST_CLIENT_STATE]
@@ -118,7 +120,9 @@ class TestMicrosoftLifecycleNotificationHandler(IsolatedAsyncioTestCase):
     @patch(
         "backend.producers.microsoft_lifecycle_notification_handler.main._init_redis_client"
     )
-    @patch("backend.producers.microsoft_lifecycle_notification_handler.main.redis_client")
+    @patch(
+        "backend.producers.microsoft_lifecycle_notification_handler.main.redis_client"
+    )
     def test_validate_identity_failure(self, mock_redis_client, mock_init_redis):
         mock_pipeline = MagicMock()
         mock_pipeline.execute.return_value = [TEST_CLIENT_STATE2]
@@ -130,7 +134,9 @@ class TestMicrosoftLifecycleNotificationHandler(IsolatedAsyncioTestCase):
     @patch(
         "backend.producers.microsoft_lifecycle_notification_handler.main._init_graph_client"
     )
-    @patch("backend.producers.microsoft_lifecycle_notification_handler.main.graph_client")
+    @patch(
+        "backend.producers.microsoft_lifecycle_notification_handler.main.graph_client"
+    )
     async def test_renew_and_reauthorize_subscription_success(
         self, mock_graph_client, mock_init_graph
     ):
@@ -146,7 +152,9 @@ class TestMicrosoftLifecycleNotificationHandler(IsolatedAsyncioTestCase):
     @patch(
         "backend.producers.microsoft_lifecycle_notification_handler.main._init_graph_client"
     )
-    @patch("backend.producers.microsoft_lifecycle_notification_handler.main.graph_client")
+    @patch(
+        "backend.producers.microsoft_lifecycle_notification_handler.main.graph_client"
+    )
     async def test_renew_and_reauthorize_subscription_failure(
         self, mock_graph_client, mock_init_graph
     ):
@@ -182,7 +190,7 @@ class TestMicrosoftLifecycleNotificationHandler(IsolatedAsyncioTestCase):
     async def test_none_json_body(self):
         request = make_request(json_data=None)
 
-        response, status = await _handle_lifecycle_notification_webhook(request)
+        _, status = await _handle_lifecycle_notification_webhook(request)
 
         self.assertEqual(status, HTTPStatus.BAD_REQUEST)
 
@@ -199,7 +207,7 @@ class TestMicrosoftLifecycleNotificationHandler(IsolatedAsyncioTestCase):
 
         request = make_request(json_data=TEST_VALIDATE_NOTIFICATION)
 
-        response, status = await _handle_lifecycle_notification_webhook(request)
+        _, status = await _handle_lifecycle_notification_webhook(request)
 
         self.assertEqual(status, HTTPStatus.OK)
 
@@ -212,7 +220,7 @@ class TestMicrosoftLifecycleNotificationHandler(IsolatedAsyncioTestCase):
 
         request = make_request(json_data=TEST_VALIDATE_NOTIFICATION)
 
-        response_body, status_code = lifecycle_notification_webhook(request)
+        _, status_code = lifecycle_notification_webhook(request)
 
         self.assertEqual(status_code, HTTPStatus.OK)
         mock_async_handler.assert_awaited_once()
@@ -228,7 +236,7 @@ class TestMicrosoftLifecycleNotificationHandler(IsolatedAsyncioTestCase):
 
         request = make_request(json_data=TEST_VALIDATE_NOTIFICATION)
 
-        response_body, status_code = lifecycle_notification_webhook(request)
+        _, status_code = lifecycle_notification_webhook(request)
 
         self.assertEqual(status_code, HTTPStatus.INTERNAL_SERVER_ERROR)
         mock_async_handler.assert_awaited_once()

@@ -3,9 +3,7 @@ import json
 import logging
 import functions_framework
 from google.cloud.pubsub_v1 import PublisherClient
-from concurrent.futures import TimeoutError
 from http import HTTPStatus
-import logging
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

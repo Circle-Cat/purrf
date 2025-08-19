@@ -3,7 +3,6 @@ from datetime import datetime, timezone
 from unittest import IsolatedAsyncioTestCase, main
 from unittest.mock import AsyncMock, MagicMock, patch
 from types import SimpleNamespace
-import traceback
 
 from backend.utils.microsoft_chat_message_store import (
     _get_ldap_by_id,
@@ -16,8 +15,6 @@ from backend.utils.microsoft_chat_message_store import (
     sync_history_chat_messages_to_redis,
     MicrosoftChatMessagesChangeType,
     MicrosoftChatMessageAttachmentType,
-    StoredMicrosoftChatMessage,
-    TextContent,
     ChatMessageType,
 )
 

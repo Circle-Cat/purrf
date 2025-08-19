@@ -1,5 +1,5 @@
 from unittest import TestCase, main
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 from backend.utils.google_chat_utils import get_chat_spaces
 
 TEST_SPACE_TYPE = "spaces"
@@ -53,7 +53,7 @@ class TestGoogleChatUtils(TestCase):
     @patch("backend.common.google_client.GoogleClientFactory.create_chat_client")
     def test_get_chat_spaces_invalid_client(self, mock_client):
         mock_client.return_value = None
-        with self.assertRaises(ValueError) as context:
+        with self.assertRaises(ValueError):
             get_chat_spaces(TEST_SPACE_TYPE, DEFAULT_PAGE_SIZE)
 
     @patch("backend.common.google_client.GoogleClientFactory.create_chat_client")
@@ -62,7 +62,7 @@ class TestGoogleChatUtils(TestCase):
             mock_client.return_value.spaces.return_value.list.return_value.execute
         )
         mock_execute.return_value = {"spaces": [], "nextPageToken": None}
-        with self.assertRaises(ValueError) as context:
+        with self.assertRaises(ValueError):
             get_chat_spaces(TEST_SPACE_TYPE, DEFAULT_PAGE_SIZE)
 
 

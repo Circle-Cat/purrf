@@ -1,7 +1,7 @@
 from unittest import TestCase, main
 from unittest.mock import patch
 from http import HTTPStatus
-from flask import Flask, json
+from flask import Flask
 from backend.common.error_handler import handle_exception, register_error_handlers
 
 VALUE_ERROR = "Invalid input"
@@ -54,7 +54,7 @@ class TestExceptionHandler(TestCase):
             self.assertEqual(data.get(ERROR_MESSAGE), VALUE_ERROR)
 
     @patch("backend.common.error_handler.logger")
-    def test_handle_value_error(self, mock_logger):
+    def test_handle_value_error_in_gerrit(self, mock_logger):
         e = ValueError(VALUE_ERROR)
         with self.app.test_request_context("/api/gerrit/stats"):
             response = handle_exception(e)
@@ -68,7 +68,7 @@ class TestExceptionHandler(TestCase):
         self.assertEqual(args[2], "gerrit")
 
     @patch("backend.common.error_handler.logger")
-    def test_handle_runtime_error(self, mock_logger):
+    def test_handle_runtime_error_in_chat(self, mock_logger):
         e = RuntimeError(RUNTIME_ERROR)
         with self.app.test_request_context("/api/chat/pull"):
             response = handle_exception(e)
@@ -80,7 +80,7 @@ class TestExceptionHandler(TestCase):
         self.assertEqual(args[2], "chat")
 
     @patch("backend.common.error_handler.logger")
-    def test_handle_unexpected_error(self, mock_logger):
+    def test_handle_unexpected_error_in_jira(self, mock_logger):
         e = Exception(EXCEPTION)
         with self.app.test_request_context("/api/jira/search"):
             response = handle_exception(e)

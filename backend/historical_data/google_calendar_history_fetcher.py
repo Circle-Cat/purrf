@@ -1,10 +1,7 @@
-from google.auth import default
-from googleapiclient.errors import HttpError
 from tenacity import retry, stop_after_attempt, wait_exponential
 from backend.common.logger import get_logger
 from backend.common.google_client import GoogleClientFactory
 from datetime import datetime
-from backend.historical_data.constants import MEET_URL_REGEX
 import re
 from backend.common.redis_client import RedisClientFactory
 from backend.common.validation import validate_data
@@ -63,7 +60,7 @@ def get_calendar_list():
         return calendars
 
     except Exception as e:
-        logger.error(f"Unexpected error fetching calendars", e)
+        logger.error("Unexpected error fetching calendars", e)
         return []
 
 
@@ -180,7 +177,6 @@ def get_event_attendance(meeting_code: str):
             break
 
         for activity in activities:
-            actor = activity.get("actor", {})
             events = activity.get("events", [])
 
             for event in events:

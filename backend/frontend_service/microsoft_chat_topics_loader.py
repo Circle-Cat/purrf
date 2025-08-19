@@ -4,10 +4,15 @@ from msgraph.generated.models.chat_type import ChatType
 
 from backend.common.logger import get_logger
 from backend.common.constants import MICROSOFT_CHAT_TOPICS
-from backend.common.environment_constants import MICROSOFT_ADMIN_LDAP, MICROSOFT_USER_LDAP
+from backend.common.environment_constants import (
+    MICROSOFT_ADMIN_LDAP,
+    MICROSOFT_USER_LDAP,
+)
 from backend.common.redis_client import RedisClientFactory
 from backend.common.microsoft_client import MicrosoftClientFactory
-from backend.historical_data.microsoft_chat_history_fetcher import list_all_id_ldap_mapping
+from backend.historical_data.microsoft_chat_history_fetcher import (
+    list_all_id_ldap_mapping,
+)
 
 logger = get_logger()
 

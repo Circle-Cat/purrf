@@ -37,7 +37,7 @@ def get_ldap_by_id(user_id):
 
     client_people = GoogleClientFactory().create_people_client()
     if not client_people:
-        raise ValueError(f"No valid people client provided.")
+        raise ValueError("No valid people client provided.")
 
     try:
         profile = (

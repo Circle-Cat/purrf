@@ -94,7 +94,7 @@ def get_gerrit_stats(
             return {}
         logger.debug("Loaded all LDAPs: %s", ldap_list)
 
-    invalid = [l for l in ldap_list if not LDAP_RE.fullmatch(l)]
+    invalid = [ldap for ldap in ldap_list if not LDAP_RE.fullmatch(ldap)]
     if invalid:
         raise ValueError(f"Invalid LDAP(s): {invalid}")
 

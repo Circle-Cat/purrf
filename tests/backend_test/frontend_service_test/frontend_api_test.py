@@ -35,7 +35,7 @@ class TestAppRoutes(TestCase):
         mock_get_all_ldaps.assert_called_once_with(MicrosoftAccountStatus.ACTIVE)
 
     def test_get_microsoft_ldaps_invalid_status_raises(self):
-        with self.assertRaises(ValueError) as context:
+        with self.assertRaises(ValueError):
             self.client.get(MICROSOFT_LDAP_FETCHER_API.format(status="invalid_status"))
 
     @patch("backend.frontend_service.frontend_api.count_messages_in_date_range")

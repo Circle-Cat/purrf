@@ -142,7 +142,9 @@ MOCK_EVENT_RETURN_VALUE = {
 
 
 class TestGetCalendarList(TestCase):
-    @patch("backend.historical_data.google_calendar_history_fetcher.GoogleClientFactory")
+    @patch(
+        "backend.historical_data.google_calendar_history_fetcher.GoogleClientFactory"
+    )
     def test_get_calendar_list_success(self, mock_factory_class):
         mock_service = MagicMock()
         mock_calendar_list = mock_service.calendarList.return_value
@@ -183,7 +185,9 @@ class TestGetCalendarList(TestCase):
         self.assertEqual(mock_calendar_list.list.call_count, 2)
         mock_factory.create_calendar_client.assert_called_once()
 
-    @patch("backend.historical_data.google_calendar_history_fetcher.GoogleClientFactory")
+    @patch(
+        "backend.historical_data.google_calendar_history_fetcher.GoogleClientFactory"
+    )
     @patch("backend.historical_data.google_calendar_history_fetcher.logger")
     def test_get_calendar_list_general_exception(self, mock_logger, mock_factory_class):
         mock_factory = MagicMock()
@@ -195,11 +199,15 @@ class TestGetCalendarList(TestCase):
         self.assertEqual(calendars, [])
         mock_logger.error.assert_called_with("Unexpected error fetching calendars", ANY)
 
-    @patch("backend.historical_data.google_calendar_history_fetcher.get_event_attendance")
+    @patch(
+        "backend.historical_data.google_calendar_history_fetcher.get_event_attendance"
+    )
     @patch(
         "backend.historical_data.google_calendar_history_fetcher.get_meeting_code_from_event"
     )
-    @patch("backend.historical_data.google_calendar_history_fetcher.GoogleClientFactory")
+    @patch(
+        "backend.historical_data.google_calendar_history_fetcher.GoogleClientFactory"
+    )
     def test_get_calendar_events_success(
         self, mock_factory_class, mock_get_meeting_code, mock_get_attendance
     ):
@@ -279,11 +287,15 @@ class TestGetCalendarList(TestCase):
 
         self.assertEqual(str(context.exception), "Simulated API Failure")
 
-    @patch("backend.historical_data.google_calendar_history_fetcher.get_event_attendance")
+    @patch(
+        "backend.historical_data.google_calendar_history_fetcher.get_event_attendance"
+    )
     @patch(
         "backend.historical_data.google_calendar_history_fetcher.get_meeting_code_from_event"
     )
-    @patch("backend.historical_data.google_calendar_history_fetcher.GoogleClientFactory")
+    @patch(
+        "backend.historical_data.google_calendar_history_fetcher.GoogleClientFactory"
+    )
     def test_get_calendar_events_retries_on_failure_then_succeeds(
         self,
         mock_factory_class,
@@ -320,7 +332,9 @@ class TestGetCalendarList(TestCase):
         self.assertEqual(mock_execute.call_count, 4)
 
     @patch("backend.historical_data.google_calendar_history_fetcher.logger")
-    @patch("backend.historical_data.google_calendar_history_fetcher.GoogleClientFactory")
+    @patch(
+        "backend.historical_data.google_calendar_history_fetcher.GoogleClientFactory"
+    )
     def test_get_event_attendance_success(self, mock_factory_class, mock_logger):
         mock_factory = MagicMock()
         mock_service = MagicMock()
@@ -347,7 +361,9 @@ class TestGetCalendarList(TestCase):
         )
 
     @patch("backend.historical_data.google_calendar_history_fetcher.logger")
-    @patch("backend.historical_data.google_calendar_history_fetcher.GoogleClientFactory")
+    @patch(
+        "backend.historical_data.google_calendar_history_fetcher.GoogleClientFactory"
+    )
     def test_get_event_attendance_error(self, mock_factory_class, mock_logger):
         mock_factory = MagicMock()
         mock_service = MagicMock()
@@ -368,7 +384,9 @@ class TestGetCalendarList(TestCase):
         self.assertEqual(mock_list.execute.call_count, 3)
 
     @patch("backend.historical_data.google_calendar_history_fetcher.logger")
-    @patch("backend.historical_data.google_calendar_history_fetcher.GoogleClientFactory")
+    @patch(
+        "backend.historical_data.google_calendar_history_fetcher.GoogleClientFactory"
+    )
     def test_get_event_attendance_retries_then_succeeds(
         self, mock_factory_class, mock_logger
     ):
@@ -544,7 +562,9 @@ class TestGetCalendarList(TestCase):
 
     @patch("backend.historical_data.google_calendar_history_fetcher.RedisClientFactory")
     @patch("backend.historical_data.google_calendar_history_fetcher.validate_data")
-    @patch("backend.historical_data.google_calendar_history_fetcher.get_calendar_events")
+    @patch(
+        "backend.historical_data.google_calendar_history_fetcher.get_calendar_events"
+    )
     def test_cache_events_success(
         self, mock_get_calendar_events, mock_validate_data, mock_redis_factory
     ):
@@ -560,14 +580,16 @@ class TestGetCalendarList(TestCase):
         )
 
         mock_redis.pipeline.assert_called_once()
-        mock_pipeline.zadd.assert_any_call(f"user:alice:events", {"evt123": ANY})
+        mock_pipeline.zadd.assert_any_call("user:alice:events", {"evt123": ANY})
         mock_pipeline.set.assert_called_once()
         mock_pipeline.execute.assert_called_once()
 
     @patch("backend.historical_data.google_calendar_history_fetcher.logger")
     @patch("backend.historical_data.google_calendar_history_fetcher.RedisClientFactory")
     @patch("backend.historical_data.google_calendar_history_fetcher.validate_data")
-    @patch("backend.historical_data.google_calendar_history_fetcher.get_calendar_events")
+    @patch(
+        "backend.historical_data.google_calendar_history_fetcher.get_calendar_events"
+    )
     def test_cache_events_no_circlecat_attendee(
         self, mock_get_events, mock_validate, mock_factory, mock_logger
     ):
@@ -595,7 +617,9 @@ class TestGetCalendarList(TestCase):
     @patch("backend.historical_data.google_calendar_history_fetcher.logger")
     @patch("backend.historical_data.google_calendar_history_fetcher.RedisClientFactory")
     @patch("backend.historical_data.google_calendar_history_fetcher.validate_data")
-    @patch("backend.historical_data.google_calendar_history_fetcher.get_calendar_events")
+    @patch(
+        "backend.historical_data.google_calendar_history_fetcher.get_calendar_events"
+    )
     def test_cache_events_invalid_event_skipped(
         self,
         mock_get_calendar_events,
@@ -619,7 +643,9 @@ class TestGetCalendarList(TestCase):
 
     @patch("backend.historical_data.google_calendar_history_fetcher.RedisClientFactory")
     @patch("backend.historical_data.google_calendar_history_fetcher.validate_data")
-    @patch("backend.historical_data.google_calendar_history_fetcher.get_calendar_events")
+    @patch(
+        "backend.historical_data.google_calendar_history_fetcher.get_calendar_events"
+    )
     def test_cache_events_retries_then_succeeds(
         self,
         mock_get_calendar_events,
@@ -647,18 +673,9 @@ class TestGetCalendarList(TestCase):
         self.assertEqual(mock_pipeline.set.call_count, 1)
         self.assertEqual(mock_pipeline.zadd.call_count, 3)
 
-    @patch("backend.historical_data.google_calendar_history_fetcher.get_calendar_events")
-    def test_cache_events_fetch_failure_retries(self, mock_get_calendar_events):
-        mock_get_calendar_events.side_effect = Exception("API failure")
-
-        with self.assertRaises(Exception):
-            cache_events(
-                "alice@circlecat.org", "2025-06-01T00:00:00Z", "2025-06-30T23:59:59Z"
-            )
-
-        self.assertEqual(mock_get_calendar_events.call_count, 3)
-
-    @patch("backend.historical_data.google_calendar_history_fetcher.get_calendar_events")
+    @patch(
+        "backend.historical_data.google_calendar_history_fetcher.get_calendar_events"
+    )
     def test_cache_events_fetch_failure_retries(self, mock_get_calendar_events):
         mock_get_calendar_events.side_effect = Exception("API failure")
 

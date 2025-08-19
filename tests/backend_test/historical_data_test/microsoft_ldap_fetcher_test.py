@@ -1,7 +1,5 @@
 from unittest import IsolatedAsyncioTestCase, main
 from unittest.mock import patch, AsyncMock, Mock
-from msgraph.generated.models.user_collection_response import UserCollectionResponse
-from backend.common.microsoft_client import MicrosoftClientFactory
 from backend.historical_data.microsoft_ldap_fetcher import (
     get_all_microsoft_members,
     sync_microsoft_members_to_redis,
@@ -55,7 +53,7 @@ class TestMicrosoftLdapFetcher(IsolatedAsyncioTestCase):
         mock_client.users.get.side_effect = Exception("API error")
         mock_create_client.return_value = mock_client
 
-        with self.assertRaises(RuntimeError) as context:
+        with self.assertRaises(RuntimeError):
             await get_all_microsoft_members()
 
         mock_client.users.get.assert_awaited_once()

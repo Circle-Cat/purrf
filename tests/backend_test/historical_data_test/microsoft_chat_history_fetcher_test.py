@@ -5,7 +5,6 @@ from backend.historical_data.microsoft_chat_history_fetcher import (
     list_all_id_ldap_mapping,
     get_microsoft_chat_messages_by_chat_id,
     sync_microsoft_chat_messages_by_chat_id,
-    sync_history_chat_messages_to_redis,
 )
 
 
@@ -48,12 +47,12 @@ class TestMicrosoftChatHistoryFetcher(IsolatedAsyncioTestCase):
             },
         )
 
-    @patch("backend.historical_data.microsoft_chat_history_fetcher.MicrosoftClientFactory")
+    @patch(
+        "backend.historical_data.microsoft_chat_history_fetcher.MicrosoftClientFactory"
+    )
     async def test_get_microsoft_chat_messages_by_chat_id(self, mock_graph_factory):
         mock_get = AsyncMock(return_value=self.TEST_CHAT_MESSAGES_PAGE_1)
         mock_get_with_url = AsyncMock(return_value=self.TEST_CHAT_MESSAGES_PAGE_2)
-
-        mock_with_url = MagicMock(return_value=mock_get_with_url)
 
         mock_messages = MagicMock()
         mock_messages.get = mock_get
@@ -121,7 +120,7 @@ class TestMicrosoftChatHistoryFetcher(IsolatedAsyncioTestCase):
         mock_list_ldap.return_value = {self.TEST_USER_ID_1: self.TEST_USER_LDAP_1}
         mock_sync_to_redis.return_value = (2, 0)
 
-        result = await sync_microsoft_chat_messages_by_chat_id(self.TEST_CHAT_ID)
+        _ = await sync_microsoft_chat_messages_by_chat_id(self.TEST_CHAT_ID)
 
         mock_list_ldap.assert_called_once()
         mock_sync_to_redis.assert_called_once()

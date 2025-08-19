@@ -1,12 +1,16 @@
 from flask import Blueprint, request
 from http import HTTPStatus
-from backend.historical_data.microsoft_ldap_fetcher import sync_microsoft_members_to_redis
+from backend.historical_data.microsoft_ldap_fetcher import (
+    sync_microsoft_members_to_redis,
+)
 from backend.historical_data.gerrit_history_fetcher import fetch_and_store_changes
 from backend.historical_data.google_chat_history_fetcher import fetch_history_messages
 from backend.historical_data.jira_history_fetcher import process_update_jira_issues
 from backend.historical_data.jira_history_fetcher import process_backfill_jira_issues
 from backend.historical_data.jira_history_fetcher import process_sync_jira_projects
-from backend.historical_data.google_calendar_history_fetcher import pull_calendar_history
+from backend.historical_data.google_calendar_history_fetcher import (
+    pull_calendar_history,
+)
 from backend.common.api_response_wrapper import api_response
 from backend.historical_data.microsoft_chat_history_fetcher import (
     sync_microsoft_chat_messages_by_chat_id,

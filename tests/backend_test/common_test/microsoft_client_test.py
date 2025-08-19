@@ -1,6 +1,6 @@
 from functools import wraps
 from unittest import TestCase, main
-from unittest.mock import patch, Mock, call
+from unittest.mock import patch, Mock
 from azure.identity import DefaultAzureCredential
 from msgraph import GraphServiceClient
 import os
