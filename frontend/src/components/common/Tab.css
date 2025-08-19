@@ -1,0 +1,94 @@
+.purrf-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: var(--bg-color-light);
+}
+
+.tablist {
+  display: flex;
+  gap: 16px;
+  padding: 4px 8px 0 8px;
+  border-bottom: 1px solid var(--border-color-light);
+}
+
+.tab-pill {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  background: transparent;
+  padding: 8px 10px;
+  font-size: 14px;
+  color: var(--text-color-light);
+  cursor: pointer;
+  border-radius: 6px 6px 0 0;
+  transition: color 0.2s ease, background-color 0.2s ease;
+}
+
+.tab-pill.active {
+  color: var(--text-color-dark);
+  background: var(--bg-color-light);
+}
+
+.tab-pill:hover {
+  color: var(--primary-color);
+}
+
+.tab-pill:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, .4); /* keep this focus ring */
+  border-radius: 6px;
+}
+
+.active-underline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  background: var(--primary-color);
+  border-radius: 2px;
+  content: "";
+  display: block;
+}
+
+.tabpanel {
+  border: 1px solid var(--border-color-light);
+  border-radius: 0 8px 8px 8px;
+  padding: 0;
+  background: var(--bg-color-light);
+}
+
+.table-wrap {
+  overflow: auto;
+}
+
+.tab-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.tab-table thead th {
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: .02em;
+  color: var(--text-color-medium);
+  background: var(--bg-color-stripe-even);
+  border-bottom: 1px solid var(--border-color-light);
+  text-align: left;
+  padding: 10px 12px;
+  white-space: nowrap;
+}
+
+.tab-table tbody td {
+  border-bottom: 1px solid var(--border-color-medium);
+  padding: 10px 12px;
+  height: 36px;
+}
+
+.tab-icon {
+  display: inline-flex;
+  line-height: 1;
+}
