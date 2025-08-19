@@ -25,18 +25,18 @@ py_test(
 )
 
 py_test(
-    name = "microsoft_chat_consumer_test",
-    srcs = ["microsoft_chat_consumer_test.py"],
+    name = "microsoft_message_processor_service_test",
+    srcs = ["microsoft_message_processor_service_test.py"],
     deps = [
-        "//backend/consumers:microsoft_chat_consumer",
+        "//backend/consumers:microsoft_message_processor_service",
     ],
 )
 
 py_test(
-    name = "consumer_api_test",
-    srcs = ["consumer_api_test.py"],
+    name = "consumer_controller_test",
+    srcs = ["consumer_controller_test.py"],
     deps = [
-        "//backend/consumers:consumer_api",
+        "//backend/consumers:consumer_controller",
     ],
 )
 

@@ -8,11 +8,12 @@ from backend.common.api_response_wrapper import api_response
 from backend.historical_data.historical_api import history_bp
 from backend.notification_management.notification_controller import notification_bp
 from backend.frontend_service.frontend_api import frontend_bp
-from backend.consumers.consumer_api import consumers_bp
+from backend.consumers.consumer_controller import consumers_bp
 
 
 def create_app(
     notification_controller,
+    consumer_controller,
 ) -> Flask:
     """
     Create and configure the Flask application.
@@ -23,7 +24,9 @@ def create_app(
     (Redis, Microsoft, Gerrit, Jira) if they are not provided.
 
     Args:
-        history_controller:
+        notification_controller: A NotificationController instance.
+        consumer_controller: A ConsumerController instance.
+
         ... another controller instance
 
     Returns:
@@ -45,6 +48,7 @@ def create_app(
     all_api_bp = Blueprint("all_api", __name__, url_prefix="/api")
 
     notification_controller.register_routes(all_api_bp)
+    consumer_controller.register_routes(all_api_bp)
 
     app.register_blueprint(all_api_bp)
 
@@ -71,6 +75,7 @@ if __name__ == "__main__":
     builder = AppDependencyBuilder()
     app = create_app(
         notification_controller=builder.notification_controller,
+        consumer_controller=builder.consumer_controller,
     )
 
     # Used when running via uvicorn as a production server.

@@ -10,6 +10,7 @@ class TestAppRoutes(TestCase):
     def setUp(self):
         self.app = create_app(
             notification_controller=MagicMock(),
+            consumer_controller=MagicMock(),
         )
         self.app.testing = True
         self.client = self.app.test_client()

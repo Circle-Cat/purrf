@@ -3,6 +3,12 @@ from unittest.mock import patch, MagicMock
 from backend.utils.app_dependency_builder import AppDependencyBuilder
 
 
+@patch("backend.utils.app_dependency_builder.ConsumerController")
+@patch("backend.utils.app_dependency_builder.MicrosoftMessageProcessorService")
+@patch("backend.utils.app_dependency_builder.PubSubPullerFactory")
+@patch("backend.utils.app_dependency_builder.PubSubPuller")
+@patch("backend.utils.app_dependency_builder.MicrosoftChatMessageUtil")
+@patch("backend.utils.app_dependency_builder.DateTimeUtil")
 @patch("backend.utils.app_dependency_builder.NotificationController")
 @patch("backend.utils.app_dependency_builder.MicrosoftChatSubscriptionService")
 @patch("backend.utils.app_dependency_builder.MicrosoftService")
@@ -20,6 +26,12 @@ class TestAppDependencyBuilder(TestCase):
         mock_microsoft_service,
         mock_microsoft_chat_subscription_service,
         mock_notification_controller,
+        mock_date_time_util_cls,
+        mock_microsoft_chat_message_util_cls,
+        mock_pubsub_puller_cls,
+        mock_pubsub_puller_factory_cls,
+        mock_microsoft_message_processor_service_cls,
+        mock_consumer_controller_cls,
     ):
         """
         Tests that the AppDependencyBuilder correctly instantiates and wires all its dependencies.
@@ -64,6 +76,30 @@ class TestAppDependencyBuilder(TestCase):
         mock_notification_controller.assert_called_once_with(
             microsoft_chat_subscription_service=mock_microsoft_chat_subscription_service.return_value
         )
+        mock_date_time_util_cls.assert_called_once_with(logger=mock_logger)
+
+        mock_microsoft_chat_message_util_cls.assert_called_once_with(
+            logger=mock_logger,
+            redis_client=mock_redis_client,
+            microsoft_service=mock_microsoft_service.return_value,
+            date_time_util=mock_date_time_util_cls.return_value,
+            retry_utils=mock_retry_utils_instance,
+        )
+
+        mock_pubsub_puller_factory_cls.assert_called_once_with(
+            puller_creator=mock_pubsub_puller_cls,
+            logger=mock_logger,
+        )
+
+        mock_microsoft_message_processor_service_cls.assert_called_once_with(
+            logger=mock_logger,
+            pubsub_puller_factory=mock_pubsub_puller_factory_cls.return_value,
+            microsoft_chat_message_util=mock_microsoft_chat_message_util_cls.return_value,
+        )
+
+        mock_consumer_controller_cls.assert_called_once_with(
+            microsoft_message_processor_service=mock_microsoft_message_processor_service_cls.return_value
+        )
 
         # Assert that the builder's internal attributes are the created mock instances
         self.assertEqual(builder.logger, mock_logger)
@@ -77,6 +113,21 @@ class TestAppDependencyBuilder(TestCase):
         )
         self.assertEqual(
             builder.notification_controller, mock_notification_controller.return_value
+        )
+        self.assertEqual(builder.date_time_util, mock_date_time_util_cls.return_value)
+        self.assertEqual(
+            builder.microsoft_chat_message_util,
+            mock_microsoft_chat_message_util_cls.return_value,
+        )
+        self.assertEqual(
+            builder.pubsub_puller_factory, mock_pubsub_puller_factory_cls.return_value
+        )
+        self.assertEqual(
+            builder.microsoft_message_processor_service,
+            mock_microsoft_message_processor_service_cls.return_value,
+        )
+        self.assertEqual(
+            builder.consumer_controller, mock_consumer_controller_cls.return_value
         )
 
 

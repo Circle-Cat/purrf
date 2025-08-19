@@ -1,15 +1,61 @@
-from flask import Blueprint
 from http import HTTPStatus
+from flask import Blueprint
 from backend.consumers.pubsub_pull_manager import (
     check_pulling_status,
     stop_pulling_process,
 )
-from backend.consumers.microsoft_chat_consumer import pull_microsoft_message
 from backend.consumers.google_chat_consumer import pull_messages
 from backend.consumers.gerrit_consumer import pull_gerrit
 from backend.common.api_response_wrapper import api_response
 
 consumers_bp = Blueprint("consumers", __name__, url_prefix="/api")
+
+
+class ConsumerController:
+    def __init__(self, microsoft_message_processor_service):
+        """
+        Initialize the ConsumerController with required dependencies.
+
+        Args:
+            microsoft_message_processor_service: MicrosoftMessageProcessorService instance.
+        """
+        self.microsoft_message_processor_service = microsoft_message_processor_service
+
+    def register_routes(self, blueprint):
+        """
+        Register all historical data backfill routes to the given Flask blueprint.
+
+        Args:
+            blueprint: Flask Blueprint object to register routes on.
+        """
+        blueprint.add_url_rule(
+            "/microsoft/pull/<project_id>/<subscription_id>",
+            view_func=self.start_microsoft_pulling,
+            methods=["POST"],
+        )
+
+    def start_microsoft_pulling(self, project_id, subscription_id):
+        """
+        HTTP POST endpoint to trigger the message pulling process for a given
+        Pub/Sub subscription.
+
+        Args:
+            project_id (str): The Google Cloud project ID from URL path.
+            subscription_id (str): The Pub/Sub subscription ID from URL path.
+
+        Returns:
+            Response: JSON response indicating success status and HTTP 200 code.
+        """
+        self.microsoft_message_processor_service.pull_microsoft_message(
+            project_id, subscription_id
+        )
+
+        return api_response(
+            success=True,
+            message="Successfully.",
+            data=None,
+            status_code=HTTPStatus.OK,
+        )
 
 
 @consumers_bp.route(
@@ -56,28 +102,6 @@ def stop_pulling(project_id, subscription_id):
         success=True,
         message="Successfully.",
         data=data,
-        status_code=HTTPStatus.OK,
-    )
-
-
-@consumers_bp.route("/microsoft/pull/<project_id>/<subscription_id>", methods=["POST"])
-def start_microsoft_pulling(project_id, subscription_id):
-    """
-    HTTP POST endpoint to trigger the message pulling process for a given
-    Pub/Sub subscription.
-
-    Args:
-        project_id (str): The Google Cloud project ID from URL path.
-        subscription_id (str): The Pub/Sub subscription ID from URL path.
-
-    Returns:
-        Response: JSON response indicating success status and HTTP 200 code.
-    """
-    pull_microsoft_message(project_id, subscription_id)
-    return api_response(
-        success=True,
-        message="Successfully.",
-        data=None,
         status_code=HTTPStatus.OK,
     )
 

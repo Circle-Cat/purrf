@@ -59,27 +59,33 @@ py_library(
 )
 
 py_library(
-    name = "app_dependency_builder",
-    srcs = [
-        "app_dependency_builder.py",
-    ],
-    deps = [
-        "//backend/common:logger",
-        "//backend/common:microsoft_graph_service_client",
-        "//backend/common:redis_client",
-        "//backend/notification_management:microsoft_chat_subscription_service",
-        "//backend/notification_management:notification_controller",
-        "//backend/service:microsoft_service",
-        "//backend/utils:retry_utils",
-    ],
-)
-
-py_library(
     name = "microsoft_chat_message_util",
     srcs = [
         "microsoft_chat_message_util.py",
     ],
     deps = [
         "//backend/common:constants",
+    ],
+)
+
+py_library(
+    name = "app_dependency_builder",
+    srcs = [
+        "app_dependency_builder.py",
+    ],
+    deps = [
+        ":date_time_util",
+        ":microsoft_chat_message_util",
+        ":retry_utils",
+        "//backend/common:logger",
+        "//backend/common:microsoft_graph_service_client",
+        "//backend/common:redis_client",
+        "//backend/consumers:consumer_controller",
+        "//backend/consumers:microsoft_message_processor_service",
+        "//backend/consumers:pubsub_puller",
+        "//backend/consumers:pubsub_puller_factory",
+        "//backend/notification_management:microsoft_chat_subscription_service",
+        "//backend/notification_management:notification_controller",
+        "//backend/service:microsoft_service",
     ],
 )

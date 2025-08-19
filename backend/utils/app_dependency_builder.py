@@ -9,6 +9,14 @@ from backend.notification_management.microsoft_chat_subscription_service import 
 from backend.notification_management.notification_controller import (
     NotificationController,
 )
+from backend.consumers.consumer_controller import ConsumerController
+from backend.utils.microsoft_chat_message_util import MicrosoftChatMessageUtil
+from backend.utils.date_time_util import DateTimeUtil
+from backend.consumers.microsoft_message_processor_service import (
+    MicrosoftMessageProcessorService,
+)
+from backend.consumers.pubsub_puller_factory import PubSubPullerFactory
+from backend.consumers.pubsub_puller import PubSubPuller
 
 
 class AppDependencyBuilder:
@@ -21,7 +29,7 @@ class AppDependencyBuilder:
     - Redis client
     - Microsoft Graph client
     - Business services (e.g. MicrosoftService, MicrosoftChatService)
-    - HTTP API controllers (e.g. HistoryController, FrontendController, ConsumersController)
+    - HTTP API controllers (e.g. HistoryController, FrontendController, ConsumerController)
 
     Example:
         builder = AppDependencyBuilder()
@@ -48,4 +56,23 @@ class AppDependencyBuilder:
 
         self.notification_controller = NotificationController(
             microsoft_chat_subscription_service=self.microsoft_chat_subscription_service
+        )
+        self.date_time_util = DateTimeUtil(logger=self.logger)
+        self.microsoft_chat_message_util = MicrosoftChatMessageUtil(
+            logger=self.logger,
+            redis_client=self.redis_client,
+            microsoft_service=self.microsoft_service,
+            date_time_util=self.date_time_util,
+            retry_utils=self.retry_utils,
+        )
+        self.pubsub_puller_factory = PubSubPullerFactory(
+            puller_creator=PubSubPuller, logger=self.logger
+        )
+        self.microsoft_message_processor_service = MicrosoftMessageProcessorService(
+            logger=self.logger,
+            pubsub_puller_factory=self.pubsub_puller_factory,
+            microsoft_chat_message_util=self.microsoft_chat_message_util,
+        )
+        self.consumer_controller = ConsumerController(
+            microsoft_message_processor_service=self.microsoft_message_processor_service
         )

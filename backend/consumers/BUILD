@@ -27,16 +27,14 @@ py_library(
 )
 
 py_library(
-    name = "consumer_api",
+    name = "consumer_controller",
     srcs = [
-        "consumer_api.py",
+        "consumer_controller.py",
     ],
     deps = [
         "//backend/common:api_response_wrapper",
-        "//backend/common:google_client",
         "//backend/consumers:gerrit_consumer",
         "//backend/consumers:google_chat_consumer",
-        "//backend/consumers:microsoft_chat_consumer",
         "//backend/consumers:pubsub_pull_manager",
         "@pypi//flask",
     ],
@@ -58,13 +56,9 @@ py_library(
 )
 
 py_library(
-    name = "microsoft_chat_consumer",
+    name = "microsoft_message_processor_service",
     srcs = [
-        "microsoft_chat_consumer.py",
-    ],
-    deps = [
-        "//backend/consumers:pubsub_puller",
-        "//backend/utils:microsoft_chat_message_store",
+        "microsoft_message_processor_service.py",
     ],
 )
 
