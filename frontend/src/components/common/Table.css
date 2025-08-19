@@ -1,0 +1,62 @@
+
+.table-container {
+    overflow-x: auto;
+    overflow-y: auto;
+    margin-top: 20px;
+    border: 1px solid var(--border-color-light);
+    border-radius: 8px;
+}
+.custom-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+    line-height: 1.5;
+    min-width: fit-content;
+}
+.custom-table th,
+.custom-table td {
+    padding: 12px 15px;
+    text-align: left;
+    border-bottom: 1px solid var(--border-color-light);
+    white-space: nowrap;
+}
+.custom-table th {
+    background-color: var(--bg-color-header);
+    font-weight: bold;
+    color: var(--text-color-dark);
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    padding-right: 25px;
+}
+.custom-table th.sortable {
+    cursor: pointer;
+    user-select: none;
+}
+.sort-indicator {
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 0.8em;
+    line-height: 1;
+    color: var(--text-color-light);
+    transition: color 0.2s ease;
+}
+.custom-table th.sortable .sort-indicator::after {
+    content: '△';
+}
+.custom-table th.sorted-asc .sort-indicator::after {
+    content: '▲';
+    color: var(--text-color-dark);
+}
+.custom-table th.sorted-desc .sort-indicator::after {
+    content: '▼';
+    color: var(--text-color-dark);
+}
+.custom-table tbody tr:nth-child(even) {
+    background-color: var(--bg-color-stripe-even);
+}
+.custom-table tbody tr:hover {
+    background-color: var(--bg-color-row-hover);
+}
