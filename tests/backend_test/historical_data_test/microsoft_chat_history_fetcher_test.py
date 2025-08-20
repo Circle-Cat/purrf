@@ -95,7 +95,7 @@ class TestMicrosoftChatHistoryFetcher(IsolatedAsyncioTestCase):
 
         mock_get_messages.return_value = mock_async_generator_empty()
 
-        result = await sync_microsoft_chat_messages_by_chat_id(self.TEST_CHAT_ID)
+        await sync_microsoft_chat_messages_by_chat_id(self.TEST_CHAT_ID)
 
         mock_list_ldap.assert_called_once()
         mock_sync_to_redis.assert_not_called()
@@ -120,7 +120,7 @@ class TestMicrosoftChatHistoryFetcher(IsolatedAsyncioTestCase):
         mock_list_ldap.return_value = {self.TEST_USER_ID_1: self.TEST_USER_LDAP_1}
         mock_sync_to_redis.return_value = (2, 0)
 
-        _ = await sync_microsoft_chat_messages_by_chat_id(self.TEST_CHAT_ID)
+        await sync_microsoft_chat_messages_by_chat_id(self.TEST_CHAT_ID)
 
         mock_list_ldap.assert_called_once()
         mock_sync_to_redis.assert_called_once()
