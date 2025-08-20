@@ -1,0 +1,14 @@
+.date-range-picker {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.date-range-picker input[type="date"] {
+    padding: 6px 8px;
+    border: 1px solid var(--border-color-light);
+    border-radius: 6px;
+    font-size: 0.9em;
+    height: 32px;
+    flex-shrink: 0;
+}
