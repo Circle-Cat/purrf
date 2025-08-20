@@ -59,6 +59,8 @@ py_library(
     name = "error_handler",
     srcs = [
         "error_handler.py",
+    ],
+    deps = [
         "//backend/common:api_response_wrapper",
         "//backend/common:logger",
     ],
