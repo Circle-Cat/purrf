@@ -324,3 +324,37 @@ class MicrosoftService:
             self.graph_service_client.subscriptions.post, request_body
         )
         return result
+
+    async def list_all_groups(self) -> list:
+        """
+        Retrieves all Microsoft 365 groups using Microsoft Graph API.
+
+        Returns:
+            List[Group]: A list of Microsoft Graph Group objects.
+        """
+        result = await self.retry_utils.get_retry_on_transient(
+            self.graph_service_client.groups.get
+        )
+        return result.value
+
+    async def get_group_members(self, group_id: str) -> list:
+        """
+        Retrieves members of a specified Microsoft 365 group.
+
+        Args:
+            group_id (str): The unique ID of the Microsoft 365 group.
+
+        Returns:
+            List[DirectoryObject]: A list of member objects in the group.
+
+        Raises:
+            ValueError: If the provided group_id is empty or None.
+        """
+        if not group_id:
+            raise ValueError("Group ID is required.")
+
+        result = await self.retry_utils.get_retry_on_transient(
+            self.graph_service_client.groups.by_group_id(group_id).members.get
+        )
+
+        return result.value

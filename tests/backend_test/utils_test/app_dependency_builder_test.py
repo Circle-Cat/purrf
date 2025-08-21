@@ -3,6 +3,8 @@ from unittest.mock import patch, MagicMock
 from backend.utils.app_dependency_builder import AppDependencyBuilder
 
 
+@patch("backend.utils.app_dependency_builder.MicrosoftMemberSyncService")
+@patch("backend.utils.app_dependency_builder.HistoricalController")
 @patch("backend.utils.app_dependency_builder.ConsumerController")
 @patch("backend.utils.app_dependency_builder.MicrosoftMessageProcessorService")
 @patch("backend.utils.app_dependency_builder.PubSubPullerFactory")
@@ -32,6 +34,8 @@ class TestAppDependencyBuilder(TestCase):
         mock_pubsub_puller_factory_cls,
         mock_microsoft_message_processor_service_cls,
         mock_consumer_controller_cls,
+        mock_historical_controller_cls,
+        mock_microsoft_member_sync_service_cls,
     ):
         """
         Tests that the AppDependencyBuilder correctly instantiates and wires all its dependencies.
@@ -101,6 +105,16 @@ class TestAppDependencyBuilder(TestCase):
             microsoft_message_processor_service=mock_microsoft_message_processor_service_cls.return_value
         )
 
+        mock_microsoft_member_sync_service_cls.assert_called_once_with(
+            logger=mock_logger,
+            redis_client=mock_redis_client,
+            microsoft_service=mock_microsoft_service.return_value,
+            retry_utils=mock_retry_utils_instance,
+        )
+        mock_historical_controller_cls.assert_called_once_with(
+            microsoft_member_sync_service=mock_microsoft_member_sync_service_cls.return_value
+        )
+
         # Assert that the builder's internal attributes are the created mock instances
         self.assertEqual(builder.logger, mock_logger)
         self.assertEqual(builder.redis_client, mock_redis_client)
@@ -128,6 +142,13 @@ class TestAppDependencyBuilder(TestCase):
         )
         self.assertEqual(
             builder.consumer_controller, mock_consumer_controller_cls.return_value
+        )
+        self.assertEqual(
+            builder.microsoft_member_sync_service,
+            mock_microsoft_member_sync_service_cls.return_value,
+        )
+        self.assertEqual(
+            builder.historical_controller, mock_historical_controller_cls.return_value
         )
 
 

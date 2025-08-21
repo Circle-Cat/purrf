@@ -84,6 +84,8 @@ py_library(
         "//backend/consumers:microsoft_message_processor_service",
         "//backend/consumers:pubsub_puller",
         "//backend/consumers:pubsub_puller_factory",
+        "//backend/historical_data:historical_controller",
+        "//backend/historical_data:microsoft_member_sync_service",
         "//backend/notification_management:microsoft_chat_subscription_service",
         "//backend/notification_management:notification_controller",
         "//backend/service:microsoft_service",

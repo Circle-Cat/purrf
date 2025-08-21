@@ -35,15 +35,24 @@ py_library(
 )
 
 py_library(
-    name = "historical_api",
-    srcs = ["historical_api.py"],
+    name = "microsoft_member_sync_service",
+    srcs = [
+        "microsoft_member_sync_service.py",
+    ],
+    deps = [
+        "//backend/common:constants",
+    ],
+)
+
+py_library(
+    name = "historical_controller",
+    srcs = ["historical_controller.py"],
     deps = [
         "//backend/historical_data:gerrit_history_fetcher",
         "//backend/historical_data:google_calendar_history_fetcher",
         "//backend/historical_data:google_chat_history_fetcher",
         "//backend/historical_data:jira_history_fetcher",
         "//backend/historical_data:microsoft_chat_history_fetcher",
-        "//backend/historical_data:microsoft_ldap_fetcher",
         "//backend/utils:date_time_util",
         "@pypi//flask",
     ],

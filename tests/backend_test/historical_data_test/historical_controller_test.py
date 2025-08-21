@@ -1,9 +1,11 @@
 from http import HTTPStatus
-from unittest import TestCase, main
-from unittest.mock import patch
+from unittest import TestCase, main, IsolatedAsyncioTestCase
+from unittest.mock import patch, AsyncMock
 from flask import Flask
-from backend.historical_data.historical_api import history_bp
-from backend.common.constants import MicrosoftAccountStatus
+from backend.historical_data.historical_controller import (
+    history_bp,
+    HistoricalController,
+)
 
 
 MICROSOFT_LDAP_FETCHER_API = "/api/microsoft/backfill/ldaps"
@@ -15,6 +17,34 @@ JIRA_PROJECT_API = "/api/jira/project"
 TEST_CHAT_ID = "chat131"
 
 
+class TestHistoricalController(IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.microsoft_member_sync_service = AsyncMock()
+        self.microsoft_member_sync_service.sync_microsoft_members_to_redis = AsyncMock()
+        self.controller = HistoricalController(
+            microsoft_member_sync_service=self.microsoft_member_sync_service
+        )
+
+        self.app = Flask(__name__)
+        self.app_context = self.app.app_context()
+        self.app_context.push()
+
+    async def asyncTearDown(self):
+        self.app_context.pop()
+
+    async def test_backfill_microsoft_ldaps_success(self):
+        with self.app.test_request_context(
+            MICROSOFT_LDAP_FETCHER_API,
+            method="POST",
+            content_type="application/json",
+        ):
+            response = await self.controller.backfill_microsoft_ldaps()
+
+        self.microsoft_member_sync_service.sync_microsoft_members_to_redis.assert_called_once()
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+
+
 class TestAppRoutes(TestCase):
     @classmethod
     def setUp(self):
@@ -23,23 +53,8 @@ class TestAppRoutes(TestCase):
         self.client = app.test_client()
         app.testing = True
 
-    @patch("backend.historical_data.historical_api.sync_microsoft_members_to_redis")
-    def test_backfill_microsoft_ldaps(self, mock_sync_microsoft_members_to_redis):
-        mock_result = {
-            MicrosoftAccountStatus.ACTIVE.value: 3,
-            MicrosoftAccountStatus.TERMINATED.value: 2,
-        }
-        mock_sync_microsoft_members_to_redis.return_value = mock_result
-
-        response = self.client.post(MICROSOFT_LDAP_FETCHER_API)
-
-        self.assertEqual(response.status_code, HTTPStatus.OK)
-        self.assertEqual(response.json["data"], mock_result)
-
-        mock_sync_microsoft_members_to_redis.assert_called_once()
-
     @patch(
-        "backend.historical_data.historical_api.sync_microsoft_chat_messages_by_chat_id"
+        "backend.historical_data.historical_controller.sync_microsoft_chat_messages_by_chat_id"
     )
     def backfill_microsoft_chat_messages(
         self, mock_sync_microsoft_chat_messages_by_chat_id
@@ -56,7 +71,7 @@ class TestAppRoutes(TestCase):
 
         mock_sync_microsoft_chat_messages_by_chat_id.assert_called_once()
 
-    @patch("backend.historical_data.historical_api.fetch_history_messages")
+    @patch("backend.historical_data.historical_controller.fetch_history_messages")
     def test_history_messages(self, mock_fetch_history_messages):
         mock_result = {"saved_messages_count": 3, "total_messges_count": 5}
         mock_fetch_history_messages.return_value = mock_result
@@ -68,7 +83,7 @@ class TestAppRoutes(TestCase):
 
         mock_fetch_history_messages.assert_called_once()
 
-    @patch("backend.historical_data.historical_api.process_update_jira_issues")
+    @patch("backend.historical_data.historical_controller.process_update_jira_issues")
     def test_update_jira_issues(self, mock_process_update_jira_issues):
         mock_result = {"total_updated_issues": 25}
         mock_process_update_jira_issues.return_value = mock_result
@@ -91,7 +106,7 @@ class TestAppRoutes(TestCase):
         )
         self.assertEqual(response_data["data"], {})
 
-    @patch("backend.historical_data.historical_api.process_backfill_jira_issues")
+    @patch("backend.historical_data.historical_controller.process_backfill_jira_issues")
     def test_backfill_jira_issues(self, mock_process_backfill_jira_issues):
         mock_result = 150
         mock_process_backfill_jira_issues.return_value = mock_result
@@ -104,7 +119,7 @@ class TestAppRoutes(TestCase):
 
         mock_process_backfill_jira_issues.assert_called_once()
 
-    @patch("backend.historical_data.historical_api.process_sync_jira_projects")
+    @patch("backend.historical_data.historical_controller.process_sync_jira_projects")
     def test_sync_jira_projects(self, mock_process_sync_jira_projects):
         mock_result = 5
         mock_process_sync_jira_projects.return_value = mock_result
@@ -117,7 +132,7 @@ class TestAppRoutes(TestCase):
 
         mock_process_sync_jira_projects.assert_called_once()
 
-    @patch("backend.historical_data.historical_api.pull_calendar_history")
+    @patch("backend.historical_data.historical_controller.pull_calendar_history")
     def test_pull_calendar_history_success(self, mock_pull_calendar_history):
         mock_pull_calendar_history.return_value = None
 

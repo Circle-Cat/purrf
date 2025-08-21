@@ -17,6 +17,10 @@ from backend.consumers.microsoft_message_processor_service import (
 )
 from backend.consumers.pubsub_puller_factory import PubSubPullerFactory
 from backend.consumers.pubsub_puller import PubSubPuller
+from backend.historical_data.historical_controller import HistoricalController
+from backend.historical_data.microsoft_member_sync_service import (
+    MicrosoftMemberSyncService,
+)
 
 
 class AppDependencyBuilder:
@@ -75,4 +79,14 @@ class AppDependencyBuilder:
         )
         self.consumer_controller = ConsumerController(
             microsoft_message_processor_service=self.microsoft_message_processor_service
+        )
+
+        self.microsoft_member_sync_service = MicrosoftMemberSyncService(
+            logger=self.logger,
+            redis_client=self.redis_client,
+            microsoft_service=self.microsoft_service,
+            retry_utils=self.retry_utils,
+        )
+        self.historical_controller = HistoricalController(
+            microsoft_member_sync_service=self.microsoft_member_sync_service
         )

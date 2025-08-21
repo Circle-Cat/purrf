@@ -17,10 +17,10 @@ py_test(
 )
 
 py_test(
-    name = "historical_api_test",
-    srcs = ["historical_api_test.py"],
+    name = "historical_controller_test",
+    srcs = ["historical_controller_test.py"],
     deps = [
-        "//backend/historical_data:historical_api",
+        "//backend/historical_data:historical_controller",
     ],
 )
 
@@ -55,5 +55,13 @@ py_test(
     srcs = ["jira_history_fetcher_test.py"],
     deps = [
         "//backend/historical_data:jira_history_fetcher",
+    ],
+)
+
+py_test(
+    name = "microsoft_member_sync_service_test",
+    srcs = ["microsoft_member_sync_service_test.py"],
+    deps = [
+        "//backend/historical_data:microsoft_member_sync_service",
     ],
 )

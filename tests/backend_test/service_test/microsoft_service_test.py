@@ -244,6 +244,96 @@ class TestMicrosoftService(IsolatedAsyncioTestCase):
             self.service.graph_service_client.subscriptions.post, ANY
         )
 
+    async def test_list_all_groups_success(self):
+        mock_groups = [MagicMock(id="group1"), MagicMock(id="group2")]
+        mock_response = MagicMock()
+        mock_response.value = mock_groups
+        mock_get_retry_on_transient = AsyncMock(return_value=mock_response)
+        self.service.retry_utils.get_retry_on_transient = mock_get_retry_on_transient
+
+        result = await self.service.list_all_groups()
+
+        self.service.retry_utils.get_retry_on_transient.assert_awaited_once_with(
+            self.service.graph_service_client.groups.get
+        )
+        self.assertEqual(result, mock_groups)
+
+    async def test_list_all_groups_returns_empty_list(self):
+        mock_response = MagicMock()
+        mock_response.value = []
+        mock_get_retry_on_transient = AsyncMock(return_value=mock_response)
+        self.service.retry_utils.get_retry_on_transient = mock_get_retry_on_transient
+
+        result = await self.service.list_all_groups()
+
+        self.service.retry_utils.get_retry_on_transient.assert_awaited_once_with(
+            self.service.graph_service_client.groups.get
+        )
+        self.assertEqual(result, [])
+
+    async def test_get_group_members_success(self):
+        group_id = "test_group_id"
+        mock_members = [MagicMock(id="member1"), MagicMock(id="member2")]
+        mock_response = MagicMock()
+        mock_response.value = mock_members
+        mock_get_retry_on_transient = AsyncMock(return_value=mock_response)
+        self.service.retry_utils.get_retry_on_transient = mock_get_retry_on_transient
+
+        mock_group_request_builder = MagicMock()
+        mock_members_request_builder = MagicMock()
+        get_method_ref = "get_method_reference"
+        mock_members_request_builder.get = get_method_ref
+        mock_group_request_builder.members = mock_members_request_builder
+        self.service.graph_service_client.groups.by_group_id.return_value = (
+            mock_group_request_builder
+        )
+
+        result = await self.service.get_group_members(group_id)
+
+        self.service.graph_service_client.groups.by_group_id.assert_called_once_with(
+            group_id
+        )
+        self.service.retry_utils.get_retry_on_transient.assert_awaited_once_with(
+            get_method_ref
+        )
+        self.assertEqual(result, mock_members)
+
+    async def test_get_group_members_returns_empty_list(self):
+        group_id = "test_group_id"
+        mock_response = MagicMock()
+        mock_response.value = []
+        mock_get_retry_on_transient = AsyncMock(return_value=mock_response)
+        self.service.retry_utils.get_retry_on_transient = mock_get_retry_on_transient
+
+        mock_group_request_builder = MagicMock()
+        mock_members_request_builder = MagicMock()
+        get_method_ref = "get_method_reference"
+        mock_members_request_builder.get = get_method_ref
+        mock_group_request_builder.members = mock_members_request_builder
+        self.service.graph_service_client.groups.by_group_id.return_value = (
+            mock_group_request_builder
+        )
+
+        result = await self.service.get_group_members(group_id)
+
+        self.service.graph_service_client.groups.by_group_id.assert_called_once_with(
+            group_id
+        )
+        self.service.retry_utils.get_retry_on_transient.assert_awaited_once_with(
+            get_method_ref
+        )
+        self.assertEqual(result, [])
+
+    async def test_get_group_members_with_empty_group_id_raises_error(self):
+        invalid_group_ids = ["", None]
+
+        for group_id in invalid_group_ids:
+            with self.subTest(group_id=group_id):
+                with self.assertRaises(ValueError):
+                    await self.service.get_group_members(group_id)
+
+        self.service.retry_utils.get_retry_on_transient.assert_not_called()
+
 
 if __name__ == "__main__":
     main()

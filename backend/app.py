@@ -5,15 +5,14 @@ from flask import Flask, Blueprint
 from http import HTTPStatus
 from backend.common.error_handler import register_error_handlers
 from backend.common.api_response_wrapper import api_response
-from backend.historical_data.historical_api import history_bp
+from backend.historical_data.historical_controller import history_bp
 from backend.notification_management.notification_controller import notification_bp
 from backend.frontend_service.frontend_api import frontend_bp
 from backend.consumers.consumer_controller import consumers_bp
 
 
 def create_app(
-    notification_controller,
-    consumer_controller,
+    notification_controller, consumer_controller, historical_controller
 ) -> Flask:
     """
     Create and configure the Flask application.
@@ -26,6 +25,7 @@ def create_app(
     Args:
         notification_controller: A NotificationController instance.
         consumer_controller: A ConsumerController instance.
+        historical_controller: A HistoricalController instance.
 
         ... another controller instance
 
@@ -49,6 +49,7 @@ def create_app(
 
     notification_controller.register_routes(all_api_bp)
     consumer_controller.register_routes(all_api_bp)
+    historical_controller.register_routes(all_api_bp)
 
     app.register_blueprint(all_api_bp)
 
@@ -76,6 +77,7 @@ if __name__ == "__main__":
     app = create_app(
         notification_controller=builder.notification_controller,
         consumer_controller=builder.consumer_controller,
+        historical_controller=builder.historical_controller,
     )
 
     # Used when running via uvicorn as a production server.

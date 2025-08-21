@@ -1,8 +1,5 @@
 from flask import Blueprint, request
 from http import HTTPStatus
-from backend.historical_data.microsoft_ldap_fetcher import (
-    sync_microsoft_members_to_redis,
-)
 from backend.historical_data.gerrit_history_fetcher import fetch_and_store_changes
 from backend.historical_data.google_chat_history_fetcher import fetch_history_messages
 from backend.historical_data.jira_history_fetcher import process_update_jira_issues
@@ -21,18 +18,42 @@ from datetime import datetime, timedelta, timezone
 history_bp = Blueprint("history", __name__, url_prefix="/api")
 
 
-@history_bp.route("/microsoft/backfill/ldaps", methods=["POST"])
-async def backfill_microsoft_ldaps():
-    """API endpoint to backfill Microsoft 365 user LDAP information into Redis."""
+class HistoricalController:
+    def __init__(self, microsoft_member_sync_service):
+        """
+        Initialize the HistoricalController with required dependencies.
 
-    response = await sync_microsoft_members_to_redis()
+        Args:
+            microsoft_chat_subscription_service: MicrosoftMemberSyncService instance.
+        """
+        self.microsoft_member_sync_service = microsoft_member_sync_service
 
-    return api_response(
-        success=True,
-        message="Saved successfully.",
-        data=response,
-        status_code=HTTPStatus.OK,
-    )
+    def register_routes(self, blueprint):
+        """
+        Register all historical data backfill routes to the given Flask blueprint.
+
+        Args:
+            blueprint: Flask Blueprint object to register routes on.
+        """
+        blueprint.add_url_rule(
+            "/microsoft/backfill/ldaps",
+            view_func=self.backfill_microsoft_ldaps,
+            methods=["POST"],
+        )
+
+    async def backfill_microsoft_ldaps(self):
+        """
+        API endpoint to backfill Microsoft 365 user LDAP information into Redis.
+        """
+
+        await self.microsoft_member_sync_service.sync_microsoft_members_to_redis()
+
+        return api_response(
+            success=True,
+            message="Successfully.",
+            data=None,
+            status_code=HTTPStatus.OK,
+        )
 
 
 @history_bp.route("/gerrit/backfill", methods=["POST"])
