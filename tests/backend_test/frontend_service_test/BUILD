@@ -67,3 +67,11 @@ py_test(
         "//backend/frontend_service:ldap_service",
     ],
 )
+
+py_test(
+    name = "microsoft_chat_analytics_service_test",
+    srcs = ["microsoft_chat_analytics_service_test.py"],
+    deps = [
+        "//backend/frontend_service:microsoft_chat_analytics_service",
+    ],
+)
