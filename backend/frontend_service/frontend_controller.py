@@ -1,6 +1,5 @@
 from flask import Blueprint, request
 from http import HTTPStatus
-from backend.frontend_service.ldap_loader import get_all_ldaps_and_displaynames
 from backend.frontend_service.chat_query_utils import count_messages_in_date_range
 from backend.frontend_service.jira_loader import process_get_issue_detail_batch
 from backend.frontend_service.gerrit_loader import (
@@ -10,7 +9,7 @@ from backend.frontend_service.calendar_loader import (
     get_all_calendars,
     get_all_events,
 )
-from backend.common.constants import MicrosoftAccountStatus
+from backend.common.constants import MicrosoftAccountStatus, MicrosoftGroups
 from backend.common.api_response_wrapper import api_response
 from backend.utils.google_chat_utils import get_chat_spaces
 from backend.frontend_service.microsoft_chat_topics_loader import (
@@ -22,19 +21,58 @@ from backend.frontend_service.jira_loader import get_issue_ids_in_timerange
 frontend_bp = Blueprint("frontend", __name__, url_prefix="/api")
 
 
-@frontend_bp.route("/microsoft/<status>/ldaps", methods=["GET"])
-async def all_ldaps_and_names(status):
-    """API endpoint to get Microsoft 365 user LDAP information from Redis."""
-    response = get_all_ldaps_and_displaynames(
-        MicrosoftAccountStatus.validate_status(status)
-    )
+class FrontendController:
+    def __init__(self, ldap_lookup_service):
+        """
+        Initialize the FrontendController with required dependencies.
 
-    return api_response(
-        success=True,
-        message="Saved successfully.",
-        data=response,
-        status_code=HTTPStatus.OK,
-    )
+        Args:
+            ldap_lookup_service: LdapLookupService instance.
+        """
+        self.ldap_lookup_service = ldap_lookup_service
+
+    def register_routes(self, blueprint):
+        """
+        Register the routes on the given Flask blueprint.
+
+        Args:
+            blueprint: Flask Blueprint object to register routes on.
+        """
+        blueprint.add_url_rule(
+            "/microsoft/<status>/ldaps",
+            view_func=self.get_ldaps_and_names,
+            methods=["GET"],
+        )
+
+    def get_ldaps_and_names(self, status):
+        """
+        API endpoint to retrieve Microsoft 365 user LDAP information from Redis, filtered by account status
+        and optionally by multiple Microsoft groups.
+
+        This endpoint expects the `groups[]` query parameter as a list (e.g., ?groups[]=interns&groups[]=employees).
+
+        Args:
+            status (str): The account status to filter by (e.g., "active", "terminated", "all").
+                          Will be validated and converted to a MicrosoftAccountStatus enum.
+
+        Returns:
+            Response: JSON response containing the LDAP data organized by group and status, with HTTP status code 200.
+
+        Example request:
+            GET /microsoft/all/ldaps?groups[]=interns&groups[]=employees
+        """
+        groups_list = request.args.getlist("groups[]")
+        data = self.ldap_lookup_service.get_ldaps_by_status_and_group(
+            status=MicrosoftAccountStatus.validate_status(status),
+            groups=[MicrosoftGroups(g) for g in groups_list],
+        )
+
+        return api_response(
+            success=True,
+            message="Successfully.",
+            data=data,
+            status_code=HTTPStatus.OK,
+        )
 
 
 @frontend_bp.route("/google/chat/count", methods=["GET"])

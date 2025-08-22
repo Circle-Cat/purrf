@@ -12,6 +12,7 @@ class TestAppRoutes(TestCase):
             notification_controller=MagicMock(),
             consumer_controller=MagicMock(),
             historical_controller=MagicMock(),
+            frontend_controller=MagicMock(),
         )
         self.app.testing = True
         self.client = self.app.test_client()

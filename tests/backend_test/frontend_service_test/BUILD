@@ -1,11 +1,11 @@
 load("@rules_python//python:defs.bzl", "py_test")
 
 py_test(
-    name = "frontend_api_test",
-    srcs = ["frontend_api_test.py"],
+    name = "frontend_controller_test",
+    srcs = ["frontend_controller_test.py"],
     deps = [
         "//backend/common:constants",
-        "//backend/frontend_service:frontend_api",
+        "//backend/frontend_service:frontend_controller",
         "@pypi//flask",
     ],
 )
@@ -57,5 +57,13 @@ py_test(
     srcs = ["calendar_loader_test.py"],
     deps = [
         "//backend/frontend_service:calendar_loader",
+    ],
+)
+
+py_test(
+    name = "ldap_lookup_service_test",
+    srcs = ["ldap_lookup_service_test.py"],
+    deps = [
+        "//backend/frontend_service:ldap_lookup_service",
     ],
 )

@@ -19,7 +19,7 @@ py_binary(
             "@pypi//flask",
             # TODO: After migration, remove these dependencies from the test section:
             "//backend/consumers:consumer_controller",
-            "//backend/frontend_service:frontend_api",
+            "//backend/frontend_service:frontend_controller",
             "//backend/historical_data:historical_controller",
             "//backend/notification_management:notification_controller",
         ],
@@ -27,7 +27,7 @@ py_binary(
             "//backend/common:api_response_wrapper",
             "//backend/common:error_handler",
             "//backend/consumers:consumer_controller",
-            "//backend/frontend_service:frontend_api",
+            "//backend/frontend_service:frontend_controller",
             "//backend/historical_data:historical_controller",
             "//backend/notification_management:notification_controller",
             "//backend/utils:app_dependency_builder",

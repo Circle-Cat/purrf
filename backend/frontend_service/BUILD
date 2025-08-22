@@ -3,8 +3,8 @@ load("@rules_python//python:defs.bzl", "py_library")
 package(default_visibility = ["//visibility:public"])
 
 py_library(
-    name = "frontend_api",
-    srcs = ["frontend_api.py"],
+    name = "frontend_controller",
+    srcs = ["frontend_controller.py"],
     deps = [
         "//backend/common:api_response_wrapper",
         "//backend/common:constants",
@@ -86,5 +86,15 @@ py_library(
     deps = [
         "//backend/common:constants",
         "//backend/common:redis_client",
+    ],
+)
+
+py_library(
+    name = "ldap_lookup_service",
+    srcs = [
+        "ldap_lookup_service.py",
+    ],
+    deps = [
+        "//backend/common:constants",
     ],
 )
