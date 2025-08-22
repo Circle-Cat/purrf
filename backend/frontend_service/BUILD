@@ -13,7 +13,6 @@ py_library(
         "//backend/frontend_service:gerrit_loader",
         "//backend/frontend_service:jira_loader",
         "//backend/frontend_service:ldap_loader",
-        "//backend/frontend_service:microsoft_chat_topics_loader",
         "//backend/utils:google_chat_utils",
         "@pypi//flask",
     ],
@@ -43,14 +42,11 @@ py_library(
 )
 
 py_library(
-    name = "microsoft_chat_topics_loader",
-    srcs = ["microsoft_chat_topics_loader.py"],
+    name = "microsoft_meeting_chat_topic_cache_service",
+    srcs = ["microsoft_meeting_chat_topic_cache_service.py"],
     deps = [
         "//backend/common:constants",
-        "//backend/common:logger",
-        "//backend/common:microsoft_client",
-        "//backend/common:redis_client",
-        "//backend/historical_data:microsoft_chat_history_fetcher",
+        "//backend/common:environment_constants",
     ],
 )
 

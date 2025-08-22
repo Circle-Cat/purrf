@@ -28,10 +28,10 @@ py_test(
 )
 
 py_test(
-    name = "microsoft_chat_topics_loader_test",
-    srcs = ["microsoft_chat_topics_loader_test.py"],
+    name = "microsoft_meeting_chat_topic_cache_service_test",
+    srcs = ["microsoft_meeting_chat_topic_cache_service_test.py"],
     deps = [
-        "//backend/frontend_service:microsoft_chat_topics_loader",
+        "//backend/frontend_service:microsoft_meeting_chat_topic_cache_service",
     ],
 )
 

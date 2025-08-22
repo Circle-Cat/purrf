@@ -12,9 +12,6 @@ from backend.frontend_service.calendar_loader import (
 from backend.common.constants import MicrosoftAccountStatus, MicrosoftGroups
 from backend.common.api_response_wrapper import api_response
 from backend.utils.google_chat_utils import get_chat_spaces
-from backend.frontend_service.microsoft_chat_topics_loader import (
-    get_microsoft_chat_topics,
-)
 from backend.frontend_service.jira_loader import get_issue_ids_in_timerange
 
 
@@ -22,16 +19,25 @@ frontend_bp = Blueprint("frontend", __name__, url_prefix="/api")
 
 
 class FrontendController:
-    def __init__(self, ldap_service, microsoft_chat_analytics_service):
+    def __init__(
+        self,
+        ldap_service,
+        microsoft_chat_analytics_service,
+        microsoft_meeting_chat_topic_cache_service,
+    ):
         """
         Initialize the FrontendController with required dependencies.
 
         Args:
             ldap_service: LdapService instance.
-            microsoft_chat_analytics_service: MicrosoftChatAnalyticsService  instance.
+            microsoft_chat_analytics_service: MicrosoftChatAnalyticsService instance.
+            microsoft_meeting_chat_topic_cache_service: MicrosoftMeetingChatTopicCacheService instance.
         """
         self.ldap_service = ldap_service
         self.microsoft_chat_analytics_service = microsoft_chat_analytics_service
+        self.microsoft_meeting_chat_topic_cache_service = (
+            microsoft_meeting_chat_topic_cache_service
+        )
 
     def register_routes(self, blueprint):
         """
@@ -49,6 +55,22 @@ class FrontendController:
             "/microsoft/chat/count",
             view_func=self.count_microsoft_chat_messages,
             methods=["POST"],
+        )
+        blueprint.add_url_rule(
+            "/microsoft/chat/topics",
+            view_func=self.all_microsoft_chat_topics,
+            methods=["GET"],
+        )
+
+    async def all_microsoft_chat_topics(self):
+        """Fetch Microsoft chat topics from Redis."""
+        response = await self.microsoft_meeting_chat_topic_cache_service.get_microsoft_chat_topics()
+
+        return api_response(
+            success=True,
+            message="Successfully.",
+            data=response,
+            status_code=HTTPStatus.OK,
         )
 
     def get_ldaps_and_names(self, status):
@@ -194,19 +216,6 @@ def get_chat_spaces_route():
         success=True,
         message="Retrieve chat spaces successfully.",
         data=spaces,
-        status_code=HTTPStatus.OK,
-    )
-
-
-@frontend_bp.route("/microsoft/chat/topics", methods=["GET"])
-async def all_microsoft_chat_topics():
-    """Fetch Microsoft chat topics from Redis."""
-    response = await get_microsoft_chat_topics()
-
-    return api_response(
-        success=True,
-        message="Successfully.",
-        data=response,
         status_code=HTTPStatus.OK,
     )
 

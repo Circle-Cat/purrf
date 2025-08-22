@@ -1,7 +1,7 @@
 import json
 from http import HTTPStatus
 from unittest import TestCase, main
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, AsyncMock
 from flask import Flask
 from backend.frontend_service.frontend_controller import (
     frontend_bp,
@@ -11,7 +11,6 @@ from backend.frontend_service.frontend_controller import (
 )
 
 MICROSOFT_LDAP_FETCHER_API = "/api/microsoft/{status}/ldaps"
-MICROSOFT_CHAT_TOPICS_FETCHER_API = "/api/microsoft/chat/topics"
 GOOGLE_CHAT_COUNT_API = "/api/google/chat/count"
 JIRA_BRIEF_API = "/api/jira/brief"
 GOOGLE_CALENDAR_CALENDARS_API = "/api/google/calendar/calendars"
@@ -23,9 +22,11 @@ class TestFrontendController(TestCase):
     def setUp(self):
         self.ldap_service = MagicMock()
         self.microsoft_chat_analytics_service = MagicMock()
+        self.microsoft_meeting_chat_topic_cache_service = AsyncMock()
         self.controller = FrontendController(
             ldap_service=self.ldap_service,
             microsoft_chat_analytics_service=self.microsoft_chat_analytics_service,
+            microsoft_meeting_chat_topic_cache_service=self.microsoft_meeting_chat_topic_cache_service,
         )
         self.app = Flask(__name__)
         self.app_context = self.app.app_context()
@@ -126,6 +127,18 @@ class TestFrontendController(TestCase):
             end_date=None,
         )
 
+    async def test_all_microsoft_chat_topics(self):
+        mock_data = {"id": "name"}
+        self.microsoft_meeting_chat_topic_cache_service.get_microsoft_chat_topics().return_value = mock_data
+
+        with self.app.test_request_context("/microsoft/chat/topics"):
+            response = await self.controller.all_microsoft_chat_topics()
+
+            self.assertEqual(response.status_code, HTTPStatus.OK)
+            self.assertEqual(response.json["data"], mock_data)
+
+            self.microsoft_meeting_chat_topic_cache_service.get_microsoft_chat_topics.assert_called_once()
+
 
 class TestAppRoutes(TestCase):
     @classmethod
@@ -215,14 +228,6 @@ class TestAppRoutes(TestCase):
         self.assertEqual(json_data["data"], mock_spaces)
 
         mock_get_chat_spaces.assert_called_once_with("SPACE", 50)
-
-    @patch("backend.frontend_service.frontend_controller.get_microsoft_chat_topics")
-    def test_all_microsoft_chat_topics(self, mock_get):
-        mock_get.return_value = {}
-
-        response = self.client.get(MICROSOFT_CHAT_TOPICS_FETCHER_API)
-
-        self.assertEqual(response.status_code, HTTPStatus.OK)
 
     @patch("backend.frontend_service.frontend_controller.get_issue_ids_in_timerange")
     def test_jira_brief_success(self, mock_process):
