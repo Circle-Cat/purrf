@@ -35,19 +35,6 @@ py_library(
 )
 
 py_library(
-    name = "microsoft_chat_message_store",
-    srcs = [
-        "microsoft_chat_message_store.py",
-    ],
-    deps = [
-        "//backend/common:constants",
-        "//backend/common:microsoft_client",
-        "//backend/common:redis_client",
-        "@pypi//tenacity",
-    ],
-)
-
-py_library(
     name = "date_time_util",
     srcs = [
         "date_time_util.py",
@@ -100,6 +87,7 @@ py_library(
         "//backend/frontend_service:microsoft_chat_analytics_service",
         "//backend/frontend_service:microsoft_meeting_chat_topic_cache_service",
         "//backend/historical_data:historical_controller",
+        "//backend/historical_data:microsoft_chat_history_sync_service",
         "//backend/historical_data:microsoft_member_sync_service",
         "//backend/notification_management:microsoft_chat_subscription_service",
         "//backend/notification_management:notification_controller",

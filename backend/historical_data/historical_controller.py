@@ -9,9 +9,6 @@ from backend.historical_data.google_calendar_history_fetcher import (
     pull_calendar_history,
 )
 from backend.common.api_response_wrapper import api_response
-from backend.historical_data.microsoft_chat_history_fetcher import (
-    sync_microsoft_chat_messages_by_chat_id,
-)
 from backend.utils.date_time_util import get_start_end_timestamps
 from datetime import datetime, timedelta, timezone
 
@@ -19,14 +16,18 @@ history_bp = Blueprint("history", __name__, url_prefix="/api")
 
 
 class HistoricalController:
-    def __init__(self, microsoft_member_sync_service):
+    def __init__(
+        self, microsoft_member_sync_service, microsoft_chat_history_sync_service
+    ):
         """
         Initialize the HistoricalController with required dependencies.
 
         Args:
-            microsoft_chat_subscription_service: MicrosoftMemberSyncService instance.
+            microsoft_member_sync_service: MicrosoftMemberSyncService instance.
+            microsoft_chat_history_sync_service: MicrosoftChatHistorySyncService instance.
         """
         self.microsoft_member_sync_service = microsoft_member_sync_service
+        self.microsoft_chat_history_sync_service = microsoft_chat_history_sync_service
 
     def register_routes(self, blueprint):
         """
@@ -40,6 +41,11 @@ class HistoricalController:
             view_func=self.backfill_microsoft_ldaps,
             methods=["POST"],
         )
+        blueprint.add_url_rule(
+            "/microsoft/backfill/chat/messages/<chatId>",
+            view_func=self.backfill_microsoft_chat_messages,
+            methods=["POST"],
+        )
 
     async def backfill_microsoft_ldaps(self):
         """
@@ -51,6 +57,19 @@ class HistoricalController:
         return api_response(
             success=True,
             message="Successfully.",
+            data=None,
+            status_code=HTTPStatus.OK,
+        )
+
+    async def backfill_microsoft_chat_messages(self, chatId):
+        """API endpoint to backfill Microsoft Teams Chat messages into Redis."""
+        await self.microsoft_chat_history_sync_service.sync_microsoft_chat_messages_by_chat_id(
+            chatId
+        )
+
+        return api_response(
+            success=True,
+            message="Saved successfully.",
             data=None,
             status_code=HTTPStatus.OK,
         )
@@ -69,19 +88,6 @@ async def backfill_gerrit_changes():
         success=True,
         message="Saved successfully.",
         data="",
-        status_code=HTTPStatus.OK,
-    )
-
-
-@history_bp.route("/microsoft/fetch/history/messages/<chatId>", methods=["POST"])
-async def backfill_microsoft_chat_messages(chatId):
-    """API endpoint to backfill Microsoft Teams Chat messages into Redis."""
-    response = await sync_microsoft_chat_messages_by_chat_id(chatId)
-
-    return api_response(
-        success=True,
-        message="Saved successfully.",
-        data=response,
         status_code=HTTPStatus.OK,
     )
 

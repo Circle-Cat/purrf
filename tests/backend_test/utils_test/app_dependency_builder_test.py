@@ -4,6 +4,7 @@ from backend.utils.app_dependency_builder import AppDependencyBuilder
 
 
 @patch("backend.utils.app_dependency_builder.JiraAnalyticsService")
+@patch("backend.utils.app_dependency_builder.MicrosoftChatHistorySyncService")
 @patch("backend.utils.app_dependency_builder.MicrosoftMeetingChatTopicCacheService")
 @patch("backend.utils.app_dependency_builder.MicrosoftChatAnalyticsService")
 @patch("backend.utils.app_dependency_builder.LdapService")
@@ -49,6 +50,7 @@ class TestAppDependencyBuilder(TestCase):
         mock_ldap_service_cls,
         mock_microsoft_chat_analytics_service_cls,
         mock_microsoft_meeting_chat_topic_cache_service_cls,
+        mock_microsoft_chat_history_sync_service_cls,
         mock_jira_analytics_service_cls,
     ):
         """
@@ -139,8 +141,14 @@ class TestAppDependencyBuilder(TestCase):
             microsoft_service=mock_microsoft_service.return_value,
             retry_utils=mock_retry_utils_instance,
         )
+        mock_microsoft_chat_history_sync_service_cls.assert_called_once_with(
+            logger=mock_logger,
+            microsoft_service=mock_microsoft_service.return_value,
+            microsoft_chat_message_util=mock_microsoft_chat_message_util_cls.return_value,
+        )
         mock_historical_controller_cls.assert_called_once_with(
-            microsoft_member_sync_service=mock_microsoft_member_sync_service_cls.return_value
+            microsoft_member_sync_service=mock_microsoft_member_sync_service_cls.return_value,
+            microsoft_chat_history_sync_service=mock_microsoft_chat_history_sync_service_cls.return_value,
         )
         mock_ldap_service_cls.assert_called_once_with(
             logger=mock_logger,
@@ -210,6 +218,10 @@ class TestAppDependencyBuilder(TestCase):
         self.assertEqual(
             builder.microsoft_member_sync_service,
             mock_microsoft_member_sync_service_cls.return_value,
+        )
+        self.assertEqual(
+            builder.microsoft_chat_history_sync_service,
+            mock_microsoft_chat_history_sync_service_cls.return_value,
         )
         self.assertEqual(
             builder.historical_controller, mock_historical_controller_cls.return_value

@@ -9,14 +9,6 @@ py_test(
 )
 
 py_test(
-    name = "microsoft_ldap_fetcher_test",
-    srcs = ["microsoft_ldap_fetcher_test.py"],
-    deps = [
-        "//backend/historical_data:microsoft_ldap_fetcher",
-    ],
-)
-
-py_test(
     name = "historical_controller_test",
     srcs = ["historical_controller_test.py"],
     deps = [
@@ -43,10 +35,10 @@ py_test(
 )
 
 py_test(
-    name = "microsoft_chat_history_fetcher_test",
-    srcs = ["microsoft_chat_history_fetcher_test.py"],
+    name = "microsoft_chat_history_sync_service_test",
+    srcs = ["microsoft_chat_history_sync_service_test.py"],
     deps = [
-        "//backend/historical_data:microsoft_chat_history_fetcher",
+        "//backend/historical_data:microsoft_chat_history_sync_service",
     ],
 )
 

@@ -51,14 +51,6 @@ py_test(
 )
 
 py_test(
-    name = "microsoft_client_test",
-    srcs = ["microsoft_client_test.py"],
-    deps = [
-        "//backend/common:microsoft_client",
-    ],
-)
-
-py_test(
     name = "jira_client_test",
     srcs = ["jira_client_test.py"],
     deps = [

@@ -34,6 +34,9 @@ from backend.frontend_service.microsoft_chat_analytics_service import (
 from backend.frontend_service.microsoft_meeting_chat_topic_cache_service import (
     MicrosoftMeetingChatTopicCacheService,
 )
+from backend.historical_data.microsoft_chat_history_sync_service import (
+    MicrosoftChatHistorySyncService,
+)
 
 
 class AppDependencyBuilder:
@@ -110,8 +113,14 @@ class AppDependencyBuilder:
             microsoft_service=self.microsoft_service,
             retry_utils=self.retry_utils,
         )
+        self.microsoft_chat_history_sync_service = MicrosoftChatHistorySyncService(
+            logger=self.logger,
+            microsoft_service=self.microsoft_service,
+            microsoft_chat_message_util=self.microsoft_chat_message_util,
+        )
         self.historical_controller = HistoricalController(
-            microsoft_member_sync_service=self.microsoft_member_sync_service
+            microsoft_member_sync_service=self.microsoft_member_sync_service,
+            microsoft_chat_history_sync_service=self.microsoft_chat_history_sync_service,
         )
         self.ldap_service = LdapService(
             logger=self.logger,

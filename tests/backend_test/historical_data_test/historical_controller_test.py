@@ -8,7 +8,7 @@ from backend.historical_data.historical_controller import (
 )
 
 
-MICROSOFT_LDAP_FETCHER_API = "/api/microsoft/backfill/ldaps"
+MICROSOFT_LDAP_FETCHER_API = "/microsoft/backfill/ldaps"
 MICROSOFT_CHAT_FETCHER_API = "/microsoft/fetch/history/messages/{chat_id}"
 GOOGLE_CHAT_FETCHER_API = "/api/google/chat/spaces/messages"
 JIRA_UPDATE_API = "/api/jira/update"
@@ -17,12 +17,17 @@ JIRA_PROJECT_API = "/api/jira/project"
 TEST_CHAT_ID = "chat131"
 
 
+# /microsoft/backfill/chat/messages/<chatId>
 class TestHistoricalController(IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.microsoft_member_sync_service = AsyncMock()
         self.microsoft_member_sync_service.sync_microsoft_members_to_redis = AsyncMock()
+        self.microsoft_chat_history_sync_service = AsyncMock()
+        self.microsoft_chat_history_sync_service.sync_microsoft_chat_messages_by_chat_id = AsyncMock()
+
         self.controller = HistoricalController(
-            microsoft_member_sync_service=self.microsoft_member_sync_service
+            microsoft_member_sync_service=self.microsoft_member_sync_service,
+            microsoft_chat_history_sync_service=self.microsoft_chat_history_sync_service,
         )
 
         self.app = Flask(__name__)
@@ -44,6 +49,19 @@ class TestHistoricalController(IsolatedAsyncioTestCase):
 
         self.assertEqual(response.status_code, HTTPStatus.OK)
 
+    async def test_backfill_microsoft_chat_messages(self):
+        with self.app.test_request_context(
+            MICROSOFT_CHAT_FETCHER_API.format(chat_id=TEST_CHAT_ID),
+            method="POST",
+            content_type="application/json",
+        ):
+            response = await self.controller.backfill_microsoft_chat_messages(
+                TEST_CHAT_ID
+            )
+
+        self.microsoft_chat_history_sync_service.sync_microsoft_chat_messages_by_chat_id.assert_called_once()
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+
 
 class TestAppRoutes(TestCase):
     @classmethod
@@ -52,24 +70,6 @@ class TestAppRoutes(TestCase):
         app.register_blueprint(history_bp)
         self.client = app.test_client()
         app.testing = True
-
-    @patch(
-        "backend.historical_data.historical_controller.sync_microsoft_chat_messages_by_chat_id"
-    )
-    def backfill_microsoft_chat_messages(
-        self, mock_sync_microsoft_chat_messages_by_chat_id
-    ):
-        mock_result = {"total_processed": 5, "total_skipped": 0}
-        mock_sync_microsoft_chat_messages_by_chat_id.return_value = mock_result
-
-        response = self.client.post(
-            MICROSOFT_CHAT_FETCHER_API.format(chat_id=TEST_CHAT_ID)
-        )
-
-        self.assertEqual(response.status_code, HTTPStatus.OK)
-        self.assertEqual(response.json["data"], mock_result)
-
-        mock_sync_microsoft_chat_messages_by_chat_id.assert_called_once()
 
     @patch("backend.historical_data.historical_controller.fetch_history_messages")
     def test_history_messages(self, mock_fetch_history_messages):

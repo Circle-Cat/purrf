@@ -25,14 +25,6 @@ py_test(
 )
 
 py_test(
-    name = "microsoft_chat_message_store_test",
-    srcs = ["microsoft_chat_message_store_test.py"],
-    deps = [
-        "//backend/utils:microsoft_chat_message_store",
-    ],
-)
-
-py_test(
     name = "date_time_util_test",
     srcs = ["date_time_util_test.py"],
     deps = [

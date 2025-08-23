@@ -80,21 +80,6 @@ py_library(
 )
 
 py_library(
-    name = "microsoft_client",
-    srcs = [
-        "microsoft_client.py",
-    ],
-    deps = [
-        "//backend/common:api_response_wrapper",
-        "//backend/common:constants",
-        "//backend/common:logger",
-        "@pypi//azure_identity",
-        "@pypi//msgraph_sdk",
-        "@pypi//tenacity",
-    ],
-)
-
-py_library(
     name = "jira_client",
     srcs = [
         "jira_client.py",

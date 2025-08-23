@@ -24,17 +24,6 @@ py_library(
 )
 
 py_library(
-    name = "microsoft_ldap_fetcher",
-    srcs = [
-        "microsoft_ldap_fetcher.py",
-    ],
-    deps = [
-        "//backend/common:microsoft_client",
-        "//backend/common:redis_client",
-    ],
-)
-
-py_library(
     name = "microsoft_member_sync_service",
     srcs = [
         "microsoft_member_sync_service.py",
@@ -48,11 +37,11 @@ py_library(
     name = "historical_controller",
     srcs = ["historical_controller.py"],
     deps = [
+        "//backend/common:api_response_wrapper",
         "//backend/historical_data:gerrit_history_fetcher",
         "//backend/historical_data:google_calendar_history_fetcher",
         "//backend/historical_data:google_chat_history_fetcher",
         "//backend/historical_data:jira_history_fetcher",
-        "//backend/historical_data:microsoft_chat_history_fetcher",
         "//backend/utils:date_time_util",
         "@pypi//flask",
     ],
@@ -84,14 +73,9 @@ py_library(
 )
 
 py_library(
-    name = "microsoft_chat_history_fetcher",
+    name = "microsoft_chat_history_sync_service",
     srcs = [
-        "microsoft_chat_history_fetcher.py",
-    ],
-    deps = [
-        "//backend/common:microsoft_client",
-        "//backend/historical_data:microsoft_ldap_fetcher",
-        "//backend/utils:microsoft_chat_message_store",
+        "microsoft_chat_history_sync_service.py",
     ],
 )
 
