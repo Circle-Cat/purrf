@@ -11,3 +11,13 @@ py_library(
         "@pypi//msgraph_sdk",
     ],
 )
+
+py_library(
+    name = "jira_search_service",
+    srcs = ["jira_search_service.py"],
+    deps = [
+        "//backend/common:constants",
+        "//backend/utils:retry_utils",
+        "@pypi//jira",
+    ],
+)

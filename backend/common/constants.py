@@ -211,6 +211,18 @@ JIRA_PROJECTS_KEY = "jira:project"
 # Jira API configuration
 JIRA_MAX_RESULTS_DEFAULT = 1000
 JIRA_STORY_POINT_FIELD = "customfield_10106"
+JIRA_ISSUE_REQUIRED_FIELDS = [
+    "summary",
+    "project",
+    "status",
+    "resolutiondate",
+    "updated",
+    "created",
+    "assignee",
+    JIRA_STORY_POINT_FIELD,
+]
+
+
 # Jira Redis key templates
 JIRA_PROJECTS_KEY = "jira:project"
 GERRIT_STAT_FIELDS = [
