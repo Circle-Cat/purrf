@@ -17,6 +17,7 @@ py_library(
         "//backend/common:logger",
         "//backend/common:redis_client",
         "//backend/common:validation",
+        "//backend/frontend_service:ldap_loader",
         "//backend/historical_data:constants",
         "@pypi//tenacity",
     ],
