@@ -37,12 +37,10 @@ TEST_MOCK_CREATED_MESSAGE = {
     "space": TEST_SPACE,
     "attachment": TEST_ATTACHMENT,
 }
-
 TEST_MOCK_UPDATED_MESSAGE = {
     **TEST_MOCK_CREATED_MESSAGE,
     "lastUpdateTime": TEST_TIME,
 }
-
 TEST_MOCK_DELETED_MESSAGE = {
     "name": TEST_MESSAGE_NAME,
     "createTime": TEST_TIME,
@@ -64,25 +62,20 @@ def create_stored_message(texts, deleted=False):
 TEST_STORED_CREATED_MESSAGE = create_stored_message([
     {"value": TEST_MESSAGE_TEXT, "createTime": TEST_TIME}
 ])
-
 TEST_STORED_UPDATED_MESSAGE = create_stored_message([
     {"value": TEST_MESSAGE_TEXT, "createTime": TEST_TIME},
     {"value": TEST_MESSAGE_TEXT, "createTime": TEST_TIME},
 ])
-
 TEST_STORED_INVALIDED_UPDATED_MESSAGE = create_stored_message(None)
-
 TEST_STORED_DELETED_MESSAGE = create_stored_message(
     [{"value": TEST_MESSAGE_TEXT, "createTime": TEST_TIME}], deleted=True
 )
-
 TEST_INDEX_REDIS_KEY = CREATED_GOOGLE_CHAT_MESSAGES_INDEX_KEY.format(
     space_id=TEST_SPACE_ID, sender_ldap=TEST_SENDER_LDAP
 )
 TEST_DELETED_INDEX_REDIS_KEY = DELETED_GOOGLE_CHAT_MESSAGES_INDEX_KEY.format(
     space_id=TEST_SPACE_ID, sender_ldap=TEST_SENDER_LDAP
 )
-
 REDIS_MEMEBER = TEST_MESSAGE_ID
 TEST_SCORE = datetime.fromisoformat(TEST_TIME).timestamp()
 
@@ -109,7 +102,6 @@ class TestStoreMessages(TestCase):
             TEST_MOCK_CREATED_MESSAGE,
             GoogleChatEventType.CREATED.value,
         )
-
         self.mock_create_redis_client.assert_called_once()
         self.mock_redis_client.pipeline.assert_called_once()
         self.mock_pipeline.zadd.assert_called_once_with(
@@ -122,13 +114,11 @@ class TestStoreMessages(TestCase):
 
     def test_store_updated_messages_success(self):
         self.mock_redis_client.get.return_value = TEST_STORED_CREATED_MESSAGE
-
         store_messages(
             TEST_SENDER_LDAP,
             TEST_MOCK_UPDATED_MESSAGE,
             GoogleChatEventType.UPDATED.value,
         )
-
         self.mock_redis_client.get.assert_called_once_with(TEST_MESSAGE_NAME)
         self.mock_redis_client.set.assert_called_once_with(
             TEST_MESSAGE_NAME, TEST_STORED_UPDATED_MESSAGE
@@ -137,13 +127,11 @@ class TestStoreMessages(TestCase):
     def test_store_deleted_messages_success(self):
         self.mock_redis_client.get.return_value = TEST_STORED_CREATED_MESSAGE
         self.mock_redis_client.zscore.return_value = TEST_SCORE
-
         store_messages(
             TEST_SENDER_LDAP,
             TEST_MOCK_DELETED_MESSAGE,
             GoogleChatEventType.DELETED.value,
         )
-
         self.mock_redis_client.get.assert_called_once_with(TEST_MESSAGE_NAME)
         self.mock_redis_client.zscore.assert_called_once_with(
             TEST_INDEX_REDIS_KEY, REDIS_MEMEBER
@@ -154,7 +142,6 @@ class TestStoreMessages(TestCase):
         self.mock_pipeline.zrem.assert_called_once_with(
             TEST_INDEX_REDIS_KEY, REDIS_MEMEBER
         )
-
         self.mock_pipeline.zadd.assert_called_once_with(
             TEST_DELETED_INDEX_REDIS_KEY, {REDIS_MEMEBER: TEST_SCORE}
         )
@@ -162,40 +149,34 @@ class TestStoreMessages(TestCase):
 
     def test_store_updated_message_does_not_exist(self):
         self.mock_redis_client.get.return_value = None
-
         with self.assertRaises(ValueError):
             store_messages(
                 TEST_SENDER_LDAP,
                 TEST_MOCK_UPDATED_MESSAGE,
                 GoogleChatEventType.UPDATED.value,
             )
-
         self.mock_redis_client.get.assert_called_once_with(TEST_MESSAGE_NAME)
         self.mock_redis_client.set.assert_not_called()
 
     def test_store_updated_message_with_data_inconsistent(self):
         self.mock_redis_client.get.return_value = TEST_STORED_INVALIDED_UPDATED_MESSAGE
-
         with self.assertRaises(TypeError):
             store_messages(
                 TEST_SENDER_LDAP,
                 TEST_MOCK_UPDATED_MESSAGE,
                 GoogleChatEventType.UPDATED.value,
             )
-
         self.mock_redis_client.get.assert_called_once_with(TEST_MESSAGE_NAME)
         self.mock_redis_client.set.assert_not_called()
 
     def test_store_deleted_message_does_not_exist(self):
         self.mock_redis_client.get.return_value = None
-
         with self.assertRaises(ValueError):
             store_messages(
                 TEST_SENDER_LDAP,
                 TEST_MOCK_DELETED_MESSAGE,
                 GoogleChatEventType.DELETED.value,
             )
-
         self.mock_redis_client.get.assert_called_once_with(TEST_MESSAGE_NAME)
         self.mock_pipeline.zrem.assert_not_called()
         self.mock_pipeline.set.assert_not_called()
@@ -206,7 +187,6 @@ class TestStoreMessages(TestCase):
             store_messages(
                 TEST_SENDER_LDAP, "{invalid_json}", GoogleChatEventType.CREATED.value
             )
-
         self.mock_pipeline.zadd.assert_not_called()
         self.mock_pipeline.set.assert_not_called()
         self.mock_pipeline.execute.assert_not_called()
