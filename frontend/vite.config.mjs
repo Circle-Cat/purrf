@@ -1,9 +1,14 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import path from "path";
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react({
+      jsxRuntime: "automatic",
+    }),
+  ],
   server: {
     host: true,
     hmr: true,
@@ -15,9 +20,14 @@ export default defineConfig({
       },
     },
     // Set up your coding workspace host.
-    allowedHosts: ["4173--main--purrf-format--yuji-ws.ccat.dev"],
+    allowedHosts: [""],
     watch: {
       usePolling: true,
+    },
+  },
+  resolve: {
+    alias: {
+      "@": path.resolve(__dirname, "src"),
     },
   },
 });
