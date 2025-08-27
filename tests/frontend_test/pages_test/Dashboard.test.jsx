@@ -1,11 +1,14 @@
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { useState } from "react";
-import Dashboard from "@/pages/Dashboard";
-import { Group } from "@/constants/Groups";
-import DateRangePicker from "@/components/common/DateRangePicker";
-import { getSummary } from "@/api/dashboardApi";
 import "@testing-library/jest-dom/vitest";
+
+import Dashboard from "@/pages/Dashboard";
+import DateRangePicker from "@/components/common/DateRangePicker";
+
+import { Group } from "@/constants/Groups";
+import { LdapStatus } from "@/constants/LdapStatus";
+import { getSummary, getLdapsAndDisplayNames } from "@/api/dashboardApi";
 
 vi.mock("@/components/common/DateRangePicker", () => {
   return {
@@ -41,13 +44,98 @@ vi.mock("@/components/common/DateRangePicker", () => {
   };
 });
 
+vi.mock("@/components/common/Card", () => ({
+  default: ({ title, value }) => (
+    <div data-testid={`card-${title.replace(/\s/g, "-")}`}>
+      <h3>{title}</h3>
+      <p>{value}</p>
+    </div>
+  ),
+}));
+
+vi.mock("@/components/common/Table", () => ({
+  default: ({ columns, data, onSort, sortColumn, sortDirection }) => (
+    <table data-testid="mock-table">
+      <thead>
+        <tr>
+          {columns.map((col) => (
+            <th
+              key={col.accessor}
+              data-testid={`table-header-${col.accessor}`}
+              onClick={() => onSort(col.accessor)}
+            >
+              {col.header}
+              {sortColumn === col.accessor && (
+                <span>{sortDirection === "asc" ? " ▲" : " ▼"}</span>
+              )}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {data.map((item, index) => (
+          <tr key={index}>
+            {columns.map((col) => (
+              <td key={col.accessor}>{item[col.accessor]}</td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  ),
+}));
+
 vi.mock("@/api/dashboardApi", () => ({
   getSummary: vi.fn(),
+  getLdapsAndDisplayNames: vi.fn(),
 }));
 
 const MOCK_TODAY = new Date("2024-02-15");
 const MOCK_FIRST_OF_MONTH = new Date("2024-02-01");
 const formatDate = (date) => date.toISOString().split("T")[0];
+
+const mockSummaryData = [
+  {
+    ldap: "test.user1",
+    jira_issue_done: 5,
+    cl_merged: 10,
+    loc_merged: 100,
+    meeting_count: 50,
+    chat_count: 200,
+  },
+  {
+    ldap: "test.user2",
+    jira_issue_done: 2,
+    cl_merged: 20,
+    loc_merged: 200,
+    meeting_count: 20,
+    chat_count: 150,
+  },
+  {
+    ldap: "test.user3",
+    jira_issue_done: 8,
+    cl_merged: 5,
+    loc_merged: 50,
+    meeting_count: 10,
+    chat_count: 50,
+  },
+];
+
+const mockLdapsData = {
+  [Group.Interns]: {
+    [LdapStatus.Active]: {
+      "test.user1": "Test User1",
+    },
+  },
+  [Group.Employees]: {
+    [LdapStatus.Active]: {
+      "test.user2": "Test User2",
+    },
+    [LdapStatus.Terminated]: {
+      "test.user3": "Test User3",
+    },
+  },
+};
 
 describe("Dashboard", () => {
   beforeEach(() => {
@@ -63,7 +151,149 @@ describe("Dashboard", () => {
     afterEach(cleanup);
   });
 
+  it("fetches and displays summary and table data correctly on search", async () => {
+    getSummary.mockResolvedValue({ data: mockSummaryData });
+    getLdapsAndDisplayNames.mockResolvedValue({ data: mockLdapsData });
+
+    render(<Dashboard />);
+
+    await vi.waitFor(() => {
+      expect(getSummary).toHaveBeenCalled();
+      expect(getLdapsAndDisplayNames).toHaveBeenCalled();
+    });
+
+    await vi.waitFor(() => {
+      expect(screen.getByText("3")).toBeInTheDocument(); // totalMembers from mockLdapsData
+      expect(screen.getByText("15")).toBeInTheDocument(); // 5+2+8
+      expect(screen.getByText("35")).toBeInTheDocument(); // 10+20+5
+      expect(screen.getByText("350")).toBeInTheDocument(); // 100+200+50
+      expect(screen.getByText("80")).toBeInTheDocument(); // 50+20+10
+      expect(screen.getByText("400")).toBeInTheDocument(); // 200+150+50
+    });
+
+    await vi.waitFor(() => {
+      expect(screen.getByText("test.user1")).toBeInTheDocument();
+      expect(screen.getByText("test.user2")).toBeInTheDocument();
+      expect(screen.getByText("test.user3")).toBeInTheDocument();
+    });
+  });
+
+  it("handles empty API results gracefully", async () => {
+    getSummary.mockResolvedValue({ data: [] });
+    getLdapsAndDisplayNames.mockResolvedValue({ data: {} });
+
+    render(<Dashboard />);
+
+    await vi.waitFor(() => {
+      expect(getSummary).toHaveBeenCalled();
+      expect(getLdapsAndDisplayNames).toHaveBeenCalled();
+    });
+
+    await vi.waitFor(() => {
+      expect(screen.getByTestId("card-Members")).toHaveTextContent("0");
+      expect(screen.getByTestId("card-Jira-Tickets-(Done)")).toHaveTextContent(
+        "0",
+      );
+      expect(screen.getByTestId("card-Merged-CLs")).toHaveTextContent("0");
+      expect(screen.getByTestId("card-Merged-LOC")).toHaveTextContent("0");
+      expect(screen.getByTestId("card-Meeting-Count")).toHaveTextContent("0");
+      expect(screen.getByTestId("card-Chat-Messages-Sent")).toHaveTextContent(
+        "0",
+      );
+    });
+
+    const tableBody = screen.getByTestId("mock-table").querySelector("tbody");
+    expect(tableBody).toBeEmptyDOMElement();
+  });
+
+  it("handles API fetch error", async () => {
+    const consoleErrorSpy = vi.spyOn(console, "log");
+    getSummary.mockRejectedValue(new Error("API Error"));
+
+    render(<Dashboard />);
+
+    await vi.waitFor(() => {
+      expect(getSummary).toHaveBeenCalled();
+      expect(getLdapsAndDisplayNames).toHaveBeenCalled();
+    });
+
+    await vi.waitFor(() => {
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.any(Error));
+    });
+
+    expect(screen.getByText("Members").nextSibling).toHaveTextContent("0");
+  });
+
+  it("sorts table data correctly by numeric column (jiraTicketsDone) in ascending and descending order", async () => {
+    getSummary.mockResolvedValue({ data: mockSummaryData });
+    getLdapsAndDisplayNames.mockResolvedValue({ data: mockLdapsData });
+
+    render(<Dashboard />);
+
+    await vi.waitFor(() => {
+      expect(screen.getByText("test.user1")).toBeInTheDocument();
+    });
+
+    const jiraHeader = screen.getByTestId("table-header-jiraTicketsDone");
+
+    let tableRows = screen
+      .getByTestId("mock-table")
+      .querySelectorAll("tbody tr td:first-child");
+    expect(tableRows[0]).toHaveTextContent("test.user1");
+    expect(tableRows[1]).toHaveTextContent("test.user2");
+    expect(tableRows[2]).toHaveTextContent("test.user3");
+
+    fireEvent.click(jiraHeader);
+    tableRows = screen
+      .getByTestId("mock-table")
+      .querySelectorAll("tbody tr td:first-child");
+    expect(tableRows[0]).toHaveTextContent("test.user2"); // 2 tickets
+    expect(tableRows[1]).toHaveTextContent("test.user1"); // 5 tickets
+    expect(tableRows[2]).toHaveTextContent("test.user3"); // 8 tickets
+
+    fireEvent.click(jiraHeader);
+    tableRows = screen
+      .getByTestId("mock-table")
+      .querySelectorAll("tbody tr td:first-child");
+    expect(tableRows[0]).toHaveTextContent("test.user3"); // 8 tickets
+    expect(tableRows[1]).toHaveTextContent("test.user1"); // 5 tickets
+    expect(tableRows[2]).toHaveTextContent("test.user2"); // 2 tickets
+  });
+
+  it("sorts table data correctly by string column (ldap) in ascending and descending order", async () => {
+    getSummary.mockResolvedValue({ data: mockSummaryData });
+    getLdapsAndDisplayNames.mockResolvedValue({ data: mockLdapsData });
+
+    render(<Dashboard />);
+    await vi.waitFor(() => {
+      expect(screen.getByText("test.user1")).toBeInTheDocument();
+    });
+
+    const ldapHeader = screen.getByTestId("table-header-ldap");
+
+    // Click to sort ascending
+    fireEvent.click(ldapHeader);
+    const tableRowsAsc = screen
+      .getByTestId("mock-table")
+      .querySelectorAll("tbody tr td:first-child");
+    expect(tableRowsAsc[0]).toHaveTextContent("test.user1");
+    expect(tableRowsAsc[1]).toHaveTextContent("test.user2");
+    expect(tableRowsAsc[2]).toHaveTextContent("test.user3");
+
+    // Click again to sort descending
+    fireEvent.click(ldapHeader);
+    const tableRowsDesc = screen
+      .getByTestId("mock-table")
+      .querySelectorAll("tbody tr td:first-child");
+    expect(tableRowsDesc[0]).toHaveTextContent("test.user3");
+    expect(tableRowsDesc[1]).toHaveTextContent("test.user2");
+    expect(tableRowsDesc[2]).toHaveTextContent("test.user1");
+  });
+
   it("renders with correct initial state and default values", () => {
+    getSummary.mockResolvedValue({ data: mockSummaryData });
+    getLdapsAndDisplayNames.mockResolvedValue({ data: mockLdapsData });
+
     render(<Dashboard />);
 
     expect(screen.getByText("Welcome")).toBeInTheDocument();
@@ -164,5 +394,19 @@ describe("Dashboard", () => {
       groups: [Group.Interns, Group.Employees],
       includeTerminated: true,
     });
+  });
+
+  it("fetches summary data on initial render with default filters", async () => {
+    getSummary.mockResolvedValue({ data: "mocked data" });
+    render(<Dashboard />);
+
+    expect(getSummary).toHaveBeenCalledWith(
+      expect.objectContaining({
+        startDate: formatDate(MOCK_FIRST_OF_MONTH),
+        endDate: formatDate(MOCK_TODAY),
+        groups: [Group.Interns],
+        includeTerminated: false,
+      }),
+    );
   });
 });
