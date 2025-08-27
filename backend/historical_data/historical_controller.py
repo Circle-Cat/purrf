@@ -4,7 +4,6 @@ from backend.historical_data.gerrit_history_fetcher import fetch_and_store_chang
 from backend.historical_data.google_chat_history_fetcher import fetch_history_messages
 from backend.historical_data.jira_history_fetcher import process_update_jira_issues
 from backend.historical_data.jira_history_fetcher import process_backfill_jira_issues
-from backend.historical_data.jira_history_fetcher import process_sync_jira_projects
 from backend.historical_data.google_calendar_history_fetcher import (
     pull_calendar_history,
 )
@@ -17,7 +16,10 @@ history_bp = Blueprint("history", __name__, url_prefix="/api")
 
 class HistoricalController:
     def __init__(
-        self, microsoft_member_sync_service, microsoft_chat_history_sync_service
+        self,
+        microsoft_member_sync_service,
+        microsoft_chat_history_sync_service,
+        jira_history_sync_service,
     ):
         """
         Initialize the HistoricalController with required dependencies.
@@ -25,9 +27,11 @@ class HistoricalController:
         Args:
             microsoft_member_sync_service: MicrosoftMemberSyncService instance.
             microsoft_chat_history_sync_service: MicrosoftChatHistorySyncService instance.
+            jira_history_sync_service: JiraHistorySyncService instance
         """
         self.microsoft_member_sync_service = microsoft_member_sync_service
         self.microsoft_chat_history_sync_service = microsoft_chat_history_sync_service
+        self.jira_history_sync_service = jira_history_sync_service
 
     def register_routes(self, blueprint):
         """
@@ -44,6 +48,11 @@ class HistoricalController:
         blueprint.add_url_rule(
             "/microsoft/backfill/chat/messages/<chatId>",
             view_func=self.backfill_microsoft_chat_messages,
+            methods=["POST"],
+        )
+        blueprint.add_url_rule(
+            "/jira/project",
+            view_func=self.sync_jira_projects,
             methods=["POST"],
         )
 
@@ -71,6 +80,18 @@ class HistoricalController:
             success=True,
             message="Saved successfully.",
             data=None,
+            status_code=HTTPStatus.OK,
+        )
+
+    def sync_jira_projects(self):
+        """Import all Jira project IDs and their display names into Redis."""
+
+        result = self.jira_history_sync_service.sync_jira_projects_id_and_name_mapping()
+
+        return api_response(
+            success=True,
+            message="Imported successfully",
+            data={"imported_projects": result},
             status_code=HTTPStatus.OK,
         )
 
@@ -140,18 +161,6 @@ def update_jira_issues():
         success=True,
         message="Updated successfully",
         data={"updated_issues": result},
-        status_code=HTTPStatus.OK,
-    )
-
-
-@history_bp.route("/jira/project", methods=["POST"])
-def sync_jira_projects():
-    """Import all Jira project IDs and their display names into Redis."""
-    result = process_sync_jira_projects()
-    return api_response(
-        success=True,
-        message="Imported successfully",
-        data={"imported_projects": result},
         status_code=HTTPStatus.OK,
     )
 

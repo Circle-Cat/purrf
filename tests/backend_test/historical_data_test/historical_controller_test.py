@@ -1,6 +1,6 @@
 from http import HTTPStatus
 from unittest import TestCase, main, IsolatedAsyncioTestCase
-from unittest.mock import patch, AsyncMock
+from unittest.mock import patch, AsyncMock, MagicMock
 from flask import Flask
 from backend.historical_data.historical_controller import (
     history_bp,
@@ -25,9 +25,11 @@ class TestHistoricalController(IsolatedAsyncioTestCase):
         self.microsoft_chat_history_sync_service = AsyncMock()
         self.microsoft_chat_history_sync_service.sync_microsoft_chat_messages_by_chat_id = AsyncMock()
 
+        self.mock_jira_service = MagicMock()
         self.controller = HistoricalController(
             microsoft_member_sync_service=self.microsoft_member_sync_service,
             microsoft_chat_history_sync_service=self.microsoft_chat_history_sync_service,
+            jira_history_sync_service=self.mock_jira_service,
         )
 
         self.app = Flask(__name__)
@@ -60,6 +62,25 @@ class TestHistoricalController(IsolatedAsyncioTestCase):
             )
 
         self.microsoft_chat_history_sync_service.sync_microsoft_chat_messages_by_chat_id.assert_called_once()
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+
+    def test_sync_jira_projects(self):
+        mock_result = 5
+        self.mock_jira_service.sync_jira_projects_id_and_name_mapping.return_value = (
+            mock_result
+        )
+
+        with self.app.test_request_context(JIRA_PROJECT_API, method="POST"):
+            response = self.controller.sync_jira_projects()
+
+        self.mock_jira_service.sync_jira_projects_id_and_name_mapping.assert_called_once()
+
+        expected_json = {
+            "message": "Imported successfully",
+            "data": {"imported_projects": mock_result},
+        }
+
+        self.assertEqual(response.get_json(), expected_json)
         self.assertEqual(response.status_code, HTTPStatus.OK)
 
 
@@ -118,19 +139,6 @@ class TestAppRoutes(TestCase):
         self.assertEqual(response_data["data"]["imported_issues"], 150)
 
         mock_process_backfill_jira_issues.assert_called_once()
-
-    @patch("backend.historical_data.historical_controller.process_sync_jira_projects")
-    def test_sync_jira_projects(self, mock_process_sync_jira_projects):
-        mock_result = 5
-        mock_process_sync_jira_projects.return_value = mock_result
-
-        response = self.client.post(JIRA_PROJECT_API)
-
-        self.assertEqual(response.status_code, HTTPStatus.OK)
-        self.assertEqual(response.json["data"], {"imported_projects": mock_result})
-        self.assertEqual(response.json["message"], "Imported successfully")
-
-        mock_process_sync_jira_projects.assert_called_once()
 
     @patch("backend.historical_data.historical_controller.pull_calendar_history")
     def test_pull_calendar_history_success(self, mock_pull_calendar_history):

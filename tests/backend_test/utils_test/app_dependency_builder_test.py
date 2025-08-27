@@ -26,9 +26,13 @@ from backend.utils.app_dependency_builder import AppDependencyBuilder
 @patch("backend.utils.app_dependency_builder.RedisClientFactory")
 @patch("backend.utils.app_dependency_builder.get_logger")
 @patch("backend.utils.app_dependency_builder.RetryUtils")
+@patch("backend.utils.app_dependency_builder.JiraClientFactory")
+@patch("backend.utils.app_dependency_builder.JiraHistorySyncService")
 class TestAppDependencyBuilder(TestCase):
     def test_dependencies_are_wired_correctly(
         self,
+        mock_jira_history_cls,
+        mock_jira_client_factory_cls,
         mock_retry_utils_cls,
         mock_get_logger,
         mock_redis_client_factory_cls,
@@ -77,6 +81,14 @@ class TestAppDependencyBuilder(TestCase):
         )
         mock_retry_utils_instance = MagicMock()
         mock_retry_utils_cls.return_value = mock_retry_utils_instance
+        mock_jira_client_instance = MagicMock()
+        mock_jira_client_factory_cls.return_value.create_jira_client.return_value = (
+            mock_jira_client_instance
+        )
+        mock_jira_client = (
+            mock_jira_client_factory_cls.return_value.create_jira_client()
+        )
+        mock_jira_history_service = mock_jira_history_cls.return_value
 
         # Act: Instantiate the builder, which should trigger all dependency creation
         builder = AppDependencyBuilder()
@@ -146,9 +158,15 @@ class TestAppDependencyBuilder(TestCase):
             microsoft_service=mock_microsoft_service.return_value,
             microsoft_chat_message_util=mock_microsoft_chat_message_util_cls.return_value,
         )
+        mock_jira_history_cls.assert_called_once_with(
+            logger=mock_logger,
+            redis_client=mock_redis_client,
+            jira_client=mock_jira_client,
+        )
         mock_historical_controller_cls.assert_called_once_with(
             microsoft_member_sync_service=mock_microsoft_member_sync_service_cls.return_value,
             microsoft_chat_history_sync_service=mock_microsoft_chat_history_sync_service_cls.return_value,
+            jira_history_sync_service=mock_jira_history_service,
         )
         mock_ldap_service_cls.assert_called_once_with(
             logger=mock_logger,
@@ -245,6 +263,8 @@ class TestAppDependencyBuilder(TestCase):
             builder.microsoft_meeting_chat_topic_cache_service,
             mock_microsoft_meeting_chat_topic_cache_service_cls.return_value,
         )
+        self.assertEqual(builder.jira_client, mock_jira_client)
+        self.assertEqual(builder.jira_history_sync_service, mock_jira_history_service)
 
 
 if __name__ == "__main__":
