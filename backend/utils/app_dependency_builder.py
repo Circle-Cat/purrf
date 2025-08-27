@@ -21,7 +21,7 @@ from backend.historical_data.historical_controller import HistoricalController
 from backend.historical_data.microsoft_member_sync_service import (
     MicrosoftMemberSyncService,
 )
-from backend.frontend_service.ldap_lookup_service import LdapLookupService
+from backend.frontend_service.ldap_service import LdapService
 from backend.frontend_service.frontend_controller import FrontendController
 
 
@@ -92,11 +92,9 @@ class AppDependencyBuilder:
         self.historical_controller = HistoricalController(
             microsoft_member_sync_service=self.microsoft_member_sync_service
         )
-        self.ldap_lookup_service = LdapLookupService(
+        self.ldap_service = LdapService(
             logger=self.logger,
             redis_client=self.redis_client,
             retry_utils=self.retry_utils,
         )
-        self.frontend_controller = FrontendController(
-            ldap_lookup_service=self.ldap_lookup_service
-        )
+        self.frontend_controller = FrontendController(ldap_service=self.ldap_service)

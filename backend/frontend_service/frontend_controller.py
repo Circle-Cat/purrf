@@ -22,14 +22,14 @@ frontend_bp = Blueprint("frontend", __name__, url_prefix="/api")
 
 
 class FrontendController:
-    def __init__(self, ldap_lookup_service):
+    def __init__(self, ldap_service):
         """
         Initialize the FrontendController with required dependencies.
 
         Args:
-            ldap_lookup_service: LdapLookupService instance.
+            ldap_service: LdapService instance.
         """
-        self.ldap_lookup_service = ldap_lookup_service
+        self.ldap_service = ldap_service
 
     def register_routes(self, blueprint):
         """
@@ -62,7 +62,7 @@ class FrontendController:
             GET /microsoft/all/ldaps?groups[]=interns&groups[]=employees
         """
         groups_list = request.args.getlist("groups[]")
-        data = self.ldap_lookup_service.get_ldaps_by_status_and_group(
+        data = self.ldap_service.get_ldaps_by_status_and_group(
             status=MicrosoftAccountStatus.validate_status(status),
             groups=[MicrosoftGroups(g) for g in groups_list],
         )

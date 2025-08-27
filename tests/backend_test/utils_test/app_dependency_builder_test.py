@@ -3,7 +3,7 @@ from unittest.mock import patch, MagicMock
 from backend.utils.app_dependency_builder import AppDependencyBuilder
 
 
-@patch("backend.utils.app_dependency_builder.LdapLookupService")
+@patch("backend.utils.app_dependency_builder.LdapService")
 @patch("backend.utils.app_dependency_builder.FrontendController")
 @patch("backend.utils.app_dependency_builder.MicrosoftMemberSyncService")
 @patch("backend.utils.app_dependency_builder.HistoricalController")
@@ -39,7 +39,7 @@ class TestAppDependencyBuilder(TestCase):
         mock_historical_controller_cls,
         mock_microsoft_member_sync_service_cls,
         mock_frontend_controller_cls,
-        mock_ldap_lookup_service_cls,
+        mock_ldap_service_cls,
     ):
         """
         Tests that the AppDependencyBuilder correctly instantiates and wires all its dependencies.
@@ -118,13 +118,13 @@ class TestAppDependencyBuilder(TestCase):
         mock_historical_controller_cls.assert_called_once_with(
             microsoft_member_sync_service=mock_microsoft_member_sync_service_cls.return_value
         )
-        mock_ldap_lookup_service_cls.assert_called_once_with(
+        mock_ldap_service_cls.assert_called_once_with(
             logger=mock_logger,
             redis_client=mock_redis_client,
             retry_utils=mock_retry_utils_instance,
         )
         mock_frontend_controller_cls.assert_called_once_with(
-            ldap_lookup_service=mock_ldap_lookup_service_cls.return_value
+            ldap_service=mock_ldap_service_cls.return_value
         )
         # Assert that the builder's internal attributes are the created mock instances
         self.assertEqual(builder.logger, mock_logger)
@@ -162,8 +162,8 @@ class TestAppDependencyBuilder(TestCase):
             builder.historical_controller, mock_historical_controller_cls.return_value
         )
         self.assertEqual(
-            builder.ldap_lookup_service,
-            mock_ldap_lookup_service_cls.return_value,
+            builder.ldap_service,
+            mock_ldap_service_cls.return_value,
         )
         self.assertEqual(
             builder.frontend_controller, mock_frontend_controller_cls.return_value

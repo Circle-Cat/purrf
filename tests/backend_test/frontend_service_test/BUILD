@@ -61,9 +61,9 @@ py_test(
 )
 
 py_test(
-    name = "ldap_lookup_service_test",
-    srcs = ["ldap_lookup_service_test.py"],
+    name = "ldap_service_test",
+    srcs = ["ldap_service_test.py"],
     deps = [
-        "//backend/frontend_service:ldap_lookup_service",
+        "//backend/frontend_service:ldap_service",
     ],
 )

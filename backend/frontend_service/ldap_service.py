@@ -7,10 +7,10 @@ from backend.common.constants import (
 )
 
 
-class LdapLookupService:
+class LdapService:
     def __init__(self, logger, redis_client, retry_utils):
         """
-        Initializes the LdapLookupService with necessary clients and logger.
+        Initializes the LdapService with necessary clients and logger.
 
         Args:
             logger: The logger instance for logging messages.

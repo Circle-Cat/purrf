@@ -90,9 +90,9 @@ py_library(
 )
 
 py_library(
-    name = "ldap_lookup_service",
+    name = "ldap_service",
     srcs = [
-        "ldap_lookup_service.py",
+        "ldap_service.py",
     ],
     deps = [
         "//backend/common:constants",

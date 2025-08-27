@@ -6,15 +6,15 @@ from backend.common.constants import (
     MicrosoftAccountStatus,
     MicrosoftGroups,
 )
-from backend.frontend_service.ldap_lookup_service import LdapLookupService
+from backend.frontend_service.ldap_service import LdapService
 
 
-class TestLdapLookupService(TestCase):
+class TestLdapService(TestCase):
     def setUp(self):
         self.logger = MagicMock()
         self.redis_client = MagicMock()
         self.retry_utils = MagicMock()
-        self.service = LdapLookupService(
+        self.service = LdapService(
             logger=self.logger,
             redis_client=self.redis_client,
             retry_utils=self.retry_utils,

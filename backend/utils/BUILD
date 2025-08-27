@@ -85,7 +85,7 @@ py_library(
         "//backend/consumers:pubsub_puller",
         "//backend/consumers:pubsub_puller_factory",
         "//backend/frontend_service:frontend_controller",
-        "//backend/frontend_service:ldap_lookup_service",
+        "//backend/frontend_service:ldap_service",
         "//backend/historical_data:historical_controller",
         "//backend/historical_data:microsoft_member_sync_service",
         "//backend/notification_management:microsoft_chat_subscription_service",

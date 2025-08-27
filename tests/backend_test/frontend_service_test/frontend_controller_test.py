@@ -20,8 +20,8 @@ GOOGLE_CALENDAR_EVENTS_API = "/api/google/calendar/events"
 
 class TestFrontendController(TestCase):
     def setUp(self):
-        self.ldap_lookup_service = MagicMock()
-        self.controller = FrontendController(self.ldap_lookup_service)
+        self.ldap_service = MagicMock()
+        self.controller = FrontendController(self.ldap_service)
         self.app = Flask(__name__)
         self.app_context = self.app.app_context()
         self.app_context.push()
@@ -31,7 +31,7 @@ class TestFrontendController(TestCase):
 
     def test_get_ldaps_and_names_success_with_groups(self):
         mock_data = {"active": ["ldap1", "ldap2"]}
-        self.ldap_lookup_service.get_ldaps_by_status_and_group.return_value = mock_data
+        self.ldap_service.get_ldaps_by_status_and_group.return_value = mock_data
 
         with self.app.test_request_context(
             "/microsoft/active/ldaps?groups[]=interns&groups[]=employees"
@@ -41,14 +41,14 @@ class TestFrontendController(TestCase):
             self.assertEqual(response.status_code, HTTPStatus.OK)
             self.assertEqual(response.json["data"], mock_data)
 
-            self.ldap_lookup_service.get_ldaps_by_status_and_group.assert_called_with(
+            self.ldap_service.get_ldaps_by_status_and_group.assert_called_with(
                 status=MicrosoftAccountStatus.ACTIVE,
                 groups=[MicrosoftGroups.INTERNS, MicrosoftGroups.EMPLOYEES],
             )
 
     def test_get_ldaps_and_names_success_no_groups(self):
         mock_data = {"all": ["ldap1", "ldap2", "ldap3"]}
-        self.ldap_lookup_service.get_ldaps_by_status_and_group.return_value = mock_data
+        self.ldap_service.get_ldaps_by_status_and_group.return_value = mock_data
 
         with self.app.test_request_context("/microsoft/all/ldaps"):
             response = self.controller.get_ldaps_and_names("all")
@@ -56,7 +56,7 @@ class TestFrontendController(TestCase):
             self.assertEqual(response.status_code, HTTPStatus.OK)
             self.assertEqual(response.json["data"], mock_data)
 
-            self.ldap_lookup_service.get_ldaps_by_status_and_group.assert_called_with(
+            self.ldap_service.get_ldaps_by_status_and_group.assert_called_with(
                 status=MicrosoftAccountStatus.ALL, groups=[]
             )
 
