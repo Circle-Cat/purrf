@@ -14,13 +14,13 @@
 #
 # Examples:
 #   1. Lint all default targets (auto-query):
-#        ./lint.sh check_all
+#        ./lint.sh all_files
 #
 #   2. Lint specific targets:
 #        ./lint.sh //frontend/... //backend:api_lib
 #
 #   3. Lint in auto-fix mode (auto-query):
-#        ./lint.sh --fix check_all
+#        ./lint.sh --fix all_files
 #
 #   4. Lint in auto-fix mode for specific targets:
 #        ./lint.sh --fix //frontend:app_lib
@@ -29,10 +29,10 @@
 set -o errexit -o pipefail -o nounset
 
 if [ "$#" -eq 0 ]; then
-	echo "No targets specified. You can use 'check_all' to lint all default targets."
+	echo "No targets specified. You can use 'all_files' to lint all default targets."
     echo "Example usages:"
-    echo "  ./lint.sh check_all                # Lint all default targets"
-    echo "  ./lint.sh --fix check_all          # Lint and auto-fix all targets"
+    echo "  ./lint.sh all_files                # Lint all default targets"
+    echo "  ./lint.sh --fix all_files          # Lint and auto-fix all targets"
     echo "  ./lint.sh //frontend/...           # Lint specific targets"
     echo "  ./lint.sh --fix //frontend:app_lib # Lint and auto-fix specific targets"
     exit 1
@@ -51,17 +51,17 @@ need_all=false
 
 # Iterate through input arguments
 for arg in "$@"; do
-    if [ "$arg" == "check_all" ]; then
+    if [ "$arg" == "all_files" ]; then
         need_all=true
     else
         args_without_all+=("$arg")
     fi
 done
 
-# If "check_all" was requested, query all Bazel targets
+# If "all_files" was requested, query all Bazel targets
 if [ "$need_all" = true ]; then
     echo "Querying all files..."
-    readarray -t all_targets < <(bazel query "kind($TARGET_KINDS, $TARGET_PATHS)" | sort -u)
+    readarray -t all_targets < <(bazel --max_idle_secs=10 query "kind($TARGET_KINDS, $TARGET_PATHS)" | sort -u)
     if [ "${#all_targets[@]}" -eq 0 ]; then
         echo "No targets found with the query. Exiting."
         exit 1
