@@ -9,6 +9,14 @@ py_test(
 )
 
 py_test(
+    name = "google_chat_message_utils_test",
+    srcs = ["google_chat_message_utils_test.py"],
+    deps = [
+        "//backend/utils:google_chat_message_utils",
+    ],
+)
+
+py_test(
     name = "google_chat_utils_test",
     srcs = ["google_chat_utils_test.py"],
     deps = [
