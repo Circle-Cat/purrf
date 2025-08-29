@@ -40,17 +40,15 @@ class GoogleChatMessagesUtils:
     Synchronizes Google Chat messages and indices in Redis.
     """
 
-    def __init__(self, logger, redis_client, date_time_util, retry_utils):
+    def __init__(self, logger, redis_client, retry_utils):
         """
         Args:
             logger: logger with debug/info/warning/error
             redis_client: redis client with get/set/zadd/zrem/zscore/pipeline
-            date_time_util: reserved (optional)
             retry_utils: exposes get_retry_on_transient(callable_or_fn)
         """
         self.logger = logger
         self.redis_client = redis_client
-        self.date_time_util = date_time_util
         self.retry_utils = retry_utils
 
     def _get_json_from_redis(self, key: str) -> dict:
@@ -79,10 +77,18 @@ class GoogleChatMessagesUtils:
     ) -> None:
         """
         Stores, updates, or deletes messages in a Redis database.
-        This function stores two types of data in Redis for each message:
-        an index (for sorting and lookup) and the message details (as JSON).
+
+        Depending on the event type, this method either:
+            - Stores a newly created message,
+            - Updates an existing message with new fields,
+            - Marks a message as deleted.
+
+        Each message is stored in Redis in two ways:
+            1. **Index (Sorted Set):** for efficient lookup and sorting.
+            2. **Message Details (Hash/JSON):** full serialized message content.
+
         Args:
-            sender_ldap (str): The LDAP identifier of the message sender.
+            sender_ldap (str | None): The LDAP identifier of the message sender.
             message (dict): A dictionary containing message data. Must include the "name" key within the "message" sub-dictionary.
                 The structure of the "message" sub-dictionary varies depending on the message_type:
                 -   **created**:
@@ -174,12 +180,24 @@ class GoogleChatMessagesUtils:
         """
         if not message or not message.get("name"):
             raise ValueError("Invalid Google Chat message: missing 'name'.")
-        if GoogleChatEventType.CREATED == message_type and sender_ldap:
-            self._handle_created_message(message, sender_ldap)
-        elif GoogleChatEventType.UPDATED == message_type and sender_ldap:
+
+        if (
+            message_type in (GoogleChatEventType.CREATED, GoogleChatEventType.UPDATED)
+            and not sender_ldap
+        ):
+            raise ValueError(
+                f"Missing sender_ldap for message type: {message_type}, message name: {message.get('name')}"
+            )
+
+        pipeline = None
+        if GoogleChatEventType.CREATED == message_type:
+            pipeline = self.redis_client.pipeline()
+            self._handle_created_message(pipeline, message, sender_ldap)
+        elif GoogleChatEventType.UPDATED == message_type:
             self._handle_update_message(message)
         elif GoogleChatEventType.DELETED == message_type:
-            self._handle_deleted_message(message)
+            pipeline = self.redis_client.pipeline()
+            self._handle_deleted_message(pipeline, message)
         else:
             self.logger.warning(
                 "Ignored message. message_type=%s, sender_ldap=%s, name=%s",
@@ -187,27 +205,58 @@ class GoogleChatMessagesUtils:
                 sender_ldap,
                 message.get("name"),
             )
+            return
 
-    def _handle_created_message(self, message: dict, sender_ldap: str) -> None:
+        if pipeline:
+            try:
+                self.retry_utils.get_retry_on_transient(pipeline.execute)
+            except Exception as e:
+                self.logger.error(
+                    "Redis pipeline failed for %s: %s",
+                    message.get("name"),
+                    e,
+                    exc_info=True,
+                )
+                raise RuntimeError(
+                    f"Redis pipeline failed for {message.get('name')}"
+                ) from e
+
+    def _handle_created_message(
+        self, pipeline, message: dict, sender_ldap: str
+    ) -> None:
         """
-        Handle a CREATED Google Chat message by storing the new message in Redis
-        and adding its ID to a sorted set index for efficient retrieval.
-        This function performs the following steps:
-        1. Parses the message name and extracts relevant IDs (space and message IDs).
-        2. Converts the message's creation time to a timestamp to use as the sorted set score.
-        3. Constructs a Redis sorted set key scoped by space ID and sender LDAP.
-        4. Extracts the thread ID from the message thread metadata.
-        5. Wraps the message details in a `StoredMessage` dataclass instance.
-        6. Uses a Redis pipeline to atomically:
-        - Add the message ID to the sorted set with the creation timestamp as score.
-        - Store the serialized message under its Redis key.
-        7. Handles exceptions during Redis operations and logs errors.
+        Queue Redis commands for a "CREATED" Google Chat message into the provided pipeline.
+
+        This method extracts metadata from the message payload, builds a
+        `StoredGoogleChatMessage`, and queues Redis operations into the
+        provided pipeline. Two things are stored:
+        1. The message ID is added to a sorted set (for chronological lookup).
+        2. The serialized message details are stored under its Redis key.
+
+        Note:
+            The pipeline is not executed here. It must be executed by the caller.
+
         Args:
-            sender_ldap (str): LDAP identifier of the sender of the message.
-            message (dict): A dictionary containing message data.
+            pipeline: A Redis pipeline used for batched atomic operations.
+            message (dict): The Google Chat message payload.
+            sender_ldap (str): LDAP identifier of the message sender.
+
         Raises:
-            ValueError: If Redis client creation fails.
-            Exception: On failure during Redis pipeline execution.
+            ValueError: If the message payload is missing required fields or
+                contains malformed "name" or "thread.name".
+            Exception: If queuing operations into the Redis pipeline fails.
+
+        Returns:
+            None
+
+        Redis Storage:
+            - Sorted Set index:
+                Key: "google:chat:created:{sender_ldap}:{space_id}"
+                Member: "{message_id}"
+                Score:  timestamp from "createTime"
+            - Message details:
+                Key:   "spaces/{space_id}/messages/{message_id}"
+                Value: JSON-serialized `StoredGoogleChatMessage`
         """
         name = message.get("name")
         create_time = message.get("createTime")
@@ -232,7 +281,6 @@ class GoogleChatMessagesUtils:
         index_score = datetime.fromisoformat(
             create_time.replace("Z", "+00:00")
         ).timestamp()
-
         created_key = CREATED_GOOGLE_CHAT_MESSAGES_INDEX_KEY.format(
             space_id=space_id, sender_ldap=sender_ldap
         )
@@ -246,19 +294,11 @@ class GoogleChatMessagesUtils:
             attachment=message.get("attachment") or [],
         )
 
-        pipe = self.redis_client.pipeline()
-        pipe.zadd(created_key, {message_id: index_score})
+        pipeline.zadd(created_key, {message_id: index_score})
         self.logger.debug("ZADD %s {%s: %s}", created_key, message_id, index_score)
-        pipe.set(name, json.dumps(stored.to_dict()))
-        self.logger.debug("SET %s created", name)
 
-        try:
-            self.retry_utils.get_retry_on_transient(pipe.execute)
-        except Exception as e:
-            self.logger.error(
-                "Redis pipeline failed for %s: %s", name, e, exc_info=True
-            )
-            raise RuntimeError(f"Redis pipeline failed for {name}") from e
+        pipeline.set(name, json.dumps(stored.to_dict()))
+        self.logger.debug("SET %s created", name)
 
     def _handle_update_message(self, message: dict) -> None:
         """
@@ -311,21 +351,42 @@ class GoogleChatMessagesUtils:
             )
             raise
 
-    def _handle_deleted_message(self, message: dict) -> None:
+    def _handle_deleted_message(self, pipeline, message: dict) -> None:
         """
-        Handle DELETED message type by marking the message as deleted and updating Redis indexes accordingly.
-        This function performs the following steps:
-        - Retrieves the message from Redis using the message name.
-        - Marks the message's 'is_deleted' flag as True.
-        - Removes the message ID from the active (created) messages sorted set.
-        - Adds the message ID to the deleted messages sorted set, preserving its original score.
-        - Uses a Redis pipeline to atomically update the message data and modify the sorted sets.
+        Queue Redis commands to mark a Google Chat message as deleted.
+
+        This method performs the following actions using the provided pipeline:
+        1. Retrieves the existing message from Redis by its key.
+        2. Marks the 'is_deleted' flag as True.
+        3. Removes the message ID from the active (created) messages sorted set.
+        4. Adds the message ID to the deleted messages sorted set, preserving its original score.
+
+        Note:
+            The pipeline is not executed here. Execution must be handled by the caller.
+
         Args:
-            message (dict): A dictionary representing the message to be deleted. Must include the "name" key.
+            pipeline: A Redis pipeline used for batched atomic operations.
+            message (dict): The Google Chat message payload to delete.
+
         Raises:
-            ValueError: If Redis client creation fails or the message does not exist in Redis.
-            Exception: If any Redis operation (set, zadd, zrem, pipeline execution) fails.
-        Logs relevant information and errors during processing.
+            ValueError: If the message payload is missing required fields,
+                malformed, or inconsistent with Redis data.
+            Exception: If queuing operations into the Redis pipeline fails.
+
+        Returns:
+            None
+
+        Redis Commands Queued:
+            - Update message details:
+                Key:   "spaces/{space_id}/messages/{message_id}"
+                Value: JSON with "is_deleted": True
+            - Remove from created index:
+                Key: "google:chat:created:{sender_ldap}:{space_id}"
+                Member: "{message_id}"
+            - Add to deleted index:
+                Key: "google:chat:deleted:{sender_ldap}:{space_id}"
+                Member: "{message_id}"
+                Score: original creation timestamp
         """
         name = message.get("name")
         if not name:
@@ -364,18 +425,69 @@ class GoogleChatMessagesUtils:
 
         saved["is_deleted"] = True
 
-        pipe = self.redis_client.pipeline()
-        pipe.set(name, json.dumps(saved))
+        pipeline.set(name, json.dumps(saved))
         self.logger.debug("SET %s is_deleted=True", name)
-        pipe.zrem(created_key, message_id)
+
+        pipeline.zrem(created_key, message_id)
+
         self.logger.debug("ZREM %s from %s", message_id, created_key)
-        pipe.zadd(deleted_key, {message_id: float(score)})
+
+        pipeline.zadd(deleted_key, {message_id: float(score)})
         self.logger.debug("ZADD %s {%s: %s}", deleted_key, message_id, score)
 
+    def sync_batch_created_messages(self, messages_list: list, all_ldaps_dict: dict):
+        """
+        Synchronize a batch of Google Chat "CREATED" messages into Redis using a single pipeline.
+
+        This method queues multiple "CREATED" messages into a Redis pipeline
+        for atomic batch insertion. Each message is processed via
+        `_handle_created_message`, which only queues the necessary Redis commands.
+        The pipeline is executed at the end of the method.
+
+        Args:
+            messages_list (list): A list of message object.
+            all_ldaps_dict (dict): A list of google user ID to LDAP mapping dict.
+
+        Raises:
+            RuntimeError: If execution of the Redis pipeline fails.
+
+        Returns:
+            None
+
+        Redis Storage:
+            For each message, the following commands are queued in the pipeline:
+            - **Sorted Set Index**:
+                Key: "google:chat:created:{sender_ldap}:{space_id}"
+                Member: message_id
+                Score: Unix timestamp from createTime
+            - **Message Details**:
+                Key: "spaces/{space_id}/messages/{message_id}"
+                Value: JSON-serialized StoredGoogleChatMessage
+        """
+        if not all_ldaps_dict:
+            raise ValueError("No Google user ID to LDAP mapping provided.")
+        if not messages_list:
+            raise ValueError("No Google chat messages list provided.")
+
+        pipeline = self.redis_client.pipeline()
+
+        for message_data in messages_list:
+            _, sender_id = message_data.get("sender", {}).get("name").split("/")
+            sender_ldap = all_ldaps_dict.get(sender_id, "")
+            if not sender_ldap:
+                self.logger.debug(
+                    "No LDAP found for sender_id=%s, external account", sender_id
+                )
+                continue
+
+            self._handle_created_message(
+                pipeline=pipeline, message=message_data, sender_ldap=sender_ldap
+            )
+
         try:
-            self.retry_utils.get_retry_on_transient(pipe.execute)
+            self.retry_utils.get_retry_on_transient(pipeline.execute)
         except Exception as e:
             self.logger.error(
-                "Redis pipeline failed for delete %s: %s", name, e, exc_info=True
+                "Redis pipeline failed for batch sync: %s", e, exc_info=True
             )
-            raise RuntimeError(f"Redis pipeline failed for delete {name}") from e
+            raise RuntimeError("Redis pipeline failed for batch sync") from e
