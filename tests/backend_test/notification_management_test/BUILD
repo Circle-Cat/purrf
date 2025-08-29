@@ -17,10 +17,10 @@ py_test(
 )
 
 py_test(
-    name = "google_chat_watcher_test",
-    srcs = ["google_chat_watcher_test.py"],
+    name = "google_chat_subscription_service_test",
+    srcs = ["google_chat_subscription_service_test.py"],
     deps = [
-        "//backend/notification_management:google_chat_watcher",
+        "//backend/notification_management:google_chat_subscription_service",
     ],
 )
 

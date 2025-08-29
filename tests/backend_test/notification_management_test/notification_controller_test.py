@@ -15,8 +15,10 @@ from backend.common.constants import EVENT_TYPES
 class TestNotificationController(IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.microsoft_chat_subscription_service = AsyncMock()
+        self.google_chat_subscription_service = MagicMock()
         self.controller = NotificationController(
-            microsoft_chat_subscription_service=self.microsoft_chat_subscription_service
+            microsoft_chat_subscription_service=self.microsoft_chat_subscription_service,
+            google_chat_subscription_service=self.google_chat_subscription_service,
         )
 
         self.app = Flask(__name__)
@@ -55,6 +57,36 @@ class TestNotificationController(IsolatedAsyncioTestCase):
         self.assertEqual(response.json["message"], mock_return_value[0])
         self.assertEqual(response.json["data"], mock_return_value[1])
 
+    def test_subscribe_google_chat_messages_success(self):
+        self.google_chat_subscription_service.create_workspaces_subscriptions.return_value = {
+            "subscription_id": "mock-subscription"
+        }
+        payload = {
+            "project_id": "test-project",
+            "topic_id": "test-topic",
+            "space_id": "test-space",
+        }
+
+        with self.app.test_request_context(
+            "/google/chat/spaces/subscribe",
+            method="POST",
+            data=json.dumps(payload),
+            content_type="application/json",
+        ):
+            response = self.controller.subscribe_google_chat_space()
+
+        self.assertEqual(response.status_code, HTTPStatus.CREATED)
+        self.assertEqual(
+            response.json["message"]["subscription_id"], "mock-subscription"
+        )
+
+        self.google_chat_subscription_service.create_workspaces_subscriptions.assert_called_once_with(
+            project_id=payload["project_id"],
+            topic_id=payload["topic_id"],
+            space_id=payload["space_id"],
+            event_types=EVENT_TYPES,
+        )
+
 
 class TestNotificationApi(IsolatedAsyncioTestCase):
     @classmethod
@@ -63,36 +95,6 @@ class TestNotificationApi(IsolatedAsyncioTestCase):
         app.register_blueprint(notification_bp)
         self.client = app.test_client()
         app.testing = True
-
-    @patch(
-        "backend.notification_management.notification_controller.create_workspaces_subscriptions"
-    )
-    def test_subscribe_success(self, mock_create_subscription):
-        payload = {
-            "project_id": "test-project",
-            "topic_id": "test-topic",
-            "space_id": "test-space",
-            "event_types": list(EVENT_TYPES),
-        }
-
-        mock_create_subscription.return_value = {"subscription_id": "mock-subscription"}
-
-        response = self.client.post(
-            "/api/google/chat/spaces/subscribe",
-            data=json.dumps(payload),
-            content_type="application/json",
-        )
-
-        self.assertEqual(response.status_code, HTTPStatus.CREATED)
-        data = response.get_json()
-        self.assertEqual(data["message"]["subscription_id"], "mock-subscription")
-
-        mock_create_subscription.assert_called_once_with(
-            payload["project_id"],
-            payload["topic_id"],
-            payload["space_id"],
-            set(payload["event_types"]),
-        )
 
     @patch("backend.notification_management.notification_controller.GerritWatcher")
     def test_register_gerrit_webhook_success(self, mock_watcher_cls):

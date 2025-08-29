@@ -1,9 +1,6 @@
 from http import HTTPStatus
 from flask import Blueprint, request
 
-from backend.notification_management.google_chat_watcher import (
-    create_workspaces_subscriptions,
-)
 from backend.notification_management.gerrit_watcher import GerritWatcher
 from backend.common.api_response_wrapper import api_response
 from backend.common.constants import EVENT_TYPES
@@ -12,7 +9,9 @@ notification_bp = Blueprint("notification", __name__, url_prefix="/api")
 
 
 class NotificationController:
-    def __init__(self, microsoft_chat_subscription_service):
+    def __init__(
+        self, microsoft_chat_subscription_service, google_chat_subscription_service
+    ):
         """
         Initialize the NotificationController with required dependencies.
 
@@ -21,8 +20,11 @@ class NotificationController:
         """
         if not microsoft_chat_subscription_service:
             raise ValueError("MicrosoftChatSubscriptionService instances is required.")
+        if not google_chat_subscription_service:
+            raise ValueError("GoogleChatSubscriptionService instances is required.")
 
         self.microsoft_chat_subscription_service = microsoft_chat_subscription_service
+        self.google_chat_subscription_service = google_chat_subscription_service
 
     def register_routes(self, blueprint):
         """
@@ -34,6 +36,12 @@ class NotificationController:
         blueprint.add_url_rule(
             "/microsoft/chat/subscribe",
             view_func=self.subscribe_microsoft_chat_messages,
+            methods=["POST"],
+        )
+
+        blueprint.add_url_rule(
+            "/google/chat/spaces/subscribe",
+            view_func=self.subscribe_google_chat_space,
             methods=["POST"],
         )
 
@@ -77,35 +85,38 @@ class NotificationController:
             status_code=HTTPStatus.CREATED,
         )
 
+    def subscribe_google_chat_space(self):
+        """API endpoint to subscribe to chat space events.
 
-@notification_bp.route("/google/chat/spaces/subscribe", methods=["POST"])
-def subscribe():
-    """API endpoint to subscribe to chat space events.
+        Request JSON Payload:
+            {
+                "project_id": "your-project-id"
+                "topic_id": "your-topic-id",
+                "space_id": "your-space-id"
+            }
 
-    Request JSON Payload:
-        {
-            "project_id": "your-project-id"
-            "topic_id": "your-topic-id",
-            "space_id": "your-space-id"
-        }
+        Returns:
+            JSON response indicating success or failure of subscription.
+        """
+        data = request.get_json()
+        project_id = data.get("project_id")
+        topic_id = data.get("topic_id")
+        space_id = data.get("space_id")
+        event_types = EVENT_TYPES
 
-    Returns:
-        JSON response indicating success or failure of subscription.
-    """
-    data = request.get_json()
-    project_id = data.get("project_id")
-    topic_id = data.get("topic_id")
-    space_id = data.get("space_id")
-    event_types = EVENT_TYPES
-
-    response = create_workspaces_subscriptions(
-        project_id, topic_id, space_id, event_types
-    )
-    return api_response(
-        success=True,
-        message=response,
-        status_code=HTTPStatus.CREATED,
-    )
+        response = (
+            self.google_chat_subscription_service.create_workspaces_subscriptions(
+                project_id=project_id,
+                topic_id=topic_id,
+                space_id=space_id,
+                event_types=event_types,
+            )
+        )
+        return api_response(
+            success=True,
+            message=response,
+            status_code=HTTPStatus.CREATED,
+        )
 
 
 @notification_bp.route("/gerrit/webhook/register", methods=["POST"])

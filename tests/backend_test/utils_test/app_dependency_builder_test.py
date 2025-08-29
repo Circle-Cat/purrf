@@ -14,8 +14,10 @@ from backend.utils.app_dependency_builder import AppDependencyBuilder
 @patch("backend.utils.app_dependency_builder.MicrosoftChatMessageUtil")
 @patch("backend.utils.app_dependency_builder.DateTimeUtil")
 @patch("backend.utils.app_dependency_builder.NotificationController")
+@patch("backend.utils.app_dependency_builder.GoogleChatSubscriptionService")
 @patch("backend.utils.app_dependency_builder.MicrosoftChatSubscriptionService")
 @patch("backend.utils.app_dependency_builder.MicrosoftService")
+@patch("backend.utils.app_dependency_builder.GoogleClientFactory")
 @patch("backend.utils.app_dependency_builder.MicrosoftGraphServiceClient")
 @patch("backend.utils.app_dependency_builder.RedisClientFactory")
 @patch("backend.utils.app_dependency_builder.get_logger")
@@ -27,8 +29,10 @@ class TestAppDependencyBuilder(TestCase):
         mock_get_logger,
         mock_redis_client_factory_cls,
         mock_graph_service_client_cls,
+        mock_google_client_factory_cls,
         mock_microsoft_service,
         mock_microsoft_chat_subscription_service,
+        mock_google_chat_subscription_service,
         mock_notification_controller,
         mock_date_time_util_cls,
         mock_microsoft_chat_message_util_cls,
@@ -57,6 +61,12 @@ class TestAppDependencyBuilder(TestCase):
         mock_graph_service_client_instance = MagicMock()
         mock_graph_service_client_instance.get_graph_service_client = mock_graph_client
         mock_graph_service_client_cls.return_value = mock_graph_service_client_instance
+        mock_google_workspaceevents_client = MagicMock()
+        mock_google_client_factory_instance = MagicMock()
+        mock_google_client_factory_instance.create_workspaceevents_client.return_value = mock_google_workspaceevents_client
+        mock_google_client_factory_cls.return_value = (
+            mock_google_client_factory_instance
+        )
         mock_retry_utils_instance = MagicMock()
         mock_retry_utils_cls.return_value = mock_retry_utils_instance
 
@@ -68,6 +78,8 @@ class TestAppDependencyBuilder(TestCase):
         mock_redis_client_factory_cls.assert_called_once()
         mock_redis_client_factory_instance.create_redis_client.assert_called_once()
         mock_graph_service_client_cls.assert_called_once()
+        mock_google_client_factory_cls.assert_called_once()
+        mock_google_client_factory_instance.create_workspaceevents_client.assert_called_once()
         mock_retry_utils_cls.assert_called_once()
 
         mock_microsoft_service.assert_called_once_with(
@@ -80,9 +92,15 @@ class TestAppDependencyBuilder(TestCase):
             redis_client=mock_redis_client,
             microsoft_service=mock_microsoft_service.return_value,
         )
+        mock_google_chat_subscription_service.assert_called_once_with(
+            logger=mock_logger,
+            google_workspaceevents_client=mock_google_workspaceevents_client,
+            retry_utils=mock_retry_utils_instance,
+        )
 
         mock_notification_controller.assert_called_once_with(
-            microsoft_chat_subscription_service=mock_microsoft_chat_subscription_service.return_value
+            microsoft_chat_subscription_service=mock_microsoft_chat_subscription_service.return_value,
+            google_chat_subscription_service=mock_google_chat_subscription_service.return_value,
         )
         mock_date_time_util_cls.assert_called_once_with(logger=mock_logger)
 
@@ -130,11 +148,18 @@ class TestAppDependencyBuilder(TestCase):
         self.assertEqual(builder.logger, mock_logger)
         self.assertEqual(builder.redis_client, mock_redis_client)
         self.assertEqual(builder.graph_client, mock_graph_client)
+        self.assertEqual(
+            builder.google_workspaceevents_client, mock_google_workspaceevents_client
+        )
         self.assertEqual(builder.retry_utils, mock_retry_utils_instance)
         self.assertEqual(builder.microsoft_service, mock_microsoft_service.return_value)
         self.assertEqual(
             builder.microsoft_chat_subscription_service,
             mock_microsoft_chat_subscription_service.return_value,
+        )
+        self.assertEqual(
+            builder.google_chat_subscription_service,
+            mock_google_chat_subscription_service.return_value,
         )
         self.assertEqual(
             builder.notification_controller, mock_notification_controller.return_value
