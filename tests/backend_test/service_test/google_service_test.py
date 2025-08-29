@@ -264,6 +264,113 @@ class TestGoogleService(TestCase):
         expected_result = {"123": "user1"}
         self.assertEqual(result, expected_result)
 
+    def test_fetch_messages_by_spaces_id_paginated_success_single_page(self):
+        """
+        Tests successful retrieval of messages from a single API page.
+        """
+        space_id = "test_space"
+        mock_response = {
+            "messages": [
+                {"name": "messages/msg1", "text": "Hello"},
+                {"name": "messages/msg2", "text": "World"},
+            ],
+            "nextPageToken": None,
+        }
+        (
+            self.mock_google_chat_client.spaces.return_value.messages.return_value.list.return_value.execute.return_value
+        ) = mock_response
+
+        result_generator = self.service.fetch_messages_by_spaces_id_paginated(space_id)
+        all_messages = list(result_generator)
+
+        expected_messages = [
+            [
+                {"name": "messages/msg1", "text": "Hello"},
+                {"name": "messages/msg2", "text": "World"},
+            ]
+        ]
+        self.assertEqual(all_messages, expected_messages)
+
+        list_mock = (
+            self.mock_google_chat_client.spaces.return_value.messages.return_value.list
+        )
+        list_mock.assert_called_once_with(
+            parent=f"spaces/{space_id}",
+            pageSize=500,
+            pageToken=None,
+        )
+        self.mock_retry_utils.get_retry_on_transient.assert_called_once()
+
+    def test_fetch_messages_by_spaces_id_paginated_success_multiple_pages(self):
+        """
+        Tests successful retrieval of messages spanning multiple API pages.
+        """
+        space_id = "test_space"
+        mock_response_page1 = {
+            "messages": [{"name": "messages/msg1", "text": "Page 1"}],
+            "nextPageToken": "next_page_token_xyz",
+        }
+        mock_response_page2 = {
+            "messages": [{"name": "messages/msg2", "text": "Page 2"}],
+            "nextPageToken": None,
+        }
+
+        execute_mock = MagicMock(side_effect=[mock_response_page1, mock_response_page2])
+        (
+            self.mock_google_chat_client.spaces.return_value.messages.return_value.list.return_value.execute
+        ) = execute_mock
+
+        result_generator = self.service.fetch_messages_by_spaces_id_paginated(space_id)
+        all_messages = list(result_generator)
+
+        expected_messages = [
+            [{"name": "messages/msg1", "text": "Page 1"}],
+            [{"name": "messages/msg2", "text": "Page 2"}],
+        ]
+        self.assertEqual(all_messages, expected_messages)
+
+        list_mock = (
+            self.mock_google_chat_client.spaces.return_value.messages.return_value.list
+        )
+        self.assertEqual(list_mock.call_count, 2)
+        self.assertEqual(execute_mock.call_count, 2)
+        self.assertEqual(self.mock_retry_utils.get_retry_on_transient.call_count, 2)
+
+    def test_fetch_messages_by_spaces_id_paginated_no_messages(self):
+        """
+        Tests retrieval when a space has no messages.
+        """
+        space_id = "empty_space"
+        mock_response = {"messages": [], "nextPageToken": None}
+        (
+            self.mock_google_chat_client.spaces.return_value.messages.return_value.list.return_value.execute.return_value
+        ) = mock_response
+
+        result_generator = self.service.fetch_messages_by_spaces_id_paginated(space_id)
+        all_messages = list(result_generator)
+
+        self.assertEqual(all_messages, [[]])
+        list_mock = (
+            self.mock_google_chat_client.spaces.return_value.messages.return_value.list
+        )
+        list_mock.assert_called_once_with(
+            parent=f"spaces/{space_id}", pageSize=500, pageToken=None
+        )
+        self.mock_retry_utils.get_retry_on_transient.assert_called_once()
+
+    def test_fetch_messages_by_spaces_id_paginated_api_error(self):
+        """
+        Tests that a RuntimeError is raised when the API call fails.
+        """
+        space_id = "error_space"
+        test_exception = Exception("API is down")
+        self.mock_retry_utils.get_retry_on_transient.side_effect = test_exception
+
+        with self.assertRaises(RuntimeError):
+            list(self.service.fetch_messages_by_spaces_id_paginated(space_id))
+
+        self.mock_logger.error.assert_called_once()
+
 
 if __name__ == "__main__":
     main()

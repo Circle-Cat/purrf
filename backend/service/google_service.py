@@ -140,3 +140,44 @@ class GoogleService:
             len(formatted_people),
         )
         return formatted_people
+
+    def fetch_messages_by_spaces_id_paginated(self, space_id):
+        """
+        Generator that retrieves messages from a specific Google Chat space page by page.
+
+        Args:
+            space_id (str): The ID of the Google Chat space to fetch messages from.
+
+        Yields:
+            list: A list of message objects (dict) for each page.
+
+        Raises:
+            RuntimeError: If unable to fetch messages due to API error.
+        """
+        page_token = None
+        while True:
+            req = (
+                self.google_chat_client.spaces()
+                .messages()
+                .list(
+                    parent=f"spaces/{space_id}",
+                    pageSize=500,
+                    pageToken=page_token,
+                )
+            )
+            try:
+                response = self.retry_utils.get_retry_on_transient(req.execute)
+            except Exception as e:
+                self.logger.error(
+                    "Error fetching chat messages (page_token=%s): %s",
+                    page_token,
+                    e,
+                    exc_info=True,
+                )
+                raise RuntimeError("Unable to fetch Google Chat messages") from e
+            messages = response.get("messages", [])
+            yield messages
+
+            page_token = response.get("nextPageToken")
+            if not page_token:
+                break
