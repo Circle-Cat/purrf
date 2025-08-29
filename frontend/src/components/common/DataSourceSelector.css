@@ -1,0 +1,138 @@
+/* ===== DataSourceSelector (scoped with .dss-*) ===== */
+
+/* Container stacks body (content) + footer vertically */
+.dss-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  border: 1px solid var(--border-color-light);
+  background: var(--bg-color-light);
+  border-radius: 10px;
+}
+
+/* Body holds sidebar + main side-by-side */
+.dss-body {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0; /* prevents overflow with flex children */
+}
+
+/* Sidebar */
+.dss-sidebar {
+  width: 200px;
+  border-right: 1px solid var(--border-color-light);
+  background: var(--bg-color-header);
+  overflow: auto;
+}
+
+.dss-sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  user-select: none;
+}
+
+.dss-sidebar-item:hover {
+  background-color: var(--bg-color-row-hover);
+}
+
+.dss-sidebar-item.active {
+  background: var(--secondary-color);
+  color: var(--primary-color);
+  font-weight: 600;
+}
+
+/* Sidebar icons via ::before (Unicode escapes) */
+.dss-sidebar-item::before {
+  display: inline-block;
+  width: 1.2em;
+  text-align: center;
+  margin-right: 2px;
+  content: ""; /* default empty; specific types below */
+}
+
+/* Chat 💬 */
+.dss-sidebar-item.chat::before { content: "\1F4AC"; }
+/* Jira 📋 */
+.dss-sidebar-item.jira::before { content: "\1F4CB"; }
+/* Gerrit 🌿 */
+.dss-sidebar-item.gerrit::before { content: "\1F33F"; }
+/* Calendar 📅 */
+.dss-sidebar-item.calendar::before { content: "\1F4C5"; }
+
+/* Main Panel */
+.dss-main {
+  flex: 1;
+  padding: 16px;
+  overflow: auto;
+}
+
+.dss-selectall {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 12px;
+  color: var(--text-color-medium);
+}
+
+/* Items (with left icon gutter) */
+.dss-item {
+  display: flex;
+  align-items: center;
+  margin-bottom: 8px;
+  position: relative;
+  padding-left: 1.6em; /* space for icon */
+  color: var(--text-color-dark);
+}
+
+/* Generic item icon (fallback ◻) */
+.dss-item::before {
+  content: "\25A1";
+  position: absolute;
+  left: 0;
+  width: 1.2em;
+  text-align: center;
+  line-height: 1;
+  color: var(--text-color-medium);
+}
+
+/* Specific item icons */
+.dss-item.dss-item--tgif::before { content: "\1F465"; }          /* 👥 */
+.dss-item.dss-item--tech-question::before { content: "\2753"; }   /* ❓ */
+.dss-item.dss-item--project-a::before,
+.dss-item.dss-item--project-b::before { content: "\1F4C2"; }      /* 📂 */
+.dss-item.dss-item--repo1::before,
+.dss-item.dss-item--repo2::before { content: "\1F4BB"; }          /* 💻 */
+.dss-item.dss-item--meeting-1::before,
+.dss-item.dss-item--meeting-2::before { content: "\1F4C5"; }      /* 📅 */
+
+/* Footer (stays at bottom) */
+.dss-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border-color-light);
+  background: var(--bg-color-header);
+}
+
+.dss-footer button {
+  min-width: 80px;
+  border-radius: 8px;
+  padding: 0.6em 1.2em;
+  font-weight: 500;
+}
+
+.dss-footer .ok-button {
+  background-color: var(--primary-color);
+  color: var(--text-color-white);
+}
+
+.dss-footer .cancel-button {
+  background-color: var(--bg-color-light);
+  color: var(--text-color-dark);
+  border: 1px solid var(--border-color-medium);
+}
