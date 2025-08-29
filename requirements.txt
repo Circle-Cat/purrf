@@ -60,7 +60,6 @@ redis==5.2.1
 python-dateutil==2.9.0.post0
 jsonschema==4.17.3
 pyrsistent==0.20.0
-attrs==24.2.0
 
 #retry
 tenacity==9.1.2
