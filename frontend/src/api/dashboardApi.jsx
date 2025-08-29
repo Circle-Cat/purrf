@@ -21,5 +21,17 @@ export async function getSummary({
     groups,
   };
 
-  return await request.post(`/api/summary`, body);
+  return await request.post(`/summary`, body);
+}
+
+export async function getLdapsAndDisplayNames({ status, groups }) {
+  const params = new URLSearchParams();
+  if (groups && groups.length > 0) {
+    groups.forEach((group) => {
+      params.append("groups[]", group);
+    });
+  }
+
+  const url = `/microsoft/${status}/ldaps?${params.toString()}`;
+  return await request.get(url);
 }

@@ -29,7 +29,7 @@ describe("dashboardApi", () => {
       await getSummary(params);
 
       expect(request.post).toHaveBeenCalledTimes(1);
-      expect(request.post).toHaveBeenCalledWith("/api/summary", {
+      expect(request.post).toHaveBeenCalledWith("/summary", {
         startDate: params.startDate,
         endDate: params.endDate,
         includeTerminated: params.includeTerminated,
