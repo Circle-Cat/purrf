@@ -15,3 +15,11 @@ py_test(
         "//backend/service:jira_search_service",
     ],
 )
+
+py_test(
+    name = "google_service_test",
+    srcs = ["google_service_test.py"],
+    deps = [
+        "//backend/service:google_service",
+    ],
+)

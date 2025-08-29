@@ -21,3 +21,8 @@ py_library(
         "@pypi//jira",
     ],
 )
+
+py_library(
+    name = "google_service",
+    srcs = ["google_service.py"],
+)
