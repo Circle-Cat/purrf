@@ -149,6 +149,29 @@ class TestLdapService(TestCase):
         result = self.service.get_all_ldaps()
         self.assertEqual(result, [])
 
+    def test_get_active_interns_ldaps_returns_list(self):
+        self.redis_client.hkeys.return_value = ["intern1", "intern2"]
+
+        result = self.service.get_active_interns_ldaps()
+
+        expected_key = LDAP_KEY_TEMPLATE.format(
+            account_status=MicrosoftAccountStatus.ACTIVE.value,
+            group=MicrosoftGroups.INTERNS.value,
+        )
+
+        self.assertIn(
+            expected_key,
+            [args[0] for args, _ in self.redis_client.hkeys.call_args_list],
+        )
+        self.assertEqual(result, ["intern1", "intern2"])
+
+    def test_get_active_interns_ldaps_empty_redis_returns_empty_list(self):
+        self.redis_client.hkeys.return_value = []
+
+        result = self.service.get_active_interns_ldaps()
+
+        self.assertEqual(result, [])
+
 
 if __name__ == "__main__":
     main()
