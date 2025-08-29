@@ -8,7 +8,6 @@ py_library(
     deps = [
         "//backend/common:api_response_wrapper",
         "//backend/common:constants",
-        "//backend/frontend_service:calendar_loader",
         "//backend/frontend_service:chat_query_utils",
         "//backend/frontend_service:gerrit_loader",
         "//backend/frontend_service:jira_loader",
@@ -75,13 +74,12 @@ py_library(
 )
 
 py_library(
-    name = "calendar_loader",
+    name = "google_calendar_analytics_service",
     srcs = [
-        "calendar_loader.py",
+        "google_calendar_analytics_service.py",
     ],
     deps = [
         "//backend/common:constants",
-        "//backend/common:redis_client",
     ],
 )
 

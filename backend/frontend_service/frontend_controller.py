@@ -8,10 +8,6 @@ from backend.frontend_service.jira_loader import (
 from backend.frontend_service.gerrit_loader import (
     get_gerrit_stats as load_gerrit_stats,
 )
-from backend.frontend_service.calendar_loader import (
-    get_all_calendars,
-    get_all_events,
-)
 from backend.common.constants import MicrosoftAccountStatus, MicrosoftGroups
 from backend.common.api_response_wrapper import api_response
 from backend.utils.google_chat_utils import get_chat_spaces
@@ -27,6 +23,8 @@ class FrontendController:
         microsoft_chat_analytics_service,
         microsoft_meeting_chat_topic_cache_service,
         jira_analytics_service,
+        google_calendar_analytics_service,
+        date_time_util,
     ):
         """
         Initialize the FrontendController with required dependencies.
@@ -35,6 +33,8 @@ class FrontendController:
             ldap_service: LdapService instance.
             microsoft_chat_analytics_service: MicrosoftChatAnalyticsService instance.
             microsoft_meeting_chat_topic_cache_service: MicrosoftMeetingChatTopicCacheService instance.
+            google_calendar_analytics_service: GoogleCalendarAnalyticsService instance.
+            date_time_util: DateTimeUtil instance.
         """
         self.ldap_service = ldap_service
         self.microsoft_chat_analytics_service = microsoft_chat_analytics_service
@@ -42,6 +42,8 @@ class FrontendController:
             microsoft_meeting_chat_topic_cache_service
         )
         self.jira_analytics_service = jira_analytics_service
+        self.google_calendar_analytics_service = google_calendar_analytics_service
+        self.date_time_util = date_time_util
 
     def register_routes(self, blueprint):
         """
@@ -68,6 +70,16 @@ class FrontendController:
         blueprint.add_url_rule(
             "/jira/projects",
             view_func=self.get_all_jira_projects_api,
+            methods=["GET"],
+        )
+        blueprint.add_url_rule(
+            "/calendar/calendars",
+            view_func=self.get_all_calendars_api,
+            methods=["GET"],
+        )
+        blueprint.add_url_rule(
+            "/calendar/events",
+            view_func=self.get_all_events_api,
             methods=["GET"],
         )
 
@@ -163,6 +175,60 @@ class FrontendController:
             success=True,
             message="Fetch jira projects successful",
             data=jira_data,
+            status_code=HTTPStatus.OK,
+        )
+
+    def get_all_calendars_api(self):
+        """API endpoint to get Google Calendar list from Redis."""
+        calendar_data = self.google_calendar_analytics_service.get_all_calendars()
+
+        return api_response(
+            success=True,
+            message="Calendar list fetched successfully.",
+            data=calendar_data,
+            status_code=HTTPStatus.OK,
+        )
+
+    def get_all_events_api(self):
+        """
+        API endpoint to get Google Calendar events for users from Redis.
+
+        Query Parameters:
+            calendar_id (str): The calendar ID to fetch events from.
+            ldaps (str): Comma-separated list of LDAP usernames.
+            start_date (str): ISO 8601 start datetime (inclusive).
+            end_date (str): ISO 8601 end datetime (exclusive).
+
+        Returns:
+            JSON: A dictionary mapping each LDAP to a list of event attendance details.
+        """
+        calendar_id = request.args.get("calendar_id")
+        ldaps_str = request.args.get("ldaps", "")
+        start_date = request.args.get("start_date")
+        end_date = request.args.get("end_date")
+
+        if not calendar_id:
+            return api_response(
+                success=False,
+                message="Missing required query parameters: calendar_id.",
+                status_code=HTTPStatus.BAD_REQUEST,
+            )
+
+        start_dt, end_dt = self.date_time_util.get_start_end_timestamps(
+            start_date, end_date
+        )
+        ldaps = [ldap.strip() for ldap in ldaps_str.split(",") if ldap.strip()]
+
+        calendar_data = self.google_calendar_analytics_service.get_all_events(
+            calendar_id,
+            ldaps,
+            start_dt,
+            end_dt,
+        )
+        return api_response(
+            success=True,
+            message="Calendar events fetched successfully.",
+            data=calendar_data,
             status_code=HTTPStatus.OK,
         )
 
@@ -299,19 +365,6 @@ async def get_gerrit_stats():
     )
 
 
-@frontend_bp.route("/google/calendar/calendars", methods=["GET"])
-def get_all_calendars_api():
-    """API endpoint to get Google Calendar list from Redis."""
-    calendar_data = get_all_calendars()
-
-    return api_response(
-        success=True,
-        message="Calendar list fetched successfully.",
-        data=calendar_data,
-        status_code=HTTPStatus.OK,
-    )
-
-
 @frontend_bp.route("/jira/detail/batch", methods=["POST"])
 def get_issue_detail_batch():
     """
@@ -340,42 +393,5 @@ def get_issue_detail_batch():
         success=True,
         message="Query successful",
         data=result,
-        status_code=HTTPStatus.OK,
-    )
-
-
-@frontend_bp.route("/google/calendar/events", methods=["GET"])
-def get_all_events_api():
-    """
-    API endpoint to get Google Calendar events for users from Redis.
-
-    Query Parameters:
-        calendar_id (str): The calendar ID to fetch events from.
-        ldaps (str): Comma-separated list of LDAP usernames.
-        start_date (str): ISO 8601 start datetime (inclusive).
-        end_date (str): ISO 8601 end datetime (exclusive).
-
-    Returns:
-        JSON: A dictionary mapping each LDAP to a list of event attendance details.
-    """
-    calendar_id = request.args.get("calendar_id")
-    ldaps_str = request.args.get("ldaps", "")
-    start_date = request.args.get("start_date")
-    end_date = request.args.get("end_date")
-
-    if not calendar_id or not start_date or not end_date:
-        return api_response(
-            success=False,
-            message="Missing required query parameters: calendar_id, start_date, end_date.",
-            status_code=HTTPStatus.BAD_REQUEST,
-        )
-
-    ldaps = [ldap.strip() for ldap in ldaps_str.split(",") if ldap.strip()]
-
-    calendar_data = get_all_events(calendar_id, ldaps, start_date, end_date)
-    return api_response(
-        success=True,
-        message="Calendar events fetched successfully.",
-        data=calendar_data,
         status_code=HTTPStatus.OK,
     )

@@ -83,6 +83,7 @@ py_library(
         "//backend/consumers:pubsub_puller",
         "//backend/consumers:pubsub_puller_factory",
         "//backend/frontend_service:frontend_controller",
+        "//backend/frontend_service:google_calendar_analytics_service",
         "//backend/frontend_service:jira_analytics_service",
         "//backend/frontend_service:ldap_service",
         "//backend/frontend_service:microsoft_chat_analytics_service",

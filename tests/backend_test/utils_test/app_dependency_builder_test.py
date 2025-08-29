@@ -3,6 +3,7 @@ from unittest.mock import patch, MagicMock
 from backend.utils.app_dependency_builder import AppDependencyBuilder
 
 
+@patch("backend.utils.app_dependency_builder.GoogleCalendarAnalyticsService")
 @patch("backend.utils.app_dependency_builder.JiraAnalyticsService")
 @patch("backend.utils.app_dependency_builder.MicrosoftChatHistorySyncService")
 @patch("backend.utils.app_dependency_builder.JiraSearchService")
@@ -58,6 +59,7 @@ class TestAppDependencyBuilder(TestCase):
         mock_jira_search_service_cls,
         mock_microsoft_chat_history_sync_service_cls,
         mock_jira_analytics_service_cls,
+        mock_google_calendar_analytics_service_cls,
     ):
         """
         Tests that the AppDependencyBuilder correctly instantiates and wires all its dependencies.
@@ -201,11 +203,18 @@ class TestAppDependencyBuilder(TestCase):
             redis_client=mock_redis_client,
             retry_utils=mock_retry_utils_instance,
         )
+        mock_google_calendar_analytics_service_cls.assert_called_once_with(
+            logger=mock_logger,
+            redis_client=mock_redis_client,
+            retry_utils=mock_retry_utils_instance,
+        )
         mock_frontend_controller_cls.assert_called_once_with(
             ldap_service=mock_ldap_service_cls.return_value,
             microsoft_chat_analytics_service=mock_microsoft_chat_analytics_service_cls.return_value,
             microsoft_meeting_chat_topic_cache_service=mock_microsoft_meeting_chat_topic_cache_service_cls.return_value,
             jira_analytics_service=mock_jira_analytics_service_cls.return_value,
+            google_calendar_analytics_service=mock_google_calendar_analytics_service_cls.return_value,
+            date_time_util=mock_date_time_util_cls.return_value,
         )
 
         # Assert that the builder's internal attributes are the created mock instances
@@ -265,6 +274,10 @@ class TestAppDependencyBuilder(TestCase):
         self.assertEqual(
             builder.jira_analytics_service,
             mock_jira_analytics_service_cls.return_value,
+        )
+        self.assertEqual(
+            builder.google_calendar_analytics_service,
+            mock_google_calendar_analytics_service_cls.return_value,
         )
         self.assertEqual(
             builder.frontend_controller, mock_frontend_controller_cls.return_value

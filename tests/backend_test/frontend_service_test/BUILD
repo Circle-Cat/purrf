@@ -53,10 +53,10 @@ py_test(
 )
 
 py_test(
-    name = "calendar_loader_test",
-    srcs = ["calendar_loader_test.py"],
+    name = "google_calendar_analytics_service_test",
+    srcs = ["google_calendar_analytics_service_test.py"],
     deps = [
-        "//backend/frontend_service:calendar_loader",
+        "//backend/frontend_service:google_calendar_analytics_service",
     ],
 )
 

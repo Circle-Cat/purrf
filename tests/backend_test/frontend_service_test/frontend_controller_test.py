@@ -9,6 +9,7 @@ from backend.frontend_service.frontend_controller import (
     MicrosoftAccountStatus,
     MicrosoftGroups,
 )
+from datetime import datetime, timezone
 
 MICROSOFT_LDAP_FETCHER_API = "/api/microsoft/{status}/ldaps"
 GOOGLE_CHAT_COUNT_API = "/api/google/chat/count"
@@ -25,12 +26,17 @@ class TestFrontendController(TestCase):
         self.microsoft_chat_analytics_service = MagicMock()
         self.microsoft_meeting_chat_topic_cache_service = AsyncMock()
         self.mock_jira_analytics_service = MagicMock()
+        self.google_calendar_analytics_service = MagicMock()
+        self.date_time_util = MagicMock()
         self.controller = FrontendController(
             ldap_service=self.ldap_service,
             microsoft_chat_analytics_service=self.microsoft_chat_analytics_service,
             microsoft_meeting_chat_topic_cache_service=self.microsoft_meeting_chat_topic_cache_service,
             jira_analytics_service=self.mock_jira_analytics_service,
+            google_calendar_analytics_service=self.google_calendar_analytics_service,
+            date_time_util=self.date_time_util,
         )
+
         self.app = Flask(__name__)
         self.app_context = self.app.app_context()
         self.app_context.push()
@@ -156,6 +162,76 @@ class TestFrontendController(TestCase):
         self.assertIn("Fetch jira project", response.json["message"])
         self.mock_jira_analytics_service.get_all_jira_projects.assert_called_once()
 
+    def test_get_google_calendar_calendars_success(self):
+        mock_calendars = [
+            {"id": "calendar1", "summary": "Team Calendar"},
+            {"id": "calendar2", "summary": "Project Calendar"},
+        ]
+        self.google_calendar_analytics_service.get_all_calendars.return_value = (
+            mock_calendars
+        )
+
+        with self.app.test_request_context("/calendar/calendars"):
+            response = self.controller.get_all_calendars_api()
+
+            self.assertEqual(response.status_code, HTTPStatus.OK)
+            self.assertEqual(response.json["data"], mock_calendars)
+            self.google_calendar_analytics_service.get_all_calendars.assert_called_once()
+
+    def test_get_all_events_success(self):
+        mock_events = {
+            "ldap1": [{"event": "Meeting", "start": "2025-08-01T10:00:00Z"}],
+            "ldap2": [{"event": "Workshop", "start": "2025-08-01T12:00:00Z"}],
+        }
+        self.google_calendar_analytics_service.get_all_events.return_value = mock_events
+        self.date_time_util.get_start_end_timestamps.return_value = (
+            datetime(2025, 8, 1, 0, 0, tzinfo=timezone.utc),
+            datetime(2025, 8, 2, 0, 0, tzinfo=timezone.utc),
+        )
+
+        with self.app.test_request_context(
+            "/calendar/events?calendar_id=cal1&ldaps=ldap1,ldap2&start_date=2025-08-01T00:00:00Z&end_date=2025-08-02T00:00:00Z"
+        ):
+            response = self.controller.get_all_events_api()
+
+            self.assertEqual(response.status_code, HTTPStatus.OK)
+            self.assertEqual(response.json["data"], mock_events)
+            self.google_calendar_analytics_service.get_all_events.assert_called_with(
+                "cal1",
+                ["ldap1", "ldap2"],
+                datetime(2025, 8, 1, 0, 0, tzinfo=timezone.utc),
+                datetime(2025, 8, 2, 0, 0, tzinfo=timezone.utc),
+            )
+
+    def test_get_all_events_api_success_no_ldaps(self):
+        mock_events = {"ldap1": [{"event": "Meeting"}]}
+        self.google_calendar_analytics_service.get_all_events.return_value = mock_events
+        self.date_time_util.get_start_end_timestamps.return_value = (
+            datetime(2025, 8, 1, 0, 0, tzinfo=timezone.utc),
+            datetime(2025, 8, 2, 0, 0, tzinfo=timezone.utc),
+        )
+
+        with self.app.test_request_context(
+            "/calendar/events?calendar_id=cal1&start_date=2025-08-01T00:00:00Z&end_date=2025-08-02T00:00:00Z"
+        ):
+            response = self.controller.get_all_events_api()
+
+            self.assertEqual(response.status_code, HTTPStatus.OK)
+            self.assertEqual(response.json["data"], mock_events)
+            self.google_calendar_analytics_service.get_all_events.assert_called_with(
+                "cal1",
+                [],
+                datetime(2025, 8, 1, 0, 0, tzinfo=timezone.utc),
+                datetime(2025, 8, 2, 0, 0, tzinfo=timezone.utc),
+            )
+
+    def test_get_all_events_api_missing_required_params(self):
+        with self.app.test_request_context("/calendar/events"):
+            response = self.controller.get_all_events_api()
+
+            self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
+            self.assertIn("Missing required query parameters", response.json["message"])
+
 
 class TestAppRoutes(TestCase):
     @classmethod
@@ -264,21 +340,6 @@ class TestAppRoutes(TestCase):
             end_date=None,
         )
 
-    @patch("backend.frontend_service.frontend_controller.get_all_calendars")
-    def test_get_google_calendar_calendars_success(self, mock_get_all_calendars):
-        mock_result = [
-            {"id": "calendar_id_1", "name": "Work"},
-            {"id": "calendar_id_2", "name": "Personal"},
-        ]
-        mock_get_all_calendars.return_value = mock_result
-
-        response = self.client.get(f"{GOOGLE_CALENDAR_CALENDARS_API}")
-        self.assertEqual(response.status_code, HTTPStatus.OK)
-        data = response.get_json()
-        self.assertEqual(data["message"], "Calendar list fetched successfully.")
-        self.assertEqual(len(data["data"]), 2)
-        self.assertEqual(data["data"][0]["id"], "calendar_id_1")
-
     @patch(
         "backend.frontend_service.frontend_controller.process_get_issue_detail_batch"
     )
@@ -302,53 +363,6 @@ class TestAppRoutes(TestCase):
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertEqual(response.json["data"], mock_result)
         mock_process.assert_called_once_with(["abc123"])
-
-    @patch("backend.frontend_service.frontend_controller.get_all_events")
-    def test_get_all_events_success(self, mock_get_all_events):
-        mock_data = {
-            "user1": [
-                {
-                    "event_id": "event123",
-                    "summary": "Team Sync",
-                    "calendar_id": "personal",
-                    "is_recurring": True,
-                    "attendance": [
-                        {
-                            "join_time": "2025-08-01T10:00:00",
-                            "leave_time": "2025-08-01T10:30:00",
-                        },
-                    ],
-                }
-            ]
-        }
-        mock_get_all_events.return_value = mock_data
-
-        params = {
-            "calendar_id": "personal",
-            "ldaps": "user1",
-            "start_date": "2025-07-01T00:00:00",
-            "end_date": "2025-08-02T00:00:00",
-        }
-
-        response = self.client.get(GOOGLE_CALENDAR_EVENTS_API, query_string=params)
-        self.assertEqual(response.status_code, HTTPStatus.OK)
-
-        data = response.get_json()
-        self.assertEqual(data["message"], "Calendar events fetched successfully.")
-        self.assertEqual(data["data"], mock_data)
-
-    def test_get_all_events_missing_params(self):
-        response = self.client.get(
-            GOOGLE_CALENDAR_EVENTS_API,
-            query_string={
-                "ldaps": "user1",
-                "start_date": "2025-07-01T00:00:00",
-                "end_date": "2025-08-02T00:00:00",
-            },
-        )
-        self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
-        data = response.get_json()
-        self.assertIn("Missing required query parameters", data["message"])
 
 
 if __name__ == "__main__":
