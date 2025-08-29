@@ -19,7 +19,9 @@ class TestLdapService(TestCase):
             redis_client=self.redis_client,
             retry_utils=self.retry_utils,
         )
-        self.retry_utils.get_retry_on_transient.side_effect = lambda func: func()
+        self.retry_utils.get_retry_on_transient.side_effect = (
+            lambda fn, *args, **kwargs: fn(*args, **kwargs)
+        )
 
     def test_get_ldaps_by_status_and_group_single_status_and_group(self):
         status = MicrosoftAccountStatus.ACTIVE
@@ -102,6 +104,50 @@ class TestLdapService(TestCase):
 
         expected_output = {"employees": {"active": {}}}
         self.assertEqual(result, expected_output)
+
+    def test_returns_all_ldaps_from_all_groups_and_statuses(self):
+        pipeline = MagicMock()
+        self.redis_client.pipeline.return_value = pipeline
+        pipeline.hkeys.side_effect = lambda key: None
+        pipeline.execute.return_value = [["ldap1"], ["ldap2"], ["ldap3"], []]
+
+        result = self.service.get_all_ldaps()
+
+        expected_keys = []
+        for group in MicrosoftGroups:
+            for status in (
+                MicrosoftAccountStatus.ACTIVE,
+                MicrosoftAccountStatus.TERMINATED,
+            ):
+                expected_keys.append(
+                    LDAP_KEY_TEMPLATE.format(
+                        account_status=status.value,
+                        group=group.value,
+                    )
+                )
+
+        actual_keys = [args[0] for args, _ in pipeline.hkeys.call_args_list]
+
+        self.assertEqual(set(result), {"ldap1", "ldap2", "ldap3"})
+        self.assertEqual(set(actual_keys), set(expected_keys))
+
+    def test_empty_pipeline_execute_returns_empty_list(self):
+        pipeline = MagicMock()
+        self.redis_client.pipeline.return_value = pipeline
+        pipeline.hkeys.side_effect = lambda key: None
+        pipeline.execute.return_value = []
+
+        result = self.service.get_all_ldaps()
+        self.assertEqual(result, [])
+
+    def test_pipeline_execute_with_empty_ldaps(self):
+        pipeline = MagicMock()
+        self.redis_client.pipeline.return_value = pipeline
+        pipeline.hkeys.side_effect = lambda key: None
+        pipeline.execute.return_value = [[], []]
+
+        result = self.service.get_all_ldaps()
+        self.assertEqual(result, [])
 
 
 if __name__ == "__main__":

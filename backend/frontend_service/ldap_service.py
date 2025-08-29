@@ -106,3 +106,37 @@ class LdapService:
             organized_results[group_val][status_val] = hash_dict
 
         return organized_results
+
+    def get_all_ldaps(self) -> list[str]:
+        """
+        Retrieve all LDAPs across all Microsoft groups and both ACTIVE and TERMINATED statuses.
+
+        Returns:
+            list[str]: Unique list of LDAP identifiers.
+        """
+        keys: list[str] = []
+        for group in MicrosoftGroups:
+            for status in (
+                MicrosoftAccountStatus.ACTIVE,
+                MicrosoftAccountStatus.TERMINATED,
+            ):
+                keys.append(
+                    LDAP_KEY_TEMPLATE.format(
+                        account_status=status.value,
+                        group=group.value,
+                    )
+                )
+
+        pipeline = self.redis_client.pipeline()
+        for k in keys:
+            pipeline.hkeys(k)
+
+        results = self.retry_utils.get_retry_on_transient(pipeline.execute)
+
+        ldap_set: set[str] = set()
+        if results:
+            for ldaps in results:
+                if ldaps:
+                    ldap_set.update(ldaps)
+
+        return list(ldap_set)
