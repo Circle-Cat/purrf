@@ -7,3 +7,11 @@ py_test(
         "//backend/service:microsoft_service",
     ],
 )
+
+py_test(
+    name = "jira_search_service_test",
+    srcs = ["jira_search_service_test.py"],
+    deps = [
+        "//backend/service:jira_search_service",
+    ],
+)
