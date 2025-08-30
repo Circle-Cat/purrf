@@ -1,7 +1,11 @@
-import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import {
+  BrowserRouter as Router,
+  Routes,
+  Route,
+  NavLink,
+} from "react-router-dom";
 import "@/App.css";
 import Header from "@/components/layout/Header";
-import Sidebar from "@/components/layout/Sidebar";
 import Dashboard from "@/pages/Dashboard";
 
 const DataSearch = () => (
@@ -14,7 +18,32 @@ function App() {
       <div className="app-container">
         <Header />
         <div className="app-body">
-          <Sidebar />
+          <div className="sidebar">
+            <nav className="sidebar-nav">
+              <ul>
+                <li>
+                  <NavLink
+                    to="/dashboard"
+                    className={({ isActive }) =>
+                      isActive ? "active-link" : ""
+                    }
+                  >
+                    Dashboard
+                  </NavLink>
+                </li>
+                <li>
+                  <NavLink
+                    to="/datasearch"
+                    className={({ isActive }) =>
+                      isActive ? "active-link" : ""
+                    }
+                  >
+                    DataSearch
+                  </NavLink>
+                </li>
+              </ul>
+            </nav>
+          </div>
           <main className="main-content">
             <Routes>
               <Route path="/" element={<Dashboard />} />
