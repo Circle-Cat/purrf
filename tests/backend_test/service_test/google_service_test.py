@@ -371,6 +371,116 @@ class TestGoogleService(TestCase):
 
         self.mock_logger.error.assert_called_once()
 
+    def test_get_ldap_by_id_success(self):
+        """
+        Tests successful retrieval of an LDAP for a given user ID.
+        """
+        user_id = "12345"
+        mock_response = {"emailAddresses": [{"value": "test.user@example.com"}]}
+        execute_mock = (
+            self.mock_google_people_client.people.return_value.get.return_value.execute
+        )
+        execute_mock.return_value = mock_response
+
+        result = self.service.get_ldap_by_id(user_id)
+
+        self.assertEqual(result, "test.user")
+        self.mock_google_people_client.people.return_value.get.assert_called_once_with(
+            resourceName=f"people/{user_id}", personFields="emailAddresses"
+        )
+        self.mock_retry_utils.get_retry_on_transient.assert_called_once()
+        self.mock_logger.info.assert_called_once_with(
+            f"Retrieved LDAP 'test.user' for ID '{user_id}'."
+        )
+
+    def test_get_ldap_by_id_no_email_found(self):
+        """
+        Tests the case where the user profile has no email addresses.
+        """
+        user_id = "67890"
+        mock_response = {"emailAddresses": []}
+        execute_mock = (
+            self.mock_google_people_client.people.return_value.get.return_value.execute
+        )
+        execute_mock.return_value = mock_response
+
+        result = self.service.get_ldap_by_id(user_id)
+
+        self.assertIsNone(result)
+        self.mock_logger.warning.assert_called_once_with(
+            f"No email found for person ID: {user_id}."
+        )
+
+    def test_get_ldap_by_id_api_error(self):
+        """
+        Tests that a RuntimeError is raised when the API call fails.
+        """
+        user_id = "error_user"
+        test_exception = Exception("API is down")
+        self.mock_retry_utils.get_retry_on_transient.side_effect = test_exception
+
+        with self.assertRaises(RuntimeError) as cm:
+            self.service.get_ldap_by_id(user_id)
+
+        self.assertIn(
+            f"Unexpected error fetching profile for user {user_id}", str(cm.exception)
+        )
+        self.mock_logger.error.assert_called_once()
+
+    def test_get_ldap_by_id_malformed_email(self):
+        """
+        Tests handling of a profile with a malformed email address (no '@').
+        """
+        user_id = "malformed_email_user"
+        mock_response = {"emailAddresses": [{"value": "test.user.example.com"}]}
+        execute_mock = (
+            self.mock_google_people_client.people.return_value.get.return_value.execute
+        )
+        execute_mock.return_value = mock_response
+
+        result = self.service.get_ldap_by_id(user_id)
+
+        self.assertIsNone(result)
+        self.mock_logger.warning.assert_called_once_with(
+            f"No email found for person ID: {user_id}."
+        )
+
+    def test_get_ldap_by_id_empty_email_value(self):
+        """
+        Tests handling of a profile with an empty email value.
+        """
+        user_id = "empty_email_user"
+        mock_response = {"emailAddresses": [{"value": ""}]}
+        execute_mock = (
+            self.mock_google_people_client.people.return_value.get.return_value.execute
+        )
+        execute_mock.return_value = mock_response
+
+        result = self.service.get_ldap_by_id(user_id)
+
+        self.assertIsNone(result)
+        self.mock_logger.warning.assert_called_once_with(
+            f"No email found for person ID: {user_id}."
+        )
+
+    def test_get_ldap_by_id_no_email_addresses_field(self):
+        """
+        Tests handling of a profile response missing the 'emailAddresses' field.
+        """
+        user_id = "no_email_field_user"
+        mock_response = {"resourceName": f"people/{user_id}"}
+        execute_mock = (
+            self.mock_google_people_client.people.return_value.get.return_value.execute
+        )
+        execute_mock.return_value = mock_response
+
+        result = self.service.get_ldap_by_id(user_id)
+
+        self.assertIsNone(result)
+        self.mock_logger.warning.assert_called_once_with(
+            f"No email found for person ID: {user_id}."
+        )
+
 
 if __name__ == "__main__":
     main()

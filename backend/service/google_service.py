@@ -181,3 +181,40 @@ class GoogleService:
             page_token = response.get("nextPageToken")
             if not page_token:
                 break
+
+    def get_ldap_by_id(self, user_id):
+        """
+        Retrieves the LDAP identifier (local part of the email) for a given person ID using the Google People API.
+
+        This function fetches the profile of a person identified by their ID and extracts the local part of their
+        email address to return as the LDAP identifier.
+
+        Args:
+            user_id (str): The unique identifier of the person in the Google People API.
+
+        Returns:
+            str or None: The LDAP identifier (local part of the email) if found, otherwise None.
+
+        Raises:
+            RuntimeError: If an error occurs during the API call.
+        """
+        request = self.google_people_client.people().get(
+            resourceName=f"people/{user_id}", personFields="emailAddresses"
+        )
+        try:
+            response = self.retry_utils.get_retry_on_transient(request.execute)
+        except Exception as e:
+            self.logger.error(f"Failed to fetch profile for user {user_id}: {e}")
+            raise RuntimeError(
+                f"Unexpected error fetching profile for user {user_id}"
+            ) from e
+
+        email_addresses = response.get("emailAddresses", [])
+        if email_addresses:
+            email = email_addresses[0].get("value", "")
+            if email and "@" in email:
+                local_part = email.split("@")[0]
+                self.logger.info(f"Retrieved LDAP '{local_part}' for ID '{user_id}'.")
+                return local_part
+        self.logger.warning(f"No email found for person ID: {user_id}.")
+        return None
