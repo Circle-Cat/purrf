@@ -3,7 +3,10 @@ load("@npm//:vitest/package_json.bzl", vitest_bin = "bin")
 
 js_library(
     name = "vitest_config",
-    srcs = ["vitest.config.mjs"],
+    srcs = [
+        "setupTests.js",
+        "vitest.config.mjs",
+    ],
 )
 
 js_library(
@@ -16,7 +19,10 @@ js_library(
 
 vitest_bin.vitest_test(
     name = "frontend_unit_tests",
-    args = ["run"],
+    args = [
+        "run",
+        "--reporter=verbose",
+    ],
     chdir = package_name(),
     data = [
         ":frontend_unit_test_files",

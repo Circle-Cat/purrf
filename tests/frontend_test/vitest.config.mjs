@@ -8,12 +8,16 @@ export default defineConfig({
       jsxRuntime: "automatic",
     }),
   ],
-  test: {
-    environment: "jsdom",
-  },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "../../frontend/src"),
     },
+  },
+  test: {
+    environment: "jsdom",
+    globals: true,
+    css: true,
+    setupFiles: ["./setupTests.js"],
+    exclude: ["node_modules", "dist", ".git", "bazel-*"],
   },
 });
