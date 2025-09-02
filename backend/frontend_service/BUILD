@@ -98,3 +98,13 @@ py_library(
         "//backend/common:constants",
     ],
 )
+
+py_library(
+    name = "microsoft_chat_analytics_service",
+    srcs = [
+        "microsoft_chat_analytics_service.py",
+    ],
+    deps = [
+        "//backend/common:constants",
+    ],
+)

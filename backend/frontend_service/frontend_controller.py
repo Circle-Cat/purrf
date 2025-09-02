@@ -22,14 +22,16 @@ frontend_bp = Blueprint("frontend", __name__, url_prefix="/api")
 
 
 class FrontendController:
-    def __init__(self, ldap_service):
+    def __init__(self, ldap_service, microsoft_chat_analytics_service):
         """
         Initialize the FrontendController with required dependencies.
 
         Args:
             ldap_service: LdapService instance.
+            microsoft_chat_analytics_service: MicrosoftChatAnalyticsService  instance.
         """
         self.ldap_service = ldap_service
+        self.microsoft_chat_analytics_service = microsoft_chat_analytics_service
 
     def register_routes(self, blueprint):
         """
@@ -42,6 +44,11 @@ class FrontendController:
             "/microsoft/<status>/ldaps",
             view_func=self.get_ldaps_and_names,
             methods=["GET"],
+        )
+        blueprint.add_url_rule(
+            "/microsoft/chat/count",
+            view_func=self.count_microsoft_chat_messages,
+            methods=["POST"],
         )
 
     def get_ldaps_and_names(self, status):
@@ -71,6 +78,49 @@ class FrontendController:
             success=True,
             message="Successfully.",
             data=data,
+            status_code=HTTPStatus.OK,
+        )
+
+    def count_microsoft_chat_messages(self):
+        """
+        Count Microsoft chat messages in Redis within a specified date range by sender.
+
+        Request Body (JSON):
+            {
+                "ldap": ["alice", "bob"],       # optional, list of user ldaps
+                "start_date": "2024-06-01",     # optional
+                "end_date": "2024-06-28"        # optional
+            }
+
+        Returns:
+            Response (JSON): Message counts grouped by sender. Example:
+            {
+                "message": "Successfully.",
+                "data": {
+                            "start_date": "2024-06-01T00:00:00+00:00",
+                            "end_date": "2024-06-28T23:59:59.999999+00:00",
+                            "result": {
+                                "alice": 25,
+                                "bob": 11
+                            }
+                    }
+            }
+        """
+        data = request.get_json(force=True)
+        ldap_list = data.get("ldap")
+        start_date = data.get("start_date")
+        end_date = data.get("end_date")
+
+        response = self.microsoft_chat_analytics_service.count_microsoft_chat_messages_in_date_range(
+            ldap_list=ldap_list,
+            start_date=start_date,
+            end_date=end_date,
+        )
+
+        return api_response(
+            success=True,
+            message="Successfully.",
+            data=response,
             status_code=HTTPStatus.OK,
         )
 

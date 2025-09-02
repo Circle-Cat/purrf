@@ -1,3 +1,4 @@
+import json
 from http import HTTPStatus
 from unittest import TestCase, main
 from unittest.mock import patch, MagicMock
@@ -21,7 +22,11 @@ GOOGLE_CALENDAR_EVENTS_API = "/api/google/calendar/events"
 class TestFrontendController(TestCase):
     def setUp(self):
         self.ldap_service = MagicMock()
-        self.controller = FrontendController(self.ldap_service)
+        self.microsoft_chat_analytics_service = MagicMock()
+        self.controller = FrontendController(
+            ldap_service=self.ldap_service,
+            microsoft_chat_analytics_service=self.microsoft_chat_analytics_service,
+        )
         self.app = Flask(__name__)
         self.app_context = self.app.app_context()
         self.app_context.push()
@@ -64,6 +69,62 @@ class TestFrontendController(TestCase):
         with self.app.test_request_context("/microsoft/invalid/ldaps"):
             with self.assertRaises(ValueError):
                 self.controller.get_ldaps_and_names("invalid")
+
+    def test_count_microsoft_chat_messages_with_params(self):
+        payload = {
+            "ldap": ["user1", "user2"],
+            "start_date": "2024-01-01",
+            "end_date": "2024-01-31",
+        }
+        mock_service_response = {
+            "start_date": "2024-01-01T00:00:00+00:00",
+            "end_date": "2024-01-31T23:59:59.999999+00:00",
+            "result": {"user1": 10, "user2": 15},
+        }
+        self.microsoft_chat_analytics_service.count_microsoft_chat_messages_in_date_range.return_value = mock_service_response
+
+        with self.app.test_request_context(
+            "/api/microsoft/chat/count",
+            method="POST",
+            data=json.dumps(payload),
+            content_type="application/json",
+        ):
+            response = self.controller.count_microsoft_chat_messages()
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.assertEqual(response.json["data"], mock_service_response)
+
+        self.microsoft_chat_analytics_service.count_microsoft_chat_messages_in_date_range.assert_called_once_with(
+            ldap_list=["user1", "user2"],
+            start_date="2024-01-01",
+            end_date="2024-01-31",
+        )
+
+    def test_count_microsoft_chat_messages_no_params(self):
+        payload = {}
+        mock_service_response = {
+            "start_date": "2024-01-01T00:00:00+00:00",
+            "end_date": "2024-01-31T23:59:59.999999+00:00",
+            "result": {"user1": 10, "user2": 15},
+        }
+        self.microsoft_chat_analytics_service.count_microsoft_chat_messages_in_date_range.return_value = mock_service_response
+
+        with self.app.test_request_context(
+            "/api/microsoft/chat/count",
+            method="POST",
+            data=json.dumps(payload),
+            content_type="application/json",
+        ):
+            response = self.controller.count_microsoft_chat_messages()
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.assertEqual(response.json["data"], mock_service_response)
+
+        self.microsoft_chat_analytics_service.count_microsoft_chat_messages_in_date_range.assert_called_once_with(
+            ldap_list=None,
+            start_date=None,
+            end_date=None,
+        )
 
 
 class TestAppRoutes(TestCase):
