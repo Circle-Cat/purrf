@@ -3,6 +3,7 @@ from backend.utils.retry_utils import RetryUtils
 from backend.common.redis_client import RedisClientFactory
 from backend.common.google_client import GoogleClientFactory
 from backend.common.jira_client import JiraClientFactory
+from backend.service.google_service import GoogleService
 from backend.common.microsoft_graph_service_client import MicrosoftGraphServiceClient
 from backend.service.microsoft_service import MicrosoftService
 from backend.notification_management.microsoft_chat_subscription_service import (
@@ -14,12 +15,14 @@ from backend.notification_management.google_chat_subscription_service import (
 from backend.notification_management.notification_controller import (
     NotificationController,
 )
+from backend.utils.google_chat_message_utils import GoogleChatMessagesUtils
 from backend.consumers.consumer_controller import ConsumerController
 from backend.utils.microsoft_chat_message_util import MicrosoftChatMessageUtil
 from backend.utils.date_time_util import DateTimeUtil
 from backend.consumers.microsoft_message_processor_service import (
     MicrosoftMessageProcessorService,
 )
+from backend.consumers.google_chat_processor_service import GoogleChatProcessorService
 from backend.consumers.pubsub_puller_factory import PubSubPullerFactory
 from backend.consumers.pubsub_puller import PubSubPuller
 from backend.historical_data.historical_controller import HistoricalController
@@ -72,6 +75,8 @@ class AppDependencyBuilder:
         self.google_workspaceevents_client = (
             self.google_client_factory.create_workspaceevents_client()
         )
+        self.google_chat_client = self.google_client_factory.create_chat_client()
+        self.google_people_client = self.google_client_factory.create_people_client()
         self.jira_client = JiraClientFactory().create_jira_client()
 
         self.microsoft_service = MicrosoftService(
@@ -110,8 +115,27 @@ class AppDependencyBuilder:
             pubsub_puller_factory=self.pubsub_puller_factory,
             microsoft_chat_message_util=self.microsoft_chat_message_util,
         )
+        self.google_chat_messages_utils = GoogleChatMessagesUtils(
+            logger=self.logger,
+            redis_client=self.redis_client,
+            retry_utils=self.retry_utils,
+        )
+        self.google_service = GoogleService(
+            logger=self.logger,
+            google_chat_client=self.google_chat_client,
+            google_people_client=self.google_people_client,
+            google_workspaceevents_client=self.google_workspaceevents_client,
+            retry_utils=self.retry_utils,
+        )
+        self.google_chat_processor_service = GoogleChatProcessorService(
+            logger=self.logger,
+            pubsub_puller_factory=self.pubsub_puller_factory,
+            google_chat_messages_utils=self.google_chat_messages_utils,
+            google_service=self.google_service,
+        )
         self.consumer_controller = ConsumerController(
-            microsoft_message_processor_service=self.microsoft_message_processor_service
+            microsoft_message_processor_service=self.microsoft_message_processor_service,
+            google_chat_processor_service=self.google_chat_processor_service,
         )
 
         self.microsoft_member_sync_service = MicrosoftMemberSyncService(

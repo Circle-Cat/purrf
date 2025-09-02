@@ -34,16 +34,15 @@ py_library(
     deps = [
         "//backend/common:api_response_wrapper",
         "//backend/consumers:gerrit_consumer",
-        "//backend/consumers:google_chat_consumer",
         "//backend/consumers:pubsub_pull_manager",
         "@pypi//flask",
     ],
 )
 
 py_library(
-    name = "google_chat_consumer",
+    name = "google_chat_processor_service",
     srcs = [
-        "google_chat_consumer.py",
+        "google_chat_processor_service.py",
     ],
     deps = [
         "//backend/common:constants",

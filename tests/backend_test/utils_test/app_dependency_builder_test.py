@@ -3,6 +3,9 @@ from unittest.mock import patch, MagicMock
 from backend.utils.app_dependency_builder import AppDependencyBuilder
 
 
+@patch("backend.utils.app_dependency_builder.GoogleChatProcessorService")
+@patch("backend.utils.app_dependency_builder.GoogleService")
+@patch("backend.utils.app_dependency_builder.GoogleChatMessagesUtils")
 @patch("backend.utils.app_dependency_builder.GoogleCalendarAnalyticsService")
 @patch("backend.utils.app_dependency_builder.JiraAnalyticsService")
 @patch("backend.utils.app_dependency_builder.MicrosoftChatHistorySyncService")
@@ -60,6 +63,9 @@ class TestAppDependencyBuilder(TestCase):
         mock_microsoft_chat_history_sync_service_cls,
         mock_jira_analytics_service_cls,
         mock_google_calendar_analytics_service_cls,
+        mock_google_chat_messages_utils,
+        mock_google_service,
+        mock_google_chat_processor_service,
     ):
         """
         Tests that the AppDependencyBuilder correctly instantiates and wires all its dependencies.
@@ -79,7 +85,15 @@ class TestAppDependencyBuilder(TestCase):
         mock_graph_service_client_cls.return_value = mock_graph_service_client_instance
         mock_google_workspaceevents_client = MagicMock()
         mock_google_client_factory_instance = MagicMock()
+        mock_google_chat_client = MagicMock()
+        mock_google_people_client = MagicMock()
         mock_google_client_factory_instance.create_workspaceevents_client.return_value = mock_google_workspaceevents_client
+        mock_google_client_factory_instance.create_chat_client.return_value = (
+            mock_google_chat_client
+        )
+        mock_google_client_factory_instance.create_people_client.return_value = (
+            mock_google_people_client
+        )
         mock_google_client_factory_cls.return_value = (
             mock_google_client_factory_instance
         )
@@ -148,7 +162,8 @@ class TestAppDependencyBuilder(TestCase):
         )
 
         mock_consumer_controller_cls.assert_called_once_with(
-            microsoft_message_processor_service=mock_microsoft_message_processor_service_cls.return_value
+            microsoft_message_processor_service=mock_microsoft_message_processor_service_cls.return_value,
+            google_chat_processor_service=mock_google_chat_processor_service.return_value,
         )
 
         mock_microsoft_member_sync_service_cls.assert_called_once_with(
@@ -219,6 +234,30 @@ class TestAppDependencyBuilder(TestCase):
             date_time_util=mock_date_time_util_cls.return_value,
         )
 
+        mock_google_client_factory_instance.create_chat_client.assert_called_once()
+        mock_google_client_factory_instance.create_people_client.assert_called_once()
+
+        mock_google_chat_messages_utils.assert_called_once_with(
+            logger=mock_logger,
+            redis_client=mock_redis_client,
+            retry_utils=mock_retry_utils_instance,
+        )
+
+        mock_google_service.assert_called_once_with(
+            logger=mock_logger,
+            google_chat_client=mock_google_chat_client,
+            google_people_client=mock_google_people_client,
+            google_workspaceevents_client=mock_google_workspaceevents_client,
+            retry_utils=mock_retry_utils_instance,
+        )
+
+        mock_google_chat_processor_service.assert_called_once_with(
+            logger=mock_logger,
+            pubsub_puller_factory=mock_pubsub_puller_factory_cls.return_value,
+            google_chat_messages_utils=mock_google_chat_messages_utils.return_value,
+            google_service=mock_google_service.return_value,
+        )
+
         # Assert that the builder's internal attributes are the created mock instances
         self.assertEqual(builder.logger, mock_logger)
         self.assertEqual(builder.redis_client, mock_redis_client)
@@ -232,6 +271,23 @@ class TestAppDependencyBuilder(TestCase):
             builder.microsoft_chat_subscription_service,
             mock_microsoft_chat_subscription_service.return_value,
         )
+        self.assertEqual(
+            builder.google_client_factory, mock_google_client_factory_instance
+        )
+        self.assertEqual(
+            builder.google_workspaceevents_client, mock_google_workspaceevents_client
+        )
+        self.assertEqual(builder.google_chat_client, mock_google_chat_client)
+        self.assertEqual(builder.google_people_client, mock_google_people_client)
+        self.assertEqual(
+            builder.google_chat_messages_utils,
+            mock_google_chat_messages_utils.return_value,
+        )
+        self.assertEqual(
+            builder.google_chat_processor_service,
+            mock_google_chat_processor_service.return_value,
+        )
+        self.assertEqual(builder.google_service, mock_google_service.return_value)
         self.assertEqual(
             builder.google_chat_subscription_service,
             mock_google_chat_subscription_service.return_value,

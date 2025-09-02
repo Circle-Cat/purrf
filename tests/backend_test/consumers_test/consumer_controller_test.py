@@ -7,7 +7,6 @@ from backend.consumers.consumer_controller import consumers_bp, ConsumerControll
 
 PUBSUB_PULL_STATUS_CHECK_API = "/api/pubsub/pull/status/{project_id}/{subscription_id}"
 PUBSUB_PULL_STATUS_STOP_API = "/api/pubsub/pull/{project_id}/{subscription_id}"
-START_GOOGLE_PULLING_API = "/api/google/chat/pull/{project_id}/{subscription_id}"
 TEST_PROJECT_ID = "test-project"
 TEST_SUBSCRIPTION_ID = "test-subscription"
 
@@ -15,8 +14,10 @@ TEST_SUBSCRIPTION_ID = "test-subscription"
 class TestConsumerController(IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.microsoft_message_processor_service = MagicMock()
+        self.google_chat_processor_service = MagicMock()
         self.controller = ConsumerController(
             microsoft_message_processor_service=self.microsoft_message_processor_service,
+            google_chat_processor_service=self.google_chat_processor_service,
         )
 
         self.app = Flask(__name__)
@@ -26,7 +27,7 @@ class TestConsumerController(IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         self.app_context.pop()
 
-    async def test_all_microsoft_chat_topics(self):
+    async def test_start_microsoft_pulling(self):
         response = self.controller.start_microsoft_pulling(
             TEST_PROJECT_ID, TEST_SUBSCRIPTION_ID
         )
@@ -34,6 +35,15 @@ class TestConsumerController(IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertEqual(response.json["data"], {})
         self.microsoft_message_processor_service.pull_microsoft_message.assert_called_once()
+
+    def test_start_google_pull(self):
+        response = self.controller.start_google_chat_pulling(
+            TEST_PROJECT_ID, TEST_SUBSCRIPTION_ID
+        )
+
+        self.assertEqual(response.status_code, HTTPStatus.ACCEPTED)
+        self.assertEqual(response.json["data"], {})
+        self.google_chat_processor_service.pull_messages.assert_called_once()
 
 
 class TestAppRoutes(TestCase):
@@ -76,29 +86,6 @@ class TestAppRoutes(TestCase):
         self.assertEqual(response.json["data"], mock_result)
 
         mock_stop_pulling.assert_called_once_with(TEST_PROJECT_ID, TEST_SUBSCRIPTION_ID)
-
-    @patch("backend.consumers.consumer_controller.pull_messages")
-    def test_start_google_pull(self, mock_pull_messages):
-        mock_pull_messages.return_value = None
-        response = self.client.post(
-            START_GOOGLE_PULLING_API.format(
-                project_id=TEST_PROJECT_ID, subscription_id=TEST_SUBSCRIPTION_ID
-            )
-        )
-
-        self.assertEqual(response.status_code, HTTPStatus.ACCEPTED)
-
-        body = response.get_json()
-        expected_msg = (
-            f"Started pulling google chat messages for subscription "
-            f"'{TEST_SUBSCRIPTION_ID}' in project '{TEST_PROJECT_ID}'."
-        )
-        self.assertEqual(body.get("message"), expected_msg)
-        self.assertEqual(body.get("data"), {})
-
-        mock_pull_messages.assert_called_once_with(
-            TEST_PROJECT_ID, TEST_SUBSCRIPTION_ID
-        )
 
 
 if __name__ == "__main__":

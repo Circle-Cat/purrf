@@ -72,6 +72,7 @@ py_library(
     ],
     deps = [
         ":date_time_util",
+        ":google_chat_message_utils",
         ":microsoft_chat_message_util",
         ":retry_utils",
         "//backend/common:jira_client",
@@ -79,6 +80,7 @@ py_library(
         "//backend/common:microsoft_graph_service_client",
         "//backend/common:redis_client",
         "//backend/consumers:consumer_controller",
+        "//backend/consumers:google_chat_processor_service",
         "//backend/consumers:microsoft_message_processor_service",
         "//backend/consumers:pubsub_puller",
         "//backend/consumers:pubsub_puller_factory",
@@ -94,6 +96,7 @@ py_library(
         "//backend/historical_data:microsoft_member_sync_service",
         "//backend/notification_management:microsoft_chat_subscription_service",
         "//backend/notification_management:notification_controller",
+        "//backend/service:google_service",
         "//backend/service:jira_search_service",
         "//backend/service:microsoft_service",
     ],

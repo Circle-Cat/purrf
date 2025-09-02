@@ -1,10 +1,10 @@
 load("@rules_python//python:defs.bzl", "py_test")
 
 py_test(
-    name = "google_chat_consumer_test",
-    srcs = ["google_chat_consumer_test.py"],
+    name = "google_chat_processor_service_test",
+    srcs = ["google_chat_processor_service_test.py"],
     deps = [
-        "//backend/consumers:google_chat_consumer",
+        "//backend/consumers:google_chat_processor_service",
     ],
 )
 

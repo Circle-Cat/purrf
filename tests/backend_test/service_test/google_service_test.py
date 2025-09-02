@@ -9,6 +9,7 @@ class TestGoogleService(TestCase):
         self.mock_logger = MagicMock()
         self.mock_google_chat_client = MagicMock()
         self.mock_google_people_client = MagicMock()
+        self.mock_google_workspaceevents_client = MagicMock()
         self.mock_retry_utils = MagicMock()
         self.mock_retry_utils.get_retry_on_transient.side_effect = lambda fn: fn()
 
@@ -16,6 +17,7 @@ class TestGoogleService(TestCase):
             logger=self.mock_logger,
             google_chat_client=self.mock_google_chat_client,
             google_people_client=self.mock_google_people_client,
+            google_workspaceevents_client=self.mock_google_workspaceevents_client,
             retry_utils=self.mock_retry_utils,
         )
 
@@ -480,6 +482,44 @@ class TestGoogleService(TestCase):
         self.mock_logger.warning.assert_called_once_with(
             f"No email found for person ID: {user_id}."
         )
+
+    def test_renew_subscription_success(self):
+        """
+        Tests successful renewal of a subscription.
+        """
+        subscription_name = "subscriptions/test-sub-123"
+        mock_response = {"name": subscription_name, "state": "ACTIVE"}
+        execute_mock = self.mock_google_workspaceevents_client.subscriptions.return_value.patch.return_value.execute
+        execute_mock.return_value = mock_response
+
+        response = self.service.renew_subscription(subscription_name)
+
+        self.assertEqual(response, mock_response)
+        self.mock_google_workspaceevents_client.subscriptions.return_value.patch.assert_called_once_with(
+            name=subscription_name,
+            updateMask="ttl",
+            body={"ttl": {"seconds": 0}},
+        )
+        self.mock_retry_utils.get_retry_on_transient.assert_called_once()
+        self.mock_logger.info.assert_called_once_with(
+            "Renew subscription response: %s", mock_response
+        )
+
+    def test_renew_subscription_api_error(self):
+        """
+        Tests that a RuntimeError is raised when the subscription renewal API call fails.
+        """
+        subscription_name = "subscriptions/test-sub-456"
+        test_exception = Exception("API is down")
+        self.mock_retry_utils.get_retry_on_transient.side_effect = test_exception
+
+        with self.assertRaises(RuntimeError) as cm:
+            self.service.renew_subscription(subscription_name)
+
+        self.assertIn(
+            f"Failed to renew subscription '{subscription_name}'", str(cm.exception)
+        )
+        self.mock_logger.error.assert_called_once()
 
 
 if __name__ == "__main__":

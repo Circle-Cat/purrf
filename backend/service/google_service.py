@@ -1,7 +1,14 @@
 class GoogleService:
     """Service class for interacting with Google APIs."""
 
-    def __init__(self, logger, google_chat_client, google_people_client, retry_utils):
+    def __init__(
+        self,
+        logger,
+        google_chat_client,
+        google_people_client,
+        google_workspaceevents_client,
+        retry_utils,
+    ):
         """
         Initializes the GoogleService with necessary clients and logger.
 
@@ -9,11 +16,13 @@ class GoogleService:
             logger (logging.Logger): Logger instance for structured logging.
             google_chat_client: Authenticated Google Chat client.
             google_people_client: Authenticated Google People client.
+            google_workspaceevents_client: Authenticated Google Workspace Events client.
             retry_utils: A RetryUtils for handling retries on transient errors.
         """
         self.logger = logger
         self.google_chat_client = google_chat_client
         self.google_people_client = google_people_client
+        self.google_workspaceevents_client = google_workspaceevents_client
         self.retry_utils = retry_utils
 
     def get_chat_spaces(self, space_type: str) -> dict:
@@ -218,3 +227,39 @@ class GoogleService:
                 return local_part
         self.logger.warning(f"No email found for person ID: {user_id}.")
         return None
+
+    def renew_subscription(self, subscription_name: str):
+        """
+        Renews a subscription by calling subscriptions.update() of the Workspace Events API.
+        Sets the time-to-live (TTL) to 0, which indicates the subscription should not expire.
+
+        Args:
+            subscription_name (str): The resource name of the subscription to renew.
+
+        Returns:
+            dict: The API response for the patch operation.
+
+        Raises:
+            RuntimeError: If the API call fails.
+        """
+        BODY = {
+            "ttl": {"seconds": 0},
+        }
+
+        request = self.google_workspaceevents_client.subscriptions().patch(
+            name=subscription_name, updateMask="ttl", body=BODY
+        )
+        try:
+            response = self.retry_utils.get_retry_on_transient(request.execute)
+            self.logger.info("Renew subscription response: %s", response)
+            return response
+        except Exception as e:
+            self.logger.error(
+                "Failed to renew subscription '%s': %s",
+                subscription_name,
+                e,
+                exc_info=True,
+            )
+            raise RuntimeError(
+                f"Failed to renew subscription '{subscription_name}'"
+            ) from e

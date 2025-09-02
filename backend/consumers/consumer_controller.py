@@ -4,7 +4,7 @@ from backend.consumers.pubsub_pull_manager import (
     check_pulling_status,
     stop_pulling_process,
 )
-from backend.consumers.google_chat_consumer import pull_messages
+
 from backend.consumers.gerrit_consumer import pull_gerrit
 from backend.common.api_response_wrapper import api_response
 
@@ -12,14 +12,18 @@ consumers_bp = Blueprint("consumers", __name__, url_prefix="/api")
 
 
 class ConsumerController:
-    def __init__(self, microsoft_message_processor_service):
+    def __init__(
+        self, microsoft_message_processor_service, google_chat_processor_service
+    ):
         """
         Initialize the ConsumerController with required dependencies.
 
         Args:
             microsoft_message_processor_service: MicrosoftMessageProcessorService instance.
+            google_chat_processor_service: GoogleChatProcessorService instance.
         """
         self.microsoft_message_processor_service = microsoft_message_processor_service
+        self.google_chat_processor_service = google_chat_processor_service
 
     def register_routes(self, blueprint):
         """
@@ -32,6 +36,35 @@ class ConsumerController:
             "/microsoft/pull/<project_id>/<subscription_id>",
             view_func=self.start_microsoft_pulling,
             methods=["POST"],
+        )
+        blueprint.add_url_rule(
+            "/google/chat/pull/<project_id>/<subscription_id>",
+            view_func=self.start_google_chat_pulling,
+            methods=["POST"],
+        )
+
+    def start_google_chat_pulling(self, project_id, subscription_id):
+        """
+        HTTP POST endpoint to initiate message pulling from a given Pub/Sub subscription.
+
+        Args:
+            project_id (str): The Google Cloud project ID, passed as a URL path parameter.
+            subscription_id (str): The Pub/Sub subscription ID, passed as a URL path parameter.
+
+        Returns:
+            Response: A standardized JSON response indicating that the pull process has started.
+        """
+
+        self.google_chat_processor_service.pull_messages(project_id, subscription_id)
+
+        return api_response(
+            success=True,
+            message=(
+                f"Started pulling google chat messages for subscription "
+                f"'{subscription_id}' in project '{project_id}'."
+            ),
+            data=None,
+            status_code=HTTPStatus.ACCEPTED,
         )
 
     def start_microsoft_pulling(self, project_id, subscription_id):
@@ -103,32 +136,6 @@ def stop_pulling(project_id, subscription_id):
         message="Successfully.",
         data=data,
         status_code=HTTPStatus.OK,
-    )
-
-
-@consumers_bp.route("google/chat/pull/<project_id>/<subscription_id>", methods=["POST"])
-def start_google_chat_pulling(project_id, subscription_id):
-    """
-    HTTP POST endpoint to initiate message pulling from a given Pub/Sub subscription.
-
-    Args:
-        project_id (str): The Google Cloud project ID, passed as a URL path parameter.
-        subscription_id (str): The Pub/Sub subscription ID, passed as a URL path parameter.
-
-    Returns:
-        Response: A standardized JSON response indicating that the pull process has started.
-    """
-
-    pull_messages(project_id, subscription_id)
-
-    return api_response(
-        success=True,
-        message=(
-            f"Started pulling google chat messages for subscription "
-            f"'{subscription_id}' in project '{project_id}'."
-        ),
-        data=None,
-        status_code=HTTPStatus.ACCEPTED,
     )
 
 
