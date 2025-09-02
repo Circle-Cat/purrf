@@ -26,6 +26,9 @@ from backend.frontend_service.frontend_controller import FrontendController
 from backend.frontend_service.microsoft_chat_analytics_service import (
     MicrosoftChatAnalyticsService,
 )
+from backend.frontend_service.microsoft_meeting_chat_topic_cache_service import (
+    MicrosoftMeetingChatTopicCacheService,
+)
 
 
 class AppDependencyBuilder:
@@ -107,7 +110,17 @@ class AppDependencyBuilder:
             ldap_service=self.ldap_service,
             retry_utils=self.retry_utils,
         )
+        self.microsoft_meeting_chat_topic_cache_service = (
+            MicrosoftMeetingChatTopicCacheService(
+                logger=self.logger,
+                redis_client=self.redis_client,
+                microsoft_service=self.microsoft_service,
+                retry_utils=self.retry_utils,
+            )
+        )
+
         self.frontend_controller = FrontendController(
             ldap_service=self.ldap_service,
             microsoft_chat_analytics_service=self.microsoft_chat_analytics_service,
+            microsoft_meeting_chat_topic_cache_service=self.microsoft_meeting_chat_topic_cache_service,
         )

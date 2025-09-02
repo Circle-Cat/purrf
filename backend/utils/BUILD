@@ -97,6 +97,7 @@ py_library(
         "//backend/frontend_service:frontend_controller",
         "//backend/frontend_service:ldap_service",
         "//backend/frontend_service:microsoft_chat_analytics_service",
+        "//backend/frontend_service:microsoft_meeting_chat_topic_cache_service",
         "//backend/historical_data:historical_controller",
         "//backend/historical_data:microsoft_member_sync_service",
         "//backend/notification_management:microsoft_chat_subscription_service",
