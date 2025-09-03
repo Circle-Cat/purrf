@@ -140,3 +140,19 @@ class LdapService:
                     ldap_set.update(ldaps)
 
         return list(ldap_set)
+
+    def get_active_interns_ldaps(self) -> list[str]:
+        """
+        Retrieve all LDAPs for active interns directly from Redis.
+
+        Returns:
+            list[str]: List of LDAP identifiers for active interns.
+        """
+        redis_key = LDAP_KEY_TEMPLATE.format(
+            account_status=MicrosoftAccountStatus.ACTIVE.value,
+            group=MicrosoftGroups.INTERNS.value,
+        )
+        ldaps = self.retry_utils.get_retry_on_transient(
+            self.redis_client.hkeys, redis_key
+        )
+        return ldaps if ldaps else []
