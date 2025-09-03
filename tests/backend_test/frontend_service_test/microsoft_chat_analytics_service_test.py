@@ -18,7 +18,7 @@ class TestMicrosoftChatAnalyticsService(TestCase):
         self.mock_logger = Mock()
         self.mock_redis_client = Mock()
         self.mock_date_time_util = Mock()
-        self.mock_ldap_lookup_service = Mock()
+        self.mock_ldap_service = Mock()
         self.mock_retry_utils = Mock()
 
         self.mock_retry_utils.get_retry_on_transient.side_effect = lambda func: func()
@@ -27,7 +27,7 @@ class TestMicrosoftChatAnalyticsService(TestCase):
             logger=self.mock_logger,
             redis_client=self.mock_redis_client,
             date_time_util=self.mock_date_time_util,
-            ldap_lookup_service=self.mock_ldap_lookup_service,
+            ldap_service=self.mock_ldap_service,
             retry_utils=self.mock_retry_utils,
         )
 
@@ -60,7 +60,7 @@ class TestMicrosoftChatAnalyticsService(TestCase):
         self.mock_date_time_util.get_start_end_timestamps.assert_called_once_with(
             self.start_date_str, self.end_date_str
         )
-        self.mock_ldap_lookup_service.get_ldaps_by_status_and_group.assert_not_called()
+        self.mock_ldap_service.get_ldaps_by_status_and_group.assert_not_called()
         self.mock_redis_client.pipeline.assert_called_once()
 
         expected_zcount_calls = []
@@ -90,7 +90,7 @@ class TestMicrosoftChatAnalyticsService(TestCase):
         intern_ldaps = ["intern1", "intern2"]
         redis_counts = [5, 15]
 
-        self.mock_ldap_lookup_service.get_ldaps_by_status_and_group.return_value = {
+        self.mock_ldap_service.get_ldaps_by_status_and_group.return_value = {
             MicrosoftGroups.INTERNS.value: {
                 MicrosoftAccountStatus.ACTIVE.value: {
                     "intern1": "Intern One",
@@ -107,7 +107,7 @@ class TestMicrosoftChatAnalyticsService(TestCase):
             start_date=self.start_date_str, end_date=self.end_date_str, ldap_list=None
         )
 
-        self.mock_ldap_lookup_service.get_ldaps_by_status_and_group.assert_called_once_with(
+        self.mock_ldap_service.get_ldaps_by_status_and_group.assert_called_once_with(
             status=MicrosoftAccountStatus.ACTIVE, groups=[MicrosoftGroups.INTERNS]
         )
 

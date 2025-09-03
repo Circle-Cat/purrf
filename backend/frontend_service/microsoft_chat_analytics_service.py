@@ -7,9 +7,7 @@ from backend.common.constants import (
 
 
 class MicrosoftChatAnalyticsService:
-    def __init__(
-        self, logger, redis_client, date_time_util, ldap_lookup_service, retry_utils
-    ):
+    def __init__(self, logger, redis_client, date_time_util, ldap_service, retry_utils):
         """
         Initializes the MicrosoftChatAnalyticsService.
 
@@ -17,13 +15,13 @@ class MicrosoftChatAnalyticsService:
             logger: The logger instance for logging messages.
             redis_client: The Redis client instance.
             date_time_util: A DateTimeUtil instance for handling date and time operations.
-            ldap_lookup_service: A LdapLookupService instance for performing LDAP lookups.
+            ldap_service: A LdapService instance for performing LDAP lookups.
             retry_utils: A RetryUtils for handling retries on transient errors.
         """
         self.logger = logger
         self.redis_client = redis_client
         self.date_time_util = date_time_util
-        self.ldap_lookup_service = ldap_lookup_service
+        self.ldap_service = ldap_service
         self.retry_utils = retry_utils
 
     def count_microsoft_chat_messages_in_date_range(
@@ -36,7 +34,7 @@ class MicrosoftChatAnalyticsService:
         Count Microsoft chat messages per LDAP user within a specified date range.
 
         If no `ldap_list` is provided, all active interns' LDAPs will be retrieved
-        automatically from LdapLookupService (`get_ldaps_by_status_and_group`)
+        automatically from LdapService (`get_ldaps_by_status_and_group`)
         with:
             - status = MicrosoftAccountStatus.ACTIVE
             - group = MicrosoftGroups.INTERNS
@@ -98,7 +96,7 @@ class MicrosoftChatAnalyticsService:
         self.logger.info(f"Date range from {start_dt_utc} to {end_dt_utc}")
 
         if not ldap_list:
-            result = self.ldap_lookup_service.get_ldaps_by_status_and_group(
+            result = self.ldap_service.get_ldaps_by_status_and_group(
                 status=MicrosoftAccountStatus.ACTIVE,
                 groups=[MicrosoftGroups.INTERNS],
             )
