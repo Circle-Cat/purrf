@@ -1,10 +1,14 @@
 from backend.common.logger import get_logger
 from backend.utils.retry_utils import RetryUtils
 from backend.common.redis_client import RedisClientFactory
+from backend.common.google_client import GoogleClientFactory
 from backend.common.microsoft_graph_service_client import MicrosoftGraphServiceClient
 from backend.service.microsoft_service import MicrosoftService
 from backend.notification_management.microsoft_chat_subscription_service import (
     MicrosoftChatSubscriptionService,
+)
+from backend.notification_management.google_chat_subscription_service import (
+    GoogleChatSubscriptionService,
 )
 from backend.notification_management.notification_controller import (
     NotificationController,
@@ -54,6 +58,10 @@ class AppDependencyBuilder:
 
         self.redis_client = RedisClientFactory().create_redis_client()
         self.graph_client = MicrosoftGraphServiceClient().get_graph_service_client
+        self.google_client_factory = GoogleClientFactory()
+        self.google_workspaceevents_client = (
+            self.google_client_factory.create_workspaceevents_client()
+        )
 
         self.microsoft_service = MicrosoftService(
             logger=self.logger,
@@ -65,9 +73,15 @@ class AppDependencyBuilder:
             redis_client=self.redis_client,
             microsoft_service=self.microsoft_service,
         )
+        self.google_chat_subscription_service = GoogleChatSubscriptionService(
+            logger=self.logger,
+            retry_utils=self.retry_utils,
+            google_workspaceevents_client=self.google_workspaceevents_client,
+        )
 
         self.notification_controller = NotificationController(
-            microsoft_chat_subscription_service=self.microsoft_chat_subscription_service
+            microsoft_chat_subscription_service=self.microsoft_chat_subscription_service,
+            google_chat_subscription_service=self.google_chat_subscription_service,
         )
         self.date_time_util = DateTimeUtil(logger=self.logger)
         self.microsoft_chat_message_util = MicrosoftChatMessageUtil(

@@ -21,7 +21,7 @@ py_library(
         "//backend/common:api_response_wrapper",
         "//backend/common:constants",
         "//backend/notification_management:gerrit_watcher",
-        "//backend/notification_management:google_chat_watcher",
+        "//backend/notification_management:google_chat_subscription_service",
         "@pypi//flask",
     ],
 )
@@ -37,11 +37,11 @@ py_library(
 )
 
 py_library(
-    name = "google_chat_watcher",
+    name = "google_chat_subscription_service",
     srcs = [
-        "google_chat_watcher.py",
+        "google_chat_subscription_service.py",
     ],
     deps = [
-        "//backend/common:google_client",
+        "@pypi//tenacity",
     ],
 )
