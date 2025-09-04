@@ -48,27 +48,16 @@ gcloud auth application-default login
 gcloud config set project {google_project_id}
 ```
 ####  Export Environment Variables
-- USER_EMAIL
-- ADMIN_EMAIL
-- SERVICE_ACCOUNT_EMAIL
-- LOG_LEVEL
-- REDIS_HOST
-- REDIS_PORT
-- REDIS_PASSWORD
-- GERRIT_URL
-- GERRIT_USER
-- GERRIT_HTTP_PASS
-- AZURE_CLIENT_ID
-- AZURE_CLIENT_SECRET
-- AZURE_TENANT_ID
 
-####  Running the backend project
+See: backend/common/environment_constants.py
+
+####  Running the backend project for development
 
 ```bash
-bazel run //backend:purrf
+bazel run //backend:dev_runner
 ```
 
-####  Running the frontend project
+####  Running the frontend project for development
 
 ```bash
 bazel run //frontend:dev_server
@@ -89,13 +78,14 @@ ibazel run //frontend:dev_server
 #### Locally preview the frontend production build
 
 ```bash
+bazel build //frontend:dist
 bazel run //frontend:vite_preview
 ```
 
 ### Before push the code
 Run all test methods:
 ```bash
-bazel test ... --define=run_test=true
+bazel test ...
 ```
 
 Remember to check if code format is up to standard.
@@ -119,12 +109,14 @@ bazel run //:format
 ### Backend
 ```bash
 bazel build //:purrf_image
-bazel run //:flask_image_push_dynamic --action_env=REPO=xxxx --action_env=TAG=xxxx
+bazel run //:purrf_image_push_dynamic --action_env=BE_REPO=xxx --action_env=TAG_1=timestamp --action_env=TAG_2=latest
 ```
 
+> **Deprecated:** We now deploy the frontend dist on a CDN, so these commands are no longer required.
+However, we keep them here for potential future use.
 ### Frontend
 ```bash
 bazel build //frontend:dist
 bazel build //:frontend_image
-bazel run //:frontend_image_push_dynamic --action_env=REPO=xxxx --action_env=TAG=xxxx
+bazel run //:frontend_image_push_dynamic --action_env=FE_REPO=xxxx --action_env=TAG=xxxx
 ```

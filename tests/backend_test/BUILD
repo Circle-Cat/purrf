@@ -4,6 +4,6 @@ py_test(
     name = "app_test",
     srcs = ["app_test.py"],
     deps = [
-        "//backend:purrf",
+        "//backend:app",
     ],
 )
