@@ -24,6 +24,7 @@ describe("request Axios instance", () => {
     expect(axios.create).toHaveBeenCalledWith({
       baseURL: "/api",
       timeout: 10000,
+      withCredentials: true,
     });
   });
 

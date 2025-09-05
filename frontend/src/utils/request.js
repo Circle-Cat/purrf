@@ -7,8 +7,12 @@
 import axios from "axios";
 
 /**
- * Pre-configured Axios instance with a standardized 10-second timeout.
- * Use this instance for all API calls in the application.
+ * Pre-configured Axios instance for standardized API communication.
+ *
+ * Features:
+ * - Default timeout: 10 seconds
+ * - Includes credentials (cookies) in requests
+ * - Centralized configuration for future customizations
  *
  * Environment behavior:
  * - Development: requests to `/api` are proxied to the local backend via the Vite dev server.
@@ -28,8 +32,11 @@ import axios from "axios";
  * @type {import('axios').AxiosInstance}
  */
 const request = axios.create({
-  baseURL: "/api",
+  baseURL: import.meta.env.PROD
+    ? import.meta.env.VITE_API_BASE_URL + "/api"
+    : "/api",
   timeout: 10000,
+  withCredentials: true,
 });
 
 /**
