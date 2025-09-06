@@ -43,14 +43,6 @@ py_test(
 )
 
 py_test(
-    name = "jira_history_fetcher_test",
-    srcs = ["jira_history_fetcher_test.py"],
-    deps = [
-        "//backend/historical_data:jira_history_fetcher",
-    ],
-)
-
-py_test(
     name = "microsoft_member_sync_service_test",
     srcs = ["microsoft_member_sync_service_test.py"],
     deps = [

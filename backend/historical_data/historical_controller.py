@@ -2,7 +2,6 @@ from flask import Blueprint, request
 from http import HTTPStatus
 from backend.historical_data.gerrit_history_fetcher import fetch_and_store_changes
 from backend.historical_data.google_chat_history_fetcher import fetch_history_messages
-from backend.historical_data.jira_history_fetcher import process_update_jira_issues
 from backend.historical_data.google_calendar_history_fetcher import (
     pull_calendar_history,
 )
@@ -58,6 +57,34 @@ class HistoricalController:
             "/jira/backfill",
             view_func=self.backfill_jira_issues,
             methods=["POST"],
+        )
+        blueprint.add_url_rule(
+            "/jira/update",
+            view_func=self.update_jira_issues,
+            methods=["POST"],
+        )
+
+    def update_jira_issues(self):
+        """
+        Incrementally update Jira issues in Redis for issues created or updated within the last N hours.
+        This endpoint performs an incremental sync (created + updated).
+        Query parameter: hours (int)
+        """
+        hours = request.args.get("hours", default=None, type=int)
+        if hours is None or hours <= 0:
+            return api_response(
+                success=False,
+                message="Missing or invalid 'hours' query parameter.",
+                data={},
+                status_code=HTTPStatus.BAD_REQUEST,
+            )
+
+        result = self.jira_history_sync_service.process_update_jira_issues(hours)
+        return api_response(
+            success=True,
+            message="Updated successfully",
+            data={"updated_issues": result},
+            status_code=HTTPStatus.OK,
         )
 
     def backfill_jira_issues(self):
@@ -138,31 +165,6 @@ def history_messages():
         success=True,
         message="Saved successfully.",
         data=response,
-        status_code=HTTPStatus.OK,
-    )
-
-
-@history_bp.route("/jira/update", methods=["POST"])
-def update_jira_issues():
-    """
-    Incrementally update Jira issues in Redis for issues created or updated within the last N hours.
-    This endpoint performs an incremental sync (created + updated).
-    Query parameter: hours (int)
-    """
-    hours = request.args.get("hours", default=None, type=int)
-    if hours is None or hours <= 0:
-        return api_response(
-            success=False,
-            message="Missing or invalid 'hours' query parameter.",
-            data={},
-            status_code=HTTPStatus.BAD_REQUEST,
-        )
-
-    result = process_update_jira_issues(hours)
-    return api_response(
-        success=True,
-        message="Updated successfully",
-        data={"updated_issues": result},
         status_code=HTTPStatus.OK,
     )
 

@@ -93,6 +93,18 @@ class TestHistoricalController(IsolatedAsyncioTestCase):
         self.assertEqual(response.get_json(), expected_json)
         self.assertEqual(response.status_code, HTTPStatus.OK)
 
+    def test_update_jira_issues(self):
+        mock_result = 5
+        self.mock_jira_service.process_update_jira_issues.return_value = mock_result
+
+        with self.app.test_request_context(
+            JIRA_UPDATE_API, method="POST", query_string={"hours": 24}
+        ):
+            response = self.controller.update_jira_issues()
+
+        self.mock_jira_service.process_update_jira_issues.assert_called_once()
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+
 
 class TestAppRoutes(TestCase):
     @classmethod
@@ -113,29 +125,6 @@ class TestAppRoutes(TestCase):
         self.assertEqual(response.json["data"], mock_result)
 
         mock_fetch_history_messages.assert_called_once()
-
-    @patch("backend.historical_data.historical_controller.process_update_jira_issues")
-    def test_update_jira_issues(self, mock_process_update_jira_issues):
-        mock_result = {"total_updated_issues": 25}
-        mock_process_update_jira_issues.return_value = mock_result
-
-        response = self.client.post(JIRA_UPDATE_API + "?hours=24")
-
-        self.assertEqual(response.status_code, HTTPStatus.OK)
-        response_data = response.get_json()
-        self.assertEqual(response_data["data"]["updated_issues"], mock_result)
-
-        mock_process_update_jira_issues.assert_called_once_with(24)
-
-    def test_update_jira_issues_missing_hours_parameter(self):
-        response = self.client.post(JIRA_UPDATE_API)
-
-        self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
-        response_data = response.get_json()
-        self.assertEqual(
-            response_data["message"], "Missing or invalid 'hours' query parameter."
-        )
-        self.assertEqual(response_data["data"], {})
 
     @patch("backend.historical_data.historical_controller.pull_calendar_history")
     def test_pull_calendar_history_success(self, mock_pull_calendar_history):

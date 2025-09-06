@@ -1,5 +1,5 @@
 from unittest import TestCase, main
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, call
 from backend.historical_data.jira_history_sync_service import JiraHistorySyncService
 from backend.common.constants import (
     JiraIssueStatus,
@@ -22,9 +22,7 @@ class TestJiraHistorySyncService(TestCase):
         self.mock_date_time_util = MagicMock()
         self.mock_retry_utils = MagicMock()
 
-        self.mock_retry_utils.get_retry_on_transient.side_effect = (
-            lambda func, *args, **kwargs: func(*args, **kwargs)
-        )
+        self.mock_retry_utils.get_retry_on_transient.side_effect = lambda func: func()
 
         self.service = JiraHistorySyncService(
             logger=self.mock_logger,
@@ -586,6 +584,133 @@ class TestJiraHistorySyncService(TestCase):
         self.mock_retry_utils.get_retry_on_transient.assert_any_call(
             mock_pipeline_2.execute
         )
+
+    def test_process_update_jira_issues_newly_assigned_issue(self):
+        """Should store a newly assigned issue that is not in Redis."""
+        self.mock_jira_search_service.fetch_issues_updated_within_hours_paginated.return_value = [
+            [self.mock_issue_1]
+        ]
+        search_pipeline_mock = MagicMock()
+        search_pipeline_mock.execute.return_value = [None]
+        updated_pipeline_mock = MagicMock()
+
+        self.mock_redis_client.pipeline.side_effect = [
+            search_pipeline_mock,
+            updated_pipeline_mock,
+        ]
+        self.mock_date_time_util.format_datetime_str_to_int.return_value = (
+            self.finish_date
+        )
+
+        result = self.service.process_update_jira_issues(hours=1)
+
+        self.assertEqual(result, 1)
+        search_pipeline_mock.hgetall.assert_called_once_with(
+            JIRA_ISSUE_DETAILS_KEY.format(issue_id=self.mock_issue_1_id)
+        )
+        updated_pipeline_mock.hset.assert_called_once_with(
+            JIRA_ISSUE_DETAILS_KEY.format(issue_id=self.mock_issue_1_id),
+            mapping=self.expected_detail_info_done,
+        )
+        updated_pipeline_mock.zadd.assert_called_once_with(
+            JIRA_LDAP_PROJECT_STATUS_INDEX_KEY.format(
+                ldap=self.mock_issue_1_assignee_name,
+                project_id=self.mock_issue_1_project_id,
+                status=JiraIssueStatus.DONE.value,
+            ),
+            {self.mock_issue_1_id: self.finish_date},
+        )
+        expected_calls = [
+            call(search_pipeline_mock.execute),
+            call(updated_pipeline_mock.execute),
+        ]
+        self.mock_retry_utils.get_retry_on_transient.assert_has_calls(expected_calls)
+
+    def test_process_update_jira_issues_unassigned_issue(self):
+        """Should remove a previously assigned issue that is now unassigned."""
+        unassigned_issue_raw = self.mock_issue_1_raw_data.copy()
+        unassigned_issue_raw["fields"]["assignee"] = None
+        unassigned_issue = MagicMock()
+        unassigned_issue.raw = unassigned_issue_raw
+
+        self.mock_jira_search_service.fetch_issues_updated_within_hours_paginated.return_value = [
+            [unassigned_issue]
+        ]
+        search_pipeline_mock = MagicMock()
+        search_pipeline_mock.execute.return_value = [self.expected_detail_info_done]
+        updated_pipeline_mock = MagicMock()
+
+        self.mock_redis_client.pipeline.side_effect = [
+            search_pipeline_mock,
+            updated_pipeline_mock,
+        ]
+
+        result = self.service.process_update_jira_issues(hours=1)
+
+        self.assertEqual(result, 0)
+        updated_pipeline_mock.delete.assert_called_once_with(
+            JIRA_ISSUE_DETAILS_KEY.format(issue_id=self.mock_issue_1_id)
+        )
+        updated_pipeline_mock.zrem.assert_called_once_with(
+            JIRA_LDAP_PROJECT_STATUS_INDEX_KEY.format(
+                ldap=self.mock_issue_1_assignee_name,
+                project_id=self.mock_issue_1_project_id,
+                status=JiraIssueStatus.DONE.value,
+            ),
+            self.mock_issue_1_id,
+        )
+        expected_calls = [
+            call(search_pipeline_mock.execute),
+            call(updated_pipeline_mock.execute),
+        ]
+        self.mock_retry_utils.get_retry_on_transient.assert_has_calls(expected_calls)
+
+    def test_process_update_jira_issues_updated_assigned_issue(self):
+        """Should update an already assigned issue."""
+        updated_issue_raw = self.mock_issue_2_raw_data.copy()
+        updated_issue_raw["fields"]["summary"] = "Updated Summary"
+        updated_issue = MagicMock()
+        updated_issue.raw = updated_issue_raw
+
+        self.mock_jira_search_service.fetch_issues_updated_within_hours_paginated.return_value = [
+            [updated_issue]
+        ]
+        search_pipeline_mock = MagicMock()
+        search_pipeline_mock.execute.return_value = [
+            self.expected_detail_info_in_progress
+        ]
+        updated_pipeline_mock = MagicMock()
+
+        self.mock_redis_client.pipeline.side_effect = [
+            search_pipeline_mock,
+            updated_pipeline_mock,
+        ]
+
+        result = self.service.process_update_jira_issues(hours=1)
+
+        self.assertEqual(result, 1)
+
+        updated_pipeline_mock.srem.assert_any_call(
+            JIRA_LDAP_PROJECT_STATUS_INDEX_KEY.format(
+                ldap=self.mock_issue_2_assignee_name,
+                project_id=self.mock_issue_2_project_id,
+                status=JiraIssueStatus.IN_PROGRESS.value,
+            ),
+            self.mock_issue_2_id,
+        )
+        expected_updated_detail = self.expected_detail_info_in_progress.copy()
+        expected_updated_detail["issue_title"] = "Updated Summary"
+        updated_pipeline_mock.hset.assert_called_once_with(
+            JIRA_ISSUE_DETAILS_KEY.format(issue_id=self.mock_issue_2_id),
+            mapping=expected_updated_detail,
+        )
+        updated_pipeline_mock.sadd.assert_called_once()
+
+        expected_calls = [
+            call(search_pipeline_mock.execute),
+            call(updated_pipeline_mock.execute),
+        ]
+        self.mock_retry_utils.get_retry_on_transient.assert_has_calls(expected_calls)
 
 
 if __name__ == "__main__":
