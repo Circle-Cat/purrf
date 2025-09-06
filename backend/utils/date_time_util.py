@@ -11,6 +11,18 @@ class DateTimeUtil:
     def __init__(self, logger):
         self.logger = logger
 
+    def format_datetime_to_int(self, dt: datetime) -> int:
+        """
+        Convert a datetime objectinto an integer in YYYYMMDD format.
+
+        Args:
+            dt: A datetime object.
+
+        Returns:
+            An integer representation of the date in YYYYMMDD format.
+        """
+        return int(dt.strftime(DATE_FORMAT_YMD_NOSEP))
+
     def format_datetime_str_to_int(self, date_str: str) -> int:
         """
         Convert a datetime string (e.g. '2023-07-12T14:35:22.123+0000')

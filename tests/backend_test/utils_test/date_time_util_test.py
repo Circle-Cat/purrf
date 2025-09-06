@@ -304,6 +304,12 @@ class TestDateTimeUtil(TestCase):
         with self.assertRaises(ValueError):
             self.utils.format_datetime_str_to_int("2023-07-12 14:35:22")
 
+    def test_format_datetime_to_int(self):
+        dt = datetime(2023, 7, 12, 14, 35, 22)
+        expected_int = 20230712
+        result = self.utils.format_datetime_to_int(dt)
+        self.assertEqual(result, expected_int)
+
 
 class TestDateTimeParser(TestCase):
     TEST_DATA_VALID_DATES_PARSE_DATE_TO_UTC_DATETIME = [
