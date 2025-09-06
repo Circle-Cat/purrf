@@ -93,6 +93,7 @@ py_library(
         "//backend/historical_data:microsoft_member_sync_service",
         "//backend/notification_management:microsoft_chat_subscription_service",
         "//backend/notification_management:notification_controller",
+        "//backend/service:jira_search_service",
         "//backend/service:microsoft_service",
     ],
 )

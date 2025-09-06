@@ -3,7 +3,6 @@ from http import HTTPStatus
 from backend.historical_data.gerrit_history_fetcher import fetch_and_store_changes
 from backend.historical_data.google_chat_history_fetcher import fetch_history_messages
 from backend.historical_data.jira_history_fetcher import process_update_jira_issues
-from backend.historical_data.jira_history_fetcher import process_backfill_jira_issues
 from backend.historical_data.google_calendar_history_fetcher import (
     pull_calendar_history,
 )
@@ -54,6 +53,23 @@ class HistoricalController:
             "/jira/project",
             view_func=self.sync_jira_projects,
             methods=["POST"],
+        )
+        blueprint.add_url_rule(
+            "/jira/backfill",
+            view_func=self.backfill_jira_issues,
+            methods=["POST"],
+        )
+
+    def backfill_jira_issues(self):
+        """Backfill all Jira issues into Redis. This endpoint does not accept
+        any parameters.
+        """
+        result = self.jira_history_sync_service.backfill_all_jira_issues()
+        return api_response(
+            success=True,
+            message="Imported successfully",
+            data=result,
+            status_code=HTTPStatus.OK,
         )
 
     async def backfill_microsoft_ldaps(self):
@@ -122,20 +138,6 @@ def history_messages():
         success=True,
         message="Saved successfully.",
         data=response,
-        status_code=HTTPStatus.OK,
-    )
-
-
-@history_bp.route("/jira/backfill", methods=["POST"])
-def backfill_jira_issues():
-    """Backfill all Jira issues into Redis. This endpoint does not accept
-    any parameters.
-    """
-    result = process_backfill_jira_issues()
-    return api_response(
-        success=True,
-        message="Imported successfully",
-        data={"imported_issues": result},
         status_code=HTTPStatus.OK,
     )
 
