@@ -1,6 +1,6 @@
 from unittest import TestCase, main
 from unittest.mock import patch, Mock
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from backend.utils.date_time_util import (
     parse_date_to_utc_datetime,
@@ -309,6 +309,30 @@ class TestDateTimeUtil(TestCase):
         expected_int = 20230712
         result = self.utils.format_datetime_to_int(dt)
         self.assertEqual(result, expected_int)
+
+    def test_resolve_start_end_timestamps_defaults_to_previous_day(self):
+        now = datetime.now(timezone.utc).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        yesterday = now - timedelta(days=1)
+
+        time_min, time_max = self.utils.resolve_start_end_timestamps()
+
+        self.assertEqual(time_max, now.isoformat().replace("+00:00", "Z"))
+        self.assertEqual(time_min, yesterday.isoformat().replace("+00:00", "Z"))
+
+    def test_resolve_start_end_timestamps_with_explicit_dates(self):
+        start_date = "2023-09-01"
+        end_date = "2023-09-03"
+
+        time_min, time_max = self.utils.resolve_start_end_timestamps(
+            start_date, end_date
+        )
+
+        self.assertTrue(time_min.startswith("2023-09-01T"))
+        self.assertTrue(time_max.startswith("2023-09-03T"))
+        self.assertTrue(time_min.endswith("Z"))
+        self.assertTrue(time_max.endswith("Z"))
 
 
 class TestDateTimeParser(TestCase):

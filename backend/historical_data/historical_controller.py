@@ -2,12 +2,7 @@ from flask import Blueprint, request
 from http import HTTPStatus
 from backend.historical_data.gerrit_history_fetcher import fetch_and_store_changes
 from backend.historical_data.google_chat_history_fetcher import fetch_history_messages
-from backend.historical_data.google_calendar_history_fetcher import (
-    pull_calendar_history,
-)
 from backend.common.api_response_wrapper import api_response
-from backend.utils.date_time_util import get_start_end_timestamps
-from datetime import datetime, timedelta, timezone
 
 history_bp = Blueprint("history", __name__, url_prefix="/api")
 
@@ -18,6 +13,8 @@ class HistoricalController:
         microsoft_member_sync_service,
         microsoft_chat_history_sync_service,
         jira_history_sync_service,
+        google_calendar_sync_service,
+        date_time_utils,
     ):
         """
         Initialize the HistoricalController with required dependencies.
@@ -26,10 +23,14 @@ class HistoricalController:
             microsoft_member_sync_service: MicrosoftMemberSyncService instance.
             microsoft_chat_history_sync_service: MicrosoftChatHistorySyncService instance.
             jira_history_sync_service: JiraHistorySyncService instance
+            google_calendar_sync_service: GoogleCalendarSyncService instance.
+            date_time_utils: DateTimeUtil instance.
         """
         self.microsoft_member_sync_service = microsoft_member_sync_service
         self.microsoft_chat_history_sync_service = microsoft_chat_history_sync_service
         self.jira_history_sync_service = jira_history_sync_service
+        self.google_calendar_sync_service = google_calendar_sync_service
+        self.date_time_utils = date_time_utils
 
     def register_routes(self, blueprint):
         """
@@ -61,6 +62,11 @@ class HistoricalController:
         blueprint.add_url_rule(
             "/jira/update",
             view_func=self.update_jira_issues,
+            methods=["POST"],
+        )
+        blueprint.add_url_rule(
+            "/google/calendar/history/pull",
+            view_func=self.pull_calendar_history_api,
             methods=["POST"],
         )
 
@@ -138,6 +144,32 @@ class HistoricalController:
             status_code=HTTPStatus.OK,
         )
 
+    def pull_calendar_history_api(self):
+        """
+        Endpoint to trigger fetching and caching Google Calendar history.
+
+        Request JSON params (optional):
+        - start_date: ISO format string, start of time range (default: now - 24h)
+        - end_date: ISO format string, end of time range (default: now)
+        """
+        data = request.get_json(silent=True) or {}
+
+        start_date_str = data.get("start_date")  # Expecting "YYYY-MM-DD"
+        end_date_str = data.get("end_date")  # Expecting "YYYY-MM-DD"
+
+        time_min, time_max = self.date_time_utils.resolve_start_end_timestamps(
+            start_date_str, end_date_str
+        )
+
+        self.google_calendar_sync_service.pull_calendar_history(time_min, time_max)
+
+        return api_response(
+            success=True,
+            message=f"Google Calendar history pulled and cached from {time_min} to {time_max}.",
+            data=None,
+            status_code=HTTPStatus.OK,
+        )
+
 
 @history_bp.route("/gerrit/backfill", methods=["POST"])
 async def backfill_gerrit_changes():
@@ -165,42 +197,5 @@ def history_messages():
         success=True,
         message="Saved successfully.",
         data=response,
-        status_code=HTTPStatus.OK,
-    )
-
-
-@history_bp.route("/google/calendar/history/pull", methods=["POST"])
-def pull_calendar_history_api():
-    """
-    Endpoint to trigger fetching and caching Google Calendar history.
-
-    Request JSON params (optional):
-      - start_date: ISO format string, start of time range (default: now - 24h)
-      - end_date: ISO format string, end of time range (default: now)
-    """
-    data = request.get_json(silent=True) or {}
-
-    start_date_str = data.get("start_date")  # Expecting "YYYY-MM-DD"
-    end_date_str = data.get("end_date")  # Expecting "YYYY-MM-DD"
-
-    if not start_date_str and not end_date_str:
-        end_dt_utc = datetime.now(timezone.utc).replace(
-            hour=0, minute=0, second=0, microsecond=0
-        )
-        start_dt_utc = end_dt_utc - timedelta(days=1)
-    else:
-        start_dt_utc, end_dt_utc = get_start_end_timestamps(
-            start_date_str, end_date_str
-        )
-
-    time_min = start_dt_utc.isoformat().replace("+00:00", "Z")
-    time_max = end_dt_utc.isoformat().replace("+00:00", "Z")
-
-    pull_calendar_history(time_min, time_max)
-
-    return api_response(
-        success=True,
-        message=f"Google Calendar history pulled and cached from {time_min} to {time_max}.",
-        data=None,
         status_code=HTTPStatus.OK,
     )

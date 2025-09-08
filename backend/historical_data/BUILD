@@ -8,18 +8,12 @@ py_library(
 )
 
 py_library(
-    name = "google_calendar_history_fetcher",
+    name = "google_calendar_sync_service",
     srcs = [
-        "google_calendar_history_fetcher.py",
+        "google_calendar_sync_service.py",
     ],
     deps = [
-        "//backend/common:google_client",
-        "//backend/common:logger",
-        "//backend/common:redis_client",
-        "//backend/common:validation",
-        "//backend/frontend_service:ldap_loader",
-        "//backend/historical_data:constants",
-        "@pypi//tenacity",
+        "//backend/common:constants",
     ],
 )
 
@@ -39,7 +33,6 @@ py_library(
     deps = [
         "//backend/common:api_response_wrapper",
         "//backend/historical_data:gerrit_history_fetcher",
-        "//backend/historical_data:google_calendar_history_fetcher",
         "//backend/historical_data:google_chat_history_fetcher",
         "//backend/utils:date_time_util",
         "@pypi//flask",

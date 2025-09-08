@@ -11,6 +11,7 @@ from backend.historical_data.historical_controller import (
 MICROSOFT_LDAP_FETCHER_API = "/microsoft/backfill/ldaps"
 MICROSOFT_CHAT_FETCHER_API = "/microsoft/fetch/history/messages/{chat_id}"
 GOOGLE_CHAT_FETCHER_API = "/api/google/chat/spaces/messages"
+GOOGLE_CALENDAR_FETCHER_API = "/api/google/calendar/history/pull"
 JIRA_UPDATE_API = "/api/jira/update"
 JIRA_BACKFILL_API = "/api/jira/backfill"
 JIRA_PROJECT_API = "/api/jira/project"
@@ -26,10 +27,14 @@ class TestHistoricalController(IsolatedAsyncioTestCase):
         self.microsoft_chat_history_sync_service.sync_microsoft_chat_messages_by_chat_id = AsyncMock()
 
         self.mock_jira_service = MagicMock()
+        self.google_calendar_sync_service = MagicMock()
+        self.date_time_utils = MagicMock()
         self.controller = HistoricalController(
             microsoft_member_sync_service=self.microsoft_member_sync_service,
             microsoft_chat_history_sync_service=self.microsoft_chat_history_sync_service,
             jira_history_sync_service=self.mock_jira_service,
+            google_calendar_sync_service=self.google_calendar_sync_service,
+            date_time_utils=self.date_time_utils,
         )
 
         self.app = Flask(__name__)
@@ -105,6 +110,25 @@ class TestHistoricalController(IsolatedAsyncioTestCase):
         self.mock_jira_service.process_update_jira_issues.assert_called_once()
         self.assertEqual(response.status_code, HTTPStatus.OK)
 
+    def test_pull_calendar_history_success(self):
+        self.controller.date_time_utils.resolve_start_end_timestamps = MagicMock(
+            return_value=("2023-09-01T00:00:00Z", "2023-09-02T00:00:00Z")
+        )
+        self.controller.google_calendar_sync_service.pull_calendar_history = MagicMock()
+
+        with self.app.test_request_context(
+            GOOGLE_CALENDAR_FETCHER_API,
+            method="POST",
+            content_type="application/json",
+        ):
+            response = self.controller.pull_calendar_history_api()
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.assertIn("Google Calendar history pulled", response.json["message"])
+        self.controller.google_calendar_sync_service.pull_calendar_history.assert_called_once_with(
+            "2023-09-01T00:00:00Z", "2023-09-02T00:00:00Z"
+        )
+
 
 class TestAppRoutes(TestCase):
     @classmethod
@@ -125,20 +149,6 @@ class TestAppRoutes(TestCase):
         self.assertEqual(response.json["data"], mock_result)
 
         mock_fetch_history_messages.assert_called_once()
-
-    @patch("backend.historical_data.historical_controller.pull_calendar_history")
-    def test_pull_calendar_history_success(self, mock_pull_calendar_history):
-        mock_pull_calendar_history.return_value = None
-
-        response = self.client.post("/api/google/calendar/history/pull", json={})
-
-        self.assertEqual(response.status_code, HTTPStatus.OK)
-        self.assertIn("Google Calendar history pulled", response.json["message"])
-
-        args, _ = mock_pull_calendar_history.call_args
-        self.assertEqual(len(args), 2)
-        self.assertTrue(isinstance(args[0], str))
-        self.assertTrue(isinstance(args[1], str))
 
 
 if __name__ == "__main__":

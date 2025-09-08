@@ -3,6 +3,8 @@ from unittest.mock import patch, MagicMock
 from backend.utils.app_dependency_builder import AppDependencyBuilder
 
 
+@patch("backend.utils.app_dependency_builder.JsonSchemaValidator")
+@patch("backend.utils.app_dependency_builder.GoogleCalendarSyncService")
 @patch("backend.utils.app_dependency_builder.GoogleChatProcessorService")
 @patch("backend.utils.app_dependency_builder.GoogleService")
 @patch("backend.utils.app_dependency_builder.GoogleChatMessagesUtils")
@@ -66,6 +68,8 @@ class TestAppDependencyBuilder(TestCase):
         mock_google_chat_messages_utils,
         mock_google_service,
         mock_google_chat_processor_service,
+        mock_google_calendar_sync_service_cls,
+        mock_json_schema_validator_cls,
     ):
         """
         Tests that the AppDependencyBuilder correctly instantiates and wires all its dependencies.
@@ -94,6 +98,14 @@ class TestAppDependencyBuilder(TestCase):
         mock_google_client_factory_instance.create_people_client.return_value = (
             mock_google_people_client
         )
+        mock_google_calendar_client = MagicMock()
+        mock_google_client_factory_instance.create_calendar_client.return_value = (
+            mock_google_calendar_client
+        )
+        mock_google_reports_client = MagicMock()
+        mock_google_client_factory_instance.create_reports_client.return_value = (
+            mock_google_reports_client
+        )
         mock_google_client_factory_cls.return_value = (
             mock_google_client_factory_instance
         )
@@ -107,6 +119,10 @@ class TestAppDependencyBuilder(TestCase):
             mock_jira_client_factory_cls.return_value.create_jira_client()
         )
         mock_jira_history_service = mock_jira_history_cls.return_value
+        mock_json_schema_validator_instance = MagicMock()
+        mock_json_schema_validator_cls.return_value = (
+            mock_json_schema_validator_instance
+        )
 
         # Act: Instantiate the builder, which should trigger all dependency creation
         builder = AppDependencyBuilder()
@@ -118,6 +134,8 @@ class TestAppDependencyBuilder(TestCase):
         mock_graph_service_client_cls.assert_called_once()
         mock_google_client_factory_cls.assert_called_once()
         mock_google_client_factory_instance.create_workspaceevents_client.assert_called_once()
+        mock_google_client_factory_instance.create_calendar_client.assert_called_once()
+        mock_google_client_factory_instance.create_reports_client.assert_called_once()
         mock_retry_utils_cls.assert_called_once()
 
         mock_microsoft_service.assert_called_once_with(
@@ -190,10 +208,21 @@ class TestAppDependencyBuilder(TestCase):
             date_time_util=mock_date_time_util_cls.return_value,
             retry_utils=mock_retry_utils_instance,
         )
+        mock_google_calendar_sync_service_cls.assert_called_once_with(
+            logger=mock_logger,
+            redis_client=mock_redis_client,
+            google_calendar_client=mock_google_calendar_client,
+            google_reports_client=mock_google_reports_client,
+            retry_utils=mock_retry_utils_instance,
+            json_schema_validator=mock_json_schema_validator_cls.return_value,
+            google_service=mock_google_service.return_value,
+        )
         mock_historical_controller_cls.assert_called_once_with(
             microsoft_member_sync_service=mock_microsoft_member_sync_service_cls.return_value,
             microsoft_chat_history_sync_service=mock_microsoft_chat_history_sync_service_cls.return_value,
             jira_history_sync_service=mock_jira_history_service,
+            google_calendar_sync_service=mock_google_calendar_sync_service_cls.return_value,
+            date_time_utils=mock_date_time_util_cls.return_value,
         )
         mock_ldap_service_cls.assert_called_once_with(
             logger=mock_logger,
@@ -266,6 +295,9 @@ class TestAppDependencyBuilder(TestCase):
             builder.google_workspaceevents_client, mock_google_workspaceevents_client
         )
         self.assertEqual(builder.retry_utils, mock_retry_utils_instance)
+        self.assertEqual(
+            builder.json_schema_validator, mock_json_schema_validator_instance
+        )
         self.assertEqual(builder.microsoft_service, mock_microsoft_service.return_value)
         self.assertEqual(
             builder.microsoft_chat_subscription_service,
@@ -317,6 +349,10 @@ class TestAppDependencyBuilder(TestCase):
         self.assertEqual(
             builder.microsoft_chat_history_sync_service,
             mock_microsoft_chat_history_sync_service_cls.return_value,
+        )
+        self.assertEqual(
+            builder.google_calendar_sync_service,
+            mock_google_calendar_sync_service_cls.return_value,
         )
         self.assertEqual(
             builder.historical_controller, mock_historical_controller_cls.return_value

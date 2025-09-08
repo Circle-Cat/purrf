@@ -5,6 +5,7 @@ from backend.common.google_client import GoogleClientFactory
 from backend.common.jira_client import JiraClientFactory
 from backend.service.google_service import GoogleService
 from backend.common.microsoft_graph_service_client import MicrosoftGraphServiceClient
+from backend.common.json_schema_validator import JsonSchemaValidator
 from backend.service.microsoft_service import MicrosoftService
 from backend.notification_management.microsoft_chat_subscription_service import (
     MicrosoftChatSubscriptionService,
@@ -28,6 +29,9 @@ from backend.consumers.pubsub_puller import PubSubPuller
 from backend.historical_data.historical_controller import HistoricalController
 from backend.historical_data.microsoft_member_sync_service import (
     MicrosoftMemberSyncService,
+)
+from backend.historical_data.google_calendar_sync_service import (
+    GoogleCalendarSyncService,
 )
 from backend.frontend_service.ldap_service import LdapService
 from backend.frontend_service.jira_analytics_service import JiraAnalyticsService
@@ -72,13 +76,17 @@ class AppDependencyBuilder:
         self.redis_client = RedisClientFactory().create_redis_client()
         self.graph_client = MicrosoftGraphServiceClient().get_graph_service_client
         self.google_client_factory = GoogleClientFactory()
+        self.json_schema_validator = JsonSchemaValidator(logger=self.logger)
         self.google_workspaceevents_client = (
             self.google_client_factory.create_workspaceevents_client()
         )
         self.google_chat_client = self.google_client_factory.create_chat_client()
         self.google_people_client = self.google_client_factory.create_people_client()
         self.jira_client = JiraClientFactory().create_jira_client()
-
+        self.google_calendar_client = (
+            self.google_client_factory.create_calendar_client()
+        )
+        self.google_reports_client = self.google_client_factory.create_reports_client()
         self.microsoft_service = MicrosoftService(
             logger=self.logger,
             graph_service_client=self.graph_client,
@@ -94,7 +102,6 @@ class AppDependencyBuilder:
             retry_utils=self.retry_utils,
             google_workspaceevents_client=self.google_workspaceevents_client,
         )
-
         self.notification_controller = NotificationController(
             microsoft_chat_subscription_service=self.microsoft_chat_subscription_service,
             google_chat_subscription_service=self.google_chat_subscription_service,
@@ -163,15 +170,26 @@ class AppDependencyBuilder:
             date_time_util=self.date_time_util,
             retry_utils=self.retry_utils,
         )
-        self.historical_controller = HistoricalController(
-            microsoft_member_sync_service=self.microsoft_member_sync_service,
-            microsoft_chat_history_sync_service=self.microsoft_chat_history_sync_service,
-            jira_history_sync_service=self.jira_history_sync_service,
-        )
         self.ldap_service = LdapService(
             logger=self.logger,
             redis_client=self.redis_client,
             retry_utils=self.retry_utils,
+        )
+        self.google_calendar_sync_service = GoogleCalendarSyncService(
+            logger=self.logger,
+            redis_client=self.redis_client,
+            google_calendar_client=self.google_calendar_client,
+            google_reports_client=self.google_reports_client,
+            retry_utils=self.retry_utils,
+            json_schema_validator=self.json_schema_validator,
+            google_service=self.google_service,
+        )
+        self.historical_controller = HistoricalController(
+            microsoft_member_sync_service=self.microsoft_member_sync_service,
+            microsoft_chat_history_sync_service=self.microsoft_chat_history_sync_service,
+            jira_history_sync_service=self.jira_history_sync_service,
+            google_calendar_sync_service=self.google_calendar_sync_service,
+            date_time_utils=self.date_time_util,
         )
         self.microsoft_chat_analytics_service = MicrosoftChatAnalyticsService(
             logger=self.logger,

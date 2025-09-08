@@ -54,16 +54,16 @@ class TestGoogleCalendarAnalyticsService(TestCase):
         self.mock_retry_utils.get_retry_on_transient.side_effect = [
             [["event123"]],
             [
-                json.dumps([
-                    {
+                [
+                    json.dumps({
                         "join_time": "2025-08-01T10:00:00",
                         "leave_time": "2025-08-01T10:30:00",
-                    },
-                    {
+                    }),
+                    json.dumps({
                         "join_time": "2025-08-01T11:00:00",
                         "leave_time": "2025-08-01T11:45:00",
-                    },
-                ])
+                    }),
+                ]
             ],
             [
                 json.dumps({

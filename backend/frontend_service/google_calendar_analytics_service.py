@@ -78,7 +78,7 @@ class GoogleCalendarAnalyticsService:
         }
 
         for events_key in events_key_by_ldap.values():
-            pipeline.zrange(events_key, min=start_ts, max=end_ts, byscore=True)
+            pipeline.zrange(events_key, start_ts, end_ts, byscore=True)
 
         ldap_event_id_lists = self.retry_utils.get_retry_on_transient(pipeline.execute)
         ldap_event_ids_map = dict(zip(ldaps, ldap_event_id_lists))
@@ -97,20 +97,25 @@ class GoogleCalendarAnalyticsService:
 
         pipeline = self.redis_client.pipeline()
         for key in attendance_keys:
-            pipeline.get(key)
+            pipeline.smembers(key)
 
         attendance_results = self.retry_utils.get_retry_on_transient(pipeline.execute)
         attendance_data_map = {}  # (ldap, event_id) -> attendance_record
 
-        for key, raw_data in zip(attendance_keys, attendance_results):
+        for key, raw_members in zip(attendance_keys, attendance_results):
             ldap, event_id = attendance_key_to_ldap_event[key]
-            if raw_data:
-                try:
-                    attendance_record = json.loads(raw_data)
-                    attendance_data_map[(ldap, event_id)] = attendance_record
-                except json.JSONDecodeError:
-                    self.logger.warning(f"Failed to decode attendance data for {key}")
-                    continue
+            if raw_members:
+                records: list[dict[str, any]] = []
+                for member in raw_members:
+                    try:
+                        records.append(json.loads(member))
+                    except json.JSONDecodeError:
+                        self.logger.warning(
+                            f"Failed to decode attendance data for {key}"
+                        )
+                        continue
+                if records:
+                    attendance_data_map[(ldap, event_id)] = records
 
         event_detail_keys = [
             GOOGLE_CALENDAR_EVENT_DETAIL_KEY.format(event_id=base_id)

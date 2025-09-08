@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from dateutil.relativedelta import relativedelta
 from backend.common.constants import (
     DATE_FORMAT_YMD,
@@ -154,6 +154,33 @@ class DateTimeUtil:
             start_dt_utc = self._start_of_day(today_utc + relativedelta(months=-1))
 
         return start_dt_utc, end_dt_utc
+
+    def resolve_start_end_timestamps(self, start_date_str=None, end_date_str=None):
+        """
+        Resolve a start and end time range in UTC (ISO 8601 format).
+
+        - If both dates are None, defaults to the range covering the previous full day:
+        [yesterday 00:00 UTC, today 00:00 UTC).
+        - If one or both dates are provided (YYYY-MM-DD strings), they are converted
+        to UTC datetimes using get_start_end_timestamps.
+
+        Returns:
+            tuple(str, str): (time_min, time_max) in ISO 8601 format with 'Z' suffix.
+        """
+        if not start_date_str and not end_date_str:
+            end_dt_utc = datetime.now(timezone.utc).replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
+            start_dt_utc = end_dt_utc - timedelta(days=1)
+        else:
+            start_dt_utc, end_dt_utc = self.get_start_end_timestamps(
+                start_date_str, end_date_str
+            )
+
+        time_min = start_dt_utc.isoformat().replace("+00:00", "Z")
+        time_max = end_dt_utc.isoformat().replace("+00:00", "Z")
+
+        return time_min, time_max
 
 
 # TODO: Remove Deprecated Standalone Methods After Migration

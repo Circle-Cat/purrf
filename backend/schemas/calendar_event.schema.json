@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "CalendarEventDetail",
   "type": "object",
-  "required": ["calendar_id", "title", "is_recurring"],
+  "required": ["calendar_id", "summary", "is_recurring"],
   "properties": {
     "event_id": {
       "type": "string"

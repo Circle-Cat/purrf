@@ -67,6 +67,14 @@ py_test(
 )
 
 py_test(
+    name = "json_schema_validator_test",
+    srcs = ["json_schema_validator_test.py"],
+    deps = [
+        "//backend/common:json_schema_validator",
+    ],
+)
+
+py_test(
     name = "asyncio_event_loop_manager_test",
     srcs = ["asyncio_event_loop_manager_test.py"],
     deps = [

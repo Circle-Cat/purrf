@@ -104,6 +104,18 @@ py_library(
 )
 
 py_library(
+    name = "json_schema_validator",
+    srcs = ["json_schema_validator.py"],
+    data = [
+        "//backend/schemas",
+    ],
+    deps = [
+        "//backend/common:logger",
+        "@pypi//jsonschema",
+    ],
+)
+
+py_library(
     name = "asyncio_event_loop_manager",
     srcs = ["asyncio_event_loop_manager.py"],
     deps = [
