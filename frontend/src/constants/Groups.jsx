@@ -1,5 +1,5 @@
 export const Group = {
-  Interns: "Interns",
-  Employees: "Employees",
-  Volunteers: "Volunteers",
+  Interns: "interns",
+  Employees: "employees",
+  Volunteers: "volunteers",
 };

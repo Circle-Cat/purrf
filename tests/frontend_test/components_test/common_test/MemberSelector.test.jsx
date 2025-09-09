@@ -2,34 +2,35 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import MemberSelector from "@/components/common/MemberSelector.jsx";
+import { Group } from "@/constants/Groups";
 
 const MEMBERS = [
   {
     id: "1",
-    ldap: "yuji",
-    fullName: "Yanpei Wang",
-    group: "Employees",
+    ldap: "ali",
+    fullName: "Alice",
+    group: Group.Employees,
     terminated: false,
   },
   {
     id: "2",
-    ldap: "qchen",
-    fullName: "Qiang Chen",
-    group: "Employees",
+    ldap: "char",
+    fullName: "Charlie",
+    group: Group.Employees,
     terminated: true,
   },
   {
     id: "3",
     ldap: "intern1",
     fullName: "Ivy Intern",
-    group: "Interns",
+    group: Group.Interns,
     terminated: false,
   },
   {
     id: "4",
     ldap: "vol1",
     fullName: "Vera Volunteer",
-    group: "Volunteers",
+    group: Group.Volunteers,
     terminated: false,
   },
 ];
@@ -65,11 +66,9 @@ describe("MemberSelector", () => {
     ).toBeInTheDocument();
 
     // Non-terminated employee visible; terminated hidden by default
+    expect(screen.getByRole("button", { name: /Alice/i })).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: /Yanpei Wang/i }),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: /Qiang Chen/i }),
+      screen.queryByRole("button", { name: /Charlie/i }),
     ).not.toBeInTheDocument();
 
     expect(screen.getByText(/0 selected/i)).toBeInTheDocument();
@@ -78,10 +77,10 @@ describe("MemberSelector", () => {
   it("shows Full Name first (bold) and LDAP next (lighter) inline", () => {
     renderMS();
 
-    const row = screen.getByRole("button", { name: /Yanpei Wang/i });
+    const row = screen.getByRole("button", { name: /Alice/i });
 
-    const nameEl = within(row).getByText("Yanpei Wang");
-    const ldapEl = within(row).getByText("yuji");
+    const nameEl = within(row).getByText("Alice");
+    const ldapEl = within(row).getByText("ali");
 
     const isNameBeforeLdap =
       (nameEl.compareDocumentPosition(ldapEl) &
@@ -96,10 +95,10 @@ describe("MemberSelector", () => {
     const user = userEvent.setup();
     renderMS();
 
-    await user.click(screen.getByRole("button", { name: /Yanpei Wang/i }));
+    await user.click(screen.getByRole("button", { name: /Alice/i }));
     expect(screen.getByText(/1 selected/i)).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: /Yanpei Wang/i }));
+    await user.click(screen.getByRole("button", { name: /Alice/i }));
     expect(screen.getByText(/0 selected/i)).toBeInTheDocument();
   });
 
@@ -127,7 +126,7 @@ describe("MemberSelector", () => {
 
     // Now terminated employee appears
     expect(
-      screen.getByRole("button", { name: /Qiang Chen/i }),
+      screen.getByRole("button", { name: /Charlie/i }),
     ).toBeInTheDocument();
 
     const employeesBtn = screen.getByRole("button", { name: /Employees \(/i });
@@ -192,7 +191,7 @@ describe("MemberSelector", () => {
     );
     await user.click(includeTerminated);
 
-    await user.click(screen.getByRole("button", { name: /Yanpei Wang/i }));
+    await user.click(screen.getByRole("button", { name: /Alice/i }));
 
     const employeesBtn = screen.getByRole("button", { name: /Employees \(/i });
     const checkEl = employeesBtn.querySelector(".ms-check");
