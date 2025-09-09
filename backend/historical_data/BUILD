@@ -93,3 +93,13 @@ py_library(
         "@pypi//jira",
     ],
 )
+
+py_library(
+    name = "jira_history_sync_service",
+    srcs = [
+        "jira_history_sync_service.py",
+    ],
+    deps = [
+        "//backend/common:constants",
+    ],
+)

@@ -2,6 +2,7 @@ from backend.common.logger import get_logger
 from backend.utils.retry_utils import RetryUtils
 from backend.common.redis_client import RedisClientFactory
 from backend.common.google_client import GoogleClientFactory
+from backend.common.jira_client import JiraClientFactory
 from backend.common.microsoft_graph_service_client import MicrosoftGraphServiceClient
 from backend.service.microsoft_service import MicrosoftService
 from backend.notification_management.microsoft_chat_subscription_service import (
@@ -37,6 +38,7 @@ from backend.frontend_service.microsoft_meeting_chat_topic_cache_service import 
 from backend.historical_data.microsoft_chat_history_sync_service import (
     MicrosoftChatHistorySyncService,
 )
+from backend.historical_data.jira_history_sync_service import JiraHistorySyncService
 
 
 class AppDependencyBuilder:
@@ -66,6 +68,7 @@ class AppDependencyBuilder:
         self.google_workspaceevents_client = (
             self.google_client_factory.create_workspaceevents_client()
         )
+        self.jira_client = JiraClientFactory().create_jira_client()
 
         self.microsoft_service = MicrosoftService(
             logger=self.logger,
@@ -118,9 +121,15 @@ class AppDependencyBuilder:
             microsoft_service=self.microsoft_service,
             microsoft_chat_message_util=self.microsoft_chat_message_util,
         )
+        self.jira_history_sync_service = JiraHistorySyncService(
+            logger=self.logger,
+            redis_client=self.redis_client,
+            jira_client=self.jira_client,
+        )
         self.historical_controller = HistoricalController(
             microsoft_member_sync_service=self.microsoft_member_sync_service,
             microsoft_chat_history_sync_service=self.microsoft_chat_history_sync_service,
+            jira_history_sync_service=self.jira_history_sync_service,
         )
         self.ldap_service = LdapService(
             logger=self.logger,

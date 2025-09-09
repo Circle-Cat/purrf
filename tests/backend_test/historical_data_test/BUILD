@@ -57,3 +57,11 @@ py_test(
         "//backend/historical_data:microsoft_member_sync_service",
     ],
 )
+
+py_test(
+    name = "jira_history_sync_service_test",
+    srcs = ["jira_history_sync_service_test.py"],
+    deps = [
+        "//backend/historical_data:jira_history_sync_service",
+    ],
+)
