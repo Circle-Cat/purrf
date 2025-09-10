@@ -233,6 +233,27 @@ class FrontendController:
         )
 
 
+@frontend_bp.route("/summary", methods=["POST"])
+def get_summary():
+    """
+    TODO: [PUR-116] Implement /api/summary
+
+    Provides a comprehensive summary of team activities and key metrics.
+    This is a temporary endpoint and will be fully implemented later.
+
+    Request Body (JSON):
+        {
+            "startDate": "YYYY-MM-DD",
+            "endDate": "YYYY-MM-DD",
+            "groups": ["<group1>", "<group2>"],
+            "includeTerminated": boolean
+        }
+    """
+    return api_response(
+        success=False, message="Not Implemented", status_code=HTTPStatus.NOT_IMPLEMENTED
+    )
+
+
 @frontend_bp.route("/google/chat/count", methods=["GET"])
 def count_messages():
     """
