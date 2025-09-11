@@ -10,7 +10,6 @@ py_library(
         "//backend/common:constants",
         "//backend/frontend_service:chat_query_utils",
         "//backend/frontend_service:gerrit_loader",
-        "//backend/frontend_service:jira_loader",
         "//backend/frontend_service:ldap_loader",
         "//backend/utils:google_chat_utils",
         "@pypi//flask",
@@ -46,18 +45,6 @@ py_library(
     deps = [
         "//backend/common:constants",
         "//backend/common:environment_constants",
-    ],
-)
-
-py_library(
-    name = "jira_loader",
-    srcs = [
-        "jira_loader.py",
-    ],
-    deps = [
-        "//backend/common:constants",
-        "//backend/common:redis_client",
-        "//backend/utils:date_time_util",
     ],
 )
 

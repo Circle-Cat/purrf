@@ -36,14 +36,6 @@ py_test(
 )
 
 py_test(
-    name = "jira_loader_test",
-    srcs = ["jira_loader_test.py"],
-    deps = [
-        "//backend/frontend_service:jira_loader",
-    ],
-)
-
-py_test(
     name = "gerrit_loader_test",
     srcs = ["gerrit_loader_test.py"],
     deps = [

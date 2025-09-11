@@ -1,6 +1,10 @@
 from unittest import TestCase, main
 from unittest.mock import Mock, MagicMock, patch
-from backend.common.constants import JIRA_PROJECTS_KEY, JiraIssueStatus
+from backend.common.constants import (
+    JIRA_PROJECTS_KEY,
+    JiraIssueStatus,
+    JIRA_ISSUE_DETAILS_KEY,
+)
 from backend.frontend_service.jira_analytics_service import JiraAnalyticsService
 from datetime import datetime, timezone
 
@@ -207,6 +211,91 @@ class TestJiraAnalyticsService(TestCase):
 
         self.assertEqual(result["user1"]["done_story_points_total"], 4.0)
         self.assertCountEqual(result["user1"]["done"], ["done-1", "done-2"])
+
+    def test_process_get_issue_detail_batch_success(self):
+        """Test fetching issue details in batch successfully."""
+        issue_ids = ["issue-1", "issue-2"]
+        pipeline_results = [
+            {"summary": "First issue", "status": "Done"},
+            {"summary": "Second issue", "status": "In Progress"},
+        ]
+        mock_pipeline = MagicMock()
+        self.mock_redis.pipeline.return_value = mock_pipeline
+        mock_pipeline.execute.return_value = pipeline_results
+
+        result = self.jira_service.process_get_issue_detail_batch(issue_ids)
+
+        self.assertEqual(len(result), 2)
+        self.assertCountEqual(
+            result,
+            [
+                {
+                    "issue_id": "issue-1",
+                    "summary": "First issue",
+                    "status": "Done",
+                },
+                {
+                    "issue_id": "issue-2",
+                    "summary": "Second issue",
+                    "status": "In Progress",
+                },
+            ],
+        )
+        self.assertEqual(mock_pipeline.hgetall.call_count, 2)
+        mock_pipeline.hgetall.assert_any_call(
+            JIRA_ISSUE_DETAILS_KEY.format(issue_id="issue-1")
+        )
+        mock_pipeline.hgetall.assert_any_call(
+            JIRA_ISSUE_DETAILS_KEY.format(issue_id="issue-2")
+        )
+
+    def test_process_get_issue_detail_batch_with_missing_details(self):
+        """Test batch fetch where some issue details are missing."""
+        issue_ids = ["issue-1", "issue-2", "issue-3"]
+        pipeline_results = [
+            {"summary": "First issue", "story_point": "5"},
+            None,
+            {"summary": "Third issue", "status": "To Do"},
+        ]
+        mock_pipeline = MagicMock()
+        self.mock_redis.pipeline.return_value = mock_pipeline
+        mock_pipeline.execute.return_value = pipeline_results
+
+        result = self.jira_service.process_get_issue_detail_batch(issue_ids)
+
+        self.assertEqual(len(result), 3)
+        self.assertCountEqual(
+            result,
+            [
+                {
+                    "issue_id": "issue-1",
+                    "summary": "First issue",
+                    "story_point": "5",
+                    "status": None,
+                },
+                {
+                    "issue_id": "issue-2",
+                    "summary": None,
+                    "story_point": None,
+                    "status": None,
+                },
+                {
+                    "issue_id": "issue-3",
+                    "summary": "Third issue",
+                    "story_point": None,
+                    "status": "To Do",
+                },
+            ],
+        )
+
+    def test_process_get_issue_detail_batch_empty_input(self):
+        """Test batch fetch with an empty list of issue IDs."""
+        with self.assertRaises(ValueError):
+            self.jira_service.process_get_issue_detail_batch([])
+
+        self.mock_redis.pipeline.assert_not_called()
+        self.mock_redis.pipeline.return_value.hgetall.assert_not_called()
+        self.mock_redis.pipeline.return_value.execute.assert_not_called()
 
 
 if __name__ == "__main__":

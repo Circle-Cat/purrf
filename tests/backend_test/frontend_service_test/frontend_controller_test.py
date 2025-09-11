@@ -44,6 +44,25 @@ class TestFrontendController(TestCase):
     async def asyncTearDown(self):
         self.app_context.pop()
 
+    def test_get_issue_detail_batch(self):
+        mock_result = {}
+        self.mock_jira_analytics_service.process_get_issue_detail_batch.return_value = (
+            mock_result
+        )
+
+        with self.app.test_request_context(
+            JIRA_BRIEF_API,
+            method="POST",
+            json={
+                "issueIds": ["id1", "id2"],
+            },
+        ):
+            response = self.controller.get_issue_detail_batch()
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.assertEqual(response.json["data"], mock_result)
+        self.mock_jira_analytics_service.process_get_issue_detail_batch.assert_called_once()
+
     def test_get_jira_brief(self):
         mock_result = {}
         self.mock_jira_analytics_service.get_issues_summary.return_value = mock_result
@@ -342,30 +361,6 @@ class TestAppRoutes(TestCase):
         self.assertEqual(json_data["data"], mock_spaces)
 
         mock_get_chat_spaces.assert_called_once_with("SPACE", 50)
-
-    @patch(
-        "backend.frontend_service.frontend_controller.process_get_issue_detail_batch"
-    )
-    def test_get_issue_detail_batch_success(self, mock_process):
-        mock_result = {
-            "abc123": {
-                "ldap": "test_ldap",
-                "finish_date": 20991231,
-                "issue_key": "TEST-999",
-                "story_point": 42,
-                "project_id": 112233,
-                "project_name": "test_proj_name",
-                "issue_status": "testing",
-                "issue_title": "This is an issue for unit test",
-            }
-        }
-        mock_process.return_value = mock_result
-        response = self.client.post(
-            "/api/jira/detail/batch", json={"issue_ids": ["abc123"]}
-        )
-        self.assertEqual(response.status_code, HTTPStatus.OK)
-        self.assertEqual(response.json["data"], mock_result)
-        mock_process.assert_called_once_with(["abc123"])
 
 
 if __name__ == "__main__":

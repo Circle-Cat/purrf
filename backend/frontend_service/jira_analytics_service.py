@@ -207,3 +207,52 @@ class JiraAnalyticsService:
                     )
 
             return dict(final_result)
+
+    def process_get_issue_detail_batch(self, issue_ids: list[str]) -> list[dict]:
+        """
+        Fetch issue details from Redis and return as a list of dicts.
+
+        Each dict contains 'issue_id' and all fields from the Redis hash.
+        Missing fields are filled with None.
+
+        Args:
+            issue_ids (list[str]): A list of Jira issue IDs to fetch from Redis.
+
+        Returns:
+            list[dict]: A list of dictionaries where each dictionary represents one
+                        Jira issue with its metadata. Example:
+                        [
+                            {"issue_id": "issue-1", "field1": "value1", "field2": "value2"},
+                            {"issue_id": "issue-2", "field1": "value1", "field2": "value2"},
+                            {"issue_id": "issue-3", "field1": None, "field2": None}
+                        ]
+
+        """
+        if not issue_ids:
+            raise ValueError("issue_ids cannot be empty")
+
+        pipeline = self.redis_client.pipeline()
+        for issue_id in issue_ids:
+            redis_key = JIRA_ISSUE_DETAILS_KEY.format(issue_id=issue_id)
+            pipeline.hgetall(redis_key)
+
+        pipeline_results = self.retry_utils.get_retry_on_transient(pipeline.execute)
+
+        all_fields = {
+            field
+            for redis_value in pipeline_results
+            if redis_value
+            for field in redis_value.keys()
+        }
+        result_list = [
+            {
+                "issue_id": issue_id,
+                **{
+                    field: redis_value.get(field) if redis_value else None
+                    for field in all_fields
+                },
+            }
+            for issue_id, redis_value in zip(issue_ids, pipeline_results)
+        ]
+
+        return result_list

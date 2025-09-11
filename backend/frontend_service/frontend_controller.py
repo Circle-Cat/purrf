@@ -1,9 +1,6 @@
 from flask import Blueprint, request
 from http import HTTPStatus
 from backend.frontend_service.chat_query_utils import count_messages_in_date_range
-from backend.frontend_service.jira_loader import (
-    process_get_issue_detail_batch,
-)
 from backend.frontend_service.gerrit_loader import (
     get_gerrit_stats as load_gerrit_stats,
 )
@@ -86,6 +83,43 @@ class FrontendController:
             view_func=self.get_jira_brief,
             methods=["POST"],
         )
+        blueprint.add_url_rule(
+            "/jira/detail/batch",
+            view_func=self.get_issue_detail_batch,
+            methods=["POST"],
+        )
+
+    def get_issue_detail_batch(self):
+        """
+        Get Jira issue details in batch from Redis.
+
+        Fetch the full metadata of multiple Jira issues from Redis, given a list
+        of issueIds.
+
+        Request Body (JSON):
+            { "issueIds": ["issue-1", "issue-2", ...] }
+
+        Returns:
+            JSON response with success flag, message, and data containing issue
+            details.
+
+            [
+                {"issue_id": "issue-1", "field1": "value1", "field2": "value2"},
+                {"issue_id": "issue-2", "field1": "value1", "field2": "value2"},
+                {"issue_id": "issue-3", "field1": None, "field2": None}
+            ]
+        """
+        data = request.get_json(force=True)
+        issue_ids = data.get("issueIds") if data else None
+
+        result = self.jira_analytics_service.process_get_issue_detail_batch(issue_ids)
+
+        return api_response(
+            success=True,
+            message="Successful",
+            data=result,
+            status_code=HTTPStatus.OK,
+        )
 
     def get_jira_brief(self):
         """
@@ -93,11 +127,11 @@ class FrontendController:
 
         Request body (JSON):
             {
-                "status_list": ["done", "in_progress", "todo"],    list of statuses
+                "statusList": ["done", "in_progress", "todo"],    list of statuses
                 "ldaps": ["<ldap1>", "<ldap2>", ...],              list of users ldap
-                "project_ids": ["<project1>", "<project2>", ...],  list of projects
-                "start_date": "<yyyy-mm-dd>",
-                "end_date": "<yyyy-mm-dd>"
+                "projectIds": ["<project1>", "<project2>", ...],  list of projects
+                "startDate": "<yyyy-mm-dd>",
+                "endDate": "<yyyy-mm-dd>"
             }
 
         Returns:
@@ -403,37 +437,5 @@ async def get_gerrit_stats():
         success=True,
         message="Fetched Gerrit stats successfully.",
         data=response,
-        status_code=HTTPStatus.OK,
-    )
-
-
-@frontend_bp.route("/jira/detail/batch", methods=["POST"])
-def get_issue_detail_batch():
-    """
-    Get Jira issue details in batch from Redis.
-
-    Fetch the full metadata of multiple Jira issues from Redis, given a list
-    of issue_ids.
-
-    Request Body (JSON):
-        A list of issue_ids.
-
-    Returns:
-        JSON response with success flag, message, and data containing issue
-        details.
-
-    Raises:
-        400 Bad Request: If issue_ids is missing or invalid
-        500 Internal Server Error: If Redis operations fail
-    """
-    data = request.get_json()
-    issue_ids = data.get("issue_ids") if data else None
-
-    result = process_get_issue_detail_batch(issue_ids)
-
-    return api_response(
-        success=True,
-        message="Query successful",
-        data=result,
         status_code=HTTPStatus.OK,
     )
