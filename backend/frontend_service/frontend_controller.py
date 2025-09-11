@@ -3,7 +3,6 @@ from http import HTTPStatus
 from backend.frontend_service.chat_query_utils import count_messages_in_date_range
 from backend.frontend_service.jira_loader import (
     process_get_issue_detail_batch,
-    get_issue_ids_in_timerange,
 )
 from backend.frontend_service.gerrit_loader import (
     get_gerrit_stats as load_gerrit_stats,
@@ -81,6 +80,68 @@ class FrontendController:
             "/calendar/events",
             view_func=self.get_all_events_api,
             methods=["GET"],
+        )
+        blueprint.add_url_rule(
+            "/jira/brief",
+            view_func=self.get_jira_brief,
+            methods=["POST"],
+        )
+
+    def get_jira_brief(self):
+        """
+        Get Jira issue IDs in Redis by status: done, in_progress, todo, and all.
+
+        Request body (JSON):
+            {
+                "status_list": ["done", "in_progress", "todo"],    list of statuses
+                "ldaps": ["<ldap1>", "<ldap2>", ...],              list of users ldap
+                "project_ids": ["<project1>", "<project2>", ...],  list of projects
+                "start_date": "<yyyy-mm-dd>",
+                "end_date": "<yyyy-mm-dd>"
+            }
+
+        Returns:
+            Response (JSON): Standard API response with issue IDs grouped by status, ldap
+
+            {
+            "time_range": {
+                "start_dt": "2023-01-01T00:00:00+00:00",
+                "end_dt": "2023-01-31T23:59:59+00:00"
+            },
+            "user1": {
+                "done": ["done-issue-1", "done-issue-2"],
+                "in_progress": ["inprogress-issue-1"],
+                "todo": [],
+                "done_story_points_total": 8.0
+            },
+            "user2": {
+                "done": [],
+                "in_progress": ["inprogress-issue-2"],
+                "todo": ["todo-issue-1"],
+                "done_story_points_total": 0.0
+            }
+        }
+        """
+        data = request.get_json(force=True)
+        status_list = data.get("statusList")
+        ldaps = data.get("ldaps")
+        project_ids = data.get("projectIds")
+        start_date = data.get("startDate")
+        end_date = data.get("endDate")
+
+        result = self.jira_analytics_service.get_issues_summary(
+            status_list=status_list,
+            ldaps=ldaps,
+            project_ids=project_ids,
+            start_date=start_date,
+            end_date=end_date,
+        )
+
+        return api_response(
+            success=True,
+            message="Successfully.",
+            data=result,
+            status_code=HTTPStatus.OK,
         )
 
     async def all_microsoft_chat_topics(self):
@@ -323,46 +384,6 @@ def get_chat_spaces_route():
         success=True,
         message="Retrieve chat spaces successfully.",
         data=spaces,
-        status_code=HTTPStatus.OK,
-    )
-
-
-@frontend_bp.route("/jira/brief", methods=["POST"])
-def get_issue_ids():
-    """
-    Get Jira issue IDs in Redis by status: done, in_progress, todo, and all.
-
-    Request body (JSON):
-        {
-            "status": "<status>",  # required, one of "done", "in_progress", "todo", "all"
-            "ldaps": ["<ldap>", ...],  # required
-            "project_ids": ["<project_id>", ...],  # required
-            "start_date": "<yyyy-mm-dd>",  # required for "done"/"all"
-            "end_date": "<yyyy-mm-dd>"     # required for "done"/"all"
-        }
-
-    Returns:
-        Response (JSON): Standard API response with issue IDs grouped by status, ldap and project.
-    """
-    data = request.get_json(force=True)
-    status = data.get("status")
-    ldaps = data.get("ldaps")
-    project_ids = data.get("project_ids")
-    start_date = data.get("start_date")
-    end_date = data.get("end_date")
-
-    result = get_issue_ids_in_timerange(
-        status=status,
-        ldaps=ldaps,
-        project_ids=project_ids,
-        start_date=start_date,
-        end_date=end_date,
-    )
-
-    return api_response(
-        success=True,
-        message="Issue IDs retrieved successfully.",
-        data=result,
         status_code=HTTPStatus.OK,
     )
 

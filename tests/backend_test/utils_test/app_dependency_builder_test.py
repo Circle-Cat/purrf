@@ -202,6 +202,8 @@ class TestAppDependencyBuilder(TestCase):
             logger=mock_logger,
             redis_client=mock_redis_client,
             retry_utils=mock_retry_utils_instance,
+            date_time_util=mock_date_time_util_cls.return_value,
+            ldap_service=mock_ldap_service_cls.return_value,
         )
         mock_google_calendar_analytics_service_cls.assert_called_once_with(
             logger=mock_logger,

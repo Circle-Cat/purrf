@@ -168,6 +168,8 @@ class AppDependencyBuilder:
             logger=self.logger,
             redis_client=self.redis_client,
             retry_utils=self.retry_utils,
+            date_time_util=self.date_time_util,
+            ldap_service=self.ldap_service,
         )
         self.google_calendar_analytics_service = GoogleCalendarAnalyticsService(
             logger=self.logger,

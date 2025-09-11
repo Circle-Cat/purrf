@@ -44,6 +44,27 @@ class TestFrontendController(TestCase):
     async def asyncTearDown(self):
         self.app_context.pop()
 
+    def test_get_jira_brief(self):
+        mock_result = {}
+        self.mock_jira_analytics_service.get_issues_summary.return_value = mock_result
+
+        with self.app.test_request_context(
+            JIRA_BRIEF_API,
+            method="POST",
+            json={
+                "statusList": ["done"],
+                "ldaps": ["user1"],
+                "projectIds": ["proj1"],
+                "startDate": "2023-01-01",
+                "endDate": "2023-01-31",
+            },
+        ):
+            response = self.controller.get_jira_brief()
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.assertEqual(response.json["data"], mock_result)
+        self.mock_jira_analytics_service.get_issues_summary.assert_called_once()
+
     def test_get_ldaps_and_names_success_with_groups(self):
         mock_data = {"active": ["ldap1", "ldap2"]}
         self.ldap_service.get_ldaps_by_status_and_group.return_value = mock_data
@@ -321,24 +342,6 @@ class TestAppRoutes(TestCase):
         self.assertEqual(json_data["data"], mock_spaces)
 
         mock_get_chat_spaces.assert_called_once_with("SPACE", 50)
-
-    @patch("backend.frontend_service.frontend_controller.get_issue_ids_in_timerange")
-    def test_jira_brief_success(self, mock_process):
-        mock_result = {"todo": {"alice": {"projectA": [101, 102]}}}
-        mock_process.return_value = mock_result
-        response = self.client.post(
-            JIRA_BRIEF_API,
-            json={"status": "todo", "ldaps": ["alice"], "project_ids": ["projectA"]},
-        )
-        self.assertEqual(response.status_code, HTTPStatus.OK)
-        self.assertEqual(response.json["data"], mock_result)
-        mock_process.assert_called_once_with(
-            status="todo",
-            ldaps=["alice"],
-            project_ids=["projectA"],
-            start_date=None,
-            end_date=None,
-        )
 
     @patch(
         "backend.frontend_service.frontend_controller.process_get_issue_detail_batch"
