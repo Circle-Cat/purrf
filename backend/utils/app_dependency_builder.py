@@ -39,6 +39,7 @@ from backend.historical_data.microsoft_chat_history_sync_service import (
     MicrosoftChatHistorySyncService,
 )
 from backend.historical_data.jira_history_sync_service import JiraHistorySyncService
+from backend.service.jira_search_service import JiraSearchService
 
 
 class AppDependencyBuilder:
@@ -121,10 +122,19 @@ class AppDependencyBuilder:
             microsoft_service=self.microsoft_service,
             microsoft_chat_message_util=self.microsoft_chat_message_util,
         )
+        self.jira_search_service = JiraSearchService(
+            logger=self.logger,
+            jira_client=self.jira_client,
+            retry_utils=self.retry_utils,
+        )
+
         self.jira_history_sync_service = JiraHistorySyncService(
             logger=self.logger,
             redis_client=self.redis_client,
             jira_client=self.jira_client,
+            jira_search_service=self.jira_search_service,
+            date_time_util=self.date_time_util,
+            retry_utils=self.retry_utils,
         )
         self.historical_controller = HistoricalController(
             microsoft_member_sync_service=self.microsoft_member_sync_service,

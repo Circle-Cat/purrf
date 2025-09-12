@@ -1,11 +1,29 @@
 from datetime import datetime, timezone
 from dateutil.relativedelta import relativedelta
-from backend.common.constants import DATE_FORMAT_YMD
+from backend.common.constants import (
+    DATE_FORMAT_YMD,
+    DATETIME_ISO8601_FORMAT,
+    DATE_FORMAT_YMD_NOSEP,
+)
 
 
 class DateTimeUtil:
     def __init__(self, logger):
         self.logger = logger
+
+    def format_datetime_str_to_int(self, date_str: str) -> int:
+        """
+        Convert a datetime string (e.g. '2023-07-12T14:35:22.123+0000')
+        into an integer in YYYYMMDD format.
+
+        Args:
+            date_str: A datetime string in the format "YYYY-MM-DDTHH:MM:SS.mmm±HHMM".
+
+        Returns:
+            An integer representation of the date in YYYYMMDD format.
+        """
+        dt = datetime.strptime(date_str, DATETIME_ISO8601_FORMAT)
+        return int(dt.strftime(DATE_FORMAT_YMD_NOSEP))
 
     def format_datetime_to_iso_utc_z(self, dt_object: datetime) -> str:
         """

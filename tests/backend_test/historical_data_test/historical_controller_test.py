@@ -39,6 +39,16 @@ class TestHistoricalController(IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         self.app_context.pop()
 
+    def test_backfill_jira_issues(self):
+        mock_result = 5
+        self.mock_jira_service.backfill_all_jira_issues.return_value = mock_result
+
+        with self.app.test_request_context(JIRA_PROJECT_API, method="POST"):
+            response = self.controller.backfill_jira_issues()
+
+        self.mock_jira_service.backfill_all_jira_issues.assert_called_once()
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+
     async def test_backfill_microsoft_ldaps_success(self):
         with self.app.test_request_context(
             MICROSOFT_LDAP_FETCHER_API,
@@ -126,19 +136,6 @@ class TestAppRoutes(TestCase):
             response_data["message"], "Missing or invalid 'hours' query parameter."
         )
         self.assertEqual(response_data["data"], {})
-
-    @patch("backend.historical_data.historical_controller.process_backfill_jira_issues")
-    def test_backfill_jira_issues(self, mock_process_backfill_jira_issues):
-        mock_result = 150
-        mock_process_backfill_jira_issues.return_value = mock_result
-
-        response = self.client.post(JIRA_BACKFILL_API)
-
-        self.assertEqual(response.status_code, HTTPStatus.OK)
-        response_data = response.get_json()
-        self.assertEqual(response_data["data"]["imported_issues"], 150)
-
-        mock_process_backfill_jira_issues.assert_called_once()
 
     @patch("backend.historical_data.historical_controller.pull_calendar_history")
     def test_pull_calendar_history_success(self, mock_pull_calendar_history):

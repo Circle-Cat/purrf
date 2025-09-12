@@ -5,6 +5,7 @@ from backend.utils.app_dependency_builder import AppDependencyBuilder
 
 @patch("backend.utils.app_dependency_builder.JiraAnalyticsService")
 @patch("backend.utils.app_dependency_builder.MicrosoftChatHistorySyncService")
+@patch("backend.utils.app_dependency_builder.JiraSearchService")
 @patch("backend.utils.app_dependency_builder.MicrosoftMeetingChatTopicCacheService")
 @patch("backend.utils.app_dependency_builder.MicrosoftChatAnalyticsService")
 @patch("backend.utils.app_dependency_builder.LdapService")
@@ -54,6 +55,7 @@ class TestAppDependencyBuilder(TestCase):
         mock_ldap_service_cls,
         mock_microsoft_chat_analytics_service_cls,
         mock_microsoft_meeting_chat_topic_cache_service_cls,
+        mock_jira_search_service_cls,
         mock_microsoft_chat_history_sync_service_cls,
         mock_jira_analytics_service_cls,
     ):
@@ -158,10 +160,18 @@ class TestAppDependencyBuilder(TestCase):
             microsoft_service=mock_microsoft_service.return_value,
             microsoft_chat_message_util=mock_microsoft_chat_message_util_cls.return_value,
         )
+        mock_jira_search_service_cls.assert_called_once_with(
+            logger=mock_logger,
+            jira_client=mock_jira_client,
+            retry_utils=mock_retry_utils_instance,
+        )
         mock_jira_history_cls.assert_called_once_with(
             logger=mock_logger,
             redis_client=mock_redis_client,
             jira_client=mock_jira_client,
+            jira_search_service=mock_jira_search_service_cls.return_value,
+            date_time_util=mock_date_time_util_cls.return_value,
+            retry_utils=mock_retry_utils_instance,
         )
         mock_historical_controller_cls.assert_called_once_with(
             microsoft_member_sync_service=mock_microsoft_member_sync_service_cls.return_value,
