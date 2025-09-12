@@ -53,6 +53,7 @@ TEST_MOCK_DELETED_MESSAGE = {
     "name": TEST_MESSAGE_NAME,
     "createTime": TEST_TIME,
 }
+TEST_MOCK_LDAP_MAPPING = {"test_user": "LDAP"}
 
 
 def create_stored_message_json(texts, deleted=False):
@@ -114,7 +115,6 @@ class TestGoogleChatMessagesUtils(TestCase):
         self.utils = GoogleChatMessagesUtils(
             logger=self.mock_logger,
             redis_client=self.mock_redis,
-            date_time_util=None,
             retry_utils=self.mock_retry,
         )
 
@@ -238,6 +238,56 @@ class TestGoogleChatMessagesUtils(TestCase):
         self.mock_pipe.zadd.assert_not_called()
         self.mock_pipe.set.assert_not_called()
         self.mock_pipe.execute.assert_not_called()
+
+    def test_store_created_message_without_sender_ldap(self):
+        with self.assertRaises(ValueError):
+            self.utils.store_messages(
+                None,
+                TEST_MOCK_CREATED_MESSAGE,
+                GoogleChatEventType.CREATED,
+            )
+
+        self.mock_pipe.zadd.assert_not_called()
+        self.mock_pipe.set.assert_not_called()
+        self.mock_pipe.execute.assert_not_called()
+
+    def test_sync_batch_created_messages(self):
+        self.utils.sync_batch_created_messages(
+            [TEST_MOCK_CREATED_MESSAGE, TEST_MOCK_CREATED_MESSAGE],
+            TEST_MOCK_LDAP_MAPPING,
+        )
+
+        self.mock_redis.pipeline.assert_called_once()
+        self.assertEqual(self.mock_pipe.zadd.call_count, 2)
+        self.assertEqual(self.mock_pipe.set.call_count, 2)
+        self.mock_retry.get_retry_on_transient.assert_called_once()
+        self.mock_pipe.execute.assert_called_once()
+
+    def test_sync_batch_created_messages_pipeline_failure(self):
+        self.mock_pipe.execute.side_effect = Exception("Redis is down")
+
+        with self.assertRaises(RuntimeError):
+            self.utils.sync_batch_created_messages(
+                [TEST_MOCK_CREATED_MESSAGE, TEST_MOCK_CREATED_MESSAGE],
+                TEST_MOCK_LDAP_MAPPING,
+            )
+
+        self.mock_pipe.execute.assert_called_once()
+
+    def test_sync_batch_created_messages_with_empty_params(self):
+        invalid_cases = [
+            ([], {}),
+            ([TEST_MOCK_CREATED_MESSAGE], {}),
+            ([], TEST_MOCK_LDAP_MAPPING),
+            (None, None),
+            (None, TEST_MOCK_LDAP_MAPPING),
+            (TEST_MOCK_CREATED_MESSAGE, None),
+            ([TEST_MOCK_CREATED_MESSAGE], None),
+        ]
+
+        for messages, ldap_mapping in invalid_cases:
+            with self.assertRaises(ValueError):
+                self.utils.sync_batch_created_messages(messages, ldap_mapping)
 
 
 if __name__ == "__main__":
