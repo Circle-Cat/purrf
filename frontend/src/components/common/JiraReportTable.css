@@ -1,0 +1,155 @@
+/* JiraReportTable.css */
+
+/* General container styles */
+.jira-table-container {
+  color: var(--text-color-dark);
+  padding: 20px;
+  border-radius: 8px;
+}
+
+/* Styles for each user's report table */
+.user-table {
+  border: 1px solid var(--border-color-medium);
+  margin-bottom: 20px;
+  border-radius: 8px;
+}
+
+.user-header {
+  background-color: var(--bg-color-header);
+  padding: 15px;
+}
+
+.user-header h4 {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: var(--text-color-dark);
+}
+
+/* Styles for the main status summary table */
+.user-status-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.user-status-table thead tr th {
+  background-color: var(--bg-color-stripe-even);
+  text-align: left;
+  padding: 12px 15px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-color-medium);
+}
+
+.status-row {
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.status-row:hover {
+  background-color: var(--bg-color-row-hover);
+}
+
+.status-row td {
+  padding: 12px 15px;
+  font-size: 0.9rem;
+  vertical-align: middle;
+}
+
+/* Status icon and text styling */
+.status-row td:first-child {
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.status-row td:first-child::before {
+  content: '';
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 8px;
+  flex-shrink: 0;
+  border-radius: 50%;
+}
+
+/* Status icon colors */
+.status-row:nth-child(1) td:first-child::before {
+  background-color: var(--warning-color); /* To Do */
+}
+
+.status-row:nth-child(2) td:first-child::before {
+  background-color: var(--primary-color); /* In Progress */
+}
+
+.status-row:nth-child(3) td:first-child::before {
+  background-color: var(--success-color); /* Done */
+}
+
+.task-detail-row:hover {
+  background-color: var(--bg-color-row-hover);
+}
+
+.toggle-icon {
+  width: 20px;
+  text-align: right;
+  font-weight: bold;
+  color: var(--text-color-light);
+}
+
+/* Styles for the expanded detail table */
+.detail-table-row td {
+  padding: 0;
+}
+
+.detail-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.detail-table thead th {
+  background-color: var(--bg-color-stripe-even);
+  text-align: left;
+  padding: 8px 15px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-color-medium);
+}
+
+.task-detail-row td {
+  padding: 8px 15px;
+  font-size: 0.8rem;
+}
+
+.task-detail-row:nth-child(even) {
+  background-color: var(--bg-color-stripe-even);
+}
+
+.loading-indicator, .no-data-msg {
+  text-align: center;
+  padding: 20px;
+  color: var(--text-color-light);
+  font-size: 0.9rem;
+}
+
+.detail-table thead th:nth-child(1),
+.task-detail-row td:nth-child(1) {
+  width: 15%;
+}
+
+.detail-table thead th:nth-child(2),
+.task-detail-row td:nth-child(2) {
+  width: 45%;
+}
+
+.detail-table thead th:nth-child(3),
+.task-detail-row td:nth-child(3) {
+  width: 20%; 
+}
+
+.detail-table thead th:nth-child(4),
+.task-detail-row td:nth-child(4) {
+  width: 20%;
+}
