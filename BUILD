@@ -57,7 +57,7 @@ py_oci_image(
     ],
     entrypoint = [
         "/backend/uvicorn",
-        "backend.app:asgi_app",
+        "backend.prod_runner:asgi_app",
     ],
 )
 
