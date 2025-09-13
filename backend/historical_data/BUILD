@@ -41,7 +41,6 @@ py_library(
         "//backend/historical_data:gerrit_history_fetcher",
         "//backend/historical_data:google_calendar_history_fetcher",
         "//backend/historical_data:google_chat_history_fetcher",
-        "//backend/historical_data:jira_history_fetcher",
         "//backend/utils:date_time_util",
         "@pypi//flask",
     ],
@@ -76,21 +75,6 @@ py_library(
     name = "microsoft_chat_history_sync_service",
     srcs = [
         "microsoft_chat_history_sync_service.py",
-    ],
-)
-
-py_library(
-    name = "jira_history_fetcher",
-    srcs = [
-        "jira_history_fetcher.py",
-    ],
-    deps = [
-        "//backend/common:constants",
-        "//backend/common:jira_client",
-        "//backend/common:logger",
-        "//backend/common:redis_client",
-        "//backend/frontend_service:ldap_loader",
-        "@pypi//jira",
     ],
 )
 

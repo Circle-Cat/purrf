@@ -332,3 +332,116 @@ class JiraHistorySyncService:
 
         self.logger.info(f"Backfill complete. Total issues stored: {total_stored}")
         return total_stored
+
+    def process_update_jira_issues(self, hours: int) -> int:
+        """
+        Processes Jira issues updated within a specified number of hours.
+
+        This method handles four main update scenarios:
+        1. A task created long ago but recently assigned (not in Redis, needs to be saved).
+        2. An unassigned task with updated content (not in Redis, remains unsaved).
+        3. A previously assigned task that is now unassigned (needs to be removed from Redis).
+        4. A previously assigned task with updated content (needs to be updated in Redis).
+
+        Args:
+            hours (int): The number of hours to look back for updated Jira issues.
+
+        Returns:
+            int: The total number of issues processed and stored/updated in Redis.
+        """
+        total_processed = 0
+        self.logger.info(
+            "Starting to process Jira issues updated within the last %s hours", hours
+        )
+
+        for (
+            issues_batch
+        ) in self.jira_search_service.fetch_issues_updated_within_hours_paginated(
+            hours
+        ):
+            issue_ids = [issue.raw.get("id") for issue in issues_batch]
+
+            search_pipeline = self.redis_client.pipeline()
+            for issue_id in issue_ids:
+                search_pipeline.hgetall(
+                    JIRA_ISSUE_DETAILS_KEY.format(issue_id=issue_id)
+                )
+            old_issue_detail_raw = self.retry_utils.get_retry_on_transient(
+                search_pipeline.execute
+            )
+
+            updated_pipeline = self.redis_client.pipeline()
+            issues_to_store = []
+
+            for i, issue in enumerate(issues_batch):
+                issue_raw_data = issue.raw
+                issue_id = issue_raw_data.get("id")
+                fields = issue_raw_data.get("fields", {})
+                new_ldap = None
+                assignee_info = fields.get("assignee", {})
+                if assignee_info:
+                    new_ldap = assignee_info.get("name")
+
+                old_raw_data = old_issue_detail_raw[i]
+                if old_raw_data is None:
+                    if new_ldap:
+                        self.logger.info(
+                            "Issue '%s' was recently assigned and will be stored.",
+                            issue_id,
+                        )
+                        issues_to_store.append(issue)
+                    else:
+                        self.logger.info(
+                            "Issue '%s' remains unassigned; skipping.", issue_id
+                        )
+                    continue
+
+                old_ldap = old_raw_data.get("ldap")
+                old_project_id = old_raw_data.get("project_id")
+                old_status = old_raw_data.get("issue_status")
+
+                if new_ldap is None and old_ldap:
+                    self.logger.info(
+                        "Assignee for issue '%s' was removed. Deleting from Redis.",
+                        issue_id,
+                    )
+                    updated_pipeline.delete(
+                        JIRA_ISSUE_DETAILS_KEY.format(issue_id=issue_id)
+                    )
+                    index_key = JIRA_LDAP_PROJECT_STATUS_INDEX_KEY.format(
+                        ldap=old_ldap, project_id=old_project_id, status=old_status
+                    )
+                    if JiraIssueStatus.DONE.value == old_status:
+                        updated_pipeline.zrem(index_key, issue_id)
+                    else:
+                        updated_pipeline.srem(index_key, issue_id)
+                    continue
+
+                if new_ldap:
+                    index_key = JIRA_LDAP_PROJECT_STATUS_INDEX_KEY.format(
+                        ldap=old_ldap, project_id=old_project_id, status=old_status
+                    )
+                    if JiraIssueStatus.DONE.value == old_status:
+                        updated_pipeline.zrem(index_key, issue_id)
+                    else:
+                        updated_pipeline.srem(index_key, issue_id)
+
+                    self.logger.info(
+                        "Content for issue '%s' has been updated; will re-store.",
+                        issue_id,
+                    )
+                    issues_to_store.append(issue)
+
+            if issues_to_store:
+                self.logger.info(
+                    "Storing/updating %d issues in Redis.", len(issues_to_store)
+                )
+                self._queue_issues_in_redis_pipeline(issues_to_store, updated_pipeline)
+
+            self.retry_utils.get_retry_on_transient(updated_pipeline.execute)
+            total_processed += len(issues_to_store)
+
+        self.logger.info(
+            "Processing complete. Total issues stored/updated: %s", total_processed
+        )
+        return total_processed
