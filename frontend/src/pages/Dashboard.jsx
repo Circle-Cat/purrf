@@ -6,6 +6,7 @@ import DateRangePicker from "@/components/common/DateRangePicker";
 import Card from "@/components/common/Card";
 import Table from "@/components/common/Table";
 import { getSummary, getLdapsAndDisplayNames } from "@/api/dashboardApi";
+import { getCookie, extractCloudflareUserName } from "@/utils/auth";
 
 /**
  * @typedef {Object} SummaryData
@@ -103,6 +104,7 @@ const Dashboard = () => {
   const [sortColumn, setSortColumn] = useState(null);
   const [sortDirection, setSortDirection] = useState("asc");
   const [tableData, setTableData] = useState([]);
+  const [greetingMessage, setGreetingMessage] = useState("Welcome");
 
   /**
    * Columns configuration for the members table.
@@ -289,10 +291,28 @@ const Dashboard = () => {
   }, [tableData, sortColumn, sortDirection]);
 
   /**
-   * useEffect hook to trigger an initial data fetch when the component mounts.
+   * Effect hook to trigger an initial data fetch and set the user's name from the Cloudflare JWT cookie.
+   *
+   * This hook runs once on component mount. It first triggers the `handleInitialLoad` function to perform
+   * the initial data fetch. Then, it checks if a Cloudflare JWT Authorization cookie (`CF_Authorization`)
+   * is present. If found, it extracts the user's name and sets the greeting message accordingly.
+   *
+   * @hook
+   * @function useEffect
+   * @see getCookie
+   * @see extractCloudflareUserName
    */
+
   useEffect(() => {
     handleInitialLoad();
+
+    const cloudflareJwtCookie = getCookie("CF_Authorization");
+    if (cloudflareJwtCookie) {
+      const extractedName = extractCloudflareUserName(cloudflareJwtCookie);
+      if (extractedName) {
+        setGreetingMessage(`Welcome, ${extractedName}`);
+      }
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -302,7 +322,7 @@ const Dashboard = () => {
         <span role="img" aria-label="clapping hands">
           &#x1F44F;
         </span>
-        <h2>Welcome</h2>
+        <h2>{greetingMessage}</h2>
       </div>
 
       <div className="summary-cards">
