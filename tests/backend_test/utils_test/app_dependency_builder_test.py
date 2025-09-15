@@ -3,6 +3,8 @@ from unittest.mock import patch, MagicMock
 from backend.utils.app_dependency_builder import AppDependencyBuilder
 
 
+@patch("backend.utils.app_dependency_builder.GerritSyncService")
+@patch("backend.utils.app_dependency_builder.GerritClientFactory")
 @patch("backend.utils.app_dependency_builder.GerritAnalyticsService")
 @patch("backend.utils.app_dependency_builder.JsonSchemaValidator")
 @patch("backend.utils.app_dependency_builder.GoogleCalendarSyncService")
@@ -72,6 +74,8 @@ class TestAppDependencyBuilder(TestCase):
         mock_google_calendar_sync_service_cls,
         mock_json_schema_validator_cls,
         mock_gerrit_analytics_service_cls,
+        mock_gerrit_client_factory_cls,
+        mock_gerrit_sync_service_cls,
     ):
         """
         Tests that the AppDependencyBuilder correctly instantiates and wires all its dependencies.
@@ -125,6 +129,15 @@ class TestAppDependencyBuilder(TestCase):
         mock_json_schema_validator_cls.return_value = (
             mock_json_schema_validator_instance
         )
+        mock_gerrit_client = MagicMock()
+        mock_gerrit_client_factory_instance = MagicMock()
+        mock_gerrit_client_factory_instance.create_gerrit_client.return_value = (
+            mock_gerrit_client
+        )
+        mock_gerrit_client_factory_cls.return_value = (
+            mock_gerrit_client_factory_instance
+        )
+        mock_gerrit_sync_service = mock_gerrit_sync_service_cls.return_value
 
         # Act: Instantiate the builder, which should trigger all dependency creation
         builder = AppDependencyBuilder()
@@ -139,6 +152,8 @@ class TestAppDependencyBuilder(TestCase):
         mock_google_client_factory_instance.create_calendar_client.assert_called_once()
         mock_google_client_factory_instance.create_reports_client.assert_called_once()
         mock_retry_utils_cls.assert_called_once()
+        mock_gerrit_client_factory_cls.assert_called_once()
+        mock_gerrit_client_factory_instance.create_gerrit_client.assert_called_once()
 
         mock_microsoft_service.assert_called_once_with(
             logger=mock_logger,
@@ -219,12 +234,19 @@ class TestAppDependencyBuilder(TestCase):
             json_schema_validator=mock_json_schema_validator_cls.return_value,
             google_service=mock_google_service.return_value,
         )
+        mock_gerrit_sync_service_cls.assert_called_once_with(
+            logger=mock_logger,
+            redis_client=mock_redis_client,
+            gerrit_client=mock_gerrit_client,
+            retry_utils=mock_retry_utils_instance,
+        )
         mock_historical_controller_cls.assert_called_once_with(
             microsoft_member_sync_service=mock_microsoft_member_sync_service_cls.return_value,
             microsoft_chat_history_sync_service=mock_microsoft_chat_history_sync_service_cls.return_value,
             jira_history_sync_service=mock_jira_history_service,
             google_calendar_sync_service=mock_google_calendar_sync_service_cls.return_value,
             date_time_utils=mock_date_time_util_cls.return_value,
+            gerrit_sync_service=mock_gerrit_sync_service,
         )
         mock_ldap_service_cls.assert_called_once_with(
             logger=mock_logger,
@@ -300,6 +322,7 @@ class TestAppDependencyBuilder(TestCase):
         # Assert that the builder's internal attributes are the created mock instances
         self.assertEqual(builder.logger, mock_logger)
         self.assertEqual(builder.redis_client, mock_redis_client)
+        self.assertEqual(builder.gerrit_client, mock_gerrit_client)
         self.assertEqual(builder.graph_client, mock_graph_client)
         self.assertEqual(
             builder.google_workspaceevents_client, mock_google_workspaceevents_client

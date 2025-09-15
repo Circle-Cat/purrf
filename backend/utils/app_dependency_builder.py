@@ -6,6 +6,7 @@ from backend.common.jira_client import JiraClientFactory
 from backend.service.google_service import GoogleService
 from backend.common.microsoft_graph_service_client import MicrosoftGraphServiceClient
 from backend.common.json_schema_validator import JsonSchemaValidator
+from backend.common.gerrit_client import GerritClientFactory
 from backend.service.microsoft_service import MicrosoftService
 from backend.notification_management.microsoft_chat_subscription_service import (
     MicrosoftChatSubscriptionService,
@@ -33,6 +34,7 @@ from backend.historical_data.microsoft_member_sync_service import (
 from backend.historical_data.google_calendar_sync_service import (
     GoogleCalendarSyncService,
 )
+from backend.historical_data.gerrit_sync_service import GerritSyncService
 from backend.frontend_service.ldap_service import LdapService
 from backend.frontend_service.jira_analytics_service import JiraAnalyticsService
 from backend.frontend_service.google_calendar_analytics_service import (
@@ -88,6 +90,8 @@ class AppDependencyBuilder:
             self.google_client_factory.create_calendar_client()
         )
         self.google_reports_client = self.google_client_factory.create_reports_client()
+        self.gerrit_client = GerritClientFactory().create_gerrit_client()
+
         self.microsoft_service = MicrosoftService(
             logger=self.logger,
             graph_service_client=self.graph_client,
@@ -171,6 +175,12 @@ class AppDependencyBuilder:
             date_time_util=self.date_time_util,
             retry_utils=self.retry_utils,
         )
+        self.gerrit_sync_service = GerritSyncService(
+            logger=self.logger,
+            redis_client=self.redis_client,
+            gerrit_client=self.gerrit_client,
+            retry_utils=self.retry_utils,
+        )
         self.ldap_service = LdapService(
             logger=self.logger,
             redis_client=self.redis_client,
@@ -191,6 +201,7 @@ class AppDependencyBuilder:
             jira_history_sync_service=self.jira_history_sync_service,
             google_calendar_sync_service=self.google_calendar_sync_service,
             date_time_utils=self.date_time_util,
+            gerrit_sync_service=self.gerrit_sync_service,
         )
         self.microsoft_chat_analytics_service = MicrosoftChatAnalyticsService(
             logger=self.logger,

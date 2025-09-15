@@ -1,6 +1,5 @@
 from flask import Blueprint, request
 from http import HTTPStatus
-from backend.historical_data.gerrit_history_fetcher import fetch_and_store_changes
 from backend.historical_data.google_chat_history_fetcher import fetch_history_messages
 from backend.common.api_response_wrapper import api_response
 
@@ -15,6 +14,7 @@ class HistoricalController:
         jira_history_sync_service,
         google_calendar_sync_service,
         date_time_utils,
+        gerrit_sync_service,
     ):
         """
         Initialize the HistoricalController with required dependencies.
@@ -25,12 +25,14 @@ class HistoricalController:
             jira_history_sync_service: JiraHistorySyncService instance
             google_calendar_sync_service: GoogleCalendarSyncService instance.
             date_time_utils: DateTimeUtil instance.
+            gerrit_sync_service: GerritSyncService instance.
         """
         self.microsoft_member_sync_service = microsoft_member_sync_service
         self.microsoft_chat_history_sync_service = microsoft_chat_history_sync_service
         self.jira_history_sync_service = jira_history_sync_service
         self.google_calendar_sync_service = google_calendar_sync_service
         self.date_time_utils = date_time_utils
+        self.gerrit_sync_service = gerrit_sync_service
 
     def register_routes(self, blueprint):
         """
@@ -67,6 +69,11 @@ class HistoricalController:
         blueprint.add_url_rule(
             "/google/calendar/history/pull",
             view_func=self.pull_calendar_history_api,
+            methods=["POST"],
+        )
+        blueprint.add_url_rule(
+            "/gerrit/backfill",
+            view_func=self.backfill_gerrit_changes,
             methods=["POST"],
         )
 
@@ -170,22 +177,20 @@ class HistoricalController:
             status_code=HTTPStatus.OK,
         )
 
+    async def backfill_gerrit_changes(self):
+        """API endpoint to backfill Gerrit changes into Redis."""
 
-@history_bp.route("/gerrit/backfill", methods=["POST"])
-async def backfill_gerrit_changes():
-    """API endpoint to backfill Gerrit changes into Redis."""
+        body = request.get_json(silent=True) or {}
+        statuses = body.get("statuses")
 
-    body = request.get_json(silent=True) or {}
-    statuses = body.get("statuses")
+        self.gerrit_sync_service.fetch_and_store_changes(statuses=statuses)
 
-    fetch_and_store_changes(statuses=statuses)
-
-    return api_response(
-        success=True,
-        message="Saved successfully.",
-        data="",
-        status_code=HTTPStatus.OK,
-    )
+        return api_response(
+            success=True,
+            message="Saved successfully.",
+            data="",
+            status_code=HTTPStatus.OK,
+        )
 
 
 @history_bp.route("/google/chat/spaces/messages", methods=["POST"])

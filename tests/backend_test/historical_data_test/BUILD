@@ -25,6 +25,15 @@ py_test(
 )
 
 py_test(
+    name = "gerrit_sync_service_test",
+    srcs = ["gerrit_sync_service_test.py"],
+    deps = [
+        "//backend/historical_data:gerrit_sync_service",
+        "@pypi//redis",
+    ],
+)
+
+py_test(
     name = "gerrit_history_fetcher_test",
     srcs = ["gerrit_history_fetcher_test.py"],
     deps = [
@@ -47,13 +56,5 @@ py_test(
     srcs = ["microsoft_member_sync_service_test.py"],
     deps = [
         "//backend/historical_data:microsoft_member_sync_service",
-    ],
-)
-
-py_test(
-    name = "jira_history_sync_service_test",
-    srcs = ["jira_history_sync_service_test.py"],
-    deps = [
-        "//backend/historical_data:jira_history_sync_service",
     ],
 )

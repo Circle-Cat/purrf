@@ -16,6 +16,7 @@ JIRA_UPDATE_API = "/api/jira/update"
 JIRA_BACKFILL_API = "/api/jira/backfill"
 JIRA_PROJECT_API = "/api/jira/project"
 TEST_CHAT_ID = "chat131"
+GERRIT_FETCHER_API = "/gerrit/backfill"
 
 
 # /microsoft/backfill/chat/messages/<chatId>
@@ -25,16 +26,18 @@ class TestHistoricalController(IsolatedAsyncioTestCase):
         self.microsoft_member_sync_service.sync_microsoft_members_to_redis = AsyncMock()
         self.microsoft_chat_history_sync_service = AsyncMock()
         self.microsoft_chat_history_sync_service.sync_microsoft_chat_messages_by_chat_id = AsyncMock()
-
         self.mock_jira_service = MagicMock()
         self.google_calendar_sync_service = MagicMock()
         self.date_time_utils = MagicMock()
+        self.gerrit_sync_service = AsyncMock()
+        self.gerrit_sync_service.fetch_and_store_changes = AsyncMock()
         self.controller = HistoricalController(
             microsoft_member_sync_service=self.microsoft_member_sync_service,
             microsoft_chat_history_sync_service=self.microsoft_chat_history_sync_service,
             jira_history_sync_service=self.mock_jira_service,
             google_calendar_sync_service=self.google_calendar_sync_service,
             date_time_utils=self.date_time_utils,
+            gerrit_sync_service=self.gerrit_sync_service,
         )
 
         self.app = Flask(__name__)
@@ -128,6 +131,18 @@ class TestHistoricalController(IsolatedAsyncioTestCase):
         self.controller.google_calendar_sync_service.pull_calendar_history.assert_called_once_with(
             "2023-09-01T00:00:00Z", "2023-09-02T00:00:00Z"
         )
+
+    async def test_backfill_gerrit_changes_success(self):
+        with self.app.test_request_context(
+            GERRIT_FETCHER_API,
+            method="POST",
+            content_type="application/json",
+        ):
+            response = await self.controller.backfill_gerrit_changes()
+
+        self.gerrit_sync_service.fetch_and_store_changes.assert_called_once()
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
 
 
 class TestAppRoutes(TestCase):
