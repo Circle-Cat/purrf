@@ -30,6 +30,7 @@ from backend.consumers.microsoft_message_processor_service import (
 from backend.consumers.google_chat_processor_service import GoogleChatProcessorService
 from backend.consumers.pubsub_puller_factory import PubSubPullerFactory
 from backend.consumers.pubsub_puller import PubSubPuller
+from backend.consumers.gerrit_processor_service import GerritProcessorService
 from backend.historical_data.historical_controller import HistoricalController
 from backend.historical_data.microsoft_member_sync_service import (
     MicrosoftMemberSyncService,
@@ -127,6 +128,12 @@ class AppDependencyBuilder:
             date_time_util=self.date_time_util,
             retry_utils=self.retry_utils,
         )
+        self.gerrit_sync_service = GerritSyncService(
+            logger=self.logger,
+            redis_client=self.redis_client,
+            gerrit_client=self.gerrit_client,
+            retry_utils=self.retry_utils,
+        )
         self.pubsub_puller_factory = PubSubPullerFactory(
             puller_creator=PubSubPuller, logger=self.logger
         )
@@ -153,9 +160,17 @@ class AppDependencyBuilder:
             google_chat_messages_utils=self.google_chat_messages_utils,
             google_service=self.google_service,
         )
+        self.gerrit_processor_service = GerritProcessorService(
+            logger=self.logger,
+            redis_client=self.redis_client,
+            pubsub_puller_factory=self.pubsub_puller_factory,
+            retry_utils=self.retry_utils,
+            gerrit_sync_service=self.gerrit_sync_service,
+        )
         self.consumer_controller = ConsumerController(
             microsoft_message_processor_service=self.microsoft_message_processor_service,
             google_chat_processor_service=self.google_chat_processor_service,
+            gerrit_processor_service=self.gerrit_processor_service,
         )
 
         self.microsoft_member_sync_service = MicrosoftMemberSyncService(
@@ -174,19 +189,12 @@ class AppDependencyBuilder:
             jira_client=self.jira_client,
             retry_utils=self.retry_utils,
         )
-
         self.jira_history_sync_service = JiraHistorySyncService(
             logger=self.logger,
             redis_client=self.redis_client,
             jira_client=self.jira_client,
             jira_search_service=self.jira_search_service,
             date_time_util=self.date_time_util,
-            retry_utils=self.retry_utils,
-        )
-        self.gerrit_sync_service = GerritSyncService(
-            logger=self.logger,
-            redis_client=self.redis_client,
-            gerrit_client=self.gerrit_client,
             retry_utils=self.retry_utils,
         )
         self.ldap_service = LdapService(

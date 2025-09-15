@@ -4,8 +4,6 @@ from backend.consumers.pubsub_pull_manager import (
     check_pulling_status,
     stop_pulling_process,
 )
-
-from backend.consumers.gerrit_consumer import pull_gerrit
 from backend.common.api_response_wrapper import api_response
 
 consumers_bp = Blueprint("consumers", __name__, url_prefix="/api")
@@ -13,7 +11,10 @@ consumers_bp = Blueprint("consumers", __name__, url_prefix="/api")
 
 class ConsumerController:
     def __init__(
-        self, microsoft_message_processor_service, google_chat_processor_service
+        self,
+        microsoft_message_processor_service,
+        google_chat_processor_service,
+        gerrit_processor_service,
     ):
         """
         Initialize the ConsumerController with required dependencies.
@@ -21,9 +22,11 @@ class ConsumerController:
         Args:
             microsoft_message_processor_service: MicrosoftMessageProcessorService instance.
             google_chat_processor_service: GoogleChatProcessorService instance.
+            gerrit_processor_service: GerritProcessorService instance.
         """
         self.microsoft_message_processor_service = microsoft_message_processor_service
         self.google_chat_processor_service = google_chat_processor_service
+        self.gerrit_processor_service = gerrit_processor_service
 
     def register_routes(self, blueprint):
         """
@@ -40,6 +43,11 @@ class ConsumerController:
         blueprint.add_url_rule(
             "/google/chat/pull/<project_id>/<subscription_id>",
             view_func=self.start_google_chat_pulling,
+            methods=["POST"],
+        )
+        blueprint.add_url_rule(
+            "/gerrit/pull/<project_id>/<subscription_id>",
+            view_func=self.start_gerrit_pulling,
             methods=["POST"],
         )
 
@@ -90,6 +98,26 @@ class ConsumerController:
             status_code=HTTPStatus.OK,
         )
 
+    def start_gerrit_pulling(self, project_id: str, subscription_id: str):
+        """
+        HTTP POST endpoint to trigger the Gerrit Pub/Sub pulling process
+        for a given project and subscription.
+
+        Args:
+            project_id (str): The Google Cloud project ID from URL path.
+            subscription_id (str): The Pub/Sub subscription ID from URL path.
+
+        Returns:
+            JSON response with pull status and HTTP 200 code.
+        """
+        self.gerrit_processor_service.pull_gerrit(project_id, subscription_id)
+        return api_response(
+            success=True,
+            message="Gerrit pull started.",
+            data=None,
+            status_code=HTTPStatus.OK,
+        )
+
 
 @consumers_bp.route(
     "/pubsub/pull/status/<project_id>/<subscription_id>", methods=["GET"]
@@ -135,27 +163,5 @@ def stop_pulling(project_id, subscription_id):
         success=True,
         message="Successfully.",
         data=data,
-        status_code=HTTPStatus.OK,
-    )
-
-
-@consumers_bp.route("/gerrit/pull/<project_id>/<subscription_id>", methods=["POST"])
-def start_gerrit_pulling(project_id: str, subscription_id: str):
-    """
-    HTTP POST endpoint to trigger the Gerrit Pub/Sub pulling process
-    for a given project and subscription.
-
-    Args:
-        project_id (str): The Google Cloud project ID from URL path.
-        subscription_id (str): The Pub/Sub subscription ID from URL path.
-
-    Returns:
-        JSON response with pull status and HTTP 200 code.
-    """
-    pull_gerrit(project_id, subscription_id)
-    return api_response(
-        success=True,
-        message="Gerrit pull started.",
-        data=None,
         status_code=HTTPStatus.OK,
     )

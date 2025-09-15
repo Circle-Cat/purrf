@@ -3,6 +3,7 @@ from unittest.mock import patch, MagicMock
 from backend.utils.app_dependency_builder import AppDependencyBuilder
 
 
+@patch("backend.utils.app_dependency_builder.GerritProcessorService")
 @patch("backend.utils.app_dependency_builder.GerritSubscriptionService")
 @patch("backend.utils.app_dependency_builder.GerritSyncService")
 @patch("backend.utils.app_dependency_builder.GerritClientFactory")
@@ -78,6 +79,7 @@ class TestAppDependencyBuilder(TestCase):
         mock_gerrit_client_factory_cls,
         mock_gerrit_sync_service_cls,
         mock_gerrit_subscription_service,
+        mock_gerrit_processor_service_cls,
     ):
         """
         Tests that the AppDependencyBuilder correctly instantiates and wires all its dependencies.
@@ -202,9 +204,18 @@ class TestAppDependencyBuilder(TestCase):
             microsoft_chat_message_util=mock_microsoft_chat_message_util_cls.return_value,
         )
 
+        mock_gerrit_processor_service_cls.assert_called_once_with(
+            logger=mock_logger,
+            redis_client=mock_redis_client,
+            gerrit_sync_service=mock_gerrit_sync_service_cls.return_value,
+            pubsub_puller_factory=mock_pubsub_puller_factory_cls.return_value,
+            retry_utils=mock_retry_utils_instance,
+        )
+
         mock_consumer_controller_cls.assert_called_once_with(
             microsoft_message_processor_service=mock_microsoft_message_processor_service_cls.return_value,
             google_chat_processor_service=mock_google_chat_processor_service.return_value,
+            gerrit_processor_service=mock_gerrit_processor_service_cls.return_value,
         )
 
         mock_microsoft_member_sync_service_cls.assert_called_once_with(
@@ -381,6 +392,10 @@ class TestAppDependencyBuilder(TestCase):
         self.assertEqual(
             builder.microsoft_message_processor_service,
             mock_microsoft_message_processor_service_cls.return_value,
+        )
+        self.assertEqual(
+            builder.gerrit_processor_service,
+            mock_gerrit_processor_service_cls.return_value,
         )
         self.assertEqual(
             builder.consumer_controller, mock_consumer_controller_cls.return_value

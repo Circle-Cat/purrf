@@ -33,7 +33,6 @@ py_library(
     ],
     deps = [
         "//backend/common:api_response_wrapper",
-        "//backend/consumers:gerrit_consumer",
         "//backend/consumers:pubsub_pull_manager",
         "@pypi//flask",
     ],
@@ -62,15 +61,12 @@ py_library(
 )
 
 py_library(
-    name = "gerrit_consumer",
+    name = "gerrit_processor_service",
     srcs = [
-        "gerrit_consumer.py",
+        "gerrit_processor_service.py",
     ],
     deps = [
-        "//backend/common:logger",
-        "//backend/common:redis_client",
-        "//backend/consumers:pubsub_puller",
-        "//backend/historical_data:gerrit_history_fetcher",
+        "//backend/common:constants",
     ],
 )
 

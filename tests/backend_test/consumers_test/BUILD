@@ -41,10 +41,10 @@ py_test(
 )
 
 py_test(
-    name = "gerrit_consumer_test",
-    srcs = ["gerrit_consumer_test.py"],
+    name = "gerrit_processor_service_test",
+    srcs = ["gerrit_processor_service_test.py"],
     deps = [
-        "//backend/consumers:gerrit_consumer",
+        "//backend/consumers:gerrit_processor_service",
     ],
 )
 

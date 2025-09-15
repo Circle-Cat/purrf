@@ -82,6 +82,7 @@ py_library(
         "//backend/common:microsoft_graph_service_client",
         "//backend/common:redis_client",
         "//backend/consumers:consumer_controller",
+        "//backend/consumers:gerrit_processor_service",
         "//backend/consumers:google_chat_processor_service",
         "//backend/consumers:microsoft_message_processor_service",
         "//backend/consumers:pubsub_puller",

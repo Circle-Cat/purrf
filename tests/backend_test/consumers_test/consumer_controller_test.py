@@ -15,9 +15,11 @@ class TestConsumerController(IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.microsoft_message_processor_service = MagicMock()
         self.google_chat_processor_service = MagicMock()
+        self.gerrit_processor_service = MagicMock()
         self.controller = ConsumerController(
             microsoft_message_processor_service=self.microsoft_message_processor_service,
             google_chat_processor_service=self.google_chat_processor_service,
+            gerrit_processor_service=self.gerrit_processor_service,
         )
 
         self.app = Flask(__name__)
@@ -44,6 +46,15 @@ class TestConsumerController(IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, HTTPStatus.ACCEPTED)
         self.assertEqual(response.json["data"], {})
         self.google_chat_processor_service.pull_messages.assert_called_once()
+
+    async def test_all_gerrit_topics(self):
+        response = self.controller.start_gerrit_pulling(
+            TEST_PROJECT_ID, TEST_SUBSCRIPTION_ID
+        )
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.assertEqual(response.json["data"], {})
+        self.gerrit_processor_service.pull_gerrit.assert_called_once()
 
 
 class TestAppRoutes(TestCase):
