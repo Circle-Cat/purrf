@@ -1,7 +1,5 @@
 from http import HTTPStatus
 from flask import Blueprint, request
-
-from backend.notification_management.gerrit_watcher import GerritWatcher
 from backend.common.api_response_wrapper import api_response
 from backend.common.constants import EVENT_TYPES
 
@@ -10,21 +8,29 @@ notification_bp = Blueprint("notification", __name__, url_prefix="/api")
 
 class NotificationController:
     def __init__(
-        self, microsoft_chat_subscription_service, google_chat_subscription_service
+        self,
+        microsoft_chat_subscription_service,
+        google_chat_subscription_service,
+        gerrit_subscription_service,
     ):
         """
         Initialize the NotificationController with required dependencies.
 
         Args:
             microsoft_chat_subscription_service: MicrosoftChatSubscriptionService instance.
+            google_chat_subscription_service: GoogleChatSubscriptionService instance.
+            gerrit_subscription_service: GerritSubscriptionService instance.
         """
         if not microsoft_chat_subscription_service:
             raise ValueError("MicrosoftChatSubscriptionService instances is required.")
         if not google_chat_subscription_service:
             raise ValueError("GoogleChatSubscriptionService instances is required.")
+        if not gerrit_subscription_service:
+            raise ValueError("GerritSubscriptionService instances is required.")
 
         self.microsoft_chat_subscription_service = microsoft_chat_subscription_service
         self.google_chat_subscription_service = google_chat_subscription_service
+        self.gerrit_subscription_service = gerrit_subscription_service
 
     def register_routes(self, blueprint):
         """
@@ -38,10 +44,14 @@ class NotificationController:
             view_func=self.subscribe_microsoft_chat_messages,
             methods=["POST"],
         )
-
         blueprint.add_url_rule(
             "/google/chat/spaces/subscribe",
             view_func=self.subscribe_google_chat_space,
+            methods=["POST"],
+        )
+        blueprint.add_url_rule(
+            "/gerrit/webhook/register",
+            view_func=self.register_gerrit_webhook,
             methods=["POST"],
         )
 
@@ -118,25 +128,23 @@ class NotificationController:
             status_code=HTTPStatus.CREATED,
         )
 
+    def register_gerrit_webhook(self):
+        """
+        Registers a Gerrit webhook for receiving change events.
 
-@notification_bp.route("/gerrit/webhook/register", methods=["POST"])
-def register_gerrit_webhook():
-    """
-    Registers a Gerrit webhook for receiving change events.
+        This endpoint uses the GerritSubscriptionService class to create (or retrieve)
+        a webhook subscription via Gerrit's Webhooks plugin. It targets
+        the configured project and sends events to the URL specified in
+        GERRIT_WEBHOOK_TARGET_URL.
 
-    This endpoint uses the GerritWatcher class to create (or retrieve)
-    a webhook subscription via Gerrit's Webhooks plugin. It targets
-    the configured project and sends events to the URL specified in
-    GERRIT_WEBHOOK_TARGET_URL.
-
-    Returns:
-        A standardized API response containing the webhook registration
-        result or existing configuration.
-    """
-    result = GerritWatcher().register_webhook()
-    return api_response(
-        success=True,
-        message="Gerrit Webhook registered successfully.",
-        data=result,
-        status_code=HTTPStatus.OK,
-    )
+        Returns:
+            A standardized API response containing the webhook registration
+            result or existing configuration.
+        """
+        result = self.gerrit_subscription_service.register_webhook()
+        return api_response(
+            success=True,
+            message="Gerrit Webhook registered successfully.",
+            data=result,
+            status_code=HTTPStatus.OK,
+        )

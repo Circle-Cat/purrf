@@ -20,19 +20,19 @@ py_library(
     deps = [
         "//backend/common:api_response_wrapper",
         "//backend/common:constants",
-        "//backend/notification_management:gerrit_watcher",
+        "//backend/notification_management:gerrit_subscription_service",
         "//backend/notification_management:google_chat_subscription_service",
         "@pypi//flask",
     ],
 )
 
 py_library(
-    name = "gerrit_watcher",
+    name = "gerrit_subscription_service",
     srcs = [
-        "gerrit_watcher.py",
+        "gerrit_subscription_service.py",
     ],
     deps = [
-        "//backend/common:gerrit_client",
+        "//backend/common:environment_constants",
     ],
 )
 

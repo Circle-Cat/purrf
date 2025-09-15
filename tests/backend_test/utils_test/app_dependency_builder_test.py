@@ -3,6 +3,7 @@ from unittest.mock import patch, MagicMock
 from backend.utils.app_dependency_builder import AppDependencyBuilder
 
 
+@patch("backend.utils.app_dependency_builder.GerritSubscriptionService")
 @patch("backend.utils.app_dependency_builder.GerritSyncService")
 @patch("backend.utils.app_dependency_builder.GerritClientFactory")
 @patch("backend.utils.app_dependency_builder.GerritAnalyticsService")
@@ -76,6 +77,7 @@ class TestAppDependencyBuilder(TestCase):
         mock_gerrit_analytics_service_cls,
         mock_gerrit_client_factory_cls,
         mock_gerrit_sync_service_cls,
+        mock_gerrit_subscription_service,
     ):
         """
         Tests that the AppDependencyBuilder correctly instantiates and wires all its dependencies.
@@ -170,10 +172,14 @@ class TestAppDependencyBuilder(TestCase):
             google_workspaceevents_client=mock_google_workspaceevents_client,
             retry_utils=mock_retry_utils_instance,
         )
-
+        mock_gerrit_subscription_service.assert_called_once_with(
+            logger=mock_logger,
+            gerrit_client=mock_gerrit_client,
+        )
         mock_notification_controller.assert_called_once_with(
             microsoft_chat_subscription_service=mock_microsoft_chat_subscription_service.return_value,
             google_chat_subscription_service=mock_google_chat_subscription_service.return_value,
+            gerrit_subscription_service=mock_gerrit_subscription_service.return_value,
         )
         mock_date_time_util_cls.assert_called_once_with(logger=mock_logger)
 
@@ -356,6 +362,10 @@ class TestAppDependencyBuilder(TestCase):
         self.assertEqual(
             builder.google_chat_subscription_service,
             mock_google_chat_subscription_service.return_value,
+        )
+        self.assertEqual(
+            builder.gerrit_subscription_service,
+            mock_gerrit_subscription_service.return_value,
         )
         self.assertEqual(
             builder.notification_controller, mock_notification_controller.return_value

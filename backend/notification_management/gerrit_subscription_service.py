@@ -1,6 +1,4 @@
 import os
-from backend.common.gerrit_client import GerritClientFactory
-from backend.common.logger import get_logger
 from http import HTTPStatus
 from backend.common.environment_constants import (
     GERRIT_WEBHOOK_REMOTE_NAME,
@@ -10,10 +8,8 @@ from backend.common.environment_constants import (
     GERRIT_WEBHOOK_PROJECT,
 )
 
-logger = get_logger()
 
-
-class GerritWatcher:
+class GerritSubscriptionService:
     """
     Registers a webhook in Gerrit's Webhooks plugin.
 
@@ -24,11 +20,15 @@ class GerritWatcher:
     Handles "already exists" responses by retrieving the existing configuration.
     """
 
-    def __init__(self, project: str = None, remote_name: str = None):
+    def __init__(
+        self, logger, gerrit_client, project: str = None, remote_name: str = None
+    ):
         """
         Initializes the GerritWatcher with project and remote configuration.
 
         Args:
+            logger: The logger instance for logging messages.
+            gerrit_client: Gerrit client instance.
             project (str, optional): The Gerrit project to register the webhook for.
                 Defaults to the value of GERRIT_WEBHOOK_PROJECT environment variable,
                 or "All-Projects" if not set.
@@ -39,9 +39,13 @@ class GerritWatcher:
         Raises:
             RuntimeError: If GERRIT_WEBHOOK_TARGET_URL is not set in the environment.
         """
-        client = GerritClientFactory().create_gerrit_client()
-        self.base_url = client.base_url.rstrip("/")
-        self.session = client.session
+        if gerrit_client is None:
+            raise ValueError("gerrit_client must not be None")
+
+        self.logger = logger
+        self.gerrit_client = gerrit_client
+        self.base_url = self.gerrit_client.base_url.rstrip("/")
+        self.session = self.gerrit_client.session
 
         self.project = project or os.getenv(GERRIT_WEBHOOK_PROJECT, "All-Projects")
         self.remote_name = remote_name or os.getenv(
@@ -86,7 +90,7 @@ class GerritWatcher:
             HTTPStatus.CREATED,
             HTTPStatus.NO_CONTENT,
         ):
-            logger.info(
+            self.logger.info(
                 "Registered webhook %s for project %s", self.remote_name, self.project
             )
             try:
@@ -98,7 +102,7 @@ class GerritWatcher:
             response.status_code == HTTPStatus.BAD_REQUEST
             and "already exists" in response.text.lower()
         ):
-            logger.info(
+            self.logger.info(
                 "Webhook %s already exists for project %s",
                 self.remote_name,
                 self.project,

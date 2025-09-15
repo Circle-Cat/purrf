@@ -2,11 +2,10 @@ import json
 from http import HTTPStatus
 
 from unittest import IsolatedAsyncioTestCase, main
-from unittest.mock import patch, AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock
 from flask import Flask
 
 from backend.notification_management.notification_controller import (
-    notification_bp,
     NotificationController,
 )
 from backend.common.constants import EVENT_TYPES
@@ -16,9 +15,11 @@ class TestNotificationController(IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.microsoft_chat_subscription_service = AsyncMock()
         self.google_chat_subscription_service = MagicMock()
+        self.gerrit_subscription_service = MagicMock()
         self.controller = NotificationController(
             microsoft_chat_subscription_service=self.microsoft_chat_subscription_service,
             google_chat_subscription_service=self.google_chat_subscription_service,
+            gerrit_subscription_service=self.gerrit_subscription_service,
         )
 
         self.app = Flask(__name__)
@@ -87,29 +88,23 @@ class TestNotificationController(IsolatedAsyncioTestCase):
             event_types=EVENT_TYPES,
         )
 
+    def test_register_gerrit_webhook_success(self):
+        self.gerrit_subscription_service.register_webhook.return_value = {"foo": "bar"}
 
-class TestNotificationApi(IsolatedAsyncioTestCase):
-    @classmethod
-    def setUp(self):
-        app = Flask(__name__)
-        app.register_blueprint(notification_bp)
-        self.client = app.test_client()
-        app.testing = True
-
-    @patch("backend.notification_management.notification_controller.GerritWatcher")
-    def test_register_gerrit_webhook_success(self, mock_watcher_cls):
-        mock_instance = MagicMock()
-        mock_instance.register_webhook.return_value = {"foo": "bar"}
-        mock_watcher_cls.return_value = mock_instance
-
-        resp = self.client.post("/api/gerrit/webhook/register")
-        data = resp.get_json()
+        with self.app.test_request_context(
+            "/api/gerrit/webhook/register",
+            method="POST",
+            data=json.dumps({}),
+            content_type="application/json",
+        ):
+            resp = self.controller.register_gerrit_webhook()
+            data = resp.get_json()
 
         self.assertEqual(resp.status_code, HTTPStatus.OK)
         self.assertIsNotNone(data)
         self.assertEqual(data.get("message"), "Gerrit Webhook registered successfully.")
         self.assertEqual(data.get("data"), {"foo": "bar"})
-        mock_instance.register_webhook.assert_called_once()
+        self.gerrit_subscription_service.register_webhook.assert_called_once()
 
 
 if __name__ == "__main__":

@@ -25,9 +25,10 @@ py_test(
 )
 
 py_test(
-    name = "gerrit_watcher_test",
-    srcs = ["gerrit_watcher_test.py"],
+    name = "gerrit_subscription_service_test",
+    srcs = ["gerrit_subscription_service_test.py"],
     deps = [
-        "//backend/notification_management:gerrit_watcher",
+        "//backend/notification_management:gerrit_subscription_service",
+        "@pypi//requests",
     ],
 )

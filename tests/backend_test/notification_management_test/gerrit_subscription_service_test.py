@@ -4,7 +4,9 @@ from unittest import TestCase, main
 from unittest.mock import MagicMock, patch
 from requests.exceptions import HTTPError
 
-from backend.notification_management.gerrit_watcher import GerritWatcher
+from backend.notification_management.gerrit_subscription_service import (
+    GerritSubscriptionService,
+)
 from backend.common.environment_constants import (
     GERRIT_WEBHOOK_TARGET_URL,
     GERRIT_WEBHOOK_SECRET,
@@ -20,20 +22,12 @@ TEST_SECRET = "supersecret"
 TEST_EVENTS = "one,two,three"
 
 
-class TestGerritWatcher(TestCase):
+class TestGerritSubscriptionService(TestCase):
     def setUp(self):
-        factory_patcher = patch(
-            "backend.notification_management.gerrit_watcher.GerritClientFactory"
-        )
-        self.addCleanup(factory_patcher.stop)
-        self.mock_factory_cls = factory_patcher.start()
-
+        self.mock_logger = MagicMock()
         self.mock_session = MagicMock()
         self.fake_client = MagicMock(
             base_url="http://gerrit.example.com/", session=self.mock_session
-        )
-        self.mock_factory_cls.return_value.create_gerrit_client.return_value = (
-            self.fake_client
         )
 
         env = {
@@ -50,14 +44,16 @@ class TestGerritWatcher(TestCase):
     def test_init_missing_target_url_raises(self):
         with patch.dict(os.environ, {}, clear=True):
             with self.assertRaises(RuntimeError):
-                GerritWatcher()
+                GerritSubscriptionService(self.mock_logger, self.fake_client)
 
     def test_register_webhook_success_and_secret_and_events(self):
         put_resp = MagicMock(status_code=HTTPStatus.CREATED)
         put_resp.json.return_value = {"status": "created"}
         self.mock_session.put.return_value = put_resp
 
-        watcher = GerritWatcher()
+        watcher = GerritSubscriptionService(
+            logger=self.mock_logger, gerrit_client=self.fake_client
+        )
         result = watcher.register_webhook()
 
         expected_path = (
@@ -84,7 +80,9 @@ class TestGerritWatcher(TestCase):
         get_resp.raise_for_status = MagicMock()
         self.mock_session.get.return_value = get_resp
 
-        watcher = GerritWatcher()
+        watcher = GerritSubscriptionService(
+            logger=self.mock_logger, gerrit_client=self.fake_client
+        )
         result = watcher.register_webhook()
 
         expected_path = (
@@ -106,7 +104,9 @@ class TestGerritWatcher(TestCase):
         get_resp.raise_for_status = MagicMock()
         self.mock_session.get.return_value = get_resp
 
-        watcher = GerritWatcher()
+        watcher = GerritSubscriptionService(
+            logger=self.mock_logger, gerrit_client=self.fake_client
+        )
         result = watcher.register_webhook()
 
         self.mock_session.get.assert_called_once()
@@ -118,7 +118,9 @@ class TestGerritWatcher(TestCase):
         put_resp.raise_for_status.side_effect = err
         self.mock_session.put.return_value = put_resp
 
-        watcher = GerritWatcher()
+        watcher = GerritSubscriptionService(
+            logger=self.mock_logger, gerrit_client=self.fake_client
+        )
         with self.assertRaises(HTTPError):
             watcher.register_webhook()
 
