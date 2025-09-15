@@ -1,9 +1,6 @@
 from flask import Blueprint, request
 from http import HTTPStatus
 from backend.frontend_service.chat_query_utils import count_messages_in_date_range
-from backend.frontend_service.gerrit_loader import (
-    get_gerrit_stats as load_gerrit_stats,
-)
 from backend.common.constants import MicrosoftAccountStatus, MicrosoftGroups
 from backend.common.api_response_wrapper import api_response
 from backend.utils.google_chat_utils import get_chat_spaces
@@ -21,6 +18,7 @@ class FrontendController:
         jira_analytics_service,
         google_calendar_analytics_service,
         date_time_util,
+        gerrit_analytics_service,
     ):
         """
         Initialize the FrontendController with required dependencies.
@@ -31,6 +29,7 @@ class FrontendController:
             microsoft_meeting_chat_topic_cache_service: MicrosoftMeetingChatTopicCacheService instance.
             google_calendar_analytics_service: GoogleCalendarAnalyticsService instance.
             date_time_util: DateTimeUtil instance.
+            gerrit_analytics_service: GerritAnalyticsService instance.
         """
         self.ldap_service = ldap_service
         self.microsoft_chat_analytics_service = microsoft_chat_analytics_service
@@ -40,6 +39,7 @@ class FrontendController:
         self.jira_analytics_service = jira_analytics_service
         self.google_calendar_analytics_service = google_calendar_analytics_service
         self.date_time_util = date_time_util
+        self.gerrit_analytics_service = gerrit_analytics_service
 
     def register_routes(self, blueprint):
         """
@@ -87,6 +87,11 @@ class FrontendController:
             "/jira/detail/batch",
             view_func=self.get_issue_detail_batch,
             methods=["POST"],
+        )
+        blueprint.add_url_rule(
+            "/gerrit/stats",
+            view_func=self.get_gerrit_stats,
+            methods=["GET"],
         )
 
     def get_issue_detail_batch(self):
@@ -327,6 +332,23 @@ class FrontendController:
             status_code=HTTPStatus.OK,
         )
 
+    async def get_gerrit_stats(self):
+        """API endpoint to retrieve aggregated Gerrit stats."""
+
+        response = self.gerrit_analytics_service.get_gerrit_stats(
+            raw_ldap=request.args.get("ldap"),
+            start_date_str=request.args.get("start_date_str"),
+            end_date_str=request.args.get("end_date_str"),
+            raw_project=request.args.get("project"),
+        )
+
+        return api_response(
+            success=True,
+            message="Successfully.",
+            data=response,
+            status_code=HTTPStatus.OK,
+        )
+
 
 @frontend_bp.route("/summary", methods=["POST"])
 def get_summary():
@@ -418,24 +440,5 @@ def get_chat_spaces_route():
         success=True,
         message="Retrieve chat spaces successfully.",
         data=spaces,
-        status_code=HTTPStatus.OK,
-    )
-
-
-@frontend_bp.route("/gerrit/stats", methods=["GET"])
-async def get_gerrit_stats():
-    """API endpoint to retrieve aggregated Gerrit stats."""
-
-    response = load_gerrit_stats(
-        raw_ldap=request.args.get("ldap_list"),
-        start_date_str=request.args.get("start_date"),
-        end_date_str=request.args.get("end_date"),
-        raw_project=request.args.get("project"),
-    )
-
-    return api_response(
-        success=True,
-        message="Fetched Gerrit stats successfully.",
-        data=response,
         status_code=HTTPStatus.OK,
     )

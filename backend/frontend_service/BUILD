@@ -9,7 +9,6 @@ py_library(
         "//backend/common:api_response_wrapper",
         "//backend/common:constants",
         "//backend/frontend_service:chat_query_utils",
-        "//backend/frontend_service:gerrit_loader",
         "//backend/frontend_service:ldap_loader",
         "//backend/utils:google_chat_utils",
         "@pypi//flask",
@@ -49,14 +48,12 @@ py_library(
 )
 
 py_library(
-    name = "gerrit_loader",
+    name = "gerrit_analytics_service",
     srcs = [
-        "gerrit_loader.py",
+        "gerrit_analytics_service.py",
     ],
     deps = [
         "//backend/common:constants",
-        "//backend/common:redis_client",
-        "//backend/frontend_service:ldap_loader",
     ],
 )
 

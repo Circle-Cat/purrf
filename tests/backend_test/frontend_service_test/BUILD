@@ -36,11 +36,11 @@ py_test(
 )
 
 py_test(
-    name = "gerrit_loader_test",
-    srcs = ["gerrit_loader_test.py"],
+    name = "gerrit_analytics_service_test",
+    srcs = ["gerrit_analytics_service_test.py"],
     deps = [
         "//backend/common:constants",
-        "//backend/frontend_service:gerrit_loader",
+        "//backend/frontend_service:gerrit_analytics_service",
     ],
 )
 

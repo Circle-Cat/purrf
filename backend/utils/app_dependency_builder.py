@@ -45,6 +45,7 @@ from backend.frontend_service.microsoft_chat_analytics_service import (
 from backend.frontend_service.microsoft_meeting_chat_topic_cache_service import (
     MicrosoftMeetingChatTopicCacheService,
 )
+from backend.frontend_service.gerrit_analytics_service import GerritAnalyticsService
 from backend.historical_data.microsoft_chat_history_sync_service import (
     MicrosoftChatHistorySyncService,
 )
@@ -218,6 +219,13 @@ class AppDependencyBuilder:
             redis_client=self.redis_client,
             retry_utils=self.retry_utils,
         )
+        self.gerrit_analytics_service = GerritAnalyticsService(
+            logger=self.logger,
+            redis_client=self.redis_client,
+            retry_utils=self.retry_utils,
+            ldap_service=self.ldap_service,
+            date_time_util=self.date_time_util,
+        )
         self.frontend_controller = FrontendController(
             ldap_service=self.ldap_service,
             microsoft_chat_analytics_service=self.microsoft_chat_analytics_service,
@@ -225,4 +233,5 @@ class AppDependencyBuilder:
             jira_analytics_service=self.jira_analytics_service,
             google_calendar_analytics_service=self.google_calendar_analytics_service,
             date_time_util=self.date_time_util,
+            gerrit_analytics_service=self.gerrit_analytics_service,
         )

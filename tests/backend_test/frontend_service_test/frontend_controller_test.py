@@ -18,6 +18,7 @@ GOOGLE_CALENDAR_CALENDARS_API = "/api/google/calendar/calendars"
 JIRA_ISSUE_DETAIL_BATCH_API = "/api/jira/detail/batch"
 GOOGLE_CALENDAR_EVENTS_API = "/api/google/calendar/events"
 JIRA_PROJECT_API = "/api/jira/projects"
+GERRIT_STATS_API = "/api/gerrit/stats"
 
 
 class TestFrontendController(TestCase):
@@ -28,6 +29,7 @@ class TestFrontendController(TestCase):
         self.mock_jira_analytics_service = MagicMock()
         self.google_calendar_analytics_service = MagicMock()
         self.date_time_util = MagicMock()
+        self.mock_gerrit_analytics_service = MagicMock()
         self.controller = FrontendController(
             ldap_service=self.ldap_service,
             microsoft_chat_analytics_service=self.microsoft_chat_analytics_service,
@@ -35,6 +37,7 @@ class TestFrontendController(TestCase):
             jira_analytics_service=self.mock_jira_analytics_service,
             google_calendar_analytics_service=self.google_calendar_analytics_service,
             date_time_util=self.date_time_util,
+            gerrit_analytics_service=self.mock_gerrit_analytics_service,
         )
 
         self.app = Flask(__name__)
@@ -271,6 +274,38 @@ class TestFrontendController(TestCase):
 
             self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
             self.assertIn("Missing required query parameters", response.json["message"])
+
+    async def test_get_gerrit_stats_success(self):
+        mock_stats = {
+            "user1": {
+                "cl_merged": 10,
+                "cl_abandoned": 2,
+                "cl_under_review": 1,
+                "loc_merged": 150,
+                "cl_reviewed": 5,
+            }
+        }
+        self.mock_gerrit_analytics_service.get_gerrit_stats.return_value = mock_stats
+
+        with self.app.test_request_context(
+            GERRIT_STATS_API
+            + "?ldap=user1&start_date_str=2024-01-01&end_date_str=2024-01-31&project=test_project",
+            method="GET",
+        ):
+            response = await self.controller.get_gerrit_stats()
+
+        self.mock_gerrit_analytics_service.get_gerrit_stats.assert_called_once_with(
+            raw_ldap="user1",
+            start_date_str="2024-01-01",
+            end_date_str="2024-01-31",
+            raw_project="test_project",
+        )
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.assertEqual(
+            response.get_json(),
+            {"success": True, "message": "Successfully.", "data": mock_stats},
+        )
 
 
 class TestAppRoutes(TestCase):

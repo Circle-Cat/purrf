@@ -3,6 +3,7 @@ from unittest.mock import patch, MagicMock
 from backend.utils.app_dependency_builder import AppDependencyBuilder
 
 
+@patch("backend.utils.app_dependency_builder.GerritAnalyticsService")
 @patch("backend.utils.app_dependency_builder.JsonSchemaValidator")
 @patch("backend.utils.app_dependency_builder.GoogleCalendarSyncService")
 @patch("backend.utils.app_dependency_builder.GoogleChatProcessorService")
@@ -70,6 +71,7 @@ class TestAppDependencyBuilder(TestCase):
         mock_google_chat_processor_service,
         mock_google_calendar_sync_service_cls,
         mock_json_schema_validator_cls,
+        mock_gerrit_analytics_service_cls,
     ):
         """
         Tests that the AppDependencyBuilder correctly instantiates and wires all its dependencies.
@@ -254,6 +256,13 @@ class TestAppDependencyBuilder(TestCase):
             redis_client=mock_redis_client,
             retry_utils=mock_retry_utils_instance,
         )
+        mock_gerrit_analytics_service_cls.assert_called_once_with(
+            logger=mock_logger,
+            redis_client=mock_redis_client,
+            retry_utils=mock_retry_utils_instance,
+            ldap_service=mock_ldap_service_cls.return_value,
+            date_time_util=mock_date_time_util_cls.return_value,
+        )
         mock_frontend_controller_cls.assert_called_once_with(
             ldap_service=mock_ldap_service_cls.return_value,
             microsoft_chat_analytics_service=mock_microsoft_chat_analytics_service_cls.return_value,
@@ -261,6 +270,7 @@ class TestAppDependencyBuilder(TestCase):
             jira_analytics_service=mock_jira_analytics_service_cls.return_value,
             google_calendar_analytics_service=mock_google_calendar_analytics_service_cls.return_value,
             date_time_util=mock_date_time_util_cls.return_value,
+            gerrit_analytics_service=mock_gerrit_analytics_service_cls.return_value,
         )
 
         mock_google_client_factory_instance.create_chat_client.assert_called_once()
@@ -372,6 +382,10 @@ class TestAppDependencyBuilder(TestCase):
         self.assertEqual(
             builder.google_calendar_analytics_service,
             mock_google_calendar_analytics_service_cls.return_value,
+        )
+        self.assertEqual(
+            builder.gerrit_analytics_service,
+            mock_gerrit_analytics_service_cls.return_value,
         )
         self.assertEqual(
             builder.frontend_controller, mock_frontend_controller_cls.return_value
