@@ -7,10 +7,7 @@ import {
 import "@/App.css";
 import Header from "@/components/layout/Header";
 import Dashboard from "@/pages/Dashboard";
-
-const DataSearch = () => (
-  <div style={{ padding: "20px" }}>Data Search Page</div>
-);
+import DataSearch from "@/pages/DataSearch";
 
 function App() {
   return (
