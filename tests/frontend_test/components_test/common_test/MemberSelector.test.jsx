@@ -1,201 +1,288 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import MemberSelector from "@/components/common/MemberSelector.jsx";
-import { Group } from "@/constants/Groups";
 
-const MEMBERS = [
-  {
-    id: "1",
-    ldap: "ali",
-    fullName: "Alice",
-    group: Group.Employees,
-    terminated: false,
-  },
-  {
-    id: "2",
-    ldap: "char",
-    fullName: "Charlie",
-    group: Group.Employees,
-    terminated: true,
-  },
-  {
-    id: "3",
-    ldap: "intern1",
-    fullName: "Ivy Intern",
-    group: Group.Interns,
-    terminated: false,
-  },
-  {
-    id: "4",
-    ldap: "vol1",
-    fullName: "Vera Volunteer",
-    group: Group.Volunteers,
-    terminated: false,
-  },
-];
+vi.mock("@/api/dashboardApi", () => ({
+  getLdapsAndDisplayNames: vi.fn(),
+}));
 
-function renderMS(props = {}) {
-  const onConfirm = vi.fn();
-  const onCancel = vi.fn();
-  render(
-    <MemberSelector
-      members={MEMBERS}
-      onConfirm={onConfirm}
-      onCancel={onCancel}
-      {...props}
-    />,
-  );
-  return { onConfirm, onCancel };
-}
+vi.mock("@/constants/Groups", () => ({
+  Group: {
+    Employees: "Employees",
+    Interns: "Interns",
+    Volunteers: "Volunteers",
+  },
+}));
 
-describe("MemberSelector", () => {
-  beforeEach(() => vi.clearAllMocks());
+vi.mock("@/constants/LdapStatus", () => ({
+  LdapStatus: {
+    Active: "Active",
+    Terminated: "Terminated",
+    All: "All",
+  },
+}));
 
-  it("renders groups and member rows; shows initial selected count = 0", () => {
-    renderMS();
+const importSelectorOnce = async () => {
+  try {
+    return await import("@/components/common/MemberSelector.jsx");
+  } catch {
+    return await import("@/components/common/MemberSelector");
+  }
+};
+
+const freshImport = async () => {
+  vi.resetModules();
+  return await importSelectorOnce();
+};
+
+const warmImport = async () => {
+  return await importSelectorOnce();
+};
+
+const renderOpen = (Cmp, props = {}) => render(<Cmp open {...props} />);
+
+// ---- Test payloads ----
+const activePayload = {
+  Employees: { Active: { alice: "Alice A", bob: "Bob B" } },
+  Interns: { Active: { ivy: "Ivy I" } },
+  Volunteers: { Active: { victor: "Victor V" } },
+};
+
+const allPayload = {
+  Employees: {
+    Active: { alice: "Alice A", bob: "Bob B" },
+    Terminated: { tony: "Tony T" },
+  },
+  Interns: { Active: { ivy: "Ivy I" } },
+  Volunteers: {
+    Active: { victor: "Victor V" },
+    Terminated: { tina: "Tina T" },
+  },
+};
+
+const getDefault = (mod) => {
+  if (!mod || !mod.default) {
+    const keys = mod ? Object.keys(mod) : [];
+    throw new Error(
+      `MemberSelector default export not found. Module keys: [${keys.join(", ")}]`,
+    );
+  }
+  return mod.default;
+};
+
+describe("MemberSelector (modal wrapper) rendering and interactions", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("loads Active members on open and renders groups/members", async () => {
+    const mod = await freshImport();
+    const MemberSelector = getDefault(mod);
+    const { getLdapsAndDisplayNames } = await import("@/api/dashboardApi");
+
+    getLdapsAndDisplayNames.mockResolvedValueOnce({ data: activePayload });
+
+    renderOpen(MemberSelector, {
+      onConfirm: vi.fn(),
+      onCancel: vi.fn(),
+      onSelectedChange: vi.fn(),
+    });
+
+    expect(screen.getByRole("status")).toHaveTextContent(/loading members/i);
+    await screen.findByRole("checkbox", { name: /Alice A/i });
 
     expect(
-      screen.getByRole("button", { name: /Employees \(/i }),
+      screen.getByRole("checkbox", { name: /Employees \(0\/2\)/i }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: /Interns \(/i }),
+      screen.getByRole("checkbox", { name: /Interns \(0\/1\)/i }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: /Volunteers \(/i }),
+      screen.getByRole("checkbox", { name: /Volunteers \(0\/1\)/i }),
     ).toBeInTheDocument();
 
-    // Non-terminated employee visible; terminated hidden by default
-    expect(screen.getByRole("button", { name: /Alice/i })).toBeInTheDocument();
+    expect(getLdapsAndDisplayNames).toHaveBeenCalledTimes(1);
+    expect(getLdapsAndDisplayNames).toHaveBeenCalledWith({
+      status: "Active",
+      groups: ["Employees", "Interns", "Volunteers"],
+    });
+  });
+
+  it("Include Terminated toggle triggers All fetch and shows terminated chips", async () => {
+    const mod = await freshImport();
+    const MemberSelector = getDefault(mod);
+    const { getLdapsAndDisplayNames } = await import("@/api/dashboardApi");
+
+    getLdapsAndDisplayNames
+      .mockResolvedValueOnce({ data: activePayload }) // Active
+      .mockResolvedValueOnce({ data: allPayload }); // All
+
+    renderOpen(MemberSelector);
+    await screen.findByRole("checkbox", { name: /Alice A/i });
+
+    const includeTerminated = screen.getByRole("checkbox", {
+      name: /include terminated/i,
+    });
+    await userEvent.click(includeTerminated);
+
+    await screen.findByRole("checkbox", { name: /Tony T \(terminated\)/i });
+    await screen.findByRole("checkbox", { name: /Tina T \(terminated\)/i });
+
+    expect(getLdapsAndDisplayNames).toHaveBeenCalledTimes(2);
+    expect(getLdapsAndDisplayNames).toHaveBeenNthCalledWith(2, {
+      status: "All",
+      groups: ["Employees", "Interns", "Volunteers"],
+    });
+  });
+
+  it("search filters members by ldap or full name", async () => {
+    const mod = await freshImport();
+    const MemberSelector = getDefault(mod);
+    const { getLdapsAndDisplayNames } = await import("@/api/dashboardApi");
+
+    getLdapsAndDisplayNames.mockResolvedValueOnce({ data: activePayload });
+
+    renderOpen(MemberSelector);
+    await screen.findByRole("checkbox", { name: /Alice A/i });
+
+    const input = screen.getByPlaceholderText(/search by ldap or full name/i);
+
+    await userEvent.clear(input);
+    await userEvent.type(input, "bob");
     expect(
-      screen.queryByRole("button", { name: /Charlie/i }),
+      screen.getByRole("checkbox", { name: /Bob B/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("checkbox", { name: /Alice A/i }),
     ).not.toBeInTheDocument();
 
-    expect(screen.getByText(/0 selected/i)).toBeInTheDocument();
-  });
-
-  it("shows Full Name first (bold) and LDAP next (lighter) inline", () => {
-    renderMS();
-
-    const row = screen.getByRole("button", { name: /Alice/i });
-
-    const nameEl = within(row).getByText("Alice");
-    const ldapEl = within(row).getByText("ali");
-
-    const isNameBeforeLdap =
-      (nameEl.compareDocumentPosition(ldapEl) &
-        Node.DOCUMENT_POSITION_FOLLOWING) !==
-      0;
-    expect(isNameBeforeLdap).toBe(true);
-    expect(nameEl.className).toContain("ms-label-main");
-    expect(ldapEl.className).toContain("ms-sub");
-  });
-
-  it("supports member toggle selection and updates selected count", async () => {
-    const user = userEvent.setup();
-    renderMS();
-
-    await user.click(screen.getByRole("button", { name: /Alice/i }));
-    expect(screen.getByText(/1 selected/i)).toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: /Alice/i }));
-    expect(screen.getByText(/0 selected/i)).toBeInTheDocument();
-  });
-
-  it("group click selects/deselects all visible members in that group", async () => {
-    const user = userEvent.setup();
-    renderMS();
-
-    const employeesBtn = screen.getByRole("button", { name: /Employees \(/i });
-
-    await user.click(employeesBtn);
-    expect(screen.getByText(/1 selected/i)).toBeInTheDocument(); // only Yanpei visible
-
-    await user.click(employeesBtn);
-    expect(screen.getByText(/0 selected/i)).toBeInTheDocument();
-  });
-
-  it("Include Terminated Members toggles visibility and affects group select-all", async () => {
-    const user = userEvent.setup();
-    renderMS();
-
-    const includeTerminated = screen.getByLabelText(
-      /Include Terminated Members/i,
-    );
-    await user.click(includeTerminated);
-
-    // Now terminated employee appears
+    await userEvent.clear(input);
+    await userEvent.type(input, "ivy");
     expect(
-      screen.getByRole("button", { name: /Charlie/i }),
+      screen.getByRole("checkbox", { name: /Ivy I/i }),
     ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("checkbox", { name: /Bob B/i }),
+    ).not.toBeInTheDocument();
+  });
 
-    const employeesBtn = screen.getByRole("button", { name: /Employees \(/i });
-    await user.click(employeesBtn);
+  it("group select toggles all in the group and updates footer count + onSelectedChange", async () => {
+    const mod = await freshImport();
+    const MemberSelector = getDefault(mod);
+    const { getLdapsAndDisplayNames } = await import("@/api/dashboardApi");
+
+    getLdapsAndDisplayNames.mockResolvedValueOnce({ data: activePayload });
+    const onSelectedChange = vi.fn();
+
+    renderOpen(MemberSelector, { onSelectedChange });
+
+    await screen.findByRole("checkbox", { name: /Alice A/i });
+
+    const employeesGroup = screen.getByRole("checkbox", {
+      name: /Employees \(0\/2\)/i,
+    });
+    await userEvent.click(employeesGroup);
+
     expect(screen.getByText(/2 selected/i)).toBeInTheDocument();
 
-    await user.click(employeesBtn);
+    await waitFor(() => {
+      const lastCall = onSelectedChange.mock.calls.at(-1);
+      const [ids, members] = lastCall;
+      expect(new Set(ids)).toEqual(new Set(["alice", "bob"]));
+      expect(new Set(members.map((m) => m.id))).toEqual(
+        new Set(["alice", "bob"]),
+      );
+    });
+
+    await userEvent.click(employeesGroup);
     expect(screen.getByText(/0 selected/i)).toBeInTheDocument();
   });
 
-  it("search filters by LDAP or full name and shows 'No matches' for empty groups", async () => {
-    const user = userEvent.setup();
-    renderMS();
+  it("member toggle works and confirm returns selected ids", async () => {
+    const mod = await freshImport();
+    const MemberSelector = getDefault(mod);
+    const { getLdapsAndDisplayNames } = await import("@/api/dashboardApi");
 
-    const search = screen.getByPlaceholderText(/Search by LDAP or full name/i);
-    await user.type(search, "Ivy");
+    getLdapsAndDisplayNames.mockResolvedValueOnce({ data: activePayload });
 
-    expect(
-      screen.getByRole("button", { name: /Ivy Intern/i }),
-    ).toBeInTheDocument();
+    const onConfirm = vi.fn();
+    renderOpen(MemberSelector, { onConfirm });
 
-    const employeesSectionButton = screen.getByRole("button", {
-      name: /Employees \(/i,
-    });
-    const volunteersSectionButton = screen.getByRole("button", {
-      name: /Volunteers \(/i,
-    });
+    await screen.findByRole("checkbox", { name: /Alice A/i });
+    await userEvent.click(screen.getByRole("checkbox", { name: /Alice A/i }));
+    await userEvent.click(screen.getByRole("checkbox", { name: /Ivy I/i }));
 
-    const employeesSection = employeesSectionButton.closest(".ms-section");
-    const volunteersSection = volunteersSectionButton.closest(".ms-section");
+    expect(screen.getByText(/2 selected/i)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /^ok$/i }));
 
-    expect(employeesSection).toBeTruthy();
-    expect(volunteersSection).toBeTruthy();
-
-    expect(
-      within(employeesSection).getByText(/No matches/i),
-    ).toBeInTheDocument();
-    expect(
-      within(volunteersSection).getByText(/No matches/i),
-    ).toBeInTheDocument();
+    const [ids] = onConfirm.mock.calls[0];
+    expect(new Set(ids)).toEqual(new Set(["alice", "ivy"]));
   });
 
-  it("returns selected IDs on OK", async () => {
-    const user = userEvent.setup();
-    const { onConfirm } = renderMS();
+  it("module-level cache prevents duplicate Active fetch on remount with same groups", async () => {
+    // First render in a fresh module world
+    const mod1 = await freshImport();
+    const MemberSelector1 = getDefault(mod1);
+    const { getLdapsAndDisplayNames } = await import("@/api/dashboardApi");
 
-    await user.click(screen.getByRole("button", { name: /Ivy Intern/i })); // id "3"
-    expect(screen.getByText(/1 selected/i)).toBeInTheDocument();
+    getLdapsAndDisplayNames.mockResolvedValueOnce({ data: activePayload });
 
-    await user.click(screen.getByRole("button", { name: /^OK$/i }));
-    expect(onConfirm).toHaveBeenCalledTimes(1);
-    const arg = onConfirm.mock.calls[0][0];
-    expect(new Set(arg)).toEqual(new Set(["3"]));
+    const { unmount } = renderOpen(MemberSelector1);
+    await screen.findByRole("checkbox", { name: /Alice A/i });
+    unmount();
+
+    // Import the same module again WITHOUT reset => reuse internal _memberCache
+    const mod2 = await warmImport();
+    const MemberSelector2 = getDefault(mod2);
+
+    renderOpen(MemberSelector2);
+    await screen.findByRole("checkbox", { name: /Alice A/i });
+
+    expect(getLdapsAndDisplayNames).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("MemberSelector (modal wrapper) close behaviors", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
   });
 
-  it("computes indeterminate when some but not all members of a group are selected", async () => {
-    const user = userEvent.setup();
-    renderMS();
+  it("calls onConfirm and closes when OK is clicked", async () => {
+    const mod = await freshImport();
+    const MemberSelector = getDefault(mod);
+    const { getLdapsAndDisplayNames } = await import("@/api/dashboardApi");
 
-    const includeTerminated = screen.getByLabelText(
-      /Include Terminated Members/i,
-    );
-    await user.click(includeTerminated);
+    getLdapsAndDisplayNames.mockResolvedValueOnce({ data: activePayload });
 
-    await user.click(screen.getByRole("button", { name: /Alice/i }));
+    const onClose = vi.fn();
+    const onConfirm = vi.fn();
 
-    const employeesBtn = screen.getByRole("button", { name: /Employees \(/i });
-    const checkEl = employeesBtn.querySelector(".ms-check");
-    expect(checkEl).toBeTruthy();
-    expect(checkEl.className).toContain("ms-check-mixed");
+    renderOpen(MemberSelector, { onClose, onConfirm });
+
+    await screen.findByRole("checkbox", { name: /Alice A/i });
+    await userEvent.click(screen.getByRole("checkbox", { name: /Alice A/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^ok$/i }));
+
+    expect(onConfirm).toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("clicking backdrop calls onClose", async () => {
+    const mod = await freshImport();
+    const MemberSelector = getDefault(mod);
+    const { getLdapsAndDisplayNames } = await import("@/api/dashboardApi");
+
+    getLdapsAndDisplayNames.mockResolvedValueOnce({ data: activePayload });
+
+    const onClose = vi.fn();
+
+    renderOpen(MemberSelector, { onClose });
+
+    await screen.findByRole("checkbox", { name: /Alice A/i });
+
+    const backdrop = screen.getByRole("presentation"); // ds-modal-backdrop
+    await userEvent.click(backdrop);
+
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

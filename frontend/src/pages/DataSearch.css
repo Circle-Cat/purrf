@@ -1,46 +1,78 @@
-.datesearch-page{
-    display: flex;
-    flex-direction: column;
-    height: 100vh;
-    padding: 20px;
-    box-sizing: border-box;
-    position: relative;
+.datesearch-page,
+.ds-page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  padding: 20px;
+  box-sizing: border-box;
+  position: relative;
+  background: var(--bg-color-light);
 }
 
-/* Search and filter row */
-.DateRangePicker-search-row {
-    display: flex;
-    align-items: center;
-    gap: 25px;
-    margin-bottom: 20px;
-    flex-wrap: nowrap;
-    justify-content: flex-end;
+.ds-topbar-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--bg-color-light);
+  border: none;
+  border-radius: 10px;
+  padding: 10px 14px;
+  margin-bottom: 14px;
+  gap: 16px;
 }
 
-.datasearch-button{
-    padding: 6px 12px;
-    background-color: var(--primary-color);
-    color: var(--text-color-white);
-    border: 1px solid var(--primary-color);
-    border-radius: 4px;
-    cursor: pointer;
-    transition: background-color 0.2s ease, border-color 0.2s ease;
-    height: 32px;
-    font-size: 0.9em;    flex-shrink: 0;
-    /* position: absolute;*/
-    top: 20px;
-    right: 200px;
-    width: auto;
-    margin-right: 150px;
+/* LDAP button */
+.ldap-chip {
+  background: var(--bg-color-light);
+  color: var(--text-color-dark);
+  border: 1px solid var(--border-color-medium);
+  border-radius: 8px;
+  padding: 6px 14px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+.ldap-chip:hover {
+  background: var(--bg-color-row-hover);
+  border-color: var(--primary-color);
+}
+.ldap-chip:focus-visible {
+  outline: 4px auto -webkit-focus-ring-color;
 }
 
-/* Button states for hover and focus */
+/* ---------- DateRangePicker + Search row ---------- */
+.DateRangePicker-search-row,
+.ds-search-row {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  margin: 0;
+  flex-wrap: nowrap;
+}
+
+/* Search button */
+.datasearch-button {
+  padding: 6px 12px;
+  background-color: var(--primary-color);
+  color: var(--text-color-white);
+  border: 1px solid var(--primary-color);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+  height: 32px;
+  font-size: 0.9em;
+  line-height: 1;
+  flex-shrink: 0;
+}
 .datasearch-button:hover {
-    background-color: var(--secondary-color);
-    border-color: var(--secondary-color);
+  background-color: var(--secondary-color);
+  border-color: var(--secondary-color);
 }
-
-.datasearch-button:focus {
-    outline: none;
-    outline: 2px solid var(--primary-color);
+.datasearch-button:focus-visible {
+  outline: 4px auto -webkit-focus-ring-color;
+}
+.datasearch-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
