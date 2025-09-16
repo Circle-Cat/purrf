@@ -34,16 +34,6 @@ py_test(
 )
 
 py_test(
-    name = "gerrit_history_fetcher_test",
-    srcs = ["gerrit_history_fetcher_test.py"],
-    deps = [
-        "//backend/common:gerrit_client",
-        "//backend/historical_data:gerrit_history_fetcher",
-        "@pypi//redis",
-    ],
-)
-
-py_test(
     name = "microsoft_chat_history_sync_service_test",
     srcs = ["microsoft_chat_history_sync_service_test.py"],
     deps = [

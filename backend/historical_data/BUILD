@@ -62,18 +62,6 @@ py_library(
 )
 
 py_library(
-    name = "gerrit_history_fetcher",
-    srcs = [
-        "gerrit_history_fetcher.py",
-    ],
-    deps = [
-        "//backend/common:constants",
-        "//backend/common:gerrit_client",
-        "//backend/common:redis_client",
-    ],
-)
-
-py_library(
     name = "microsoft_chat_history_sync_service",
     srcs = [
         "microsoft_chat_history_sync_service.py",
