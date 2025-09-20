@@ -22,3 +22,18 @@ export async function getJiraIssueDetails({ issueIds }) {
   const body = { issueIds };
   return await request.post(`/jira/detail/batch`, body);
 }
+
+export async function getGoogleCalendarEvents({
+  startDate,
+  endDate,
+  calendarIds,
+  ldaps,
+}) {
+  const body = {
+    startDate,
+    endDate,
+    calendarIds,
+    ldaps,
+  };
+  return await request.post(`/calendar/events`, body);
+}
