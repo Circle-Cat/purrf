@@ -19,11 +19,10 @@ py_test(
 )
 
 py_test(
-    name = "chat_query_utils_test",
-    srcs = ["chat_query_utils_test.py"],
+    name = "google_chat_analytics_service_test",
+    srcs = ["google_chat_analytics_service_test.py"],
     deps = [
-        "//backend/common:constants",
-        "//backend/frontend_service:chat_query_utils",
+        "//backend/frontend_service:google_chat_analytics_service",
     ],
 )
 

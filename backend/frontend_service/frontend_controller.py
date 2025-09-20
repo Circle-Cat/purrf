@@ -1,6 +1,5 @@
 from flask import Blueprint, request
 from http import HTTPStatus
-from backend.frontend_service.chat_query_utils import count_messages_in_date_range
 from backend.common.constants import MicrosoftAccountStatus, MicrosoftGroups
 from backend.common.api_response_wrapper import api_response
 from backend.utils.google_chat_utils import get_chat_spaces
@@ -17,6 +16,7 @@ class FrontendController:
         microsoft_meeting_chat_topic_cache_service,
         jira_analytics_service,
         google_calendar_analytics_service,
+        google_chat_analytics_service,
         date_time_util,
         gerrit_analytics_service,
     ):
@@ -28,6 +28,7 @@ class FrontendController:
             microsoft_chat_analytics_service: MicrosoftChatAnalyticsService instance.
             microsoft_meeting_chat_topic_cache_service: MicrosoftMeetingChatTopicCacheService instance.
             google_calendar_analytics_service: GoogleCalendarAnalyticsService instance.
+            google_chat_analytics_service: GoogleChatAnalyticsService instance.
             date_time_util: DateTimeUtil instance.
             gerrit_analytics_service: GerritAnalyticsService instance.
         """
@@ -38,6 +39,7 @@ class FrontendController:
         )
         self.jira_analytics_service = jira_analytics_service
         self.google_calendar_analytics_service = google_calendar_analytics_service
+        self.google_chat_analytics_service = google_chat_analytics_service
         self.date_time_util = date_time_util
         self.gerrit_analytics_service = gerrit_analytics_service
 
@@ -97,6 +99,55 @@ class FrontendController:
             "/gerrit/projects",
             view_func=self.get_gerrit_projects,
             methods=["GET"],
+        )
+
+        blueprint.add_url_rule(
+            "/google/chat/count",
+            view_func=self.get_google_chat_messages_count,
+            methods=["POST"],
+        )
+
+    def get_google_chat_messages_count(self):
+        """
+        Count chat messages in Redis within a specified date range.
+
+        JSON Body Parameters:
+            ldaps (list[str], optional): List of sender LDAPs.
+            spaceIds (list[str], optional): List of space IDs.
+            startDate (str, optional): Start date in "YYYY-MM-DD" format.
+            endDate (str, optional): End date in "YYYY-MM-DD" format.
+
+        Returns:
+            Response (JSON): Message counts grouped by sender and space. Example:
+            {
+                "alice": {
+                    "space1": 25,
+                    "space2": 5
+                },
+                "bob": {
+                    "space1": 11,
+                    "space2": 0
+                }
+            }
+        """
+        data = request.get_json(force=True)
+        sender_ldaps = data.get("ldaps")
+        space_ids = data.get("spaceIds")
+        start_date = data.get("startDate")
+        end_date = data.get("endDate")
+
+        result = self.google_chat_analytics_service.count_messages(
+            space_ids=space_ids,
+            sender_ldaps=sender_ldaps,
+            start_date=start_date,
+            end_date=end_date,
+        )
+
+        return api_response(
+            success=True,
+            message="Successfully.",
+            data=result,
+            status_code=HTTPStatus.OK,
         )
 
     def get_issue_detail_batch(self):
@@ -330,11 +381,13 @@ class FrontendController:
             start_date, end_date
         )
 
-        calendar_data = self.google_calendar_analytics_service.get_all_events_from_calendars(
-            calendar_ids,
-            ldaps,
-            start_dt,
-            end_dt,
+        calendar_data = (
+            self.google_calendar_analytics_service.get_all_events_from_calendars(
+                calendar_ids,
+                ldaps,
+                start_dt,
+                end_dt,
+            )
         )
         return api_response(
             success=True,
@@ -389,63 +442,6 @@ def get_summary():
     """
     return api_response(
         success=False, message="Not Implemented", status_code=HTTPStatus.NOT_IMPLEMENTED
-    )
-
-
-@frontend_bp.route("/google/chat/count", methods=["GET"])
-def count_messages():
-    """
-    Count chat messages in Redis within a specified date range.
-
-    Redis keys are structured as "{space_id}/{sender_ldap}", and this endpoint
-    counts the number of messages (sorted set entries) whose UNIX timestamp
-    score falls within the requested date range.
-
-    Query Parameters:
-        spaceId (str, optional): Repeated key format (e.g., "spaceId=space1&spaceId=space2").
-            If omitted, all space IDs are included.
-
-        senderLdap (str, optional): Repeated key format (e.g., "senderLdap=alice&senderLdap=bob").
-            If omitted, all sender LDAPs are included.
-
-        startDate (str, optional): Start date in "YYYY-MM-DD" format.
-            Defaults to one month before endDate.
-
-        endDate (str, optional): End date in "YYYY-MM-DD" format.
-            Defaults to today (UTC).
-
-    Returns:
-        Response (JSON): Message counts grouped by sender and space. Example:
-        {
-            "alice": {
-                "space1": 25,
-                "space2": 5
-            },
-            "bob": {
-                "space1": 11,
-                "space2": 0
-            }
-        }
-    """
-
-    start_date = request.args.get("startDate")
-    end_date = request.args.get("endDate")
-
-    space_ids = request.args.getlist("spaceId")
-    sender_ldaps = request.args.getlist("senderLdap")
-
-    result = count_messages_in_date_range(
-        space_ids=space_ids,
-        sender_ldaps=sender_ldaps,
-        start_date=start_date,
-        end_date=end_date,
-    )
-
-    return api_response(
-        success=True,
-        message="Messages counted successfully.",
-        data=result,
-        status_code=HTTPStatus.OK,
     )
 
 

@@ -8,7 +8,6 @@ py_library(
     deps = [
         "//backend/common:api_response_wrapper",
         "//backend/common:constants",
-        "//backend/frontend_service:chat_query_utils",
         "//backend/frontend_service:ldap_loader",
         "//backend/utils:google_chat_utils",
         "@pypi//flask",
@@ -26,15 +25,10 @@ py_library(
 )
 
 py_library(
-    name = "chat_query_utils",
-    srcs = ["chat_query_utils.py"],
+    name = "google_chat_analytics_service",
+    srcs = ["google_chat_analytics_service.py"],
     deps = [
         "//backend/common:constants",
-        "//backend/common:logger",
-        "//backend/common:redis_client",
-        "//backend/frontend_service:ldap_loader",
-        "//backend/utils:google_chat_utils",
-        "@pypi//python_dateutil",
     ],
 )
 

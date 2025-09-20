@@ -58,6 +58,9 @@ from backend.historical_data.microsoft_chat_history_sync_service import (
 )
 from backend.historical_data.jira_history_sync_service import JiraHistorySyncService
 from backend.service.jira_search_service import JiraSearchService
+from backend.frontend_service.google_chat_analytics_service import (
+    GoogleChatAnalyticsService,
+)
 from backend.common.environment_constants import (
     GERRIT_URL,
     GERRIT_USER,
@@ -265,6 +268,14 @@ class AppDependencyBuilder:
             ldap_service=self.ldap_service,
             date_time_util=self.date_time_util,
         )
+        self.google_chat_analytics_service = GoogleChatAnalyticsService(
+            logger=self.logger,
+            redis_client=self.redis_client,
+            retry_utils=self.retry_utils,
+            date_time_util=self.date_time_util,
+            google_service=self.google_service,
+            ldap_service=self.ldap_service,
+        )
         self.frontend_controller = FrontendController(
             ldap_service=self.ldap_service,
             microsoft_chat_analytics_service=self.microsoft_chat_analytics_service,
@@ -273,4 +284,5 @@ class AppDependencyBuilder:
             google_calendar_analytics_service=self.google_calendar_analytics_service,
             date_time_util=self.date_time_util,
             gerrit_analytics_service=self.gerrit_analytics_service,
+            google_chat_analytics_service=self.google_chat_analytics_service,
         )

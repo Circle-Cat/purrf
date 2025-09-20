@@ -31,6 +31,7 @@ class TestFrontendController(TestCase):
         self.google_calendar_analytics_service = MagicMock()
         self.date_time_util = MagicMock()
         self.mock_gerrit_analytics_service = MagicMock()
+        self.mock_google_chat_analytics_service = MagicMock()
         self.controller = FrontendController(
             ldap_service=self.ldap_service,
             microsoft_chat_analytics_service=self.microsoft_chat_analytics_service,
@@ -39,6 +40,7 @@ class TestFrontendController(TestCase):
             google_calendar_analytics_service=self.google_calendar_analytics_service,
             date_time_util=self.date_time_util,
             gerrit_analytics_service=self.mock_gerrit_analytics_service,
+            google_chat_analytics_service=self.mock_google_chat_analytics_service,
         )
 
         self.app = Flask(__name__)
@@ -47,6 +49,28 @@ class TestFrontendController(TestCase):
 
     async def asyncTearDown(self):
         self.app_context.pop()
+
+    def test_get_google_chat_messages_count(self):
+        mock_result = {}
+        self.mock_google_chat_analytics_service.count_messages.return_value = (
+            mock_result
+        )
+
+        with self.app.test_request_context(
+            GOOGLE_CHAT_COUNT_API,
+            method="POST",
+            json={
+                "startDate": "2025-01-01",
+                "endDate": "2025-02-01",
+                "spaceIds": ["space1"],
+                "senderLdaps": ["ldap1"],
+            },
+        ):
+            response = self.controller.get_google_chat_messages_count()
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.assertEqual(response.json["data"], mock_result)
+        self.mock_google_chat_analytics_service.count_messages.assert_called_once()
 
     def test_get_issue_detail_batch(self):
         mock_result = {}
@@ -227,9 +251,7 @@ class TestFrontendController(TestCase):
             "ldap1": [{"event": "Meeting", "start": "2025-08-01T10:00:00Z"}],
             "ldap2": [{"event": "Workshop", "start": "2025-08-01T12:00:00Z"}],
         }
-        self.google_calendar_analytics_service.get_all_events_from_calendars.return_value = (
-            mock_events
-        )
+        self.google_calendar_analytics_service.get_all_events_from_calendars.return_value = mock_events
         self.date_time_util.get_start_end_timestamps.return_value = (
             datetime(2025, 8, 1, 0, 0, tzinfo=timezone.utc),
             datetime(2025, 8, 2, 0, 0, tzinfo=timezone.utc),
@@ -258,9 +280,7 @@ class TestFrontendController(TestCase):
 
     def test_get_all_events_api_success_no_ldaps(self):
         mock_events = {"ldap1": [{"event": "Meeting"}]}
-        self.google_calendar_analytics_service.get_all_events_from_calendars.return_value = (
-            mock_events
-        )
+        self.google_calendar_analytics_service.get_all_events_from_calendars.return_value = mock_events
         self.date_time_util.get_start_end_timestamps.return_value = (
             datetime(2025, 8, 1, 0, 0, tzinfo=timezone.utc),
             datetime(2025, 8, 2, 0, 0, tzinfo=timezone.utc),
@@ -349,71 +369,6 @@ class TestAppRoutes(TestCase):
         app.register_blueprint(frontend_bp)
         self.client = app.test_client()
         app.testing = True
-
-    @patch("backend.frontend_service.frontend_controller.count_messages_in_date_range")
-    def test_count_messages_api_success(self, mock_count):
-        mock_count.return_value = {"userA": {"spaceX": 3}}
-        response = self.client.get(
-            f"{GOOGLE_CHAT_COUNT_API}?startDate=2024-12-01&endDate=2024-12-15"
-            f"&senderLdap=userA&spaceId=spaceX"
-        )
-        self.assertEqual(response.status_code, HTTPStatus.OK)
-        self.assertEqual(response.json["data"]["userA"]["spaceX"], 3)
-
-    @patch("backend.frontend_service.frontend_controller.count_messages_in_date_range")
-    def test_count_messages_api_fallback_sender(self, mock_count):
-        mock_count.return_value = {"userB": {"spaceY": 1}}
-        response = self.client.get(
-            f"{GOOGLE_CHAT_COUNT_API}?startDate=2024-12-01&endDate=2024-12-15"
-            f"&spaceId=spaceY"
-        )
-        self.assertEqual(response.status_code, HTTPStatus.OK)
-        self.assertIn("userB", response.json["data"])
-        self.assertIn("spaceY", response.json["data"]["userB"])
-
-    @patch("backend.frontend_service.frontend_controller.count_messages_in_date_range")
-    def test_count_messages_api_fallback_space_id(self, mock_count):
-        mock_count.return_value = {"userC": {"spaceZ": 1}}
-        response = self.client.get(
-            f"{GOOGLE_CHAT_COUNT_API}?startDate=2024-12-01&endDate=2024-12-15"
-            f"&senderLdap=userC"
-        )
-        self.assertEqual(response.status_code, HTTPStatus.OK)
-        self.assertIn("userC", response.json["data"])
-        self.assertIn("spaceZ", response.json["data"]["userC"])
-
-    @patch("backend.frontend_service.frontend_controller.count_messages_in_date_range")
-    def test_count_messages_api_internal_error(self, mock_count):
-        mock_count.side_effect = Exception("Simulated Redis failure")
-        with self.assertRaises(Exception):
-            self.client.get(
-                f"{GOOGLE_CHAT_COUNT_API}?startDate=2024-12-01&endDate=2024-12-15"
-                f"&senderLdap=userD&spaceId=spaceD"
-            )
-
-    @patch("backend.frontend_service.frontend_controller.count_messages_in_date_range")
-    def test_count_messages_api_no_params(self, mock_count):
-        mock_count.return_value = {"userE": {"spaceE": 5}}
-        response = self.client.get(GOOGLE_CHAT_COUNT_API)
-        self.assertEqual(response.status_code, HTTPStatus.OK)
-        self.assertEqual(response.json["data"]["userE"]["spaceE"], 5)
-
-    @patch("backend.frontend_service.frontend_controller.count_messages_in_date_range")
-    def test_count_messages_multiple_sender_and_space(self, mock_count):
-        mock_count.return_value = {
-            "alice": {"space1": 3, "space2": 1},
-            "bob": {"space1": 0, "space2": 2},
-        }
-        response = self.client.get(
-            f"{GOOGLE_CHAT_COUNT_API}?startDate=2024-12-01&endDate=2024-12-15"
-            f"&spaceId=space1&spaceId=space2"
-            f"&senderLdap=alice&senderLdap=bob"
-        )
-        self.assertEqual(response.status_code, HTTPStatus.OK)
-        self.assertEqual(response.json["data"]["alice"]["space1"], 3)
-        self.assertEqual(response.json["data"]["alice"]["space2"], 1)
-        self.assertEqual(response.json["data"]["bob"]["space1"], 0)
-        self.assertEqual(response.json["data"]["bob"]["space2"], 2)
 
     @patch("backend.frontend_service.frontend_controller.get_chat_spaces")
     def test_get_chat_spaces_route_success(self, mock_get_chat_spaces):
