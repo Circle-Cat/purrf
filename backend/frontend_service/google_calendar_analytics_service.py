@@ -29,6 +29,23 @@ class GoogleCalendarAnalyticsService:
         if not self.retry_utils:
             raise ValueError("Retry utils not provided.")
 
+    def _get_calendar_name(self, calendar_id: str) -> str:
+        """
+        Retrieve the calendar's display name from the Redis hash that stores all calendars.
+
+        Args:
+            calendar_id (str): Google Calendar ID.
+
+        Returns:
+            str: Calendar name.
+        """
+        name = self.retry_utils.get_retry_on_transient(
+            self.redis_client.hget,
+            GOOGLE_CALENDAR_LIST_INDEX_KEY,
+            calendar_id,
+        )
+        return name
+
     def get_all_calendars(self) -> list[dict[str, str]]:
         """
         Retrieve the calendar list from Redis.
@@ -137,6 +154,8 @@ class GoogleCalendarAnalyticsService:
                     self.logger.warning(f"Failed to decode event detail for {base_id}")
                     continue
 
+        calendar_name = self._get_calendar_name(calendar_id)
+
         for ldap in ldaps:
             user_events = []
             for event_id in ldap_event_ids_map.get(ldap, []):
@@ -152,7 +171,7 @@ class GoogleCalendarAnalyticsService:
                 user_events.append({
                     "event_id": event_id,
                     "summary": event_detail.get("summary", ""),
-                    "calendar_id": event_detail.get("calendar_id", ""),
+                    "calendar_name": calendar_name,
                     "is_recurring": event_detail.get("is_recurring", False),
                     "attendance": attendance,
                 })
@@ -160,3 +179,36 @@ class GoogleCalendarAnalyticsService:
             result[ldap] = user_events
 
         return result
+
+    def get_all_events_from_calendars(
+        self,
+        calendar_ids: list[str],
+        ldaps: list[str],
+        start_date: datetime,
+        end_date: datetime,
+    ) -> dict[str, list[dict[str, any]]]:
+        """
+        Fetch all events (with attendance info) for multiple calendars.
+
+        Args:
+            calendar_id (List[str]): List of calendar ID.
+            ldaps (List[str]): List of LDAP usernames.
+            start_date (datetime): Start date in ISO format (inclusive).
+            end_date (datetime): End date in ISO format (inclusive).
+
+        Returns:
+            Dict[str, List[Dict]]: Each LDAP maps to a list of event dicts.
+        """
+        combined_result: dict[str, list[dict[str, any]]] = {ldap: [] for ldap in ldaps}
+
+        for cal_id in calendar_ids:
+            single_result = self.get_all_events(
+                cal_id,
+                ldaps,
+                start_date,
+                end_date,
+            )
+            for ldap, events in single_result.items():
+                combined_result[ldap].extend(events)
+
+        return combined_result

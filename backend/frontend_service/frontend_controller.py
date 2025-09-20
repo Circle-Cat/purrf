@@ -76,7 +76,7 @@ class FrontendController:
         blueprint.add_url_rule(
             "/calendar/events",
             view_func=self.get_all_events_api,
-            methods=["GET"],
+            methods=["POST"],
         )
         blueprint.add_url_rule(
             "/jira/brief",
@@ -298,34 +298,40 @@ class FrontendController:
         """
         API endpoint to get Google Calendar events for users from Redis.
 
-        Query Parameters:
-            calendar_id (str): The calendar ID to fetch events from.
-            ldaps (str): Comma-separated list of LDAP usernames.
-            start_date (str): ISO 8601 start datetime (inclusive).
-            end_date (str): ISO 8601 end datetime (exclusive).
+        Request JSON Body:
+            calendarIds (List[str]): List of calendar IDs to fetch events from.
+            ldaps (List[str]): List of LDAP usernames.
+            startDate (str): ISO 8601 start datetime (inclusive).
+            endDate (str): ISO 8601 end datetime (exclusive).
 
         Returns:
             JSON: A dictionary mapping each LDAP to a list of event attendance details.
-        """
-        calendar_id = request.args.get("calendar_id")
-        ldaps_str = request.args.get("ldaps", "")
-        start_date = request.args.get("start_date")
-        end_date = request.args.get("end_date")
 
-        if not calendar_id:
+        TODO:
+            This method currently calls `get_all_events` in a loop for each calendar,
+            which increases round-trip time (RTT) proportionally to the number of calendars.
+            Consider enhancing `get_all_events` to support fetching events from multiple
+            calendars in a single call to reduce RTT and improve overall performance.
+        """
+        data = request.get_json(silent=True) or {}
+        calendar_ids = data.get("calendarIds", [])
+        ldaps = data.get("ldaps", [])
+        start_date = data.get("startDate")
+        end_date = data.get("endDate")
+
+        if not calendar_ids:
             return api_response(
                 success=False,
-                message="Missing required query parameters: calendar_id.",
+                message="Missing required query parameters: calendar_ids.",
                 status_code=HTTPStatus.BAD_REQUEST,
             )
 
         start_dt, end_dt = self.date_time_util.get_start_end_timestamps(
             start_date, end_date
         )
-        ldaps = [ldap.strip() for ldap in ldaps_str.split(",") if ldap.strip()]
 
-        calendar_data = self.google_calendar_analytics_service.get_all_events(
-            calendar_id,
+        calendar_data = self.google_calendar_analytics_service.get_all_events_from_calendars(
+            calendar_ids,
             ldaps,
             start_dt,
             end_dt,

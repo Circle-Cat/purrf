@@ -227,21 +227,30 @@ class TestFrontendController(TestCase):
             "ldap1": [{"event": "Meeting", "start": "2025-08-01T10:00:00Z"}],
             "ldap2": [{"event": "Workshop", "start": "2025-08-01T12:00:00Z"}],
         }
-        self.google_calendar_analytics_service.get_all_events.return_value = mock_events
+        self.google_calendar_analytics_service.get_all_events_from_calendars.return_value = (
+            mock_events
+        )
         self.date_time_util.get_start_end_timestamps.return_value = (
             datetime(2025, 8, 1, 0, 0, tzinfo=timezone.utc),
             datetime(2025, 8, 2, 0, 0, tzinfo=timezone.utc),
         )
 
         with self.app.test_request_context(
-            "/calendar/events?calendar_id=cal1&ldaps=ldap1,ldap2&start_date=2025-08-01T00:00:00Z&end_date=2025-08-02T00:00:00Z"
+            "/calendar/events",
+            method="POST",
+            json={
+                "calendarIds": ["cal1"],
+                "ldaps": ["ldap1", "ldap2"],
+                "startDate": "2025-08-01T00:00:00Z",
+                "endDate": "2025-08-02T00:00:00Z",
+            },
         ):
             response = self.controller.get_all_events_api()
 
             self.assertEqual(response.status_code, HTTPStatus.OK)
             self.assertEqual(response.json["data"], mock_events)
-            self.google_calendar_analytics_service.get_all_events.assert_called_with(
-                "cal1",
+            self.google_calendar_analytics_service.get_all_events_from_calendars.assert_called_with(
+                ["cal1"],
                 ["ldap1", "ldap2"],
                 datetime(2025, 8, 1, 0, 0, tzinfo=timezone.utc),
                 datetime(2025, 8, 2, 0, 0, tzinfo=timezone.utc),
@@ -249,21 +258,29 @@ class TestFrontendController(TestCase):
 
     def test_get_all_events_api_success_no_ldaps(self):
         mock_events = {"ldap1": [{"event": "Meeting"}]}
-        self.google_calendar_analytics_service.get_all_events.return_value = mock_events
+        self.google_calendar_analytics_service.get_all_events_from_calendars.return_value = (
+            mock_events
+        )
         self.date_time_util.get_start_end_timestamps.return_value = (
             datetime(2025, 8, 1, 0, 0, tzinfo=timezone.utc),
             datetime(2025, 8, 2, 0, 0, tzinfo=timezone.utc),
         )
 
         with self.app.test_request_context(
-            "/calendar/events?calendar_id=cal1&start_date=2025-08-01T00:00:00Z&end_date=2025-08-02T00:00:00Z"
+            "/calendar/events",
+            method="POST",
+            json={
+                "calendarIds": ["cal1"],
+                "startDate": "2025-08-01T00:00:00Z",
+                "endDate": "2025-08-02T00:00:00Z",
+            },
         ):
             response = self.controller.get_all_events_api()
 
             self.assertEqual(response.status_code, HTTPStatus.OK)
             self.assertEqual(response.json["data"], mock_events)
-            self.google_calendar_analytics_service.get_all_events.assert_called_with(
-                "cal1",
+            self.google_calendar_analytics_service.get_all_events_from_calendars.assert_called_with(
+                ["cal1"],
                 [],
                 datetime(2025, 8, 1, 0, 0, tzinfo=timezone.utc),
                 datetime(2025, 8, 2, 0, 0, tzinfo=timezone.utc),
