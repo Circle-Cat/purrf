@@ -14,6 +14,7 @@ from backend.common.constants import (
     GERRIT_STATS_MONTHLY_BUCKET_KEY,
     GERRIT_STATS_PROJECT_BUCKET_KEY,
     GERRIT_DEDUPE_REVIEWED_KEY,
+    GERRIT_PROJECTS_KEY,
     GERRIT_CHANGE_STATUS_KEY,
     DATETIME_FORMAT_YMD_HMS,
 )
@@ -275,3 +276,15 @@ class GerritSyncService:
         except Exception as e:
             self.logger.error("Error after processing %d changes: %s", total, e)
             raise
+
+    def sync_gerrit_projects(self) -> int:
+        """
+        Fetches all project names from Gerrit and stores them in a Redis set.
+
+        Returns:
+            int: The number of projects synced.
+        """
+        projects = self.gerrit_client.get_projects() or {}
+        if projects:
+            self.redis_client.sadd(GERRIT_PROJECTS_KEY, *projects.keys())
+        return len(projects)

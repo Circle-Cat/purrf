@@ -299,6 +299,30 @@ class TestGerritSyncService(unittest.TestCase):
         pattern = r"\d{4}-\d{2}-01_\d{4}-\d{2}-\d{2}"
         self.assertRegex(result, pattern)
 
+    def test_sync_gerrit_projects_success(self):
+        """Tests that projects are fetched and stored in Redis."""
+        mock_projects = {
+            "project-a": {"id": "project-a", "state": "ACTIVE"},
+            "project-b": {"id": "project-b", "state": "ACTIVE"},
+        }
+        self.mock_gerrit_client.get_projects.return_value = mock_projects
+
+        result = self.service.sync_gerrit_projects()
+
+        self.assertEqual(result, 2)
+        self.mock_gerrit_client.get_projects.assert_called_once()
+        self.assertEqual(len(self.mock_redis.method_calls), 1)
+
+    def test_sync_gerrit_projects_no_projects(self):
+        """Tests that nothing is added to Redis when no projects are found."""
+        self.mock_gerrit_client.get_projects.return_value = {}
+
+        result = self.service.sync_gerrit_projects()
+
+        self.assertEqual(result, 0)
+        self.mock_gerrit_client.get_projects.assert_called_once()
+        self.mock_redis.sadd.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

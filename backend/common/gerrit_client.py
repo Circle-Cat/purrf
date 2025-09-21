@@ -134,3 +134,15 @@ class GerritClient:
         if text.startswith(")]}'"):
             text = text.split("\n", 1)[1]
         return json.loads(text)
+
+    def get_projects(self):
+        """
+        Query the /projects/ endpoint.
+
+        Returns:
+            dict: A dictionary where keys are project names and values are ProjectInfo objects.
+        """
+        resp = self.session.get(f"{self.base_url}/projects/")
+        resp.raise_for_status()
+        text = resp.text.lstrip(")]}'\n")
+        return json.loads(text)

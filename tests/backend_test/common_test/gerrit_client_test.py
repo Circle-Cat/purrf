@@ -1,3 +1,4 @@
+import json
 import os
 import unittest
 from unittest.mock import patch, MagicMock
@@ -30,6 +31,7 @@ class TestQueryChanges(unittest.TestCase):
         self.client = GerritClient(
             base_url="https://gerrit.test", username="user", http_password="pass"
         )
+        self.base_url = "https://gerrit.test"
         self.patcher = patch.object(self.client, "session", autospec=True)
         self.mock_session = self.patcher.start()
 
@@ -86,6 +88,35 @@ class TestQueryChanges(unittest.TestCase):
         params = kwargs.get("params")
         self.assertIn(("no-limit", "true"), params)
         self.assertNotIn(("n", "50"), params)
+
+    def test_get_projects_success(self):
+        """Tests successful retrieval and parsing of projects."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_projects_data = {
+            "project-one": {"id": "project-one", "state": "ACTIVE"},
+            "project-two": {"id": "project-two", "state": "READ_ONLY"},
+        }
+        mock_response.text = ")]}'\n" + json.dumps(mock_projects_data)
+        mock_response.raise_for_status.return_value = None
+        self.mock_session.get.return_value = mock_response
+
+        projects = self.client.get_projects()
+
+        self.mock_session.get.assert_called_once_with(f"{self.base_url}/projects/")
+        mock_response.raise_for_status.assert_called_once()
+        self.assertEqual(projects, mock_projects_data)
+
+    def test_get_projects_json_decode_error(self):
+        """Tests handling of invalid JSON in the response."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.text = ")]}'\n" + "this is not valid json"
+        mock_response.raise_for_status.return_value = None
+        self.mock_session.get.return_value = mock_response
+
+        with self.assertRaises(json.JSONDecodeError):
+            self.client.get_projects()
 
 
 if __name__ == "__main__":

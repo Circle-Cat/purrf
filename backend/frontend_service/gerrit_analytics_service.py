@@ -6,6 +6,7 @@ from backend.common.constants import (
     GERRIT_STATS_ALL_TIME_KEY,
     GERRIT_STATS_MONTHLY_BUCKET_KEY,
     GERRIT_STATS_PROJECT_BUCKET_KEY,
+    GERRIT_PROJECTS_KEY,
 )
 
 
@@ -27,6 +28,18 @@ class GerritAnalyticsService:
         self.ldap_service = ldap_service
         self.date_time_util = date_time_util
         self.LDAP_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+
+    def get_gerrit_projects(self) -> list[str]:
+        """
+        Retrieve all Gerrit project names stored in Redis set 'gerrit:projects'.
+
+        Returns:
+            list[str]: A list of project names.
+        """
+        projects = self.retry_utils.get_retry_on_transient(
+            self.redis_client.smembers, GERRIT_PROJECTS_KEY
+        )
+        return sorted(list(projects))
 
     def _get_month_buckets(self, start: date, end: date) -> list[str]:
         """Returns a list of calendar month bucket strings like 'YYYY-MM-DD_YYYY-MM-DD'."""

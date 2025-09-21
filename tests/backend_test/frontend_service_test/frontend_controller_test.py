@@ -19,6 +19,7 @@ JIRA_ISSUE_DETAIL_BATCH_API = "/api/jira/detail/batch"
 GOOGLE_CALENDAR_EVENTS_API = "/api/google/calendar/events"
 JIRA_PROJECT_API = "/api/jira/projects"
 GERRIT_STATS_API = "/api/gerrit/stats"
+GERRIT_PROJECTS_API = "/api/gerrit/projects"
 
 
 class TestFrontendController(TestCase):
@@ -306,6 +307,22 @@ class TestFrontendController(TestCase):
             response.get_json(),
             {"success": True, "message": "Successfully.", "data": mock_stats},
         )
+
+    def test_get_gerrit_projects_success(self):
+        mock_projects = ["proj1", "proj2"]
+        self.mock_gerrit_analytics_service.get_gerrit_projects.return_value = (
+            mock_projects
+        )
+
+        with self.app.test_request_context(GERRIT_PROJECTS_API, method="GET"):
+            response = self.controller.get_gerrit_projects()
+
+        self.mock_gerrit_analytics_service.get_gerrit_projects.assert_called_once()
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.assertEqual(
+            response.get_json()["message"], "Successfully retrieved Gerrit projects."
+        )
+        self.assertEqual(response.get_json()["data"], mock_projects)
 
 
 class TestAppRoutes(TestCase):

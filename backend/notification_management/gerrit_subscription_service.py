@@ -59,7 +59,7 @@ class GerritSubscriptionService:
         self.secret = os.getenv(GERRIT_WEBHOOK_SECRET, None)
         self.events = os.getenv(
             GERRIT_WEBHOOK_EVENTS,
-            "patchset-created,change-merged,change-abandoned,comment-added,change-restored",
+            "patchset-created,change-merged,change-abandoned,comment-added,change-restored,project-created",
         ).split(",")
         logger.debug(
             f"[GerritWatcher] Subscribing to events: {self.events} "

@@ -17,6 +17,7 @@ JIRA_BACKFILL_API = "/api/jira/backfill"
 JIRA_PROJECT_API = "/api/jira/project"
 TEST_CHAT_ID = "chat131"
 GERRIT_FETCHER_API = "/gerrit/backfill"
+GERRIT_PROJECTS_BACKFILL_API = "/gerrit/projects/backfill"
 
 
 # /microsoft/backfill/chat/messages/<chatId>
@@ -31,6 +32,7 @@ class TestHistoricalController(IsolatedAsyncioTestCase):
         self.date_time_utils = MagicMock()
         self.gerrit_sync_service = AsyncMock()
         self.gerrit_sync_service.fetch_and_store_changes = AsyncMock()
+        self.gerrit_sync_service.sync_gerrit_projects = MagicMock()
         self.controller = HistoricalController(
             microsoft_member_sync_service=self.microsoft_member_sync_service,
             microsoft_chat_history_sync_service=self.microsoft_chat_history_sync_service,
@@ -143,6 +145,27 @@ class TestHistoricalController(IsolatedAsyncioTestCase):
         self.gerrit_sync_service.fetch_and_store_changes.assert_called_once()
 
         self.assertEqual(response.status_code, HTTPStatus.OK)
+
+    def test_backfill_gerrit_projects_success(self):
+        """Tests the successful backfill of Gerrit projects."""
+        mock_project_count = 10
+        self.gerrit_sync_service.sync_gerrit_projects.return_value = mock_project_count
+
+        with self.app.test_request_context(
+            GERRIT_PROJECTS_BACKFILL_API,
+            method="POST",
+            content_type="application/json",
+        ):
+            response = self.controller.backfill_gerrit_projects()
+
+        self.gerrit_sync_service.sync_gerrit_projects.assert_called_once()
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        response_data = response.get_json()
+        self.assertEqual(
+            response_data["message"],
+            f"Successfully synced {mock_project_count} Gerrit projects.",
+        )
+        self.assertEqual(response_data["data"]["project_count"], mock_project_count)
 
 
 class TestAppRoutes(TestCase):

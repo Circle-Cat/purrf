@@ -1,5 +1,6 @@
 import json
 from backend.common.constants import (
+    GERRIT_PROJECTS_KEY,
     GERRIT_DEDUPE_REVIEWED_KEY,
 )
 
@@ -74,6 +75,10 @@ class GerritProcessorService:
 
         if event_type == "comment-added":
             self._store_comment_event(payload)
+        elif event_type == "project-created":
+            project_name = payload.get("projectName")
+            if project_name:
+                self.redis_client.sadd(GERRIT_PROJECTS_KEY, project_name)
         else:
             self.gerrit_sync_service.store_change(change)
 

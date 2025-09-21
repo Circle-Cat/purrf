@@ -93,6 +93,11 @@ class FrontendController:
             view_func=self.get_gerrit_stats,
             methods=["GET"],
         )
+        blueprint.add_url_rule(
+            "/gerrit/projects",
+            view_func=self.get_gerrit_projects,
+            methods=["GET"],
+        )
 
     def get_issue_detail_batch(self):
         """
@@ -346,6 +351,16 @@ class FrontendController:
             success=True,
             message="Successfully.",
             data=response,
+            status_code=HTTPStatus.OK,
+        )
+
+    def get_gerrit_projects(self):
+        """API endpoint to retrieve the list of Gerrit projects."""
+        projects = self.gerrit_analytics_service.get_gerrit_projects()
+        return api_response(
+            success=True,
+            message="Successfully retrieved Gerrit projects.",
+            data=projects,
             status_code=HTTPStatus.OK,
         )
 

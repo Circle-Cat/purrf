@@ -76,6 +76,11 @@ class HistoricalController:
             view_func=self.backfill_gerrit_changes,
             methods=["POST"],
         )
+        blueprint.add_url_rule(
+            "/gerrit/projects/backfill",
+            view_func=self.backfill_gerrit_projects,
+            methods=["POST"],
+        )
 
     def update_jira_issues(self):
         """
@@ -189,6 +194,18 @@ class HistoricalController:
             success=True,
             message="Saved successfully.",
             data="",
+            status_code=HTTPStatus.OK,
+        )
+
+    def backfill_gerrit_projects(self):
+        """API endpoint to backfill Gerrit projects into Redis."""
+
+        count = self.gerrit_sync_service.sync_gerrit_projects()
+
+        return api_response(
+            success=True,
+            message=f"Successfully synced {count} Gerrit projects.",
+            data={"project_count": count},
             status_code=HTTPStatus.OK,
         )
 
