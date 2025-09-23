@@ -37,3 +37,31 @@ export async function getGoogleCalendarEvents({
   };
   return await request.post(`/calendar/events`, body);
 }
+
+export async function getGoogleChatMessagesCount({
+  startDate,
+  endDate,
+  spaceIds,
+  ldaps,
+}) {
+  const body = {
+    startDate,
+    endDate,
+    spaceIds,
+    ldaps,
+  };
+  return await request.post(`/google/chat/count`, body);
+}
+
+export async function getMicrosoftChatMessagesCount({
+  ldaps,
+  startDate,
+  endDate,
+}) {
+  const body = {
+    ldaps,
+    startDate,
+    endDate,
+  };
+  return await request.post(`/microsoft/chat/count`, body);
+}

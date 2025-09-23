@@ -3,3 +3,8 @@ export const Group = {
   Employees: "employees",
   Volunteers: "volunteers",
 };
+
+export const ChatProvider = {
+  Microsoft: "Microsoft",
+  Google: "Google",
+};

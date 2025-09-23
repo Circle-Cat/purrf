@@ -126,9 +126,9 @@ class TestFrontendController(TestCase):
 
     def test_count_microsoft_chat_messages_with_params(self):
         payload = {
-            "ldap": ["user1", "user2"],
-            "start_date": "2024-01-01",
-            "end_date": "2024-01-31",
+            "ldaps": ["user1", "user2"],
+            "startDate": "2024-01-01",
+            "endDate": "2024-01-31",
         }
         mock_service_response = {
             "start_date": "2024-01-01T00:00:00+00:00",

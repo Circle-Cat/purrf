@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { flattenGoogleCalendarScheduleData } from "@/utils/flattenScheduleData";
+import {
+  flattenGoogleCalendarScheduleData,
+  flattenMicrosoftChatData,
+  flattenGoogleChatData,
+} from "@/utils/flattenScheduleData";
 
 let toLocaleDateStringSpy;
 let toLocaleTimeStringSpy;
@@ -176,5 +180,108 @@ describe("flattenGoogleCalendarScheduleData", () => {
       ],
     };
     expect(flattenGoogleCalendarScheduleData(mockBackendData)).toEqual([]);
+  });
+
+  describe("flattenMicrosoftChatData", () => {
+    it("should return an empty array for null or undefined data", () => {
+      expect(
+        flattenMicrosoftChatData({ data: null, defaultChatSpace: "test" }),
+      ).toEqual([]);
+      expect(
+        flattenMicrosoftChatData({ data: undefined, defaultChatSpace: "test" }),
+      ).toEqual([]);
+    });
+
+    it("should return an empty array for an empty object", () => {
+      expect(
+        flattenMicrosoftChatData({ data: {}, defaultChatSpace: "test" }),
+      ).toEqual([]);
+    });
+
+    it("should flatten data correctly with a default chat space", () => {
+      const mockData = {
+        alice: 15,
+        bob: 10,
+        charlie: 22,
+      };
+      const defaultChatSpace = "General Channel";
+      const expected = [
+        { ldap: "alice", chatSpace: "General Channel", counts: 15 },
+        { ldap: "bob", chatSpace: "General Channel", counts: 10 },
+        { ldap: "charlie", chatSpace: "General Channel", counts: 22 },
+      ];
+      expect(
+        flattenMicrosoftChatData({ data: mockData, defaultChatSpace }),
+      ).toEqual(expected);
+    });
+
+    it("should handle a count of zero correctly", () => {
+      const mockData = {
+        dave: 0,
+      };
+      const defaultChatSpace = "Test Space";
+      const expected = [{ ldap: "dave", chatSpace: "Test Space", counts: 0 }];
+      expect(
+        flattenMicrosoftChatData({ data: mockData, defaultChatSpace }),
+      ).toEqual(expected);
+    });
+  });
+  describe("flattenGoogleChatData", () => {
+    it("should return an empty array for null or undefined data", () => {
+      expect(flattenGoogleChatData({ data: null, spaceMap: {} })).toEqual([]);
+      expect(flattenGoogleChatData({ data: undefined, spaceMap: {} })).toEqual(
+        [],
+      );
+    });
+
+    it("should return an empty array for an empty data object", () => {
+      expect(flattenGoogleChatData({ data: {}, spaceMap: {} })).toEqual([]);
+    });
+
+    it("should flatten nested data correctly and use the spaceMap for names", () => {
+      const mockData = {
+        alice: { space1: 25, space2: 5 },
+        bob: { space1: 11, space2: 0 },
+      };
+      const mockSpaceMap = {
+        space1: "Team-Alpha",
+        space2: "Project-Omega",
+      };
+      const expected = [
+        { ldap: "alice", chatSpace: "Team-Alpha", counts: 25 },
+        { ldap: "alice", chatSpace: "Project-Omega", counts: 5 },
+        { ldap: "bob", chatSpace: "Team-Alpha", counts: 11 },
+        { ldap: "bob", chatSpace: "Project-Omega", counts: 0 },
+      ];
+      expect(
+        flattenGoogleChatData({ data: mockData, spaceMap: mockSpaceMap }),
+      ).toEqual(expected);
+    });
+
+    it("should handle a count of zero correctly", () => {
+      const mockData = {
+        charlie: { space3: 0 },
+      };
+      const mockSpaceMap = {
+        space3: "Support-Chat",
+      };
+      const expected = [
+        { ldap: "charlie", chatSpace: "Support-Chat", counts: 0 },
+      ];
+      expect(
+        flattenGoogleChatData({ data: mockData, spaceMap: mockSpaceMap }),
+      ).toEqual(expected);
+    });
+
+    it("should use the spaceId as a fallback if not found in the spaceMap", () => {
+      const mockData = {
+        dave: { space4: 50 },
+      };
+      const mockSpaceMap = {}; // Empty map
+      const expected = [{ ldap: "dave", chatSpace: "space4", counts: 50 }];
+      expect(
+        flattenGoogleChatData({ data: mockData, spaceMap: mockSpaceMap }),
+      ).toEqual(expected);
+    });
   });
 });

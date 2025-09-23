@@ -235,9 +235,9 @@ class FrontendController:
 
         Request Body (JSON):
             {
-                "ldap": ["alice", "bob"],       # optional, list of user ldaps
-                "start_date": "2024-06-01",     # optional
-                "end_date": "2024-06-28"        # optional
+                "ldaps": ["alice", "bob"],       # optional, list of user ldaps
+                "startDate": "2024-06-01",     # optional
+                "endDate": "2024-06-28"        # optional
             }
 
         Returns:
@@ -255,9 +255,9 @@ class FrontendController:
             }
         """
         data = request.get_json(force=True)
-        ldap_list = data.get("ldap")
-        start_date = data.get("start_date")
-        end_date = data.get("end_date")
+        ldap_list = data.get("ldaps")
+        start_date = data.get("startDate")
+        end_date = data.get("endDate")
 
         response = self.microsoft_chat_analytics_service.count_microsoft_chat_messages_in_date_range(
             ldap_list=ldap_list,

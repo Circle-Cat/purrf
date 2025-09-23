@@ -3,6 +3,8 @@ import {
   getJiraIssueBrief,
   getJiraIssueDetails,
   getGoogleCalendarEvents,
+  getGoogleChatMessagesCount,
+  getMicrosoftChatMessagesCount,
 } from "@/api/dataSearchApi";
 import request from "@/utils/request";
 
@@ -124,6 +126,100 @@ describe("dataSearchApi", () => {
       await expect(getGoogleCalendarEvents(params)).rejects.toThrow(
         errorMessage,
       );
+    });
+  });
+  describe("getGoogleChatMessagesCount", () => {
+    const mockGoogleParams = {
+      startDate: "2024-05-01",
+      endDate: "2024-05-07",
+      spaceIds: ["SPACE123", "SPACE456"],
+      ldaps: ["user1", "user2"],
+    };
+
+    it("should call request.post with the correct URL and body", async () => {
+      const mockResponse = { data: { success: true, result: {} } };
+      request.post.mockResolvedValue(mockResponse);
+
+      await getGoogleChatMessagesCount(mockGoogleParams);
+
+      expect(request.post).toHaveBeenCalledTimes(1);
+      expect(request.post).toHaveBeenCalledWith(
+        "/google/chat/count",
+        mockGoogleParams,
+      );
+    });
+
+    it("should return the data from the response on success", async () => {
+      const mockSuccessResponse = {
+        data: {
+          result: {
+            user1: { SPACE123: 10, SPACE456: 5 },
+            user2: { SPACE123: 0, SPACE456: 20 },
+          },
+        },
+      };
+      request.post.mockResolvedValue(mockSuccessResponse);
+
+      const result = await getGoogleChatMessagesCount(mockGoogleParams);
+
+      expect(result).toEqual(mockSuccessResponse);
+    });
+
+    it("should throw an error if the request fails", async () => {
+      const errorMessage = "Google Chat API Error";
+
+      request.post.mockRejectedValue(new Error(errorMessage));
+
+      await expect(
+        getGoogleChatMessagesCount(mockGoogleParams),
+      ).rejects.toThrow(errorMessage);
+    });
+  });
+
+  describe("getMicrosoftChatMessagesCount", () => {
+    const mockMicrosoftParams = {
+      ldaps: ["userA", "userB"],
+      startDate: "2024-06-01",
+      endDate: "2024-06-30",
+    };
+
+    it("should call request.post with the correct URL and body", async () => {
+      const mockResponse = { data: { success: true, result: {} } };
+      request.post.mockResolvedValue(mockResponse);
+
+      await getMicrosoftChatMessagesCount(mockMicrosoftParams);
+
+      expect(request.post).toHaveBeenCalledTimes(1);
+
+      expect(request.post).toHaveBeenCalledWith(
+        "/microsoft/chat/count",
+        mockMicrosoftParams,
+      );
+    });
+
+    it("should return the data from the response on success", async () => {
+      const mockSuccessResponse = {
+        data: {
+          result: {
+            userA: 50,
+            userB: 75,
+          },
+        },
+      };
+      request.post.mockResolvedValue(mockSuccessResponse);
+
+      const result = await getMicrosoftChatMessagesCount(mockMicrosoftParams);
+
+      expect(result).toEqual(mockSuccessResponse);
+    });
+
+    it("should throw an error if the request fails", async () => {
+      const errorMessage = "Microsoft Chat API Failure";
+      request.post.mockRejectedValue(new Error(errorMessage));
+
+      await expect(
+        getMicrosoftChatMessagesCount(mockMicrosoftParams),
+      ).rejects.toThrow(errorMessage);
     });
   });
 });
