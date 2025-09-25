@@ -6,11 +6,17 @@ import {
   getGoogleChatMessagesCount,
   getMicrosoftChatMessagesCount,
   getGerritStats,
+  getMicrosoftChatTopics,
+  getGoogleChatSpaces,
+  getGoogleCalendars,
+  getJiraProjects,
+  getGerritProjects,
 } from "@/api/dataSearchApi";
 import request from "@/utils/request";
 
 vi.mock("@/utils/request", () => ({
   default: {
+    get: vi.fn(),
     post: vi.fn(),
   },
 }));
@@ -281,5 +287,140 @@ describe("dataSearchApi", () => {
         }),
       ).rejects.toThrow(errorMessage);
     });
+  });
+});
+
+describe("getMicrosoftChatTopics", () => {
+  it("should call request.get with the correct URL", async () => {
+    const mockResponse = { data: { topic1: "Topic A", topic2: "Topic B" } };
+    request.get.mockResolvedValue(mockResponse);
+
+    await getMicrosoftChatTopics();
+
+    expect(request.get).toHaveBeenCalledWith("/microsoft/chat/topics");
+  });
+
+  it("should return the data from the response on success", async () => {
+    const mockResponse = { data: { topic1: "Topic A" } };
+    request.get.mockResolvedValue(mockResponse);
+
+    const result = await getMicrosoftChatTopics();
+
+    expect(result).toEqual(mockResponse);
+  });
+
+  it("should throw an error if the request fails", async () => {
+    const errorMessage = "Failed to fetch Microsoft chat topics";
+    request.get.mockRejectedValue(new Error(errorMessage));
+
+    await expect(getMicrosoftChatTopics()).rejects.toThrow(errorMessage);
+  });
+});
+
+describe("getGoogleChatSpaces", () => {
+  it("should call request.get with the correct URL", async () => {
+    const mockResponse = { data: { space1: "Space A", space2: "Space B" } };
+    request.get.mockResolvedValue(mockResponse);
+
+    await getGoogleChatSpaces();
+
+    expect(request.get).toHaveBeenCalledWith("/google/chat/spaces");
+  });
+
+  it("should return the data from the response on success", async () => {
+    const mockResponse = { data: { space1: "Space A" } };
+    request.get.mockResolvedValue(mockResponse);
+
+    const result = await getGoogleChatSpaces();
+
+    expect(result).toEqual(mockResponse);
+  });
+
+  it("should throw an error if the request fails", async () => {
+    const errorMessage = "Failed to fetch Google chat spaces";
+    request.get.mockRejectedValue(new Error(errorMessage));
+
+    await expect(getGoogleChatSpaces()).rejects.toThrow(errorMessage);
+  });
+});
+
+describe("getGoogleCalendars", () => {
+  it("should call request.get with the correct URL", async () => {
+    const mockResponse = { data: [{ id: "cal1", name: "Work" }] };
+    request.get.mockResolvedValue(mockResponse);
+
+    await getGoogleCalendars();
+
+    expect(request.get).toHaveBeenCalledWith("/calendar/calendars");
+  });
+
+  it("should return the data from the response on success", async () => {
+    const mockResponse = { data: [{ id: "cal1", name: "Work" }] };
+    request.get.mockResolvedValue(mockResponse);
+
+    const result = await getGoogleCalendars();
+
+    expect(result).toEqual(mockResponse);
+  });
+
+  it("should throw an error if the request fails", async () => {
+    const errorMessage = "Failed to fetch Google calendars";
+    request.get.mockRejectedValue(new Error(errorMessage));
+
+    await expect(getGoogleCalendars()).rejects.toThrow(errorMessage);
+  });
+});
+
+describe("getJiraProjects", () => {
+  it("should call request.get with the correct URL", async () => {
+    const mockResponse = { data: { PROJ1: "Project Alpha" } };
+    request.get.mockResolvedValue(mockResponse);
+
+    await getJiraProjects();
+
+    expect(request.get).toHaveBeenCalledWith("/jira/projects");
+  });
+
+  it("should return the data from the response on success", async () => {
+    const mockResponse = { data: { PROJ1: "Project Alpha" } };
+    request.get.mockResolvedValue(mockResponse);
+
+    const result = await getJiraProjects();
+
+    expect(result).toEqual(mockResponse);
+  });
+
+  it("should throw an error if the request fails", async () => {
+    const errorMessage = "Failed to fetch Jira projects";
+    request.get.mockRejectedValue(new Error(errorMessage));
+
+    await expect(getJiraProjects()).rejects.toThrow(errorMessage);
+  });
+});
+
+describe("getGerritProjects", () => {
+  it("should call request.get with the correct URL", async () => {
+    const mockResponse = { data: ["gerrit/proj1", "gerrit/proj2"] };
+    request.get.mockResolvedValue(mockResponse);
+
+    await getGerritProjects();
+
+    expect(request.get).toHaveBeenCalledWith("/gerrit/projects");
+  });
+
+  it("should return the data from the response on success", async () => {
+    const mockResponse = { data: ["gerrit/proj1"] };
+    request.get.mockResolvedValue(mockResponse);
+
+    const result = await getGerritProjects();
+
+    expect(result).toEqual(mockResponse);
+  });
+
+  it("should throw an error if the request fails", async () => {
+    const errorMessage = "Failed to fetch Gerrit projects";
+    request.get.mockRejectedValue(new Error(errorMessage));
+
+    await expect(getGerritProjects()).rejects.toThrow(errorMessage);
   });
 });

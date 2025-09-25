@@ -1,0 +1,22 @@
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(0,0,0,0.25);
+  display: grid;
+  place-items: center;
+}
+
+.modal {
+  width: min(900px, 92vw);
+  max-height: 85vh;
+  overflow: hidden;
+  background: var(--bg-color-light);
+  border: 1px solid var(--border-color-light);
+  border-radius: 12px;
+  box-shadow: 0 10px 35px rgba(0,0,0,0.25);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+}

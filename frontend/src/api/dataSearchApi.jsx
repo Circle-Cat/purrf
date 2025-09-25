@@ -75,3 +75,23 @@ export async function getGerritStats({ ldaps, startDate, endDate, project }) {
   };
   return await request.post("/gerrit/stats", body);
 }
+
+export async function getMicrosoftChatTopics() {
+  return await request.get("/microsoft/chat/topics");
+}
+
+export async function getGoogleChatSpaces() {
+  return await request.get("/google/chat/spaces");
+}
+
+export async function getGoogleCalendars() {
+  return await request.get("/calendar/calendars");
+}
+
+export async function getJiraProjects() {
+  return await request.get("/jira/projects");
+}
+
+export async function getGerritProjects() {
+  return await request.get("/gerrit/projects");
+}

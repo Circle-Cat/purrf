@@ -1,93 +1,341 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import DataSourceSelector from "@/components/common/DataSourceSelector.jsx";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  getMicrosoftChatTopics,
+  getGoogleChatSpaces,
+  getGoogleCalendars,
+  getJiraProjects,
+  getGerritProjects,
+} from "@/api/dataSearchApi";
+import { ChatProvider, DataSourceNames } from "@/constants/Groups";
+import { DataSourceSelector } from "@/components/common/DataSourceSelector";
+
+vi.mock("@/api/dataSearchApi", () => ({
+  getMicrosoftChatTopics: vi.fn(),
+  getGoogleChatSpaces: vi.fn(),
+  getGoogleCalendars: vi.fn(),
+  getJiraProjects: vi.fn(),
+  getGerritProjects: vi.fn(),
+}));
 
 describe("DataSourceSelector", () => {
-  let onConfirm, onCancel, user;
+  const onConfirmMock = vi.fn();
+  const onCancelMock = vi.fn();
+
+  // Helper function to render the component with default props
+  const renderDataSourceSelector = (props = {}) => {
+    return render(
+      <DataSourceSelector
+        isOpen={true}
+        onConfirm={onConfirmMock}
+        onCancel={onCancelMock}
+        {...props}
+      />,
+    );
+  };
 
   beforeEach(() => {
-    onConfirm = vi.fn();
-    onCancel = vi.fn();
-    user = userEvent.setup();
-    render(<DataSourceSelector onConfirm={onConfirm} onCancel={onCancel} />);
+    vi.clearAllMocks();
+
+    // Mock successful API responses
+    getMicrosoftChatTopics.mockResolvedValue({
+      data: {
+        "ms-chat-1": "Microsoft Chat 1",
+        "ms-chat-2": "Microsoft Chat 2",
+      },
+    });
+    getGoogleChatSpaces.mockResolvedValue({
+      data: {
+        "gc-space-1": "Google Space A",
+        "gc-space-2": "Google Space B",
+      },
+    });
+    getJiraProjects.mockResolvedValue({
+      data: {
+        JIRA1: "Jira Project Alpha",
+        JIRA2: "Jira Project Beta",
+      },
+    });
+    getGerritProjects.mockResolvedValue({
+      data: ["gerrit/project/foo", "gerrit/project/bar"],
+    });
+    getGoogleCalendars.mockResolvedValue({
+      data: [
+        { id: "cal-1", name: "My Personal Calendar" },
+        { id: "cal-2", name: "Team Events" },
+      ],
+    });
   });
 
-  it("renders with Chat active and shows its items", () => {
-    // Sidebar sources visible
-    expect(screen.getByRole("button", { name: /chat/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /jira/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /gerrit/i })).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: /calendar/i }),
-    ).toBeInTheDocument();
-    // Chat items visible by default
-    expect(screen.getByLabelText("TGIF")).toBeInTheDocument();
-    expect(screen.getByLabelText("Tech Question")).toBeInTheDocument();
-    // "Select All" in main panel exists and is unchecked
-    const mainSelectAll = screen.getByLabelText(/select all$/i);
-    expect(mainSelectAll).not.toBeChecked();
+  it("should not render the selector content when isOpen is false", () => {
+    renderDataSourceSelector({ isOpen: false });
+    expect(screen.queryByText("Loading...")).not.toBeInTheDocument();
+    expect(screen.queryByText(DataSourceNames.CHAT)).not.toBeInTheDocument();
   });
 
-  it("toggles a single item checkbox", async () => {
-    const tgif = screen.getByLabelText("TGIF");
-    expect(tgif).not.toBeChecked();
-    await user.click(tgif);
-    expect(tgif).toBeChecked();
-    await user.click(tgif);
-    expect(tgif).not.toBeChecked();
+  it("should display loading state initially", () => {
+    getMicrosoftChatTopics.mockReturnValue(new Promise(() => {}));
+    getGoogleChatSpaces.mockReturnValue(new Promise(() => {}));
+    getJiraProjects.mockReturnValue(new Promise(() => {}));
+    getGerritProjects.mockReturnValue(new Promise(() => {}));
+    getGoogleCalendars.mockReturnValue(new Promise(() => {}));
+
+    renderDataSourceSelector();
+    expect(screen.getByText("Loading...")).toBeInTheDocument();
   });
 
-  it("main 'Select All' toggles all visible items for active source", async () => {
-    const tgif = screen.getByLabelText("TGIF");
-    const techQ = screen.getByLabelText("Tech Question");
-    const mainSelectAll = screen.getByLabelText(/select all$/i);
-    await user.click(mainSelectAll);
-    expect(tgif).toBeChecked();
-    expect(techQ).toBeChecked();
-    await user.click(mainSelectAll);
-    expect(tgif).not.toBeChecked();
-    expect(techQ).not.toBeChecked();
+  it("should render data sources and items after successful data fetch and activate the first source", async () => {
+    renderDataSourceSelector();
+
+    await waitFor(() => {
+      expect(screen.getByText(DataSourceNames.CHAT)).toBeInTheDocument();
+      expect(screen.getByText(DataSourceNames.JIRA)).toBeInTheDocument();
+      expect(screen.getByText(DataSourceNames.GERRIT)).toBeInTheDocument();
+      expect(screen.getByText(DataSourceNames.CALENDAR)).toBeInTheDocument();
+
+      expect(screen.getByText("Microsoft Chat 1")).toBeInTheDocument();
+      expect(screen.getByText("Google Space A")).toBeInTheDocument();
+    });
+
+    expect(screen.queryByText("Jira Project Alpha")).not.toBeInTheDocument();
+    const chatSidebarButton = screen
+      .getByText(DataSourceNames.CHAT)
+      .closest('[role="button"]');
+    expect(chatSidebarButton).toHaveClass("active");
   });
 
-  it("switches sources via sidebar and shows the corresponding items", async () => {
-    await user.click(screen.getByRole("button", { name: /jira/i }));
-    expect(screen.getByLabelText("Project A")).toBeInTheDocument();
-    expect(screen.getByLabelText("Project B")).toBeInTheDocument();
-    // Chat items should be gone from the main list
-    expect(screen.queryByLabelText("TGIF")).not.toBeInTheDocument();
+  it("should switch active source when a sidebar item is clicked", async () => {
+    renderDataSourceSelector();
+
+    await waitFor(() => {
+      expect(screen.getByText(DataSourceNames.CHAT)).toBeInTheDocument();
+      expect(screen.getByText("Microsoft Chat 1")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText(DataSourceNames.JIRA));
+
+    await waitFor(() => {
+      expect(screen.getByText("Jira Project Alpha")).toBeInTheDocument();
+      expect(screen.getByText("Jira Project Beta")).toBeInTheDocument();
+    });
+
+    expect(screen.queryByText("Microsoft Chat 1")).not.toBeInTheDocument(); // Chat items should no longer be visible
+    const jiraSidebarButton = screen
+      .getByText(DataSourceNames.JIRA)
+      .closest('[role="button"]');
+    expect(jiraSidebarButton).toHaveClass("active");
   });
 
-  it("sidebar checkbox selects/deselects all for that source", async () => {
-    // Go to Gerrit
-    await user.click(screen.getByRole("button", { name: /gerrit/i }));
-    const gerritSidebarAll = screen.getByLabelText(/select all gerrit/i);
-    const repo1 = screen.getByLabelText("Repo1");
-    const repo2 = screen.getByLabelText("Repo2");
-    await user.click(gerritSidebarAll);
-    expect(repo1).toBeChecked();
-    expect(repo2).toBeChecked();
-    await user.click(gerritSidebarAll);
-    expect(repo1).not.toBeChecked();
-    expect(repo2).not.toBeChecked();
+  it("should allow selecting and deselecting individual items", async () => {
+    renderDataSourceSelector();
+    await waitFor(() => screen.getByText("Microsoft Chat 1"));
+
+    const item1 = screen.getByLabelText("Microsoft Chat 1");
+    const item2 = screen.getByLabelText("Google Space A");
+
+    fireEvent.click(item1);
+    expect(item1).toBeChecked();
+
+    fireEvent.click(item2);
+    expect(item2).toBeChecked();
+
+    fireEvent.click(item1); // Deselect item1
+    expect(item1).not.toBeChecked();
+
+    fireEvent.click(screen.getByRole("button", { name: "OK" }));
+
+    await waitFor(() => {
+      expect(onConfirmMock).toHaveBeenCalledWith({
+        Chat: [
+          {
+            id: "gc-space-1",
+            name: "Google Space A",
+            provider: ChatProvider.Google,
+          },
+        ],
+      });
+    });
   });
 
-  it("calls onConfirm with selected items map", async () => {
-    // Select in Chat
-    await user.click(screen.getByLabelText("TGIF"));
-    // Switch to Calendar and select one
-    await user.click(screen.getByRole("button", { name: /calendar/i }));
-    await user.click(screen.getByLabelText("Meeting 1"));
-    await user.click(screen.getByRole("button", { name: /^ok$/i }));
-    expect(onConfirm).toHaveBeenCalledTimes(1);
-    const payload = onConfirm.mock.calls[0][0];
-    // Expected structure: { Chat: ["TGIF"], Calendar: ["Meeting 1"], ... }
-    expect(payload.Chat).toEqual(["TGIF"]);
-    expect(payload.Calendar).toEqual(["Meeting 1"]);
+  it('should toggle "Select All" for the active source', async () => {
+    renderDataSourceSelector();
+    await waitFor(() => screen.getByText("Microsoft Chat 1"));
+
+    const chatSelectAll = screen.getByLabelText(
+      `Select all ${DataSourceNames.CHAT}`,
+    );
+    fireEvent.click(chatSelectAll); // Select all
+
+    expect(screen.getByLabelText("Microsoft Chat 1")).toBeChecked();
+    expect(screen.getByLabelText("Microsoft Chat 2")).toBeChecked();
+    expect(screen.getByLabelText("Google Space A")).toBeChecked();
+    expect(screen.getByLabelText("Google Space B")).toBeChecked();
+    expect(chatSelectAll).toBeChecked();
+
+    fireEvent.click(chatSelectAll); // Deselect all
+    expect(screen.getByLabelText("Microsoft Chat 1")).not.toBeChecked();
+    expect(screen.getByLabelText("Google Space A")).not.toBeChecked();
+    expect(chatSelectAll).not.toBeChecked();
   });
 
-  it("calls onCancel when Cancel is clicked", async () => {
-    await user.click(screen.getByRole("button", { name: /cancel/i }));
-    expect(onCancel).toHaveBeenCalledTimes(1);
+  it('should update source "Select All" checkbox when individual items are toggled', async () => {
+    renderDataSourceSelector();
+    await waitFor(() => screen.getByText("Microsoft Chat 1"));
+
+    const chatSelectAll = screen.getByLabelText(
+      `Select all ${DataSourceNames.CHAT}`,
+    );
+    expect(chatSelectAll).not.toBeChecked();
+
+    fireEvent.click(screen.getByLabelText("Microsoft Chat 1"));
+    fireEvent.click(screen.getByLabelText("Microsoft Chat 2"));
+    fireEvent.click(screen.getByLabelText("Google Space A"));
+    fireEvent.click(screen.getByLabelText("Google Space B"));
+
+    await waitFor(() => {
+      expect(chatSelectAll).toBeChecked(); // All items selected, so source select all should be checked
+    });
+
+    fireEvent.click(screen.getByLabelText("Microsoft Chat 1")); // Deselect one item
+    await waitFor(() => {
+      expect(chatSelectAll).not.toBeChecked(); // Source select all should now be unchecked
+    });
+  });
+
+  it('should toggle global "Select All" across all data sources', async () => {
+    renderDataSourceSelector();
+    await waitFor(() => screen.getByText("Microsoft Chat 1"));
+
+    const globalSelectAll = screen.getByLabelText(
+      "Select all items across all sources",
+    );
+    expect(globalSelectAll).not.toBeChecked();
+
+    fireEvent.click(globalSelectAll); // Select all globally
+
+    await waitFor(() => {
+      // Verify chat items are selected
+      expect(screen.getByLabelText("Microsoft Chat 1")).toBeChecked();
+      expect(screen.getByLabelText("Google Space A")).toBeChecked();
+      expect(globalSelectAll).toBeChecked();
+    });
+
+    // Switch to other sources and verify items are selected
+    fireEvent.click(screen.getByText(DataSourceNames.JIRA));
+    expect(screen.getByLabelText("Jira Project Alpha")).toBeChecked();
+    expect(screen.getByLabelText("Jira Project Beta")).toBeChecked();
+
+    fireEvent.click(screen.getByText(DataSourceNames.GERRIT));
+    expect(screen.getByLabelText("gerrit/project/foo")).toBeChecked();
+    expect(screen.getByLabelText("gerrit/project/bar")).toBeChecked();
+
+    fireEvent.click(screen.getByText(DataSourceNames.CALENDAR));
+    expect(screen.getByLabelText("My Personal Calendar")).toBeChecked();
+    expect(screen.getByLabelText("Team Events")).toBeChecked();
+
+    fireEvent.click(globalSelectAll); // Deselect all globally
+
+    await waitFor(() => {
+      expect(globalSelectAll).not.toBeChecked();
+    });
+
+    fireEvent.click(screen.getByText(DataSourceNames.CHAT));
+    expect(screen.getByLabelText("Microsoft Chat 1")).not.toBeChecked();
+    expect(screen.getByLabelText("Google Space A")).not.toBeChecked();
+
+    fireEvent.click(screen.getByText(DataSourceNames.JIRA));
+    expect(screen.getByLabelText("Jira Project Alpha")).not.toBeChecked();
+  });
+
+  it("should call onConfirm with the correct payload when OK is clicked", async () => {
+    renderDataSourceSelector();
+    await waitFor(() => screen.getByText("Microsoft Chat 1"));
+
+    fireEvent.click(screen.getByLabelText("Microsoft Chat 1"));
+    fireEvent.click(screen.getByLabelText("Google Space B"));
+
+    fireEvent.click(screen.getByText(DataSourceNames.JIRA));
+    fireEvent.click(screen.getByLabelText("Jira Project Alpha"));
+
+    fireEvent.click(screen.getByText(DataSourceNames.GERRIT));
+    fireEvent.click(screen.getByLabelText("gerrit/project/bar"));
+
+    fireEvent.click(screen.getByText(DataSourceNames.CALENDAR));
+    fireEvent.click(screen.getByLabelText("My Personal Calendar"));
+
+    fireEvent.click(screen.getByRole("button", { name: "OK" }));
+
+    await waitFor(() => {
+      expect(onConfirmMock).toHaveBeenCalledTimes(1);
+      expect(onConfirmMock).toHaveBeenCalledWith({
+        Chat: [
+          {
+            id: "ms-chat-1",
+            name: "Microsoft Chat 1",
+            provider: ChatProvider.Microsoft,
+          },
+          {
+            id: "gc-space-2",
+            name: "Google Space B",
+            provider: ChatProvider.Google,
+          },
+        ],
+        Jira: ["JIRA1"],
+        Gerrit: ["gerrit/project/bar"],
+        Calendar: ["cal-1"],
+      });
+    });
+  });
+
+  it("should call onCancel when Cancel is clicked", async () => {
+    renderDataSourceSelector();
+    await waitFor(() => screen.getByText("Microsoft Chat 1"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(onCancelMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("should handle empty data sources gracefully", async () => {
+    getMicrosoftChatTopics.mockResolvedValue({ data: {} });
+    getGoogleChatSpaces.mockResolvedValue({ data: {} });
+    getJiraProjects.mockResolvedValue({ data: {} });
+    getGerritProjects.mockResolvedValue({ data: [] });
+    getGoogleCalendars.mockResolvedValue({ data: [] });
+
+    renderDataSourceSelector();
+
+    await waitFor(() => {
+      // Data sources should still be listed in the sidebar
+      expect(screen.getByText(DataSourceNames.CHAT)).toBeInTheDocument();
+      expect(screen.getByText(DataSourceNames.JIRA)).toBeInTheDocument();
+    });
+
+    // No chat items should be visible
+    expect(screen.queryByText("Microsoft Chat 1")).not.toBeInTheDocument();
+
+    const globalSelectAll = screen.getByLabelText(
+      "Select all items across all sources",
+    );
+
+    // Global "Select All" should not be checked if there are no selectable items
+    expect(globalSelectAll).not.toBeChecked();
+
+    fireEvent.click(globalSelectAll); // Try to select all
+
+    await waitFor(() => {
+      expect(globalSelectAll).not.toBeChecked(); // Should still be unchecked as there are no items
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "OK" }));
+
+    await waitFor(() => {
+      expect(onConfirmMock).toHaveBeenCalledWith({
+        Chat: [],
+        Jira: [],
+        Gerrit: [],
+        Calendar: [],
+      });
+    });
   });
 });
