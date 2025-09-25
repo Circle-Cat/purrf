@@ -11,7 +11,6 @@ class NotificationController:
         self,
         microsoft_chat_subscription_service,
         google_chat_subscription_service,
-        gerrit_subscription_service,
     ):
         """
         Initialize the NotificationController with required dependencies.
@@ -25,12 +24,9 @@ class NotificationController:
             raise ValueError("MicrosoftChatSubscriptionService instances is required.")
         if not google_chat_subscription_service:
             raise ValueError("GoogleChatSubscriptionService instances is required.")
-        if not gerrit_subscription_service:
-            raise ValueError("GerritSubscriptionService instances is required.")
 
         self.microsoft_chat_subscription_service = microsoft_chat_subscription_service
         self.google_chat_subscription_service = google_chat_subscription_service
-        self.gerrit_subscription_service = gerrit_subscription_service
 
     def register_routes(self, blueprint):
         """
@@ -47,11 +43,6 @@ class NotificationController:
         blueprint.add_url_rule(
             "/google/chat/spaces/subscribe",
             view_func=self.subscribe_google_chat_space,
-            methods=["POST"],
-        )
-        blueprint.add_url_rule(
-            "/gerrit/webhook/register",
-            view_func=self.register_gerrit_webhook,
             methods=["POST"],
         )
 
@@ -126,25 +117,4 @@ class NotificationController:
             success=True,
             message=response,
             status_code=HTTPStatus.CREATED,
-        )
-
-    def register_gerrit_webhook(self):
-        """
-        Registers a Gerrit webhook for receiving change events.
-
-        This endpoint uses the GerritSubscriptionService class to create (or retrieve)
-        a webhook subscription via Gerrit's Webhooks plugin. It targets
-        the configured project and sends events to the URL specified in
-        GERRIT_WEBHOOK_TARGET_URL.
-
-        Returns:
-            A standardized API response containing the webhook registration
-            result or existing configuration.
-        """
-        result = self.gerrit_subscription_service.register_webhook()
-        return api_response(
-            success=True,
-            message="Gerrit Webhook registered successfully.",
-            data=result,
-            status_code=HTTPStatus.OK,
         )

@@ -1,25 +1,19 @@
-import os
 from http import HTTPStatus
 from unittest import TestCase, main
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 from requests.exceptions import HTTPError
 
 from backend.notification_management.gerrit_subscription_service import (
     GerritSubscriptionService,
 )
-from backend.common.environment_constants import (
-    GERRIT_WEBHOOK_TARGET_URL,
-    GERRIT_WEBHOOK_SECRET,
-    GERRIT_WEBHOOK_PROJECT,
-    GERRIT_WEBHOOK_REMOTE_NAME,
-    GERRIT_WEBHOOK_EVENTS,
-)
 
+# Constants for test data
 TEST_PROJECT = "test-project"
 TEST_REMOTE = "test-remote"
 TEST_TARGET_URL = "http://example.com/webhook"
 TEST_SECRET = "supersecret"
-TEST_EVENTS = "one,two,three"
+TEST_EVENTS_STR = "one,two,three"
+TEST_EVENTS_LIST = TEST_EVENTS_STR.split(",")
 
 
 class TestGerritSubscriptionService(TestCase):
@@ -29,31 +23,64 @@ class TestGerritSubscriptionService(TestCase):
         self.fake_client = MagicMock(
             base_url="http://gerrit.example.com/", session=self.mock_session
         )
-
-        env = {
-            GERRIT_WEBHOOK_TARGET_URL: TEST_TARGET_URL,
-            GERRIT_WEBHOOK_SECRET: TEST_SECRET,
-            GERRIT_WEBHOOK_EVENTS: TEST_EVENTS,
-            GERRIT_WEBHOOK_PROJECT: TEST_PROJECT,
-            GERRIT_WEBHOOK_REMOTE_NAME: TEST_REMOTE,
+        self.service_kwargs = {
+            "logger": self.mock_logger,
+            "gerrit_client": self.fake_client,
+            "project": TEST_PROJECT,
+            "remote_name": TEST_REMOTE,
+            "subscribe_url": TEST_TARGET_URL,
+            "events": TEST_EVENTS_LIST,
+            "secret": TEST_SECRET,
         }
-        self.env_patcher = patch.dict(os.environ, env, clear=True)
-        self.env_patcher.start()
-        self.addCleanup(self.env_patcher.stop)
 
-    def test_init_missing_target_url_raises(self):
-        with patch.dict(os.environ, {}, clear=True):
-            with self.assertRaises(RuntimeError):
-                GerritSubscriptionService(self.mock_logger, self.fake_client)
+    def test_init_raises_value_error_for_missing_logger(self):
+        kwargs = {**self.service_kwargs, "logger": None}
+        with self.assertRaisesRegex(ValueError, "A valid logger instance is required."):
+            GerritSubscriptionService(**kwargs)
+
+    def test_init_raises_value_error_for_missing_gerrit_client(self):
+        kwargs = {**self.service_kwargs, "gerrit_client": None}
+        with self.assertRaisesRegex(
+            ValueError, "A valid Gerrit client instance is required."
+        ):
+            GerritSubscriptionService(**kwargs)
+
+    def test_init_raises_value_error_for_missing_project(self):
+        kwargs = {**self.service_kwargs, "project": ""}
+        with self.assertRaisesRegex(ValueError, "A valid project name is required."):
+            GerritSubscriptionService(**kwargs)
+
+    def test_init_raises_value_error_for_missing_remote_name(self):
+        kwargs = {**self.service_kwargs, "remote_name": ""}
+        with self.assertRaisesRegex(ValueError, "A valid remote name is required."):
+            GerritSubscriptionService(**kwargs)
+
+    def test_init_raises_value_error_for_missing_subscribe_url(self):
+        kwargs = {**self.service_kwargs, "subscribe_url": ""}
+        with self.assertRaisesRegex(ValueError, "A valid target URL is required."):
+            GerritSubscriptionService(**kwargs)
+
+    def test_init_raises_value_error_for_missing_events(self):
+        kwargs = {**self.service_kwargs, "events": []}
+        with self.assertRaisesRegex(ValueError, "At least one event is required."):
+            GerritSubscriptionService(**kwargs)
+
+    def test_init_raises_value_error_for_missing_secret(self):
+        # Test with None
+        kwargs_none = {**self.service_kwargs, "secret": None}
+        with self.assertRaisesRegex(ValueError, "A valid secret is required."):
+            GerritSubscriptionService(**kwargs_none)
+        # Test with empty string
+        kwargs_empty = {**self.service_kwargs, "secret": ""}
+        with self.assertRaisesRegex(ValueError, "A valid secret is required."):
+            GerritSubscriptionService(**kwargs_empty)
 
     def test_register_webhook_success_and_secret_and_events(self):
         put_resp = MagicMock(status_code=HTTPStatus.CREATED)
         put_resp.json.return_value = {"status": "created"}
         self.mock_session.put.return_value = put_resp
 
-        watcher = GerritSubscriptionService(
-            logger=self.mock_logger, gerrit_client=self.fake_client
-        )
+        watcher = GerritSubscriptionService(**self.service_kwargs)
         result = watcher.register_webhook()
 
         expected_path = (
@@ -64,7 +91,7 @@ class TestGerritSubscriptionService(TestCase):
             expected_url,
             json={
                 "url": TEST_TARGET_URL,
-                "events": TEST_EVENTS.split(","),
+                "events": TEST_EVENTS_LIST,  # Corrected from TEST_EVENTS.split(",")
                 "secret": TEST_SECRET,
             },
             headers={"Content-Type": "application/json; charset=UTF-8"},
@@ -80,9 +107,7 @@ class TestGerritSubscriptionService(TestCase):
         get_resp.raise_for_status = MagicMock()
         self.mock_session.get.return_value = get_resp
 
-        watcher = GerritSubscriptionService(
-            logger=self.mock_logger, gerrit_client=self.fake_client
-        )
+        watcher = GerritSubscriptionService(**self.service_kwargs)
         result = watcher.register_webhook()
 
         expected_path = (
@@ -104,9 +129,7 @@ class TestGerritSubscriptionService(TestCase):
         get_resp.raise_for_status = MagicMock()
         self.mock_session.get.return_value = get_resp
 
-        watcher = GerritSubscriptionService(
-            logger=self.mock_logger, gerrit_client=self.fake_client
-        )
+        watcher = GerritSubscriptionService(**self.service_kwargs)
         result = watcher.register_webhook()
 
         self.mock_session.get.assert_called_once()
@@ -118,9 +141,7 @@ class TestGerritSubscriptionService(TestCase):
         put_resp.raise_for_status.side_effect = err
         self.mock_session.put.return_value = put_resp
 
-        watcher = GerritSubscriptionService(
-            logger=self.mock_logger, gerrit_client=self.fake_client
-        )
+        watcher = GerritSubscriptionService(**self.service_kwargs)
         with self.assertRaises(HTTPError):
             watcher.register_webhook()
 

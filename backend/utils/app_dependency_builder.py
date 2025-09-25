@@ -15,9 +15,7 @@ from backend.notification_management.microsoft_chat_subscription_service import 
 from backend.notification_management.google_chat_subscription_service import (
     GoogleChatSubscriptionService,
 )
-from backend.notification_management.gerrit_subscription_service import (
-    GerritSubscriptionService,
-)
+
 from backend.notification_management.notification_controller import (
     NotificationController,
 )
@@ -126,14 +124,9 @@ class AppDependencyBuilder:
             retry_utils=self.retry_utils,
             google_workspaceevents_client=self.google_workspaceevents_client,
         )
-        self.gerrit_subscription_service = GerritSubscriptionService(
-            logger=self.logger,
-            gerrit_client=self.gerrit_client,
-        )
         self.notification_controller = NotificationController(
             microsoft_chat_subscription_service=self.microsoft_chat_subscription_service,
             google_chat_subscription_service=self.google_chat_subscription_service,
-            gerrit_subscription_service=self.gerrit_subscription_service,
         )
         self.date_time_util = DateTimeUtil(logger=self.logger)
         self.microsoft_chat_message_util = MicrosoftChatMessageUtil(

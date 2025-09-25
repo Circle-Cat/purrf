@@ -1,12 +1,4 @@
-import os
 from http import HTTPStatus
-from backend.common.environment_constants import (
-    GERRIT_WEBHOOK_REMOTE_NAME,
-    GERRIT_WEBHOOK_TARGET_URL,
-    GERRIT_WEBHOOK_EVENTS,
-    GERRIT_WEBHOOK_SECRET,
-    GERRIT_WEBHOOK_PROJECT,
-)
 
 
 class GerritSubscriptionService:
@@ -16,53 +8,63 @@ class GerritSubscriptionService:
     Uses the REST API:
     PUT /a/config/server/webhooks~projects/{project}/remotes/{remote}
 
-    The webhook will send Gerrit events to the configured `GERRIT_WEBHOOK_TARGET_URL`.
+    The webhook will send Gerrit events to the configured target URL.
     Handles "already exists" responses by retrieving the existing configuration.
     """
 
     def __init__(
-        self, logger, gerrit_client, project: str = None, remote_name: str = None
+        self,
+        logger,
+        gerrit_client,
+        project: str,
+        remote_name: str,
+        subscribe_url: str,
+        events: list[str],
+        secret: str | None = None,
     ):
         """
-        Initializes the GerritWatcher with project and remote configuration.
+        Initializes the GerritSubscriptionService with fully injected parameters.
 
         Args:
-            logger: The logger instance for logging messages.
-            gerrit_client: Gerrit client instance.
-            project (str, optional): The Gerrit project to register the webhook for.
-                Defaults to the value of GERRIT_WEBHOOK_PROJECT environment variable,
-                or "All-Projects" if not set.
-            remote_name (str, optional): The identifier for the webhook in Gerrit.
-                Defaults to the value of GERRIT_WEBHOOK_REMOTE_NAME environment variable,
-                or "gerrit-webhook" if not set.
+            logger: Logger instance.
+            gerrit_client: Gerrit client instance with 'base_url' and 'session'.
+            project (str): Gerrit project to register the webhook for.
+            remote_name (str): Identifier for the webhook in Gerrit.
+            subscribe_url (str): The URL to which Gerrit will send webhook events.
+            events (list[str]): List of Gerrit events to subscribe to.
+            secret (str | None): Optional secret for webhook signing.
 
         Raises:
-            RuntimeError: If GERRIT_WEBHOOK_TARGET_URL is not set in the environment.
+            ValueError: If required parameters are missing or invalid.
         """
-        if gerrit_client is None:
-            raise ValueError("gerrit_client must not be None")
-
         self.logger = logger
         self.gerrit_client = gerrit_client
+        self.project = project
+        self.remote_name = remote_name
+        self.subscribe_url = subscribe_url
+        self.secret = secret
+        self.events = events
+
+        if not self.logger:
+            raise ValueError("A valid logger instance is required.")
+        if not self.gerrit_client:
+            raise ValueError("A valid Gerrit client instance is required.")
+        if not self.project:
+            raise ValueError("A valid project name is required.")
+        if not self.remote_name:
+            raise ValueError("A valid remote name is required.")
+        if not self.subscribe_url:
+            raise ValueError("A valid target URL is required.")
+        if not self.events:
+            raise ValueError("At least one event is required.")
+        if not self.secret:
+            raise ValueError("A valid secret is required.")
+
         self.base_url = self.gerrit_client.base_url.rstrip("/")
         self.session = self.gerrit_client.session
 
-        self.project = project or os.getenv(GERRIT_WEBHOOK_PROJECT, "All-Projects")
-        self.remote_name = remote_name or os.getenv(
-            GERRIT_WEBHOOK_REMOTE_NAME, "gerrit-webhook"
-        )
-
-        self.subscribe_url = os.getenv(GERRIT_WEBHOOK_TARGET_URL)
-        if not self.subscribe_url:
-            raise RuntimeError("GERRIT_WEBHOOK_TARGET_URL must be set")
-
-        self.secret = os.getenv(GERRIT_WEBHOOK_SECRET, None)
-        self.events = os.getenv(
-            GERRIT_WEBHOOK_EVENTS,
-            "patchset-created,change-merged,change-abandoned,comment-added,change-restored,project-created",
-        ).split(",")
         logger.debug(
-            f"[GerritWatcher] Subscribing to events: {self.events} "
+            f"[GerritSubscriptionService] Subscribing to events: {self.events} "
             f"for project: {self.project}, sending to: {self.subscribe_url}"
         )
 

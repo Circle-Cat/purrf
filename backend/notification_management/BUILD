@@ -1,4 +1,4 @@
-load("@rules_python//python:defs.bzl", "py_library")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -31,9 +31,6 @@ py_library(
     srcs = [
         "gerrit_subscription_service.py",
     ],
-    deps = [
-        "//backend/common:environment_constants",
-    ],
 )
 
 py_library(
@@ -43,5 +40,25 @@ py_library(
     ],
     deps = [
         "@pypi//tenacity",
+    ],
+)
+
+py_library(
+    name = "gerrit_webhook_lib",
+    srcs = ["gerrit_webhook_lib.py"],
+    deps = [
+        ":gerrit_subscription_service",
+        "//backend/common:environment_constants",
+        "//backend/common:gerrit_client",
+        "//backend/common:logger",
+    ],
+)
+
+py_binary(
+    name = "register_gerrit_webhook",
+    srcs = ["register_gerrit_webhook.py"],
+    main = "register_gerrit_webhook.py",
+    deps = [
+        ":gerrit_webhook_lib",
     ],
 )

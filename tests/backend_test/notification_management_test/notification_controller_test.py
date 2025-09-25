@@ -15,11 +15,9 @@ class TestNotificationController(IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.microsoft_chat_subscription_service = AsyncMock()
         self.google_chat_subscription_service = MagicMock()
-        self.gerrit_subscription_service = MagicMock()
         self.controller = NotificationController(
             microsoft_chat_subscription_service=self.microsoft_chat_subscription_service,
             google_chat_subscription_service=self.google_chat_subscription_service,
-            gerrit_subscription_service=self.gerrit_subscription_service,
         )
 
         self.app = Flask(__name__)
@@ -87,24 +85,6 @@ class TestNotificationController(IsolatedAsyncioTestCase):
             space_id=payload["space_id"],
             event_types=EVENT_TYPES,
         )
-
-    def test_register_gerrit_webhook_success(self):
-        self.gerrit_subscription_service.register_webhook.return_value = {"foo": "bar"}
-
-        with self.app.test_request_context(
-            "/api/gerrit/webhook/register",
-            method="POST",
-            data=json.dumps({}),
-            content_type="application/json",
-        ):
-            resp = self.controller.register_gerrit_webhook()
-            data = resp.get_json()
-
-        self.assertEqual(resp.status_code, HTTPStatus.OK)
-        self.assertIsNotNone(data)
-        self.assertEqual(data.get("message"), "Gerrit Webhook registered successfully.")
-        self.assertEqual(data.get("data"), {"foo": "bar"})
-        self.gerrit_subscription_service.register_webhook.assert_called_once()
 
 
 if __name__ == "__main__":

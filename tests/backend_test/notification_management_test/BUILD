@@ -32,3 +32,11 @@ py_test(
         "@pypi//requests",
     ],
 )
+
+py_test(
+    name = "gerrit_webhook_lib_test",
+    srcs = ["gerrit_webhook_lib_test.py"],
+    deps = [
+        "//backend/notification_management:gerrit_webhook_lib",
+    ],
+)

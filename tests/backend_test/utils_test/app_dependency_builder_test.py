@@ -10,7 +10,6 @@ from backend.common.environment_constants import (
 
 @patch("backend.utils.app_dependency_builder.GoogleChatAnalyticsService")
 @patch("backend.utils.app_dependency_builder.GerritProcessorService")
-@patch("backend.utils.app_dependency_builder.GerritSubscriptionService")
 @patch("backend.utils.app_dependency_builder.GerritSyncService")
 @patch("backend.utils.app_dependency_builder.GerritClient")
 @patch("backend.utils.app_dependency_builder.GerritAnalyticsService")
@@ -86,7 +85,6 @@ class TestAppDependencyBuilder(TestCase):
         mock_gerrit_analytics_service_cls,
         mock_gerrit_client_cls,
         mock_gerrit_sync_service_cls,
-        mock_gerrit_subscription_service,
         mock_gerrit_processor_service_cls,
         mock_google_chat_analytics_service_cls,
     ):
@@ -187,14 +185,9 @@ class TestAppDependencyBuilder(TestCase):
             google_workspaceevents_client=mock_google_workspaceevents_client,
             retry_utils=mock_retry_utils_instance,
         )
-        mock_gerrit_subscription_service.assert_called_once_with(
-            logger=mock_logger,
-            gerrit_client=mock_gerrit_client,
-        )
         mock_notification_controller.assert_called_once_with(
             microsoft_chat_subscription_service=mock_microsoft_chat_subscription_service.return_value,
             google_chat_subscription_service=mock_google_chat_subscription_service.return_value,
-            gerrit_subscription_service=mock_gerrit_subscription_service.return_value,
         )
         mock_date_time_util_cls.assert_called_once_with(logger=mock_logger)
 
@@ -416,10 +409,6 @@ class TestAppDependencyBuilder(TestCase):
         self.assertEqual(
             builder.google_chat_subscription_service,
             mock_google_chat_subscription_service.return_value,
-        )
-        self.assertEqual(
-            builder.gerrit_subscription_service,
-            mock_gerrit_subscription_service.return_value,
         )
         self.assertEqual(
             builder.notification_controller, mock_notification_controller.return_value
