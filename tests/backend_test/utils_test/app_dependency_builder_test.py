@@ -1,12 +1,17 @@
 from unittest import TestCase, main
 from unittest.mock import patch, MagicMock
 from backend.utils.app_dependency_builder import AppDependencyBuilder
+from backend.common.environment_constants import (
+    GERRIT_URL,
+    GERRIT_USER,
+    GERRIT_HTTP_PASS,
+)
 
 
 @patch("backend.utils.app_dependency_builder.GerritProcessorService")
 @patch("backend.utils.app_dependency_builder.GerritSubscriptionService")
 @patch("backend.utils.app_dependency_builder.GerritSyncService")
-@patch("backend.utils.app_dependency_builder.GerritClientFactory")
+@patch("backend.utils.app_dependency_builder.GerritClient")
 @patch("backend.utils.app_dependency_builder.GerritAnalyticsService")
 @patch("backend.utils.app_dependency_builder.JsonSchemaValidator")
 @patch("backend.utils.app_dependency_builder.GoogleCalendarSyncService")
@@ -40,9 +45,11 @@ from backend.utils.app_dependency_builder import AppDependencyBuilder
 @patch("backend.utils.app_dependency_builder.RetryUtils")
 @patch("backend.utils.app_dependency_builder.JiraClientFactory")
 @patch("backend.utils.app_dependency_builder.JiraHistorySyncService")
+@patch("os.getenv")
 class TestAppDependencyBuilder(TestCase):
     def test_dependencies_are_wired_correctly(
         self,
+        mock_os_getenv,
         mock_jira_history_cls,
         mock_jira_client_factory_cls,
         mock_retry_utils_cls,
@@ -76,7 +83,7 @@ class TestAppDependencyBuilder(TestCase):
         mock_google_calendar_sync_service_cls,
         mock_json_schema_validator_cls,
         mock_gerrit_analytics_service_cls,
-        mock_gerrit_client_factory_cls,
+        mock_gerrit_client_cls,
         mock_gerrit_sync_service_cls,
         mock_gerrit_subscription_service,
         mock_gerrit_processor_service_cls,
@@ -133,14 +140,19 @@ class TestAppDependencyBuilder(TestCase):
         mock_json_schema_validator_cls.return_value = (
             mock_json_schema_validator_instance
         )
-        mock_gerrit_client = MagicMock()
-        mock_gerrit_client_factory_instance = MagicMock()
-        mock_gerrit_client_factory_instance.create_gerrit_client.return_value = (
-            mock_gerrit_client
-        )
-        mock_gerrit_client_factory_cls.return_value = (
-            mock_gerrit_client_factory_instance
-        )
+
+        # Configure os.getenv mock for GerritClient
+        GERRIT_URL_VAL = "https://test-gerrit.com"
+        GERRIT_USER_VAL = "testuser"
+        GERRIT_PASS_VAL = "testpass"
+
+        mock_os_getenv.side_effect = lambda key: {
+            GERRIT_URL: GERRIT_URL_VAL,
+            GERRIT_USER: GERRIT_USER_VAL,
+            GERRIT_HTTP_PASS: GERRIT_PASS_VAL,
+        }.get(key)
+
+        mock_gerrit_client = mock_gerrit_client_cls.return_value
         mock_gerrit_sync_service = mock_gerrit_sync_service_cls.return_value
 
         # Act: Instantiate the builder, which should trigger all dependency creation
@@ -156,8 +168,7 @@ class TestAppDependencyBuilder(TestCase):
         mock_google_client_factory_instance.create_calendar_client.assert_called_once()
         mock_google_client_factory_instance.create_reports_client.assert_called_once()
         mock_retry_utils_cls.assert_called_once()
-        mock_gerrit_client_factory_cls.assert_called_once()
-        mock_gerrit_client_factory_instance.create_gerrit_client.assert_called_once()
+        mock_gerrit_client_cls.assert_called_once()
 
         mock_microsoft_service.assert_called_once_with(
             logger=mock_logger,

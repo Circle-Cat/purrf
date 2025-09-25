@@ -72,10 +72,7 @@ py_library(
         "gerrit_client.py",
     ],
     deps = [
-        "//backend/common:constants",
-        "//backend/common:logger",
         "@pypi//requests",
-        "@pypi//tenacity",
     ],
 )
 

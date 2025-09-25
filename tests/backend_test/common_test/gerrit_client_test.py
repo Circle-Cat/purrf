@@ -1,32 +1,10 @@
 import json
-import os
-import unittest
+from unittest import TestCase, main
 from unittest.mock import patch, MagicMock
-from backend.common.environment_constants import (
-    GERRIT_URL,
-    GERRIT_USER,
-    GERRIT_HTTP_PASS,
-)
-from backend.common.gerrit_client import GerritClientFactory, GerritClient
+from backend.common.gerrit_client import GerritClient
 
 
-class TestGerritClientFactory(unittest.TestCase):
-    def test_create_client_singleton(self):
-        env = {
-            GERRIT_URL: "https://gerrit.test",
-            GERRIT_USER: "testuser",
-            GERRIT_HTTP_PASS: "testpass",
-        }
-        with patch.dict(os.environ, env, clear=True):
-            factory1 = GerritClientFactory()
-            client1 = factory1.create_gerrit_client()
-            client2 = factory1.create_gerrit_client()
-            self.assertIs(client1, client2)
-            self.assertIsInstance(client1, GerritClient)
-            self.assertEqual(client1.session.auth, ("testuser", "testpass"))
-
-
-class TestQueryChanges(unittest.TestCase):
+class TestQueryChanges(TestCase):
     def setUp(self):
         self.client = GerritClient(
             base_url="https://gerrit.test", username="user", http_password="pass"
@@ -37,6 +15,22 @@ class TestQueryChanges(unittest.TestCase):
 
     def tearDown(self):
         self.patcher.stop()
+
+    def test_init_raises_value_error_if_url_missing(self):
+        with self.assertRaises(ValueError):
+            GerritClient(base_url="", username="user", http_password="pass")
+
+    def test_init_raises_value_error_if_user_missing(self):
+        with self.assertRaises(ValueError):
+            GerritClient(
+                base_url="https://gerrit.test", username="", http_password="pass"
+            )
+
+    def test_init_raises_value_error_if_password_missing(self):
+        with self.assertRaises(ValueError):
+            GerritClient(
+                base_url="https://gerrit.test", username="user", http_password=""
+            )
 
     def test_query_changes_with_parameters(self):
         mock_resp = MagicMock()
@@ -120,4 +114,4 @@ class TestQueryChanges(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    main()

@@ -1,3 +1,4 @@
+import os
 from backend.common.logger import get_logger
 from backend.utils.retry_utils import RetryUtils
 from backend.common.redis_client import RedisClientFactory
@@ -6,7 +7,7 @@ from backend.common.jira_client import JiraClientFactory
 from backend.service.google_service import GoogleService
 from backend.common.microsoft_graph_service_client import MicrosoftGraphServiceClient
 from backend.common.json_schema_validator import JsonSchemaValidator
-from backend.common.gerrit_client import GerritClientFactory
+from backend.common.gerrit_client import GerritClient
 from backend.service.microsoft_service import MicrosoftService
 from backend.notification_management.microsoft_chat_subscription_service import (
     MicrosoftChatSubscriptionService,
@@ -57,6 +58,11 @@ from backend.historical_data.microsoft_chat_history_sync_service import (
 )
 from backend.historical_data.jira_history_sync_service import JiraHistorySyncService
 from backend.service.jira_search_service import JiraSearchService
+from backend.common.environment_constants import (
+    GERRIT_URL,
+    GERRIT_USER,
+    GERRIT_HTTP_PASS,
+)
 
 
 class AppDependencyBuilder:
@@ -77,9 +83,16 @@ class AppDependencyBuilder:
     """
 
     def __init__(self):
+        gerrit_url = os.getenv(GERRIT_URL)
+        gerrit_user = os.getenv(GERRIT_USER)
+        gerrit_password = os.getenv(GERRIT_HTTP_PASS)
+
         self.logger = get_logger()
         self.retry_utils = RetryUtils()
 
+        self.gerrit_client = GerritClient(
+            base_url=gerrit_url, username=gerrit_user, http_password=gerrit_password
+        )
         self.redis_client = RedisClientFactory().create_redis_client()
         self.graph_client = MicrosoftGraphServiceClient().get_graph_service_client
         self.google_client_factory = GoogleClientFactory()
@@ -94,7 +107,6 @@ class AppDependencyBuilder:
             self.google_client_factory.create_calendar_client()
         )
         self.google_reports_client = self.google_client_factory.create_reports_client()
-        self.gerrit_client = GerritClientFactory().create_gerrit_client()
 
         self.microsoft_service = MicrosoftService(
             logger=self.logger,
