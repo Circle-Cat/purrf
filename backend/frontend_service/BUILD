@@ -8,8 +8,6 @@ py_library(
     deps = [
         "//backend/common:api_response_wrapper",
         "//backend/common:constants",
-        "//backend/frontend_service:ldap_loader",
-        "//backend/utils:google_chat_utils",
         "@pypi//flask",
     ],
 )

@@ -29,6 +29,24 @@ class GoogleChatAnalyticsService:
         self.google_service = google_service
         self.ldap_service = ldap_service
 
+    def get_chat_spaces_by_type(self, space_type):
+        """
+        Retrieve Google Chat spaces filtered by type.
+
+        Args:
+            space_type (str): The type of chat spaces to retrieve, e.g., ' SPACE'.
+
+        Raises:
+            ValueError: If `space_type` is None or an empty string.
+
+        Returns:
+            dict: A dictionary containing chat space information keyed by space ID or name.
+        """
+        if not space_type:
+            raise ValueError("space_type must be provided and cannot be empty.")
+        space_dict = self.google_service.get_chat_spaces(space_type=space_type)
+        return space_dict
+
     def count_messages(
         self,
         space_ids: list[str] | None = None,

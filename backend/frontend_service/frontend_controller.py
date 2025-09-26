@@ -2,7 +2,6 @@ from flask import Blueprint, request
 from http import HTTPStatus
 from backend.common.constants import MicrosoftAccountStatus, MicrosoftGroups
 from backend.common.api_response_wrapper import api_response
-from backend.utils.google_chat_utils import get_chat_spaces
 
 
 frontend_bp = Blueprint("frontend", __name__, url_prefix="/api")
@@ -105,6 +104,23 @@ class FrontendController:
             "/google/chat/count",
             view_func=self.get_google_chat_messages_count,
             methods=["POST"],
+        )
+        blueprint.add_url_rule(
+            "/google/chat/spaces",
+            view_func=self.get_chat_spaces_route,
+            methods=["GET"],
+        )
+
+    def get_chat_spaces_route(self):
+        """API endpoint to retrieve chat spaces of a specified type, default SPACE type."""
+        space_type = request.args.get("spaceType", "SPACE")
+
+        spaces = self.google_chat_analytics_service.get_chat_spaces_by_type(space_type)
+        return api_response(
+            success=True,
+            message="Successfully.",
+            data=spaces,
+            status_code=HTTPStatus.OK,
         )
 
     def get_google_chat_messages_count(self):
@@ -442,20 +458,4 @@ def get_summary():
     """
     return api_response(
         success=False, message="Not Implemented", status_code=HTTPStatus.NOT_IMPLEMENTED
-    )
-
-
-@frontend_bp.route("/google/chat/spaces", methods=["GET"])
-def get_chat_spaces_route():
-    """API endpoint to retrieve chat spaces of a specified type and page size."""
-
-    space_type = request.args.get("space_type", "SPACE")
-    page_size = int(request.args.get("page_size", 100))
-
-    spaces = get_chat_spaces(space_type, page_size)
-    return api_response(
-        success=True,
-        message="Retrieve chat spaces successfully.",
-        data=spaces,
-        status_code=HTTPStatus.OK,
     )

@@ -1,10 +1,9 @@
 import json
 from http import HTTPStatus
 from unittest import TestCase, main
-from unittest.mock import patch, MagicMock, AsyncMock
+from unittest.mock import MagicMock, AsyncMock
 from flask import Flask
 from backend.frontend_service.frontend_controller import (
-    frontend_bp,
     FrontendController,
     MicrosoftAccountStatus,
     MicrosoftGroups,
@@ -49,6 +48,20 @@ class TestFrontendController(TestCase):
 
     async def asyncTearDown(self):
         self.app_context.pop()
+
+    def test_get_chat_spaces_route(self):
+        mock_data = [{"space id": "space name"}]
+        self.mock_google_chat_analytics_service.get_chat_spaces_by_type.return_value = (
+            mock_data
+        )
+
+        with self.app.test_request_context("/api/google/chat/spaces?spaceType=SPACE"):
+            response = self.controller.get_chat_spaces_route()
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.assertEqual(response.json["data"], mock_data)
+
+        self.mock_google_chat_analytics_service.get_chat_spaces_by_type.assert_called_once()
 
     def test_get_google_chat_messages_count(self):
         mock_result = {}
@@ -360,31 +373,6 @@ class TestFrontendController(TestCase):
             response.get_json()["message"], "Successfully retrieved Gerrit projects."
         )
         self.assertEqual(response.get_json()["data"], mock_projects)
-
-
-class TestAppRoutes(TestCase):
-    @classmethod
-    def setUp(self):
-        app = Flask(__name__)
-        app.register_blueprint(frontend_bp)
-        self.client = app.test_client()
-        app.testing = True
-
-    @patch("backend.frontend_service.frontend_controller.get_chat_spaces")
-    def test_get_chat_spaces_route_success(self, mock_get_chat_spaces):
-        mock_spaces = [{"name": "spaces/abc123", "spaceType": "SPACE"}]
-        mock_get_chat_spaces.return_value = mock_spaces
-
-        response = self.client.get(
-            "/api/google/chat/spaces?space_type=SPACE&page_size=50"
-        )
-        self.assertEqual(response.status_code, HTTPStatus.OK)
-
-        json_data = response.get_json()
-        self.assertEqual(json_data["message"], "Retrieve chat spaces successfully.")
-        self.assertEqual(json_data["data"], mock_spaces)
-
-        mock_get_chat_spaces.assert_called_once_with("SPACE", 50)
 
 
 if __name__ == "__main__":
