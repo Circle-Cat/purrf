@@ -1,0 +1,115 @@
+.gerrit-table-container {
+  color: var(--text-color-dark);
+  padding: 20px;
+  border-radius: 8px;
+}
+
+.gerrit-summary-card {
+  border: 1px solid var(--border-color-medium);
+  margin-bottom: 20px;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.gerrit-header {
+  background-color: var(--bg-color-header);
+  padding: 15px;
+}
+
+.gerrit-header h4 {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: var(--text-color-dark);
+}
+
+/* Styles for the main Gerrit stats table */
+.gerrit-stats-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.gerrit-stats-table thead tr th {
+  background-color: var(--bg-color-stripe-even);
+  text-align: left;
+  padding: 12px 15px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-color-medium);
+}
+
+.gerrit-row {
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.gerrit-row:hover {
+  background-color: var(--bg-color-row-hover);
+}
+
+.gerrit-row td {
+  padding: 12px 15px;
+  font-size: 0.9rem;
+  vertical-align: middle;
+  border-bottom: 1px solid var(--border-color-light);
+}
+
+/* LDAP column stronger weight */
+.gerrit-row td:first-child {
+  font-weight: 500;
+  color: var(--text-color-dark);
+}
+
+/* Number columns right-aligned */
+.gerrit-row td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Loading / empty states */
+.loading-indicator,
+.no-data-msg,
+.error-msg {
+  text-align: center;
+  padding: 20px;
+  font-size: 0.9rem;
+  color: var(--text-color-light);
+}
+
+.error-msg {
+  color: var(--error-color);
+}
+
+/* Responsive tweaks */
+@media (max-width: 640px) {
+  .gerrit-stats-table thead {
+    display: none;
+  }
+  .gerrit-stats-table,
+  .gerrit-stats-table tbody,
+  .gerrit-stats-table tr,
+  .gerrit-stats-table td {
+    display: block;
+    width: 100%;
+  }
+  .gerrit-stats-table tr {
+    margin-bottom: 12px;
+    border: 1px solid var(--border-color-medium);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .gerrit-stats-table td {
+    text-align: right;
+    padding: 8px 12px;
+    border: none;
+    position: relative;
+  }
+  .gerrit-stats-table td::before {
+    content: attr(data-label);
+    position: absolute;
+    left: 12px;
+    text-align: left;
+    font-weight: 600;
+    color: var(--text-color-medium);
+  }
+}

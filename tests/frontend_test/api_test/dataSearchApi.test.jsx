@@ -5,6 +5,7 @@ import {
   getGoogleCalendarEvents,
   getGoogleChatMessagesCount,
   getMicrosoftChatMessagesCount,
+  getGerritStats,
 } from "@/api/dataSearchApi";
 import request from "@/utils/request";
 
@@ -219,6 +220,65 @@ describe("dataSearchApi", () => {
 
       await expect(
         getMicrosoftChatMessagesCount(mockMicrosoftParams),
+      ).rejects.toThrow(errorMessage);
+    });
+  });
+
+  describe("getGerritStats", () => {
+    it("should call request.post with the correct URL and body", async () => {
+      const input = {
+        ldaps: ["alice", "bob"],
+        startDate: "2024-05-01",
+        endDate: "2024-05-31",
+        project: "projA",
+      };
+      const mockResponse = { data: { stats: [] } };
+      request.post.mockResolvedValue(mockResponse);
+
+      await getGerritStats(input);
+
+      expect(request.post).toHaveBeenCalledTimes(1);
+      expect(request.post).toHaveBeenCalledWith("/gerrit/stats", input);
+    });
+
+    it("should allow being called with an empty object", async () => {
+      const mockResponse = { data: { ok: true } };
+      request.post.mockResolvedValue(mockResponse);
+
+      await getGerritStats({});
+
+      expect(request.post).toHaveBeenCalledTimes(1);
+      expect(request.post).toHaveBeenCalledWith("/gerrit/stats", {
+        ldaps: undefined,
+        startDate: undefined,
+        endDate: undefined,
+        project: undefined,
+      });
+    });
+
+    it("should return the response on success", async () => {
+      const mockResponse = { data: { stats: [{ ldap: "alice", merged: 3 }] } };
+      request.post.mockResolvedValue(mockResponse);
+
+      const result = await getGerritStats({
+        ldaps: ["alice"],
+        startDate: "2024-06-01",
+        endDate: "2024-06-30",
+      });
+
+      expect(result).toEqual(mockResponse);
+    });
+
+    it("should throw an error if the request fails", async () => {
+      const errorMessage = "Gerrit API Error";
+      request.post.mockRejectedValue(new Error(errorMessage));
+
+      await expect(
+        getGerritStats({
+          ldaps: ["u1"],
+          startDate: "2024-01-01",
+          endDate: "2024-01-07",
+        }),
       ).rejects.toThrow(errorMessage);
     });
   });
