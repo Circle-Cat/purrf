@@ -8,6 +8,7 @@ from backend.common.environment_constants import (
 )
 
 
+@patch("backend.utils.app_dependency_builder.GoogleChatHistorySyncService")
 @patch("backend.utils.app_dependency_builder.GoogleChatAnalyticsService")
 @patch("backend.utils.app_dependency_builder.GerritProcessorService")
 @patch("backend.utils.app_dependency_builder.GerritSyncService")
@@ -87,6 +88,7 @@ class TestAppDependencyBuilder(TestCase):
         mock_gerrit_sync_service_cls,
         mock_gerrit_processor_service_cls,
         mock_google_chat_analytics_service_cls,
+        mock_google_chat_history_sync_service_cls,
     ):
         """
         Tests that the AppDependencyBuilder correctly instantiates and wires all its dependencies.
@@ -154,6 +156,9 @@ class TestAppDependencyBuilder(TestCase):
 
         mock_gerrit_client = mock_gerrit_client_cls.return_value
         mock_gerrit_sync_service = mock_gerrit_sync_service_cls.return_value
+        mock_google_chat_history_sync_service = (
+            mock_google_chat_history_sync_service_cls.return_value
+        )
 
         # Act: Instantiate the builder, which should trigger all dependency creation
         builder = AppDependencyBuilder()
@@ -263,6 +268,11 @@ class TestAppDependencyBuilder(TestCase):
             gerrit_client=mock_gerrit_client,
             retry_utils=mock_retry_utils_instance,
         )
+        mock_google_chat_history_sync_service_cls.assert_called_once_with(
+            logger=mock_logger,
+            google_service=mock_google_service.return_value,
+            google_chat_message_utils=mock_google_chat_messages_utils.return_value,
+        )
         mock_historical_controller_cls.assert_called_once_with(
             microsoft_member_sync_service=mock_microsoft_member_sync_service_cls.return_value,
             microsoft_chat_history_sync_service=mock_microsoft_chat_history_sync_service_cls.return_value,
@@ -270,6 +280,7 @@ class TestAppDependencyBuilder(TestCase):
             google_calendar_sync_service=mock_google_calendar_sync_service_cls.return_value,
             date_time_utils=mock_date_time_util_cls.return_value,
             gerrit_sync_service=mock_gerrit_sync_service,
+            google_chat_history_sync_service=mock_google_chat_history_sync_service,
         )
         mock_ldap_service_cls.assert_called_once_with(
             logger=mock_logger,

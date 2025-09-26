@@ -1,6 +1,5 @@
 from flask import Blueprint, request
 from http import HTTPStatus
-from backend.historical_data.google_chat_history_fetcher import fetch_history_messages
 from backend.common.api_response_wrapper import api_response
 
 history_bp = Blueprint("history", __name__, url_prefix="/api")
@@ -15,6 +14,7 @@ class HistoricalController:
         google_calendar_sync_service,
         date_time_utils,
         gerrit_sync_service,
+        google_chat_history_sync_service,
     ):
         """
         Initialize the HistoricalController with required dependencies.
@@ -26,6 +26,7 @@ class HistoricalController:
             google_calendar_sync_service: GoogleCalendarSyncService instance.
             date_time_utils: DateTimeUtil instance.
             gerrit_sync_service: GerritSyncService instance.
+            google_chat_history_sync_service: GoogleChatHistorySyncService instance
         """
         self.microsoft_member_sync_service = microsoft_member_sync_service
         self.microsoft_chat_history_sync_service = microsoft_chat_history_sync_service
@@ -33,6 +34,7 @@ class HistoricalController:
         self.google_calendar_sync_service = google_calendar_sync_service
         self.date_time_utils = date_time_utils
         self.gerrit_sync_service = gerrit_sync_service
+        self.google_chat_history_sync_service = google_chat_history_sync_service
 
     def register_routes(self, blueprint):
         """
@@ -80,6 +82,22 @@ class HistoricalController:
             "/gerrit/projects/backfill",
             view_func=self.backfill_gerrit_projects,
             methods=["POST"],
+        )
+        blueprint.add_url_rule(
+            "/google/chat/spaces/messages",
+            view_func=self.sync_google_chat_history_messages,
+            methods=["POST"],
+        )
+
+    def sync_google_chat_history_messages(self):
+        """API endpoint to trigger the fetching of messages for all SPACE type Google chat spaces and store them in Redis."""
+
+        result = self.google_chat_history_sync_service.sync_history_messages()
+        return api_response(
+            success=True,
+            message="Saved successfully.",
+            data=result,
+            status_code=HTTPStatus.OK,
         )
 
     def update_jira_issues(self):
@@ -208,16 +226,3 @@ class HistoricalController:
             data={"project_count": count},
             status_code=HTTPStatus.OK,
         )
-
-
-@history_bp.route("/google/chat/spaces/messages", methods=["POST"])
-def history_messages():
-    """API endpoint to trigger the fetching of messages for all SPACE type chat spaces and store them in Redis asynchronously."""
-
-    response = fetch_history_messages()
-    return api_response(
-        success=True,
-        message="Saved successfully.",
-        data=response,
-        status_code=HTTPStatus.OK,
-    )

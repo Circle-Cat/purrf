@@ -1,9 +1,8 @@
 from http import HTTPStatus
-from unittest import TestCase, main, IsolatedAsyncioTestCase
-from unittest.mock import patch, AsyncMock, MagicMock
+from unittest import main, IsolatedAsyncioTestCase
+from unittest.mock import AsyncMock, MagicMock
 from flask import Flask
 from backend.historical_data.historical_controller import (
-    history_bp,
     HistoricalController,
 )
 
@@ -33,6 +32,8 @@ class TestHistoricalController(IsolatedAsyncioTestCase):
         self.gerrit_sync_service = AsyncMock()
         self.gerrit_sync_service.fetch_and_store_changes = AsyncMock()
         self.gerrit_sync_service.sync_gerrit_projects = MagicMock()
+        self.mock_google_chat_history_sync_service = MagicMock()
+
         self.controller = HistoricalController(
             microsoft_member_sync_service=self.microsoft_member_sync_service,
             microsoft_chat_history_sync_service=self.microsoft_chat_history_sync_service,
@@ -40,6 +41,7 @@ class TestHistoricalController(IsolatedAsyncioTestCase):
             google_calendar_sync_service=self.google_calendar_sync_service,
             date_time_utils=self.date_time_utils,
             gerrit_sync_service=self.gerrit_sync_service,
+            google_chat_history_sync_service=self.mock_google_chat_history_sync_service,
         )
 
         self.app = Flask(__name__)
@@ -48,6 +50,16 @@ class TestHistoricalController(IsolatedAsyncioTestCase):
 
     async def asyncTearDown(self):
         self.app_context.pop()
+
+    def test_sync_google_chat_history_messages(self):
+        mock_result = 5
+        self.mock_google_chat_history_sync_service.sync_history_messages.return_value = mock_result
+
+        with self.app.test_request_context(GOOGLE_CHAT_FETCHER_API, method="POST"):
+            response = self.controller.sync_google_chat_history_messages()
+
+        self.mock_google_chat_history_sync_service.sync_history_messages.assert_called_once()
+        self.assertEqual(response.status_code, HTTPStatus.OK)
 
     def test_backfill_jira_issues(self):
         mock_result = 5
@@ -166,27 +178,6 @@ class TestHistoricalController(IsolatedAsyncioTestCase):
             f"Successfully synced {mock_project_count} Gerrit projects.",
         )
         self.assertEqual(response_data["data"]["project_count"], mock_project_count)
-
-
-class TestAppRoutes(TestCase):
-    @classmethod
-    def setUp(self):
-        app = Flask(__name__)
-        app.register_blueprint(history_bp)
-        self.client = app.test_client()
-        app.testing = True
-
-    @patch("backend.historical_data.historical_controller.fetch_history_messages")
-    def test_history_messages(self, mock_fetch_history_messages):
-        mock_result = {"saved_messages_count": 3, "total_messges_count": 5}
-        mock_fetch_history_messages.return_value = mock_result
-
-        response = self.client.post(GOOGLE_CHAT_FETCHER_API)
-
-        self.assertEqual(response.status_code, HTTPStatus.OK)
-        self.assertEqual(response.json["data"], mock_result)
-
-        mock_fetch_history_messages.assert_called_once()
 
 
 if __name__ == "__main__":

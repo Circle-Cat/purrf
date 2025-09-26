@@ -17,10 +17,10 @@ py_test(
 )
 
 py_test(
-    name = "google_chat_history_fetcher_test",
-    srcs = ["google_chat_history_fetcher_test.py"],
+    name = "google_chat_history_sync_service_test",
+    srcs = ["google_chat_history_sync_service_test.py"],
     deps = [
-        "//backend/historical_data:google_chat_history_fetcher",
+        "//backend/historical_data:google_chat_history_sync_service",
     ],
 )
 

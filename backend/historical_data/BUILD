@@ -32,22 +32,15 @@ py_library(
     srcs = ["historical_controller.py"],
     deps = [
         "//backend/common:api_response_wrapper",
-        "//backend/historical_data:google_chat_history_fetcher",
         "//backend/utils:date_time_util",
         "@pypi//flask",
     ],
 )
 
 py_library(
-    name = "google_chat_history_fetcher",
+    name = "google_chat_history_sync_service",
     srcs = [
-        "google_chat_history_fetcher.py",
-    ],
-    deps = [
-        "//backend/common:constants",
-        "//backend/common:google_client",
-        "//backend/utils:google_chat_message_store",
-        "//backend/utils:google_chat_utils",
+        "google_chat_history_sync_service.py",
     ],
 )
 

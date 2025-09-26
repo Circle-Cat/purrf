@@ -64,6 +64,9 @@ from backend.common.environment_constants import (
     GERRIT_USER,
     GERRIT_HTTP_PASS,
 )
+from backend.historical_data.google_chat_history_sync_service import (
+    GoogleChatHistorySyncService,
+)
 
 
 class AppDependencyBuilder:
@@ -219,6 +222,11 @@ class AppDependencyBuilder:
             json_schema_validator=self.json_schema_validator,
             google_service=self.google_service,
         )
+        self.google_chat_history_sync_service = GoogleChatHistorySyncService(
+            logger=self.logger,
+            google_service=self.google_service,
+            google_chat_message_utils=self.google_chat_messages_utils,
+        )
         self.historical_controller = HistoricalController(
             microsoft_member_sync_service=self.microsoft_member_sync_service,
             microsoft_chat_history_sync_service=self.microsoft_chat_history_sync_service,
@@ -226,6 +234,7 @@ class AppDependencyBuilder:
             google_calendar_sync_service=self.google_calendar_sync_service,
             date_time_utils=self.date_time_util,
             gerrit_sync_service=self.gerrit_sync_service,
+            google_chat_history_sync_service=self.google_chat_history_sync_service,
         )
         self.microsoft_chat_analytics_service = MicrosoftChatAnalyticsService(
             logger=self.logger,

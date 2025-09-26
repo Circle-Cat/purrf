@@ -97,6 +97,7 @@ py_library(
         "//backend/frontend_service:microsoft_meeting_chat_topic_cache_service",
         "//backend/historical_data:gerrit_sync_service",
         "//backend/historical_data:google_calendar_sync_service",
+        "//backend/historical_data:google_chat_history_sync_service",
         "//backend/historical_data:historical_controller",
         "//backend/historical_data:jira_history_sync_service",
         "//backend/historical_data:microsoft_chat_history_sync_service",
