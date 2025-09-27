@@ -8,11 +8,8 @@ py_library(
         "pubsub_puller.py",
     ],
     deps = [
-        "//backend/common:asyncio_event_loop_manager",
         "//backend/common:constants",
-        "//backend/common:google_client",
-        "//backend/common:redis_client",
-        "@pypi//tenacity",
+        "@pypi//google_api_python_client",
     ],
 )
 

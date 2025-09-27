@@ -12,6 +12,7 @@ py_test(
     name = "pubsub_puller_test",
     srcs = ["pubsub_puller_test.py"],
     deps = [
+        "//backend/common:asyncio_event_loop_manager",
         "//backend/consumers:pubsub_puller",
     ],
 )

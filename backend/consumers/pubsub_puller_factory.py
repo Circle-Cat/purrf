@@ -10,7 +10,14 @@ class PubSubPullerFactory:
     managing resources and preventing redundant connections.
     """
 
-    def __init__(self, puller_creator: Callable, logger):
+    def __init__(
+        self,
+        puller_creator: Callable,
+        logger,
+        redis_client,
+        asyncio_event_loop_manager,
+        subscriber_client,
+    ):
         """
         Initializes the PubSubPullerFactory with a callable object to create puller instances.
 
@@ -20,9 +27,19 @@ class PubSubPullerFactory:
                 This allows the factory to create instances dynamically without being
                 tied to a specific set of parameters.
             logger: Logger instance to output informational messages.
+            redis_client: An initialized Redis client instance used by the PubSubPuller
+                for caching or state management.
+            asyncio_event_loop_manager: An instance of an AsyncioEventLoopManager
+                responsible for managing the asyncio event loop for the puller.
+            subscriber_client: An initialized Google Cloud Pub/Sub SubscriberClient
+                instance used by the PubSubPuller to interact with the Pub/Sub service.
         """
         self.puller_creator = puller_creator
         self.logger = logger
+        self.redis_client = redis_client
+        self.subscriber_client = subscriber_client
+        self.asyncio_event_loop_manager = asyncio_event_loop_manager
+
         self.pubsub_puller_instances = {}
 
     def get_puller_instance(self, project_id: str, subscription_id: str):
@@ -54,7 +71,12 @@ class PubSubPullerFactory:
         key = (project_id, subscription_id)
         if key not in self.pubsub_puller_instances:
             self.pubsub_puller_instances[key] = self.puller_creator(
-                project_id, subscription_id
+                project_id=project_id,
+                subscription_id=subscription_id,
+                logger=self.logger,
+                redis_client=self.redis_client,
+                subscriber_client=self.subscriber_client,
+                asyncio_event_loop_manager=self.asyncio_event_loop_manager,
             )
             self.logger.info(
                 "Create new PubSubPuller instance: project_id: %s, subscription_id: %s",

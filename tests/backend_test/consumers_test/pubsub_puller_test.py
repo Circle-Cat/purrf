@@ -1,49 +1,42 @@
+import inspect
 from unittest import TestCase, main
 from unittest.mock import patch, MagicMock, Mock
 from backend.consumers.pubsub_puller import PubSubPuller, PullStatusResponse
 from backend.common.constants import PullStatus, PUBSUB_PULL_MESSAGES_STATUS_KEY
-from backend.common.asyncio_event_loop_manager import AsyncioEventLoopManager
 from google.api_core.exceptions import NotFound
 import concurrent.futures
-import time
+import datetime as dt
 
 
 class TestPubSubPuller(TestCase):
     def setUp(self):
-        PubSubPuller._instances = {}
         self.project_id = "test-project"
         self.subscription_id = "test-subscription"
-        self.subscription_path = "projects/test/subscriptions/sub"
+        self.subscription_path = (
+            f"projects/{self.project_id}/subscriptions/{self.subscription_id}"
+        )
 
-    def test_singleton_pattern(self):
-        """Verify that PubSubPuller maintains single instance per (project, subscription) pair."""
-        puller1 = PubSubPuller(self.project_id, self.subscription_id)
-        puller2 = PubSubPuller(self.project_id, self.subscription_id)
+        self.mock_logger = MagicMock()
+        self.mock_redis_client = MagicMock()
+        self.mock_subscriber_client = MagicMock()
+        self.mock_asyncio_event_loop_manager = MagicMock()
 
-        self.assertIs(puller1, puller2)
+        self.puller = PubSubPuller(
+            project_id=self.project_id,
+            subscription_id=self.subscription_id,
+            logger=self.mock_logger,
+            redis_client=self.mock_redis_client,
+            subscriber_client=self.mock_subscriber_client,
+            asyncio_event_loop_manager=self.mock_asyncio_event_loop_manager,
+        )
 
-        puller3 = PubSubPuller("another-project", "test-subscription")
+        self.mock_subscriber_client.subscription_path.return_value = (
+            self.subscription_path
+        )
 
-        self.assertIsNot(puller1, puller3)
-
-    @patch("backend.consumers.pubsub_puller.RedisClientFactory")
-    def test_redis_client_unavailable(self, mock_factory):
-        """Test proper error when Redis client cannot be created."""
-        mock_factory().create_redis_client.return_value = None
-
-        puller = PubSubPuller(self.project_id, self.subscription_id)
-
-        with self.assertRaises(ValueError) as context:
-            puller.check_pulling_messages_status()
-
-        self.assertIn("Redis client not available", str(context.exception))
-
-    @patch("backend.consumers.pubsub_puller.RedisClientFactory")
-    def test_redis_status_not_found_and_not_pulling(self, mock_factory):
+    def test_redis_status_not_found_and_not_pulling(self):
         """Test correct NOT_STARTED response when no Redis status found and not pulling locally."""
-        redis_client = MagicMock()
-        redis_client.hgetall.return_value = {}
-        mock_factory().create_redis_client.return_value = redis_client
+        self.mock_redis_client.hgetall.return_value = {}
 
         expected_result = PullStatusResponse(
             subscription_id=self.subscription_id,
@@ -54,83 +47,73 @@ class TestPubSubPuller(TestCase):
             timestamp=None,
         )
 
-        puller = PubSubPuller(self.project_id, self.subscription_id)
+        self.puller._is_pulling.clear()
+        self.puller._streaming_pull_future = None
 
-        puller._is_pulling.clear()
-        puller._streaming_pull_future = None
-
-        result = puller.check_pulling_messages_status()
+        result = self.puller.check_pulling_messages_status()
 
         self.assertEqual(expected_result, result)
+        self.mock_redis_client.hgetall.assert_called_once_with(
+            PUBSUB_PULL_MESSAGES_STATUS_KEY.format(subscription_id=self.subscription_id)
+        )
 
-    @patch("backend.consumers.pubsub_puller.RedisClientFactory")
-    def test_redis_status_not_found_but_local_is_pulling(self, mock_factory):
+    def test_redis_status_not_found_but_local_is_pulling(self):
         """Test inconsistency error when locally pulling but no Redis status exists."""
-        redis_client = MagicMock()
-        redis_client.hgetall.return_value = {}
-        mock_factory().create_redis_client.return_value = redis_client
+        self.mock_redis_client.hgetall.return_value = {}
         mock_future = MagicMock()
         mock_future.done.return_value = False
 
-        puller = PubSubPuller(self.project_id, self.subscription_id)
+        self.puller._is_pulling.set()
+        self.puller._streaming_pull_future = mock_future
 
-        puller._is_pulling.set()
-        puller._streaming_pull_future = mock_future
+        with self.assertRaises(RuntimeError):
+            self.puller.check_pulling_messages_status()
 
-        with self.assertRaises(RuntimeError) as context:
-            puller.check_pulling_messages_status()
+        self.mock_redis_client.hgetall.assert_called_once_with(
+            PUBSUB_PULL_MESSAGES_STATUS_KEY.format(subscription_id=self.subscription_id)
+        )
 
-        self.assertIn("Status inconsistency", str(context.exception))
-
-    @patch("backend.consumers.pubsub_puller.RedisClientFactory")
-    def test_redis_running_but_local_not_pulling(self, mock_factory):
+    def test_redis_running_but_local_not_pulling(self):
         """Test inconsistency error when Redis reports running but locally not pulling."""
-        redis_client = MagicMock()
-        redis_client.hgetall.return_value = {
+        self.mock_redis_client.hgetall.return_value = {
             "task_status": PullStatus.RUNNING.code,
             "timestamp": "2024-05-28T12:00:00Z",
             "message": "Running normally",
         }
-        mock_factory().create_redis_client.return_value = redis_client
 
-        puller = PubSubPuller(self.project_id, self.subscription_id)
+        self.puller._is_pulling.clear()
+        self.puller._streaming_pull_future = None
 
-        puller._is_pulling.clear()
-        puller._streaming_pull_future = None
+        with self.assertRaises(RuntimeError):
+            self.puller.check_pulling_messages_status()
 
-        with self.assertRaises(RuntimeError) as context:
-            puller.check_pulling_messages_status()
+        self.mock_redis_client.hgetall.assert_called_once_with(
+            PUBSUB_PULL_MESSAGES_STATUS_KEY.format(subscription_id=self.subscription_id)
+        )
 
-        self.assertIn("Status inconsistency", str(context.exception))
-
-    @patch("backend.consumers.pubsub_puller.RedisClientFactory")
-    def test_local_pulling_but_redis_not_running(self, mock_factory):
+    def test_local_pulling_but_redis_not_running(self):
         """Test inconsistency error when locally pulling but Redis reports stopped."""
-        redis_client = MagicMock()
-        redis_client.hgetall.return_value = {
+        self.mock_redis_client.hgetall.return_value = {
             "task_status": PullStatus.STOPPED.code,
             "timestamp": "2024-05-28T12:00:00Z",
             "message": "Stopped",
         }
-        mock_factory().create_redis_client.return_value = redis_client
         mock_future = MagicMock()
         mock_future.done.return_value = False
 
-        puller = PubSubPuller(self.project_id, self.subscription_id)
+        self.puller._is_pulling.set()
+        self.puller._streaming_pull_future = mock_future
 
-        puller._is_pulling.set()
-        puller._streaming_pull_future = mock_future
+        with self.assertRaises(RuntimeError):
+            self.puller.check_pulling_messages_status()
 
-        with self.assertRaises(RuntimeError) as context:
-            puller.check_pulling_messages_status()
+        self.mock_redis_client.hgetall.assert_called_once_with(
+            PUBSUB_PULL_MESSAGES_STATUS_KEY.format(subscription_id=self.subscription_id)
+        )
 
-        self.assertIn("Status inconsistency", str(context.exception))
-
-    @patch("backend.consumers.pubsub_puller.RedisClientFactory")
-    def test_status_consistent_running(self, mock_factory):
+    def test_status_consistent_running(self):
         """Test successful status check when local and Redis states match (RUNNING)."""
-        redis_client = MagicMock()
-        redis_client.hgetall.return_value = {
+        self.mock_redis_client.hgetall.return_value = {
             "task_status": PullStatus.RUNNING.code,
             "timestamp": "2024-05-28T12:00:00Z",
             "message": PullStatus.RUNNING.format_message(
@@ -146,26 +129,20 @@ class TestPubSubPuller(TestCase):
             timestamp="2024-05-28T12:00:00Z",
         )
 
-        mock_factory().create_redis_client.return_value = redis_client
         mock_future = MagicMock()
         mock_future.done.return_value = False
 
-        puller = PubSubPuller(self.project_id, self.subscription_id)
+        self.puller._is_pulling.set()
+        self.puller._streaming_pull_future = mock_future
 
-        puller._is_pulling.set()
-        puller._streaming_pull_future = mock_future
-
-        result = puller.check_pulling_messages_status()
+        result = self.puller.check_pulling_messages_status()
         self.assertEqual(expected_result, result)
+        self.mock_redis_client.hgetall.assert_called_once_with(
+            PUBSUB_PULL_MESSAGES_STATUS_KEY.format(subscription_id=self.subscription_id)
+        )
 
     @patch("backend.consumers.pubsub_puller.dt.datetime")
-    @patch("backend.consumers.pubsub_puller.RedisClientFactory.create_redis_client")
-    def test_update_redis_pull_status_success(
-        self, mock_create_redis_client, mock_datetime
-    ):
-        mock_redis = Mock()
-        mock_create_redis_client.return_value = mock_redis
-
+    def test_update_redis_pull_status_success(self, mock_datetime):
         expected_timestamp = "2024-01-01T12:00:00.000000Z"
         fake_now = Mock()
         fake_iso = Mock()
@@ -173,13 +150,13 @@ class TestPubSubPuller(TestCase):
 
         fake_now.isoformat.return_value = fake_iso
         mock_datetime.now.return_value = fake_now
+        mock_datetime.timezone.utc = dt.timezone.utc
 
         expected_message = f"Pulling started for {self.subscription_id}."
 
-        puller = PubSubPuller(self.project_id, self.subscription_id)
-        puller._update_redis_pull_status(PullStatus.RUNNING)
+        self.puller._update_redis_pull_status(PullStatus.RUNNING)
 
-        mock_redis.hset.assert_called_once_with(
+        self.mock_redis_client.hset.assert_called_once_with(
             PUBSUB_PULL_MESSAGES_STATUS_KEY.format(
                 subscription_id=self.subscription_id
             ),
@@ -191,13 +168,7 @@ class TestPubSubPuller(TestCase):
         )
 
     @patch("backend.consumers.pubsub_puller.dt.datetime")
-    @patch("backend.consumers.pubsub_puller.RedisClientFactory.create_redis_client")
-    def test_update_redis_pull_status_with_kwargs(
-        self, mock_create_redis_client, mock_datetime
-    ):
-        mock_redis = Mock()
-        mock_create_redis_client.return_value = mock_redis
-
+    def test_update_redis_pull_status_with_kwargs(self, mock_datetime):
         expected_timestamp = "2024-01-01T12:00:00.000000Z"
         fake_now = Mock()
         fake_iso = Mock()
@@ -205,14 +176,14 @@ class TestPubSubPuller(TestCase):
 
         fake_now.isoformat.return_value = fake_iso
         mock_datetime.now.return_value = fake_now
+        mock_datetime.timezone.utc = dt.timezone.utc
 
         error = "Test Error"
         expected_message = f"Pulling failed for {self.subscription_id}: {error}."
 
-        puller = PubSubPuller(self.project_id, self.subscription_id)
-        puller._update_redis_pull_status(PullStatus.FAILED, error=error)
+        self.puller._update_redis_pull_status(PullStatus.FAILED, error=error)
 
-        mock_redis.hset.assert_called_once_with(
+        self.mock_redis_client.hset.assert_called_once_with(
             PUBSUB_PULL_MESSAGES_STATUS_KEY.format(
                 subscription_id=self.subscription_id
             ),
@@ -223,31 +194,26 @@ class TestPubSubPuller(TestCase):
             },
         )
 
-    @patch("backend.consumers.pubsub_puller.RedisClientFactory.create_redis_client")
-    def test_update_redis_pull_status_no_redis_client(
-        self,
-        mock_create_redis_client,
-    ):
-        mock_create_redis_client.return_value = None
+    def test_update_redis_pull_status_failed_logs_error(self):
+        self.mock_redis_client.hset.side_effect = Exception("Redis connection lost")
 
-        puller = PubSubPuller(self.project_id, self.subscription_id)
+        self.puller._update_redis_pull_status(PullStatus.RUNNING)
 
-        with self.assertRaises(ValueError):
-            puller._update_redis_pull_status(PullStatus.RUNNING)
-
-        self.assertEqual(mock_create_redis_client.call_count, 3)
+        self.mock_logger.error.assert_called_once()
+        self.assertIn(
+            "Failed to update Redis status", self.mock_logger.error.call_args[0][0]
+        )
 
     @patch.object(PubSubPuller, "check_pulling_messages_status")
     @patch.object(PubSubPuller, "_update_redis_pull_status")
     def test_no_active_pull_future_is_done(
         self, mock_update_redis_pull_status, mock_check_pulling_messages_status
     ):
-        puller = PubSubPuller(self.project_id, self.subscription_id)
-        puller._streaming_pull_future = MagicMock()
-        puller._streaming_pull_future.done.return_value = True
-        puller._is_pulling.clear()
+        self.puller._streaming_pull_future = MagicMock()
+        self.puller._streaming_pull_future.done.return_value = True
+        self.puller._is_pulling.clear()
 
-        puller.stop_pulling_messages()
+        self.puller.stop_pulling_messages()
 
         mock_check_pulling_messages_status.assert_called_once()
         mock_update_redis_pull_status.assert_not_called()
@@ -257,18 +223,17 @@ class TestPubSubPuller(TestCase):
     def test_stop_successfully(
         self, mock_update_status, mock_check_pulling_messages_status
     ):
-        puller = PubSubPuller(self.project_id, self.subscription_id)
         mock_future = MagicMock()
         mock_future.done.return_value = False
-        puller._streaming_pull_future = mock_future
-        puller._is_pulling.set()
+        self.puller._streaming_pull_future = mock_future
+        self.puller._is_pulling.set()
 
-        puller.stop_pulling_messages()
+        self.puller.stop_pulling_messages()
 
         mock_future.cancel.assert_called_once()
-        mock_future.result.assert_called_once()
+        mock_future.result.assert_called_once_with(timeout=3)
         mock_update_status.assert_called_once_with(PullStatus.STOPPED)
-        self.assertFalse(puller._is_pulling.is_set())
+        self.assertFalse(self.puller._is_pulling.is_set())
         mock_check_pulling_messages_status.assert_called_once()
 
     @patch.object(PubSubPuller, "check_pulling_messages_status")
@@ -276,57 +241,60 @@ class TestPubSubPuller(TestCase):
     def test_cancelled_error(
         self, mock_update_status, mock_check_pulling_messages_status
     ):
-        puller = PubSubPuller(self.project_id, self.subscription_id)
         mock_future = MagicMock()
         mock_future.done.return_value = False
         mock_future.result.side_effect = concurrent.futures.CancelledError()
-        puller._streaming_pull_future = mock_future
-        puller._is_pulling.set()
+        self.puller._streaming_pull_future = mock_future
+        self.puller._is_pulling.set()
 
-        puller.stop_pulling_messages()
+        self.puller.stop_pulling_messages()
 
+        mock_future.cancel.assert_called_once()
+        mock_future.result.assert_called_once_with(timeout=3)
         mock_update_status.assert_called_once_with(PullStatus.STOPPED)
-        self.assertFalse(puller._is_pulling.is_set())
+        self.assertFalse(self.puller._is_pulling.is_set())
         mock_check_pulling_messages_status.assert_called_once()
 
     @patch.object(PubSubPuller, "check_pulling_messages_status")
     @patch.object(PubSubPuller, "_update_redis_pull_status")
-    def test_timeout_error(
+    def test_timeout_error_on_stop(
         self, mock_update_status, mock_check_pulling_messages_status
     ):
-        puller = PubSubPuller(self.project_id, self.subscription_id)
         mock_future = MagicMock()
         mock_future.done.return_value = False
         mock_future.result.side_effect = concurrent.futures.TimeoutError("timeout")
-        puller._streaming_pull_future = mock_future
-        puller._is_pulling.set()
+        self.puller._streaming_pull_future = mock_future
+        self.puller._is_pulling.set()
 
         with self.assertRaises(TimeoutError):
-            puller.stop_pulling_messages()
+            self.puller.stop_pulling_messages()
 
+        mock_future.cancel.assert_called_once()
+        mock_future.result.assert_called_once_with(timeout=3)
         mock_update_status.assert_called_once_with(PullStatus.FAILED, error="timeout")
-        self.assertFalse(puller._is_pulling.is_set())
+        self.assertFalse(self.puller._is_pulling.is_set())
         mock_check_pulling_messages_status.assert_not_called()
 
     @patch.object(PubSubPuller, "check_pulling_messages_status")
     @patch.object(PubSubPuller, "_update_redis_pull_status")
-    def test_generic_exception(
+    def test_generic_exception_on_stop(
         self, mock_update_status, mock_check_pulling_messages_status
     ):
-        puller = PubSubPuller(self.project_id, self.subscription_id)
         mock_future = MagicMock()
         mock_future.done.return_value = False
         mock_future.result.side_effect = Exception("unexpected error")
-        puller._streaming_pull_future = mock_future
-        puller._is_pulling.set()
+        self.puller._streaming_pull_future = mock_future
+        self.puller._is_pulling.set()
 
         with self.assertRaises(Exception):
-            puller.stop_pulling_messages()
+            self.puller.stop_pulling_messages()
 
+        mock_future.cancel.assert_called_once()
+        mock_future.result.assert_called_once_with(timeout=3)
         mock_update_status.assert_called_once_with(
             PullStatus.FAILED, error="unexpected error"
         )
-        self.assertFalse(puller._is_pulling.is_set())
+        self.assertFalse(self.puller._is_pulling.is_set())
         mock_check_pulling_messages_status.assert_not_called()
 
     @patch.object(PubSubPuller, "check_pulling_messages_status")
@@ -334,168 +302,123 @@ class TestPubSubPuller(TestCase):
     def test_flag_set_but_no_future(
         self, mock_update_status, mock_check_pulling_messages_status
     ):
-        puller = PubSubPuller(self.project_id, self.subscription_id)
-        puller._streaming_pull_future = None
-        puller._is_pulling.set()
+        self.puller._streaming_pull_future = None
+        self.puller._is_pulling.set()
 
-        puller.stop_pulling_messages()
+        self.puller.stop_pulling_messages()
 
         mock_update_status.assert_not_called()
-        self.assertFalse(puller._is_pulling.is_set())
+        self.assertFalse(self.puller._is_pulling.is_set())
         mock_check_pulling_messages_status.assert_called_once()
 
-    @patch(
-        "backend.consumers.pubsub_puller.GoogleClientFactory.create_subscriber_client"
-    )
-    def test_check_subscription_exist_true(self, mock_create_subscriber_client):
-        mock_subscriber = MagicMock()
-        mock_create_subscriber_client.return_value = mock_subscriber
+    def test_check_subscription_exist_true(self):
+        self.mock_subscriber_client.get_subscription.return_value = MagicMock()
 
-        mock_subscription_obj = Mock()
-        mock_subscription_obj.name = mock_subscriber.subscription_path(
+        result = self.puller._check_subscription_exist()
+        self.assertTrue(result)
+        self.mock_subscriber_client.subscription_path.assert_called_once_with(
             self.project_id, self.subscription_id
         )
-        mock_subscriber.get_subscription.return_value = mock_subscription_obj
+        self.mock_subscriber_client.get_subscription.assert_called_once_with(
+            subscription=self.subscription_path
+        )
 
-        puller = PubSubPuller(self.project_id, self.subscription_id)
-        result = puller._check_subscription_exist()
-        self.assertTrue(result)
-
-    @patch(
-        "backend.consumers.pubsub_puller.GoogleClientFactory.create_subscriber_client"
-    )
-    def test_check_subscription_exist_false(self, mock_create_subscriber_client):
-        mock_subscriber = MagicMock()
-        mock_create_subscriber_client.return_value = mock_subscriber
-
-        mock_subscriber.get_subscription.side_effect = NotFound(
+    def test_check_subscription_exist_false(self):
+        self.mock_subscriber_client.get_subscription.side_effect = NotFound(
             "Subscription not found"
         )
 
-        puller = PubSubPuller(self.project_id, self.subscription_id)
-        result = puller._check_subscription_exist()
+        result = self.puller._check_subscription_exist()
         self.assertFalse(result)
+        self.mock_subscriber_client.subscription_path.assert_called_once_with(
+            self.project_id, self.subscription_id
+        )
+        self.mock_subscriber_client.get_subscription.assert_called_once_with(
+            subscription=self.subscription_path
+        )
 
-    @patch("backend.consumers.pubsub_puller.RedisClientFactory.create_redis_client")
-    def test_delete_redis_pull_status_key_success(self, mock_create_redis_client):
-        mock_redis = Mock()
-        mock_create_redis_client.return_value = mock_redis
+    def test_delete_redis_pull_status_key_success(self):
+        self.puller._delete_redis_pull_status()
 
-        puller = PubSubPuller(self.project_id, self.subscription_id)
-        puller._delete_redis_pull_status()
-
-        mock_redis.delete.assert_called_once_with(
+        self.mock_redis_client.delete.assert_called_once_with(
             PUBSUB_PULL_MESSAGES_STATUS_KEY.format(subscription_id=self.subscription_id)
         )
 
-    @patch("backend.consumers.pubsub_puller.RedisClientFactory.create_redis_client")
-    def test_delete_redis_pull_status_no_redis_client(
-        self,
-        mock_create_redis_client,
-    ):
-        mock_create_redis_client.return_value = None
+    def test_delete_redis_pull_status_failed(self):
+        self.mock_redis_client.delete.side_effect = Exception("Redis error")
 
-        puller = PubSubPuller(self.project_id, self.subscription_id)
+        with self.assertRaises(RuntimeError):
+            self.puller._delete_redis_pull_status()
 
-        with self.assertRaises(ValueError):
-            puller._delete_redis_pull_status()
-
-        self.assertEqual(mock_create_redis_client.call_count, 3)
-
-    @patch("backend.consumers.pubsub_puller.RedisClientFactory.create_redis_client")
-    def test_delete_redis_pull_status_failed(
-        self,
-        mock_create_redis_client,
-    ):
-        mock_redis = Mock()
-        mock_create_redis_client.return_value = mock_redis
-        mock_redis.delete.side_effect = Exception()
-
-        puller = PubSubPuller(self.project_id, self.subscription_id)
-
-        with self.assertRaises(Exception):
-            puller._delete_redis_pull_status()
-
-        self.assertEqual(mock_redis.delete.call_count, 3)
+        self.mock_redis_client.delete.assert_called_once_with(
+            PUBSUB_PULL_MESSAGES_STATUS_KEY.format(subscription_id=self.subscription_id)
+        )
 
     @patch.object(PubSubPuller, "_update_redis_pull_status")
-    @patch(
-        "backend.consumers.pubsub_puller.GoogleClientFactory.create_subscriber_client"
-    )
-    def test_pull_target_success(
-        self, mock_create_subscriber_client, mock_update_status
-    ):
-        mock_subscriber = MagicMock()
+    def test_pull_target_success(self, mock_update_status):
         mock_future = MagicMock()
-        mock_subscriber.subscription_path.return_value = self.subscription_path
-        mock_create_subscriber_client.return_value = mock_subscriber
+        mock_future.result.side_effect = None
+        self.mock_subscriber_client.subscribe.return_value = mock_future
 
-        mock_future.result.side_effect = lambda: time.sleep(0.05)
+        self.assertFalse(self.puller._is_pulling.is_set())
 
-        puller = PubSubPuller(self.project_id, self.subscription_id)
-        self.assertFalse(puller._is_pulling.is_set())
+        with patch.object(self.puller._is_pulling, "clear") as mock_clear:
+            self.puller._pull_target(callback=Mock())
 
-        with patch.object(puller._is_pulling, "clear") as mock_clear:
-            puller._pull_target(callback=Mock())
-
-            mock_subscriber.subscription_path.assert_called_once()
-            mock_subscriber.subscribe.assert_called_once()
-            self.assertTrue(puller._is_pulling.is_set())
+            self.mock_subscriber_client.subscription_path.assert_called_once_with(
+                self.project_id, self.subscription_id
+            )
+            self.mock_subscriber_client.subscribe.assert_called_once()
+            self.assertTrue(self.puller._is_pulling.is_set())
             mock_update_status.assert_called_with(PullStatus.RUNNING)
+            mock_future.result.assert_called_once()
 
             mock_clear.assert_called_once()
 
     @patch.object(PubSubPuller, "_delete_redis_pull_status")
     @patch.object(PubSubPuller, "_update_redis_pull_status")
-    @patch(
-        "backend.consumers.pubsub_puller.GoogleClientFactory.create_subscriber_client"
-    )
     def test_pull_target_with_not_found_error(
-        self, mock_create_subscriber_client, mock_update_status, mock_delete_status
+        self, mock_update_status, mock_delete_status
     ):
-        mock_subscriber = MagicMock()
-        mock_subscriber.subscription_path.return_value = self.subscription_path
-        mock_create_subscriber_client.return_value = mock_subscriber
-        mock_subscriber.subscribe.side_effect = NotFound("Subscription not found")
+        self.mock_subscriber_client.subscribe.side_effect = NotFound(
+            "Subscription not found"
+        )
 
-        puller = PubSubPuller(self.project_id, self.subscription_id)
-        self.assertFalse(puller._is_pulling.is_set())
+        self.assertFalse(self.puller._is_pulling.is_set())
 
-        with patch.object(puller._is_pulling, "clear") as mock_clear:
-            puller._pull_target(callback=Mock())
+        with patch.object(self.puller._is_pulling, "clear") as mock_clear:
+            self.puller._pull_target(callback=Mock())
 
-            mock_subscriber.subscription_path.assert_called_once()
-            mock_subscriber.subscribe.assert_called_once()
-            self.assertFalse(puller._is_pulling.is_set())
+            self.mock_subscriber_client.subscription_path.assert_called_once_with(
+                self.project_id, self.subscription_id
+            )
+            self.mock_subscriber_client.subscribe.assert_called_once()
+            self.assertFalse(
+                self.puller._is_pulling.is_set()
+            )  # Should not be set if NotFound occurs before that
             mock_update_status.assert_not_called()
             mock_delete_status.assert_called_once()
-            mock_clear.assert_not_called()
+            mock_clear.assert_not_called()  # Finally block ensures it's clear, but explicit clear might not happen for this path.
 
     @patch.object(PubSubPuller, "_update_redis_pull_status")
-    @patch(
-        "backend.consumers.pubsub_puller.GoogleClientFactory.create_subscriber_client"
-    )
-    def test_pull_target_with_expection(
-        self, mock_create_subscriber_client, mock_update_status
-    ):
+    def test_pull_target_with_exception(self, mock_update_status):
         mock_future = MagicMock()
         mock_future.result.side_effect = Exception("unexpected error")
 
-        mock_subscriber = MagicMock()
-        mock_subscriber.subscribe.return_value = mock_future
-        mock_subscriber.subscription_path.return_value = self.subscription_path
-        mock_create_subscriber_client.return_value = mock_subscriber
+        self.mock_subscriber_client.subscribe.return_value = mock_future
 
-        puller = PubSubPuller(self.project_id, self.subscription_id)
+        self.assertFalse(self.puller._is_pulling.is_set())
 
-        self.assertFalse(puller._is_pulling.is_set())
+        with patch.object(self.puller._is_pulling, "clear") as mock_clear:
+            self.puller._pull_target(callback=Mock())
 
-        with patch.object(puller._is_pulling, "clear") as mock_clear:
-            puller._pull_target(callback=Mock())
-
-            mock_subscriber.subscription_path.assert_called_once()
-            mock_subscriber.subscribe.assert_called_once()
-            self.assertTrue(puller._is_pulling.is_set())
+            self.mock_subscriber_client.subscription_path.assert_called_once_with(
+                self.project_id, self.subscription_id
+            )
+            self.mock_subscriber_client.subscribe.assert_called_once()
+            self.assertTrue(
+                self.puller._is_pulling.is_set()
+            )  # Should be set before exception in .result()
             mock_update_status.assert_any_call(PullStatus.RUNNING)
             mock_update_status.assert_any_call(
                 PullStatus.FAILED, error="unexpected error"
@@ -503,29 +426,24 @@ class TestPubSubPuller(TestCase):
             mock_clear.assert_called_once()
 
     @patch.object(PubSubPuller, "_check_subscription_exist", return_value=True)
-    @patch(
-        "backend.consumers.pubsub_puller.GoogleClientFactory.create_subscriber_client"
-    )
     @patch("backend.consumers.pubsub_puller.threading.Thread")
     def test_start_pulling_messages_success(
-        self, mock_thread, mock_create_subscriber_client, mock_check_subscription_exist
+        self, mock_thread, mock_check_subscription_exist
     ):
-        mock_subscriber = MagicMock()
-        mock_create_subscriber_client.return_value = mock_subscriber
-        mock_future = Mock(spec=concurrent.futures.Future)
-        mock_subscriber.subscribe.return_value = mock_future
-
         mock_callback = Mock()
 
-        puller = PubSubPuller(self.project_id, self.subscription_id)
-        self.assertFalse(puller._is_pulling.is_set())
+        # The actual subscribe call happens inside _pull_target, mocked here for _pull_target
+        mock_future = Mock(spec=concurrent.futures.Future)
+        self.mock_subscriber_client.subscribe.return_value = mock_future
 
-        puller.start_pulling_messages(mock_callback)
+        self.assertFalse(self.puller._is_pulling.is_set())
+
+        self.puller.start_pulling_messages(mock_callback)
 
         mock_check_subscription_exist.assert_called_once()
         mock_thread.assert_called_once()
 
-        self.assertTrue(mock_thread.call_args[1].get("daemon"))
+        self.assertEqual(mock_thread.call_args[1].get("daemon"), True)
         mock_thread.return_value.start.assert_called_once()
 
     @patch.object(PubSubPuller, "_check_subscription_exist", return_value=False)
@@ -534,96 +452,92 @@ class TestPubSubPuller(TestCase):
     ):
         mock_callback = Mock()
 
-        puller = PubSubPuller(self.project_id, self.subscription_id)
-
         with self.assertRaises(ValueError):
-            puller.start_pulling_messages(mock_callback)
+            self.puller.start_pulling_messages(mock_callback)
 
         mock_check_subscription_exist.assert_called_once()
-        self.assertFalse(puller._is_pulling.is_set())
+        self.assertFalse(self.puller._is_pulling.is_set())
 
     def test_start_pulling_messages_no_callback(self):
-        puller = PubSubPuller(self.project_id, self.subscription_id)
         with self.assertRaises(ValueError):
-            puller.start_pulling_messages(None)
+            self.puller.start_pulling_messages(None)
 
-        self.assertFalse(puller._is_pulling.is_set())
+        self.assertFalse(self.puller._is_pulling.is_set())
 
     @patch.object(PubSubPuller, "_check_subscription_exist", return_value=True)
-    @patch(
-        "backend.consumers.pubsub_puller.GoogleClientFactory.create_subscriber_client"
-    )
     @patch("backend.consumers.pubsub_puller.threading.Thread")
     def test_start_pulling_messages_already_pulling(
-        self, mock_thread, mock_create_subscriber_client, mock_check_subscription_exist
+        self, mock_thread, mock_check_subscription_exist
     ):
-        puller = PubSubPuller(self.project_id, self.subscription_id)
-
         mock_future = MagicMock()
         mock_future.done.return_value = False
-        puller._streaming_pull_future = mock_future
+        self.puller._streaming_pull_future = mock_future
 
-        puller._is_pulling.set()
+        self.puller._is_pulling.set()
 
         mock_callback = Mock()
 
-        puller.start_pulling_messages(mock_callback)
+        self.puller.start_pulling_messages(mock_callback)
 
         mock_check_subscription_exist.assert_called_once()
         mock_thread.assert_not_called()
-        mock_create_subscriber_client.assert_not_called()
 
     @patch.object(PubSubPuller, "stop_pulling_messages")
     @patch.object(PubSubPuller, "_check_subscription_exist", return_value=True)
-    @patch(
-        "backend.consumers.pubsub_puller.GoogleClientFactory.create_subscriber_client"
-    )
     @patch("backend.consumers.pubsub_puller.threading.Thread")
-    def test_start_pulling_messages_stale(
+    def test_start_pulling_messages_stale_future(
         self,
         mock_thread,
-        mock_create_subscriber_client,
         mock_check_subscription_exist,
         mock_stop_pulling_messages,
     ):
-        puller = PubSubPuller(self.project_id, self.subscription_id)
-
         mock_future = MagicMock()
         mock_future.done.return_value = False
-        puller._streaming_pull_future = mock_future
+        self.puller._streaming_pull_future = mock_future
+        self.puller._is_pulling.clear()
 
         mock_callback = Mock()
 
-        puller.start_pulling_messages(mock_callback)
+        self.puller.start_pulling_messages(mock_callback)
 
         mock_check_subscription_exist.assert_called_once()
-        mock_thread.assert_called_once()
+
         mock_stop_pulling_messages.assert_called_once()
+        mock_thread.assert_called_once()
 
     def test_wrap_sync_callback_returns_original(self):
         def sync_callback(msg):
             return f"processed {msg}"
 
-        puller = PubSubPuller(self.project_id, self.subscription_id)
-
-        wrapped = puller._wrap_callback_if_async(sync_callback)
+        wrapped = self.puller._wrap_callback_if_async(sync_callback)
         self.assertIs(wrapped, sync_callback)
 
-    @patch.object(AsyncioEventLoopManager, "run_async_in_background_loop")
-    def test_wrap_async_callback_returns_wrapped(self, mock_run_in_loop):
+    def test_wrap_async_callback_returns_wrapped(self):
         async def async_callback(msg):
             return f"processed {msg}"
 
-        mock_run_in_loop.return_value = "done"
+        self.mock_asyncio_event_loop_manager.run_async_in_background_loop.return_value = "done"
 
-        puller = PubSubPuller(self.project_id, self.subscription_id)
-        wrapped = puller._wrap_callback_if_async(async_callback)
+        wrapped = self.puller._wrap_callback_if_async(async_callback)
 
         self.assertTrue(callable(wrapped))
-        self.assertNotEqual(wrapped, async_callback)
+        self.assertIsNot(
+            wrapped, async_callback
+        )  # Should be a wrapper, not the original
 
         result = wrapped("message")
-        mock_run_in_loop.assert_called_once()
+        # The wrapper lambda should call run_async_in_background_loop with the async_callback coroutine
+        # and the message argument. The actual coroutine is `async_callback(msg)`.
+        self.mock_asyncio_event_loop_manager.run_async_in_background_loop.assert_called_once()
+        # Check the type of the argument passed to run_async_in_background_loop
+        # It should be a coroutine object.
+        called_arg = (
+            self.mock_asyncio_event_loop_manager.run_async_in_background_loop.call_args[
+                0
+            ][0]
+        )
+
+        self.assertTrue(inspect.iscoroutine(called_arg))
         self.assertEqual(result, "done")
 
 

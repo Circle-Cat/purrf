@@ -1,22 +1,10 @@
 from google.api_core.exceptions import NotFound
-from backend.common.redis_client import RedisClientFactory
-from backend.common.google_client import GoogleClientFactory
 from backend.common.constants import PullStatus, PUBSUB_PULL_MESSAGES_STATUS_KEY
-from backend.common.asyncio_event_loop_manager import AsyncioEventLoopManager
-from backend.common.logger import get_logger
 from dataclasses import dataclass
-from tenacity import (
-    retry,
-    stop_after_attempt,
-    wait_exponential,
-    retry_if_exception_type,
-)
 import concurrent.futures
 import datetime as dt
 import threading
 import inspect
-
-logger = get_logger()
 
 
 @dataclass
@@ -30,53 +18,49 @@ class PullStatusResponse:
 class PubSubPuller:
     """
     Manages asynchronous message pulling from Google Cloud Pub/Sub subscriptions.
-    Implements a singleton pattern per project_id-subscription_id pair.
     """
 
-    _instances = {}
-
-    @classmethod
-    def make_instance_key(cls, project_id: str, subscription_id: str) -> str:
-        return f"{project_id}-{subscription_id}"
-
-    def __new__(cls, project_id: str, subscription_id: str):
+    def __init__(
+        self,
+        project_id,
+        subscription_id,
+        logger,
+        redis_client,
+        subscriber_client,
+        asyncio_event_loop_manager,
+    ):
         """
-        Implement the singleton pattern to ensure that there is only one PubSubPuller instance for each project_id-subscription_id pair.
-        """
-        key = cls.make_instance_key(project_id, subscription_id)
-        if key not in cls._instances:
-            cls._instances[key] = super().__new__(cls)
-        return cls._instances[key]
+        Initialize the PubSubPuller instance with injected dependencies.
 
-    def __init__(self, project_id: str, subscription_id: str):
+        Args:
+            project_id (str): The Google Cloud project ID where the Pub/Sub subscription resides.
+            subscription_id (str): The ID of the Pub/Sub subscription from which messages will be pulled.
+            logger: An instance of a logger.
+            redis_client: An RedisClient instance.
+            subscriber_client: An initialized Google Cloud Pub/Sub SubscriberClient instance.
+            asyncio_event_loop_manager: An AsyncioEventLoopManager instance responsible for managing the asyncio
+                event loop where asynchronous Pub/Sub pull operations will run. This allows
+                for control over the event loop's lifecycle and execution context.
         """
-        Initialize the PubSubPuller instance.
-        """
-        if not hasattr(self, "_initialized") or not self._initialized:
-            self.project_id = project_id
-            self.subscription_id = subscription_id
-            self._streaming_pull_future: concurrent.futures.Future = None
-            self._is_pulling = threading.Event()
-            self._lock = threading.RLock()
-            self._pull_exception = False
-            self._initialized = True
+        self.project_id = project_id
+        self.subscription_id = subscription_id
+        self._streaming_pull_future: concurrent.futures.Future = None
+        self._is_pulling = threading.Event()
+        self._lock = threading.RLock()
 
-            key = self.make_instance_key(self.project_id, self.subscription_id)
-            logger.info(f"Initialized PubSubPuller for {key}")
+        self._logger = logger
+        self._redis_client = redis_client
+        self._subscriber_client = subscriber_client
+        self._asyncio_event_loop_manager = asyncio_event_loop_manager
 
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=1, max=3),
-        retry=retry_if_exception_type(Exception),
-        reraise=True,
-    )
+        self._logger.info(
+            f"Initialized PubSubPuller for {self.project_id}-{self.subscription_id}"
+        )
+
     def _update_redis_pull_status(self, status: PullStatus, **kwargs):
         """
         Updates the pull status in Redis Hash using a PullStatus enum and dynamic message formatting.
         """
-        redis_client = RedisClientFactory().create_redis_client()
-        if not redis_client:
-            raise ValueError("Redis client not available. Cannot update pull status.")
         timestamp = (
             dt.datetime.now(dt.timezone.utc)
             .isoformat(timespec="microseconds")
@@ -89,7 +73,7 @@ class PubSubPuller:
             status_redis_key = PUBSUB_PULL_MESSAGES_STATUS_KEY.format(
                 subscription_id=self.subscription_id
             )
-            redis_client.hset(
+            self._redis_client.hset(
                 status_redis_key,
                 mapping={
                     "task_status": status.code,
@@ -97,37 +81,26 @@ class PubSubPuller:
                     "message": message,
                 },
             )
-            logger.debug(
+            self._logger.debug(
                 f"Redis status updated for {self.subscription_id}: {status.code}"
             )
         except Exception as e:
-            logger.error(
+            self._logger.error(
                 f"Failed to update Redis status for {self.subscription_id}: {e}"
             )
 
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=1, max=3),
-        retry=retry_if_exception_type(Exception),
-        reraise=True,
-    )
     def _delete_redis_pull_status(self):
         """
         Deleted the pull status in Redis Hash.
         """
-        redis_client = RedisClientFactory().create_redis_client()
-        if not redis_client:
-            raise ValueError(
-                "Redis client not available. Cannot delete obsolete pull status."
-            )
         try:
             status_redis_key = PUBSUB_PULL_MESSAGES_STATUS_KEY.format(
                 subscription_id=self.subscription_id
             )
-            redis_client.delete(status_redis_key)
-            logger.debug(f"Redis status deleted for {self.subscription_id}")
+            self._redis_client.delete(status_redis_key)
+            self._logger.debug(f"Redis status deleted for {self.subscription_id}")
         except Exception as e:
-            logger.error(
+            self._logger.error(
                 f"Failed to delete Redis status for {self.subscription_id}: {e}"
             )
             raise RuntimeError(
@@ -149,7 +122,7 @@ class PubSubPuller:
         """
 
         if inspect.iscoroutinefunction(callback):
-            loop_mgr = AsyncioEventLoopManager()
+            loop_mgr = self._asyncio_event_loop_manager
             return lambda msg: loop_mgr.run_async_in_background_loop(callback(msg))
         return callback
 
@@ -176,33 +149,36 @@ class PubSubPuller:
             - In the `finally` block, always clears `_is_pulling` flag to ensure proper shutdown.
         """
         try:
-            subscriber = GoogleClientFactory().create_subscriber_client()
-            subscription_path = subscriber.subscription_path(
+            subscription_path = self._subscriber_client.subscription_path(
                 self.project_id, self.subscription_id
             )
 
             wrapped_callback = self._wrap_callback_if_async(callback)
-            self._streaming_pull_future = subscriber.subscribe(
+            self._streaming_pull_future = self._subscriber_client.subscribe(
                 subscription_path, callback=wrapped_callback
             )
-            logger.info(f"Subscription {self.subscription_id} listening started.")
+            self._logger.info(f"Subscription {self.subscription_id} listening started.")
             self._is_pulling.set()
             self._update_redis_pull_status(PullStatus.RUNNING)
             self._streaming_pull_future.result()
 
         except NotFound as nf_exc:
-            logger.error(f"Subscription {self.subscription_id} not found: {nf_exc}")
+            self._logger.error(
+                f"Subscription {self.subscription_id} not found: {nf_exc}"
+            )
             self._delete_redis_pull_status()
 
         except Exception as e:
-            logger.error(f"Streaming pull for {self.subscription_id} interrupted: {e}")
+            self._logger.error(
+                f"Streaming pull for {self.subscription_id} interrupted: {e}"
+            )
             self._update_redis_pull_status(PullStatus.FAILED, error=str(e))
 
         finally:
             with self._lock:
                 if self._is_pulling.is_set():
                     self._is_pulling.clear()
-                    logger.debug(
+                    self._logger.debug(
                         f"_is_pulling flag cleared for {self.subscription_id} in _pull_target finally."
                     )
 
@@ -211,12 +187,11 @@ class PubSubPuller:
         Checks if the subscription configured for this Pub/Sub Puller instance
         exists within the specified Google Cloud project.
         """
-        subscriber = GoogleClientFactory().create_subscriber_client()
-        subscription_path = subscriber.subscription_path(
+        subscription_path = self._subscriber_client.subscription_path(
             self.project_id, self.subscription_id
         )
         try:
-            subscriber.get_subscription(subscription=subscription_path)
+            self._subscriber_client.get_subscription(subscription=subscription_path)
             return True
         except NotFound:
             return False
@@ -248,12 +223,12 @@ class PubSubPuller:
         with self._lock:
             if self._streaming_pull_future and not self._streaming_pull_future.done():
                 if self._is_pulling.is_set():
-                    logger.info(
+                    self._logger.info(
                         f"Subscription {self.subscription_id} is already actively pulling messages."
                     )
                     return
                 else:
-                    logger.warning(
+                    self._logger.warning(
                         f"Detected stale streaming pull future for {self.subscription_id}, cancelling it..."
                     )
                     self.stop_pulling_messages()
@@ -262,6 +237,9 @@ class PubSubPuller:
             target=self._pull_target, args=(callback,), daemon=True
         )
         pull_thread.start()
+        self._logger.info(
+            f"Subscription {self.subscription_id} pulling thread started."
+        )
 
     def check_pulling_messages_status(self) -> PullStatusResponse:
         """
@@ -280,10 +258,6 @@ class PubSubPuller:
             RuntimeError: If local and Redis states are inconsistent
             Exception: Any Redis operation errors
         """
-        redis_client = RedisClientFactory().create_redis_client()
-        if not redis_client:
-            raise ValueError("Redis client not available. Cannot check pull status.")
-
         with self._lock:
             local_status_is_pulling = (
                 self._is_pulling.is_set()
@@ -291,19 +265,20 @@ class PubSubPuller:
                 and (not self._streaming_pull_future.done())
             )
             try:
-                redis_status_log = redis_client.hgetall(
+                redis_status_log = self._redis_client.hgetall(
                     PUBSUB_PULL_MESSAGES_STATUS_KEY.format(
                         subscription_id=self.subscription_id
                     )
                 )
             except Exception as e:
-                logger.error(
+                self._logger.error(
                     f"Failed to retrieve status from Redis for {self.subscription_id}: {e}"
                 )
                 raise
 
             if redis_status_log:
                 task_status = redis_status_log.get("task_status")
+
                 if local_status_is_pulling and task_status != PullStatus.RUNNING.code:
                     raise RuntimeError(
                         f"Status inconsistency detected for {self.subscription_id}: "
@@ -373,27 +348,27 @@ class PubSubPuller:
             future = self._streaming_pull_future
             if not future or future.done():
                 if self._is_pulling.is_set():
-                    logger.info(
+                    self._logger.info(
                         f"No active pull Future found for subscription: {self.subscription_id}, but _is_pulling was set. Clearing flag."
                     )
                     self._is_pulling.clear()
-                logger.info(
+                self._logger.info(
                     f"Subscription {self.subscription_id} is not actively pulling and no active future."
                 )
 
             elif future and not future.done():
-                logger.info(
+                self._logger.info(
                     f"Stopping async pull for subscription: {self.subscription_id}"
                 )
                 future.cancel()
                 try:
                     future.result(timeout=3)
-                    logger.info(
+                    self._logger.info(
                         f"Subscription {self.subscription_id} listening cancelled and stream closed gracefully."
                     )
                     self._update_redis_pull_status(PullStatus.STOPPED)
                 except concurrent.futures.CancelledError:
-                    logger.info(
+                    self._logger.info(
                         f"Subscription {self.subscription_id} Future was successfully cancelled."
                     )
                     self._update_redis_pull_status(PullStatus.STOPPED)

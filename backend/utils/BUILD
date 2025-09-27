@@ -75,6 +75,7 @@ py_library(
         ":google_chat_message_utils",
         ":microsoft_chat_message_util",
         ":retry_utils",
+        "//backend/common:asyncio_event_loop_manager",
         "//backend/common:gerrit_client",
         "//backend/common:jira_client",
         "//backend/common:json_schema_validator",

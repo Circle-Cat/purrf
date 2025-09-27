@@ -67,6 +67,7 @@ from backend.common.environment_constants import (
 from backend.historical_data.google_chat_history_sync_service import (
     GoogleChatHistorySyncService,
 )
+from backend.common.asyncio_event_loop_manager import AsyncioEventLoopManager
 
 
 class AppDependencyBuilder:
@@ -106,6 +107,7 @@ class AppDependencyBuilder:
         )
         self.google_chat_client = self.google_client_factory.create_chat_client()
         self.google_people_client = self.google_client_factory.create_people_client()
+        self.subscriber_client = self.google_client_factory.create_subscriber_client()
         self.jira_client = JiraClientFactory().create_jira_client()
         self.google_calendar_client = (
             self.google_client_factory.create_calendar_client()
@@ -145,8 +147,14 @@ class AppDependencyBuilder:
             gerrit_client=self.gerrit_client,
             retry_utils=self.retry_utils,
         )
+        self.asyncio_event_loop_manager = AsyncioEventLoopManager()
+
         self.pubsub_puller_factory = PubSubPullerFactory(
-            puller_creator=PubSubPuller, logger=self.logger
+            puller_creator=PubSubPuller,
+            logger=self.logger,
+            redis_client=self.redis_client,
+            subscriber_client=self.subscriber_client,
+            asyncio_event_loop_manager=self.asyncio_event_loop_manager,
         )
         self.microsoft_message_processor_service = MicrosoftMessageProcessorService(
             logger=self.logger,

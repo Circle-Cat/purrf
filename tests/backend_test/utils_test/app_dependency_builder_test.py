@@ -8,6 +8,7 @@ from backend.common.environment_constants import (
 )
 
 
+@patch("backend.utils.app_dependency_builder.AsyncioEventLoopManager")
 @patch("backend.utils.app_dependency_builder.GoogleChatHistorySyncService")
 @patch("backend.utils.app_dependency_builder.GoogleChatAnalyticsService")
 @patch("backend.utils.app_dependency_builder.GerritProcessorService")
@@ -89,6 +90,7 @@ class TestAppDependencyBuilder(TestCase):
         mock_gerrit_processor_service_cls,
         mock_google_chat_analytics_service_cls,
         mock_google_chat_history_sync_service_cls,
+        mock_asyncio_event_loop_manager_cls,
     ):
         """
         Tests that the AppDependencyBuilder correctly instantiates and wires all its dependencies.
@@ -110,6 +112,10 @@ class TestAppDependencyBuilder(TestCase):
         mock_google_client_factory_instance = MagicMock()
         mock_google_chat_client = MagicMock()
         mock_google_people_client = MagicMock()
+        mock_google_subscriber_client = MagicMock()
+        mock_google_client_factory_instance.create_subscriber_client.return_value = (
+            mock_google_subscriber_client
+        )
         mock_google_client_factory_instance.create_workspaceevents_client.return_value = mock_google_workspaceevents_client
         mock_google_client_factory_instance.create_chat_client.return_value = (
             mock_google_chat_client
@@ -127,6 +133,10 @@ class TestAppDependencyBuilder(TestCase):
         )
         mock_google_client_factory_cls.return_value = (
             mock_google_client_factory_instance
+        )
+        mock_asyncio_event_loop_manager = MagicMock()
+        mock_asyncio_event_loop_manager_cls.return_value = (
+            mock_asyncio_event_loop_manager
         )
         mock_retry_utils_instance = MagicMock()
         mock_retry_utils_cls.return_value = mock_retry_utils_instance
@@ -207,6 +217,9 @@ class TestAppDependencyBuilder(TestCase):
         mock_pubsub_puller_factory_cls.assert_called_once_with(
             puller_creator=mock_pubsub_puller_cls,
             logger=mock_logger,
+            redis_client=mock_redis_client,
+            subscriber_client=mock_google_subscriber_client,
+            asyncio_event_loop_manager=mock_asyncio_event_loop_manager,
         )
 
         mock_microsoft_message_processor_service_cls.assert_called_once_with(
