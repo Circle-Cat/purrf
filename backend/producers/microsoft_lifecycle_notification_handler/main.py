@@ -38,24 +38,37 @@ EVENT_SCHEMA = {
         "type": "object",
         "properties": {
             "subscriptionId": {"type": "string"},
-            "subscriptionExpirationDateTime": {"type": "string"},
-            "tenantId": {"type": "string"},
+            "resource": {"type": "string"},
             "clientState": {"type": "string"},
+            "resourceData": {
+                "type": "object",
+                "properties": {
+                    "@odata.type": {"type": "string"},
+                    "@odata.id": {"type": "string"},
+                    "id": {"type": "string"},
+                },
+                "required": ["@odata.type", "@odata.id", "id"],
+            },
+            "encryptedContent": {"type": ["string", "null"]},
+            "subscriptionExpirationDateTime": {"type": "string"},
+            "resourceChangeType": {"type": ["string", "null"]},
             "lifecycleEvent": {
                 "type": "string",
                 "enum": [e.value for e in MicrosoftLifecycleNotificationType],
             },
+            "organizationId": {"type": "string"},
         },
         "required": [
             "subscriptionId",
-            "subscriptionExpirationDateTime",
-            "tenantId",
+            "resource",
             "clientState",
+            "resourceData",
+            "subscriptionExpirationDateTime",
             "lifecycleEvent",
+            "organizationId",
         ],
     },
 }
-
 
 redis_client = None
 graph_client = None

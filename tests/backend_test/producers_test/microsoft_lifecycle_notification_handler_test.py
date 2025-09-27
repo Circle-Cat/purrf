@@ -19,10 +19,16 @@ TEST_SUBSCRIPTION_ID = "sub1"
 TEST_SUCCESS_PAYLOAD = [
     {
         "subscriptionId": TEST_SUBSCRIPTION_ID,
-        "subscriptionExpirationDateTime": "2023-01-01T00:00:00Z",
-        "tenantId": "tenant1",
+        "resource": "users/subscribers",
         "clientState": TEST_CLIENT_STATE,
+        "resourceData": {
+            "@odata.type": "#Microsoft.Graph.User",
+            "@odata.id": "/users/abc",
+            "id": "abc",
+        },
+        "subscriptionExpirationDateTime": "2023-01-01T00:00:00Z",
         "lifecycleEvent": MicrosoftLifecycleNotificationType.REAUTHORIZATION_REQUIRED,
+        "organizationId": "org1",
     }
 ]
 TEST_FAILED_PAYLOAD = [
