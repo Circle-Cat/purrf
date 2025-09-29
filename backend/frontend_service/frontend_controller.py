@@ -92,7 +92,7 @@ class FrontendController:
         blueprint.add_url_rule(
             "/gerrit/stats",
             view_func=self.get_gerrit_stats,
-            methods=["GET"],
+            methods=["POST"],
         )
         blueprint.add_url_rule(
             "/gerrit/projects",
@@ -414,12 +414,13 @@ class FrontendController:
 
     async def get_gerrit_stats(self):
         """API endpoint to retrieve aggregated Gerrit stats."""
+        body = request.get_json(silent=True) or {}
 
         response = self.gerrit_analytics_service.get_gerrit_stats(
-            raw_ldap=request.args.get("ldap"),
-            start_date_str=request.args.get("start_date_str"),
-            end_date_str=request.args.get("end_date_str"),
-            raw_project=request.args.get("project"),
+            ldap_list=body.get("ldaps"),
+            start_date_str=body.get("startDate"),
+            end_date_str=body.get("endDate"),
+            project_list=body.get("project"),
         )
 
         return api_response(

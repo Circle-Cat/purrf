@@ -69,10 +69,10 @@ class TestGerritAnalyticsService(unittest.TestCase):
         self.retry_utils.get_retry_on_transient.side_effect = lambda func: func()
 
         result = self.service.get_gerrit_stats(
-            raw_ldap="user1",
+            ldap_list=["user1"],
             start_date_str="2024-04-01",
             end_date_str="2024-04-30",
-            raw_project="test_project",
+            project_list=["test_project"],
         )
         self.assertEqual(result["user1"]["cl_merged"], 1)
         self.assertEqual(result["user1"]["loc_merged"], 50)
@@ -97,10 +97,10 @@ class TestGerritAnalyticsService(unittest.TestCase):
         self.retry_utils.get_retry_on_transient.side_effect = lambda func: func()
 
         result = self.service.get_gerrit_stats(
-            raw_ldap="user1",
+            ldap_list=["user1"],
             start_date_str="2024-05-01",
             end_date_str="2024-05-31",
-            raw_project=None,
+            project_list=None,
         )
 
         self.assertEqual(result["user1"]["cl_merged"], 3)
@@ -157,10 +157,10 @@ class TestGerritAnalyticsService(unittest.TestCase):
         self.retry_utils.get_retry_on_transient.side_effect = lambda func: func()
 
         result = self.service.get_gerrit_stats(
-            raw_ldap="user1,user2",
+            ldap_list=["user1", "user2"],
             start_date_str=None,
             end_date_str=None,
-            raw_project=None,
+            project_list=None,
         )
 
         self.assertIn("user1", result)

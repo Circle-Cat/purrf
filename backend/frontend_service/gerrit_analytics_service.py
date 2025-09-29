@@ -60,10 +60,10 @@ class GerritAnalyticsService:
 
     def get_gerrit_stats(
         self,
-        raw_ldap: str | None = None,
+        ldap_list: list[str] | None = None,
         start_date_str: str | None = None,
         end_date_str: str | None = None,
-        raw_project: str | None = None,
+        project_list: list[str] | None = None,
     ) -> dict[str, dict]:
         """
         Aggregate Gerrit stats from Redis buckets.
@@ -81,7 +81,6 @@ class GerritAnalyticsService:
             Update `get_active_interns_ldaps` to get all active ldaps,
             that stats include all users, not just active interns.
         """
-        ldap_list = [s.strip() for s in (raw_ldap or "").split(",") if s.strip()]
         if not ldap_list:
             ldap_list = self.ldap_service.get_active_interns_ldaps()
             if not ldap_list:
@@ -106,7 +105,6 @@ class GerritAnalyticsService:
             self._get_month_buckets(start_date, end_date) if use_month_buckets else []
         )
 
-        project_list = raw_project.split(",") if raw_project else None
         projects = [p for p in (project_list or []) if p] or [None]
 
         pipeline = self.redis_client.pipeline()

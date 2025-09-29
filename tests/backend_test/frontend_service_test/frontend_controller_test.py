@@ -339,9 +339,8 @@ class TestFrontendController(TestCase):
         self.mock_gerrit_analytics_service.get_gerrit_stats.return_value = mock_stats
 
         with self.app.test_request_context(
-            GERRIT_STATS_API
-            + "?ldap=user1&start_date_str=2024-01-01&end_date_str=2024-01-31&project=test_project",
-            method="GET",
+            GERRIT_STATS_API,
+            method="POST",
         ):
             response = await self.controller.get_gerrit_stats()
 
