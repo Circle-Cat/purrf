@@ -1,35 +1,43 @@
-from backend.consumers.pubsub_puller import PubSubPuller, PullStatusResponse
+from backend.consumers.pubsub_puller import PubSubPuller
 
 
-def check_pulling_status(project_id: str, subscription_id: str) -> PullStatusResponse:
-    """
-    Check the message pulling status for a given Pub/Sub subscription.
+class PubSubPullManager:
+    def __init__(self, pubsub_puller_factory):
+        """
+        Args:
+            pubsub_puller_factory: A PubSubPullerFactory instance.
+        """
+        self.pubsub_puller_factory = pubsub_puller_factory
 
-    Args:
-        project_id: Google Cloud project ID (must be non-empty)
-        subscription_id: Pub/Sub subscription ID (must be non-empty)
+    def check_pulling_status(self, project_id: str, subscription_id: str):
+        """
+        Check the message pulling status for a given Pub/Sub subscription.
 
-    Returns:
-        PullStatusResponse: An object containing the subscription's pull status with:
-            - subscription_id: The ID of the subscription being checked
-            - task_status: Current pull status code (RUNNING, NOT_STARTED, etc.)
-            - message: Human-readable status description
-            - timestamp: Last status update time (or None if not available)
-    Raises:
-        ValueError: If either project_id or subscription_id is None or empty
-        RuntimeError: If there's a state inconsistency between local and Redis status
-        Exception: Any errors from the underlying PubSubPuller or Redis operations
-    """
-    if not project_id:
-        raise ValueError("project_id must be a non-empty string")
-    if not subscription_id:
-        raise ValueError("subscription_id must be a non-empty string")
+        Args:
+            project_id: Google Cloud project ID (must be non-empty)
+            subscription_id: Pub/Sub subscription ID (must be non-empty)
 
-    response_data = PubSubPuller(
-        project_id, subscription_id
-    ).check_pulling_messages_status()
+        Returns:
+            PullStatusResponse: An object containing the subscription's pull status with:
+                - subscription_id: The ID of the subscription being checked
+                - task_status: Current pull status code (RUNNING, NOT_STARTED, etc.)
+                - message: Human-readable status description
+                - timestamp: Last status update time (or None if not available)
+        Raises:
+            ValueError: If either project_id or subscription_id is None or empty
+            RuntimeError: If there's a state inconsistency between local and Redis status
+            Exception: Any errors from the underlying PubSubPuller or Redis operations
+        """
+        if not project_id:
+            raise ValueError("project_id must be a non-empty string")
+        if not subscription_id:
+            raise ValueError("subscription_id must be a non-empty string")
 
-    return response_data
+        response_data = self.pubsub_puller_factory.get_puller_instance(
+            project_id, subscription_id
+        ).check_pulling_messages_status()
+
+        return response_data
 
 
 def stop_pulling_process(project_id: str, subscription_id: str):

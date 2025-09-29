@@ -1,8 +1,8 @@
 from unittest import TestCase, main
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 from backend.consumers.pubsub_puller import PullStatusResponse
 from backend.consumers.pubsub_pull_manager import (
-    check_pulling_status,
+    PubSubPullManager,
     stop_pulling_process,
 )
 
@@ -18,53 +18,57 @@ class TestPubsubPullManager(TestCase):
             timestamp="2023-01-01T00:00:00Z",
         )
 
-    @patch("backend.consumers.pubsub_pull_manager.PubSubPuller")
-    def test_successful_status_check(self, mock_puller):
+        self.mock_puller = MagicMock()
+        self.mock_puller.check_pulling_messages_status.return_value = self.mock_response
+        self.mock_puller.stop_pulling_messages.return_value = self.mock_response
+
+        self.mock_factory = MagicMock()
+        self.mock_factory.get_puller_instance.return_value = self.mock_puller
+
+        self.manager = PubSubPullManager(pubsub_puller_factory=self.mock_factory)
+
+    def test_successful_status_check(self):
         """Test successful status check with valid inputs."""
-        mock_instance = mock_puller.return_value
-        mock_instance.check_pulling_messages_status.return_value = self.mock_response
-
-        result = check_pulling_status(self.valid_project_id, self.valid_subscription_id)
-
-        mock_puller.assert_called_once_with(
+        result = self.manager.check_pulling_status(
             self.valid_project_id, self.valid_subscription_id
         )
+
+        self.mock_factory.get_puller_instance.assert_called_once_with(
+            self.valid_project_id, self.valid_subscription_id
+        )
+        self.mock_puller.check_pulling_messages_status.assert_called_once()
         self.assertEqual(result, self.mock_response)
 
-    @patch("backend.consumers.pubsub_pull_manager.PubSubPuller")
-    def test_empty_project_id(self, mock_puller):
+    def test_empty_project_id(self):
         """Test ValueError when project_id is empty."""
         with self.assertRaises(ValueError):
-            check_pulling_status("", self.valid_subscription_id)
+            self.manager.check_pulling_status("", self.valid_subscription_id)
 
-    @patch("backend.consumers.pubsub_pull_manager.PubSubPuller")
-    def test_none_project_id(self, mock_puller):
+    def test_none_project_id(self):
         """Test ValueError when project_id is None."""
         with self.assertRaises(ValueError):
-            check_pulling_status(None, self.valid_subscription_id)
+            self.manager.check_pulling_status(None, self.valid_subscription_id)
 
-    @patch("backend.consumers.pubsub_pull_manager.PubSubPuller")
-    def test_empty_subscription_id(self, mock_puller):
+    def test_empty_subscription_id(self):
         """Test ValueError when subscription_id is empty."""
         with self.assertRaises(ValueError):
-            check_pulling_status(self.valid_project_id, "")
+            self.manager.check_pulling_status(self.valid_project_id, "")
 
-    @patch("backend.consumers.pubsub_pull_manager.PubSubPuller")
-    def test_none_subscription_id(self, mock_puller):
+    def test_none_subscription_id(self):
         """Test ValueError when subscription_id is None."""
         with self.assertRaises(ValueError):
-            check_pulling_status(self.valid_project_id, None)
+            self.manager.check_pulling_status(self.valid_project_id, None)
 
-    @patch("backend.consumers.pubsub_pull_manager.PubSubPuller")
-    def test_puller_exception_propagation(self, mock_puller):
+    def test_puller_exception_propagation(self):
         """Test that exceptions from PubSubPuller are propagated."""
-        mock_instance = mock_puller.return_value
-        mock_instance.check_pulling_messages_status.side_effect = RuntimeError(
+        self.mock_puller.check_pulling_messages_status.side_effect = RuntimeError(
             "Test error"
         )
 
         with self.assertRaises(RuntimeError) as context:
-            check_pulling_status(self.valid_project_id, self.valid_subscription_id)
+            self.manager.check_pulling_status(
+                self.valid_project_id, self.valid_subscription_id
+            )
         self.assertEqual(str(context.exception), "Test error")
 
     @patch("backend.consumers.pubsub_pull_manager.PubSubPuller")

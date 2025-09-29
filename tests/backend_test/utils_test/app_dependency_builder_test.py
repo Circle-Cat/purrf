@@ -8,6 +8,7 @@ from backend.common.environment_constants import (
 )
 
 
+@patch("backend.utils.app_dependency_builder.PubSubPullManager")
 @patch("backend.utils.app_dependency_builder.AsyncioEventLoopManager")
 @patch("backend.utils.app_dependency_builder.GoogleChatHistorySyncService")
 @patch("backend.utils.app_dependency_builder.GoogleChatAnalyticsService")
@@ -91,6 +92,7 @@ class TestAppDependencyBuilder(TestCase):
         mock_google_chat_analytics_service_cls,
         mock_google_chat_history_sync_service_cls,
         mock_asyncio_event_loop_manager_cls,
+        mock_pubsub_pull_manager_cls,
     ):
         """
         Tests that the AppDependencyBuilder correctly instantiates and wires all its dependencies.
@@ -222,6 +224,10 @@ class TestAppDependencyBuilder(TestCase):
             asyncio_event_loop_manager=mock_asyncio_event_loop_manager,
         )
 
+        mock_pubsub_pull_manager_cls.assert_called_once_with(
+            pubsub_puller_factory=mock_pubsub_puller_factory_cls.return_value,
+        )
+
         mock_microsoft_message_processor_service_cls.assert_called_once_with(
             logger=mock_logger,
             pubsub_puller_factory=mock_pubsub_puller_factory_cls.return_value,
@@ -240,6 +246,7 @@ class TestAppDependencyBuilder(TestCase):
             microsoft_message_processor_service=mock_microsoft_message_processor_service_cls.return_value,
             google_chat_processor_service=mock_google_chat_processor_service.return_value,
             gerrit_processor_service=mock_gerrit_processor_service_cls.return_value,
+            pubsub_pull_manager=mock_pubsub_pull_manager_cls.return_value,
         )
 
         mock_microsoft_member_sync_service_cls.assert_called_once_with(

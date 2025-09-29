@@ -5,7 +5,6 @@ from flask import Flask
 from backend.consumers.consumer_controller import consumers_bp, ConsumerController
 
 
-PUBSUB_PULL_STATUS_CHECK_API = "/api/pubsub/pull/status/{project_id}/{subscription_id}"
 PUBSUB_PULL_STATUS_STOP_API = "/api/pubsub/pull/{project_id}/{subscription_id}"
 TEST_PROJECT_ID = "test-project"
 TEST_SUBSCRIPTION_ID = "test-subscription"
@@ -16,10 +15,12 @@ class TestConsumerController(IsolatedAsyncioTestCase):
         self.microsoft_message_processor_service = MagicMock()
         self.google_chat_processor_service = MagicMock()
         self.gerrit_processor_service = MagicMock()
+        self.pubsub_pull_manager = MagicMock()
         self.controller = ConsumerController(
             microsoft_message_processor_service=self.microsoft_message_processor_service,
             google_chat_processor_service=self.google_chat_processor_service,
             gerrit_processor_service=self.gerrit_processor_service,
+            pubsub_pull_manager=self.pubsub_pull_manager,
         )
 
         self.app = Flask(__name__)
@@ -56,6 +57,22 @@ class TestConsumerController(IsolatedAsyncioTestCase):
         self.assertEqual(response.json["data"], {})
         self.gerrit_processor_service.pull_gerrit.assert_called_once()
 
+    def test_check_pulling_messages(self):
+        self.pubsub_pull_manager.check_pulling_status.return_value = {
+            "subscription_id": TEST_SUBSCRIPTION_ID,
+            "task_status": "RUNNING",
+            "message": "ok",
+            "timestamp": "2023-01-01T00:00:00Z",
+        }
+
+        response = self.controller.check_pulling_messages(
+            TEST_PROJECT_ID, TEST_SUBSCRIPTION_ID
+        )
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.assertEqual(response.json["data"]["subscription_id"], TEST_SUBSCRIPTION_ID)
+        self.pubsub_pull_manager.check_pulling_status.assert_called_once()
+
 
 class TestAppRoutes(TestCase):
     def setUp(self):
@@ -63,24 +80,6 @@ class TestAppRoutes(TestCase):
         app.register_blueprint(consumers_bp)
         self.client = app.test_client()
         app.testing = True
-
-    @patch("backend.consumers.consumer_controller.check_pulling_status")
-    def test_check_pulling_messages(self, mock_check_pulling_status):
-        mock_result = {}
-        mock_check_pulling_status.return_value = mock_result
-
-        response = self.client.get(
-            PUBSUB_PULL_STATUS_CHECK_API.format(
-                project_id=TEST_PROJECT_ID, subscription_id=TEST_SUBSCRIPTION_ID
-            )
-        )
-
-        self.assertEqual(response.status_code, HTTPStatus.OK)
-        self.assertEqual(response.json["data"], mock_result)
-
-        mock_check_pulling_status.assert_called_once_with(
-            TEST_PROJECT_ID, TEST_SUBSCRIPTION_ID
-        )
 
     @patch("backend.consumers.consumer_controller.stop_pulling_process")
     def test_stop_pulling(self, mock_stop_pulling):

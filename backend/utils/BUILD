@@ -75,6 +75,7 @@ py_library(
         "//backend/consumers:gerrit_processor_service",
         "//backend/consumers:google_chat_processor_service",
         "//backend/consumers:microsoft_message_processor_service",
+        "//backend/consumers:pubsub_pull_manager",
         "//backend/consumers:pubsub_puller",
         "//backend/consumers:pubsub_puller_factory",
         "//backend/frontend_service:frontend_controller",
