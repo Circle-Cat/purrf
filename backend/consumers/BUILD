@@ -18,9 +18,6 @@ py_library(
     srcs = [
         "pubsub_pull_manager.py",
     ],
-    deps = [
-        ":pubsub_puller",
-    ],
 )
 
 py_library(
@@ -29,7 +26,6 @@ py_library(
         "consumer_controller.py",
     ],
     deps = [
-        ":pubsub_pull_manager",
         "//backend/common:api_response_wrapper",
         "@pypi//flask",
     ],

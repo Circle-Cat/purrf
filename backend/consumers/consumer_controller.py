@@ -1,8 +1,5 @@
 from http import HTTPStatus
 from flask import Blueprint
-from backend.consumers.pubsub_pull_manager import (
-    stop_pulling_process,
-)
 from backend.common.api_response_wrapper import api_response
 
 consumers_bp = Blueprint("consumers", __name__, url_prefix="/api")
@@ -56,6 +53,11 @@ class ConsumerController:
             "/pubsub/pull/status/<project_id>/<subscription_id>",
             view_func=self.check_pulling_messages,
             methods=["GET"],
+        )
+        blueprint.add_url_rule(
+            "/pubsub/pull/<project_id>/<subscription_id>",
+            view_func=self.stop_pulling,
+            methods=["DELETE"],
         )
 
     def start_google_chat_pulling(self, project_id, subscription_id):
@@ -148,25 +150,25 @@ class ConsumerController:
             status_code=HTTPStatus.OK,
         )
 
+    def stop_pulling(self, project_id, subscription_id):
+        """
+        HTTP DELETE endpoint to stop the message pulling process for a given
+        Pub/Sub subscription.
 
-@consumers_bp.route("/pubsub/pull/<project_id>/<subscription_id>", methods=["DELETE"])
-def stop_pulling(project_id, subscription_id):
-    """
-    HTTP DELETE endpoint to stop the message pulling process for a given
-    Pub/Sub subscription.
+        Args:
+            project_id (str): The Google Cloud project ID, provided as a URL path parameter.
+            subscription_id (str): The Pub/Sub subscription ID, provided as a URL path parameter.
 
-    Args:
-        project_id (str): The Google Cloud project ID, provided as a URL path parameter.
-        subscription_id (str): The Pub/Sub subscription ID, provided as a URL path parameter.
-
-    Returns:
-        Response: A JSON response indicating whether the stopping operation succeeded,
-                  including the final pulling status, a success flag, and HTTP 200 status.
-    """
-    data = stop_pulling_process(project_id, subscription_id)
-    return api_response(
-        success=True,
-        message="Successfully.",
-        data=data,
-        status_code=HTTPStatus.OK,
-    )
+        Returns:
+            Response: A JSON response indicating whether the stopping operation succeeded,
+                    including the final pulling status, a success flag, and HTTP 200 status.
+        """
+        data = self.pubsub_pull_manager.stop_pulling_process(
+            project_id, subscription_id
+        )
+        return api_response(
+            success=True,
+            message="Successfully.",
+            data=data,
+            status_code=HTTPStatus.OK,
+        )

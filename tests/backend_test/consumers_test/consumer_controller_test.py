@@ -1,8 +1,8 @@
 from http import HTTPStatus
-from unittest import TestCase, main, IsolatedAsyncioTestCase
-from unittest.mock import patch, MagicMock
+from unittest import main, IsolatedAsyncioTestCase
+from unittest.mock import MagicMock
 from flask import Flask
-from backend.consumers.consumer_controller import consumers_bp, ConsumerController
+from backend.consumers.consumer_controller import ConsumerController
 
 
 PUBSUB_PULL_STATUS_STOP_API = "/api/pubsub/pull/{project_id}/{subscription_id}"
@@ -73,29 +73,19 @@ class TestConsumerController(IsolatedAsyncioTestCase):
         self.assertEqual(response.json["data"]["subscription_id"], TEST_SUBSCRIPTION_ID)
         self.pubsub_pull_manager.check_pulling_status.assert_called_once()
 
+    def test_stop_pulling(self):
+        self.pubsub_pull_manager.stop_pulling_process.return_value = {
+            "subscription_id": TEST_SUBSCRIPTION_ID,
+            "task_status": "RUNNING",
+            "message": "ok",
+            "timestamp": "2023-01-01T00:00:00Z",
+        }
 
-class TestAppRoutes(TestCase):
-    def setUp(self):
-        app = Flask(__name__)
-        app.register_blueprint(consumers_bp)
-        self.client = app.test_client()
-        app.testing = True
-
-    @patch("backend.consumers.consumer_controller.stop_pulling_process")
-    def test_stop_pulling(self, mock_stop_pulling):
-        mock_result = {}
-        mock_stop_pulling.return_value = mock_result
-
-        response = self.client.delete(
-            PUBSUB_PULL_STATUS_STOP_API.format(
-                project_id=TEST_PROJECT_ID, subscription_id=TEST_SUBSCRIPTION_ID
-            )
-        )
+        response = self.controller.stop_pulling(TEST_PROJECT_ID, TEST_SUBSCRIPTION_ID)
 
         self.assertEqual(response.status_code, HTTPStatus.OK)
-        self.assertEqual(response.json["data"], mock_result)
-
-        mock_stop_pulling.assert_called_once_with(TEST_PROJECT_ID, TEST_SUBSCRIPTION_ID)
+        self.assertEqual(response.json["data"]["subscription_id"], TEST_SUBSCRIPTION_ID)
+        self.pubsub_pull_manager.stop_pulling_process.assert_called_once()
 
 
 if __name__ == "__main__":

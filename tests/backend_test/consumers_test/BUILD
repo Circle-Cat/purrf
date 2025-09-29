@@ -22,6 +22,7 @@ py_test(
     srcs = ["pubsub_pull_manager_test.py"],
     deps = [
         "//backend/consumers:pubsub_pull_manager",
+        "//backend/consumers:pubsub_puller",
     ],
 )
 
