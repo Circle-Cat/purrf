@@ -19,7 +19,7 @@ py_library(
         "pubsub_pull_manager.py",
     ],
     deps = [
-        "//backend/consumers:pubsub_puller",
+        ":pubsub_puller",
     ],
 )
 
@@ -30,7 +30,7 @@ py_library(
     ],
     deps = [
         "//backend/common:api_response_wrapper",
-        "//backend/consumers:pubsub_pull_manager",
+        ":pubsub_pull_manager",
         "@pypi//flask",
     ],
 )
@@ -44,7 +44,7 @@ py_library(
         "//backend/common:constants",
         "//backend/common:google_client",
         "//backend/common:logger",
-        "//backend/consumers:pubsub_puller",
+        ":pubsub_puller",
         "//backend/utils:google_chat_message_store",
         "@pypi//tenacity",
     ],

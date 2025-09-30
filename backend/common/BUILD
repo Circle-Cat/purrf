@@ -15,7 +15,7 @@ py_library(
 py_library(
     name = "logger",
     srcs = ["logger.py"],
-    deps = ["//backend/common:environment_constants"],
+    deps = [":environment_constants"],
 )
 
 py_library(
@@ -24,8 +24,8 @@ py_library(
         "google_client.py",
     ],
     deps = [
-        "//backend/common:constants",
-        "//backend/common:logger",
+        ":constants",
+        ":logger",
         "@pypi//google_api_python_client",
         "@pypi//google_auth_oauthlib",
         "@pypi//google_cloud_pubsub",
@@ -38,8 +38,8 @@ py_library(
     name = "redis_client",
     srcs = ["redis_client.py"],
     deps = [
-        "//backend/common:constants",
-        "//backend/common:logger",
+        ":constants",
+        ":logger",
         "@pypi//redis",
         "@pypi//tenacity",
     ],
@@ -61,8 +61,8 @@ py_library(
         "error_handler.py",
     ],
     deps = [
-        "//backend/common:api_response_wrapper",
-        "//backend/common:logger",
+        ":api_response_wrapper",
+        ":logger",
     ],
 )
 
@@ -82,7 +82,7 @@ py_library(
         "jira_client.py",
     ],
     deps = [
-        "//backend/common:logger",
+        ":logger",
         "@pypi//jira",
         "@pypi//tenacity",
     ],
@@ -95,7 +95,7 @@ py_library(
         "//backend/schemas",
     ],
     deps = [
-        "//backend/common:logger",
+        ":logger",
         "@pypi//jsonschema",
     ],
 )
@@ -107,7 +107,7 @@ py_library(
         "//backend/schemas",
     ],
     deps = [
-        "//backend/common:logger",
+        ":logger",
         "@pypi//jsonschema",
     ],
 )
@@ -116,7 +116,7 @@ py_library(
     name = "asyncio_event_loop_manager",
     srcs = ["asyncio_event_loop_manager.py"],
     deps = [
-        "//backend/common:logger",
+        ":logger",
     ],
 )
 
@@ -126,7 +126,7 @@ py_library(
         "microsoft_graph_service_client.py",
     ],
     deps = [
-        "//backend/common:constants",
+        ":constants",
         "@pypi//azure_identity",
         "@pypi//msgraph_sdk",
     ],

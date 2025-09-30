@@ -20,8 +20,8 @@ py_library(
     deps = [
         "//backend/common:api_response_wrapper",
         "//backend/common:constants",
-        "//backend/notification_management:gerrit_subscription_service",
-        "//backend/notification_management:google_chat_subscription_service",
+        ":gerrit_subscription_service",
+        ":google_chat_subscription_service",
         "@pypi//flask",
     ],
 )
