@@ -13,7 +13,6 @@ class TestGerritWebhookLib(unittest.TestCase):
         "GERRIT_WEBHOOK_TARGET_URL": "http://target.example.com/webhook",
         "GERRIT_WEBHOOK_REMOTE_NAME": "test-webhook",
         "GERRIT_WEBHOOK_EVENTS": "patchset-created,change-merged",
-        "GERRIT_WEBHOOK_SECRET": "super_secret",
         "GERRIT_WEBHOOK_PROJECT": "test-project",
     }
 

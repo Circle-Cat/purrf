@@ -20,7 +20,6 @@ class GerritSubscriptionService:
         remote_name: str,
         subscribe_url: str,
         events: list[str],
-        secret: str | None = None,
     ):
         """
         Initializes the GerritSubscriptionService with fully injected parameters.
@@ -32,7 +31,6 @@ class GerritSubscriptionService:
             remote_name (str): Identifier for the webhook in Gerrit.
             subscribe_url (str): The URL to which Gerrit will send webhook events.
             events (list[str]): List of Gerrit events to subscribe to.
-            secret (str | None): Optional secret for webhook signing.
 
         Raises:
             ValueError: If required parameters are missing or invalid.
@@ -42,7 +40,6 @@ class GerritSubscriptionService:
         self.project = project
         self.remote_name = remote_name
         self.subscribe_url = subscribe_url
-        self.secret = secret
         self.events = events
 
         if not self.logger:
@@ -57,8 +54,6 @@ class GerritSubscriptionService:
             raise ValueError("A valid target URL is required.")
         if not self.events:
             raise ValueError("At least one event is required.")
-        if not self.secret:
-            raise ValueError("A valid secret is required.")
 
         self.base_url = self.gerrit_client.base_url.rstrip("/")
         self.session = self.gerrit_client.session
@@ -80,9 +75,6 @@ class GerritSubscriptionService:
             "url": self.subscribe_url,
             "events": self.events,
         }
-
-        if self.secret:
-            payload["secret"] = self.secret
 
         headers = {"Content-Type": "application/json; charset=UTF-8"}
         response = self.session.put(url, json=payload, headers=headers)

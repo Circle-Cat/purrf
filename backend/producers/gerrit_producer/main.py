@@ -10,8 +10,6 @@ logger = logging.getLogger(__name__)
 
 PROJECT_ID = os.environ.get("PROJECT_ID")
 TOPIC_ID = os.environ.get("TOPIC_ID")
-EXPECTED_SECRET = os.environ.get("GERRIT_WEBHOOK_SECRET")
-GERRIT_SECRET_HEADER = "X-Gerrit-Webhook-Secret"
 
 redis_client = None
 publisher_client = None
@@ -23,17 +21,10 @@ def gerrit_event_webhook(request):
     Cloud Function to receive Gerrit webhook events and publish them to Pub/Sub.
 
     Steps:
-    - Validates the optional `X-Gerrit-Webhook-Secret`.
     - Parses incoming JSON body.
     - Publishes the entire JSON payload to Pub/Sub.
     """
     global publisher_client
-
-    if EXPECTED_SECRET:
-        received_secret = request.headers.get(GERRIT_SECRET_HEADER)
-        if received_secret != EXPECTED_SECRET:
-            logger.warning("Unauthorized: Invalid secret.")
-            return "Unauthorized", HTTPStatus.UNAUTHORIZED
 
     try:
         payload = request.get_json(force=True)

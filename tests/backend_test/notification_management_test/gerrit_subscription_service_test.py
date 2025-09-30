@@ -11,7 +11,6 @@ from backend.notification_management.gerrit_subscription_service import (
 TEST_PROJECT = "test-project"
 TEST_REMOTE = "test-remote"
 TEST_TARGET_URL = "http://example.com/webhook"
-TEST_SECRET = "supersecret"
 TEST_EVENTS_STR = "one,two,three"
 TEST_EVENTS_LIST = TEST_EVENTS_STR.split(",")
 
@@ -30,7 +29,6 @@ class TestGerritSubscriptionService(TestCase):
             "remote_name": TEST_REMOTE,
             "subscribe_url": TEST_TARGET_URL,
             "events": TEST_EVENTS_LIST,
-            "secret": TEST_SECRET,
         }
 
     def test_init_raises_value_error_for_missing_logger(self):
@@ -65,16 +63,6 @@ class TestGerritSubscriptionService(TestCase):
         with self.assertRaisesRegex(ValueError, "At least one event is required."):
             GerritSubscriptionService(**kwargs)
 
-    def test_init_raises_value_error_for_missing_secret(self):
-        # Test with None
-        kwargs_none = {**self.service_kwargs, "secret": None}
-        with self.assertRaisesRegex(ValueError, "A valid secret is required."):
-            GerritSubscriptionService(**kwargs_none)
-        # Test with empty string
-        kwargs_empty = {**self.service_kwargs, "secret": ""}
-        with self.assertRaisesRegex(ValueError, "A valid secret is required."):
-            GerritSubscriptionService(**kwargs_empty)
-
     def test_register_webhook_success_and_secret_and_events(self):
         put_resp = MagicMock(status_code=HTTPStatus.CREATED)
         put_resp.json.return_value = {"status": "created"}
@@ -92,7 +80,6 @@ class TestGerritSubscriptionService(TestCase):
             json={
                 "url": TEST_TARGET_URL,
                 "events": TEST_EVENTS_LIST,  # Corrected from TEST_EVENTS.split(",")
-                "secret": TEST_SECRET,
             },
             headers={"Content-Type": "application/json; charset=UTF-8"},
         )

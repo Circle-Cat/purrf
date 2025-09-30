@@ -46,27 +46,6 @@ class TestGerritEventWebhook(unittest.TestCase):
         self.assertEqual(status, HTTPStatus.BAD_REQUEST)
         self.assertIn("Invalid JSON", response)
 
-    @patch.dict(
-        os.environ,
-        {
-            "PROJECT_ID": "test-project",
-            "TOPIC_ID": "test-topic",
-        },
-    )
-    @patch(
-        "backend.producers.gerrit_producer.main.EXPECTED_SECRET", new="expected-secret"
-    )
-    @patch("backend.producers.gerrit_producer.main.PublisherClient")
-    @patch.object(main, "publisher_client", new=None)
-    def test_invalid_secret_returns_401(self, mock_pubsub_client):
-        request = self.make_request(
-            json_data=self.sample_payload,
-            headers={"X-Gerrit-Webhook-Secret": "wrong-secret"},
-        )
-        response, status = gerrit_event_webhook(request)
-        self.assertEqual(status, HTTPStatus.UNAUTHORIZED)
-        self.assertIn("Unauthorized", response)
-
     @patch.dict(os.environ, {"PROJECT_ID": "test-project", "TOPIC_ID": "test-topic"})
     @patch("backend.producers.gerrit_producer.main.PublisherClient")
     def test_successful_publish(self, mock_pubsub_cls):

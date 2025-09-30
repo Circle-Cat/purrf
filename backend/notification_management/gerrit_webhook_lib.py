@@ -8,7 +8,6 @@ from backend.common.environment_constants import (
     GERRIT_WEBHOOK_REMOTE_NAME,  # Identifier name for the webhook in Gerrit
     GERRIT_WEBHOOK_TARGET_URL,  # The target URL to which Gerrit will send webhook events
     GERRIT_WEBHOOK_EVENTS,  # List of Gerrit events to subscribe to (comma-separated)
-    GERRIT_WEBHOOK_SECRET,  # Secret token for webhook signing
     GERRIT_WEBHOOK_PROJECT,  # Gerrit project to subscribe the webhook for (defaults to 'All-Projects')
 )
 from backend.notification_management.gerrit_subscription_service import (
@@ -49,7 +48,6 @@ def run_gerrit_webhook_registration():
     gerrit_password = require_env(GERRIT_HTTP_PASS)
 
     # Webhook settings
-    secret = os.getenv(GERRIT_WEBHOOK_SECRET)
     subscribe_url = validate_url(
         require_env(GERRIT_WEBHOOK_TARGET_URL), GERRIT_WEBHOOK_TARGET_URL
     )
@@ -80,7 +78,6 @@ def run_gerrit_webhook_registration():
         project=project,
         remote_name=remote_name,
         subscribe_url=subscribe_url,
-        secret=secret,
         events=events,
     )
 
