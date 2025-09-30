@@ -22,6 +22,7 @@ class FrontendController:
         google_chat_analytics_service,
         date_time_util,
         gerrit_analytics_service,
+        summary_service,
     ):
         """
         Initialize the FrontendController with required dependencies.
@@ -45,6 +46,7 @@ class FrontendController:
         self.google_chat_analytics_service = google_chat_analytics_service
         self.date_time_util = date_time_util
         self.gerrit_analytics_service = gerrit_analytics_service
+        self.summary_service = summary_service
 
     def register_routes(self, blueprint):
         """
@@ -113,6 +115,11 @@ class FrontendController:
             "/google/chat/spaces",
             view_func=self.get_chat_spaces_route,
             methods=["GET"],
+        )
+        blueprint.add_url_rule(
+            "/summary",
+            view_func=self.get_summary,
+            methods=["POST"],
         )
 
     def get_chat_spaces_route(self):
@@ -445,23 +452,21 @@ class FrontendController:
             status_code=HTTPStatus.OK,
         )
 
+    def get_summary(self):
+        """API endpoint to retrieve the summary on the dashboard."""
+        data = request.get_json(force=True)
+        start_date = data.get("startDate")
+        end_date = data.get("endDate")
+        groups_list = data.get("groups", [])
+        include_terminated = data.get("includeTerminated", False)
 
-@frontend_bp.route("/summary", methods=["POST"])
-def get_summary():
-    """
-    TODO: [PUR-116] Implement /api/summary
+        summary_data = self.summary_service.get_summary(
+            start_date, end_date, groups_list, include_terminated
+        )
 
-    Provides a comprehensive summary of team activities and key metrics.
-    This is a temporary endpoint and will be fully implemented later.
-
-    Request Body (JSON):
-        {
-            "startDate": "YYYY-MM-DD",
-            "endDate": "YYYY-MM-DD",
-            "groups": ["<group1>", "<group2>"],
-            "includeTerminated": boolean
-        }
-    """
-    return api_response(
-        success=False, message="Not Implemented", status_code=HTTPStatus.NOT_IMPLEMENTED
-    )
+        return api_response(
+            success=True,
+            message="Summary fetched successfully",
+            data=summary_data,
+            status_code=HTTPStatus.OK,
+        )

@@ -31,6 +31,8 @@ class TestFrontendController(TestCase):
         self.date_time_util = MagicMock()
         self.mock_gerrit_analytics_service = MagicMock()
         self.mock_google_chat_analytics_service = MagicMock()
+        self.mock_summary_service = MagicMock()
+
         self.controller = FrontendController(
             ldap_service=self.ldap_service,
             microsoft_chat_analytics_service=self.microsoft_chat_analytics_service,
@@ -40,6 +42,7 @@ class TestFrontendController(TestCase):
             date_time_util=self.date_time_util,
             gerrit_analytics_service=self.mock_gerrit_analytics_service,
             google_chat_analytics_service=self.mock_google_chat_analytics_service,
+            summary_service=self.mock_summary_service,
         )
 
         self.app = Flask(__name__)
@@ -372,6 +375,46 @@ class TestFrontendController(TestCase):
             response.get_json()["message"], "Successfully retrieved Gerrit projects."
         )
         self.assertEqual(response.get_json()["data"], mock_projects)
+
+    def test_get_summary_success(self):
+        mock_summary_data = [
+            {
+                "ldap": "alice",
+                "chat_count": 10,
+                "meeting_count": 2,
+                "cl_merged": 5,
+                "loc_merged": 500,
+                "jira_issue_done": 3,
+            }
+        ]
+        self.mock_summary_service.get_summary.return_value = mock_summary_data
+
+        payload = {
+            "startDate": "2025-09-01",
+            "endDate": "2025-09-30",
+            "groups": ["interns"],
+            "includeTerminated": False,
+        }
+
+        with self.app.test_request_context(
+            "/api/summary",
+            method="POST",
+            data=json.dumps(payload),
+            content_type="application/json",
+        ):
+            response = self.controller.get_summary()
+
+        self.mock_summary_service.get_summary.assert_called_once_with(
+            "2025-09-01",
+            "2025-09-30",
+            ["interns"],
+            False,
+        )
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        resp_json = response.get_json()
+        self.assertEqual(resp_json["message"], "Summary fetched successfully")
+        self.assertEqual(resp_json["data"], mock_summary_data)
 
 
 if __name__ == "__main__":

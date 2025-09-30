@@ -66,3 +66,11 @@ py_test(
         "//backend/frontend_service:jira_analytics_service",
     ],
 )
+
+py_test(
+    name = "summary_service_test",
+    srcs = ["summary_service_test.py"],
+    deps = [
+        "//backend/frontend_service:summary_service",
+    ],
+)

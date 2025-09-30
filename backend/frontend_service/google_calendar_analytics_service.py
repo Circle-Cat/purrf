@@ -212,3 +212,47 @@ class GoogleCalendarAnalyticsService:
                 combined_result[ldap].extend(events)
 
         return combined_result
+
+    def get_meeting_hours_for_user(
+        self,
+        calendar_ids: list[str],
+        ldap_list: list[str],
+        start_date: datetime,
+        end_date: datetime,
+    ) -> dict[str, float]:
+        """
+        Compute total meeting hours for each LDAP user across multiple calendars.
+
+        Args:
+            calendar_ids (List[str]): List of calendar IDs to include.
+            ldap_list (List[str]): List of LDAP usernames.
+            start_date (datetime): Start datetime (inclusive).
+            end_date (datetime): End datetime (inclusive).
+
+        Returns:
+            Dict[str, float]: Mapping of LDAP -> total meeting hours.
+        """
+        meeting_hours_by_user = {ldap: 0.0 for ldap in ldap_list}
+
+        all_events = self.get_all_events_from_calendars(
+            calendar_ids=calendar_ids,
+            ldaps=ldap_list,
+            start_date=start_date,
+            end_date=end_date,
+        )
+
+        for ldap in ldap_list:
+            events = all_events.get(ldap, [])
+            total_hours = 0.0
+
+            for event in events:
+                attendance = event.get("attendance", [])
+                for rec in attendance:
+                    if "join_time" in rec and "leave_time" in rec:
+                        join = datetime.fromisoformat(rec["join_time"])
+                        leave = datetime.fromisoformat(rec["leave_time"])
+                        total_hours += (leave - join).total_seconds() / 3600.0
+
+            meeting_hours_by_user[ldap] = round(total_hours, 2)
+
+        return meeting_hours_by_user

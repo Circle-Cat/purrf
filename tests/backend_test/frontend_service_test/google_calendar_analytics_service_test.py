@@ -140,6 +140,60 @@ class TestGoogleCalendarAnalyticsService(TestCase):
         self.service.get_all_events.assert_any_call("cal1", ldaps, start_date, end_date)
         self.service.get_all_events.assert_any_call("cal2", ldaps, start_date, end_date)
 
+    def test_get_meeting_hours_for_user(self):
+        ldap_list = ["alice"]
+        calendar_ids = ["cal1", "cal2"]
+        start_date = datetime(2025, 9, 1)
+        end_date = datetime(2025, 9, 30)
+
+        self.service.get_all_events_from_calendars = Mock(
+            return_value={
+                "alice": [
+                    {
+                        "event_id": "event1",
+                        "attendance": [
+                            {
+                                "join_time": "2025-09-01T10:00:00",
+                                "leave_time": "2025-09-01T11:00:00",
+                            },
+                            {
+                                "join_time": "2025-09-01T11:15:00",
+                                "leave_time": "2025-09-01T12:00:00",
+                            },
+                        ],
+                    },
+                    {
+                        "event_id": "event2",
+                        "attendance": [
+                            {
+                                "join_time": "2025-09-02T14:00:00",
+                                "leave_time": "2025-09-02T15:30:00",
+                            }
+                        ],
+                    },
+                ]
+            }
+        )
+
+        meeting_hours = self.service.get_meeting_hours_for_user(
+            calendar_ids=calendar_ids,
+            ldap_list=ldap_list,
+            start_date=start_date,
+            end_date=end_date,
+        )
+
+        expected_hours = 1.75 + 1.5
+
+        self.assertIn("alice", meeting_hours)
+        self.assertAlmostEqual(meeting_hours["alice"], expected_hours, places=2)
+
+        self.service.get_all_events_from_calendars.assert_called_once_with(
+            calendar_ids=calendar_ids,
+            ldaps=ldap_list,
+            start_date=start_date,
+            end_date=end_date,
+        )
+
 
 if __name__ == "__main__":
     main()

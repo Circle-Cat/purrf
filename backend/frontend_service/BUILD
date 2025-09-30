@@ -78,3 +78,13 @@ py_library(
         "//backend/common:constants",
     ],
 )
+
+py_library(
+    name = "summary_service",
+    srcs = [
+        "summary_service.py",
+    ],
+    deps = [
+        "//backend/common:constants",
+    ],
+)

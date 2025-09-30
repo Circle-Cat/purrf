@@ -8,6 +8,7 @@ from backend.common.environment_constants import (
 )
 
 
+@patch("backend.utils.app_dependency_builder.SummaryService")
 @patch("backend.utils.app_dependency_builder.PubSubPullManager")
 @patch("backend.utils.app_dependency_builder.AsyncioEventLoopManager")
 @patch("backend.utils.app_dependency_builder.GoogleChatHistorySyncService")
@@ -93,6 +94,7 @@ class TestAppDependencyBuilder(TestCase):
         mock_google_chat_history_sync_service_cls,
         mock_asyncio_event_loop_manager_cls,
         mock_pubsub_pull_manager_cls,
+        mock_summary_service_cls,
     ):
         """
         Tests that the AppDependencyBuilder correctly instantiates and wires all its dependencies.
@@ -347,15 +349,14 @@ class TestAppDependencyBuilder(TestCase):
             google_service=mock_google_service.return_value,
             ldap_service=mock_ldap_service_cls.return_value,
         )
-        mock_frontend_controller_cls.assert_called_once_with(
+        mock_summary_service_cls.assert_called_once_with(
             ldap_service=mock_ldap_service_cls.return_value,
             microsoft_chat_analytics_service=mock_microsoft_chat_analytics_service_cls.return_value,
-            microsoft_meeting_chat_topic_cache_service=mock_microsoft_meeting_chat_topic_cache_service_cls.return_value,
-            jira_analytics_service=mock_jira_analytics_service_cls.return_value,
             google_calendar_analytics_service=mock_google_calendar_analytics_service_cls.return_value,
-            date_time_util=mock_date_time_util_cls.return_value,
-            gerrit_analytics_service=mock_gerrit_analytics_service_cls.return_value,
             google_chat_analytics_service=mock_google_chat_analytics_service_cls.return_value,
+            gerrit_analytics_service=mock_gerrit_analytics_service_cls.return_value,
+            jira_analytics_service=mock_jira_analytics_service_cls.return_value,
+            date_time_util=mock_date_time_util_cls.return_value,
         )
 
         # Assert that the builder's internal attributes are the created mock instances
@@ -401,6 +402,7 @@ class TestAppDependencyBuilder(TestCase):
             date_time_util=mock_date_time_util_cls.return_value,
             gerrit_analytics_service=mock_gerrit_analytics_service_cls.return_value,
             google_chat_analytics_service=mock_google_chat_analytics_service_cls.return_value,
+            summary_service=mock_summary_service_cls.return_value,
         )
 
         # Assert that the builder's internal attributes are the created mock instances
@@ -502,6 +504,7 @@ class TestAppDependencyBuilder(TestCase):
             builder.google_chat_analytics_service,
             mock_google_chat_analytics_service_cls.return_value,
         )
+        self.assertEqual(builder.summary_service, mock_summary_service_cls.return_value)
         self.assertEqual(
             builder.frontend_controller, mock_frontend_controller_cls.return_value
         )

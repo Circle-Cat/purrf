@@ -60,6 +60,7 @@ from backend.service.jira_search_service import JiraSearchService
 from backend.frontend_service.google_chat_analytics_service import (
     GoogleChatAnalyticsService,
 )
+from backend.frontend_service.summary_service import SummaryService
 from backend.common.environment_constants import (
     GERRIT_URL,
     GERRIT_USER,
@@ -291,6 +292,15 @@ class AppDependencyBuilder:
             google_service=self.google_service,
             ldap_service=self.ldap_service,
         )
+        self.summary_service = SummaryService(
+            ldap_service=self.ldap_service,
+            microsoft_chat_analytics_service=self.microsoft_chat_analytics_service,
+            google_calendar_analytics_service=self.google_calendar_analytics_service,
+            google_chat_analytics_service=self.google_chat_analytics_service,
+            gerrit_analytics_service=self.gerrit_analytics_service,
+            jira_analytics_service=self.jira_analytics_service,
+            date_time_util=self.date_time_util,
+        )
         self.frontend_controller = FrontendController(
             ldap_service=self.ldap_service,
             microsoft_chat_analytics_service=self.microsoft_chat_analytics_service,
@@ -300,4 +310,5 @@ class AppDependencyBuilder:
             date_time_util=self.date_time_util,
             gerrit_analytics_service=self.gerrit_analytics_service,
             google_chat_analytics_service=self.google_chat_analytics_service,
+            summary_service=self.summary_service,
         )
