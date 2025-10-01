@@ -1,7 +1,7 @@
 from http import HTTPStatus
 
 from unittest import main, IsolatedAsyncioTestCase
-from unittest.mock import MagicMock, AsyncMock, ANY
+from unittest.mock import MagicMock, AsyncMock, ANY, patch
 from backend.service.microsoft_service import MicrosoftService
 
 
@@ -12,6 +12,34 @@ def make_mock_user(mail, display_name, account_enabled, user_id=None):
     mock_user.account_enabled = account_enabled
     mock_user.id = user_id
     return mock_user
+
+
+class MockPageIterator:
+    """
+    Mock kiota_abstractions.page_iterator.PageIterator.
+
+    For reference on the original implementation, see:
+    https://github.com/microsoftgraph/msgraph-sdk-python-core/blob/a33614f802864a8d9ea2b1f6686df4721c88bf93/src/msgraph_core/tasks/page_iterator.py#L124
+    """
+
+    def __init__(self, initial_response, request_adapter):
+        self.initial_response = initial_response
+        self.request_adapter = request_adapter
+
+    async def iterate(self, callback):
+        """
+        Simulates the asynchronous iteration over one mock data page.
+
+        Args:
+            callback (Callable): The function to apply to each item.
+                                 It's called with a single item (e.g., a User object)
+                                 and typically returns a boolean (though the return
+                                 value is ignored in this mock).
+        """
+        if self.initial_response and self.initial_response.value:
+            items = self.initial_response.value
+        for item in items:
+            callback(item)
 
 
 class TestMicrosoftService(IsolatedAsyncioTestCase):
@@ -29,6 +57,7 @@ class TestMicrosoftService(IsolatedAsyncioTestCase):
         self.user_mail = "alice@circlecat.org"
         self.message_id = "test_message_id"
 
+    @patch("backend.service.microsoft_service.PageIterator", MockPageIterator)
     async def test_get_all_microsoft_members_success(self):
         member_active = make_mock_user("alice@circlecat.org", "Alice", True)
         member_terminated = make_mock_user("bob@circlecat.org", "Bob", False)
@@ -46,6 +75,7 @@ class TestMicrosoftService(IsolatedAsyncioTestCase):
             self.service.graph_service_client.users.get, request_configuration=ANY
         )
 
+    @patch("backend.service.microsoft_service.PageIterator", MockPageIterator)
     async def test_get_all_microsoft_members_empty_result(self):
         mock_response = MagicMock()
         mock_response.value = []

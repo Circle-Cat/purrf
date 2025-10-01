@@ -11,6 +11,7 @@ from msgraph.generated.models.chat_message_collection_response import (
     ChatMessageCollectionResponse,
 )
 from msgraph.generated.models.chat_message import ChatMessage
+from msgraph_core.tasks.page_iterator import PageIterator
 from msgraph import GraphServiceClient
 from backend.common.constants import (
     MICROSOFT_USER_INFO_FILTER,
@@ -64,6 +65,7 @@ class MicrosoftService:
         Returns:
             List[User]: A list of user objects matching the filter. Returns an empty list if no users are found.
         """
+        all_users = []
         query_params = UsersRequestBuilder.UsersRequestBuilderGetQueryParameters(
             filter=MICROSOFT_USER_INFO_FILTER,
             select=MICROSOFT_USER_INFO_SELECT_FIELDS,
@@ -84,7 +86,14 @@ class MicrosoftService:
             self.logger.warning("Received empty result from Microsoft Graph API.")
             return []
 
-        return result.value
+        def callback(items):
+            all_users.append(items)
+            return True
+
+        page_iterator = PageIterator(result, self.graph_service_client.request_adapter)
+        await page_iterator.iterate(callback)
+
+        return all_users
 
     async def fetch_initial_chat_messages_page(
         self, chat_id: str
