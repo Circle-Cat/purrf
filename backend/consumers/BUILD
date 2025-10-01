@@ -29,8 +29,8 @@ py_library(
         "consumer_controller.py",
     ],
     deps = [
-        "//backend/common:api_response_wrapper",
         ":pubsub_pull_manager",
+        "//backend/common:api_response_wrapper",
         "@pypi//flask",
     ],
 )
@@ -41,10 +41,10 @@ py_library(
         "google_chat_processor_service.py",
     ],
     deps = [
+        ":pubsub_puller",
         "//backend/common:constants",
         "//backend/common:google_client",
         "//backend/common:logger",
-        ":pubsub_puller",
         "//backend/utils:google_chat_message_store",
         "@pypi//tenacity",
     ],

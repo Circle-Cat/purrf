@@ -18,10 +18,10 @@ py_library(
         "notification_controller.py",
     ],
     deps = [
-        "//backend/common:api_response_wrapper",
-        "//backend/common:constants",
         ":gerrit_subscription_service",
         ":google_chat_subscription_service",
+        "//backend/common:api_response_wrapper",
+        "//backend/common:constants",
         "@pypi//flask",
     ],
 )

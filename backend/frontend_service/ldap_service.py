@@ -156,3 +156,33 @@ class LdapService:
             self.redis_client.hkeys, redis_key
         )
         return ldaps if ldaps else []
+
+    def get_all_active_interns_and_employees_ldaps(self) -> list[str]:
+        """
+        Retrieve all LDAPs for active interns and employees directly from Redis.
+
+        Returns:
+            list[str]: List of LDAP identifiers for active interns and employees.
+        """
+        keys: list[str] = []
+        for group in [MicrosoftGroups.INTERNS, MicrosoftGroups.EMPLOYEES]:
+            keys.append(
+                LDAP_KEY_TEMPLATE.format(
+                    account_status=MicrosoftAccountStatus.ACTIVE.value,
+                    group=group.value,
+                )
+            )
+
+        pipeline = self.redis_client.pipeline()
+        for k in keys:
+            pipeline.hkeys(k)
+
+        results = self.retry_utils.get_retry_on_transient(pipeline.execute)
+
+        ldap_set: set[str] = set()
+        if results:
+            for ldaps in results:
+                if ldaps:
+                    ldap_set.update(ldaps)
+
+        return list(ldap_set)

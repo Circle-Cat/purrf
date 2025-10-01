@@ -172,6 +172,129 @@ class TestLdapService(TestCase):
 
         self.assertEqual(result, [])
 
+    def test_get_all_active_interns_and_employees_ldaps(self):
+        pipeline_mock = MagicMock()
+        self.redis_client.pipeline.return_value = pipeline_mock
+
+        expected_keys = [
+            LDAP_KEY_TEMPLATE.format(
+                    account_status=MicrosoftAccountStatus.ACTIVE.value,
+                    group=MicrosoftGroups.INTERNS.value,
+            ),
+            LDAP_KEY_TEMPLATE.format(
+                account_status=MicrosoftAccountStatus.ACTIVE.value,
+                group=MicrosoftGroups.EMPLOYEES.value,
+            ),
+        ]
+
+        pipeline_mock.hkeys.side_effect = lambda key: [f"ldap_for_{key}"]
+        pipeline_mock.execute.return_value = [["ldap_for_interns"], ["ldap_for_employees"]]
+
+        result = self.service.get_all_active_interns_and_employees_ldaps()
+
+        for key in expected_keys:
+            pipeline_mock.hkeys.assert_any_call(key)
+
+        self.assertEqual(sorted(result), sorted(["ldap_for_interns", "ldap_for_employees"]))
+
+    def test_get_all_active_interns_and_employees_ldaps_from_some_groups_within_ldaps(self):
+        pipeline_mock = MagicMock()
+        self.redis_client.pipeline.return_value = pipeline_mock
+
+        pipeline_mock.hkeys.side_effect = lambda key: (
+            [] if "intern" in key else ["ldap_for_employee"]
+        )
+
+        pipeline_mock.execute.return_value = [[], ["ldap_for_employee"]]
+
+        expected_keys = [
+            LDAP_KEY_TEMPLATE.format(
+                    account_status=MicrosoftAccountStatus.ACTIVE.value,
+                    group=MicrosoftGroups.INTERNS.value,
+            ),
+            LDAP_KEY_TEMPLATE.format(
+                account_status=MicrosoftAccountStatus.ACTIVE.value,
+                group=MicrosoftGroups.EMPLOYEES.value,
+            ),
+        ]
+
+        result = self.service.get_all_active_interns_and_employees_ldaps()
+
+        for key in expected_keys:
+            pipeline_mock.hkeys.assert_any_call(key)
+
+        self.assertEqual(result, ["ldap_for_employee"])
+
+    def test_get_all_active_interns_and_employees_ldaps_empty_pipeline_execute_returns_empty_list(self):
+        pipeline_mock = MagicMock()
+        self.redis_client.pipeline.return_value = pipeline_mock
+
+        pipeline_mock.hkeys.side_effect = lambda key: None
+        pipeline_mock.execute.return_value = []
+
+        expected_keys = [
+            LDAP_KEY_TEMPLATE.format(
+                account_status=MicrosoftAccountStatus.ACTIVE.value,
+                group=MicrosoftGroups.INTERNS.value,
+            ),
+            LDAP_KEY_TEMPLATE.format(
+                account_status=MicrosoftAccountStatus.ACTIVE.value,
+                group=MicrosoftGroups.EMPLOYEES.value,
+            ),
+        ]
+
+        result = self.service.get_all_active_interns_and_employees_ldaps()
+
+        for key in expected_keys:
+            pipeline_mock.hkeys.assert_any_call(key)
+
+        self.assertEqual(result, [])
+
+    def test_get_all_active_interns_and_employees_ldaps_pipeline_execute_with_empty_ldaps(self):
+        pipeline_mock = MagicMock()
+        self.redis_client.pipeline.return_value = pipeline_mock
+
+        pipeline_mock.hkeys.side_effect = lambda key: ["ldap_for_interns"] if "interns" in key else []
+        pipeline_mock.execute.return_value = [[], []]
+
+        result = self.service.get_all_active_interns_and_employees_ldaps()
+        self.assertEqual(result, [])
+
+    def test_get_all_active_interns_and_employees_ldaps_empty_redis_returns_empty_list(self):
+        pipeline_mock = MagicMock()
+        self.redis_client.pipeline.return_value = pipeline_mock
+
+        pipeline_mock.hkeys.side_effect = lambda key: None
+        pipeline_mock.execute.return_value = [[], []]
+
+        expected_keys = [
+            LDAP_KEY_TEMPLATE.format(
+                account_status=MicrosoftAccountStatus.ACTIVE.value,
+                group=MicrosoftGroups.INTERNS.value,
+            ),
+            LDAP_KEY_TEMPLATE.format(
+                account_status=MicrosoftAccountStatus.ACTIVE.value,
+                group=MicrosoftGroups.EMPLOYEES.value,
+            ),
+        ]
+
+        result = self.service.get_all_active_interns_and_employees_ldaps()
+
+        for key in expected_keys:
+            pipeline_mock.hkeys.assert_any_call(key)
+
+        self.assertEqual(result, [])
+
+    def test_get_all_active_interns_and_employees_ldaps_redis_raises_exception(self):
+        pipeline_mock = MagicMock()
+        self.redis_client.pipeline.return_value = pipeline_mock
+        pipeline_mock.execute.side_effect = Exception("Redis connection error")
+
+        with self.assertRaises(Exception) as context:
+            self.service.get_all_active_interns_and_employees_ldaps()
+
+        self.assertEqual(str(context.exception), "Redis connection error")
+
 
 if __name__ == "__main__":
     main()
