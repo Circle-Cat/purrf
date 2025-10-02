@@ -41,7 +41,6 @@ GOOGLE_CALENDAR_USER_EVENTS_KEY = "calendar:{calendar_id}:user:{ldap}:events"
 MICROSOFT_SUBSCRIPTION_CLIENT_STATE_SECRET_KEY = (
     "microsoft:client_state:{subscription_id}"
 )
-MICROSOFT_LDAP_KEY = "ldap:{account_status}"
 LDAP_KEY_TEMPLATE = "ldap:{account_status}:{group}"
 MICROSOFT_CHAT_MESSAGES_INDEX_KEY = "microsoft:chat:{message_status}:{sender_ldap}"
 MICROSOFT_CHAT_MESSAGES_DETAILS_KEY = "microsoft:messages:{message_id}"

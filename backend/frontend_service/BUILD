@@ -13,16 +13,6 @@ py_library(
 )
 
 py_library(
-    name = "ldap_loader",
-    srcs = [
-        "ldap_loader.py",
-    ],
-    deps = [
-        "//backend/common:redis_client",
-    ],
-)
-
-py_library(
     name = "google_chat_analytics_service",
     srcs = ["google_chat_analytics_service.py"],
     deps = [

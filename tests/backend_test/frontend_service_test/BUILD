@@ -11,14 +11,6 @@ py_test(
 )
 
 py_test(
-    name = "ldap_loader_test",
-    srcs = ["ldap_loader_test.py"],
-    deps = [
-        "//backend/frontend_service:ldap_loader",
-    ],
-)
-
-py_test(
     name = "google_chat_analytics_service_test",
     srcs = ["google_chat_analytics_service_test.py"],
     deps = [
