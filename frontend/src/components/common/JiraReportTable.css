@@ -3,8 +3,8 @@
 /* General container styles */
 .jira-table-container {
   color: var(--text-color-dark);
-  padding: 20px;
   border-radius: 8px;
+  overflow: hidden; 
 }
 
 /* Styles for each user's report table */
@@ -12,6 +12,7 @@
   border: 1px solid var(--border-color-medium);
   margin-bottom: 20px;
   border-radius: 8px;
+  overflow: hidden;
 }
 
 .user-header {

@@ -1,6 +1,10 @@
 from flask import Blueprint, request
 from http import HTTPStatus
-from backend.common.constants import MicrosoftAccountStatus, MicrosoftGroups
+from backend.common.constants import (
+    MicrosoftAccountStatus,
+    MicrosoftGroups,
+    JiraIssueStatus,
+)
 from backend.common.api_response_wrapper import api_response
 
 
@@ -234,7 +238,8 @@ class FrontendController:
         }
         """
         data = request.get_json(force=True)
-        status_list = data.get("statusList")
+        status_list_str = data.get("statusList")
+        status_list = [JiraIssueStatus(status_str) for status_str in status_list_str]
         ldaps = data.get("ldaps")
         project_ids = data.get("projectIds")
         start_date = data.get("startDate")

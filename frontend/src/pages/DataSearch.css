@@ -21,17 +21,25 @@
   gap: 16px;
 }
 
+.ds-left-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 /* LDAP button */
 .ldap-chip {
   background: var(--bg-color-light);
   color: var(--text-color-dark);
-  border: 1px solid var(--border-color-medium);
-  border-radius: 8px;
-  padding: 6px 14px;
-  font-size: 14px;
+  border: 1px solid var(--border-color-light);
+  border-radius: 4px;
+  padding: 6px 12px;
+  height: 32px;
+  font-size: 0.9em;
   font-weight: 500;
   cursor: pointer;
   transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+  box-shadow: 0 2px 4px var(--border-color-light);
 }
 .ldap-chip:hover {
   background: var(--bg-color-row-hover);
@@ -57,7 +65,7 @@
   background-color: var(--primary-color);
   color: var(--text-color-white);
   border: 1px solid var(--primary-color);
-  border-radius: 8px;
+  border-radius: 4px;
   cursor: pointer;
   transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
   height: 32px;

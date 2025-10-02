@@ -59,7 +59,6 @@ import Modal from "@/components/common/Modal";
  * ```
  */
 export const DataSourceSelector = ({ isOpen, onConfirm, onCancel }) => {
-  // 添加 isOpen prop
   const [activeSource, setActiveSource] = useState("");
   const [selectedItems, setSelectedItems] = useState({});
   const [dataSources, setDataSources] = useState({});

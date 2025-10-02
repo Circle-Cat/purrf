@@ -1,7 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import "@/pages/DataSearch.css";
 import MemberSelector from "@/components/common/MemberSelector";
 import DateRangePicker from "@/components/common/DateRangePicker";
-import "@/pages/DataSearch.css";
+import { DataSourceSelector } from "@/components/common/DataSourceSelector";
+import Tab from "@/components/common/Tab.jsx";
 
 /**
  * DataSearch Page
@@ -17,6 +19,8 @@ import "@/pages/DataSearch.css";
  * - selectedIds {string[]}: currently selected member LDAPs.
  * - selectedStartDate {string}: ISO-ish date string (from DateRangePicker).
  * - selectedEndDate {string}: ISO-ish date string (from DateRangePicker).
+ * - showSelector {boolean}: whether the DataSourceSelector modal is open.
+ * - selectedData {any}: the current selected data source(s).
  *
  * Behavior
  * - Clicking the LDAP chip opens MemberSelector.
@@ -28,10 +32,15 @@ import "@/pages/DataSearch.css";
  * @returns {JSX.Element}
  */
 export default function DataSearch() {
+  const [showTab, setShowTab] = useState(false);
   // LDAP selection state
   const [ldapModalOpen, setLdapModalOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState([]);
   const selectedCount = selectedIds.length;
+
+  // Data source selection state
+  const [showSelector, setShowSelector] = useState(false);
+  const [selectedData, setSelectedData] = useState(null);
 
   // Date range state
   const defaultStart = "";
@@ -39,42 +48,86 @@ export default function DataSearch() {
   const [selectedStartDate, setSelectedStartDate] = useState(defaultStart);
   const [selectedEndDate, setSelectedEndDate] = useState(defaultEnd);
 
-  /** Update selected date range from DateRangePicker. */
+  const [committedSearchParams, setCommittedSearchParams] = useState(null);
+
+  useEffect(() => {
+    setShowTab(false);
+    setCommittedSearchParams(null);
+  }, [selectedIds, selectedStartDate, selectedEndDate, selectedData]);
+
+  /**
+   * Handle changes from DateRangePicker.
+   * @param {{startDate: string, endDate: string}}
+   */
   const handleDateChange = ({ startDate, endDate }) => {
     setSelectedStartDate(startDate);
     setSelectedEndDate(endDate);
   };
 
-  /** Submit handler (wire this to your fetch once endpoints are ready). */
+  /**
+   * Confirm selected data sources from DataSourceSelector.
+   * @param {any} selection - The confirmed data source selection.
+   */
+  const handleConfirmSelection = (selection) => {
+    setSelectedData(selection);
+    setShowSelector(false);
+  };
+
+  /** Cancel data source selection and reset state. */
+  const handleCancelSelection = () => {
+    setShowSelector(false);
+    setSelectedData(null);
+  };
+
+  /** Submit handler */
   const handleSearchClick = () => {
-    // Replace these logs with your actual query/invoke to backend.
-    console.log("[DataSearch] Search clicked");
-    console.log("Selected LDAP IDs:", selectedIds);
-    console.log("Selected Start Date:", selectedStartDate);
-    console.log("Selected End Date:", selectedEndDate);
+    if (
+      selectedIds.length === 0 ||
+      !selectedStartDate ||
+      !selectedEndDate ||
+      !selectedData
+    ) {
+      return;
+    }
+    setCommittedSearchParams({
+      ldaps: selectedIds,
+      startDate: selectedStartDate,
+      endDate: selectedEndDate,
+      selectedDataSources: selectedData,
+    });
+
+    setShowTab(true);
   };
   return (
     <div className="datesearch-page ds-page" data-testid="data-search-page">
       <div className="ds-topbar-row">
-        <button
-          type="button"
-          className="ldap-chip"
-          onClick={() => setLdapModalOpen(true)}
-          title="Pick members"
-        >
-          {selectedCount ? `LDAP (${selectedCount})` : "LDAP"}
-        </button>
+        <div className="ds-left-group">
+          <button
+            type="button"
+            className="ldap-chip"
+            onClick={() => setLdapModalOpen(true)}
+            title="Pick members"
+          >
+            {selectedCount ? `LDAP (${selectedCount})` : "LDAP"}
+          </button>
 
-        <div className="DateRangePicker-search-row ds-search-row">
+          <button
+            type="button"
+            className="ldap-chip"
+            onClick={() => setShowSelector(true)}
+          >
+            Data Source
+          </button>
+
           <DateRangePicker
             defaultStartDate={defaultStart}
             defaultEndDate={defaultEnd}
             onChange={handleDateChange}
           />
-          <button className="datasearch-button" onClick={handleSearchClick}>
-            Search
-          </button>
         </div>
+        <button className="datasearch-button" onClick={handleSearchClick}>
+          Search
+        </button>
       </div>
 
       {/* MemberSelector modal (controlled) */}
@@ -93,6 +146,20 @@ export default function DataSearch() {
           setLdapModalOpen(false);
         }}
       />
+
+      {/* DataSourceSelector modal (controlled) */}
+      <DataSourceSelector
+        isOpen={showSelector}
+        onConfirm={handleConfirmSelection}
+        onCancel={handleCancelSelection}
+      />
+
+      {/* Tabbed view for data reports */}
+      <div className="ds-content-area">
+        {showTab && committedSearchParams && (
+          <Tab committedSearchParams={committedSearchParams} />
+        )}
+      </div>
     </div>
   );
 }

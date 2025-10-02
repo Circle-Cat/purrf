@@ -15,3 +15,9 @@ export const DataSourceNames = {
   GERRIT: "Gerrit",
   CALENDAR: "Calendar",
 };
+
+export const JiraIssueStatus = {
+  TODO: "todo",
+  IN_PROGRESS: "in_progress",
+  DONE: "done",
+};

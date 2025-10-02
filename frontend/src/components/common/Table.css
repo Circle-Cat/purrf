@@ -2,9 +2,7 @@
 .table-container {
     overflow-x: auto;
     overflow-y: auto;
-    margin-top: 20px;
     border: 1px solid var(--border-color-light);
-    border-radius: 8px;
 }
 .custom-table {
     width: 100%;

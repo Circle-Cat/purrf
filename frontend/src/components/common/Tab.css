@@ -1,15 +1,13 @@
 .purrf-tabs {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  flex-grow: 1;
   background: var(--bg-color-light);
 }
 
 .tablist {
   display: flex;
-  gap: 16px;
-  padding: 4px 8px 0 8px;
-  border-bottom: 1px solid var(--border-color-light);
+  flex-shrink: 0;
 }
 
 .tab-pill {
@@ -28,8 +26,8 @@
 }
 
 .tab-pill.active {
-  color: var(--text-color-dark);
-  background: var(--bg-color-light);
+  color: var(--primary-color);
+  background: var(--bg-color-header);
 }
 
 .tab-pill:hover {
@@ -38,8 +36,21 @@
 
 .tab-pill:focus {
   outline: none;
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, .4); /* keep this focus ring */
   border-radius: 6px;
+}
+
+/* 1. 为禁用状态添加明确的样式 */
+.tab-pill.disabled-tab {
+  cursor: not-allowed; /* 将鼠标光标改为“禁止”图标 */
+  opacity: 0.6; /* 可选：增加透明度以增强禁用感 */
+}
+
+/* 2. 覆盖禁用按钮的悬停效果 */
+.tab-pill.disabled-tab:hover {
+  /* 将颜色重置回禁用状态的颜色，而不是 primary-color */
+  color: var(--text-color-light); /* 确保与 .tab-pill.disabled-tab 的颜色一致 */
+  background-color: transparent; /* 如果hover时背景色会变，也要重置 */
+  /* 如果有其他悬停效果 (如 transform, box-shadow 等)，也在这里重置为 none 或初始值 */
 }
 
 .active-underline {
@@ -55,40 +66,21 @@
 }
 
 .tabpanel {
-  border: 1px solid var(--border-color-light);
-  border-radius: 0 8px 8px 8px;
-  padding: 0;
-  background: var(--bg-color-light);
-}
-
-.table-wrap {
+  flex-direction: column;
   overflow: auto;
-}
-
-.tab-table {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-.tab-table thead th {
-  font-weight: 600;
-  font-size: 12px;
-  letter-spacing: .02em;
-  color: var(--text-color-medium);
-  background: var(--bg-color-stripe-even);
-  border-bottom: 1px solid var(--border-color-light);
-  text-align: left;
-  padding: 10px 12px;
-  white-space: nowrap;
-}
-
-.tab-table tbody td {
-  border-bottom: 1px solid var(--border-color-medium);
-  padding: 10px 12px;
-  height: 36px;
 }
 
 .tab-icon {
   display: inline-flex;
   line-height: 1;
+}
+
+/* 为非隐藏的 Tab 面板应用 display: flex */
+.tabpanel:not([hidden]) {
+  display: flex;
+}
+
+/* 可选：为了更明确，可以显式声明隐藏时的 display */
+.tabpanel[hidden] {
+    display: none;
 }
