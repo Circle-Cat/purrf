@@ -22,6 +22,22 @@ class TestJiraSearchService(unittest.TestCase):
         )
         self.required_fields = JIRA_ISSUE_REQUIRED_FIELDS
 
+    def test_fetch_issue_by_issue_id_success(self):
+        self.retry_utils.get_retry_on_transient.return_value = []
+
+        self.service.fetch_issue_by_issue_id(issue_id="123")
+
+        self.retry_utils.get_retry_on_transient.assert_called_once_with(
+            self.jira_client.issue, id="123", fields="assignee"
+        )
+
+    def test_fetch_issue_by_issue_id_with_illegal_id(self):
+        with self.assertRaises(ValueError):
+            self.service.fetch_issue_by_issue_id(issue_id="")
+
+        with self.assertRaises(ValueError):
+            self.service.fetch_issue_by_issue_id(issue_id=None)
+
     @patch(
         "backend.service.jira_search_service.JIRA_MAX_RESULTS_DEFAULT", MOCK_MAX_RESULTS
     )

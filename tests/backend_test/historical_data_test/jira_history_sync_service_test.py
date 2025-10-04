@@ -455,14 +455,52 @@ class TestJiraHistorySyncService(TestCase):
                 "status": {"id": "10000", "name": "To Do"},
             },
         }
+        self.mock_jira_search_service.fetch_issue_by_issue_id.return_value = (
+            issue_no_assignee
+        )
         issues = [issue_no_assignee]
 
         result = self.service._queue_issues_in_redis_pipeline(issues, mock_pipeline)
 
         self.assertEqual(result, 0)
+        self.mock_jira_search_service.fetch_issue_by_issue_id.assert_called_once()
         mock_pipeline.hset.assert_not_called()
         mock_pipeline.zadd.assert_not_called()
         mock_pipeline.sadd.assert_not_called()
+
+    def test_queue_issues_in_redis_pipeline_missing_assignee_use_fallback_approach(
+        self,
+    ):
+        """Should skip issues with no assignee."""
+        mock_pipeline = MagicMock()
+        issue_no_assignee = MagicMock()
+        issue_no_assignee.raw = {
+            "id": "10003",
+            "key": "PROJ-3",
+            "fields": {
+                "project": {"id": "100"},
+                "assignee": None,
+                "status": {"id": "10000", "name": "To Do"},
+            },
+        }
+        issue_with_assignee = MagicMock()
+        issue_with_assignee.raw = {
+            "fields": {
+                "assignee": {"name": "test user"},
+            },
+        }
+        self.mock_jira_search_service.fetch_issue_by_issue_id.return_value = (
+            issue_with_assignee
+        )
+        issues = [issue_no_assignee]
+
+        result = self.service._queue_issues_in_redis_pipeline(issues, mock_pipeline)
+
+        self.assertEqual(result, 1)
+        self.mock_jira_search_service.fetch_issue_by_issue_id.assert_called_once()
+        mock_pipeline.hset.assert_called_once()
+        mock_pipeline.zadd.assert_not_called()
+        mock_pipeline.sadd.assert_called_once()
 
     def test_queue_issues_in_redis_pipeline_skip_excluded_status(self):
         """Should skip issues with an excluded status."""

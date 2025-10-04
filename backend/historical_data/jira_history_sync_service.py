@@ -230,7 +230,14 @@ class JiraHistorySyncService:
                 )
                 continue
 
-            ldap_info = fields.get("assignee")
+            # Note: In some cases, e.g., if the user account is deactivated,
+            # the search API may return assignee=None even though it exists.
+            # We can get the correct assignee via the issue API.
+            ldap_info = fields.get(
+                "assignee"
+            ) or self.jira_search_service.fetch_issue_by_issue_id(issue_id).raw.get(
+                "fields", {}
+            ).get("assignee")
             if not ldap_info:
                 self.logger.warning(
                     "Skipping issue '%s': Assignee is None (possibly the account has been deactivated)",

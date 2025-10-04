@@ -109,3 +109,20 @@ class JiraSearchService:
             f"(updated >= -{hours}h OR created >= -{hours}h) ORDER BY created DESC"
         )
         yield from self._fetch_issues_by_jql_paginated(jql_query)
+
+    def fetch_issue_by_issue_id(self, issue_id: str) -> Issue:
+        """
+        Fetches issue from Jira for a given issue ID.
+        Currently, this method only retrieves the `assignee` field of the issue.
+        If you need additional fields, you can modify the `fields` parameter
+
+        Args:
+            issue_id (str): The issue_id string to filter issue.
+        """
+        if not issue_id:
+            raise ValueError("issue_id must be provided.")
+
+        issue = self.retry_utils.get_retry_on_transient(
+            self.jira_client.issue, id=issue_id, fields="assignee"
+        )
+        return issue
