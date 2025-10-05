@@ -2,10 +2,6 @@ from flask import Flask, Blueprint
 from http import HTTPStatus
 from backend.common.error_handler import register_error_handlers
 from backend.common.api_response_wrapper import api_response
-from backend.historical_data.historical_controller import history_bp
-from backend.notification_management.notification_controller import notification_bp
-from backend.frontend_service.frontend_controller import frontend_bp
-from backend.consumers.consumer_controller import consumers_bp
 
 
 class App:
@@ -45,14 +41,6 @@ class App:
         # Initialize the Flask app
         app = Flask(__name__)
         register_error_handlers(app)
-
-        # Register existing blueprints for various services
-        # TODO: Deleted them after migration.
-        app.register_blueprint(notification_bp)
-        app.register_blueprint(frontend_bp)
-        app.register_blueprint(consumers_bp)
-        app.register_blueprint(history_bp)
-        # ---
 
         # Register new blueprint for all API routes
         all_api_bp = Blueprint("all_api", __name__, url_prefix="/api")
