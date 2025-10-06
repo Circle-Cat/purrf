@@ -1,7 +1,7 @@
 import os
 from backend.common.logger import get_logger
 from backend.utils.retry_utils import RetryUtils
-from backend.common.redis_client import RedisClientFactory
+from backend.common.redis_client import RedisClient
 from backend.common.google_client import GoogleClientFactory
 from backend.common.jira_client import JiraClientFactory
 from backend.service.google_service import GoogleService
@@ -100,7 +100,10 @@ class AppDependencyBuilder:
         self.gerrit_client = GerritClient(
             base_url=gerrit_url, username=gerrit_user, http_password=gerrit_password
         )
-        self.redis_client = RedisClientFactory().create_redis_client()
+        self.redis_client = RedisClient(
+            logger=self.logger,
+            retry_utils=self.retry_utils,
+        ).get_redis_client()
         self.graph_client = MicrosoftGraphServiceClient().get_graph_service_client
         self.google_client_factory = GoogleClientFactory()
         self.json_schema_validator = JsonSchemaValidator(logger=self.logger)

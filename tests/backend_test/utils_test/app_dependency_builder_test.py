@@ -44,7 +44,7 @@ from backend.common.environment_constants import (
 @patch("backend.utils.app_dependency_builder.MicrosoftService")
 @patch("backend.utils.app_dependency_builder.GoogleClientFactory")
 @patch("backend.utils.app_dependency_builder.MicrosoftGraphServiceClient")
-@patch("backend.utils.app_dependency_builder.RedisClientFactory")
+@patch("backend.utils.app_dependency_builder.RedisClient")
 @patch("backend.utils.app_dependency_builder.get_logger")
 @patch("backend.utils.app_dependency_builder.RetryUtils")
 @patch("backend.utils.app_dependency_builder.JiraClientFactory")
@@ -58,7 +58,7 @@ class TestAppDependencyBuilder(TestCase):
         mock_jira_client_factory_cls,
         mock_retry_utils_cls,
         mock_get_logger,
-        mock_redis_client_factory_cls,
+        mock_redis_client_cls,
         mock_graph_service_client_cls,
         mock_google_client_factory_cls,
         mock_microsoft_service,
@@ -103,11 +103,9 @@ class TestAppDependencyBuilder(TestCase):
         mock_logger = MagicMock()
         mock_get_logger.return_value = mock_logger
         mock_redis_client = MagicMock()
-        mock_redis_client_factory_instance = MagicMock()
-        mock_redis_client_factory_instance.create_redis_client.return_value = (
-            mock_redis_client
-        )
-        mock_redis_client_factory_cls.return_value = mock_redis_client_factory_instance
+        mock_redis_client_instance = MagicMock()
+        mock_redis_client_instance.get_redis_client.return_value = mock_redis_client
+        mock_redis_client_cls.return_value = mock_redis_client_instance
         mock_graph_client = MagicMock()
         mock_graph_service_client_instance = MagicMock()
         mock_graph_service_client_instance.get_graph_service_client = mock_graph_client
@@ -179,8 +177,8 @@ class TestAppDependencyBuilder(TestCase):
 
         # Assert: Verify that all factories and constructors were called correctly
         mock_get_logger.assert_called_once()
-        mock_redis_client_factory_cls.assert_called_once()
-        mock_redis_client_factory_instance.create_redis_client.assert_called_once()
+        mock_redis_client_cls.assert_called_once()
+        mock_redis_client_instance.get_redis_client.assert_called_once()
         mock_graph_service_client_cls.assert_called_once()
         mock_google_client_factory_cls.assert_called_once()
         mock_google_client_factory_instance.create_workspaceevents_client.assert_called_once()
