@@ -1,84 +1,72 @@
 import os
 from jira import JIRA
-from tenacity import retry, stop_after_attempt, wait_exponential
-from backend.common.logger import get_logger
 from backend.common.environment_constants import (
-    JIRA_SERVER,
-    JIRA_USER,
     JIRA_PASSWORD,
 )
 
-logger = get_logger()
 
-
-class JiraClientFactory:
+class JiraClient:
     """
-    A singleton factory class for creating and managing Jira client.
+    A class for creating and managing a single, eagerly-initialized Jira client.
 
-    This class ensures that only one Jira client instance is created and shared
-    across the application. It handles credential management and client creation
-    with automatic retries on transient failures.
-
-    Attributes:
-        _instance (JiraClientFactory): The singleton instance of the factory.
-        _client (JIRA): The created Jira client instance.
-        _credentials (dict[str, str]): The cached Jira credentials.
+    This class establishes and verifies the connection upon instantiation, ensuring
+    that a valid client is immediately available for use via the get_client() method.
     """
 
-    _instance = None
+    def __init__(
+        self,
+        jira_server: str,
+        jira_user: str,
+        logger,
+        retry_utils,
+    ):
+        """
+        Initializes the JiraClient and establishes the connection.
 
-    def __new__(cls, *args, **kwargs):
-        """Create or return the singleton instance."""
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-        return cls._instance
+        Args:
+            jira_server: The base URL of the Jira server.
+            jira_user: The username or email for authentication.
+            jira_password: The API token or password for authentication.
+            logger: A logger instance for logging operations.
+            retry_utils: A utility for retrying transient connection errors.
 
-    def __init__(self):
-        """Initialize attributes only once."""
-        if not hasattr(self, "_initialized"):
-            self._client = None
-            self._credentials = None
-            self._initialized = True
+        Raises:
+            ValueError: If essential connection parameters are missing.
+        """
+        if not all([jira_server, jira_user]):
+            raise ValueError("Jira server and user must be provided.")
 
-    def _get_credentials(self) -> dict[str, str]:
-        """Load and cache Jira credentials."""
-        if self._credentials is None:
-            server = os.getenv(JIRA_SERVER)
-            user = os.getenv(JIRA_USER)
-            password = os.getenv(JIRA_PASSWORD)
+        self._jira_server = jira_server.rstrip("/")
+        self._jira_user = jira_user
+        self.logger = logger
+        self.retry_utils = retry_utils
 
-            if not all([server, user, password]):
-                missing = [
-                    name
-                    for name, val in [
-                        (JIRA_SERVER, server),
-                        (JIRA_USER, user),
-                        (JIRA_PASSWORD, password),
-                    ]
-                    if not val
-                ]
-                raise ValueError(f"Missing Jira credentials: {', '.join(missing)}")
+        try:
+            jira_client = self.retry_utils.get_retry_on_transient(self._connect_to_jira)
+            self.logger.info("Created Jira client successfully.")
+            self._jira_client = jira_client
+        except Exception as e:
+            self.logger.error(f"Failed to create Jira client: {e}")
+            raise
 
-            self._credentials = {
-                "server": server.rstrip("/"),
-                "username": user,
-                "password": password,
-            }
-            logger.info("Jira credentials loaded")
-        return self._credentials
-
-    @retry(
-        reraise=True,
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(min=1, max=3),
-    )
-    def create_jira_client(self) -> JIRA:
-        """Create and return a Jira client instance."""
-        if self._client is None:
-            creds = self._get_credentials()
-            logger.info("Creating Jira client instance")
-            self._client = JIRA(
-                server=creds["server"],
-                basic_auth=(creds["username"], creds["password"]),
+    def _connect_to_jira(self) -> JIRA:
+        """
+        Create and return a connected Jira client using injected credentials.
+        """
+        jira_password = os.getenv(JIRA_PASSWORD)
+        if not jira_password:
+            raise ValueError(
+                f"Jira password not found in environment variable: {JIRA_PASSWORD}"
             )
-        return self._client
+
+        client = JIRA(
+            server=self._jira_server,
+            basic_auth=(self._jira_user, jira_password),
+        )
+        client.server_info()
+        self.logger.debug("Jira connection verified successfully.")
+        return client
+
+    def get_jira_client(self) -> JIRA:
+        """Provides public access to the initialized Jira client."""
+        return self._jira_client

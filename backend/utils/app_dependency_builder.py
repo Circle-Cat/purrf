@@ -1,8 +1,9 @@
+import os
 from backend.common.logger import get_logger
 from backend.utils.retry_utils import RetryUtils
 from backend.common.redis_client import RedisClient
 from backend.common.google_client import GoogleClient
-from backend.common.jira_client import JiraClientFactory
+from backend.common.jira_client import JiraClient
 from backend.service.google_service import GoogleService
 from backend.common.microsoft_graph_service_client import MicrosoftGraphServiceClient
 from backend.common.json_schema_validator import JsonSchemaValidator
@@ -60,6 +61,10 @@ from backend.frontend_service.google_chat_analytics_service import (
     GoogleChatAnalyticsService,
 )
 from backend.frontend_service.summary_service import SummaryService
+from backend.common.environment_constants import (
+    JIRA_SERVER,
+    JIRA_USER,
+)
 from backend.historical_data.google_chat_history_sync_service import (
     GoogleChatHistorySyncService,
 )
@@ -84,6 +89,9 @@ class AppDependencyBuilder:
     """
 
     def __init__(self):
+        jira_server = os.getenv(JIRA_SERVER)
+        jira_user = os.getenv(JIRA_USER)
+
         self.logger = get_logger()
         self.retry_utils = RetryUtils()
 
@@ -104,7 +112,12 @@ class AppDependencyBuilder:
         self.subscriber_client = self.google_client.create_subscriber_client()
         self.google_chat_client = self.google_client.create_chat_client()
         self.google_people_client = self.google_client.create_people_client()
-        self.jira_client = JiraClientFactory().create_jira_client()
+        self.jira_client = JiraClient(
+            jira_server=jira_server,
+            jira_user=jira_user,
+            logger=self.logger,
+            retry_utils=self.retry_utils,
+        ).get_jira_client()
         self.google_calendar_client = self.google_client.create_calendar_client()
         self.google_reports_client = self.google_client.create_reports_client()
 

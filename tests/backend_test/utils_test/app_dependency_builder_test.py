@@ -1,6 +1,10 @@
 from unittest import TestCase, main
 from unittest.mock import patch, MagicMock
 from backend.utils.app_dependency_builder import AppDependencyBuilder
+from backend.common.environment_constants import (
+    JIRA_SERVER,
+    JIRA_USER,
+)
 
 
 @patch("backend.utils.app_dependency_builder.SummaryService")
@@ -42,7 +46,7 @@ from backend.utils.app_dependency_builder import AppDependencyBuilder
 @patch("backend.utils.app_dependency_builder.RedisClient")
 @patch("backend.utils.app_dependency_builder.get_logger")
 @patch("backend.utils.app_dependency_builder.RetryUtils")
-@patch("backend.utils.app_dependency_builder.JiraClientFactory")
+@patch("backend.utils.app_dependency_builder.JiraClient")
 @patch("backend.utils.app_dependency_builder.JiraHistorySyncService")
 @patch("os.getenv")
 class TestAppDependencyBuilder(TestCase):
@@ -50,7 +54,7 @@ class TestAppDependencyBuilder(TestCase):
         self,
         mock_os_getenv,
         mock_jira_history_cls,
-        mock_jira_client_factory_cls,
+        mock_jira_client_cls,
         mock_retry_utils_cls,
         mock_get_logger,
         mock_redis_client_cls,
@@ -139,17 +143,24 @@ class TestAppDependencyBuilder(TestCase):
         mock_retry_utils_instance = MagicMock()
         mock_retry_utils_cls.return_value = mock_retry_utils_instance
         mock_jira_client_instance = MagicMock()
-        mock_jira_client_factory_cls.return_value.create_jira_client.return_value = (
+        mock_jira_client_cls.return_value.get_jira_client.return_value = (
             mock_jira_client_instance
         )
-        mock_jira_client = (
-            mock_jira_client_factory_cls.return_value.create_jira_client()
-        )
+        mock_jira_client = mock_jira_client_cls.return_value.get_jira_client()
         mock_jira_history_service = mock_jira_history_cls.return_value
         mock_json_schema_validator_instance = MagicMock()
         mock_json_schema_validator_cls.return_value = (
             mock_json_schema_validator_instance
         )
+
+        # Configure os.getenv mock for JiraClient
+        JIRA_SERVER_VAL = "https://test-jira.com"
+        JIRA_USER_VAL = "testuser"
+
+        mock_os_getenv.side_effect = lambda key: {
+            JIRA_SERVER: JIRA_SERVER_VAL,
+            JIRA_USER: JIRA_USER_VAL,
+        }.get(key)
 
         mock_gerrit_client = mock_gerrit_client_cls.return_value
         mock_gerrit_sync_service = mock_gerrit_sync_service_cls.return_value
@@ -171,6 +182,7 @@ class TestAppDependencyBuilder(TestCase):
         mock_google_client_instance.create_reports_client.assert_called_once()
         mock_retry_utils_cls.assert_called_once()
         mock_gerrit_client_cls.assert_called_once()
+        mock_jira_client_cls.assert_called_once()
 
         mock_microsoft_service.assert_called_once_with(
             logger=mock_logger,
