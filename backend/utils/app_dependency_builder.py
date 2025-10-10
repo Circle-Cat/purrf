@@ -2,7 +2,7 @@ import os
 from backend.common.logger import get_logger
 from backend.utils.retry_utils import RetryUtils
 from backend.common.redis_client import RedisClient
-from backend.common.google_client import GoogleClientFactory
+from backend.common.google_client import GoogleClient
 from backend.common.jira_client import JiraClientFactory
 from backend.service.google_service import GoogleService
 from backend.common.microsoft_graph_service_client import MicrosoftGraphServiceClient
@@ -105,19 +105,20 @@ class AppDependencyBuilder:
             retry_utils=self.retry_utils,
         ).get_redis_client()
         self.graph_client = MicrosoftGraphServiceClient().get_graph_service_client
-        self.google_client_factory = GoogleClientFactory()
+        self.google_client = GoogleClient(
+            logger=self.logger,
+            retry_utils=self.retry_utils,
+        )
         self.json_schema_validator = JsonSchemaValidator(logger=self.logger)
         self.google_workspaceevents_client = (
-            self.google_client_factory.create_workspaceevents_client()
+            self.google_client.create_workspaceevents_client()
         )
-        self.google_chat_client = self.google_client_factory.create_chat_client()
-        self.google_people_client = self.google_client_factory.create_people_client()
-        self.subscriber_client = self.google_client_factory.create_subscriber_client()
+        self.subscriber_client = self.google_client.create_subscriber_client()
+        self.google_chat_client = self.google_client.create_chat_client()
+        self.google_people_client = self.google_client.create_people_client()
         self.jira_client = JiraClientFactory().create_jira_client()
-        self.google_calendar_client = (
-            self.google_client_factory.create_calendar_client()
-        )
-        self.google_reports_client = self.google_client_factory.create_reports_client()
+        self.google_calendar_client = self.google_client.create_calendar_client()
+        self.google_reports_client = self.google_client.create_reports_client()
 
         self.microsoft_service = MicrosoftService(
             logger=self.logger,

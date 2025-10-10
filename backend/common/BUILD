@@ -25,6 +25,7 @@ py_library(
     ],
     deps = [
         ":constants",
+        ":environment_constants",
         ":logger",
         "@pypi//google_api_python_client",
         "@pypi//google_auth_oauthlib",

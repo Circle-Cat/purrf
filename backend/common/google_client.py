@@ -2,141 +2,119 @@ from google.auth.impersonated_credentials import Credentials as ImpersonatedCred
 from google.cloud.pubsub_v1 import SubscriberClient, PublisherClient
 from googleapiclient.discovery import build
 from google.auth import default
-from tenacity import retry, stop_after_attempt, wait_exponential
+from backend.common.constants import GOOGLE_USER_SCOPES_LIST, GOOGLE_ADMIN_SCOPES_LIST
 from backend.common.environment_constants import (
     USER_EMAIL,
     SERVICE_ACCOUNT_EMAIL,
     ADMIN_EMAIL,
 )
-from backend.common.constants import GOOGLE_USER_SCOPES_LIST, GOOGLE_ADMIN_SCOPES_LIST
-from backend.common.logger import get_logger
 import os
 
-logger = get_logger()
 
-
-class GoogleClientFactory:
+class GoogleClient:
     """
-    A singleton factory class for creating and managing Google API clients.
+    A class for creating and managing Google API clients.
 
-    This class ensures that only one instance of Google API clients (Chat, People, Workspace Events,
-    Pub/Sub Publisher and Subscriber) is created and shared across the application. It manages the
-    retrieval of credentials and the creation of client instances, ensuring they are initialized only once.
+    This class manages the creation of Google API clients such as:
+      - Chat, People, Workspace Events, Calendar, and Admin Reports (via googleapiclient)
+      - Pub/Sub Publisher and Subscriber (via google.cloud.pubsub_v1)
+
+    It uses Application Default Credentials (ADC) and impersonation of a target service account
+    to obtain user-scoped credentials. Credentials and client creation can be retried using
+    an injected `retry_utils` helper that handles transient errors.
 
     Attributes:
-        _instance (GoogleClientFactory): The singleton instance of the factory.
-        _credentials (google.auth.credentials.Credentials): The retrieved Google Cloud credentials.
-        _chat_client (googleapiclient.discovery.Resource): The created Google Chat API client instance.
-        _people_client (googleapiclient.discovery.Resource): The created Google People API client instance.
-        _workspaceevents_client (googleapiclient.discovery.Resource): The created Google Workspace Events API client.
-        _subscriber_client (google.cloud.pubsub_v1.SubscriberClient): The created Pub/Sub Subscriber client instance.
-        _publisher_client (google.cloud.pubsub_v1.PublisherClient): The created Pub/Sub Publisher client instance.
+        _credentials (dict[str, google.auth.credentials.Credentials]): Cached impersonated credentials keyed by user email.
+        _user_email (str): The user email to impersonate by default.
+        _service_account_email (str): The target service account used for impersonation.
+        _admin_email (str): Admin user email for domain-wide delegated APIs (e.g. Reports API).
+        logger: Application logger for structured logging.
+        retry_utils: Utility providing `get_retry_on_transient(func)` for automatic retries.
     """
 
-    _instance = None
+    def __init__(
+        self,
+        logger,
+        retry_utils,
+    ):
+        self._credentials = {}
+        self._user_email = os.getenv(USER_EMAIL)
+        self._service_account_email = os.getenv(SERVICE_ACCOUNT_EMAIL)
+        self._admin_email = os.getenv(ADMIN_EMAIL)
+        self.logger = logger
+        self.retry_utils = retry_utils
 
-    def __new__(cls, *args, **kwargs):
-        """
-        Creates or returns the singleton instance of the GoogleClientFactory.
-
-        Args:
-            cls (type): The class itself.
-            *args: Variable length argument list.
-            **kwargs: Arbitrary keyword arguments.
-
-        Returns:
-            GoogleClientFactory: The singleton instance.
-        """
-
-        if not cls._instance:
-            cls._instance = super(GoogleClientFactory, cls).__new__(
-                cls, *args, **kwargs
-            )
-        return cls._instance
-
-    def __init__(self):
-        if not hasattr(self, "_initialized"):
-            self._credentials = {}
-            self._chat_client = None
-            self._people_client = None
-            self._workspaceevents_client = None
-            self._subscriber_client = None
-            self._publisher_client = None
-            self._calendar_client = None
-            self._reports_client = None
-
-            self._initialized = True
+        if not self._user_email:
+            raise ValueError("Missing environment variable: USER_EMAIL")
+        if not self._service_account_email:
+            raise ValueError("Missing environment variable: SERVICE_ACCOUNT_EMAIL")
+        if not self._admin_email:
+            raise ValueError("Missing environment variable: ADMIN_EMAIL")
+        if not self.logger:
+            raise ValueError("logger must be provided")
+        if not self.retry_utils:
+            raise ValueError("retry_utils must be provided")
 
     def _get_impersonate_credentials(self, user_email=None, scopes=None):
-        """Retrieves and caches Google Cloud credentials with impersonation using ADC.
+        """
+        Retrieves and caches impersonated credentials using ADC and the injected service account.
 
-        This method fetches credentials via ADC, and impersonates a user if a user email is provided,
-        using a target service account.
+        Args:
+            user_email (str | None): The user to impersonate. Defaults to the injected user.
+            scopes (list[str] | None): OAuth2 scopes. Defaults to GOOGLE_USER_SCOPES_LIST.
 
         Returns:
-            google.auth.credentials.Credentials: The retrieved credentials object.
+            google.auth.credentials.Credentials: Impersonated credentials.
 
         Raises:
-            ValueError: If any required configuration (user email, service account email) is missing.
-            google.auth.exceptions.DefaultCredentialsError: If ADC cannot locate valid credentials.
-            ValueError: If user impersonation fails.
-            Exception: For unexpected errors during credential retrieval or impersonation.
+            ValueError: If required values are missing or impersonation fails.
         """
-        email = user_email or os.environ.get(USER_EMAIL)
+        email = user_email or self._user_email
         scopes = scopes or GOOGLE_USER_SCOPES_LIST
         if not email:
-            logger.error(
-                f"Impersonation failed: environment variable {USER_EMAIL} is not set."
+            self.logger.error(
+                f"Impersonation failed: environment variable {email} is not set."
             )
-            raise ValueError(f"Please set environment variable: {USER_EMAIL}.")
+            raise ValueError(f"Please set environment variable: {email}.")
 
         if email in self._credentials:
-            logger.info("Credentials are already cached.")
+            self.logger.info("Credentials are already cached.")
             return self._credentials[email]
-
-        service_account_email = os.environ.get(SERVICE_ACCOUNT_EMAIL)
-        if not service_account_email:
-            logger.error(
-                f"Impersonation failed: environment variable {SERVICE_ACCOUNT_EMAIL} is not set."
-            )
-            raise ValueError(
-                f"Please set environment variable: {SERVICE_ACCOUNT_EMAIL}."
-            )
 
         self._credentials[email], project_id = default()
         if not self._credentials[email]:
-            logger.error(
+            self.logger.error(
                 "Failed to obtain ADC credentials: no valid default credentials found."
             )
             raise ValueError("Google authentication service unavailable.")
 
         credentials_type = type(self._credentials[email])
-        logger.info(
+        self.logger.info(
             f"Credentials retrieved successfully. Project ID: {project_id}. Credentials type: {credentials_type}"
         )
 
         try:
             self._credentials[email] = ImpersonatedCredentials(
                 source_credentials=self._credentials[email],
-                target_principal=service_account_email,
+                target_principal=self._service_account_email,
                 target_scopes=scopes,
                 subject=email,
             )
 
-            logger.info(
-                f"Successfully impersonated user: {email} using service account: {service_account_email}"
+            self.logger.info(
+                f"Successfully impersonated user: {email} using service account: {self._service_account_email}"
             )
 
         except Exception as e:
             original_error = str(e)
-            logger.error(
+            self.logger.error(
                 f"Impersonation failed with original error: {original_error}",
                 exc_info=True,
             )
-            logger.error(
+            self.logger.error(
                 f"Impersonation troubleshooting details:\n"
                 f"1. User email ('{email}') may be invalid or not in the Google Workspace domain.\n"
-                f"2. Target service account ('{service_account_email}') may not have domain-wide delegation enabled.\n"
+                f"2. Target service account ('{self._service_account_email}') may not have domain-wide delegation enabled.\n"
                 f"3. Source credentials (from gcloud auth application-default login) may lack 'roles/iam.serviceAccountTokenCreator' role on the target service account.\n"
                 f"   To fix, contact admin to grant your account this role.\n"
                 f"4. IAM Credentials API may not be enabled (run: gcloud services enable iamcredentials.googleapis.com).\n"
@@ -149,22 +127,17 @@ class GoogleClientFactory:
 
         return self._credentials[email]
 
-    @retry(
-        reraise=True,
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=1, max=3),
-    )
     def _create_client(
         self, api_name: str, api_version: str, user_email=None, scopes=None
     ):
-        """Creates a Google API client using Application Default Credentials (ADC).
-        This function retrieves credentials using ADC and builds a Google API client.
-        It includes automatic retry logic in case of failure (e.g., network issues, API rate limits).
-        The method will retry up to 3 times with exponential backoff (waiting between 1 and 3 seconds before each retry).
+        """
+        Creates a Google API client with retry logic via retry_utils.
 
         Args:
             api_name (str): The name of the API (e.g., "chat", "pubsub").
             api_version (str): The version of the API (e.g., "v1", "v1beta1").
+            user_email (str | None): Optional user to impersonate.
+            scopes (list[str] | None): OAuth2 scopes.
 
         Returns:
             googleapiclient.discovery.Resource: The API client, or None if an error occurs after all retries.
@@ -181,40 +154,42 @@ class GoogleClientFactory:
             else:
                 print("Failed to create Chat client.")
         """
-        credentials = self._get_impersonate_credentials(
-            user_email=user_email, scopes=scopes
+        credentials = self.retry_utils.get_retry_on_transient(
+            lambda: self._get_impersonate_credentials(
+                user_email=user_email, scopes=scopes
+            )
         )
         if not credentials:
             raise ValueError("Credentials are not available for creating the client.")
         service = build(api_name, api_version, credentials=credentials)
         if not service:
             raise ValueError(f"Failed to create client for {api_name}.")
-        logger.info(f"Created {api_name} client successfully.")
+        self.logger.info(f"Created {api_name} client successfully.")
         return service
 
     def create_chat_client(self):
-        """Creates a Google Chat API client.
+        """
+        Creates a Google Chat API client.
 
         Returns:
             googleapiclient.discovery.Resource: The Google Chat API client, or None if an error occurs.
         """
 
-        if not self._chat_client:
-            self._chat_client = self._create_client("chat", "v1")
-        return self._chat_client
+        return self._create_client("chat", "v1")
 
     def create_people_client(self):
-        """Creates a Google People API client.
+        """
+        Creates a Google People API client.
+
         Returns:
-        googleapiclient.discovery.Resource: The Google People API client, or None if an error occurs.
+            googleapiclient.discovery.Resource: The Google People API client, or None if an error occurs.
         """
 
-        if not self._people_client:
-            self._people_client = self._create_client("people", "v1")
-        return self._people_client
+        return self._create_client("people", "v1")
 
     def create_workspaceevents_client(self):
-        """Creates a Google Workspace Events API client.
+        """
+        Creates a Google Workspace Events API client.
 
         This method initializes and returns a client for interacting with the Google Workspace Events API.
         If the client has not been created yet, it is instantiated using the `_create_client` method.
@@ -223,9 +198,7 @@ class GoogleClientFactory:
             googleapiclient.discovery.Resource: The Google Workspace Events API client instance.
         """
 
-        if not self._workspaceevents_client:
-            self._workspaceevents_client = self._create_client("workspaceevents", "v1")
-        return self._workspaceevents_client
+        return self._create_client("workspaceevents", "v1")
 
     def create_subscriber_client(self):
         """
@@ -235,9 +208,7 @@ class GoogleClientFactory:
             pubsub_v1.SubscriberClient object if successful, else None.
         """
 
-        if not self._subscriber_client:
-            self._subscriber_client = SubscriberClient()
-        return self._subscriber_client
+        return SubscriberClient()
 
     def create_publisher_client(self):
         """
@@ -247,9 +218,7 @@ class GoogleClientFactory:
             google.cloud.pubsub_v1.PublisherClient: The Publisher client instance.
         """
 
-        if not self._publisher_client:
-            self._publisher_client = PublisherClient()
-        return self._publisher_client
+        return PublisherClient()
 
     def create_calendar_client(self):
         """
@@ -258,9 +227,8 @@ class GoogleClientFactory:
         Returns:
             googleapiclient.discovery.Resource: The Calendar API client instance.
         """
-        if self._calendar_client is None:
-            self._calendar_client = self._create_client("calendar", "v3")
-        return self._calendar_client
+
+        return self._create_client("calendar", "v3")
 
     def create_reports_client(self):
         """
@@ -269,9 +237,7 @@ class GoogleClientFactory:
         Returns:
             googleapiclient.discovery.Resource: The Reports API client.
         """
-        if self._reports_client is None:
-            admin_email = os.environ.get(ADMIN_EMAIL)
-            self._reports_client = self._create_client(
-                "admin", "reports_v1", admin_email, GOOGLE_ADMIN_SCOPES_LIST
-            )
-        return self._reports_client
+
+        return self._create_client(
+            "admin", "reports_v1", self._admin_email, GOOGLE_ADMIN_SCOPES_LIST
+        )

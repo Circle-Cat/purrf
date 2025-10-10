@@ -42,7 +42,7 @@ from backend.common.environment_constants import (
 @patch("backend.utils.app_dependency_builder.GoogleChatSubscriptionService")
 @patch("backend.utils.app_dependency_builder.MicrosoftChatSubscriptionService")
 @patch("backend.utils.app_dependency_builder.MicrosoftService")
-@patch("backend.utils.app_dependency_builder.GoogleClientFactory")
+@patch("backend.utils.app_dependency_builder.GoogleClient")
 @patch("backend.utils.app_dependency_builder.MicrosoftGraphServiceClient")
 @patch("backend.utils.app_dependency_builder.RedisClient")
 @patch("backend.utils.app_dependency_builder.get_logger")
@@ -60,7 +60,7 @@ class TestAppDependencyBuilder(TestCase):
         mock_get_logger,
         mock_redis_client_cls,
         mock_graph_service_client_cls,
-        mock_google_client_factory_cls,
+        mock_google_client_cls,
         mock_microsoft_service,
         mock_microsoft_chat_subscription_service,
         mock_google_chat_subscription_service,
@@ -111,35 +111,36 @@ class TestAppDependencyBuilder(TestCase):
         mock_graph_service_client_instance.get_graph_service_client = mock_graph_client
         mock_graph_service_client_cls.return_value = mock_graph_service_client_instance
         mock_google_workspaceevents_client = MagicMock()
-        mock_google_client_factory_instance = MagicMock()
+        mock_google_client_instance = MagicMock()
         mock_google_chat_client = MagicMock()
         mock_google_people_client = MagicMock()
         mock_google_subscriber_client = MagicMock()
-        mock_google_client_factory_instance.create_subscriber_client.return_value = (
+        mock_google_client_instance.create_subscriber_client.return_value = (
             mock_google_subscriber_client
         )
-        mock_google_client_factory_instance.create_workspaceevents_client.return_value = mock_google_workspaceevents_client
-        mock_google_client_factory_instance.create_chat_client.return_value = (
+        mock_google_client_instance.create_workspaceevents_client.return_value = (
+            mock_google_workspaceevents_client
+        )
+        mock_google_client_instance.create_chat_client.return_value = (
             mock_google_chat_client
         )
-        mock_google_client_factory_instance.create_people_client.return_value = (
+        mock_google_client_instance.create_people_client.return_value = (
             mock_google_people_client
         )
         mock_google_calendar_client = MagicMock()
-        mock_google_client_factory_instance.create_calendar_client.return_value = (
+        mock_google_client_instance.create_calendar_client.return_value = (
             mock_google_calendar_client
         )
         mock_google_reports_client = MagicMock()
-        mock_google_client_factory_instance.create_reports_client.return_value = (
+        mock_google_client_instance.create_reports_client.return_value = (
             mock_google_reports_client
         )
-        mock_google_client_factory_cls.return_value = (
-            mock_google_client_factory_instance
-        )
+        mock_google_client_cls.return_value = mock_google_client_instance
         mock_asyncio_event_loop_manager = MagicMock()
         mock_asyncio_event_loop_manager_cls.return_value = (
             mock_asyncio_event_loop_manager
         )
+        mock_google_client_cls.return_value = mock_google_client_instance
         mock_retry_utils_instance = MagicMock()
         mock_retry_utils_cls.return_value = mock_retry_utils_instance
         mock_jira_client_instance = MagicMock()
@@ -180,10 +181,10 @@ class TestAppDependencyBuilder(TestCase):
         mock_redis_client_cls.assert_called_once()
         mock_redis_client_instance.get_redis_client.assert_called_once()
         mock_graph_service_client_cls.assert_called_once()
-        mock_google_client_factory_cls.assert_called_once()
-        mock_google_client_factory_instance.create_workspaceevents_client.assert_called_once()
-        mock_google_client_factory_instance.create_calendar_client.assert_called_once()
-        mock_google_client_factory_instance.create_reports_client.assert_called_once()
+        mock_google_client_cls.assert_called_once()
+        mock_google_client_instance.create_workspaceevents_client.assert_called_once()
+        mock_google_client_instance.create_calendar_client.assert_called_once()
+        mock_google_client_instance.create_reports_client.assert_called_once()
         mock_retry_utils_cls.assert_called_once()
         mock_gerrit_client_cls.assert_called_once()
 
@@ -358,8 +359,8 @@ class TestAppDependencyBuilder(TestCase):
         )
 
         # Assert that the builder's internal attributes are the created mock instances
-        mock_google_client_factory_instance.create_chat_client.assert_called_once()
-        mock_google_client_factory_instance.create_people_client.assert_called_once()
+        mock_google_client_instance.create_chat_client.assert_called_once()
+        mock_google_client_instance.create_people_client.assert_called_once()
 
         mock_google_chat_messages_utils.assert_called_once_with(
             logger=mock_logger,
@@ -420,9 +421,7 @@ class TestAppDependencyBuilder(TestCase):
             builder.microsoft_chat_subscription_service,
             mock_microsoft_chat_subscription_service.return_value,
         )
-        self.assertEqual(
-            builder.google_client_factory, mock_google_client_factory_instance
-        )
+        self.assertEqual(builder.google_client, mock_google_client_instance)
         self.assertEqual(
             builder.google_workspaceevents_client, mock_google_workspaceevents_client
         )
