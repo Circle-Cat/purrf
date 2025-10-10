@@ -13,17 +13,6 @@ py_library(
 )
 
 py_library(
-    name = "google_chat_message_store",
-    srcs = [
-        "google_chat_message_store.py",
-    ],
-    deps = [
-        "//backend/common:constants",
-        "//backend/common:redis_client",
-    ],
-)
-
-py_library(
     name = "google_chat_utils",
     srcs = [
         "google_chat_utils.py",

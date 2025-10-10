@@ -45,7 +45,6 @@ py_library(
         "//backend/common:constants",
         "//backend/common:google_client",
         "//backend/common:logger",
-        "//backend/utils:google_chat_message_store",
         "@pypi//tenacity",
     ],
 )
