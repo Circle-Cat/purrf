@@ -1,8 +1,6 @@
 from backend.common.constants import (
     MICROSOFT_CHAT_MESSAGES_INDEX_KEY,
     MicrosoftChatMessagesChangeType,
-    MicrosoftGroups,
-    MicrosoftAccountStatus,
 )
 
 
@@ -33,11 +31,8 @@ class MicrosoftChatAnalyticsService:
         """
         Count Microsoft chat messages per LDAP user within a specified date range.
 
-        If no `ldap_list` is provided, all active interns' LDAPs will be retrieved
-        automatically from LdapService (`get_ldaps_by_status_and_group`)
-        with:
-            - status = MicrosoftAccountStatus.ACTIVE
-            - group = MicrosoftGroups.INTERNS
+        If no `ldap_list` is provided, all active interns' and employees' LDAPs will be retrieved
+        automatically from LdapService (`get_all_active_interns_and_employees_ldaps`)
 
         If `start_date` or `end_date` is not provided, they will be determined using
         `date_time_util.get_start_end_timestamps`, which falls back to the default
@@ -96,19 +91,9 @@ class MicrosoftChatAnalyticsService:
         self.logger.info(f"Date range from {start_dt_utc} to {end_dt_utc}")
 
         if not ldap_list:
-            result = self.ldap_service.get_ldaps_by_status_and_group(
-                status=MicrosoftAccountStatus.ACTIVE,
-                groups=[MicrosoftGroups.INTERNS],
-            )
-            group_data = result.get(MicrosoftGroups.INTERNS.value, {})
-            ldap_list = list(
-                group_data.get(MicrosoftAccountStatus.ACTIVE.value, {}).keys()
-            )
+            ldap_list = self.ldap_service.get_all_active_interns_and_employees_ldaps()
             self.logger.info(
-                f"Fetched all active interns LDAP, count = {len(ldap_list)}."
-            )
-            self.logger.debug(
-                f"Fetched all active interns LDAP, ldap_list = {ldap_list}."
+                f"Fetched all active interns and employees LDAP, count = {len(ldap_list)}."
             )
         pipeline = self.redis_client.pipeline()
         for ldap in ldap_list:

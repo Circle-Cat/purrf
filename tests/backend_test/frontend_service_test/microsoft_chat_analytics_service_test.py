@@ -4,9 +4,7 @@ from unittest.mock import Mock, call
 
 from backend.common.constants import (
     MICROSOFT_CHAT_MESSAGES_INDEX_KEY,
-    MicrosoftAccountStatus,
     MicrosoftChatMessagesChangeType,
-    MicrosoftGroups,
 )
 from backend.frontend_service.microsoft_chat_analytics_service import (
     MicrosoftChatAnalyticsService,
@@ -60,7 +58,7 @@ class TestMicrosoftChatAnalyticsService(TestCase):
         self.mock_date_time_util.get_start_end_timestamps.assert_called_once_with(
             self.start_date_str, self.end_date_str
         )
-        self.mock_ldap_service.get_ldaps_by_status_and_group.assert_not_called()
+        self.mock_ldap_service.get_all_active_interns_and_employees_ldaps.assert_not_called()
         self.mock_redis_client.pipeline.assert_called_once()
 
         expected_zcount_calls = []
@@ -86,18 +84,12 @@ class TestMicrosoftChatAnalyticsService(TestCase):
         }
         self.assertEqual(result, expected_result)
 
-    def test_count_messages_without_ldap_list_uses_interns(self):
+    def test_count_messages_without_ldap_list_uses_interns_and_employees(self):
         intern_ldaps = ["intern1", "intern2"]
-        redis_counts = [5, 15]
+        employee_ldaps = ["employee1", "employee2"]
+        redis_counts = [5, 15, 7, 27]
 
-        self.mock_ldap_service.get_ldaps_by_status_and_group.return_value = {
-            MicrosoftGroups.INTERNS.value: {
-                MicrosoftAccountStatus.ACTIVE.value: {
-                    "intern1": "Intern One",
-                    "intern2": "Intern Two",
-                }
-            }
-        }
+        self.mock_ldap_service.get_all_active_interns_and_employees_ldaps.return_value = intern_ldaps + employee_ldaps
 
         mock_pipeline = Mock()
         self.mock_redis_client.pipeline.return_value = mock_pipeline
@@ -107,13 +99,11 @@ class TestMicrosoftChatAnalyticsService(TestCase):
             start_date=self.start_date_str, end_date=self.end_date_str, ldap_list=None
         )
 
-        self.mock_ldap_service.get_ldaps_by_status_and_group.assert_called_once_with(
-            status=MicrosoftAccountStatus.ACTIVE, groups=[MicrosoftGroups.INTERNS]
-        )
+        self.mock_ldap_service.get_all_active_interns_and_employees_ldaps.assert_called_once()
 
         self.mock_redis_client.pipeline.assert_called_once()
         expected_zcount_calls = []
-        for ldap in intern_ldaps:
+        for ldap in intern_ldaps + employee_ldaps:
             redis_key = MICROSOFT_CHAT_MESSAGES_INDEX_KEY.format(
                 message_status=MicrosoftChatMessagesChangeType.CREATED.value,
                 sender_ldap=ldap,
@@ -127,6 +117,11 @@ class TestMicrosoftChatAnalyticsService(TestCase):
         expected_result = {
             "start_date": self.start_dt_utc.isoformat(),
             "end_date": self.end_dt_utc.isoformat(),
-            "result": {"intern1": 5, "intern2": 15},
+            "result": {
+                "intern1": 5,
+                "intern2": 15,
+                "employee1": 7,
+                "employee2": 27,
+            },
         }
         self.assertEqual(result, expected_result)
