@@ -13,17 +13,6 @@ py_library(
 )
 
 py_library(
-    name = "google_chat_utils",
-    srcs = [
-        "google_chat_utils.py",
-    ],
-    deps = [
-        "//backend/common:google_client",
-        "@pypi//tenacity",
-    ],
-)
-
-py_library(
     name = "date_time_util",
     srcs = [
         "date_time_util.py",
