@@ -30,7 +30,9 @@ class TestGerritAnalyticsService(unittest.TestCase):
         self.assertEqual(self.service._get_month_buckets(start, end), expected)
 
     def test_get_gerrit_stats_all_time(self):
-        self.ldap_service.get_active_interns_ldaps.return_value = ["user1"]
+        self.ldap_service.get_all_active_interns_and_employees_ldaps.return_value = [
+            "user1"
+        ]
 
         mock_pipeline = MagicMock()
         mock_pipeline.execute.return_value = [
@@ -110,10 +112,12 @@ class TestGerritAnalyticsService(unittest.TestCase):
         self.assertEqual(result["user1"]["cl_reviewed"], 1)
 
     def test_get_gerrit_stats_without_ldap_list(self):
-        self.ldap_service.get_active_interns_ldaps.return_value = {
-            "user1": "User One",
-            "user2": "User Two",
-        }
+        self.ldap_service.get_all_active_interns_and_employees_ldaps.return_value = [
+            "intern1",
+            "intern2",
+            "employee1",
+            "employee2",
+        ]
         mock_pipeline = MagicMock()
         side_effect_data = [
             {
@@ -130,6 +134,20 @@ class TestGerritAnalyticsService(unittest.TestCase):
                 "loc_merged": "50",
                 "cl_reviewed": "3",
             },
+            {
+                "cl_merged": "9",
+                "cl_abandoned": "2",
+                "cl_under_review": "1",
+                "loc_merged": "26",
+                "cl_reviewed": "10",
+            },
+            {
+                "cl_merged": "7",
+                "cl_abandoned": "0",
+                "cl_under_review": "3",
+                "loc_merged": "27",
+                "cl_reviewed": "4",
+            },
         ]
         mock_pipeline.execute.return_value = side_effect_data
         self.redis_client.pipeline.return_value = mock_pipeline
@@ -137,14 +155,37 @@ class TestGerritAnalyticsService(unittest.TestCase):
 
         result = self.service.get_gerrit_stats()
 
-        self.assertEqual(result["user1"]["cl_merged"], 4)
-        self.assertEqual(result["user1"]["cl_abandoned"], 1)
-        self.assertEqual(result["user1"]["loc_merged"], 100)
-        self.assertEqual(result["user1"]["cl_reviewed"], 2)
-        self.assertEqual(result["user2"]["cl_merged"], 2)
-        self.assertEqual(result["user2"]["cl_under_review"], 1)
-        self.assertEqual(result["user2"]["loc_merged"], 50)
-        self.assertEqual(result["user2"]["cl_reviewed"], 3)
+        expected_stats = {
+            "intern1": {
+                "cl_merged": 4,
+                "cl_abandoned": 1,
+                "loc_merged": 100,
+                "cl_reviewed": 2,
+            },
+            "intern2": {
+                "cl_merged": 2,
+                "cl_under_review": 1,
+                "loc_merged": 50,
+                "cl_reviewed": 3,
+            },
+            "employee1": {
+                "cl_merged": 9,
+                "cl_abandoned": 2,
+                "cl_under_review": 1,
+                "loc_merged": 26,
+                "cl_reviewed": 10,
+            },
+            "employee2": {
+                "cl_merged": 7,
+                "cl_under_review": 3,
+                "loc_merged": 27,
+                "cl_reviewed": 4,
+            },
+        }
+
+        for user, stats in expected_stats.items():
+            for field, expected_value in stats.items():
+                self.assertEqual(result[user][field], expected_value)
 
     def test_get_gerrit_stats_multiple_ldaps(self):
         mock_pipeline = MagicMock()

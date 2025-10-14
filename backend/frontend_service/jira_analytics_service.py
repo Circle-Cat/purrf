@@ -66,7 +66,7 @@ class JiraAnalyticsService:
                 List of Jira issue statuses to include (e.g., DONE, IN_PROGRESS, TODO).
                 If None, defaults to all three.
             ldaps : list[str] | None
-                List of user LDAPs to include in the summary. If None, uses all active interns.
+                List of user LDAPs to include in the summary. If None, uses all active interns and employees.
             project_ids : list[str] | None
                 List of Jira project IDs to include. If None, fetches all available projects.
             start_date : str | None
@@ -114,7 +114,7 @@ class JiraAnalyticsService:
             JiraIssueStatus.IN_PROGRESS,
             JiraIssueStatus.TODO,
         ]
-        ldaps = ldaps or self.ldap_service.get_active_interns_ldaps()
+        ldaps = ldaps or self.ldap_service.get_all_active_interns_and_employees_ldaps()
         project_ids = project_ids or self.get_all_jira_projects()
 
         self.logger.info(

@@ -1,5 +1,5 @@
 from unittest import TestCase, main
-from unittest.mock import Mock, MagicMock, patch
+from unittest.mock import Mock, MagicMock, patch, ANY
 from backend.common.constants import (
     JIRA_PROJECTS_KEY,
     JiraIssueStatus,
@@ -152,24 +152,38 @@ class TestJiraAnalyticsService(TestCase):
     )
     def test_get_issues_summary_with_defaults(self, mock_get_projects):
         """Test that the method correctly uses defaults for ldaps and project_ids."""
-        self.mock_ldap_service.get_active_interns_ldaps.return_value = ["intern1"]
+        self.mock_ldap_service.get_all_active_interns_and_employees_ldaps.return_value = [
+            "intern1",
+            "employee1",
+        ]
         mock_pipeline = MagicMock()
         self.mock_redis.pipeline.return_value = mock_pipeline
-        mock_pipeline.execute.return_value = [
-            {"issue-1"}
-        ]  # Mock smembers for IN_PROGRESS
+
+        mock_pipeline.smembers.return_value = {"issue-1", "issue-2"}
+
+        mock_get_projects.return_value = ["test_project-1"]
 
         self.jira_service.get_issues_summary(
-            status_list=[JiraIssueStatus.IN_PROGRESS],
+            status_list=[JiraIssueStatus.IN_PROGRESS, JiraIssueStatus.DONE],
             ldaps=None,
             project_ids=None,
             start_date="2023-01-01",
             end_date="2023-01-31",
         )
 
-        self.mock_ldap_service.get_active_interns_ldaps.assert_called_once()
+        self.mock_ldap_service.get_all_active_interns_and_employees_ldaps.assert_called_once()
         mock_get_projects.assert_called_once()
-        mock_pipeline.smembers.assert_called_once()
+
+        expected_keys = [
+            "jira:ldap:intern1:project:test_project-1:status:done",
+            "jira:ldap:employee1:project:test_project-1:status:in_progress",
+        ]
+
+        for key in expected_keys:
+            if "in_progress" in key:
+                mock_pipeline.smembers.assert_any_call(key)
+            else:
+                mock_pipeline.zrange.assert_any_call(key, ANY, ANY, byscore=True)
 
     def test_get_issues_summary_with_no_results(self):
         mock_pipeline = MagicMock()

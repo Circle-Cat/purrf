@@ -76,17 +76,15 @@ class GerritAnalyticsService:
 
         Returns:
             Dictionary keyed by LDAP, each containing aggregated stat fields.
-
-        TODO:
-            Update `get_active_interns_ldaps` to get all active ldaps,
-            that stats include all users, not just active interns.
         """
         if not ldap_list:
-            ldap_list = self.ldap_service.get_active_interns_ldaps()
+            ldap_list = self.ldap_service.get_all_active_interns_and_employees_ldaps()
             if not ldap_list:
                 self.logger.warning("No active LDAP users found.")
                 return {}
-            self.logger.debug("Loaded all active interns LDAP: %s", ldap_list)
+            self.logger.info(
+                "Fetched all active interns and employees LDAP count: %d", len(ldap_list)
+            )
 
         invalid = [ldap for ldap in ldap_list if not self.LDAP_RE.fullmatch(ldap)]
         if invalid:

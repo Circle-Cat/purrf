@@ -39,20 +39,34 @@ class TestGoogleChatAnalyticsService(unittest.TestCase):
         self.mock_redis_client.pipeline.return_value = self.mock_pipeline
         self.mock_pipeline.zcount.return_value = None
 
-    def test_count_messages_defaults_to_all_spaces_and_interns(self):
+    def test_count_messages_defaults_to_all_spaces_by_interns_and_employees(self):
         """Test with no space_ids or sender_ldaps provided."""
         mock_spaces = {"spaceA": "Space A Name", "spaceB": "Space B Name"}
-        mock_intern_ldaps = ["ldap1", "ldap2"]
+        mock_intern_ldaps = ["intern1", "intern2"]
+        mock_employee_ldaps = ["employee1", "employee2"]
 
         self.mock_google_service.get_chat_spaces.return_value = mock_spaces
-        self.mock_ldap_service.get_active_interns_ldaps.return_value = mock_intern_ldaps
-        self.mock_retry_utils.get_retry_on_transient.return_value = [10, 5, 0, 20]
+        self.mock_ldap_service.get_all_active_interns_and_employees_ldaps.return_value = (
+            mock_intern_ldaps + mock_employee_ldaps
+        )
+        self.mock_retry_utils.get_retry_on_transient.return_value = [
+            10,
+            5,
+            7,
+            26,
+            0,
+            20,
+            9,
+            27,
+        ]
         expected_result = {
             "start_date": self.start_dt.isoformat(),
             "end_date": self.end_dt.isoformat(),
             "result": {
-                "ldap1": {"spaceA": 10, "spaceB": 0},
-                "ldap2": {"spaceA": 5, "spaceB": 20},
+                "intern1": {"spaceA": 10, "spaceB": 0},
+                "intern2": {"spaceA": 5, "spaceB": 20},
+                "employee1": {"spaceA": 7, "spaceB": 9},
+                "employee2": {"spaceA": 26, "spaceB": 27},
             },
         }
 
@@ -63,33 +77,61 @@ class TestGoogleChatAnalyticsService(unittest.TestCase):
         self.mock_google_service.get_chat_spaces.assert_called_once_with(
             space_type="SPACE"
         )
-        self.mock_ldap_service.get_active_interns_ldaps.assert_called_once()
+        self.mock_ldap_service.get_all_active_interns_and_employees_ldaps.assert_called_once()
         self.assertEqual(result, expected_result)
         expected_zcount_calls = [
             call(
                 CREATED_GOOGLE_CHAT_MESSAGES_INDEX_KEY.format(
-                    space_id="spaceA", sender_ldap="ldap1"
+                    space_id="spaceA", sender_ldap="intern1"
                 ),
                 self.start_dt.timestamp(),
                 self.end_dt.timestamp(),
             ),
             call(
                 CREATED_GOOGLE_CHAT_MESSAGES_INDEX_KEY.format(
-                    space_id="spaceA", sender_ldap="ldap2"
+                    space_id="spaceA", sender_ldap="intern2"
                 ),
                 self.start_dt.timestamp(),
                 self.end_dt.timestamp(),
             ),
             call(
                 CREATED_GOOGLE_CHAT_MESSAGES_INDEX_KEY.format(
-                    space_id="spaceB", sender_ldap="ldap1"
+                    space_id="spaceA", sender_ldap="employee1"
                 ),
                 self.start_dt.timestamp(),
                 self.end_dt.timestamp(),
             ),
             call(
                 CREATED_GOOGLE_CHAT_MESSAGES_INDEX_KEY.format(
-                    space_id="spaceB", sender_ldap="ldap2"
+                    space_id="spaceA", sender_ldap="employee2"
+                ),
+                self.start_dt.timestamp(),
+                self.end_dt.timestamp(),
+            ),
+            call(
+                CREATED_GOOGLE_CHAT_MESSAGES_INDEX_KEY.format(
+                    space_id="spaceB", sender_ldap="intern1"
+                ),
+                self.start_dt.timestamp(),
+                self.end_dt.timestamp(),
+            ),
+            call(
+                CREATED_GOOGLE_CHAT_MESSAGES_INDEX_KEY.format(
+                    space_id="spaceB", sender_ldap="intern2"
+                ),
+                self.start_dt.timestamp(),
+                self.end_dt.timestamp(),
+            ),
+            call(
+                CREATED_GOOGLE_CHAT_MESSAGES_INDEX_KEY.format(
+                    space_id="spaceB", sender_ldap="employee1"
+                ),
+                self.start_dt.timestamp(),
+                self.end_dt.timestamp(),
+            ),
+            call(
+                CREATED_GOOGLE_CHAT_MESSAGES_INDEX_KEY.format(
+                    space_id="spaceB", sender_ldap="employee2"
                 ),
                 self.start_dt.timestamp(),
                 self.end_dt.timestamp(),
@@ -126,7 +168,7 @@ class TestGoogleChatAnalyticsService(unittest.TestCase):
 
         self.assertEqual(result, expected_result)
         self.mock_google_service.get_chat_spaces.assert_not_called()
-        self.mock_ldap_service.get_active_interns_ldaps.assert_not_called()
+        self.mock_ldap_service.get_all_active_interns_and_employees_ldaps.assert_not_called()
 
         expected_zcount_calls = [
             call(
@@ -193,7 +235,7 @@ class TestGoogleChatAnalyticsService(unittest.TestCase):
 
         self.assertEqual(result, expected_result)
         self.mock_google_service.get_chat_spaces.assert_not_called()
-        self.mock_ldap_service.get_active_interns_ldaps.assert_not_called()
+        self.mock_ldap_service.get_all_active_interns_and_employees_ldaps.assert_not_called()
 
         expected_zcount_calls = [
             call(
@@ -272,7 +314,9 @@ class TestGoogleChatAnalyticsService(unittest.TestCase):
     def test_count_messages_empty_input_lists_cause_defaults_to_be_fetched(self):
         """Test that empty list inputs for space_ids and sender_ldaps trigger default fetching."""
         self.mock_google_service.get_chat_spaces.return_value = {"s1": "S1"}
-        self.mock_ldap_service.get_active_interns_ldaps.return_value = ["u1"]
+        self.mock_ldap_service.get_all_active_interns_and_employees_ldaps.return_value = [
+            "u1"
+        ]
         self.mock_retry_utils.get_retry_on_transient.return_value = [10]
 
         expected_result = {
@@ -290,7 +334,7 @@ class TestGoogleChatAnalyticsService(unittest.TestCase):
 
         self.assertEqual(result, expected_result)
         self.mock_google_service.get_chat_spaces.assert_called_once()
-        self.mock_ldap_service.get_active_interns_ldaps.assert_called_once()
+        self.mock_ldap_service.get_all_active_interns_and_employees_ldaps.assert_called_once()
 
     def test_count_messages_no_messages_found_for_any(self):
         """Test case where no messages are found for any sender/space pair."""

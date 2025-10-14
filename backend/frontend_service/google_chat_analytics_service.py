@@ -68,7 +68,7 @@ class GoogleChatAnalyticsService:
                 retrieved using `google_service.get_chat_spaces()`. Entries with only whitespace
                 will be ignored.
             sender_ldaps (list[str] | None): List of sender LDAPs to include
-                in the count. If None, all active interns LDAPs will be retrieved
+                in the count. If None, all active interns and employees LDAPs will be retrieved
                 as the default. Entries with only whitespace will be ignored.
             start_date (str | None): Start date of the range, in "YYYY-MM-DD"
                 format.
@@ -99,11 +99,6 @@ class GoogleChatAnalyticsService:
                     }
                 }
             }
-
-        TODO:
-            Update `get_active_interns_ldaps` to get all active ldaps,
-            that stats include all users, not just active interns.
-            For now, just keep it consistent with others and use only active interns.
         """
 
         space_ids = [s.strip() for s in space_ids or [] if s.strip()]
@@ -121,7 +116,9 @@ class GoogleChatAnalyticsService:
             self.logger.info(
                 "[API] Fetching active interns LDAP as default sender list..."
             )
-            sender_ldaps = self.ldap_service.get_active_interns_ldaps()
+            sender_ldaps = (
+                self.ldap_service.get_all_active_interns_and_employees_ldaps()
+            )
 
         pipeline = self.redis_client.pipeline()
         query_keys: list[tuple[str, str]] = []
