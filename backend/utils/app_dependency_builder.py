@@ -1,4 +1,3 @@
-import os
 from backend.common.logger import get_logger
 from backend.utils.retry_utils import RetryUtils
 from backend.common.redis_client import RedisClient
@@ -61,11 +60,6 @@ from backend.frontend_service.google_chat_analytics_service import (
     GoogleChatAnalyticsService,
 )
 from backend.frontend_service.summary_service import SummaryService
-from backend.common.environment_constants import (
-    GERRIT_URL,
-    GERRIT_USER,
-    GERRIT_HTTP_PASS,
-)
 from backend.historical_data.google_chat_history_sync_service import (
     GoogleChatHistorySyncService,
 )
@@ -90,16 +84,10 @@ class AppDependencyBuilder:
     """
 
     def __init__(self):
-        gerrit_url = os.getenv(GERRIT_URL)
-        gerrit_user = os.getenv(GERRIT_USER)
-        gerrit_password = os.getenv(GERRIT_HTTP_PASS)
-
         self.logger = get_logger()
         self.retry_utils = RetryUtils()
 
-        self.gerrit_client = GerritClient(
-            base_url=gerrit_url, username=gerrit_user, http_password=gerrit_password
-        )
+        self.gerrit_client = GerritClient()
         self.redis_client = RedisClient(
             logger=self.logger,
             retry_utils=self.retry_utils,

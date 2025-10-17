@@ -1,3 +1,4 @@
+import os
 import json
 from unittest import TestCase, main
 from unittest.mock import patch, MagicMock
@@ -6,31 +7,39 @@ from backend.common.gerrit_client import GerritClient
 
 class TestQueryChanges(TestCase):
     def setUp(self):
-        self.client = GerritClient(
-            base_url="https://gerrit.test", username="user", http_password="pass"
-        )
-        self.base_url = "https://gerrit.test"
+        env = {
+            "GERRIT_URL": "https://gerrit.test",
+            "GERRIT_USER": "user",
+            "GERRIT_HTTP_PASS": "pass",
+        }
+        self.env_patcher = patch.dict(os.environ, env)
+        self.env_patcher.start()
+
+        self.client = GerritClient()
+
         self.patcher = patch.object(self.client, "session", autospec=True)
         self.mock_session = self.patcher.start()
 
+        self.base_url = os.environ.get("GERRIT_URL")
+
     def tearDown(self):
         self.patcher.stop()
+        self.env_patcher.stop()
 
     def test_init_raises_value_error_if_url_missing(self):
-        with self.assertRaises(ValueError):
-            GerritClient(base_url="", username="user", http_password="pass")
+        with patch.dict(os.environ, {"GERRIT_URL": ""}):
+            with self.assertRaises(ValueError):
+                GerritClient()
 
     def test_init_raises_value_error_if_user_missing(self):
-        with self.assertRaises(ValueError):
-            GerritClient(
-                base_url="https://gerrit.test", username="", http_password="pass"
-            )
+        with patch.dict(os.environ, {"GERRIT_USER": ""}):
+            with self.assertRaises(ValueError):
+                GerritClient()
 
     def test_init_raises_value_error_if_password_missing(self):
-        with self.assertRaises(ValueError):
-            GerritClient(
-                base_url="https://gerrit.test", username="user", http_password=""
-            )
+        with patch.dict(os.environ, {"GERRIT_HTTP_PASS": ""}):
+            with self.assertRaises(ValueError):
+                GerritClient()
 
     def test_query_changes_with_parameters(self):
         mock_resp = MagicMock()
@@ -49,7 +58,7 @@ class TestQueryChanges(TestCase):
 
         self.assertEqual(result, [{"id": 1}])
 
-        expected_url = "https://gerrit.test/changes/"
+        expected_url = f"{self.base_url}/changes/"
         self.mock_session.get.assert_called_once()
         args, kwargs = self.mock_session.get.call_args
         self.assertEqual(args[0], expected_url)

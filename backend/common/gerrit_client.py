@@ -1,13 +1,19 @@
 import requests
 import json
+import os
+from backend.common.environment_constants import (
+    GERRIT_URL,
+    GERRIT_USER,
+    GERRIT_HTTP_PASS,
+)
 
 
 class GerritClient:
-    def __init__(self, base_url, username, http_password):
+    def __init__(self):
         """Initializes the GerritClient instance and sets up the requests session."""
-        self.base_url = base_url
-        self._username = username
-        self._http_password = http_password
+        self.base_url = os.environ.get(GERRIT_URL)
+        self._username = os.environ.get(GERRIT_USER)
+        self._http_password = os.environ.get(GERRIT_HTTP_PASS)
 
         if not self.base_url:
             raise ValueError(

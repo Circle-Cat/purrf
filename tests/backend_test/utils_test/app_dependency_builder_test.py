@@ -1,11 +1,6 @@
 from unittest import TestCase, main
 from unittest.mock import patch, MagicMock
 from backend.utils.app_dependency_builder import AppDependencyBuilder
-from backend.common.environment_constants import (
-    GERRIT_URL,
-    GERRIT_USER,
-    GERRIT_HTTP_PASS,
-)
 
 
 @patch("backend.utils.app_dependency_builder.SummaryService")
@@ -155,17 +150,6 @@ class TestAppDependencyBuilder(TestCase):
         mock_json_schema_validator_cls.return_value = (
             mock_json_schema_validator_instance
         )
-
-        # Configure os.getenv mock for GerritClient
-        GERRIT_URL_VAL = "https://test-gerrit.com"
-        GERRIT_USER_VAL = "testuser"
-        GERRIT_PASS_VAL = "testpass"
-
-        mock_os_getenv.side_effect = lambda key: {
-            GERRIT_URL: GERRIT_URL_VAL,
-            GERRIT_USER: GERRIT_USER_VAL,
-            GERRIT_HTTP_PASS: GERRIT_PASS_VAL,
-        }.get(key)
 
         mock_gerrit_client = mock_gerrit_client_cls.return_value
         mock_gerrit_sync_service = mock_gerrit_sync_service_cls.return_value

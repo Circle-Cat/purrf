@@ -73,6 +73,7 @@ py_library(
         "gerrit_client.py",
     ],
     deps = [
+        ":environment_constants",
         "@pypi//requests",
     ],
 )
