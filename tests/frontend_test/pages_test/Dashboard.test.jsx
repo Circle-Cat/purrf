@@ -106,7 +106,7 @@ const mockSummaryData = [
     jira_issue_done: 5,
     cl_merged: 10,
     loc_merged: 100,
-    meeting_count: 50,
+    meeting_hours: 50,
     chat_count: 200,
   },
   {
@@ -114,7 +114,7 @@ const mockSummaryData = [
     jira_issue_done: 2,
     cl_merged: 20,
     loc_merged: 200,
-    meeting_count: 20,
+    meeting_hours: 20,
     chat_count: 150,
   },
   {
@@ -122,7 +122,7 @@ const mockSummaryData = [
     jira_issue_done: 8,
     cl_merged: 5,
     loc_merged: 50,
-    meeting_count: 10,
+    meeting_hours: 10,
     chat_count: 50,
   },
 ];
@@ -206,7 +206,7 @@ describe("Dashboard", () => {
       );
       expect(screen.getByTestId("card-Merged-CLs")).toHaveTextContent("0");
       expect(screen.getByTestId("card-Merged-LOC")).toHaveTextContent("0");
-      expect(screen.getByTestId("card-Meeting-Count")).toHaveTextContent("0");
+      expect(screen.getByTestId("card-Meeting-Hours")).toHaveTextContent("0");
       expect(screen.getByTestId("card-Chat-Messages-Sent")).toHaveTextContent(
         "0",
       );
@@ -451,6 +451,48 @@ describe("Dashboard", () => {
           screen.getByRole("heading", { name: /Welcome/ }),
         ).toHaveTextContent("Welcome");
         expect(screen.queryByText(/Welcome \S+/)).toBeNull();
+      });
+    });
+
+    it("correctly sums and displays floating-point meeting hours", async () => {
+      const mockDecimalSummaryData = [
+        {
+          ldap: "test.user1",
+          jira_issue_done: 1,
+          cl_merged: 1,
+          loc_merged: 1,
+          meeting_hours: 0.65,
+          chat_count: 1,
+        },
+        {
+          ldap: "test.user2",
+          jira_issue_done: 1,
+          cl_merged: 1,
+          loc_merged: 1,
+          meeting_hours: 0.71,
+          chat_count: 1,
+        },
+        {
+          ldap: "test.user3",
+          jira_issue_done: 1,
+          cl_merged: 1,
+          loc_merged: 1,
+          meeting_hours: 0.82,
+          chat_count: 1,
+        },
+      ];
+
+      getSummary.mockResolvedValue({ data: mockDecimalSummaryData });
+      getLdapsAndDisplayNames.mockResolvedValue({ data: mockLdapsData });
+
+      render(<Dashboard />);
+
+      await vi.waitFor(() => {
+        const meetingHoursCard = screen.getByTestId("card-Meeting-Hours");
+
+        expect(meetingHoursCard).toHaveTextContent("2.18");
+
+        expect(meetingHoursCard).not.toHaveTextContent("2.17999");
       });
     });
   });

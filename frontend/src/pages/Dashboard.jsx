@@ -14,7 +14,7 @@ import { getCookie, extractCloudflareUserName } from "@/utils/auth";
  * @property {number} totalCompletedTickets - The total count of completed Jira tickets.
  * @property {number} totalMergedCls - The total count of merged CLs (Gerrit Change Lists).
  * @property {number} totalMergedLoc - The total count of merged LOCs (Lines of Code).
- * @property {number} totalMeetingCount - The total count of Google meetings attended.
+ * @property {number} totalMeetingHours - The total hours of Google meetings attended.
  * @property {number} totalMessagesSent - The total count of chat messages sent (Google Chat and Teams Chat).
  */
 
@@ -24,7 +24,7 @@ import { getCookie, extractCloudflareUserName } from "@/utils/auth";
  * @property {number} jiraTicketsDone - Number of Jira tickets completed.
  * @property {number} mergedCls - Number of CLs merged.
  * @property {number} mergedLoc - Number of LOCs merged.
- * @property {number} meetingCount - Number of meetings attended.
+ * @property {number} meetingHours - Total duration (in hours) of meetings attended.
  * @property {number} chatMessagesSent - Number of chat messages sent.
  */
 
@@ -97,7 +97,7 @@ const Dashboard = () => {
     totalCompletedTickets: 0,
     totalMergedCls: 0,
     totalMergedLoc: 0,
-    totalMeetingCount: 0,
+    totalMeetingHours: 0,
     totalMessagesSent: 0,
   });
 
@@ -119,7 +119,7 @@ const Dashboard = () => {
     },
     { header: "Merged CLs", accessor: "mergedCls", sortable: true },
     { header: "Merged LOC", accessor: "mergedLoc", sortable: true },
-    { header: "Meeting Count", accessor: "meetingCount", sortable: true },
+    { header: "Meeting Hours", accessor: "meetingHours", sortable: true },
     {
       header: "Chat Messages Sent",
       accessor: "chatMessagesSent",
@@ -194,7 +194,9 @@ const Dashboard = () => {
           acc.totalCompletedTickets += member.jira_issue_done;
           acc.totalMergedCls += member.cl_merged;
           acc.totalMergedLoc += member.loc_merged;
-          acc.totalMeetingCount += member.meeting_count;
+          acc._totalMeetingHoursInCents += Math.round(
+            member.meeting_hours * 100,
+          );
           acc.totalMessagesSent += member.chat_count;
           return acc;
         },
@@ -202,24 +204,31 @@ const Dashboard = () => {
           totalCompletedTickets: 0,
           totalMergedCls: 0,
           totalMergedLoc: 0,
-          totalMeetingCount: 0,
+          _totalMeetingHoursInCents: 0,
           totalMessagesSent: 0,
         },
       );
+
+      const finalTotalMeetingHours =
+        accumulatedSummary._totalMeetingHoursInCents / 100;
 
       const newTableData = summaryResult.map((member) => ({
         ldap: member.ldap,
         jiraTicketsDone: member.jira_issue_done,
         mergedCls: member.cl_merged,
         mergedLoc: member.loc_merged,
-        meetingCount: member.meeting_count,
+        meetingHours: member.meeting_hours,
         chatMessagesSent: member.chat_count,
       }));
 
       setTableData(newTableData);
 
       setSummaryData({
-        ...accumulatedSummary,
+        totalCompletedTickets: accumulatedSummary.totalCompletedTickets,
+        totalMergedCls: accumulatedSummary.totalMergedCls,
+        totalMergedLoc: accumulatedSummary.totalMergedLoc,
+        totalMessagesSent: accumulatedSummary.totalMessagesSent,
+        totalMeetingHours: finalTotalMeetingHours,
         totalMembers: totalLdaps,
       });
     } catch (err) {
@@ -333,7 +342,7 @@ const Dashboard = () => {
         />
         <Card title="Merged CLs" value={summaryData.totalMergedCls} />
         <Card title="Merged LOC" value={summaryData.totalMergedLoc} />
-        <Card title="Meeting Count" value={summaryData.totalMeetingCount} />
+        <Card title="Meeting Hours" value={summaryData.totalMeetingHours} />
         <Card
           title="Chat Messages Sent"
           value={summaryData.totalMessagesSent}
