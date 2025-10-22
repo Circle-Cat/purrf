@@ -4,12 +4,65 @@ from backend.common.constants import (
     DATE_FORMAT_YMD,
     DATETIME_ISO8601_FORMAT,
     DATE_FORMAT_YMD_NOSEP,
+    DATETIME_FORMAT_YMD_HMS,
+    GERRIT_DATE_BUCKET_TEMPLATE,
 )
 
 
 class DateTimeUtil:
     def __init__(self, logger):
         self.logger = logger
+
+    def parse_timestamp_without_microseconds(self, timestamp_str: str) -> datetime:
+        """
+        Parses a timestamp string into a datetime object, ignoring any microseconds part.
+
+        Args:
+            timestamp_str (str): The timestamp string to parse.
+                Example: "2025-10-22 14:33:45.123456" → microseconds will be ignored.
+
+        Returns:
+            datetime: A datetime object parsed from the given string without microseconds.
+
+        Raises:
+            ValueError: If the input string is None or empty.
+        """
+        if not timestamp_str:
+            raise ValueError("timestamp_str can not be None.")
+        dt_str_clean = timestamp_str.split(".")[0]
+        return datetime.strptime(dt_str_clean, DATETIME_FORMAT_YMD_HMS)
+
+    def compute_buckets_weekly(self, timestamp: str | datetime | int) -> str:
+        """
+        Compute weekly bucket key from timestamp (Monday-Sunday).
+        Returns a string "YYYY-MM-DD_YYYY-MM-DD" representing the start and end of the week.
+
+        Args:
+            timestamp: Input timestamp to map to a weekly bucket. Supports three types:
+                - str: date-time with nanoseconds string (e.g., "2025-10-22 05:44:27.000000000")
+                - datetime: Python datetime object (timezone-aware recommended)
+                - int: Unix timestamp in seconds (automatically treated as UTC)
+
+        Returns:
+            str: Weekly bucket key in "YYYY-MM-DD_YYYY-MM-DD" format (e.g., "2024-10-21_2024-10-27")
+
+        Raises:
+            TypeError: If the input timestamp is of an unsupported type.
+            ValueError: If parsing a string timestamp fails (delegated to parse_timestamp_without_microseconds).
+        """
+        if isinstance(timestamp, str):
+            dt = self.parse_timestamp_without_microseconds(timestamp)
+        elif isinstance(timestamp, datetime):
+            dt = timestamp
+        elif isinstance(timestamp, int):
+            dt = datetime.fromtimestamp(timestamp, tz=timezone.utc)
+        else:
+            raise TypeError(f"Unsupported type for timestamp: {type(timestamp)}")
+
+        days_to_monday = dt.weekday()
+        start = dt.date() - timedelta(days=days_to_monday)
+        end = start + timedelta(days=6)
+        return GERRIT_DATE_BUCKET_TEMPLATE.format(start=start, end=end)
 
     def format_datetime_to_int(self, dt: datetime) -> int:
         """

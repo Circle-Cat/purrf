@@ -222,6 +222,119 @@ class TestDateTimeUtil(TestCase):
             ),
         ]
 
+        self.test_cases_compute_buckets_weekly = [
+            # Case 1: 2025-10-21 (Tuesday) -> Week range 2025-10-20 (Monday) to 2025-10-26 (Sunday)
+            ("2025-10-21 14:30:00.123456", "2025-10-20_2025-10-26"),
+            # Case 2: 2025-10-30 (Thursday) -> Cross-month week range 2025-10-27 (Monday) to 2025-11-02 (Sunday)
+            ("2025-10-30 08:00:00", "2025-10-27_2025-11-02"),
+            # Case 3: 2025-01-06 (Monday) -> Monday input should start from itself
+            ("2025-01-06 00:00:01", "2025-01-06_2025-01-12"),
+            # Case 4: 2025-01-12 (Sunday) -> Sunday input should end on itself
+            ("2025-01-12 23:59:59", "2025-01-06_2025-01-12"),
+            # Case 5: Cross-year test (2025-12-31 is Tuesday) -> Week range 2025-12-29 (Monday) to 2026-01-04 (Sunday)
+            ("2025-12-31 12:00:00", "2025-12-29_2026-01-04"),
+            # Case 6: Leap year test (2024-02-29 is Thursday) -> Week range 2024-02-26 (Monday) to 2024-03-03 (Sunday)
+            ("2024-02-29 12:00:00", "2024-02-26_2024-03-03"),
+            # Case 7: Test with datetime object directly - Tuesday
+            (datetime(2025, 10, 21, 14, 30, 0, 123456), "2025-10-20_2025-10-26"),
+            # Case 8: Test with datetime object directly - Monday
+            (datetime(2025, 1, 6, 0, 0, 1), "2025-01-06_2025-01-12"),
+            # Case 9: Test with datetime object directly - Sunday
+            (datetime(2025, 1, 12, 23, 59, 59), "2025-01-06_2025-01-12"),
+            # Case 10: Unix timestamp for 2025-10-21 14:30:00 UTC (matches Case 1)
+            (1761028200, "2025-10-20_2025-10-26"),
+        ]
+
+        self.test_invalid_cases_compute_buckets_weekly = [
+            (
+                "2025/10/21 14:30:00",
+                "Invalid string format (uses / instead of -)",
+                ValueError,
+            ),
+            ("Just a string", "Non-date string", ValueError),
+            ("", "Empty string", ValueError),
+            ([1, 2, 3], "List input", TypeError),
+            (None, "None input", TypeError),
+            (1.0, "Float input", TypeError),
+        ]
+
+        self.test_cases_parse_timestamp_without_microseconds_valid = [
+            (
+                "2023-10-27 10:30:45.123456",
+                datetime(2023, 10, 27, 10, 30, 45),
+            ),
+            (
+                "2023-10-28 11:00:00",
+                datetime(2023, 10, 28, 11, 0, 0),
+            ),
+            (
+                "1999-01-01 00:00:00.999",
+                datetime(1999, 1, 1, 0, 0, 0),
+            ),
+            (
+                "2025-12-31 23:59:59",
+                datetime(2025, 12, 31, 23, 59, 59),
+            ),
+        ]
+
+        self.test_cases_parse_timestamp_without_microseconds_invalid = [
+            ("2023/10/27 10:30:45.123", "Incorrect date separator"),
+            ("27-10-2023 10:30:45", "Incorrect date order"),
+            ("2023-10-27T10:30:45", "Incorrect date-time separator"),
+            ("Invalid Timestamp String", "Completely invalid string"),
+            ("", "Empty string"),
+            ("2023-10-27 10:30", "Missing seconds"),
+            ("2023-10-27", "Missing time part"),
+            ("2023-10-27 25:00:00", "Invalid hour"),
+            ("2023-13-01 00:00:00", "Invalid month"),
+            (None, "None input"),
+        ]
+
+    def test_parse_timestamp_without_microseconds_valid_input(self):
+        """Tests the parse_timestamp_without_microseconds method with valid timestamp strings."""
+        for i, (timestamp_str, expected_dt) in enumerate(
+            self.test_cases_parse_timestamp_without_microseconds_valid
+        ):
+            with self.subTest(f"Valid case {i + 1}: '{timestamp_str}'"):
+                result = self.utils.parse_timestamp_without_microseconds(timestamp_str)
+                self.assertEqual(result, expected_dt)
+
+    def test_parse_timestamp_without_microseconds_invalid_input(self):
+        """
+        Tests the parse_timestamp_without_microseconds method with invalid timestamp strings,
+        expecting a ValueError to be raised.
+        """
+        for i, (timestamp_str, description) in enumerate(
+            self.test_cases_parse_timestamp_without_microseconds_invalid
+        ):
+            with self.subTest(
+                f"Invalid case {i + 1}: '{timestamp_str}' ({description})"
+            ):
+                with self.assertRaises(ValueError):
+                    self.utils.parse_timestamp_without_microseconds(timestamp_str)
+
+    def test_compute_buckets_weekly(self):
+        """Test the weekly aggregation logic to ensure correct Monday-Sunday range keys."""
+        for i, (input_timestamp, expected_key) in enumerate(
+            self.test_cases_compute_buckets_weekly
+        ):
+            with self.subTest(
+                case=f"Weekly Case {i + 1}: Input {input_timestamp} -> Expected {expected_key}"
+            ):
+                actual_key = self.utils.compute_buckets_weekly(input_timestamp)
+                self.assertEqual(actual_key, expected_key)
+
+    def test_compute_buckets_weekly_invalid_input(self):
+        """Test that invalid timestamps now raise the correct exception (ValueError for bad format, TypeError for unsupported types)."""
+        for i, (input_timestamp, description, expected_exception) in enumerate(
+            self.test_invalid_cases_compute_buckets_weekly
+        ):
+            with self.subTest(
+                case=f"Invalid Weekly Case {i + 1}: Input '{input_timestamp}' ({description})"
+            ):
+                with self.assertRaises(expected_exception):
+                    self.utils.compute_buckets_weekly(input_timestamp)
+
     def test_format_datetime_to_iso_utc_z_valid_inputs(self):
         for i, (date_str, expected_dt) in enumerate(
             self.test_cases_format_datetime_to_iso_utc_z
