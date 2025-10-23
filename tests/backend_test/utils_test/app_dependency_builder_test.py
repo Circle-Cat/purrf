@@ -284,6 +284,7 @@ class TestAppDependencyBuilder(TestCase):
             redis_client=mock_redis_client,
             gerrit_client=mock_gerrit_client,
             retry_utils=mock_retry_utils_instance,
+            date_time_util=mock_date_time_util_cls.return_value,
         )
         mock_google_chat_history_sync_service_cls.assert_called_once_with(
             logger=mock_logger,

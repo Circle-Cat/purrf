@@ -153,6 +153,7 @@ class AppDependencyBuilder:
             redis_client=self.redis_client,
             gerrit_client=self.gerrit_client,
             retry_utils=self.retry_utils,
+            date_time_util=self.date_time_util,
         )
         self.asyncio_event_loop_manager = AsyncioEventLoopManager()
 

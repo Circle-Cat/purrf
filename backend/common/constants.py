@@ -127,6 +127,9 @@ class PullStatus(Enum):
         return self.default_message_template.format(**kwargs)
 
 
+GERRIT_PERSUBMIT_BOT = "CatBot"
+
+
 # Constants for Gerrit
 class GerritChangeStatus(str, Enum):
     OPEN = "open"
@@ -154,17 +157,21 @@ GERRIT_STATUS_TO_FIELD = {
     GERRIT_UNDER_REVIEW: "cl_under_review",
 }
 
+GERRIT_STATUS_TO_FIELD_TEMPLATE = "cl_{status}"
 GERRIT_CL_REVIEWED_FIELD = "cl_reviewed"
 GERRIT_LOC_MERGED_FIELD = "loc_merged"
 GERRIT_DATE_BUCKET_TEMPLATE = "{start}_{end}"
 
 # Gerrit Redis key templates
 GERRIT_STATS_ALL_TIME_KEY = "gerrit:stats:{ldap}"
-GERRIT_STATS_MONTHLY_BUCKET_KEY = "gerrit:stats:{ldap}:{bucket}"
+GERRIT_STATS_BUCKET_KEY = "gerrit:stats:{ldap}:{bucket}"
 GERRIT_STATS_PROJECT_BUCKET_KEY = "gerrit:stats:{ldap}:{project}:{bucket}"
 GERRIT_CHANGE_STATUS_KEY = "gerrit:change_status"
+GERRIT_UNDER_REVIEWED_CL_INDEX_KEY = "gerrit:cl:under_reviewed"
 GERRIT_DEDUPE_REVIEWED_KEY = "gerrit:dedupe:reviewed:{change_number}"
 GERRIT_PROJECTS_KEY = "gerrit:projects"
+GERRIT_UNMERGED_CL_KEY_BY_PROJECT = "gerrit:cl:{ldap}:{project}:{cl_status}"
+GERRIT_UNMERGED_CL_KEY_GLOBAL = "gerrit:cl:{ldap}:{cl_status}"
 
 
 # Constants for Jira
@@ -235,3 +242,4 @@ DATE_FORMAT_YMD = "%Y-%m-%d"
 DATE_FORMAT_YMD_NOSEP = "%Y%m%d"
 DATETIME_ISO8601_FORMAT = "%Y-%m-%dT%H:%M:%S.%f%z"
 DATETIME_FORMAT_YMD_HMS = "%Y-%m-%d %H:%M:%S"
+THREE_MONTHS_IN_SECONDS = 60 * 60 * 24 * 90

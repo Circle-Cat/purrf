@@ -4,7 +4,7 @@ from backend.common.constants import (
     GERRIT_DATE_BUCKET_TEMPLATE,
     GERRIT_STAT_FIELDS,
     GERRIT_STATS_ALL_TIME_KEY,
-    GERRIT_STATS_MONTHLY_BUCKET_KEY,
+    GERRIT_STATS_BUCKET_KEY,
     GERRIT_STATS_PROJECT_BUCKET_KEY,
     GERRIT_PROJECTS_KEY,
 )
@@ -118,7 +118,7 @@ class GerritAnalyticsService:
                                 ldap=ldap, project=proj, bucket=bucket
                             )
                             if proj
-                            else GERRIT_STATS_MONTHLY_BUCKET_KEY.format(
+                            else GERRIT_STATS_BUCKET_KEY.format(
                                 ldap=ldap, bucket=bucket
                             )
                         )
