@@ -318,7 +318,7 @@ describe("Dashboard", () => {
     );
 
     expect(screen.getByLabelText(Group.Interns)).toBeChecked();
-    expect(screen.getByLabelText(Group.Employees)).not.toBeChecked();
+    expect(screen.getByLabelText(Group.Employees)).toBeChecked();
     expect(screen.getByLabelText(Group.Volunteers)).not.toBeChecked();
     expect(
       screen.getByLabelText("Include Terminated Members"),
@@ -338,7 +338,7 @@ describe("Dashboard", () => {
     fireEvent.click(volunteersCheckbox);
 
     expect(internsCheckbox).not.toBeChecked();
-    expect(employeesCheckbox).toBeChecked();
+    expect(employeesCheckbox).not.toBeChecked();
     expect(volunteersCheckbox).toBeChecked();
   });
 
@@ -383,7 +383,7 @@ describe("Dashboard", () => {
     expect(getSummary).toHaveBeenCalledWith({
       startDate: newStartDate,
       endDate: newEndDate,
-      groups: [Group.Interns],
+      groups: [Group.Interns, Group.Employees],
       includeTerminated: false,
     });
   });
@@ -393,7 +393,7 @@ describe("Dashboard", () => {
 
     render(<Dashboard />);
 
-    fireEvent.click(screen.getByLabelText(Group.Employees));
+    fireEvent.click(screen.getByLabelText(Group.Volunteers));
     fireEvent.click(screen.getByLabelText("Include Terminated Members"));
 
     fireEvent.click(screen.getByRole("button", { name: "Search" }));
@@ -401,7 +401,7 @@ describe("Dashboard", () => {
     expect(getSummary).toHaveBeenCalledWith({
       startDate: formatDate(MOCK_FIRST_OF_MONTH),
       endDate: formatDate(MOCK_TODAY),
-      groups: [Group.Interns, Group.Employees],
+      groups: [Group.Interns, Group.Employees, Group.Volunteers],
       includeTerminated: true,
     });
   });
@@ -414,7 +414,7 @@ describe("Dashboard", () => {
       expect.objectContaining({
         startDate: formatDate(MOCK_FIRST_OF_MONTH),
         endDate: formatDate(MOCK_TODAY),
-        groups: [Group.Interns],
+        groups: [Group.Interns, Group.Employees],
         includeTerminated: false,
       }),
     );

@@ -89,7 +89,7 @@ const Dashboard = () => {
 
   const [includeTerminated, setIncludeTerminated] = useState(false);
 
-  const [groups, setGroups] = useState([Group.Interns]);
+  const [groups, setGroups] = useState([Group.Interns, Group.Employees]);
   const groupsData = Object.values(Group);
 
   const [summaryData, setSummaryData] = useState({
@@ -245,7 +245,7 @@ const Dashboard = () => {
     fetchDataAndRender({
       startDate: defaultStart,
       endDate: defaultEnd,
-      groups: [Group.Interns],
+      groups: [Group.Interns, Group.Employees],
       includeTerminated: false,
     });
   };
