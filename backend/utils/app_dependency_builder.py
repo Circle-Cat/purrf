@@ -195,7 +195,7 @@ class AppDependencyBuilder:
             redis_client=self.redis_client,
             pubsub_puller_factory=self.pubsub_puller_factory,
             retry_utils=self.retry_utils,
-            gerrit_sync_service=self.gerrit_sync_service,
+            date_time_util=self.date_time_util,
         )
         self.consumer_controller = ConsumerController(
             microsoft_message_processor_service=self.microsoft_message_processor_service,

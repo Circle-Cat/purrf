@@ -54,7 +54,7 @@ def run_gerrit_webhook_registration():
 
     raw_events = os.getenv(
         GERRIT_WEBHOOK_EVENTS,
-        "patchset-created,change-merged,change-abandoned,comment-added,change-restored,project-created",
+        "patchset-created,change-merged,change-abandoned,comment-added,change-restored,project-created,wip-state-changed,private-state-changed,change-deleted",
     )
     events = [e.strip() for e in raw_events.split(",") if e.strip()]
     if not events:

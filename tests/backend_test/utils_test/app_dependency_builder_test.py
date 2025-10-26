@@ -234,9 +234,9 @@ class TestAppDependencyBuilder(TestCase):
         mock_gerrit_processor_service_cls.assert_called_once_with(
             logger=mock_logger,
             redis_client=mock_redis_client,
-            gerrit_sync_service=mock_gerrit_sync_service_cls.return_value,
             pubsub_puller_factory=mock_pubsub_puller_factory_cls.return_value,
             retry_utils=mock_retry_utils_instance,
+            date_time_util=mock_date_time_util_cls.return_value,
         )
 
         mock_consumer_controller_cls.assert_called_once_with(

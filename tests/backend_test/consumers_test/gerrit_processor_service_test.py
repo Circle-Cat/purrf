@@ -1,10 +1,20 @@
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, call  # Import call for multiple assertions
 from backend.consumers.gerrit_processor_service import GerritProcessorService
 from backend.common.constants import (
-    PullStatus,
+    PullStatus,  # Not used in the provided test, but kept for context
     GERRIT_DEDUPE_REVIEWED_KEY,
+    GERRIT_CL_REVIEWED_FIELD,
+    GerritChangeStatus,
+    THREE_MONTHS_IN_SECONDS,
+    GERRIT_STATS_PROJECT_BUCKET_KEY,
+    GERRIT_STATS_BUCKET_KEY,  # New: Import global stats key
+    GERRIT_UNMERGED_CL_KEY_BY_PROJECT,  # Existing, but good to be explicit
+    GERRIT_UNMERGED_CL_KEY_GLOBAL,  # New: Import global unmerged CL key
+    GERRIT_STATUS_TO_FIELD_TEMPLATE,  # New: Import for change_merged
+    GERRIT_LOC_MERGED_FIELD,  # New: Import for change_merged
 )
+
 from dataclasses import dataclass
 
 
@@ -19,95 +29,322 @@ class PullStatusResponse:
 class TestStorePayload(unittest.TestCase):
     def setUp(self):
         self.mock_logger = MagicMock()
-        self.mock_redis_client = MagicMock()
-        self.mock_gerrit_sync_service = MagicMock()
-        self.mock_pubsub_puller_factory = MagicMock()
-        self.mock_retry_utils = MagicMock()
+        self.mock_redis = MagicMock()
+        self.mock_puller_factory = MagicMock()
+        self.mock_retry = MagicMock()
+        self.mock_date_util = MagicMock()
+
         self.service = GerritProcessorService(
             logger=self.mock_logger,
-            redis_client=self.mock_redis_client,
-            gerrit_sync_service=self.mock_gerrit_sync_service,
-            pubsub_puller_factory=self.mock_pubsub_puller_factory,
-            retry_utils=self.mock_retry_utils,
+            redis_client=self.mock_redis,
+            pubsub_puller_factory=self.mock_puller_factory,
+            retry_utils=self.mock_retry,
+            date_time_util=self.mock_date_util,
         )
 
-    def test_non_comment_delegates_to_store_change(self):
-        payload = {"type": "change-merged", "change": {"foo": "bar"}}
-        self.service.store_payload(payload)
-        self.mock_gerrit_sync_service.store_change.assert_called_once_with({
-            "foo": "bar"
-        })
+        self.mock_retry.get_retry_on_transient.side_effect = lambda func: func()
 
-    def test_comment_added_increments_review_counts(self):
-        fake_pipeline = MagicMock()
-        self.mock_redis_client.pipeline.return_value = fake_pipeline
-        self.mock_redis_client.sadd.return_value = 1
-        self.mock_gerrit_sync_service.compute_buckets.return_value = (
-            "2025-07-01_2025-07-31"
-        )
+        # Preset date utility to return a fixed weekly bucket for assertion
+        self.bucket_value = "2025-W20"
+        self.mock_date_util.compute_buckets_weekly.return_value = self.bucket_value
 
-        commenter = "alice"
-        owner = "bob"
+        self.mock_project_value = "experiment"
+
+    def test_patchset_created_new_cl(self):
+        """Test real-format first patchset event to verify status tracking logic for project-specific and global keys"""
         payload = {
-            "type": "comment-added",
-            "author": {"username": commenter},
+            "type": "patchset-created",
+            "patchSet": {"number": 1, "sizeInsertions": 14},
             "change": {
-                "owner": {"username": owner},
-                "project": "proj",
-                "created": "2025-07-18 22:00:00.000000",
-                "_number": 123,
+                "number": 7043,
+                "project": self.mock_project_value,
+                "owner": {"username": "bob"},
+                "status": "NEW",
+                "createdOn": 1761278745,
             },
+            "eventCreatedOn": 1761278745,
         }
 
         self.service.store_payload(payload)
 
-        dedupe_key = GERRIT_DEDUPE_REVIEWED_KEY.format(change_number=123)
-        self.mock_redis_client.sadd.assert_called_once_with(dedupe_key, commenter)
-        fake_pipeline.expire.assert_called_once_with(dedupe_key, 60 * 60 * 24 * 90)
-
-        self.assertTrue(self.mock_retry_utils.get_retry_on_transient.called)
-
-        self.mock_gerrit_sync_service.bump_cl_reviewed.assert_called_once_with(
-            fake_pipeline, commenter, "proj", "2025-07-01_2025-07-31"
+        # Assert project-specific key
+        expected_key_project = GERRIT_UNMERGED_CL_KEY_BY_PROJECT.format(
+            ldap="bob",
+            project=self.mock_project_value,
+            cl_status=GerritChangeStatus.NEW.value,
+        )
+        # Assert global key
+        expected_key_global = GERRIT_UNMERGED_CL_KEY_GLOBAL.format(
+            ldap="bob", cl_status=GerritChangeStatus.NEW.value
         )
 
-    def test_comment_added_idempotent_on_repeat(self):
-        fake_pipeline = MagicMock()
-        self.mock_redis_client.pipeline.return_value = fake_pipeline
-        self.mock_redis_client.sadd.return_value = 0
-        self.mock_gerrit_sync_service.compute_buckets.return_value = (
-            "2025-07-01_2025-07-31"
+        mock_pipeline = self.mock_redis.pipeline.return_value
+
+        mock_pipeline.zadd.assert_has_calls(
+            [
+                call(expected_key_project, {7043: 1761278745}),
+                call(expected_key_global, {7043: 1761278745}),
+            ],
+            any_order=True,
+        )
+        mock_pipeline.execute.assert_called_once()  # Ensure pipeline was executed
+
+    def test_comment_added_by_human(self):
+        """Test real-format human comment event to verify deduplication and statistics logic for project-specific and global keys"""
+        payload = {
+            "type": "comment-added",
+            "author": {"username": "alice"},  # Not owner/bot
+            "change": {
+                "number": 7043,
+                "project": self.mock_project_value,
+                "owner": {"username": "bob"},
+            },
+            "eventCreatedOn": 1761279121,
+            "comment": "Patch Set 1: LGTM+1",
+        }
+
+        # Mock Redis deduplication check: first comment (not in set)
+        self.mock_redis.sismember.return_value = False
+
+        mock_pipeline = MagicMock()
+        self.mock_redis.pipeline.return_value = mock_pipeline
+
+        self.service.store_payload(payload)
+
+        # Check deduplication key
+        dedupe_key = GERRIT_DEDUPE_REVIEWED_KEY.format(change_number=7043)
+        self.mock_redis.sismember.assert_called_once_with(dedupe_key, "alice")
+
+        # Assert project-specific stats key generation and increment execution
+        stats_key_project = GERRIT_STATS_PROJECT_BUCKET_KEY.format(
+            ldap="alice", project=self.mock_project_value, bucket=self.bucket_value
+        )
+        mock_pipeline.hincrby.assert_any_call(
+            stats_key_project, GERRIT_CL_REVIEWED_FIELD, 1
         )
 
+        # Assert global stats key generation and increment execution
+        stats_key_global = GERRIT_STATS_BUCKET_KEY.format(
+            ldap="alice", bucket=self.bucket_value
+        )
+        mock_pipeline.hincrby.assert_any_call(
+            stats_key_global, GERRIT_CL_REVIEWED_FIELD, 1
+        )
+
+        mock_pipeline.sadd.assert_called_once_with(dedupe_key, "alice")
+        mock_pipeline.expire.assert_called_once_with(
+            dedupe_key, THREE_MONTHS_IN_SECONDS
+        )
+        mock_pipeline.execute.assert_called_once()
+
+    def test_comment_added_by_bot(self):
+        """Test bot comment event (e.g., Presubmit) to verify it's skipped"""
+        payload = {
+            "type": "comment-added",
+            "author": {"username": "CatBot"},  # Bot account
+            "change": {"number": 7044, "owner": {"username": "bob"}},
+            "comment": "Patch Set 1: Verified+1",
+        }
+
+        # Execute processing
+        self.service.store_payload(payload)
+
+        # Verify: No Redis operations executed (bot comments are skipped)
+        self.mock_redis.sismember.assert_not_called()
+        self.mock_redis.pipeline.assert_not_called()
+
+    def test_change_merged(self):
+        """Test real-format merge event to verify statistics and status cleanup logic for project-specific and global keys"""
+
+        payload = {
+            "type": "change-merged",
+            "eventCreatedOn": 1761280203,
+            "change": {
+                "number": 7043,
+                "project": self.mock_project_value,
+                "owner": {"username": "bob"},
+            },
+            "patchSet": {"sizeInsertions": 18},  # Insertions in merged patchset
+        }
+
+        mock_pipeline = MagicMock()
+        self.mock_redis.pipeline.return_value = mock_pipeline
+
+        self.service.store_payload(payload)
+
+        # Merge statistics updated (LOC and merge count) for project-specific
+        stats_key_project = GERRIT_STATS_PROJECT_BUCKET_KEY.format(
+            ldap="bob", project=self.mock_project_value, bucket=self.bucket_value
+        )
+        mock_pipeline.hincrby.assert_any_call(
+            stats_key_project, GERRIT_LOC_MERGED_FIELD, 18
+        )
+        mock_pipeline.hincrby.assert_any_call(
+            stats_key_project,
+            GERRIT_STATUS_TO_FIELD_TEMPLATE.format(
+                status=GerritChangeStatus.MERGED.value
+            ),
+            1,
+        )
+
+        # Merge statistics updated (LOC and merge count) for global
+        stats_key_global = GERRIT_STATS_BUCKET_KEY.format(
+            ldap="bob", bucket=self.bucket_value
+        )
+        mock_pipeline.hincrby.assert_any_call(
+            stats_key_global, GERRIT_LOC_MERGED_FIELD, 18
+        )
+        mock_pipeline.hincrby.assert_any_call(
+            stats_key_global,
+            GERRIT_STATUS_TO_FIELD_TEMPLATE.format(
+                status=GerritChangeStatus.MERGED.value
+            ),
+            1,
+        )
+
+        # Removed from NEW status set for project-specific
+        new_status_key_project = GERRIT_UNMERGED_CL_KEY_BY_PROJECT.format(
+            ldap="bob",
+            project=self.mock_project_value,
+            cl_status=GerritChangeStatus.NEW.value,
+        )
+        mock_pipeline.zrem.assert_any_call(new_status_key_project, 7043)
+
+        # Removed from NEW status set for global
+        new_status_key_global = GERRIT_UNMERGED_CL_KEY_GLOBAL.format(
+            ldap="bob", cl_status=GerritChangeStatus.NEW.value
+        )
+        mock_pipeline.zrem.assert_any_call(new_status_key_global, 7043)
+
+        # Ensure pipeline execution
+        mock_pipeline.execute.assert_called_once()
+
+    def test_change_abandoned(self):
+        """Test real-format abandon event to verify status migration logic for project-specific and global keys"""
+        payload = {
+            "type": "change-abandoned",
+            "eventCreatedOn": 1761280743,
+            "change": {
+                "number": 7041,
+                "project": self.mock_project_value,
+                "owner": {"username": "bob"},
+                "status": "ABANDONED",
+            },
+            "reason": "test abandon",
+        }
+
+        mock_pipeline = MagicMock()
+        self.mock_redis.pipeline.return_value = mock_pipeline
+
+        self.service.store_payload(payload)
+
+        # Verify: Migrated from NEW to ABANDONED set for project-specific
+        new_key_project = GERRIT_UNMERGED_CL_KEY_BY_PROJECT.format(
+            ldap="bob",
+            project=self.mock_project_value,
+            cl_status=GerritChangeStatus.NEW.value,
+        )
+        abandoned_key_project = GERRIT_UNMERGED_CL_KEY_BY_PROJECT.format(
+            ldap="bob",
+            project=self.mock_project_value,
+            cl_status=GerritChangeStatus.ABANDONED.value,
+        )
+        mock_pipeline.zadd.assert_any_call(abandoned_key_project, {7041: 1761280743})
+        mock_pipeline.zrem.assert_any_call(new_key_project, 7041)
+
+        # Verify: Migrated from NEW to ABANDONED set for global
+        new_key_global = GERRIT_UNMERGED_CL_KEY_GLOBAL.format(
+            ldap="bob", cl_status=GerritChangeStatus.NEW.value
+        )
+        abandoned_key_global = GERRIT_UNMERGED_CL_KEY_GLOBAL.format(
+            ldap="bob", cl_status=GerritChangeStatus.ABANDONED.value
+        )
+        mock_pipeline.zadd.assert_any_call(abandoned_key_global, {7041: 1761280743})
+        mock_pipeline.zrem.assert_any_call(new_key_global, 7041)
+
+        mock_pipeline.execute.assert_called_once()
+
+    def test_change_restored(self):
+        """Test real-format restore event to verify status migration and reviewer refresh for project-specific and global keys"""
+        payload = {
+            "type": "change-restored",
+            "eventCreatedOn": 1761280835,
+            "change": {
+                "number": 7041,
+                "project": self.mock_project_value,
+                "owner": {"username": "bob"},
+                "status": "NEW",
+                "createdOn": 1761280000,
+            },
+        }
+
+        mock_pipeline = MagicMock()
+        self.mock_redis.pipeline.return_value = mock_pipeline
+
+        self.service.store_payload(payload)
+
+        # Status migrated from ABANDONED to NEW for project-specific
+        new_key_project = GERRIT_UNMERGED_CL_KEY_BY_PROJECT.format(
+            ldap="bob",
+            project=self.mock_project_value,
+            cl_status=GerritChangeStatus.NEW.value,
+        )
+        abandoned_key_project = GERRIT_UNMERGED_CL_KEY_BY_PROJECT.format(
+            ldap="bob",
+            project=self.mock_project_value,
+            cl_status=GerritChangeStatus.ABANDONED.value,
+        )
+        mock_pipeline.zadd.assert_any_call(new_key_project, {7041: 1761280000})
+        mock_pipeline.zrem.assert_any_call(abandoned_key_project, 7041)
+
+        # Status migrated from ABANDONED to NEW for global
+        new_key_global = GERRIT_UNMERGED_CL_KEY_GLOBAL.format(
+            ldap="bob", cl_status=GerritChangeStatus.NEW.value
+        )
+        abandoned_key_global = GERRIT_UNMERGED_CL_KEY_GLOBAL.format(
+            ldap="bob", cl_status=GerritChangeStatus.ABANDONED.value
+        )
+        mock_pipeline.zadd.assert_any_call(new_key_global, {7041: 1761280000})
+        mock_pipeline.zrem.assert_any_call(abandoned_key_global, 7041)
+        mock_pipeline.execute.assert_called_once()
+
+    def test_duplicate_comment(self):
+        """Test multiple comments from the same user on the same CL to verify deduplication"""
         payload = {
             "type": "comment-added",
             "author": {"username": "alice"},
             "change": {
+                "number": 7043,
                 "owner": {"username": "bob"},
-                "project": "proj",
-                "created": "2025-07-18 22:00:00.000000",
-                "_number": 123,
+                "project": self.mock_project_value,
             },
+            "eventCreatedOn": 1761279121,  # Added timestamp for compute_buckets_weekly to be called
         }
+
+        # Mock deduplication check: already reviewed
+        self.mock_redis.sismember.return_value = True
 
         self.service.store_payload(payload)
 
-        fake_pipeline.hincrby.assert_not_called()
-        fake_pipeline.expire.assert_not_called()
-        fake_pipeline.execute.assert_not_called()
+        # Verify: No statistics update (duplicate count skipped)
+        self.mock_redis.pipeline.assert_not_called()
+        self.mock_redis.sismember.assert_called_once()  # sismember is still called to check for duplication
 
 
 class TestPullGerrit(unittest.TestCase):
     def setUp(self):
         self.mock_logger = MagicMock()
         self.mock_redis = MagicMock()
-        self.mock_gerrit_sync = MagicMock()
         self.mock_puller_factory = MagicMock()
+        self.mock_retry = MagicMock()
+        self.mock_date_util = MagicMock()
+
         self.service = GerritProcessorService(
             logger=self.mock_logger,
             redis_client=self.mock_redis,
-            gerrit_sync_service=self.mock_gerrit_sync,
             pubsub_puller_factory=self.mock_puller_factory,
+            retry_utils=self.mock_retry,
+            date_time_util=self.mock_date_util,
         )
 
         self.fake_status = PullStatusResponse(
