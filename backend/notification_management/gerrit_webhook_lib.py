@@ -4,7 +4,6 @@ from urllib.parse import urlparse
 from backend.common.environment_constants import (
     GERRIT_URL,  # Base URL of the Gerrit server
     GERRIT_USER,  # Admin username required to connect to Gerrit
-    GERRIT_HTTP_PASS,  # HTTP password required to connect to Gerrit
     GERRIT_WEBHOOK_REMOTE_NAME,  # Identifier name for the webhook in Gerrit
     GERRIT_WEBHOOK_TARGET_URL,  # The target URL to which Gerrit will send webhook events
     GERRIT_WEBHOOK_EVENTS,  # List of Gerrit events to subscribe to (comma-separated)
@@ -45,7 +44,6 @@ def run_gerrit_webhook_registration():
     # Required Gerrit connection
     gerrit_url = validate_url(require_env(GERRIT_URL), GERRIT_URL)
     gerrit_user = require_env(GERRIT_USER)
-    gerrit_password = require_env(GERRIT_HTTP_PASS)
 
     # Webhook settings
     subscribe_url = validate_url(
@@ -69,9 +67,7 @@ def run_gerrit_webhook_registration():
     )
 
     # Build client and service
-    gerrit_client = GerritClient(
-        base_url=gerrit_url, username=gerrit_user, http_password=gerrit_password
-    )
+    gerrit_client = GerritClient()
     gerrit_subscription_service = GerritSubscriptionService(
         logger=logger,
         gerrit_client=gerrit_client,
