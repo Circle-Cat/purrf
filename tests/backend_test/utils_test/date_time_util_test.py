@@ -1,6 +1,6 @@
 from unittest import TestCase, main
 from unittest.mock import patch, Mock
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, date
 
 from backend.utils.date_time_util import DateTimeUtil
 
@@ -289,6 +289,106 @@ class TestDateTimeUtil(TestCase):
             ("2023-13-01 00:00:00", "Invalid month"),
             (None, "None input"),
         ]
+
+        self.test_cases_get_week_buckets = [
+            # Case 1: Single week (start=Monday, end=Sunday)
+            (
+                date(2024, 6, 24),  # 2024-06-24 (Monday)
+                date(2024, 6, 30),  # 2024-06-30 (Sunday)
+                ["2024-06-24_2024-06-30"],  # Expected 1 weekly bucket
+            ),
+            # Case 2: Cross two weeks (start=Wednesday, end=next Tuesday)
+            (
+                date(2024, 7, 3),  # 2024-07-03 (Wednesday)
+                date(2024, 7, 9),  # 2024-07-09 (Tuesday)
+                [
+                    "2024-07-01_2024-07-07",  # Week 1 (covers 7.3-7.5)
+                    "2024-07-08_2024-07-14",  # Week 2 (covers 7.6-7.9)
+                ],
+            ),
+            # Case 3: Cross month (start=last day of June, end=first day of July)
+            (
+                date(2024, 6, 30),  # 2024-06-30 (Sunday)
+                date(2024, 7, 1),  # 2024-07-01 (Monday)
+                [
+                    "2024-06-24_2024-06-30",  # Last week of June
+                    "2024-07-01_2024-07-07",  # First week of July (includes 7.1)
+                ],
+            ),
+            # Case 4: Cross year (start=last day of 2024, end=first day of 2025)
+            (
+                date(2024, 12, 31),  # 2024-12-31 (Tuesday)
+                date(2025, 1, 2),  # 2025-01-02 (Thursday)
+                [
+                    "2024-12-30_2025-01-05",  # Single week covering cross-year dates
+                ],
+            ),
+            # Case 5: Start equals end (single day, Wednesday)
+            (
+                date(2024, 8, 14),  # 2024-08-14 (Wednesday)
+                date(2024, 8, 14),  # 2024-08-14 (Wednesday)
+                ["2024-08-12_2024-08-18"],  # Weekly bucket containing the day
+            ),
+            # Case 6: Full month (February 2024, leap year)
+            (
+                date(2024, 2, 1),  # 2024-02-01 (Thursday)
+                date(2024, 2, 29),  # 2024-02-29 (Thursday)
+                [
+                    "2024-01-29_2024-02-04",  # Week 1 (covers 2.1-2.4)
+                    "2024-02-05_2024-02-11",  # Week 2
+                    "2024-02-12_2024-02-18",  # Week 3
+                    "2024-02-19_2024-02-25",  # Week 4
+                    "2024-02-26_2024-03-03",  # Week 5 (covers 2.26-2.29)
+                ],
+            ),
+        ]
+
+        self.test_invalid_cases_get_week_buckets = [
+            # Case 1: start=2024-07-10, end=2024-07-01 (start is later than end)
+            (date(2024, 7, 10), date(2024, 7, 1)),
+            # Case 2: start=2025-01-01, end=2024-12-31 (cross-year reverse order)
+            (date(2025, 1, 1), date(2024, 12, 31)),
+        ]
+
+    def test_get_week_buckets_valid_cases(self):
+        """Test get_week_buckets method with valid scenarios (data-driven)."""
+        for i, (start_date, end_date, expected_buckets) in enumerate(
+            self.test_cases_get_week_buckets
+        ):
+            with self.subTest(
+                case=f"Get Week Buckets Valid Case {i + 1}: "
+                f"start={start_date}, end={end_date}"
+            ):
+                actual_buckets = self.utils.get_week_buckets(start_date, end_date)
+                # Verify the number of weekly buckets matches
+                self.assertEqual(
+                    len(actual_buckets),
+                    len(expected_buckets),
+                    msg=f"Bucket count mismatch: expected {len(expected_buckets)}, got {len(actual_buckets)}",
+                )
+                # Verify the content of weekly buckets matches
+                self.assertListEqual(
+                    actual_buckets,
+                    expected_buckets,
+                    msg=f"Bucket content mismatch: expected {expected_buckets}, got {actual_buckets}",
+                )
+
+    def test_get_week_buckets_invalid_cases(self):
+        """Test get_week_buckets method with invalid scenarios (start > end, expects ValueError)."""
+        for i, (start_date, end_date) in enumerate(
+            self.test_invalid_cases_get_week_buckets
+        ):
+            with self.subTest(
+                case=f"Get Week Buckets Invalid Case {i + 1}: "
+                f"start={start_date} (later than) end={end_date}"
+            ):
+                with self.assertRaises(ValueError) as ctx:
+                    self.utils.get_week_buckets(start_date, end_date)
+                # Verify the error message contains key hint
+                self.assertIn(
+                    f"start_date ({start_date}) must be <= end_date ({end_date})",
+                    str(ctx.exception),
+                )
 
     def test_parse_timestamp_without_microseconds_valid_input(self):
         """Tests the parse_timestamp_without_microseconds method with valid timestamp strings."""

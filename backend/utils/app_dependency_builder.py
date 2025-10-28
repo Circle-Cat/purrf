@@ -289,6 +289,7 @@ class AppDependencyBuilder:
             retry_utils=self.retry_utils,
             ldap_service=self.ldap_service,
             date_time_util=self.date_time_util,
+            gerrit_client=self.gerrit_client,
         )
         self.google_chat_analytics_service = GoogleChatAnalyticsService(
             logger=self.logger,

@@ -336,6 +336,7 @@ class TestAppDependencyBuilder(TestCase):
             retry_utils=mock_retry_utils_instance,
             ldap_service=mock_ldap_service_cls.return_value,
             date_time_util=mock_date_time_util_cls.return_value,
+            gerrit_client=mock_gerrit_client,
         )
         mock_google_chat_analytics_service_cls.assert_called_once_with(
             logger=mock_logger,

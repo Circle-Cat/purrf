@@ -6,17 +6,22 @@ import Table from "@/components/common/Table";
 const COLUMNS = [
   { header: "LDAP", accessor: "ldap", sortable: true },
   { header: "CL MERGED", accessor: "cl_merged", sortable: true },
-  { header: "CL UNDER REVIEW", accessor: "cl_under_review", sortable: true },
   { header: "LOC MERGED", accessor: "loc_merged", sortable: true },
-  { header: "CL ABANDONED", accessor: "cl_abandoned", sortable: true },
   { header: "CL REVIEWED", accessor: "cl_reviewed", sortable: true },
+  {
+    header: "CL UNDER REVIEW (TODAY)",
+    accessor: "cl_under_review",
+    sortable: true,
+  },
+  { header: "CL ABANDONED", accessor: "cl_abandoned", sortable: true },
 ];
 
 const toRows = (dict = {}) =>
   Object.entries(dict).map(([ldap, v]) => ({
     ldap,
     cl_merged: Number(v?.cl_merged ?? 0),
-    cl_under_review: Number(v?.cl_under_review ?? 0),
+    cl_under_review:
+      v?.cl_under_review == null ? "N/A" : Number(v?.cl_under_review),
     loc_merged: Number(v?.loc_merged ?? 0),
     cl_abandoned: Number(v?.cl_abandoned ?? 0),
     cl_reviewed: Number(v?.cl_reviewed ?? 0),

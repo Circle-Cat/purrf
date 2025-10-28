@@ -424,7 +424,7 @@ class FrontendController:
             status_code=HTTPStatus.OK,
         )
 
-    async def get_gerrit_stats(self):
+    def get_gerrit_stats(self):
         """API endpoint to retrieve aggregated Gerrit stats."""
         body = request.get_json(silent=True) or {}
 
@@ -433,6 +433,8 @@ class FrontendController:
             start_date_str=body.get("startDate"),
             end_date_str=body.get("endDate"),
             project_list=body.get("project"),
+            include_full_stats=True,
+            include_all_projects=body.get("includeAllProjects"),
         )
 
         return api_response(

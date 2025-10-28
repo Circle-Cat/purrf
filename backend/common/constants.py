@@ -141,10 +141,7 @@ GERRIT_PERSUBMIT_BOT = "CatBot"
 
 # Constants for Gerrit
 class GerritChangeStatus(str, Enum):
-    OPEN = "open"
     NEW = "new"
-    PENDING = "pending"
-    REVIEWED = "reviewed"
     MERGED = "merged"
     ABANDONED = "abandoned"
 
@@ -154,22 +151,28 @@ ALL_GERRIT_STATUSES: list[str] = [status.value for status in GerritChangeStatus]
 GERRIT_UNDER_REVIEW = "under_review"
 
 GERRIT_UNDER_REVIEW_STATUSES = {
-    GerritChangeStatus.OPEN,
     GerritChangeStatus.NEW,
-    GerritChangeStatus.PENDING,
 }
 GERRIT_UNDER_REVIEW_STATUS_VALUES = {s.value for s in GERRIT_UNDER_REVIEW_STATUSES}
 
-GERRIT_STATUS_TO_FIELD = {
-    GerritChangeStatus.MERGED: "cl_merged",
-    GerritChangeStatus.ABANDONED: "cl_abandoned",
-    GERRIT_UNDER_REVIEW: "cl_under_review",
-}
-
 GERRIT_STATUS_TO_FIELD_TEMPLATE = "cl_{status}"
+GERRIT_CL_MERGED_FIELD = "cl_merged"
+GERRIT_CL_ABANDONED_FIELD = "cl_abandoned"
+GERRIT_CL_UNDER_REVIEW_FIELD = "cl_under_review"
 GERRIT_CL_REVIEWED_FIELD = "cl_reviewed"
 GERRIT_LOC_MERGED_FIELD = "loc_merged"
 GERRIT_DATE_BUCKET_TEMPLATE = "{start}_{end}"
+
+GERRIT_STATUS_TO_FIELD = {
+    GerritChangeStatus.MERGED: GERRIT_CL_MERGED_FIELD,
+    GerritChangeStatus.ABANDONED: GERRIT_CL_ABANDONED_FIELD,
+    GerritChangeStatus.NEW: GERRIT_CL_UNDER_REVIEW_FIELD,
+}
+
+GERRIT_STAT_FIELDS = list(GERRIT_STATUS_TO_FIELD.values()) + [
+    GERRIT_LOC_MERGED_FIELD,
+    GERRIT_CL_REVIEWED_FIELD,
+]
 
 # Gerrit Redis key templates
 GERRIT_STATS_ALL_TIME_KEY = "gerrit:stats:{ldap}"
@@ -181,6 +184,8 @@ GERRIT_DEDUPE_REVIEWED_KEY = "gerrit:dedupe:reviewed:{change_number}"
 GERRIT_PROJECTS_KEY = "gerrit:projects"
 GERRIT_UNMERGED_CL_KEY_BY_PROJECT = "gerrit:cl:{ldap}:{project}:{cl_status}"
 GERRIT_UNMERGED_CL_KEY_GLOBAL = "gerrit:cl:{ldap}:{cl_status}"
+
+ZSET_MIN_SCORE = "-inf"
 
 
 # Constants for Jira
@@ -239,13 +244,6 @@ JIRA_ISSUE_REQUIRED_FIELDS = [
 
 # Jira Redis key templates
 JIRA_PROJECTS_KEY = "jira:project"
-GERRIT_STAT_FIELDS = [
-    "cl_merged",
-    "cl_abandoned",
-    "cl_under_review",
-    "loc_merged",
-    "cl_reviewed",
-]
 
 DATE_FORMAT_YMD = "%Y-%m-%d"
 DATE_FORMAT_YMD_NOSEP = "%Y%m%d"

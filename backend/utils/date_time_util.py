@@ -1,4 +1,4 @@
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, date
 from dateutil.relativedelta import relativedelta
 from backend.common.constants import (
     DATE_FORMAT_YMD,
@@ -63,6 +63,27 @@ class DateTimeUtil:
         start = dt.date() - timedelta(days=days_to_monday)
         end = start + timedelta(days=6)
         return GERRIT_DATE_BUCKET_TEMPLATE.format(start=start, end=end)
+
+    def get_week_buckets(self, start: date, end: date) -> list[str]:
+        """Returns a list of weekly bucket strings like 'YYYY-MM-DD_YYYY-MM-DD' (Monday-Sunday)."""
+        if start > end:
+            raise ValueError(f"start_date ({start}) must be <= end_date ({end})")
+        buckets = []
+
+        start_monday = start - timedelta(days=start.weekday())
+
+        current = start_monday
+        while current <= end:
+            week_start = current
+            week_end = current + timedelta(days=6)
+            bucket = GERRIT_DATE_BUCKET_TEMPLATE.format(
+                start=week_start.isoformat(),
+                end=week_end.isoformat(),
+            )
+            buckets.append(bucket)
+            current += timedelta(days=7)
+
+        return buckets
 
     def format_datetime_to_int(self, dt: datetime) -> int:
         """

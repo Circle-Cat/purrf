@@ -329,7 +329,15 @@ class TestFrontendController(TestCase):
             self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
             self.assertIn("Missing required query parameters", response.json["message"])
 
-    async def test_get_gerrit_stats_success(self):
+    def test_get_gerrit_stats_success(self):
+        request_params = {
+            "ldaps": ["user1"],
+            "startDate": "2024-01-01",
+            "endDate": "2024-01-31",
+            "project": ["test_project"],
+            "includeAllProjects": False,
+        }
+
         mock_stats = {
             "user1": {
                 "cl_merged": 10,
@@ -340,24 +348,24 @@ class TestFrontendController(TestCase):
             }
         }
         self.mock_gerrit_analytics_service.get_gerrit_stats.return_value = mock_stats
-
         with self.app.test_request_context(
-            GERRIT_STATS_API,
-            method="POST",
+            GERRIT_STATS_API, method="POST", json=request_params
         ):
-            response = await self.controller.get_gerrit_stats()
+            response = self.controller.get_gerrit_stats()
 
         self.mock_gerrit_analytics_service.get_gerrit_stats.assert_called_once_with(
-            raw_ldap="user1",
-            start_date_str="2024-01-01",
-            end_date_str="2024-01-31",
-            raw_project="test_project",
+            ldap_list=request_params["ldaps"],
+            start_date_str=request_params["startDate"],
+            end_date_str=request_params["endDate"],
+            project_list=request_params["project"],
+            include_full_stats=True,
+            include_all_projects=request_params["includeAllProjects"],
         )
 
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertEqual(
             response.get_json(),
-            {"success": True, "message": "Successfully.", "data": mock_stats},
+            {"message": "Successfully.", "data": mock_stats},
         )
 
     def test_get_gerrit_projects_success(self):
