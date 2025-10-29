@@ -23,9 +23,9 @@ class GoogleChatEventType(str, Enum):
 
 BASE_EVENT_TYPE = "google.workspace.chat.message.v1"
 
-EVENT_TYPES = {
+EVENT_TYPES = [
     f"{BASE_EVENT_TYPE}.{event_type.value}" for event_type in GoogleChatEventType
-}
+]
 
 EXPIRATION_REMINDER_EVENT = "google.workspace.events.subscription.v1.expirationReminder"
 

@@ -59,7 +59,7 @@ class GoogleChatSubscriptionService:
         subscription = self.google_workspaceevents_client.subscriptions().create(
             body=body
         )
-        response = self.retry_utils.get_retry_on_transient.call(subscription.execute)
+        response = self.retry_utils.get_retry_on_transient(subscription.execute)
 
         self.logger.info(
             "Created subscription for space %s with event types %s on topic %s. Response: %s",

@@ -22,8 +22,6 @@ class TestGoogleChatSubscriptionService(TestCase):
 
         self.mock_retry_utils = MagicMock()
         self.mock_retry_utils.get_retry_on_transient = MagicMock()
-        self.mock_retry_utils.get_retry_on_transient.call = MagicMock()
-
         self.svc = GoogleChatSubscriptionService(
             logger=self.mock_logger,
             google_workspaceevents_client=self.mock_workspace_client,
@@ -32,9 +30,7 @@ class TestGoogleChatSubscriptionService(TestCase):
 
     def test_create_workspaces_subscriptions_success_first_try(self):
         expected_response = {"subscription_id": "test-subscription"}
-        self.mock_retry_utils.get_retry_on_transient.call.return_value = (
-            expected_response
-        )
+        self.mock_retry_utils.get_retry_on_transient.return_value = expected_response
 
         resp = self.svc.create_workspaces_subscriptions(
             project_id=TEST_PROJECT_ID,
@@ -54,7 +50,7 @@ class TestGoogleChatSubscriptionService(TestCase):
         self.mock_subscriptions.create.assert_called_once_with(body=expected_body)
 
         subscription = self.mock_subscriptions.create.return_value
-        self.mock_retry_utils.get_retry_on_transient.call.assert_called_once_with(
+        self.mock_retry_utils.get_retry_on_transient.assert_called_once_with(
             subscription.execute
         )
         self.assertEqual(resp, expected_response)
@@ -71,7 +67,7 @@ class TestGoogleChatSubscriptionService(TestCase):
             except RuntimeError:
                 return fn(*args, **kwargs)
 
-        self.mock_retry_utils.get_retry_on_transient.call.side_effect = fake_retry_call
+        self.mock_retry_utils.get_retry_on_transient.side_effect = fake_retry_call
 
         resp = self.svc.create_workspaces_subscriptions(
             project_id=TEST_PROJECT_ID,
@@ -84,7 +80,7 @@ class TestGoogleChatSubscriptionService(TestCase):
         self.assertEqual(resp, {"subscription_id": "retry-success"})
 
         subscription = self.mock_subscriptions.create.return_value
-        self.mock_retry_utils.get_retry_on_transient.call.assert_called_with(
+        self.mock_retry_utils.get_retry_on_transient.assert_called_with(
             subscription.execute
         )
 
@@ -96,7 +92,7 @@ class TestGoogleChatSubscriptionService(TestCase):
                 space_id=TEST_SPACE_ID,
                 event_types=[],  # invalid
             )
-        self.mock_retry_utils.get_retry_on_transient.call.assert_not_called()
+        self.mock_retry_utils.get_retry_on_transient.assert_not_called()
 
 
 if __name__ == "__main__":
