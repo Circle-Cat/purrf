@@ -83,7 +83,8 @@ class GerritAnalyticsService:
                 self.logger.warning("No active LDAP users found.")
                 return {}
             self.logger.info(
-                "Fetched all active interns and employees LDAP count: %d", len(ldap_list)
+                "Fetched all active interns and employees LDAP count: %d",
+                len(ldap_list),
             )
 
         invalid = [ldap for ldap in ldap_list if not self.LDAP_RE.fullmatch(ldap)]

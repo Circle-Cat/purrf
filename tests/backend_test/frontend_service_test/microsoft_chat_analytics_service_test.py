@@ -89,7 +89,9 @@ class TestMicrosoftChatAnalyticsService(TestCase):
         employee_ldaps = ["employee1", "employee2"]
         redis_counts = [5, 15, 7, 27]
 
-        self.mock_ldap_service.get_all_active_interns_and_employees_ldaps.return_value = intern_ldaps + employee_ldaps
+        self.mock_ldap_service.get_all_active_interns_and_employees_ldaps.return_value = (
+            intern_ldaps + employee_ldaps
+        )
 
         mock_pipeline = Mock()
         self.mock_redis_client.pipeline.return_value = mock_pipeline
