@@ -9,7 +9,7 @@
 
 .ds-modal {
   width: min(900px, 92vw);
-  max-height: 85vh;
+  max-height: 90vh;
   overflow: hidden;
   background: var(--bg-color-light);
   border: 1px solid var(--border-color-light);
@@ -29,7 +29,7 @@
 .ds-modal-body {
   flex: 1 1 auto;
   min-height: 0;
-  overflow: auto;
+  overflow: hidden;
   -webkit-overflow-scrolling: touch;
 }
 
@@ -273,13 +273,13 @@
 
 /* ---------- Footer: Cancel | count | OK (pinned) ---------- */
 .ms-footer {
-  flex: 0 0 auto;            /* stays outside the scroll area */
+  flex: 0 0 60px;            /* stays outside the scroll area */
   background: #fff;
   border-top: 1px solid var(--border-color-light, #eef2f7);
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 16px;
+  padding: 8px 20px 10px;
   box-shadow: 0 -1px 0 rgba(17, 24, 39, 0.04);
 }
 
