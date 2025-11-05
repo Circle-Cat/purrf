@@ -1,7 +1,9 @@
 import json
 from backend.common.constants import (
     EXPIRATION_REMINDER_EVENT,
-    EVENT_TYPES,
+    ALL_GOOGLE_CHAT_EVENT_TYPES,
+    SINGLE_GOOGLE_CHAT_EVENT_TYPES,
+    GoogleChatEventType,
 )
 
 
@@ -34,11 +36,12 @@ class GoogleChatProcessorService:
         """
         Listens to the given Pub/Sub subscription and processes incoming events.
 
-        For each event:
-        - If the event type is "google.workspace.events.subscription.v1.expirationReminder",
-            renews the subscription using google_service.renew_subscription.
-        - Otherwise, uses get_ldap_by_id(senderId) to obtain the sender's LDAP,
-            then stores the event in Redis.
+        This method initializes a Pub/Sub puller for the given `project_id` and `subscription_id`,
+        and registers the instance's `callback` method as the message handler.
+
+        The message handler (`callback`) will:
+          - Renew expiring Workspace subscription events
+          - Process Google Chat events and store messages in Redis
 
         Args:
             project_id (str): The Google Cloud project ID associated with the subscription.
@@ -75,6 +78,36 @@ class GoogleChatProcessorService:
         puller.start_pulling_messages(self.callback)
 
     def callback(self, message):
+        """
+        Handles individual Pub/Sub messages pulled from a Workspace Chat subscription.
+
+        Depending on the CloudEvent type (`ce-type` attribute), the handler performs one of:
+          - **Subscription Expiration Reminder**:
+                Calls `google_service.renew_subscription()` to renew the expiring subscription.
+          - **Google Chat Events**:
+                Parses the event payload, resolves sender LDAP(s), and stores the messages
+                into Redis via `google_chat_messages_utils.store_messages()`.
+
+        Unsupported event types are negatively acknowledged (nack).
+
+        Args:
+            message (google.cloud.pubsub_v1.subscriber.message.Message):
+                The Pub/Sub message object containing:
+                - `attributes`: includes CloudEvent metadata (e.g. `ce-type`).
+                - `data`: JSON-encoded Workspace or Chat event payload.
+
+        Raises:
+            ValueError: If required fields (e.g., subscription name, message content) are missing
+                        or malformed within the event payload.
+
+        Side Effects:
+            - Calls external Google API to renew subscriptions.
+            - Persists parsed messages into Redis.
+            - Acknowledges or nacks Pub/Sub messages depending on processing result.
+
+        Returns:
+            None
+        """
         self.logger.debug("Received message: %s", message)
         attributes = message.attributes
         message_type_full = attributes.get("ce-type")
@@ -106,21 +139,34 @@ class GoogleChatProcessorService:
             self.logger.info("Subscription renewed and message acknowledged.")
             return
 
-        if message_type_full in EVENT_TYPES:
+        if message_type_full in ALL_GOOGLE_CHAT_EVENT_TYPES:
             message_type = message_type_full.split(".")[-1] if message_type_full else ""
-
-            chat_message = data.get("message")
-
-            sender_name = chat_message.get("sender", {}).get("name", "")
-            sender_id = sender_name.split("/")[1] if sender_name else ""
-
-            sender_ldap = (
-                self.google_service.get_ldap_by_id(sender_id) if sender_id else ""
-            )
+            message_enum = GoogleChatEventType(message_type)
+            ldaps_dict = {}
+            if message_type_full in SINGLE_GOOGLE_CHAT_EVENT_TYPES:
+                chat_message = data.get("message")
+                messages_list = [data]
+                if GoogleChatEventType.CREATED == message_enum:
+                    sender_name = chat_message.get("sender", {}).get("name", "")
+                    sender_id = sender_name.split("/")[1] if sender_name else ""
+                    sender_ldap = (
+                        self.google_service.get_ldap_by_id(sender_id)
+                        if sender_id
+                        else ""
+                    )
+                    ldaps_dict = {sender_name: sender_ldap}
+            else:
+                messages_list = data.get("messages")
+                if GoogleChatEventType.BATCH_CREATED == message_enum:
+                    ldaps_dict = self.google_service.list_directory_all_people_ldap()
 
             self.google_chat_messages_utils.store_messages(
-                sender_ldap, chat_message, message_type
+                ldaps_dict, messages_list, message_enum
             )
-
             message.ack()
             self.logger.info("Message processed and acknowledged.")
+        else:
+            message.nack()
+            self.logger.info(
+                "Received unsupporited Google Chat event: %s", message_type_full
+            )

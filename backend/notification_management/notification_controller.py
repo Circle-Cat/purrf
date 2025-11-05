@@ -1,7 +1,7 @@
 from http import HTTPStatus
 from flask import Blueprint, request
 from backend.common.api_response_wrapper import api_response
-from backend.common.constants import EVENT_TYPES
+from backend.common.constants import SINGLE_GOOGLE_CHAT_EVENT_TYPES
 
 notification_bp = Blueprint("notification", __name__, url_prefix="/api")
 
@@ -103,7 +103,7 @@ class NotificationController:
         project_id = data.get("project_id")
         topic_id = data.get("topic_id")
         space_id = data.get("space_id")
-        event_types = EVENT_TYPES
+        event_types = SINGLE_GOOGLE_CHAT_EVENT_TYPES
 
         response = (
             self.google_chat_subscription_service.create_workspaces_subscriptions(

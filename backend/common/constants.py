@@ -19,11 +19,20 @@ class GoogleChatEventType(str, Enum):
     CREATED = "created"
     UPDATED = "updated"
     DELETED = "deleted"
+    BATCH_CREATED = "batchCreated"
+    BATCH_UPDATED = "batchUpdated"
+    BATCH_DELETED = "batchDeleted"
 
 
 BASE_EVENT_TYPE = "google.workspace.chat.message.v1"
 
-EVENT_TYPES = [
+SINGLE_GOOGLE_CHAT_EVENT_TYPES = [
+    f"{BASE_EVENT_TYPE}.{GoogleChatEventType.CREATED.value}",
+    f"{BASE_EVENT_TYPE}.{GoogleChatEventType.UPDATED.value}",
+    f"{BASE_EVENT_TYPE}.{GoogleChatEventType.DELETED.value}",
+]
+
+ALL_GOOGLE_CHAT_EVENT_TYPES = [
     f"{BASE_EVENT_TYPE}.{event_type.value}" for event_type in GoogleChatEventType
 ]
 

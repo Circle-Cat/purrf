@@ -5,7 +5,9 @@ from unittest.mock import MagicMock
 from backend.consumers.google_chat_processor_service import GoogleChatProcessorService
 from backend.common.constants import (
     EXPIRATION_REMINDER_EVENT,
-    EVENT_TYPES,
+    SINGLE_GOOGLE_CHAT_EVENT_TYPES,
+    ALL_GOOGLE_CHAT_EVENT_TYPES,
+    GoogleChatEventType,
 )
 
 
@@ -96,17 +98,20 @@ class TestGoogleChatProcessorService(TestCase):
     def test_callback_chat_message_created(self):
         """Test callback handling of a chat message creation event."""
         sender_id = "12345"
+        sender_name_full = f"users/{sender_id}"
         sender_ldap = "test.user"
-        chat_message = {
-            "sender": {"name": f"users/{sender_id}"},
-            "text": "hello",
+        chat_message_payload = {
+            "message": {
+                "sender": {"name": sender_name_full},
+                "text": "hello",
+            }
         }
-        message_type = "google.workspace.chat.message.v1.created"
-        self.assertIn(message_type, EVENT_TYPES)
+        message_type_full = "google.workspace.chat.message.v1.created"
+        self.assertIn(message_type_full, SINGLE_GOOGLE_CHAT_EVENT_TYPES)
 
         message = FakeMessage(
-            data={"message": chat_message},
-            attributes={"ce-type": message_type},
+            data=chat_message_payload,
+            attributes={"ce-type": message_type_full},
         )
         self.google_service.get_ldap_by_id.return_value = sender_ldap
 
@@ -114,36 +119,75 @@ class TestGoogleChatProcessorService(TestCase):
 
         self.google_service.get_ldap_by_id.assert_called_once_with(sender_id)
         self.google_chat_messages_utils.store_messages.assert_called_once_with(
-            sender_ldap, chat_message, "created"
+            {sender_name_full: sender_ldap},  # ldaps_dict
+            [chat_message_payload],  # messages_list
+            GoogleChatEventType.CREATED,  # message_enum
         )
         message.ack.assert_called_once()
         message.nack.assert_not_called()
 
     def test_callback_chat_message_no_sender_id(self):
         """Test callback handling of a chat message with no sender ID."""
-        chat_message = {
-            "sender": {"name": "users/"},
-            "text": "hello",
+        sender_name_full = "users/"
+        chat_message_payload = {
+            "message": {
+                "sender": {"name": sender_name_full},
+                "text": "hello",
+            }
         }
-        message_type = "google.workspace.chat.message.v1.created"
-        self.assertIn(message_type, EVENT_TYPES)
+        message_type_full = "google.workspace.chat.message.v1.created"
+        self.assertIn(message_type_full, SINGLE_GOOGLE_CHAT_EVENT_TYPES)
 
         message = FakeMessage(
-            data={"message": chat_message},
-            attributes={"ce-type": message_type},
+            data=chat_message_payload,
+            attributes={"ce-type": message_type_full},
         )
 
         self.service.callback(message)
 
         self.google_service.get_ldap_by_id.assert_not_called()
         self.google_chat_messages_utils.store_messages.assert_called_once_with(
-            "", chat_message, "created"
+            {sender_name_full: ""},  # ldaps_dict
+            [chat_message_payload],  # messages_list
+            GoogleChatEventType.CREATED,  # message_enum
+        )
+        message.ack.assert_called_once()
+        message.nack.assert_not_called()
+
+    def test_callback_batch_chat_message_created(self):
+        """Test callback handling of a batch chat message creation event."""
+        all_people_ldap = {"user/1": "user1.ldap", "user/2": "user2.ldap"}
+        batch_messages_payload = {
+            "messages": [
+                {"message": {"sender": {"name": "user/1"}, "text": "batch_hello_1"}},
+                {"message": {"sender": {"name": "user/2"}, "text": "batch_hello_2"}},
+            ]
+        }
+        message_type_full = "google.workspace.chat.message.v1.batchCreated"
+        self.assertNotIn(message_type_full, SINGLE_GOOGLE_CHAT_EVENT_TYPES)
+        self.assertIn(message_type_full, ALL_GOOGLE_CHAT_EVENT_TYPES)
+
+        message = FakeMessage(
+            data=batch_messages_payload,
+            attributes={"ce-type": message_type_full},
+        )
+        self.google_service.list_directory_all_people_ldap.return_value = (
+            all_people_ldap
+        )
+
+        self.service.callback(message)
+
+        self.google_service.list_directory_all_people_ldap.assert_called_once()
+        self.google_chat_messages_utils.store_messages.assert_called_once_with(
+            all_people_ldap,  # ldaps_dict
+            batch_messages_payload.get("messages"),  # messages_list
+            GoogleChatEventType.BATCH_CREATED,  # message_enum
         )
         message.ack.assert_called_once()
         message.nack.assert_not_called()
 
     def test_callback_unsupported_event_type(self):
-        """Test that unsupported event types are ignored."""
+        """Test that unsupported event types are NACKed."""
         message = FakeMessage(
             data={"message": {}},
             attributes={"ce-type": "unsupported.event.type"},
@@ -154,7 +198,7 @@ class TestGoogleChatProcessorService(TestCase):
         self.google_service.get_ldap_by_id.assert_not_called()
         self.google_chat_messages_utils.store_messages.assert_not_called()
         message.ack.assert_not_called()
-        message.nack.assert_not_called()
+        message.nack.assert_called_once()
 
     def test_callback_invalid_json_data(self):
         """Test callback handling of a message with invalid JSON data."""

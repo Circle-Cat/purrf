@@ -8,7 +8,7 @@ from flask import Flask
 from backend.notification_management.notification_controller import (
     NotificationController,
 )
-from backend.common.constants import EVENT_TYPES
+from backend.common.constants import SINGLE_GOOGLE_CHAT_EVENT_TYPES
 
 
 class TestNotificationController(IsolatedAsyncioTestCase):
@@ -83,7 +83,7 @@ class TestNotificationController(IsolatedAsyncioTestCase):
             project_id=payload["project_id"],
             topic_id=payload["topic_id"],
             space_id=payload["space_id"],
-            event_types=EVENT_TYPES,
+            event_types=SINGLE_GOOGLE_CHAT_EVENT_TYPES,
         )
 
 
