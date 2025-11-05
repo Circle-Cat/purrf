@@ -74,14 +74,14 @@ class GoogleChatProcessorService:
         )
         puller.start_pulling_messages(self.callback)
 
-    def callback(self, project_id, message):
-        self.logger.info("Received message: %s", message)
+    def callback(self, message):
+        self.logger.debug("Received message: %s", message)
         attributes = message.attributes
         message_type_full = attributes.get("ce-type")
 
         try:
             data = json.loads(message.data.decode("utf-8"))
-            self.logger.info(data)
+            self.logger.debug("Decoded message data: %s", data)
         except (UnicodeDecodeError, json.JSONDecodeError) as err:
             self.logger.error("Failed to decode/parse message data: %s", err)
             message.nack()

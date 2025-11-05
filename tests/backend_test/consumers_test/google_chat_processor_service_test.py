@@ -71,7 +71,7 @@ class TestGoogleChatProcessorService(TestCase):
             attributes={"ce-type": EXPIRATION_REMINDER_EVENT},
         )
 
-        self.service.callback(self.project_id, message)
+        self.service.callback(message)
 
         self.google_service.renew_subscription.assert_called_once_with(
             subscription_name
@@ -87,7 +87,7 @@ class TestGoogleChatProcessorService(TestCase):
         )
 
         with self.assertRaises(ValueError):
-            self.service.callback(self.project_id, message)
+            self.service.callback(message)
 
         self.google_service.renew_subscription.assert_not_called()
         message.ack.assert_not_called()
@@ -110,7 +110,7 @@ class TestGoogleChatProcessorService(TestCase):
         )
         self.google_service.get_ldap_by_id.return_value = sender_ldap
 
-        self.service.callback(self.project_id, message)
+        self.service.callback(message)
 
         self.google_service.get_ldap_by_id.assert_called_once_with(sender_id)
         self.google_chat_messages_utils.store_messages.assert_called_once_with(
@@ -133,7 +133,7 @@ class TestGoogleChatProcessorService(TestCase):
             attributes={"ce-type": message_type},
         )
 
-        self.service.callback(self.project_id, message)
+        self.service.callback(message)
 
         self.google_service.get_ldap_by_id.assert_not_called()
         self.google_chat_messages_utils.store_messages.assert_called_once_with(
@@ -149,7 +149,7 @@ class TestGoogleChatProcessorService(TestCase):
             attributes={"ce-type": "unsupported.event.type"},
         )
 
-        self.service.callback(self.project_id, message)
+        self.service.callback(message)
 
         self.google_service.get_ldap_by_id.assert_not_called()
         self.google_chat_messages_utils.store_messages.assert_not_called()
@@ -163,7 +163,7 @@ class TestGoogleChatProcessorService(TestCase):
             attributes={"ce-type": "google.workspace.chat.message.v1.created"},
         )
 
-        self.service.callback(self.project_id, message)
+        self.service.callback(message)
 
         self.google_service.get_ldap_by_id.assert_not_called()
         self.google_chat_messages_utils.store_messages.assert_not_called()
