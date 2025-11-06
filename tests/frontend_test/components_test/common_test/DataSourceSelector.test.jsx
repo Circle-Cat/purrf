@@ -338,4 +338,54 @@ describe("DataSourceSelector", () => {
       });
     });
   });
+
+  it("should clear all temporary selections when Cancel is clicked and reset the state for next open", async () => {
+    // Initial render and perform selections
+    const { rerender } = renderDataSourceSelector();
+    await waitFor(() => screen.getByText("Microsoft Chat 1"));
+
+    fireEvent.click(screen.getByLabelText("Microsoft Chat 1"));
+    fireEvent.click(screen.getByLabelText("Google Space A"));
+
+    fireEvent.click(screen.getByText(DataSourceNames.JIRA));
+    await waitFor(() => screen.getByText("Jira Project Alpha"));
+    fireEvent.click(screen.getByLabelText("Jira Project Alpha"));
+
+    // Verify items were selected
+    expect(screen.getByLabelText("Jira Project Alpha")).toBeChecked();
+
+    // Click Cancel
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    // Verify onCancel was called (modal closed)
+    expect(onCancelMock).toHaveBeenCalledTimes(1);
+
+    rerender(
+      <DataSourceSelector
+        isOpen={false}
+        onConfirm={onConfirmMock}
+        onCancel={onCancelMock}
+      />,
+    );
+    expect(screen.queryByText("Microsoft Chat 1")).not.toBeInTheDocument();
+
+    // Re-open the modal
+    rerender(
+      <DataSourceSelector
+        isOpen={true}
+        onConfirm={onConfirmMock}
+        onCancel={onCancelMock}
+      />,
+    );
+    await waitFor(() => screen.getByText("Microsoft Chat 1"));
+
+    // Verify all items are unselected (state has been reset)
+
+    expect(screen.getByLabelText("Microsoft Chat 1")).not.toBeChecked();
+    expect(screen.getByLabelText("Google Space A")).not.toBeChecked();
+
+    fireEvent.click(screen.getByText(DataSourceNames.JIRA));
+    await waitFor(() => screen.getByText("Jira Project Alpha"));
+    expect(screen.getByLabelText("Jira Project Alpha")).not.toBeChecked();
+  });
 });

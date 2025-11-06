@@ -308,6 +308,16 @@ export const DataSourceSelector = ({ isOpen, onConfirm, onCancel }) => {
     onConfirm(finalSelection);
   }, [selectedItems, onConfirm]);
 
+  /**
+   * * Handle Cancel button click or Modal onClose event.
+   * Resets temporary selection state and calls the parent onCancel handler.
+   */
+  const handleCancelAction = useCallback(() => {
+    setSelectedItems({});
+    setActiveSource("");
+    onCancel();
+  }, [onCancel]);
+
   const content = (
     <>
       {loading && <div>Loading...</div>}
@@ -376,7 +386,7 @@ export const DataSourceSelector = ({ isOpen, onConfirm, onCancel }) => {
           </div>
 
           <footer className="dss-footer">
-            <button className="cancel-button" onClick={onCancel}>
+            <button className="cancel-button" onClick={handleCancelAction}>
               Cancel
             </button>
             <button className="ok-button" onClick={handleConfirm}>
