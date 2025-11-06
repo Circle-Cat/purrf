@@ -66,12 +66,19 @@ export async function getMicrosoftChatMessagesCount({
   return await request.post(`/microsoft/chat/count`, body);
 }
 
-export async function getGerritStats({ ldaps, startDate, endDate, project }) {
+export async function getGerritStats({
+  ldaps,
+  startDate,
+  endDate,
+  project,
+  includeAllProjects,
+}) {
   const body = {
     ldaps,
     startDate,
     endDate,
     project,
+    includeAllProjects,
   };
   return await request.post("/gerrit/stats", body);
 }

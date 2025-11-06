@@ -237,6 +237,7 @@ describe("dataSearchApi", () => {
         startDate: "2024-05-01",
         endDate: "2024-05-31",
         project: "projA",
+        includeAllProjects: true,
       };
       const mockResponse = { data: { stats: [] } };
       request.post.mockResolvedValue(mockResponse);
@@ -259,6 +260,7 @@ describe("dataSearchApi", () => {
         startDate: undefined,
         endDate: undefined,
         project: undefined,
+        includeAllProjects: undefined,
       });
     });
 

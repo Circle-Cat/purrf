@@ -296,9 +296,17 @@ export const DataSourceSelector = ({ isOpen, onConfirm, onCancel }) => {
       ].map((item) => item.id);
     }
     if (selectedItems[DataSourceNames.GERRIT]) {
-      finalSelection[DataSourceNames.GERRIT] = selectedItems[
-        DataSourceNames.GERRIT
-      ].map((item) => item.name);
+      const gerritSelected = selectedItems[DataSourceNames.GERRIT].map(
+        (item) => item.name,
+      );
+      const allGerritItems = dataSources[DataSourceNames.GERRIT] || [];
+
+      finalSelection[DataSourceNames.GERRIT] = {
+        projectList: gerritSelected,
+        includeAllProjects:
+          allGerritItems.length > 0 &&
+          gerritSelected.length === allGerritItems.length,
+      };
     }
     if (selectedItems[DataSourceNames.CALENDAR]) {
       finalSelection[DataSourceNames.CALENDAR] = selectedItems[
@@ -306,7 +314,7 @@ export const DataSourceSelector = ({ isOpen, onConfirm, onCancel }) => {
       ].map((item) => item.id);
     }
     onConfirm(finalSelection);
-  }, [selectedItems, onConfirm]);
+  }, [selectedItems, onConfirm, dataSources]);
 
   /**
    * * Handle Cancel button click or Modal onClose event.

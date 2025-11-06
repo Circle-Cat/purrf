@@ -151,12 +151,15 @@ const getReportTableProps = (sourceName, committedSearchParams) => {
     }
     case DataSourceNames.GERRIT: {
       const gerritConfig = selectedDataSources[sourceName];
-      if (!gerritConfig?.length) return null;
+      if (!gerritConfig) return null;
+      const { projectList, includeAllProjects } = gerritConfig;
+
       return {
         gerritReportProps: {
           searchParams: {
             ...commonParams,
-            project: gerritConfig,
+            project: projectList,
+            includeAllProjects,
           },
         },
       };
@@ -178,8 +181,9 @@ const getReportTableProps = (sourceName, committedSearchParams) => {
  *   (must match one of the `DataSourceNames` values).
  *
  * Notes:
- * - Gerrit is commented out but left as an example of how new sources can be added later.
- * - Disabled state is handled dynamically based on `committedSearchParams`.
+ * - Tab components are dynamically mounted/unmounted based on the `active` state.
+ * - Tabs are disabled if the corresponding data source configuration in
+ * `committedSearchParams.selectedDataSources` is incomplete or missing.
  */
 export default function Tab({ committedSearchParams }) {
   // Default to empty object to avoid null errors
@@ -227,6 +231,16 @@ export default function Tab({ committedSearchParams }) {
     (sourceName) => {
       const selectedSourceData =
         committedSearchParams?.selectedDataSources?.[sourceName];
+
+      if (!selectedSourceData) return false;
+
+      if (sourceName === DataSourceNames.GERRIT) {
+        return (
+          Array.isArray(selectedSourceData.projectList) &&
+          selectedSourceData.projectList.length > 0
+        );
+      }
+
       return Array.isArray(selectedSourceData) && selectedSourceData.length > 0;
     },
     [committedSearchParams],

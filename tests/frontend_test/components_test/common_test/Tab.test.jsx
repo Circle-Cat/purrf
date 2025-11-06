@@ -158,7 +158,10 @@ describe("Tab Component", () => {
         ],
         [DataSourceNames.JIRA]: ["jira-project-1"],
         [DataSourceNames.CALENDAR]: ["calendar-id-1"],
-        [DataSourceNames.GERRIT]: ["gerrit-project-1"],
+        [DataSourceNames.GERRIT]: {
+          projectList: ["mock/project-name"],
+          includeAllProjects: false,
+        },
       },
     };
 

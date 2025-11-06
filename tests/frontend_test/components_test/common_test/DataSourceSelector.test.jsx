@@ -281,7 +281,10 @@ describe("DataSourceSelector", () => {
           },
         ],
         Jira: ["JIRA1"],
-        Gerrit: ["gerrit/project/bar"],
+        Gerrit: {
+          projectList: ["gerrit/project/bar"],
+          includeAllProjects: false,
+        },
         Calendar: ["cal-1"],
       });
     });
@@ -333,7 +336,7 @@ describe("DataSourceSelector", () => {
       expect(onConfirmMock).toHaveBeenCalledWith({
         Chat: [],
         Jira: [],
-        Gerrit: [],
+        Gerrit: { projectList: [], includeAllProjects: false },
         Calendar: [],
       });
     });

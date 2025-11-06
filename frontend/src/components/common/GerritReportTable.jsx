@@ -54,7 +54,7 @@ const toRows = (dict = {}) =>
  */
 export default function GerritReportTable({ gerritReportProps }) {
   const sp = gerritReportProps?.searchParams ?? {};
-  const { ldaps = [], startDate, endDate, project } = sp;
+  const { ldaps = [], startDate, endDate, project, includeAllProjects } = sp;
 
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -85,6 +85,7 @@ export default function GerritReportTable({ gerritReportProps }) {
           startDate,
           endDate,
           project,
+          includeAllProjects,
         });
         if (!alive) return;
         setRows(toRows(resp?.data));
@@ -103,7 +104,7 @@ export default function GerritReportTable({ gerritReportProps }) {
     return () => {
       alive = false;
     };
-  }, [startDate, endDate, project, ldaps]);
+  }, [startDate, endDate, project, ldaps, includeAllProjects]);
 
   const handleSort = useCallback((key) => {
     setSort((prev) => ({

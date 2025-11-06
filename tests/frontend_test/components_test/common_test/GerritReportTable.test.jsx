@@ -55,7 +55,13 @@ describe("GerritReportTable", () => {
     render(
       <GerritReportTable
         gerritReportProps={{
-          searchParams: { ldaps: [], startDate: "", endDate: "", project: "" },
+          searchParams: {
+            ldaps: [],
+            startDate: "",
+            endDate: "",
+            project: "",
+            includeAllProjects: "",
+          },
         }}
       />,
     );
@@ -91,7 +97,8 @@ describe("GerritReportTable", () => {
             ldaps: ["alice", "bob"],
             startDate: "2025-09-01",
             endDate: "2025-09-21",
-            project: "",
+            project: [""],
+            includeAllProjects: true,
           },
         }}
       />,
@@ -107,7 +114,8 @@ describe("GerritReportTable", () => {
       ldaps: ["alice", "bob"],
       startDate: "2025-09-01",
       endDate: "2025-09-21",
-      project: "",
+      project: [""],
+      includeAllProjects: true,
     });
 
     // Spot-check formatted number appears (locale-safe matcher)
@@ -144,7 +152,8 @@ describe("GerritReportTable", () => {
             ldaps: ["alice", "bob"],
             startDate: "2025-09-01",
             endDate: "2025-09-21",
-            project: "purrf/backend",
+            project: ["purrf/backend"],
+            includeAllProjects: true,
           },
         }}
       />,
@@ -178,7 +187,8 @@ describe("GerritReportTable", () => {
             ldaps: ["alice"],
             startDate: "2025-09-01",
             endDate: "2025-09-21",
-            project: "",
+            project: [""],
+            includeAllProjects: true,
           },
         }}
       />,
@@ -222,7 +232,8 @@ describe("GerritReportTable", () => {
             ldaps: ["alice", "bob", "charlie"],
             startDate: "2025-09-01",
             endDate: "2025-09-21",
-            project: "",
+            project: [""],
+            includeAllProjects: true,
           },
         }}
       />,
@@ -262,7 +273,8 @@ describe("GerritReportTable", () => {
             ldaps: ["nobody"],
             startDate: "2025-09-01",
             endDate: "2025-09-21",
-            project: "",
+            project: [""],
+            includeAllProjects: true,
           },
         }}
       />,
