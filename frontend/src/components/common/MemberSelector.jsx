@@ -420,7 +420,13 @@ export function MemberSelectorPanel({
 
       {/* Footer */}
       <div className="ms-footer">
-        <button className="ms-btn-flat" onClick={() => onCancel?.()}>
+        <button
+          className="ms-btn-flat"
+          onClick={() => {
+            setSelectedSet(new Set());
+            onCancel?.();
+          }}
+        >
           Cancel
         </button>
         <div className="ms-spacer" />

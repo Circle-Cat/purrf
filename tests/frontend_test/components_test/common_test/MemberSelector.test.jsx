@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 vi.mock("@/api/dashboardApi", () => ({
@@ -346,5 +346,53 @@ describe("MemberSelector (modal wrapper) close behaviors", () => {
     await userEvent.click(backdrop);
 
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("should clear all temporary selections when Cancel is clicked and reset the state for next open", async () => {
+    const mod = await freshImport();
+    const MemberSelector = getDefault(mod);
+    const onCancelMock = vi.fn();
+
+    getLdapsAndDisplayNames.mockResolvedValueOnce({ data: activePayload });
+
+    // Initial render
+    const { unmount } = renderOpen(MemberSelector, { onCancel: onCancelMock });
+
+    // Wait for options to be displayed
+    await waitFor(() => {
+      expect(screen.getByLabelText("Alice A")).toBeInTheDocument();
+      expect(screen.getByLabelText("Ivy I")).toBeInTheDocument();
+    });
+
+    //mock user selection
+    fireEvent.click(screen.getByLabelText("Alice A"));
+    fireEvent.click(screen.getByLabelText("Ivy I"));
+
+    //Verify items were selected
+    expect(screen.getByLabelText("Alice A")).toBeChecked();
+    expect(screen.getByLabelText("Ivy I")).toBeChecked();
+
+    // Click Cancel
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    // Verify onCancel was called (modal closed)
+    expect(onCancelMock).toHaveBeenCalledTimes(1);
+
+    // close modal
+    unmount();
+    expect(screen.queryByText("Alice A")).not.toBeInTheDocument();
+    expect(screen.queryByText("Ivy I")).not.toBeInTheDocument();
+
+    //Re-open the modal
+    renderOpen(MemberSelector, { onCancel: onCancelMock });
+
+    await waitFor(() => {
+      expect(screen.getByText("Alice A")).toBeInTheDocument();
+      expect(screen.getByText("Ivy I")).toBeInTheDocument();
+    });
+
+    // Verify all items are unselected (state has been reset)
+    expect(screen.getByLabelText("Alice A")).not.toBeChecked();
+    expect(screen.getByLabelText("Ivy I")).not.toBeChecked();
   });
 });
