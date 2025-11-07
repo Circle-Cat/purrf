@@ -369,7 +369,9 @@ export function MemberSelectorPanel({
                 }
                 aria-label={`${groupName} (${selectedCount}/${list.length})`}
               >
-                <CheckCircle state={state} />
+                <CheckCircle
+                  state={state === "checked" ? "checked" : "unchecked"}
+                />
                 <div className="ms-text">
                   <div className="ms-label-main">
                     {groupName} ({selectedCount}/{list.length})

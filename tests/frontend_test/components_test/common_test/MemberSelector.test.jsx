@@ -41,6 +41,8 @@ const warmImport = async () => {
 
 const renderOpen = (Cmp, props = {}) => render(<Cmp open {...props} />);
 
+const { getLdapsAndDisplayNames } = await import("@/api/dashboardApi");
+
 // ---- Test payloads ----
 const activePayload = {
   Employees: { Active: { alice: "Alice A", bob: "Bob B" } },
@@ -78,7 +80,6 @@ describe("MemberSelector (modal wrapper) rendering and interactions", () => {
   it("loads Active members on open and renders groups/members", async () => {
     const mod = await freshImport();
     const MemberSelector = getDefault(mod);
-    const { getLdapsAndDisplayNames } = await import("@/api/dashboardApi");
 
     getLdapsAndDisplayNames.mockResolvedValueOnce({ data: activePayload });
 
@@ -111,7 +112,6 @@ describe("MemberSelector (modal wrapper) rendering and interactions", () => {
   it("Include Terminated toggle triggers All fetch and shows terminated chips", async () => {
     const mod = await freshImport();
     const MemberSelector = getDefault(mod);
-    const { getLdapsAndDisplayNames } = await import("@/api/dashboardApi");
 
     getLdapsAndDisplayNames
       .mockResolvedValueOnce({ data: activePayload }) // Active
@@ -138,7 +138,6 @@ describe("MemberSelector (modal wrapper) rendering and interactions", () => {
   it("search filters members by ldap or full name", async () => {
     const mod = await freshImport();
     const MemberSelector = getDefault(mod);
-    const { getLdapsAndDisplayNames } = await import("@/api/dashboardApi");
 
     getLdapsAndDisplayNames.mockResolvedValueOnce({ data: activePayload });
 
@@ -169,7 +168,6 @@ describe("MemberSelector (modal wrapper) rendering and interactions", () => {
   it("group select toggles all in the group and updates footer count + onSelectedChange", async () => {
     const mod = await freshImport();
     const MemberSelector = getDefault(mod);
-    const { getLdapsAndDisplayNames } = await import("@/api/dashboardApi");
 
     getLdapsAndDisplayNames.mockResolvedValueOnce({ data: activePayload });
     const onSelectedChange = vi.fn();
@@ -201,7 +199,6 @@ describe("MemberSelector (modal wrapper) rendering and interactions", () => {
   it("member toggle works and confirm returns selected ids", async () => {
     const mod = await freshImport();
     const MemberSelector = getDefault(mod);
-    const { getLdapsAndDisplayNames } = await import("@/api/dashboardApi");
 
     getLdapsAndDisplayNames.mockResolvedValueOnce({ data: activePayload });
 
@@ -223,7 +220,6 @@ describe("MemberSelector (modal wrapper) rendering and interactions", () => {
     // First render in a fresh module world
     const mod1 = await freshImport();
     const MemberSelector1 = getDefault(mod1);
-    const { getLdapsAndDisplayNames } = await import("@/api/dashboardApi");
 
     getLdapsAndDisplayNames.mockResolvedValueOnce({ data: activePayload });
 
@@ -240,6 +236,74 @@ describe("MemberSelector (modal wrapper) rendering and interactions", () => {
 
     expect(getLdapsAndDisplayNames).toHaveBeenCalledTimes(1);
   });
+
+  it("Show 'checked' when all members in the group are selected", async () => {
+    const mod = await freshImport();
+    const MemberSelector = getDefault(mod);
+
+    getLdapsAndDisplayNames.mockResolvedValueOnce({ data: activePayload });
+
+    //Initial render
+    renderOpen(MemberSelector);
+    await screen.findByRole("checkbox", { name: /Alice A/i });
+    await screen.findByRole("checkbox", { name: /Bob B/i });
+
+    // Mock to select all members
+    await userEvent.click(screen.getByRole("checkbox", { name: /Alice A/i }));
+    await userEvent.click(screen.getByRole("checkbox", { name: /Bob B/i }));
+
+    // Check the selection state of the group Employees
+    const employeesGroup = screen.getByRole("checkbox", {
+      name: /Employees \(2\/2\)/i,
+    });
+
+    // Ensure the state(the pre-grouping symbol) is changed
+    const state = employeesGroup.getAttribute("aria-checked");
+    expect(state).toBe("true");
+  });
+
+  it("Show 'unchecked' when no members in the group are selected", async () => {
+    const mod = await freshImport();
+    const MemberSelector = getDefault(mod);
+
+    getLdapsAndDisplayNames.mockResolvedValueOnce({ data: activePayload });
+
+    // Initial render
+    renderOpen(MemberSelector);
+    await screen.findByRole("checkbox", { name: /Employees \(0\/2\)/i });
+
+    // Check the selection state of the group Employees
+    const employeesGroup = screen.getByRole("checkbox", {
+      name: /Employees \(0\/2\)/i,
+    });
+
+    // Ensure the state(the pre-grouping symbol) is not changed
+    const state = employeesGroup.getAttribute("aria-checked");
+    expect(state).toBe("false");
+  });
+
+  it("Keep the group symbol unchanged when only some members are selected", async () => {
+    const mod = await freshImport();
+    const MemberSelector = getDefault(mod);
+
+    getLdapsAndDisplayNames.mockResolvedValueOnce({ data: activePayload });
+
+    // Initial render
+    renderOpen(MemberSelector);
+    await screen.findByRole("checkbox", { name: /Alice A/i });
+
+    // Select a member
+    await userEvent.click(screen.getByRole("checkbox", { name: /Alice A/i }));
+
+    // Check the selection state of the group Employees
+    const employeesGroup = screen.getByRole("checkbox", {
+      name: /Employees \(1\/2\)/i,
+    });
+
+    // Ensure the state(the pre-grouping symbol) is not changed
+    const state = employeesGroup.getAttribute("aria-checked");
+    expect(state).toBe("mixed");
+  });
 });
 
 describe("MemberSelector (modal wrapper) close behaviors", () => {
@@ -250,7 +314,6 @@ describe("MemberSelector (modal wrapper) close behaviors", () => {
   it("calls onConfirm and closes when OK is clicked", async () => {
     const mod = await freshImport();
     const MemberSelector = getDefault(mod);
-    const { getLdapsAndDisplayNames } = await import("@/api/dashboardApi");
 
     getLdapsAndDisplayNames.mockResolvedValueOnce({ data: activePayload });
 
@@ -270,7 +333,6 @@ describe("MemberSelector (modal wrapper) close behaviors", () => {
   it("clicking backdrop calls onClose", async () => {
     const mod = await freshImport();
     const MemberSelector = getDefault(mod);
-    const { getLdapsAndDisplayNames } = await import("@/api/dashboardApi");
 
     getLdapsAndDisplayNames.mockResolvedValueOnce({ data: activePayload });
 
