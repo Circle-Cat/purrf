@@ -2,6 +2,7 @@ import "@/components/common/JiraReportTable.css";
 
 import { useState, useEffect } from "react";
 import { getJiraIssueDetails, getJiraIssueBrief } from "@/api/dataSearchApi";
+import { JiraIssueStatus } from "@/constants/Groups";
 
 /**
  * @typedef {Object} StatusData
@@ -19,18 +20,30 @@ import { getJiraIssueDetails, getJiraIssueBrief } from "@/api/dataSearchApi";
  */
 
 /**
+ * Mapping API status keys to user-friendly display names
+ */
+const statusDisplayNamesMap = {
+  [JiraIssueStatus.TODO]: "To Do",
+  [JiraIssueStatus.IN_PROGRESS]: "In Progress",
+  [JiraIssueStatus.DONE]: "Done",
+};
+
+/**
  * Format Jira brief data into a structured format for rendering.
  *
  * For each user:
  * - "To Do" and "In Progress" will always have `storyPoints` set to "-"
  * - "Done" will include a numeric story points value formatted to one decimal place (e.g., "0.0")
  * - User name will use the LDAP displayName if provided, otherwise fallback to LDAP
+ * - Displays only the statuses present in the `statusList` parameter.
  *
  * @param {Object} jiraBriefs - Raw Jira briefs data.
+ * @param {Object} ldapsAndDisplayNames - Optional mapping from LDAP to display name.
+ * @param {string[]} statusList - List of status keys (e.g., "todo", "in_progress", "done") to display.
  * @returns {Array<User>} - Formatted user data with status breakdown.
  */
-const formatJiraBriefsData = (jiraBriefs, ldapsAndDisplayNames) => {
-  if (!jiraBriefs) {
+const formatJiraBriefsData = (jiraBriefs, ldapsAndDisplayNames, statusList) => {
+  if (!jiraBriefs || !statusList) {
     return [];
   }
   const users = [];
@@ -41,28 +54,28 @@ const formatJiraBriefsData = (jiraBriefs, ldapsAndDisplayNames) => {
     const userData = jiraBriefs[userLdap];
     const displayName = ldapsAndDisplayNames?.[userLdap] ?? null;
 
+    const userStatusData = [];
+    statusList.forEach((statusKey) => {
+      const displayStatusName = statusDisplayNamesMap[statusKey] || statusKey;
+      const count = userData[statusKey]?.length ?? 0;
+      const issueIds = userData[statusKey] ?? [];
+
+      let storyPoints = "-";
+      if (statusKey === JiraIssueStatus.DONE) {
+        storyPoints = (userData.done_story_points_total ?? 0).toFixed(1);
+      }
+
+      userStatusData.push({
+        status: displayStatusName,
+        count: count,
+        storyPoints: storyPoints,
+        issueIds: issueIds,
+      });
+    });
+
     users.push({
       name: displayName ? `${userLdap} (${displayName})` : userLdap,
-      statusData: [
-        {
-          status: "To Do",
-          count: userData.todo?.length ?? 0,
-          storyPoints: "-",
-          issueIds: userData.todo ?? [],
-        },
-        {
-          status: "In Progress",
-          count: userData.in_progress?.length ?? 0,
-          storyPoints: "-",
-          issueIds: userData.in_progress ?? [],
-        },
-        {
-          status: "Done",
-          count: userData.done?.length ?? 0,
-          storyPoints: (userData.done_story_points_total ?? 0).toFixed(1),
-          issueIds: userData.done ?? [],
-        },
-      ],
+      statusData: userStatusData,
     });
   }
   return users;
@@ -223,7 +236,7 @@ const UserTable = ({ user }) => (
  *     startDate: "2025-09-01",
  *     endDate: "2025-09-10",
  *     projectIds: ["PROJ1", "PROJ2"],
- *     statusList: ["To Do", "Done"],
+ *     statusList: [JiraIssueStatus.DONE],
  *     ldaps: ["alice", "bob"]
  *   },
  *   ldapsAndDisplayNames: {
@@ -271,6 +284,7 @@ const JiraReportTable = ({ jiraReportProps }) => {
   const formattedData = formatJiraBriefsData(
     jiraSummaryData,
     jiraReportProps.ldapsAndDisplayNames,
+    jiraReportProps.searchParams.statusList,
   );
 
   return (

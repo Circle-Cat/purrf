@@ -21,7 +21,20 @@ const mockJiraReportProps = {
     startDate: "2025-09-01",
     endDate: "2025-09-10",
     projectIds: ["PROJ1", "PROJ2"],
-    statusList: ["To Do", "Done"],
+    statusList: ["todo", "done", "in_progress"],
+    ldaps: ["user1", "user2"],
+  },
+  ldapsAndDisplayNames: {
+    user1: "Test User 1",
+  },
+};
+
+const mockJiraReportPropsDoneOnly = {
+  searchParams: {
+    startDate: "2025-09-01",
+    endDate: "2025-09-10",
+    projectIds: ["PROJ1", "PROJ2"],
+    statusList: ["done"],
     ldaps: ["user1", "user2"],
   },
   ldapsAndDisplayNames: {
@@ -167,6 +180,39 @@ describe("JiraReportTable", () => {
     expect(doneRowUser2).toHaveTextContent("Done");
     expect(doneRowUser2).toHaveTextContent("0");
     expect(doneRowUser2).toHaveTextContent("0.0");
+  });
+
+  it("should render user tables with correct names and only 'Done' status data", async () => {
+    render(<JiraReportTable jiraReportProps={mockJiraReportPropsDoneOnly} />);
+
+    await waitFor(() => {
+      expect(screen.getByText("user1 (Test User 1)")).toBeInTheDocument();
+      expect(screen.getByText("user2")).toBeInTheDocument();
+    });
+
+    const user1Table = screen
+      .getByText("user1 (Test User 1)")
+      .closest(".user-table");
+    const user2Table = screen.getByText("user2").closest(".user-table");
+
+    const user1Scope = within(user1Table);
+    const user2Scope = within(user2Table);
+
+    const doneRowUser1 = user1Scope.getByText("Done").closest("tr");
+    expect(doneRowUser1).toHaveTextContent("Done");
+    expect(doneRowUser1).toHaveTextContent("1");
+    expect(doneRowUser1).toHaveTextContent("5.0");
+
+    expect(user1Scope.queryByText("To Do")).not.toBeInTheDocument();
+    expect(user1Scope.queryByText("In Progress")).not.toBeInTheDocument();
+
+    const doneRowUser2 = user2Scope.getByText("Done").closest("tr");
+    expect(doneRowUser2).toHaveTextContent("Done");
+    expect(doneRowUser2).toHaveTextContent("0");
+    expect(doneRowUser2).toHaveTextContent("0.0");
+
+    expect(user2Scope.queryByText("To Do")).not.toBeInTheDocument();
+    expect(user2Scope.queryByText("In Progress")).not.toBeInTheDocument();
   });
 
   it("should not fetch details for a status with zero issues", async () => {

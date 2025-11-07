@@ -255,11 +255,7 @@ describe("Tab Component", () => {
       expect(props.jiraReportProps.searchParams).toEqual({
         ...commonSearchParams,
         projectIds: ["jira-project-1"],
-        statusList: [
-          JiraIssueStatus.DONE,
-          JiraIssueStatus.IN_PROGRESS,
-          JiraIssueStatus.TODO,
-        ],
+        statusList: [JiraIssueStatus.DONE],
       });
     });
 
@@ -584,5 +580,37 @@ describe("Tab Component", () => {
     expect(
       screen.queryByTestId("CalendarReportTable-mock"),
     ).not.toBeInTheDocument();
+  });
+
+  it("should pass all three Jira issue statuses when endDate is today", async () => {
+    const today = new Date().toISOString().split("T")[0]; // "YYYY-MM-DD" format
+
+    const committedSearchParamsToday = {
+      ...commonSearchParams,
+      endDate: today,
+      selectedDataSources: {
+        [DataSourceNames.JIRA]: ["jira-project-1"],
+      },
+    };
+
+    render(<Tab committedSearchParams={committedSearchParamsToday} />);
+
+    fireEvent.click(screen.getByRole("tab", { name: DataSourceNames.JIRA }));
+
+    await waitFor(() => {
+      expect(JiraReportTable).toHaveBeenCalledTimes(1);
+      const props = JiraReportTable.mock.calls[0][0];
+      expect(props.jiraReportProps.searchParams).toEqual({
+        ldaps: ["ldap1", "ldap2"],
+        startDate: "2023-01-01",
+        endDate: today,
+        projectIds: ["jira-project-1"],
+        statusList: [
+          JiraIssueStatus.DONE,
+          JiraIssueStatus.IN_PROGRESS,
+          JiraIssueStatus.TODO,
+        ],
+      });
+    });
   });
 });

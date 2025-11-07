@@ -129,16 +129,22 @@ const getReportTableProps = (sourceName, committedSearchParams) => {
     case DataSourceNames.JIRA: {
       const jiraConfig = selectedDataSources[sourceName];
       if (!jiraConfig?.length) return null;
+      const today = new Date().toISOString().split("T")[0];
+      const endDate = commonParams.endDate;
+      const isPast = endDate < today;
+      const statusList = isPast
+        ? [JiraIssueStatus.DONE]
+        : [
+            JiraIssueStatus.DONE,
+            JiraIssueStatus.IN_PROGRESS,
+            JiraIssueStatus.TODO,
+          ];
       return {
         jiraReportProps: {
           searchParams: {
             ...commonParams,
             projectIds: jiraConfig,
-            statusList: [
-              JiraIssueStatus.DONE,
-              JiraIssueStatus.IN_PROGRESS,
-              JiraIssueStatus.TODO,
-            ],
+            statusList: statusList,
           },
         },
       };
