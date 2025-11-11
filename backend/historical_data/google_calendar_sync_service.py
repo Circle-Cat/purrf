@@ -7,9 +7,50 @@ from backend.common.constants import (
     GOOGLE_EVENT_ATTENDANCE_KEY,
     GOOGLE_CALENDAR_USER_EVENTS_KEY,
 )
+from collections import defaultdict
+import uuid
+import time
+
+# Google Reports API rate limits:
+# - Batch requests can include at most 10 calls.
+# - With filters, the API allows ~250 requests per minute.
+#
+# Using 10 requests per batch + a 2.5s delay keeps us safely under the limit.
+BATCH_SIZE = 10
+SLEEP_BETWEEN_BATCHES = 2.5
 
 
 class GoogleCalendarSyncService:
+    """
+    A service responsible for synchronizing Google Calendar and Google Meet attendance data
+    into Redis for efficient querying and analytics.
+
+    This service handles:
+      - Fetching and caching calendar metadata.
+      - Retrieving and validating Google Calendar events.
+      - Extracting Google Meet meeting codes and attendance data.
+      - Caching structured event and attendance data in Redis for later processing.
+
+    Core functionalities:
+      1. **Calendar Management**:
+         - Fetches all accessible calendars using the Google Calendar API.
+         - Filters out irrelevant or system-generated calendars.
+         - Caches valid calendar metadata (ID → summary) into Redis.
+
+      2. **Event Retrieval and Caching**:
+         - Fetches events within a specific time range for each calendar.
+         - Handles pagination using Google Calendar batch requests.
+         - Extracts event details and associated Google Meet attendance.
+         - Validates data schemas before caching to ensure data consistency.
+
+      3. **Attendance Tracking**:
+         - Retrieves Google Meet attendance reports via the Google Reports API.
+         - Supports batched attendance queries for multiple meeting codes.
+         - Filters attendance to include only organization-specific participants
+           (e.g., users with `@circlecat.org` emails).
+         - Associates attendance records with calendar events in Redis.
+    """
+
     def __init__(
         self,
         logger,
@@ -82,7 +123,15 @@ class GoogleCalendarSyncService:
 
     def _get_calendar_events(self, calendar_id: str, start_time: str, end_time: str):
         """
-        Fetches events for a given calendar ID and time range using the Google Calendar API.
+        Fetch all Google Calendar events within a given time range, with batched
+        pagination and bulk attendance lookup.
+
+        This method issues Google Calendar API `events.list` requests using the
+        batch API so that multiple pages can be fetched efficiently. Each page of
+        events is processed in the batch callback, where the method extracts Google
+        Meet meeting codes, resolves recurrence information, and calls
+        `_get_bulk_event_attendance()` to fetch attendance data for all meetings
+        in that page in a single batched Reports API request.
 
         Args:
             calendar_id: The specific calendar's ID (e.g., 'primary' or a shared calendar ID).
@@ -93,57 +142,88 @@ class GoogleCalendarSyncService:
             A list of events (dictionaries) from the calendar.
         """
         events = []
-        page_token = None
+        requests = []
 
-        def _fetch_page(page_token=None):
-            return (
-                self.google_calendar_client.events()
-                .list(
-                    calendarId=calendar_id,
-                    timeMin=start_time,
-                    timeMax=end_time,
-                    singleEvents=True,
-                    orderBy="startTime",
-                    pageToken=page_token,
-                )
-                .execute()
+        def _callback(request_id, response, exception):
+            if exception:
+                self.logger.warning(f"Batch request {request_id} failed: {exception}")
+                return
+
+            page_events = response.get("items", [])
+            if not page_events:
+                return
+
+            meeting_codes = []
+            event_id_map = {}
+            recurring_map = {}
+
+            for event in page_events:
+                meet_code = self._get_meeting_code_from_event(event)
+                if meet_code:
+                    meeting_codes.append(meet_code)
+                    event_id_map[meet_code] = event.get("id")
+                    recurring_map[meet_code] = "recurringEventId" in event
+
+            bulk_attendance = self._get_bulk_event_attendance(
+                meeting_codes, event_id_map, recurring_map
             )
 
-        while True:
-            events_result = self.retry_utils.get_retry_on_transient(
-                lambda: _fetch_page(page_token)
-            )
-
-            for event in events_result.get("items", []):
+            for event in page_events:
                 event_id = event.get("id")
                 summary = event.get("summary", "")
                 start = event.get("start", {}).get("dateTime")
-                attendance_data = None
+                if not start:
+                    self.logger.warning(
+                        f"Skipping event {event_id} because it has no valid start time."
+                    )
+                    continue
                 is_recurring = "recurringEventId" in event
-
                 meet_code = self._get_meeting_code_from_event(event)
-                if meet_code:
-                    try:
-                        attendance_data = self._get_event_attendance(
-                            meet_code, is_recurring, event_id
-                        )
-                    except Exception as e:
-                        self.logger.warning(
-                            f"Failed to fetch attendance for event {event_id}: {e}"
-                        )
 
                 events.append({
                     "event_id": event_id,
                     "calendar_id": calendar_id,
                     "summary": summary or "",
                     "start": start or "",
-                    "attendees": attendance_data or [],
+                    "attendees": bulk_attendance.get(meet_code, []),
                     "is_recurring": is_recurring,
                 })
 
-            page_token = events_result.get("nextPageToken")
-            if not page_token:
-                break
+            next_token = response.get("nextPageToken")
+            if next_token:
+                requests.append(
+                    self.google_calendar_client.events().list(
+                        calendarId=calendar_id,
+                        timeMin=start_time,
+                        timeMax=end_time,
+                        singleEvents=True,
+                        orderBy="startTime",
+                        pageToken=next_token,
+                    )
+                )
+
+        requests.append(
+            self.google_calendar_client.events().list(
+                calendarId=calendar_id,
+                timeMin=start_time,
+                timeMax=end_time,
+                singleEvents=True,
+                orderBy="startTime",
+            )
+        )
+
+        while requests:
+            current_requests = list(requests)
+            requests.clear()
+
+            batch = self.google_calendar_client.new_batch_http_request(
+                callback=_callback
+            )
+            for req in current_requests:
+                req_id = getattr(req, "request_id", None) or req.uri
+                batch.add(req, request_id=req_id)
+
+            self.retry_utils.get_retry_on_transient(batch.execute)
 
         return events
 
@@ -159,87 +239,72 @@ class GoogleCalendarSyncService:
         """
         return email.endswith("@circlecat.org")
 
-    def _get_event_attendance(
-        self, meeting_code: str, is_recurring: bool = False, event_id: str = None
+    def _get_bulk_event_attendance(
+        self,
+        meeting_codes: list[str],
+        event_id_map: dict[str, str],
+        recurring_map: dict[str, bool],
     ):
         """
-        Fetches actual Google Meet attendance (participants) for a calendar event using the Reports API.
+        Fetch attendance records for multiple Google Meet meeting codes in parallel
+        using Google Admin Reports API batch requests.
+
+        The Reports API returns activity records for `call_ended` events that
+        include participant join/leave timestamps, identifiers, and duration
+        metadata. This method batches up to `BATCH_SIZE` meeting-code queries into
+        a single HTTP batch to reduce latency and API quota usage.
 
         Args:
-            meeting_code: The unique code for the Google Meet session.
-            is_recurring: Whether the event is part of a recurring series.
-            event_id: The full event ID (e.g., 4gnl5pmrltdb8so1e273gmgqp0_20250702T013000Z)
-            is_recurring: Whether the event is part of a recurring series.
-            event_id: The full event ID (e.g., 4gnl5pmrltdb8so1e273gmgqp0_20250702T013000Z)
+            meeting_codes: List of Google Meet codes.
+            event_id_map: Mapping meeting_code -> full event_id (used for recurring events).
+            recurring_map: Mapping meeting_code -> bool, whether event is recurring.
 
         Returns:
-            A list of dictionaries containing participant details: email, duration, join/leave times.
+            dict: meeting_code -> list of attendance records
         """
-        attendance_details = []
-        next_page_token = None
+        results = defaultdict(list)
 
-        def _fetch_page(page_token=None):
-            return (
-                self.google_reports_client.activities()
-                .list(
-                    userKey="all",
-                    applicationName="meet",
-                    eventName="call_ended",
-                    filters=f"meeting_code=={meeting_code}",
-                    maxResults=1000,
-                    pageToken=page_token,
-                )
-                .execute()
-            )
-
-        recurrence_instance_date = None
-        if is_recurring and event_id:
-            try:
-                recurrence_suffix = event_id.split("_")[
-                    -1
-                ]  # e.g., '20250702T013000Z' → '2025-07-02'
-                recurrence_instance_date = datetime.strptime(
-                    recurrence_suffix, "%Y%m%dT%H%M%SZ"
-                ).date()
-            except Exception as e:
+        def _callback(request_id, response, exception):
+            code = request_id.split("_")[0]
+            if exception:
                 self.logger.warning(
-                    f"Failed to parse recurrence date from event_id: {event_id}: {e}"
+                    f"Failed to fetch attendance for meeting {code}: {exception}"
                 )
+                return
 
-        while True:
-            response = self.retry_utils.get_retry_on_transient(
-                lambda: _fetch_page(next_page_token)
-            )
+            recurrence_instance_date = None
+            event_id = event_id_map.get(code)
+            is_recurring = recurring_map.get(code, False)
+
+            if is_recurring and event_id:
+                try:
+                    recurrence_suffix = event_id.split("_")[
+                        -1
+                    ]  # e.g., 20250702T013000Z
+                    recurrence_instance_date = datetime.strptime(
+                        recurrence_suffix, "%Y%m%dT%H%M%SZ"
+                    ).date()
+                except Exception as e:
+                    self.logger.warning(
+                        f"Failed to parse recurrence date for {event_id}: {e}"
+                    )
 
             activities = response.get("items", [])
-            if not activities:
-                self.logger.warning(
-                    f"No attendance data found for meeting code: {meeting_code}"
-                )
-                break
-
             for activity in activities:
-                events = activity.get("events", [])
-
-                for event in events:
+                for event in activity.get("events", []):
                     parameters = event.get("parameters", [])
                     data = {}
 
                     for param in parameters:
                         key = param.get("name")
                         if "intValue" in param:
-                            data[key] = int(
-                                param["intValue"]
-                            )  # "intValue" is used for numeric fields (e.g., duration, timestamps)
+                            data[key] = int(param["intValue"])
                         elif "value" in param:
-                            data[key] = param[
-                                "value"
-                            ]  # "value" is used for string fields (e.g., user identifier, device info)
+                            data[key] = param["value"]
 
                     email = event.get("actor", {}).get("email") or data.get(
                         "identifier"
                     )
-
                     duration_seconds = data.get("duration_seconds", 0)
                     start_ts = data.get("start_timestamp_seconds")
 
@@ -260,22 +325,35 @@ class GoogleCalendarSyncService:
                         join_date = datetime.fromisoformat(join_time).date()
                         if join_date != recurrence_instance_date:
                             continue
+
                     if email and self._is_circlecat_email(email):
-                        attendance_details.append({
+                        results[code].append({
                             "email": email,
                             "duration_seconds": duration_seconds,
                             "join_time": join_time,
                             "leave_time": leave_time,
                         })
 
-            next_page_token = response.get("nextPageToken")
-            if not next_page_token:
-                break
+        for i in range(0, len(meeting_codes), BATCH_SIZE):
+            batch_codes = [c for c in meeting_codes[i : i + BATCH_SIZE] if c]
+            batch = self.google_reports_client.new_batch_http_request(
+                callback=_callback
+            )
 
-        self.logger.info(
-            f"Fetched {len(attendance_details)} attendance records for meeting code: {meeting_code}"
-        )
-        return attendance_details
+            for code in batch_codes:
+                req = self.google_reports_client.activities().list(
+                    userKey="all",
+                    applicationName="meet",
+                    eventName="call_ended",
+                    filters=f"meeting_code=={code}",
+                    maxResults=1000,
+                )
+                batch.add(req, request_id=f"{code}_{uuid.uuid4()}")
+
+            self.retry_utils.get_retry_on_transient(batch.execute)
+            time.sleep(SLEEP_BETWEEN_BATCHES)
+
+        return results
 
     def _get_meeting_code_from_event(self, event):
         """
@@ -470,6 +548,12 @@ class GoogleCalendarSyncService:
 
         ldaps = self.google_service.list_directory_all_people_ldap().values()
         personal_calendar_ids = [f"{ldap}@circlecat.org" for ldap in ldaps]
+
+        # TODO: [PUR-258] Currently, each batch processes events for a single user.
+        # However, not every user has enough events to fill the BATCH_SIZE (10).
+        # We could optimize by grouping multiple users' event requests together
+        # into batches of up to 10 requests to better utilize batch parallelism
+        # and reduce overall API latency.
 
         for personal_calendar_id in personal_calendar_ids:
             processed_event_ids |= self.cache_events(
