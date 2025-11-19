@@ -139,9 +139,10 @@ class GoogleCalendarSyncService:
             end_time: RFC3339 timestamp for the end of the range (exclusive).
 
         Returns:
-            A list of events (dictionaries) from the calendar.
+            tuple: (list of event metadata dicts, dict of meeting_code -> event_metadata)
         """
-        events = []
+        event_metadata = []
+        meeting_code_map = {}  # Map: meet_code -> {event_id, is_recurring}
         requests = []
 
         def _callback(request_id, response, exception):
@@ -153,41 +154,33 @@ class GoogleCalendarSyncService:
             if not page_events:
                 return
 
-            meeting_codes = []
-            event_id_map = {}
-            recurring_map = {}
-
-            for event in page_events:
-                meet_code = self._get_meeting_code_from_event(event)
-                if meet_code:
-                    meeting_codes.append(meet_code)
-                    event_id_map[meet_code] = event.get("id")
-                    recurring_map[meet_code] = "recurringEventId" in event
-
-            bulk_attendance = self._get_bulk_event_attendance(
-                meeting_codes, event_id_map, recurring_map
-            )
-
             for event in page_events:
                 event_id = event.get("id")
                 summary = event.get("summary", "")
                 start = event.get("start", {}).get("dateTime")
+
                 if not start:
                     self.logger.warning(
                         f"Skipping event {event_id} because it has no valid start time."
                     )
                     continue
+
                 is_recurring = "recurringEventId" in event
                 meet_code = self._get_meeting_code_from_event(event)
 
-                events.append({
+                event_metadata.append({
                     "event_id": event_id,
                     "calendar_id": calendar_id,
                     "summary": summary or "",
                     "start": start or "",
-                    "attendees": bulk_attendance.get(meet_code, []),
                     "is_recurring": is_recurring,
                 })
+
+                if meet_code:
+                    meeting_code_map[meet_code] = {
+                        "event_id": event_id,
+                        "is_recurring": is_recurring,
+                    }
 
             next_token = response.get("nextPageToken")
             if next_token:
@@ -225,7 +218,7 @@ class GoogleCalendarSyncService:
 
             self.retry_utils.get_retry_on_transient(batch.execute)
 
-        return events
+        return event_metadata, meeting_code_map
 
     def _is_circlecat_email(self, email: str) -> bool:
         """
@@ -278,9 +271,7 @@ class GoogleCalendarSyncService:
 
             if is_recurring and event_id:
                 try:
-                    recurrence_suffix = event_id.split("_")[
-                        -1
-                    ]  # e.g., 20250702T013000Z
+                    recurrence_suffix = event_id.split("_")[-1]
                     recurrence_instance_date = datetime.strptime(
                         recurrence_suffix, "%Y%m%dT%H%M%SZ"
                     ).date()
@@ -334,24 +325,20 @@ class GoogleCalendarSyncService:
                             "leave_time": leave_time,
                         })
 
-        for i in range(0, len(meeting_codes), BATCH_SIZE):
-            batch_codes = [c for c in meeting_codes[i : i + BATCH_SIZE] if c]
-            batch = self.google_reports_client.new_batch_http_request(
-                callback=_callback
+        batch = self.google_reports_client.new_batch_http_request(callback=_callback)
+
+        for code in meeting_codes:
+            req = self.google_reports_client.activities().list(
+                userKey="all",
+                applicationName="meet",
+                eventName="call_ended",
+                filters=f"meeting_code=={code}",
+                maxResults=1000,
             )
+            batch.add(req, request_id=f"{code}_{uuid.uuid4()}")
 
-            for code in batch_codes:
-                req = self.google_reports_client.activities().list(
-                    userKey="all",
-                    applicationName="meet",
-                    eventName="call_ended",
-                    filters=f"meeting_code=={code}",
-                    maxResults=1000,
-                )
-                batch.add(req, request_id=f"{code}_{uuid.uuid4()}")
-
-            self.retry_utils.get_retry_on_transient(batch.execute)
-            time.sleep(SLEEP_BETWEEN_BATCHES)
+        self.retry_utils.get_retry_on_transient(batch.execute)
+        time.sleep(SLEEP_BETWEEN_BATCHES)
 
         return results
 
@@ -437,6 +424,39 @@ class GoogleCalendarSyncService:
 
         self.retry_utils.get_retry_on_transient(pipeline.execute)
 
+    def _get_bulk_attendance_for_all_events(self, all_meeting_codes_map: dict):
+        """
+        Orchestrates the bulk fetching of attendance data by ensuring the Reports API
+        BATCH_SIZE is fully utilized.
+
+        Args:
+            all_meeting_codes_map (dict): A map of meet_code -> {event_id, is_recurring}
+                                          collected from all fetched events.
+
+        Returns:
+            dict: meeting_code -> list of attendance records
+        """
+        meeting_codes = list(all_meeting_codes_map.keys())
+        all_attendance_results = {}
+
+        for i in range(0, len(meeting_codes), BATCH_SIZE):
+            batch_codes = [c for c in meeting_codes[i : i + BATCH_SIZE] if c]
+
+            batch_event_id_map = {
+                code: all_meeting_codes_map[code]["event_id"] for code in batch_codes
+            }
+            batch_recurring_map = {
+                code: all_meeting_codes_map[code]["is_recurring"]
+                for code in batch_codes
+            }
+
+            batch_attendance = self._get_bulk_event_attendance(
+                batch_codes, batch_event_id_map, batch_recurring_map
+            )
+            all_attendance_results.update(batch_attendance)
+
+        return all_attendance_results
+
     def cache_events(
         self, calendar_id: str, time_min: str, time_max: str, skip_event_ids: set = None
     ):
@@ -464,16 +484,25 @@ class GoogleCalendarSyncService:
             "personal" if self._is_circlecat_email(calendar_id) else calendar_id
         )
 
+        event_metadata_list, all_meeting_codes_map = self._get_calendar_events(
+            calendar_id, time_min, time_max
+        )
+
+        bulk_attendance = self._get_bulk_attendance_for_all_events(
+            all_meeting_codes_map
+        )
+
         pipeline = self.redis_client.pipeline()
 
-        events = self._get_calendar_events(calendar_id, time_min, time_max)
-
-        for event in events:
+        for event in event_metadata_list:
             event_id = event["event_id"]
             if event_id in skip_event_ids:
                 continue
 
             skip_event_ids.add(event_id)
+
+            meet_code = self._get_meeting_code_from_event(event)
+            event["attendees"] = bulk_attendance.get(meet_code, [])
 
             try:
                 self.json_schema_validator.validate_data(
@@ -548,12 +577,6 @@ class GoogleCalendarSyncService:
 
         ldaps = self.google_service.list_directory_all_people_ldap().values()
         personal_calendar_ids = [f"{ldap}@circlecat.org" for ldap in ldaps]
-
-        # TODO: [PUR-258] Currently, each batch processes events for a single user.
-        # However, not every user has enough events to fill the BATCH_SIZE (10).
-        # We could optimize by grouping multiple users' event requests together
-        # into batches of up to 10 requests to better utilize batch parallelism
-        # and reduce overall API latency.
 
         for personal_calendar_id in personal_calendar_ids:
             processed_event_ids |= self.cache_events(
