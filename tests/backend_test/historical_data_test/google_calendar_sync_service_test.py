@@ -1,153 +1,10 @@
 from unittest import TestCase, main
 from unittest.mock import MagicMock, ANY
-from collections import defaultdict
+from datetime import datetime
 from backend.historical_data.google_calendar_sync_service import (
     GoogleCalendarSyncService,
 )
 import json
-
-MOCK_CALENDAR_LIST_PAGE_1 = {
-    "items": [
-        {
-            "id": "cal1",
-            "summary": "Work",
-        },
-        {
-            "id": "cal2",
-            "summary": "Personal",
-        },
-    ],
-    "nextPageToken": "token123",
-}
-
-MOCK_CALENDAR_LIST_PAGE_2 = {
-    "items": [
-        {
-            "id": "cal3",
-            "summary": "School",
-        }
-    ]
-}
-
-MOCK_EVENTS_PAGE_1 = {
-    "items": [
-        {
-            "id": "event1",
-            "summary": "Engineering Sync",
-            "start": {"dateTime": "2025-06-13T10:00:00Z"},
-            "conferenceData": {
-                "entryPoints": [
-                    {
-                        "entryPointType": "video",
-                        "uri": "https://meet.google.com/abc-defg-hij",
-                    }
-                ]
-            },
-        },
-        {
-            "id": "event2",
-            "summary": "One-on-One",
-            "start": {"dateTime": "2025-06-13T12:00:00Z"},
-            "conferenceData": {
-                "entryPoints": [
-                    {
-                        "entryPointType": "video",
-                        "uri": "https://meet.google.com/xyz-1234-pqr",
-                    }
-                ]
-            },
-        },
-    ],
-    "nextPageToken": "token123",
-}
-
-MOCK_EVENTS_PAGE_2 = {
-    "items": [
-        {
-            "id": "event3",
-            "summary": "Company All-Hands",
-            "start": {"dateTime": "2025-06-13T14:00:00Z"},
-            "conferenceData": {
-                "entryPoints": [
-                    {
-                        "entryPointType": "video",
-                        "uri": "https://meet.google.com/qrs-tuv-wxy",
-                    }
-                ]
-            },
-        }
-    ]
-}
-
-MOCK_REPORTS_RESPONSE = {
-    "items": [
-        {
-            "actor": {"email": "admin@example.com"},
-            "events": [
-                {
-                    "actor": {"email": "user1@circlecat.org"},
-                    "type": "call_ended",
-                    "parameters": [
-                        {"name": "duration_seconds", "intValue": "120"},
-                        {"name": "start_timestamp_seconds", "intValue": "1716712800"},
-                        {"name": "identifier", "value": "user1@circlecat.org"},
-                    ],
-                }
-            ],
-        }
-    ]
-}
-
-MOCK_EVENT = {
-    "conferenceData": {
-        "entryPoints": [
-            {
-                "entryPointType": "video",
-                "uri": "https://meet.google.com/abc-def-ghi",
-            }
-        ]
-    }
-}
-
-MOCK_EVENTS_PAGE_1_NO_NEXT = {
-    "items": [
-        {
-            "id": "event1",
-            "summary": "Engineering Sync",
-            "start": {"dateTime": "2025-06-13T10:00:00Z"},
-            "conferenceData": {
-                "entryPoints": [
-                    {
-                        "entryPointType": "video",
-                        "uri": "https://meet.google.com/abc-defg-hij",
-                    }
-                ]
-            },
-        }
-    ]
-}
-
-MOCK_CALENDAR_EVENTS_RESPONSE = {
-    "items": [
-        {
-            "id": "event1",
-            "summary": "Test Event 1",
-            "start": {"dateTime": "2025-11-10T10:00:00Z"},
-            "end": {"dateTime": "2025-11-10T11:00:00Z"},
-        },
-        {
-            "id": "event2",
-            "summary": "Test Event 2",
-            "start": {"dateTime": "2025-11-11T12:00:00Z"},
-            "end": {"dateTime": "2025-11-11T13:00:00Z"},
-        },
-    ]
-}
-
-
-class HttpError(Exception):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args)
 
 
 class TestGoogleCalendarSyncService(TestCase):
@@ -171,237 +28,62 @@ class TestGoogleCalendarSyncService(TestCase):
             google_service=self.mock_google_service,
             json_schema_validator=self.mock_json_schema_validator,
         )
+        self.service._is_circlecat_email = lambda email: email.endswith(
+            "@circlecat.org"
+        )
 
-    def test_get_calendar_list_success(self):
-        mock_calendar_list = self.mock_google_calendar_client.calendarList.return_value
-        mock_calendar_list.list.return_value.execute.side_effect = [
-            MOCK_CALENDAR_LIST_PAGE_1,
-            MOCK_CALENDAR_LIST_PAGE_2,
+        self.event_start_time = "2025-11-19T08:00:00"
+        self.time_min = "2025-11-01T00:00:00"
+        self.time_max = "2025-11-30T23:59:59"
+        self.sample_calendar_list = [
+            {"calendar_id": "team_calendar1", "summary": "Team Calendar 1"},
+            {"calendar_id": "alice@circlecat.org", "summary": "Alice Personal"},
+            {
+                "calendar_id": "system@group.v.calendar.google.com",
+                "summary": "System Calendar",
+            },
+            {"calendar_id": "team_calendar2", "summary": "Team Calendar 2"},
         ]
-
-        calendars = self.service._get_calendar_list()
-
-        expected = [
-            {"calendar_id": "cal1", "summary": "Work"},
-            {"calendar_id": "cal2", "summary": "Personal"},
-            {"calendar_id": "cal3", "summary": "School"},
-        ]
-        self.assertEqual(calendars, expected)
-
-        self.assertEqual(mock_calendar_list.list.call_count, 2)
-
-    def test_get_calendar_list_general_exception(self):
-        mock_calendar_list_api = (
-            self.mock_google_calendar_client.calendarList.return_value
-        )
-        mock_calendar_list_api.list.return_value.execute.side_effect = Exception(
-            "Failed to connect"
-        )
-
-        calendars = self.service._get_calendar_list()
-
-        self.assertEqual(calendars, [])
-        self.mock_logger.error.assert_called_with(
-            "Unexpected error fetching calendars", ANY
-        )
-
-    def test_get_calendar_events_success_returns_metadata_and_codes(self):
-        mock_request = MagicMock()
-        mock_request.uri = "req1"
-        self.mock_google_calendar_client.events().list.return_value = mock_request
-
-        def mock_new_batch(callback):
-            callback("req1", MOCK_EVENTS_PAGE_1_NO_NEXT, None)
-            mock_batch = MagicMock()
-            mock_batch.add = MagicMock()
-            mock_batch.execute = MagicMock()
-            return mock_batch
-
-        self.mock_google_calendar_client.new_batch_http_request.side_effect = (
-            mock_new_batch
-        )
-        self.service._get_bulk_event_attendance = MagicMock()
-
-        self.service._get_meeting_code_from_event = MagicMock(
-            side_effect=lambda e: e["conferenceData"]["entryPoints"][0]["uri"].split(
-                "/"
-            )[-1]
-        )
-
-        metadata, meeting_code_map = self.service._get_calendar_events(
-            calendar_id="primary",
-            start_time="2025-06-13T00:00:00Z",
-            end_time="2025-06-14T00:00:00Z",
-        )
-
-        self.assertEqual(len(metadata), 1)
-        self.assertEqual(metadata[0]["event_id"], "event1")
-
-        self.assertIn("abc-defg-hij", meeting_code_map)
-        self.assertEqual(meeting_code_map["abc-defg-hij"]["event_id"], "event1")
-
-        self.service._get_bulk_event_attendance.assert_not_called()
-
-    def test_get_calendar_events_exception(self):
-        self.mock_google_calendar_client.events().list.return_value = MagicMock(
-            uri="req1"
-        )
-        mock_batch = MagicMock()
-        mock_batch.execute.side_effect = Exception("API failure")
-        self.mock_google_calendar_client.new_batch_http_request.return_value = (
-            mock_batch
-        )
-
-        self.service._get_meeting_code_from_event = MagicMock(return_value=None)
-
-        with self.assertRaises(Exception) as context:
-            self.service._get_calendar_events(
-                "primary", "2025-06-13T00:00:00Z", "2025-06-14T00:00:00Z"
-            )
-
-        self.assertIn("API failure", str(context.exception))
-
-    def test_get_calendar_events_retries_on_failure_then_succeeds(self):
-        """Tests that the batch execution is wrapped by the retry utility."""
-        self.service._get_meeting_code_from_event = MagicMock(
-            side_effect=[
-                "abc-defg-hij",
-                "xyz-1234-pqr",
-                "qrs-tuv-wxy",
+        self.sample_events_dict = {
+            "event1_123": {
+                "calendar_id": "calendar1",
+                "summary": "Event 1",
+                "start": self.event_start_time,
+                "is_recurring": False,
+                "meeting_code": "event1",
+            },
+            "event2_456": {
+                "calendar_id": "calendar2",
+                "summary": "Event 2",
+                "start": "2025-11-19T09:00:00",
+                "is_recurring": True,
+                "meeting_code": "event2",
+            },
+        }
+        self.sample_attendance = {
+            "event1_123": [
+                {
+                    "ldap": "alice",
+                    "join_time": "2025-11-19T08:00:00Z",
+                    "leave_time": "2025-11-19T09:00:00Z",
+                }
             ]
-        )
-
-        pages = [MOCK_EVENTS_PAGE_1, MOCK_EVENTS_PAGE_2]
-
-        def mock_fetch_page(page_token=None):
-            return pages.pop(0)
-
-        # Set up a mock for the list execute method
-        self.service.google_calendar_client.events.return_value.list.side_effect = (
-            lambda **kwargs: MagicMock(
-                execute=lambda: mock_fetch_page(kwargs.get("pageToken"))
-            )
-        )
-
-        calendar_id = "test_calendar"
-        start_time = "2023-01-01T00:00:00Z"
-        end_time = "2023-01-02T00:00:00Z"
-
-        self.service._get_calendar_events(calendar_id, start_time, end_time)
-
-        self.assertTrue(self.mock_retry_utils.get_retry_on_transient.called)
-
-    def test_get_bulk_attendance_for_all_events_batching(self):
-        self.service._is_circlecat_email = MagicMock(return_value=True)
-
-        mock_attendance_data = {
-            f"code{i}": [{"email": f"user{i}@circlecat.org"}] for i in range(1, 12)
         }
-        self.service._get_bulk_event_attendance = MagicMock(
-            side_effect=lambda codes, *args: {
-                code: mock_attendance_data[code] for code in codes
-            }
-        )
-
-        all_meeting_codes_map = {
-            f"code{i}": {"event_id": f"event{i}", "is_recurring": False}
-            for i in range(1, 12)
-        }
-
-        result = self.service._get_bulk_attendance_for_all_events(all_meeting_codes_map)
-
-        self.assertEqual(self.service._get_bulk_event_attendance.call_count, 2)
-
-        first_call_codes = self.service._get_bulk_event_attendance.call_args_list[0][0][
-            0
-        ]
-        self.assertEqual(len(first_call_codes), 10)
-        self.assertIn("code1", first_call_codes)
-        self.assertIn("code10", first_call_codes)
-
-        second_call_codes = self.service._get_bulk_event_attendance.call_args_list[1][
-            0
-        ][0]
-        self.assertEqual(len(second_call_codes), 1)
-        self.assertIn("code11", second_call_codes)
-
-        self.assertEqual(len(result), 11)
-
-    def test_get_bulk_event_attendance_success(self):
-        self.service._is_circlecat_email = MagicMock(return_value=True)
-
-        def mock_reports_batch(callback):
-            callback("abc-defg-hij_uuid", MOCK_REPORTS_RESPONSE, None)
-            mock_batch = MagicMock()
-            mock_batch.add = MagicMock()
-            mock_batch.execute = MagicMock()
-            return mock_batch
-
-        self.mock_google_reports_client.new_batch_http_request.side_effect = (
-            mock_reports_batch
-        )
-
-        mock_activity_request = MagicMock()
-        self.mock_google_reports_client.activities().list.return_value = (
-            mock_activity_request
-        )
-
-        import builtins
-
-        builtins.time = MagicMock()
-
-        result = self.service._get_bulk_event_attendance(
-            ["abc-defg-hij"],
-            {"abc-defg-hij": "event1"},
-            {"abc-defg-hij": False},
-        )
-
-        self.assertIn("abc-defg-hij", result)
-
-    def test_get_bulk_event_attendance_error(self):
-        self.service._is_circlecat_email = MagicMock(return_value=True)
-
-        mock_batch = MagicMock()
-        mock_batch.execute.side_effect = Exception("API error")
-        self.mock_google_reports_client.new_batch_http_request.return_value = mock_batch
-        self.mock_google_reports_client.activities().list.return_value = MagicMock()
-
-        def retry_side_effect(func, *args, **kwargs):
-            try:
-                func()
-            except Exception as e:
-                self.service.logger.warning(f"Batch request failed: {e}")
-
-        self.mock_retry_utils.get_retry_on_transient.side_effect = retry_side_effect
-
-        result = self.service._get_bulk_event_attendance(
-            ["abc-defg-hij"],
-            {"abc-defg-hij": "event1"},
-            {"abc-defg-hij": False},
-        )
-
-        self.assertEqual(result, defaultdict(list))
-        self.service.logger.warning.assert_called()
-
-    def test_get_bulk_event_attendance_retries_then_succeeds(self):
-        mock_activities = self.mock_google_reports_client.activities.return_value
-        mock_list = mock_activities.list.return_value
-        mock_list.execute.return_value = MOCK_REPORTS_RESPONSE
-
-        meeting_codes = ["retry-meeting"]
-        event_id_map = {"retry-meeting": "retry-meeting_20250702T013000Z"}
-        recurring_map = {"retry-meeting": True}
-
-        self.service._get_bulk_event_attendance(
-            meeting_codes=meeting_codes,
-            event_id_map=event_id_map,
-            recurring_map=recurring_map,
-        )
-
-        self.assertTrue(self.mock_retry_utils.get_retry_on_transient.called)
+        self.sample_ldap_dict = {"alice": "alice", "bob": "bob"}
 
     def test_get_meeting_code_from_event_success(self):
-        code = self.service._get_meeting_code_from_event(MOCK_EVENT)
+        event = {
+            "conferenceData": {
+                "entryPoints": [
+                    {
+                        "entryPointType": "video",
+                        "uri": "https://meet.google.com/abc-def-ghi",
+                    }
+                ]
+            }
+        }
+
+        code = self.service._get_meeting_code_from_event(event)
         self.assertEqual(code, "abcdefghi")
 
     def test_get_meeting_code_from_event_no_uri(self):
@@ -416,340 +98,626 @@ class TestGoogleCalendarSyncService(TestCase):
         self.assertIsNone(code)
         self.mock_logger.exception.assert_called()
 
+    def test_get_calendar_list_single_page(self):
+        mock_response = {
+            "items": [
+                {"id": "calendar1", "summary": "Calendar 1"},
+                {"id": "calendar2", "summary": "Calendar 2"},
+            ]
+        }
+        self.mock_google_calendar_client.calendarList.return_value.list.return_value.execute.return_value = mock_response
+
+        calendars = self.service._get_calendar_list()
+
+        self.assertEqual(len(calendars), 2)
+        self.assertEqual(calendars[0]["calendar_id"], "calendar1")
+        self.assertEqual(calendars[1]["summary"], "Calendar 2")
+
+    def test_get_calendar_list_multiple_pages(self):
+        responses = [
+            {
+                "items": [{"id": "calendar1", "summary": "Calendar 1"}],
+                "nextPageToken": "token1",
+            },
+            {"items": [{"id": "calendar2", "summary": "Calendar 2"}]},
+        ]
+
+        def execute_side_effect(*args, **kwargs):
+            return responses.pop(0)
+
+        self.mock_google_calendar_client.calendarList.return_value.list.return_value.execute.side_effect = execute_side_effect
+
+        calendars = self.service._get_calendar_list()
+
+        self.assertEqual(len(calendars), 2)
+        self.assertEqual(calendars[0]["calendar_id"], "calendar1")
+        self.assertEqual(calendars[1]["calendar_id"], "calendar2")
+
+    def test_get_calendar_list_api_exception(self):
+        self.mock_google_calendar_client.calendarList.return_value.list.return_value.execute.side_effect = Exception(
+            "API error"
+        )
+
+        calendars = self.service._get_calendar_list()
+
+        self.assertEqual(calendars, [])
+        self.mock_logger.error.assert_called_with(
+            "Unexpected error fetching calendars", ANY
+        )
+
+    def test_get_calendars_events_success(self):
+        sample_event = {
+            "id": "event1",
+            "summary": "Event 1",
+            "start": {"dateTime": "2025-11-01T10:00:00"},
+        }
+
+        def new_batch_http_request_side_effect(callback):
+            mock_batch = MagicMock()
+            mock_batch._callback = callback
+
+            def execute_side_effect():
+                for call_args in mock_batch.add.call_args_list:
+                    request_id = call_args[1]["request_id"]
+                    callback(request_id, {"items": [sample_event]}, None)
+
+            mock_batch.execute.side_effect = execute_side_effect
+            return mock_batch
+
+        self.mock_google_calendar_client.new_batch_http_request.side_effect = (
+            new_batch_http_request_side_effect
+        )
+
+        mock_req = MagicMock()
+        self.mock_google_calendar_client.events.return_value.list.return_value = (
+            mock_req
+        )
+
+        self.service._get_meeting_code_from_event = lambda e: "event1"
+
+        events_dict = self.service._get_calendars_events(
+            ["calendar1"], "2025-11-01T00:00:00Z", "2025-11-02T00:00:00Z"
+        )
+
+        self.assertIn("event1", events_dict)
+        self.assertEqual(events_dict["event1"]["meeting_code"], "event1")
+        self.mock_google_calendar_client.new_batch_http_request.assert_called()
+
+    def test_get_calendars_events_no_meeting_code(self):
+        mock_batch = MagicMock()
+        self.mock_google_calendar_client.new_batch_http_request.return_value = (
+            mock_batch
+        )
+        mock_req = MagicMock()
+        self.mock_google_calendar_client.events.return_value.list.return_value = (
+            mock_req
+        )
+        mock_req.execute.return_value = {
+            "items": [
+                {
+                    "id": "event1",
+                    "summary": "Event 1",
+                    "start": {"dateTime": "2025-11-01T10:00:00"},
+                },
+                {
+                    "id": "event2",
+                    "summary": "Event 2",
+                    "start": {"dateTime": "2025-11-02T10:00:00"},
+                },
+            ]
+        }
+
+        self.service._get_meeting_code_from_event = lambda e: None
+
+        events_dict = self.service._get_calendars_events(
+            ["calendar1", "calendar2"], "2025-11-01T00:00:00Z", "2025-11-03T00:00:00Z"
+        )
+
+        self.assertEqual(events_dict, {})
+
+    def test_get_calendars_events_exception_in_batch_add(self):
+        mock_batch = MagicMock()
+        mock_batch.add.side_effect = Exception("Add failed")
+        self.mock_google_calendar_client.new_batch_http_request.return_value = (
+            mock_batch
+        )
+        mock_req = MagicMock()
+        self.mock_google_calendar_client.events.return_value.list.return_value = (
+            mock_req
+        )
+        mock_req.execute.return_value = {
+            "items": [
+                {
+                    "id": "event1",
+                    "summary": "Event 1",
+                    "start": {"dateTime": "2025-11-01T10:00:00"},
+                }
+            ]
+        }
+
+        self.service._get_meeting_code_from_event = lambda e: "event1"
+
+        self.service._get_calendars_events(
+            ["calendar1"], "2025-11-01T00:00:00Z", "2025-11-02T00:00:00Z"
+        )
+
+        found_warning = any(
+            "Add failed" in str(call.args)
+            for call in self.mock_logger.warning.call_args_list
+        )
+        self.assertTrue(found_warning)
+
+    def test_get_event_attendees_success(self):
+        sample_events = {
+            "event1": {
+                "calendar_ids": ["calendar1"],
+                "summary": "Event 1",
+                "start": "2025-11-01T10:00:00",
+                "is_recurring": False,
+                "meeting_code": "event1",
+            }
+        }
+
+        sample_response = {
+            "items": [
+                {
+                    "events": [
+                        {
+                            "actor": {"email": "alice@circlecat.org"},
+                            "parameters": [
+                                {
+                                    "name": "start_timestamp_seconds",
+                                    "intValue": 1700000000,
+                                },
+                                {"name": "duration_seconds", "intValue": 3600},
+                            ],
+                        }
+                    ]
+                }
+            ]
+        }
+
+        def new_batch_http_request_side_effect(callback):
+            mock_batch = MagicMock()
+            mock_batch._callback = callback
+
+            def execute_side_effect():
+                for call_args in mock_batch.add.call_args_list:
+                    request_id = call_args[1]["request_id"]
+                    callback(request_id, sample_response, None)
+
+            mock_batch.execute.side_effect = execute_side_effect
+            return mock_batch
+
+        self.mock_google_reports_client.new_batch_http_request.side_effect = (
+            new_batch_http_request_side_effect
+        )
+        mock_req = MagicMock()
+        self.mock_google_reports_client.activities.return_value.list.return_value = (
+            mock_req
+        )
+
+        result = self.service._get_events_attendees(sample_events)
+
+        self.assertIn("event1", result)
+        self.assertEqual(len(result["event1"]), 1)
+        self.assertEqual(result["event1"][0]["ldap"], "alice")
+
+    def test_get_event_attendees_retries(self):
+        sample_events = {
+            "event1": {
+                "calendar_ids": ["calendar1"],
+                "summary": "Event 1",
+                "start": "2025-11-01T10:00:00",
+                "is_recurring": False,
+                "meeting_code": "event1",
+            }
+        }
+
+        sample_response = {
+            "items": [
+                {
+                    "events": [
+                        {
+                            "actor": {"email": "bob@circlecat.org"},
+                            "parameters": [
+                                {
+                                    "name": "start_timestamp_seconds",
+                                    "intValue": 1700003600,
+                                },
+                                {"name": "duration_seconds", "intValue": 1800},
+                            ],
+                        }
+                    ]
+                }
+            ]
+        }
+
+        def new_batch_http_request_side_effect(callback):
+            mock_batch = MagicMock()
+            mock_batch._callback = callback
+
+            def execute_side_effect():
+                for call_args in mock_batch.add.call_args_list:
+                    request_id = call_args[1]["request_id"]
+                    callback(request_id, sample_response, None)
+
+            mock_batch.execute.side_effect = execute_side_effect
+            return mock_batch
+
+        self.mock_google_reports_client.new_batch_http_request.side_effect = (
+            new_batch_http_request_side_effect
+        )
+        self.mock_retry_utils.get_retry_on_transient.side_effect = (
+            lambda func, *args, **kwargs: func()
+        )
+        mock_req = MagicMock()
+        self.mock_google_reports_client.activities.return_value.list.return_value = (
+            mock_req
+        )
+
+        result = self.service._get_events_attendees(sample_events)
+
+        self.assertIn("event1", result)
+        self.assertEqual(result["event1"][0]["ldap"], "bob")
+
+    def test_get_event_attendees_exception(self):
+        sample_events = {
+            "event1": {
+                "calendar_ids": ["calendar1"],
+                "summary": "Event 1",
+                "start": "2025-11-01T10:00:00",
+                "is_recurring": False,
+                "meeting_code": "event1",
+            }
+        }
+
+        def new_batch_http_request_side_effect(callback):
+            mock_batch = MagicMock()
+            mock_batch._callback = callback
+
+            def execute_side_effect():
+                for call_args in mock_batch.add.call_args_list:
+                    request_id = call_args[1]["request_id"]
+                    callback(request_id, None, Exception("API failed"))
+
+            mock_batch.execute.side_effect = execute_side_effect
+            return mock_batch
+
+        self.mock_google_reports_client.new_batch_http_request.side_effect = (
+            new_batch_http_request_side_effect
+        )
+        mock_req = MagicMock()
+        self.mock_google_reports_client.activities.return_value.list.return_value = (
+            mock_req
+        )
+
+        result = self.service._get_events_attendees(sample_events)
+
+        self.assertIn("event1", result)
+        self.assertEqual(result["event1"], [])
+        self.mock_logger.warning.assert_called_with(
+            "Failed to fetch attendance for meeting event1: API failed"
+        )
+
     def test_cache_calendars_success(self):
         self.service._get_calendar_list = MagicMock(
+            return_value=self.sample_calendar_list
+        )
+        mock_pipeline = MagicMock()
+        self.mock_redis_client.pipeline.return_value = mock_pipeline
+
+        cached_ids = self.service._cache_calendars()
+
+        mock_pipeline.hset.assert_any_call(
+            "calendarlist", "personal", "Personal Calendars"
+        )
+        mock_pipeline.hset.assert_any_call(
+            "calendarlist", "team_calendar1", "Team Calendar 1"
+        )
+        mock_pipeline.hset.assert_any_call(
+            "calendarlist", "team_calendar2", "Team Calendar 2"
+        )
+        self.assertEqual(cached_ids, ["team_calendar1", "team_calendar2"])
+        self.mock_retry_utils.get_retry_on_transient.assert_called_with(
+            mock_pipeline.execute
+        )
+
+    def test_cache_calendars_retries(self):
+        """Test that _cache_calendars retries Redis execution on transient errors."""
+        self.service._get_calendar_list = MagicMock(
             return_value=[
-                {"calendar_id": "user@circlecat.org", "summary": "Personal"},
-                {"calendar_id": "team1@group.v.calendar.google.com", "summary": "Team"},
-                {"calendar_id": "team2@circlecat.org", "summary": "Team2"},
-                {
-                    "calendar_id": "valid-calendar@calendar.google.com",
-                    "summary": "Valid",
-                },
+                {"calendar_id": "team_calendar1", "summary": "Team Calendar 1"},
             ]
         )
 
         mock_pipeline = MagicMock()
         self.mock_redis_client.pipeline.return_value = mock_pipeline
 
-        mock_validate_data = MagicMock()
-        self.mock_json_schema_validator.validate_data = mock_validate_data
+        def execute_side_effect():
+            return "ok"
 
-        self.service._cache_calendars()
-        mock_pipeline.hset.assert_any_call(
-            "calendarlist", "personal", "Personal Calendars"
-        )
-        mock_pipeline.hset.assert_any_call(
-            "calendarlist", "valid-calendar@calendar.google.com", "Valid"
-        )
-        self.assertTrue(mock_pipeline.execute.called)
-        assert mock_validate_data.call_count == 1
+        mock_pipeline.execute.side_effect = execute_side_effect
 
-    def test_cache_calendars_no_ldap_found(self):
+        cached_ids = self.service._cache_calendars()
+
+        self.mock_retry_utils.get_retry_on_transient.assert_called_with(
+            mock_pipeline.execute
+        )
+        self.assertEqual(cached_ids, ["team_calendar1"])
+
+    def test_cache_calendars_exception(self):
+        """Test that _cache_calendars handles invalid calendars and logs a warning."""
         self.service._get_calendar_list = MagicMock(
             return_value=[
-                {"calendar_id": "team1@group.v.calendar.google.com", "summary": "Team"},
-                {"calendar_id": "invalid@calendar.google.com", "summary": "Invalid"},
+                {"calendar_id": "team_calendar1", "summary": "Team Calendar 1"},
+                {"calendar_id": "invalid_calendar", "summary": "Invalid Calendar"},
             ]
         )
 
-        self.service._cache_calendars()
+        mock_pipeline = MagicMock()
+        self.mock_redis_client.pipeline.return_value = mock_pipeline
 
+        def validate_data_side_effect(data, schema):
+            if data["calendar_id"] == "invalid_calendar":
+                raise Exception("Invalid schema")
+
+        self.service.json_schema_validator.validate_data.side_effect = (
+            validate_data_side_effect
+        )
+
+        cached_ids = self.service._cache_calendars()
+
+        self.assertEqual(cached_ids, ["team_calendar1"])
         self.mock_logger.warning.assert_called_with(
-            "No calendar_id ending with @circlecat.org found; skipping caching."
+            "Invalid calendar skipped: Invalid schema"
         )
 
-    def test_cache_calendars_invalid_calendar_skipped(self):
-        self.service._get_calendar_list = MagicMock(
-            return_value=[
-                {"calendar_id": "user@circlecat.org", "summary": "Personal"},
-                {
-                    "calendar_id": "invalid-calendar@calendar.google.com",
-                    "summary": "Invalid",
+    def test_cache_calendar_events_success(self):
+        self.service._get_calendars_events = MagicMock(
+            return_value=self.sample_events_dict
+        )
+        mock_pipeline = MagicMock()
+        self.mock_redis_client.pipeline.return_value = mock_pipeline
+
+        events_dict = self.service._cache_calendar_events(
+            calendar_ids=["calendar1", "calendar2", "alice@circlecat.org"],
+            time_min=self.time_min,
+            time_max=self.time_max,
+        )
+
+        mock_pipeline.set.assert_any_call(
+            "event:event1",
+            json.dumps({
+                "summary": "Event 1",
+                "calendar_id": "calendar1",
+                "is_recurring": False,
+            }),
+        )
+        mock_pipeline.set.assert_any_call(
+            "event:event2",
+            json.dumps({
+                "summary": "Event 2",
+                "calendar_id": "calendar2",
+                "is_recurring": True,
+            }),
+        )
+        self.assertEqual(set(events_dict.keys()), set(self.sample_events_dict.keys()))
+        self.mock_retry_utils.get_retry_on_transient.assert_called_with(
+            mock_pipeline.execute
+        )
+
+    def test_cache_calendar_events_validation_exception(self):
+        self.service._get_calendars_events = MagicMock(
+            return_value={
+                "event1_123": {
+                    "calendar_ids": ["calendar1"],
+                    "summary": "Event 1",
+                    "start": "2025-11-19T08:00:00",
+                    "is_recurring": False,
+                    "meeting_code": "event1",
                 },
-            ]
-        )
-        self.mock_json_schema_validator.validate_data.side_effect = Exception(
-            "schema error"
-        )
-
-        mock_pipeline = MagicMock()
-        self.mock_redis_client.pipeline.return_value = mock_pipeline
-
-        self.service._cache_calendars()
-
-        self.mock_logger.warning.assert_any_call(
-            "Invalid calendar skipped: schema error"
-        )
-        mock_pipeline.hset.assert_called_once_with(
-            "calendarlist", "personal", "Personal Calendars"
-        )
-        mock_pipeline.execute.assert_called()
-
-    def test_cache_calendars_retries_then_succeeds(self):
-        self.service._get_calendar_list = MagicMock(
-            return_value=[
-                {"calendar_id": "user@circlecat.org", "summary": "Personal"},
-                {"calendar_id": "valid@calendar.google.com", "summary": "Valid"},
-            ]
+                "event_invalid": {
+                    "calendar_ids": ["calendar2"],
+                    "summary": "Invalid Event",
+                    "start": "2025-11-19T09:00:00",
+                    "is_recurring": True,
+                    "meeting_code": "invalid",
+                },
+            }
         )
 
         mock_pipeline = MagicMock()
         self.mock_redis_client.pipeline.return_value = mock_pipeline
 
-        self.service._cache_calendars()
+        def validate_data_side_effect(data, schema):
+            if data["meeting_code"] == "invalid":
+                raise Exception("Invalid schema")
 
-        self.assertTrue(mock_pipeline.execute.called)
-        self.mock_retry_utils.get_retry_on_transient.assert_called_once()
+        self.service.json_schema_validator.validate_data.side_effect = (
+            validate_data_side_effect
+        )
 
-    def test_cache_calendars_retries_3_times_and_fails(self):
-        self.service._get_calendar_list = MagicMock(
-            return_value=[
-                {"calendar_id": "user@circlecat.org", "summary": "Personal"},
-                {"calendar_id": "valid@calendar.google.com", "summary": "Valid"},
-            ]
+        events_dict = self.service._cache_calendar_events(
+            calendar_ids=["calendar1", "calendar2"],
+            time_min="2025-11-19T00:00:00",
+            time_max="2025-11-20T00:00:00",
+        )
+
+        mock_pipeline.set.assert_any_call("event:event1", ANY)
+        self.assertNotIn("event_invalid", events_dict)
+        self.mock_logger.warning.assert_called_with(
+            "Invalid event skipped: Invalid schema"
+        )
+
+    def test_cache_calendar_events_retry_on_execute(self):
+        self.service._get_calendars_events = MagicMock(
+            return_value={
+                "event1_123": {
+                    "calendar_ids": ["calendar1"],
+                    "summary": "Event 1",
+                    "start": "2025-11-19T08:00:00",
+                    "is_recurring": False,
+                    "meeting_code": "event1",
+                }
+            }
         )
 
         mock_pipeline = MagicMock()
         self.mock_redis_client.pipeline.return_value = mock_pipeline
 
-        def always_fail(func, *args, **kwargs):
-            raise Exception("Redis pipeline failed")
+        self.service._cache_calendar_events(
+            calendar_ids=["calendar1"],
+            time_min="2025-11-19T00:00:00",
+            time_max="2025-11-20T00:00:00",
+        )
 
-        self.mock_retry_utils.get_retry_on_transient.side_effect = always_fail
+        self.mock_retry_utils.get_retry_on_transient.assert_called_with(
+            mock_pipeline.execute
+        )
 
-        with self.assertRaises(Exception):
-            self.service._cache_calendars()
+    def test_cache_events_attendees_success(self):
+        self.service._get_events_attendees = MagicMock(
+            return_value=self.sample_attendance
+        )
+        mock_pipeline = MagicMock()
+        self.mock_redis_client.pipeline.return_value = mock_pipeline
 
-        self.mock_retry_utils.get_retry_on_transient.assert_called_once()
+        self.service._cache_events_attendees(
+            self.sample_events_dict, time_min=self.time_min, time_max=self.time_max
+        )
 
-    def test_cache_events_success_with_new_flow(self):
-        mock_metadata = [
-            {
-                "event_id": "event123",
-                "calendar_id": "user@circlecat.org",
-                "summary": "Meeting",
-                "start": "2025-07-30T10:00:00",
+        record_str = json.dumps({
+            "join_time": "2025-11-19T08:00:00Z",
+            "leave_time": "2025-11-19T09:00:00Z",
+        })
+        mock_pipeline.sadd.assert_called_with(
+            "event:event1_123:user:alice:attendance", record_str
+        )
+        score = int(datetime.fromisoformat(self.event_start_time).timestamp())
+        mock_pipeline.zadd.assert_any_call(
+            "calendar:calendar1:user:alice:events", {"event1_123": score}
+        )
+        self.mock_retry_utils.get_retry_on_transient.assert_called_with(
+            mock_pipeline.execute
+        )
+
+    def test_cache_events_attendees_no_attendees(self):
+        self.service._get_events_attendees = MagicMock()
+        events = {
+            "event1": {
+                "calendar_id": "calendar1",
+                "start": "2025-11-19T08:00:00",
+                "meeting_code": "event1",
                 "is_recurring": False,
             }
-        ]
-        mock_codes_map = {
-            "abc-def-ghi": {"event_id": "event123", "is_recurring": False}
         }
-        self.service._get_calendar_events = MagicMock(
-            return_value=(mock_metadata, mock_codes_map)
-        )
-
-        mock_attendance = [
-            {
-                "email": "user1@circlecat.org",
-                "join_time": "2025-07-30T10:00:00",
-                "leave_time": "2025-07-30T10:30:00",
-            }
-        ]
-        self.service._get_bulk_attendance_for_all_events = MagicMock(
-            return_value={"abc-def-ghi": mock_attendance}
-        )
-
-        self.service._get_meeting_code_from_event = MagicMock(
-            return_value="abc-def-ghi"
-        )
-
-        mock_pipeline = MagicMock()
-        self.mock_redis_client.pipeline.return_value = mock_pipeline
-        self.mock_redis_client.exists.return_value = False
-
-        updated_ids = self.service.cache_events(
-            "user@circlecat.org", "2025-07-30T00:00:00", "2025-07-31T00:00:00"
-        )
-
-        self.service._get_calendar_events.assert_called_once()
-        self.service._get_bulk_attendance_for_all_events.assert_called_once_with(
-            mock_codes_map
-        )
-        self.assertIn("event123", updated_ids)
-        self.assertTrue(mock_pipeline.set.called)
-        self.assertTrue(mock_pipeline.zadd.called)
-        self.assertTrue(mock_pipeline.sadd.called)
-        self.assertTrue(mock_pipeline.execute.called)
-
-    def test_cache_events_invalid_event_skipped(self):
-        mock_metadata = [
-            {
-                "event_id": "event123",
-                "calendar_id": "user@circlecat.org",
-                "summary": "Bad Event",
-                "start": "2025-07-30T10:00:00",
-                "is_recurring": False,
-            }
-        ]
-        self.service._get_calendar_events = MagicMock(return_value=(mock_metadata, {}))
-        self.service._get_bulk_attendance_for_all_events = MagicMock(return_value={})
-
-        self.mock_json_schema_validator.validate_data.side_effect = Exception(
-            "validation failed"
-        )
+        self.service._get_events_attendees.return_value = {}
 
         mock_pipeline = MagicMock()
         self.mock_redis_client.pipeline.return_value = mock_pipeline
 
-        updated_ids = self.service.cache_events(
-            "user@circlecat.org", "2025-07-30T00:00:00", "2025-07-31T00:00:00"
+        self.service._cache_events_attendees(events, time_min=None, time_max=None)
+
+        mock_pipeline.sadd.assert_not_called()
+        mock_pipeline.zadd.assert_not_called()
+        self.mock_retry_utils.get_retry_on_transient.assert_called_with(
+            mock_pipeline.execute
         )
 
-        self.assertIn("event123", updated_ids)
-        self.mock_logger.warning.assert_any_call(
-            "Invalid event skipped: validation failed"
-        )
-        self.assertFalse(mock_pipeline.set.called)
-        mock_pipeline.execute.assert_called()
-
-    def test_cache_events_retries_then_succeeds(self):
-        mock_metadata = [
-            {
-                "event_id": "event123",
-                "calendar_id": "user@circlecat.org",
-                "summary": "Retry Event",
-                "start": "2025-07-30T10:00:00",
+    def test_cache_events_attendees_invalid_start(self):
+        self.service._get_events_attendees = MagicMock()
+        events = {
+            "event1": {
+                "calendar_id": "calendar1",
+                "start": "invalid-time",
+                "meeting_code": "event1",
                 "is_recurring": False,
             }
-        ]
-        self.service._get_calendar_events = MagicMock(
-            return_value=(
-                mock_metadata,
-                {"abc-def-ghi": {"event_id": "event123", "is_recurring": False}},
-            )
-        )
-        self.service._get_bulk_attendance_for_all_events = MagicMock()
-        mock_attendance = [
-            {
-                "email": "user1@circlecat.org",
-                "join_time": "2025-07-30T10:00:00",
-                "leave_time": "2025-07-30T10:30:00",
-            }
-        ]
-        self.service._get_bulk_attendance_for_all_events.return_value = {
-            "abc-def-ghi": mock_attendance
         }
-        self.service._get_meeting_code_from_event = MagicMock(
-            return_value="abc-def-ghi"
-        )
+        self.service._get_events_attendees.return_value = {
+            "event1": [
+                {
+                    "ldap": "alice",
+                    "join_time": "2025-11-19T08:00:00Z",
+                    "leave_time": "2025-11-19T09:00:00Z",
+                }
+            ]
+        }
 
         mock_pipeline = MagicMock()
         self.mock_redis_client.pipeline.return_value = mock_pipeline
-        self.mock_redis_client.get.return_value = json.dumps([])
 
-        result = self.service.cache_events(
-            "user@circlecat.org", "2025-07-30T00:00:00", "2025-07-31T00:00:00"
-        )
+        self.service._cache_events_attendees(events, time_min=None, time_max=None)
 
-        self.assertIn("event123", result)
-        self.service._get_bulk_attendance_for_all_events.assert_called_once()
-        self.mock_retry_utils.get_retry_on_transient.assert_called_once()
+        mock_pipeline.sadd.assert_not_called()
+        mock_pipeline.zadd.assert_not_called()
 
-    def test_cache_events_fetch_failure_retries(self):
-        mock_metadata = [
-            {
-                "event_id": "event123",
-                "calendar_id": "user@circlecat.org",
-                "summary": "Retry Event",
-                "start": "2025-07-30T10:00:00",
-                "is_recurring": False,
-            }
-        ]
-
-        self.service._get_calendar_events = MagicMock(return_value=(mock_metadata, {}))
-        self.service._get_bulk_attendance_for_all_events = MagicMock()
-        self.service._get_bulk_attendance_for_all_events.return_value = {}
-
-        mock_pipeline = MagicMock()
-        self.mock_redis_client.pipeline.return_value = mock_pipeline
-        self.mock_redis_client.get.return_value = json.dumps([])
-
-        self.service.cache_events(
-            "alice@circlecat.org", "2025-06-01T00:00:00Z", "2025-06-30T23:59:59Z"
-        )
-
-        self.mock_retry_utils.get_retry_on_transient.assert_called_once_with(
+        self.mock_logger.warning.assert_called_with(ANY)
+        self.mock_retry_utils.get_retry_on_transient.assert_called_with(
             mock_pipeline.execute
         )
 
     def test_pull_calendar_history_success(self):
-        self.mock_redis_client.hkeys.return_value = [
-            "team1@group.v.calendar.google.com",
-            "team2@group.v.calendar.google.com",
-        ]
-
-        self.service._cache_calendars = MagicMock()
-        self.service.cache_events = MagicMock(return_value={"event1", "event2"})
-
-        self.mock_google_service.list_directory_all_people_ldap.return_value = {
-            "user1": "user1@circlecat.org",
-            "user2": "user2@circlecat.org",
-        }
-
-        self.service.pull_calendar_history("2025-07-01T00:00:00", "2025-08-01T00:00:00")
-
-        self.assertEqual(self.service.cache_events.call_count, 4)
-        self.service._cache_calendars.assert_called_once()
-        self.mock_google_service.list_directory_all_people_ldap.assert_called_once()
-
-    def test_pull_calendar_history_empty_calendar_keys(self):
-        self.mock_redis_client.hkeys.return_value = []
-        self.mock_google_service.list_directory_all_people_ldap.return_value = {
-            "user1": "user1@circlecat.org"
-        }
-        self.service._cache_calendars = MagicMock()
-        self.service.cache_events = MagicMock(return_value=set())
+        self.mock_google_service.list_directory_all_people_ldap.return_value = (
+            self.sample_ldap_dict
+        )
+        self.service._cache_events_attendees = MagicMock()
+        self.service._cache_calendars = MagicMock(
+            return_value=["calendar1", "calendar2"]
+        )
+        self.service._cache_calendar_events = MagicMock(
+            return_value=self.sample_events_dict
+        )
 
         self.service.pull_calendar_history(
-            time_min="2025-07-01T00:00:00Z", time_max="2025-08-01T00:00:00Z"
+            time_min=self.time_min, time_max=self.time_max
         )
 
         self.service._cache_calendars.assert_called_once()
-        self.assertEqual(self.service.cache_events.call_count, 1)
-        self.mock_google_service.list_directory_all_people_ldap.assert_called_once()
+        personal_calendar_ids = [
+            f"{ldap}@circlecat.org" for ldap in self.sample_ldap_dict.values()
+        ]
+        expected_all_ids = ["calendar1", "calendar2"] + personal_calendar_ids
+        self.service._cache_calendar_events.assert_called_once_with(
+            expected_all_ids, self.time_min, self.time_max
+        )
+        self.service._cache_events_attendees.assert_called_once_with(
+            self.sample_events_dict, self.time_min, self.time_max
+        )
 
-    def test_pull_calendar_history_retries_then_succeeds(self):
-        self.mock_redis_client.hkeys.return_value = ["personal"]
-        self.service._cache_calendars = MagicMock()
-        self.service.cache_events = MagicMock(side_effect=[set(), set()])
-        self.mock_google_service.list_directory_all_people_ldap = MagicMock(
+    def test_pull_calendar_history_no_time(self):
+        self.mock_google_service.list_directory_all_people_ldap.return_value = {
+            "alice": "alice",
+            "bob": "bob",
+        }
+        self.service._cache_events_attendees = MagicMock()
+        self.service._cache_calendars = MagicMock(
+            return_value=["calendar1", "calendar2"]
+        )
+        self.service._cache_calendar_events = MagicMock(
             return_value={
-                "user1": "user1@circlecat.org",
-                "user2": "user2@circlecat.org",
+                "event1": {
+                    "calendar_id": "calendar1",
+                    "summary": "Event 1",
+                    "start": "2025-11-19T08:00:00",
+                    "is_recurring": False,
+                    "meeting_code": "event1",
+                }
             }
         )
 
-        self.service.pull_calendar_history(
-            time_min="2025-07-01T00:00:00Z", time_max="2025-08-01T00:00:00Z"
-        )
+        self.service.pull_calendar_history()
 
         self.service._cache_calendars.assert_called_once()
-        self.assertEqual(
-            self.service.cache_events.call_count, 2
-        )  # for personal calendar_ids
-        self.mock_google_service.list_directory_all_people_ldap.assert_called_once()
-
-    def test_pull_calendar_history_retries_then_fails(self):
-        self.mock_redis_client.hkeys.return_value = ["personal"]
-        self.service._cache_calendars = MagicMock()
-        self.service.cache_events = MagicMock(
-            side_effect=Exception("Cache events failed")
+        personal_calendar_ids = ["alice@circlecat.org", "bob@circlecat.org"]
+        expected_all_ids = ["calendar1", "calendar2"] + personal_calendar_ids
+        self.service._cache_calendar_events.assert_called_once_with(
+            expected_all_ids, None, None
         )
-        self.mock_google_service.list_directory_all_people_ldap = MagicMock(
-            return_value={"user1": "user1@circlecat.org"}
+        self.service._cache_events_attendees.assert_called_once_with(
+            self.service._cache_calendar_events.return_value, None, None
         )
-
-        with self.assertRaises(Exception) as context:
-            self.service.pull_calendar_history(
-                time_min="2025-07-01T00:00:00Z", time_max="2025-08-01T00:00:00Z"
-            )
-
-        self.assertIn("Cache events failed", str(context.exception))
-        self.service._cache_calendars.assert_called_once()
-        self.assertTrue(self.service.cache_events.called)
-        self.mock_google_service.list_directory_all_people_ldap.assert_called_once()
 
 
 if __name__ == "__main__":

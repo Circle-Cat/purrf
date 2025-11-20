@@ -2,11 +2,14 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "CalendarEventDetail",
   "type": "object",
-  "required": ["calendar_id", "summary", "is_recurring"],
+  "required": [
+    "calendar_id",
+    "summary",
+    "start",
+    "is_recurring",
+    "meeting_code"
+  ],
   "properties": {
-    "event_id": {
-      "type": "string"
-    },
     "calendar_id": {
       "type": "string"
     },
@@ -17,33 +20,11 @@
       "type": "string",
       "format": "date-time"
     },
-    "attendees": {
-      "type": ["array", "null"],
-      "items": {
-        "type": "object",
-        "required": ["email"],
-        "properties": {
-          "email": {
-            "type": "string",
-            "format": "email"
-          },
-          "duration_seconds": {
-            "type": "integer"
-          },
-          "join_time": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "leave_time": {
-            "type": "string",
-            "format": "date-time"
-          }
-        },
-        "additionalProperties": false
-      }
-    },
     "is_recurring": {
       "type": "boolean"
+    },
+    "meeting_code": {
+      "type": ["string", "null"]
     }
   },
   "additionalProperties": false
