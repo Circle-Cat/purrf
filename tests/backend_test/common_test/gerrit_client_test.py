@@ -121,6 +121,44 @@ class TestQueryChanges(TestCase):
         with self.assertRaises(json.JSONDecodeError):
             self.client.get_projects()
 
+    def test_get_change_by_change_id_success(self):
+        """Tests successful retrieval and parsing of a change by change_id."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_change_data = {
+            "id": "12345",
+            "project": "project-one",
+            "insertions": 10,
+            "deletions": 2,
+            "status": "MERGED",
+        }
+        # Gerrit prepends ")]}'\n" to responses
+        mock_response.text = ")]}'\n" + json.dumps(mock_change_data)
+        mock_response.raise_for_status.return_value = None
+        self.mock_session.get.return_value = mock_response
+
+        change_info = self.client.get_change_by_change_id("12345")
+
+        self.mock_session.get.assert_called_once_with(f"{self.base_url}/changes/12345")
+        mock_response.raise_for_status.assert_called_once()
+        self.assertEqual(change_info, mock_change_data)
+
+    def test_get_change_by_change_id_none(self):
+        """Tests that passing None as change_id raises ValueError."""
+        with self.assertRaises(ValueError):
+            self.client.get_change_by_change_id(None)
+
+    def test_get_change_by_change_id_json_decode_error(self):
+        """Tests handling of invalid JSON in the response."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.text = ")]}'\n" + "invalid json"
+        mock_response.raise_for_status.return_value = None
+        self.mock_session.get.return_value = mock_response
+
+        with self.assertRaises(json.JSONDecodeError):
+            self.client.get_change_by_change_id("12345")
+
 
 if __name__ == "__main__":
     main()

@@ -23,6 +23,7 @@ class GerritProcessorService:
         pubsub_puller_factory,
         retry_utils,
         date_time_util,
+        gerrit_client,
     ):
         """
         Args:
@@ -31,12 +32,14 @@ class GerritProcessorService:
             pubsub_puller_factory: Factory that creates PubSubPuller(project_id, subscription_id).
             retry_utils: Retry utility.
             date_time_util: A DateTimeUtil instance for handling date and time operations.
+            gerrit_client: A Gerrit client instance.
         """
         self.logger = logger
         self.redis_client = redis_client
         self.pubsub_puller_factory = pubsub_puller_factory
         self.retry_utils = retry_utils
         self.date_time_util = date_time_util
+        self.gerrit_client = gerrit_client
 
     def _get_unmerged_cl_key(self, owner_ldap: str, project: str, status: str) -> str:
         """Generate Redis sorted set key for unmerged CLs (project-specific)"""
@@ -76,7 +79,6 @@ class GerritProcessorService:
             "is_private": change_info.get("private"),
             "is_wip": change_info.get("wip"),
             "patch_set_number": payload.get("patchSet", {}).get("number"),
-            "insertions": payload.get("patchSet", {}).get("sizeInsertions", 0),
             "change_status": (
                 GerritChangeStatus(status_str.lower()) if status_str else None
             ),
@@ -424,7 +426,7 @@ class GerritProcessorService:
         Note:
             - Relies on `_get_unmerged_cl_key` to generate the Redis key for tracking "NEW" status CLs.
             - Metrics are stored in a weekly bucket (via `date_time_util.compute_buckets_weekly`) for time-based aggregation.
-            - Ignores missing optional fields (e.g., `insertions` defaults to 0 if not found) to avoid partial failures.
+            - After receiving a merge event, query the actual number of lines added using the get_change_by_change_id method.
         """
         data = self._extract_and_validate_change_data(
             payload,
@@ -433,7 +435,6 @@ class GerritProcessorService:
                 "project",
                 "owner_ldap",
                 "event_unix_timestamp",
-                "insertions",
             ],
         )
         if not data:
@@ -443,7 +444,8 @@ class GerritProcessorService:
         project = data["project"]
         owner_ldap = data["owner_ldap"]
         merged_unix_timestamp = data["event_unix_timestamp"]
-        insertions = data["insertions"]
+        change_summary = self.gerrit_client.get_change_by_change_id(change_number)
+        insertions = change_summary.get("insertions", 0)
 
         bucket = self.date_time_util.compute_buckets_weekly(merged_unix_timestamp)
         cl_merged_field = GERRIT_STATUS_TO_FIELD_TEMPLATE.format(

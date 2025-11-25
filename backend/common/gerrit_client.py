@@ -97,3 +97,20 @@ class GerritClient:
         resp.raise_for_status()
         text = resp.text.lstrip(")]}'\n")
         return json.loads(text)
+
+    def get_change_by_change_id(self, change_id):
+        """
+        Query the /changes/{change_id} endpoint to retrieve information about a specific change.
+
+        Args:
+            change_id (str): The ID of the change to query.
+
+        Returns:
+            dict: A ChangeInfo dictionary containing details of the change.
+        """
+        if not change_id:
+            raise ValueError("change_id can not be None.")
+        resp = self.session.get(f"{self.base_url}/changes/{change_id}")
+        resp.raise_for_status()
+        text = resp.text.lstrip(")]}'\n")
+        return json.loads(text)

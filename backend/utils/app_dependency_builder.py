@@ -196,6 +196,7 @@ class AppDependencyBuilder:
             pubsub_puller_factory=self.pubsub_puller_factory,
             retry_utils=self.retry_utils,
             date_time_util=self.date_time_util,
+            gerrit_client=self.gerrit_client,
         )
         self.consumer_controller = ConsumerController(
             microsoft_message_processor_service=self.microsoft_message_processor_service,

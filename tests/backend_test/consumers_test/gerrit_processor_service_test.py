@@ -33,6 +33,7 @@ class TestStorePayload(unittest.TestCase):
         self.mock_puller_factory = MagicMock()
         self.mock_retry = MagicMock()
         self.mock_date_util = MagicMock()
+        self.mock_gerrit_client = MagicMock()
 
         self.service = GerritProcessorService(
             logger=self.mock_logger,
@@ -40,6 +41,7 @@ class TestStorePayload(unittest.TestCase):
             pubsub_puller_factory=self.mock_puller_factory,
             retry_utils=self.mock_retry,
             date_time_util=self.mock_date_util,
+            gerrit_client=self.mock_gerrit_client,
         )
 
         self.mock_retry.get_retry_on_transient.side_effect = lambda func: func()
@@ -169,6 +171,9 @@ class TestStorePayload(unittest.TestCase):
 
         mock_pipeline = MagicMock()
         self.mock_redis.pipeline.return_value = mock_pipeline
+        self.mock_gerrit_client.get_change_by_change_id.return_value = {
+            "insertions": 16
+        }
 
         self.service.store_payload(payload)
 
@@ -177,7 +182,7 @@ class TestStorePayload(unittest.TestCase):
             ldap="bob", project=self.mock_project_value, bucket=self.bucket_value
         )
         mock_pipeline.hincrby.assert_any_call(
-            stats_key_project, GERRIT_LOC_MERGED_FIELD, 18
+            stats_key_project, GERRIT_LOC_MERGED_FIELD, 16
         )
         mock_pipeline.hincrby.assert_any_call(
             stats_key_project,
@@ -192,7 +197,7 @@ class TestStorePayload(unittest.TestCase):
             ldap="bob", bucket=self.bucket_value
         )
         mock_pipeline.hincrby.assert_any_call(
-            stats_key_global, GERRIT_LOC_MERGED_FIELD, 18
+            stats_key_global, GERRIT_LOC_MERGED_FIELD, 16
         )
         mock_pipeline.hincrby.assert_any_call(
             stats_key_global,
@@ -338,6 +343,7 @@ class TestPullGerrit(unittest.TestCase):
         self.mock_puller_factory = MagicMock()
         self.mock_retry = MagicMock()
         self.mock_date_util = MagicMock()
+        self.mock_gerrit_client = MagicMock()
 
         self.service = GerritProcessorService(
             logger=self.mock_logger,
@@ -345,6 +351,7 @@ class TestPullGerrit(unittest.TestCase):
             pubsub_puller_factory=self.mock_puller_factory,
             retry_utils=self.mock_retry,
             date_time_util=self.mock_date_util,
+            gerrit_client=self.mock_gerrit_client,
         )
 
         self.fake_status = PullStatusResponse(
