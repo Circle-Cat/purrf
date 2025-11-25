@@ -164,3 +164,26 @@ bazel build //frontend:dist
 bazel build //:frontend_image
 bazel run //:frontend_image_push_dynamic --action_env=FE_REPO=xxxx --action_env=TAG=xxxx
 ```
+
+### PostgreSQL Docker Setup
+
+For local **development only**, you can spin up a PostgreSQL database using the provided script.
+
+#### Give the script execute permission and start the PostgreSQL container
+```bash
+chmod +x docker/postgres_up.sh
+./docker/postgres_up.sh
+```
+
+This launches a PostgreSQL 16 container on:
+* Host: localhost
+* Port: 5432
+* User: myuser
+* Password: mypassword
+* Database: mydb
+
+#### Stop and remove the container
+```bash
+docker stop my-postgres
+docker rm my-postgres
+```
