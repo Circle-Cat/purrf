@@ -1,0 +1,2 @@
+class TrainingEntity:
+    pass

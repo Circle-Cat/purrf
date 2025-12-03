@@ -1,0 +1,2 @@
+class EducationDto:
+    pass
