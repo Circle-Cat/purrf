@@ -7,6 +7,7 @@ from backend.common.environment_constants import (
 )
 
 
+@patch("backend.utils.app_dependency_builder.FastAppFactory")
 @patch("backend.utils.app_dependency_builder.SummaryService")
 @patch("backend.utils.app_dependency_builder.PubSubPullManager")
 @patch("backend.utils.app_dependency_builder.AsyncioEventLoopManager")
@@ -94,6 +95,7 @@ class TestAppDependencyBuilder(TestCase):
         mock_asyncio_event_loop_manager_cls,
         mock_pubsub_pull_manager_cls,
         mock_summary_service_cls,
+        mock_fast_app_factory_cls,
     ):
         """
         Tests that the AppDependencyBuilder correctly instantiates and wires all its dependencies.
@@ -356,6 +358,7 @@ class TestAppDependencyBuilder(TestCase):
             jira_analytics_service=mock_jira_analytics_service_cls.return_value,
             date_time_util=mock_date_time_util_cls.return_value,
         )
+        mock_fast_app_factory_cls.assert_called_once()
 
         # Assert that the builder's internal attributes are the created mock instances
         mock_google_client_instance.create_chat_client.assert_called_once()

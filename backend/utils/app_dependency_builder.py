@@ -69,6 +69,7 @@ from backend.historical_data.google_chat_history_sync_service import (
     GoogleChatHistorySyncService,
 )
 from backend.common.asyncio_event_loop_manager import AsyncioEventLoopManager
+from backend.utils.fast_app_factory import FastAppFactory
 
 
 class AppDependencyBuilder:
@@ -320,3 +321,4 @@ class AppDependencyBuilder:
             google_chat_analytics_service=self.google_chat_analytics_service,
             summary_service=self.summary_service,
         )
+        self.fast_app_factory = FastAppFactory()

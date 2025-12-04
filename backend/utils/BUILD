@@ -44,12 +44,23 @@ py_library(
 )
 
 py_library(
+    name = "fast_app_factory",
+    srcs = [
+        "fast_app_factory.py",
+    ],
+    deps = [
+        "@pypi//fastapi",
+    ],
+)
+
+py_library(
     name = "app_dependency_builder",
     srcs = [
         "app_dependency_builder.py",
     ],
     deps = [
         ":date_time_util",
+        ":fast_app_factory",
         ":google_chat_message_utils",
         ":microsoft_chat_message_util",
         ":retry_utils",

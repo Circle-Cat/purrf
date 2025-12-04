@@ -26,6 +26,16 @@ py_binary(
 )
 
 py_binary(
+    name = "fast_app_dev_runner",
+    srcs = ["fast_app_dev_runner.py"],
+    main = "fast_app_dev_runner.py",
+    deps = [
+        "//backend/utils:app_dependency_builder",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_binary(
     name = "prod_runner",
     srcs = ["prod_runner.py"],
     main = "prod_runner.py",

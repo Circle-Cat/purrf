@@ -53,8 +53,14 @@ See: backend/common/environment_constants.py
 
 ####  Running the backend project for development
 
+- **Original command** (legacy / synchronous routes):
 ```bash
 bazel run //backend:dev_runner
+```
+- **New command** (asynchronous support):
+For developing Mentorship-related modules, please use this one.
+```bash
+bazel run //backend:fast_app_dev_runner
 ```
 
 ####  Running the frontend project for development
