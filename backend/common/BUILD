@@ -133,3 +133,26 @@ py_library(
         "@pypi//msgraph_sdk",
     ],
 )
+
+py_library(
+    name = "base",
+    srcs = ["base.py"],
+    deps = [
+        ":environment_constants",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "database",
+    srcs = ["database.py"],
+    deps = [
+        "base",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "mentorship_enums",
+    srcs = ["mentorship_enums.py"],
+)

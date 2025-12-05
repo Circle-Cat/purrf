@@ -22,6 +22,14 @@ exports_files(
     visibility = ["//tools/lint:lint_access_file_group"],  #lint file group
 )
 
+filegroup(
+    name = "alembic_files",
+    srcs = glob([
+        "alembic_setup/**",
+        "alembic.ini",
+    ]),
+)
+
 js_library(
     name = "eslintrc",
     srcs = ["eslint.config.mjs"],

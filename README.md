@@ -51,6 +51,27 @@ gcloud config set project {google_project_id}
 
 See: backend/common/environment_constants.py
 
+### Init PostgreSQL Database
+**Warning**: Do **not** use the same database for development and testing.
+The init_db command will **drop all existing data** and recreate an empty database with only the table structure. Using the same database for tests will erase your development data.
+
+Create and initialize the development database:
+```bash
+export DATABASE_URL=postgresql+asyncpg://<user>:<password>@<host>:<port>/<database>
+bazel run //tools:init_db
+```
+
+Create and initialize the test database (separate from the development database):
+Note: The init_db script always reads DATABASE_URL to determine which database to initialize.
+To initialize the test database, temporarily point DATABASE_URL to the test database.
+```bash
+export TEST_DATABASE_URL=postgresql+asyncpg://<user>:<password>@<host>:<port>/<test_database>
+export DATABASE_URL=$TEST_DATABASE_URL
+bazel run //tools:init_db
+```
+Both databases must be initialized with init_db before running the backend or unit tests.
+This ensures the development database has your working environment and the test database is clean for testing.
+
 ####  Running the backend project for development
 
 - **Original command** (legacy / synchronous routes):
@@ -88,7 +109,15 @@ bazel build //frontend:dist
 bazel run //frontend:vite_preview
 ```
 
-### Before push the code
+### Before pushing code
+
+Before running the repository unit tests under `tests/backend_test/repository_test`,
+export the test database URL (replace the placeholders as needed):
+
+```bash
+export TEST_DATABASE_URL=postgresql+asyncpg://<user>:<password>@<host>:<port>/<database>
+```
+
 Run all test methods:
 ```bash
 bazel test ...
