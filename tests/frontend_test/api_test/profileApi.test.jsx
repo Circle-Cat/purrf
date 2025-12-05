@@ -1,10 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { updateMyProfile } from "@/api/profileApi";
 import { getMyProfile } from "@/api/profileApi";
 import request from "@/utils/request";
 
 vi.mock("@/utils/request", () => ({
   default: {
     get: vi.fn(),
+    patch: vi.fn(),
   },
 }));
 
@@ -37,6 +39,20 @@ describe("profileApi", () => {
 
       expect(request.get).toHaveBeenCalledTimes(1);
       expect(request.get).toHaveBeenCalledWith("/profiles/me");
+    });
+  });
+
+  describe("updateMyProfile", () => {
+    it("should call request.patch with the correct URL and profile Object", async () => {
+      await updateMyProfile({ profile: {} });
+
+      expect(request.patch).toHaveBeenCalledTimes(1);
+      expect(request.patch).toHaveBeenCalledWith(
+        "/profiles/me",
+        expect.objectContaining({
+          profile: expect.any(Object),
+        }),
+      );
     });
   });
 });
