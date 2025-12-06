@@ -31,6 +31,63 @@
     cursor: pointer;
 }
 
+.header-right .user-name:hover {
+    background-color: var(--secondary-color);
+    border-color: var(--secondary-color);
+    opacity: 0.8;
+}
+
+.header-right .user-name:focus {
+    outline: 2px solid var(--primary-color);
+}
+
+.dropdown-content-wrapper {
+    position: fixed;
+    top: 0;
+    left: 0;
+    transform: translate(580px, 55.5px);
+    min-width: max-content;
+    will-change: transform;
+    z-index: 50;
+    --radix-popper-available-width: 796px;
+    --radix-popper-available-height: 802.5px;
+    --radix-popper-anchor-width: 40px;
+    --radix-popper-anchor-height: 40px;
+    --radix-popper-transform-origin: 100% 0px;
+}
+
+.dropdown-content {
+    outline: none;
+    box-shadow: 0 1px 3px var(--border-color-light);
+    background-color: white;
+    border-radius: 0.5rem;
+    padding: 4px;
+    border: 1px solid var(--border-color-light);
+    --radix-dropdown-menu-content-transform-origin: 100% 0px;
+    --radix-dropdown-menu-content-available-width: 796;
+    --radix-dropdown-menu-content-available-height: 802.5;
+    --radix-dropdown-menu-trigger-width: 40px;
+    --radix-dropdown-menu-trigger-height: 40px;
+    pointer-events: auto;
+}
+
+.dropdown-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: 0.5rem;
+  padding: 0.375rem 0.5rem;
+  font-size: 0.875rem;
+  outline: none;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.dropdown-item:hover {
+  background-color: var(--teriary-color);
+}
+
 .logo {
     height: 35px;
     width: auto;

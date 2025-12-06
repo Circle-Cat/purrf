@@ -8,6 +8,7 @@ import "@/App.css";
 import Header from "@/components/layout/Header";
 import Dashboard from "@/pages/Dashboard";
 import DataSearch from "@/pages/DataSearch";
+import Profile from "@/pages/Profile";
 
 function App() {
   return (
@@ -46,6 +47,7 @@ function App() {
               <Route path="/" element={<Dashboard />} />
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/datasearch" element={<DataSearch />} />
+              <Route path="/profile" element={<Profile />} />
             </Routes>
           </main>
         </div>

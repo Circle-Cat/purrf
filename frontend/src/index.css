@@ -11,7 +11,10 @@
 
   /* Secondary color, a semi-transparent version of the primary color.
      Used for subtle effects like hover states, selected backgrounds, or minor highlights. */
-  --secondary-color: #6135f344;
+  --secondary-color: #8b6ef7;
+
+  /* Teriary color */
+  --teriary-color: #E8E2FE;
 
   /* Text Colors */
   --text-color-dark: #333333;
