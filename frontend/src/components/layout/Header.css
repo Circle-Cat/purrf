@@ -92,3 +92,69 @@
     height: 35px;
     width: auto;
 }
+
+.dialog-content {
+  background: white;
+  border-radius: 0.5rem;
+  padding: 1.4rem;
+  max-width: 530px;
+  width: 100%;
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+  z-index: 1000;
+}
+
+.dialog-header {
+  font-size: 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0;
+  margin-top: -1rem;
+  margin-bottom: -0.1rem;
+}
+
+.dialog-close {
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  font-size: 22px;
+  color: #555;
+  padding: 0;
+  margin-right: -0.5rem;
+}
+
+.support-message {
+  margin-top: -0.5rem;
+  margin-bottom: -0.1rem;
+  font-size: 16px;
+  margin-bottom: 0;
+  color: #555555b1;
+}
+
+.spacer {
+  margin: 28px 0;
+}
+
+.admin-email-text {
+  font-weight: Regular;
+  color: #555;
+}
+
+.admin-email {
+  color: #007bff;
+  margin: 0;
+}
+
+.dialog-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.4);
+  z-index: 999;
+}

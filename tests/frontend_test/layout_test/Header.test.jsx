@@ -1,4 +1,9 @@
-import { render, screen, cleanup, waitFor } from "@testing-library/react";
+import {
+  render,
+  screen,
+  cleanup,
+  waitFor,
+} from "@testing-library/react";
 import { describe, test, expect, afterEach, vi } from "vitest";
 import Header from "@/components/layout/Header";
 import Profile from "@/pages/Profile";
@@ -18,6 +23,17 @@ vi.mock("@/pages/Profile", () => ({
 }));
 
 describe("Header Component", () => {
+  const setup = (cookieValue = null, userName = "") => {
+    getCookie.mockReturnValue(cookieValue);
+    extractCloudflareUserName.mockReturnValue(userName);
+
+    render(
+      <MemoryRouter>
+        <Header />
+      </MemoryRouter>,
+    );
+  };
+
   afterEach(() => {
     cleanup();
     vi.resetAllMocks();
@@ -125,5 +141,48 @@ describe("Header Component", () => {
     await waitFor(() => {
       expect(screen.getByText("Mocked Profile Page")).toBeInTheDocument();
     });
+  });
+
+  test("opens modal when clicking on the avatar", async () => {
+    setup("some-jwt-cookie-string", "Alice");
+
+    const user = userEvent.setup();
+    await user.click(screen.getByText("A"));
+    const contactUs = await screen.findByText("Contact Us");
+    await user.click(contactUs);
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
+  test("renders header and content correctly when modal is opened", async () => {
+    setup("some-jwt-cookie-string", "Alice");
+
+    const user = userEvent.setup();
+    await user.click(screen.getByText("A"));
+    const contactUs = await screen.findByText("Contact Us");
+    await user.click(contactUs);
+
+    const expectedTexts = [
+      "Contact Administrators",
+      "If you need support, please contact our admins:",
+      "Admin Email:",
+      "outreach-programs-comms@circlecat.org",
+    ];
+
+    expectedTexts.forEach((text) => {
+      expect(screen.getByText(text)).toBeInTheDocument();
+    });
+  });
+
+  test("closes modal when clicking on the close button", async () => {
+    setup("some-jwt-cookie-string", "Alice");
+
+    const user = userEvent.setup();
+    await user.click(screen.getByText("A"));
+    const contactUs = await screen.findByText("Contact Us");
+    await user.click(contactUs);
+
+    const closeContactUs = await screen.findByText("×");
+    await user.click(closeContactUs);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 });

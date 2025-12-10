@@ -4,13 +4,29 @@ import "./Header.css";
 import { Root, Trigger, Content, Item } from "@radix-ui/react-dropdown-menu";
 import logo from "@/assets/logo.png";
 import { getCookie, extractCloudflareUserName } from "@/utils/auth";
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  DialogClose,
+  DialogOverlay,
+} from "@radix-ui/react-dialog";
 
 const Header = () => {
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [char, setChar] = useState("");
   const navigate = useNavigate();
 
   const goToProfile = () => {
     navigate("/profile");
+  };
+
+  const openContactUs = () => {
+    setIsDialogOpen(true);
+  };
+
+  const closeContactUs = () => {
+    setIsDialogOpen(false);
   };
 
   useEffect(() => {
@@ -44,8 +60,34 @@ const Header = () => {
             >
               View Profile
             </Item>
+            <Item
+              onClick={openContactUs}
+              className="dropdown-item"
+              aria-label="Contact Us"
+            >
+              Contact Us
+            </Item>
           </Content>
         </Root>
+        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+          <DialogOverlay className="dialog-overlay" />
+          <DialogContent className="dialog-content" role="dialog">
+            <div className="dialog-header">
+              <DialogTitle>Contact Administrators</DialogTitle>
+              <DialogClose className="dialog-close" onClick={closeContactUs}>
+                ×
+              </DialogClose>
+            </div>
+            <div className="dialog-body">
+              <p className="support-message">
+                If you need support, please contact our admins:
+              </p>
+              <div className="spacer"></div>
+              <p className="admin-email-text">Admin Email:</p>
+              <p className="admin-email">outreach-programs-comms@circlecat.org</p>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </header>
   );
