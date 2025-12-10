@@ -29,3 +29,25 @@ class UsersRepository:
         )
 
         return result.scalars().one_or_none()
+
+    async def upsert_users(
+        self, session: AsyncSession, entity: UsersEntity
+    ) -> UsersEntity:
+        """
+        Inserts or updates a UsersEntity object in the database.
+
+        This method using session.merge() handles data persistence, it will
+        updates the entity if the primary key exists, or inserts it otherwise
+
+        Args:
+            session (AsyncSession): The active async database session.
+            entity: The UsersEntity object containing the user data.
+
+        Returns:
+            UsersEntity: The entity object synchronized with the database, reflecting
+            the latest state, generated keys, and default values.
+        """
+        merged_entity = await session.merge(entity)
+        await session.flush()
+
+        return merged_entity

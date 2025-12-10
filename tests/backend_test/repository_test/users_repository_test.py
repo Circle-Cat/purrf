@@ -16,9 +16,7 @@ class TestUsersRepository(BaseRepositoryTestLib):
         # repo instance
         self.repo = UsersRepository()
 
-        # Insert test data
         self.user_entity = UsersEntity(
-            user_id=1,
             first_name="Alice",
             last_name="Admin",
             timezone=UserTimezone.Asia_Shanghai,
@@ -29,6 +27,18 @@ class TestUsersRepository(BaseRepositoryTestLib):
             subject_identifier="sub1",
         )
 
+        self.user_entity_two = UsersEntity(
+            first_name="Bob",
+            last_name="Smith",
+            timezone=UserTimezone.America_New_York,
+            communication_channel="email",
+            primary_email="Bob@example.com",
+            is_active=True,
+            updated_timestamp=datetime.utcnow(),
+            subject_identifier="sub2",
+        )
+
+        # Insert test data
         await self.insert_entities([self.user_entity])
 
     async def test_get_user_by_user_id(self):
@@ -50,6 +60,27 @@ class TestUsersRepository(BaseRepositoryTestLib):
         user = await self.repo.get_user_by_user_id(self.session, None)
 
         self.assertIsNone(user)
+
+    async def test_upsert_users_insert_user_entity(self):
+        """Test insert a new UserEntity"""
+        user = await self.repo.get_user_by_user_id(
+            self.session, self.user_entity_two.user_id
+        )
+        self.assertIsNone(user)
+
+        user = await self.repo.upsert_users(self.session, self.user_entity_two)
+        self.assertIsNotNone(user.user_id)
+
+    async def test_upsert_users_update_user_entity(self):
+        """Test update a existed UserEntity"""
+        updated_entity = UsersEntity(
+            user_id=self.user_entity.user_id,
+            is_active=False,
+        )
+        user = await self.repo.upsert_users(self.session, updated_entity)
+
+        self.assertFalse(user.is_active)
+        self.assertEqual(user.subject_identifier, self.user_entity.subject_identifier)
 
 
 if __name__ == "__main__":
