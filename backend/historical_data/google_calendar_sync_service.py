@@ -119,7 +119,10 @@ class GoogleCalendarSyncService:
                             f"Extracted meeting code: {meeting_code} from URI: {uri}"
                         )
                         return meeting_code
-            self.logger.warning("No valid Google Meet video entry found in the event.")
+            event_id = event.get("id", "unknown")
+            self.logger.warning(
+                "[GoogleCalendarSyncService] no valid Google Meet video entry found in the event: %s", event_id
+            )
             return None
         except Exception as e:
             self.logger.exception(f"Error extracting meeting code from event: {e}")
