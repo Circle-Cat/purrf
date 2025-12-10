@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from backend.common.fast_api_error_handler import register_exception_handlers
 
 
 class FastAppFactory:
@@ -30,6 +31,8 @@ class FastAppFactory:
         """
         # Initialize the FastAPI app
         app = FastAPI()
+
+        register_exception_handlers(app)
 
         @app.get("/fastapi/health")
         def health_check():

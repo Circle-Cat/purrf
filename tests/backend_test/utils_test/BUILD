@@ -36,6 +36,15 @@ py_test(
 )
 
 py_test(
+    name = "fast_app_factory_test",
+    srcs = ["fast_app_factory_test.py"],
+    deps = [
+        "//backend/utils:fast_app_factory",
+        "@pypi//httpx",
+    ],
+)
+
+py_test(
     name = "microsoft_chat_message_util_test",
     srcs = ["microsoft_chat_message_util_test.py"],
     deps = [

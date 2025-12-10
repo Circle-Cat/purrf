@@ -43,6 +43,26 @@ py_test(
 )
 
 py_test(
+    name = "fast_api_error_handler_test",
+    srcs = ["fast_api_error_handler_test.py"],
+    deps = [
+        "//backend/common:fast_api_error_handler",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+    ],
+)
+
+py_test(
+    name = "fast_api_response_wrapper_test",
+    srcs = ["fast_api_response_wrapper_test.py"],
+    deps = [
+        "//backend/common:fast_api_response_wrapper",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+    ],
+)
+
+py_test(
     name = "gerrit_client_test",
     srcs = ["gerrit_client_test.py"],
     deps = [

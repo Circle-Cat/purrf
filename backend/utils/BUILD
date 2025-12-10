@@ -49,6 +49,7 @@ py_library(
         "fast_app_factory.py",
     ],
     deps = [
+        "//backend/common:fast_api_error_handler",
         "@pypi//fastapi",
     ],
 )

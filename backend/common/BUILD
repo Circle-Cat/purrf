@@ -68,6 +68,27 @@ py_library(
 )
 
 py_library(
+    name = "fast_api_response_wrapper",
+    srcs = [
+        "fast_api_response_wrapper.py",
+    ],
+    deps = [
+        "@pypi//fastapi",
+    ],
+)
+
+py_library(
+    name = "fast_api_error_handler",
+    srcs = [
+        "fast_api_error_handler.py",
+    ],
+    deps = [
+        ":fast_api_response_wrapper",
+        ":logger",
+    ],
+)
+
+py_library(
     name = "gerrit_client",
     srcs = [
         "gerrit_client.py",
