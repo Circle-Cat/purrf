@@ -30,6 +30,28 @@ class UsersRepository:
 
         return result.scalars().one_or_none()
 
+    async def get_user_by_subject_identifier(
+        self, session: AsyncSession, sub: str
+    ) -> UsersEntity | None:
+        """
+        Retrieve a users entity by its subject identifier.
+
+        This method expects an externally managed AsyncSession, typically provided
+        by the service layer within a transactional context.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            sub (string): The subject identifier of the user to retrieve.
+
+        Returns:
+            UsersEntity | None: The matching user entity if found; otherwise None.
+        """
+        result = await session.execute(
+            select(UsersEntity).where(UsersEntity.subject_identifier == sub)
+        )
+
+        return result.scalars().one_or_none()
+
     async def upsert_users(
         self, session: AsyncSession, entity: UsersEntity
     ) -> UsersEntity:
