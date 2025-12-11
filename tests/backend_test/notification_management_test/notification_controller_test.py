@@ -1,91 +1,128 @@
-import json
+import unittest
+from unittest.mock import AsyncMock, MagicMock
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 from http import HTTPStatus
 
-from unittest import IsolatedAsyncioTestCase, main
-from unittest.mock import AsyncMock, MagicMock
-from flask import Flask
-
+from backend.common.user_role import UserRole
+from backend.common.api_endpoints import (
+    GOOGLE_CHAT_SUBSCRIBE_ENDPOINT,
+    MICROSOFT_CHAT_SUBSCRIBE_ENDPOINT,
+)
+from backend.utils.auth_middleware import AuthMiddleware
 from backend.notification_management.notification_controller import (
     NotificationController,
 )
-from backend.common.constants import SINGLE_GOOGLE_CHAT_EVENT_TYPES
 
 
-class TestNotificationController(IsolatedAsyncioTestCase):
-    async def asyncSetUp(self):
-        self.microsoft_chat_subscription_service = AsyncMock()
-        self.google_chat_subscription_service = MagicMock()
+class TestNotificationIntegration(unittest.TestCase):
+    def setUp(self):
+        # Mock the authentication service (dependency of the middleware)
+        self.mock_auth_service = MagicMock()
+
+        # Mock the business services (we only test the web integration layer)
+        self.microsoft_service = AsyncMock()
+        self.google_service = MagicMock()
+
+        # Initialize the controller
         self.controller = NotificationController(
-            microsoft_chat_subscription_service=self.microsoft_chat_subscription_service,
-            google_chat_subscription_service=self.google_chat_subscription_service,
+            microsoft_chat_subscription_service=self.microsoft_service,
+            google_chat_subscription_service=self.google_service,
         )
 
-        self.app = Flask(__name__)
-        self.app_context = self.app.app_context()
-        self.app_context.push()
+        # Assemble the FastAPI app
+        self.app = FastAPI()
 
-    async def asyncTearDown(self):
-        self.app_context.pop()
+        # Add the real authentication middleware
+        self.app.add_middleware(AuthMiddleware, auth_service=self.mock_auth_service)
 
-    async def test_subscribe_microsoft_chat_messages_success(self):
-        mock_return_value = (
-            "Subscription created successfully for chat_id 19:meeting_ID@thread.skype.",
-            {
-                "expiration_timestamp": "2025-05-27T12:34:56.000Z",
-                "chat_id": "19:meeting_ID@thread.skype",
-                "subscription_id": "abc123",
-            },
+        # Include routes from the controller
+        self.app.include_router(self.controller.router)
+
+        self.client = TestClient(self.app)
+
+    def _set_authenticated_user(self, roles=None, sub="test_user_123"):
+        """Helper method: configure mock_auth_service to return a user with given roles"""
+        if roles is None:
+            roles = [UserRole.ADMIN]
+
+        mock_user = MagicMock()
+        mock_user.sub = sub
+        mock_user.roles = roles
+        mock_user.primary_email = "admin@example.com"
+
+        # Return this user when authenticate_request is called by the middleware
+        self.mock_auth_service.authenticate_request.return_value = mock_user
+
+    def test_microsoft_subscribe_integration_success(self):
+        """Verify the full flow from auth to Microsoft subscription"""
+
+        # Configure auth service: simulate an Admin user
+        self._set_authenticated_user(roles=[UserRole.ADMIN])
+
+        # Configure business service return value
+        self.microsoft_service.subscribe_chat_messages.return_value = (
+            "Successfully created",
+            {"id": "sub_001"},
         )
-        self.microsoft_chat_subscription_service.subscribe_chat_messages.return_value = mock_return_value
 
         payload = {
-            "chat_id": "19:meeting_ID@thread.skype",
-            "notification_url": "https://example.com/notifications",
-            "lifecycle_notification_url": "https://example.com/lifecycle",
+            "chat_id": "19:meeting@thread.skype",
+            "notification_url": "https://callback.com",
+            "lifecycle_notification_url": "https://lifecycle.com",
         }
 
-        with self.app.test_request_context(
-            "/microsoft/chat/subscribe",
-            method="POST",
-            data=json.dumps(payload),
-            content_type="application/json",
-        ):
-            response = await self.controller.subscribe_microsoft_chat_messages()
-
-        self.assertEqual(response.status_code, HTTPStatus.CREATED)
-        self.assertEqual(response.json["message"], mock_return_value[0])
-        self.assertEqual(response.json["data"], mock_return_value[1])
-
-    def test_subscribe_google_chat_messages_success(self):
-        self.google_chat_subscription_service.create_workspaces_subscriptions.return_value = {
-            "subscription_id": "mock-subscription"
-        }
-        payload = {
-            "project_id": "test-project",
-            "topic_id": "test-topic",
-            "space_id": "test-space",
-        }
-
-        with self.app.test_request_context(
-            "/google/chat/spaces/subscribe",
-            method="POST",
-            data=json.dumps(payload),
-            content_type="application/json",
-        ):
-            response = self.controller.subscribe_google_chat_space()
-
-        self.assertEqual(response.status_code, HTTPStatus.CREATED)
-        self.assertEqual(
-            response.json["message"]["subscription_id"], "mock-subscription"
+        # Send request with any Authorization header to trigger middleware logic
+        response = self.client.post(
+            MICROSOFT_CHAT_SUBSCRIBE_ENDPOINT,
+            json=payload,
+            headers={"Authorization": "Bearer mock-token"},
         )
 
-        self.google_chat_subscription_service.create_workspaces_subscriptions.assert_called_once_with(
-            project_id=payload["project_id"],
-            topic_id=payload["topic_id"],
-            space_id=payload["space_id"],
-            event_types=SINGLE_GOOGLE_CHAT_EVENT_TYPES,
+        # Verify result
+        self.assertEqual(response.status_code, HTTPStatus.CREATED)
+        self.assertTrue(response.json()["success"])
+        # Verify middleware was called correctly
+        self.mock_auth_service.authenticate_request.assert_called_once()
+
+    def test_google_subscribe_integration_forbidden(self):
+        """Verify middleware/decorator blocks when roles do not match"""
+
+        # Configure auth service: simulate a normal user (no ADMIN role)
+        self._set_authenticated_user(roles=[UserRole.MENTORSHIP])
+
+        payload = {"project_id": "p1", "topic_id": "t1", "space_id": "s1"}
+
+        response = self.client.post(
+            GOOGLE_CHAT_SUBSCRIBE_ENDPOINT,
+            json=payload,
+            headers={"Authorization": "Bearer mock-token"},
         )
+
+        # Verify it is blocked: should return 403 Forbidden (from decorator)
+        self.assertEqual(response.status_code, HTTPStatus.FORBIDDEN)
+        self.assertFalse(response.json()["success"])
+        # Verify business service was never called
+        self.google_service.create_workspaces_subscriptions.assert_not_called()
+
+    def test_auth_failure_integration(self):
+        """Verify middleware behavior when token is invalid"""
+
+        # Configure auth service to raise ValueError (simulate token validation failure)
+        self.mock_auth_service.authenticate_request.side_effect = ValueError(
+            "Invalid token"
+        )
+
+        response = self.client.post(
+            GOOGLE_CHAT_SUBSCRIBE_ENDPOINT,
+            json={},
+            headers={"Authorization": "Bearer invalid-token"},
+        )
+
+        # Verify middleware returns 400 Bad Request (as defined in middleware logic)
+        self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
+        self.assertEqual(response.json()["message"], "Invalid token")
 
 
 if __name__ == "__main__":
-    main()
+    unittest.main()

@@ -120,6 +120,7 @@ py_library(
         "//backend/historical_data:jira_history_sync_service",
         "//backend/historical_data:microsoft_chat_history_sync_service",
         "//backend/historical_data:microsoft_member_sync_service",
+        "//backend/notification_management:google_chat_subscription_service",
         "//backend/notification_management:microsoft_chat_subscription_service",
         "//backend/notification_management:notification_controller",
         "//backend/service:google_service",

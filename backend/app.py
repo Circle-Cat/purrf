@@ -12,7 +12,6 @@ class App:
 
     def __init__(
         self,
-        notification_controller,
         consumer_controller,
         historical_controller,
         frontend_controller,
@@ -21,12 +20,10 @@ class App:
         Initializes the factory with controller dependencies.
 
         Args:
-            notification_controller: An instance of NotificationController.
             consumer_controller: An instance of ConsumerController.
             historical_controller: An instance of HistoricalController.
             frontend_controller: An instance of FrontendController.
         """
-        self.notification_controller = notification_controller
         self.consumer_controller = consumer_controller
         self.historical_controller = historical_controller
         self.frontend_controller = frontend_controller
@@ -46,7 +43,6 @@ class App:
         all_api_bp = Blueprint("all_api", __name__, url_prefix="/api")
 
         # Register routes using the injected controllers
-        self.notification_controller.register_routes(all_api_bp)
         self.consumer_controller.register_routes(all_api_bp)
         self.historical_controller.register_routes(all_api_bp)
         self.frontend_controller.register_routes(all_api_bp)

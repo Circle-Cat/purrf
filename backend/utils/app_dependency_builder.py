@@ -328,4 +328,5 @@ class AppDependencyBuilder:
         self.fast_app_factory = FastAppFactory(
             authentication_controller=self.authentication_controller,
             authentication_service=self.authentication_service,
+            notification_controller=self.notification_controller,
         )

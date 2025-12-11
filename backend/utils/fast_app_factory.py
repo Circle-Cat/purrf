@@ -11,19 +11,23 @@ class FastAppFactory:
     routing, dependencies, and any middleware or configuration.
     """
 
-    def __init__(self, authentication_controller, authentication_service):
+    def __init__(
+        self,
+        authentication_controller,
+        authentication_service,
+        notification_controller,
+    ):
         """
         Initialize the factory.
 
         Args:
             authentication_controller: Controller instance responsible for authentication routes.
             authentication_service: AuthenticationService instance used by middleware to validate requests.
-
-        TODO: Extending this method to accept configuration parameters
-        or dependency overrides for testing or production environments.
+            notification_controller: An instance of NotificationController that manages API routes for subscribe_microsoft_chat_messages and subscribe_google_chat_space.
         """
         self.authentication_controller = authentication_controller
         self.authentication_service = authentication_service
+        self.notification_controller = notification_controller
 
     def create_app(self) -> FastAPI:
         """
@@ -54,6 +58,7 @@ class FastAppFactory:
 
         # Include authentication routes
         app.include_router(self.authentication_controller.router, prefix="/api")
+        app.include_router(self.notification_controller.router, prefix="/api")
 
         @app.get("/fastapi/health")
         def health_check():

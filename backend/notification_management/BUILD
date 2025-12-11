@@ -18,11 +18,12 @@ py_library(
         "notification_controller.py",
     ],
     deps = [
-        ":gerrit_subscription_service",
-        ":google_chat_subscription_service",
-        "//backend/common:api_response_wrapper",
+        "//backend/common:api_endpoints",
         "//backend/common:constants",
-        "@pypi//flask",
+        "//backend/common:fast_api_response_wrapper",
+        "//backend/common:user_role",
+        "//backend/utils:permission_decorators",
+        "@pypi//fastapi",
     ],
 )
 
@@ -37,9 +38,6 @@ py_library(
     name = "google_chat_subscription_service",
     srcs = [
         "google_chat_subscription_service.py",
-    ],
-    deps = [
-        "@pypi//tenacity",
     ],
 )
 

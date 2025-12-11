@@ -9,9 +9,11 @@ class TestFastAppFactory(unittest.TestCase):
         self.mock_controller = MagicMock()
         self.mock_controller.router = MagicMock()
         self.mock_service = MagicMock()
+
         self.factory = FastAppFactory(
             authentication_controller=self.mock_controller,
             authentication_service=self.mock_service,
+            notification_controller=self.mock_controller,
         )
 
     def test_factory_initialization(self):

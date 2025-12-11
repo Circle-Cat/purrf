@@ -369,6 +369,7 @@ class TestAppDependencyBuilder(TestCase):
         mock_fast_app_factory_cls.assert_called_once_with(
             authentication_controller=mock_authentication_controller_cls.return_value,
             authentication_service=mock_authentication_service_cls.return_value,
+            notification_controller=mock_notification_controller.return_value,
         )
 
         # Assert that the builder's internal attributes are the created mock instances

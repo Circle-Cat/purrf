@@ -13,6 +13,9 @@ py_test(
     srcs = ["notification_controller_test.py"],
     deps = [
         "//backend/notification_management:notification_controller",
+        "//backend/utils:auth_middleware",
+        "@pypi//fastapi",
+        "@pypi//httpx",
     ],
 )
 
