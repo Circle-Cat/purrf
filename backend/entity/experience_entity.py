@@ -10,6 +10,8 @@ class ExperienceEntity(Base):
     experience_id: Mapped[int] = mapped_column(
         Integer, primary_key=True, autoincrement=True
     )
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.user_id"), nullable=False, unique=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.user_id"), nullable=False, unique=True
+    )
     education: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     work_experience: Mapped[dict | None] = mapped_column(JSONB, nullable=True)

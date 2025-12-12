@@ -51,3 +51,12 @@ py_test(
         "//backend/utils:microsoft_chat_message_util",
     ],
 )
+
+py_test(
+    name = "auth_middleware_test",
+    srcs = ["auth_middleware_test.py"],
+    deps = [
+        "//backend/utils:auth_middleware",
+        "@pypi//httpx",
+    ],
+)

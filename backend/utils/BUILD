@@ -44,11 +44,23 @@ py_library(
 )
 
 py_library(
+    name = "auth_middleware",
+    srcs = [
+        "auth_middleware.py",
+    ],
+    deps = [
+        "//backend/common:fast_api_response_wrapper",
+        "@pypi//fastapi",
+    ],
+)
+
+py_library(
     name = "fast_app_factory",
     srcs = [
         "fast_app_factory.py",
     ],
     deps = [
+        ":auth_middleware",
         "//backend/common:fast_api_error_handler",
         "@pypi//fastapi",
     ],
@@ -65,6 +77,8 @@ py_library(
         ":google_chat_message_utils",
         ":microsoft_chat_message_util",
         ":retry_utils",
+        "//backend/authentication:authentication_controller",
+        "//backend/authentication:authentication_service",
         "//backend/common:asyncio_event_loop_manager",
         "//backend/common:gerrit_client",
         "//backend/common:jira_client",

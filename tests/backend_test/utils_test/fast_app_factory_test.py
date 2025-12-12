@@ -1,16 +1,24 @@
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 from fastapi import FastAPI
 from backend.utils.fast_app_factory import FastAppFactory
 
 
 class TestFastAppFactory(unittest.TestCase):
     def setUp(self):
-        self.factory = FastAppFactory()
+        self.mock_controller = MagicMock()
+        self.mock_controller.router = MagicMock()
+        self.mock_service = MagicMock()
+        self.factory = FastAppFactory(
+            authentication_controller=self.mock_controller,
+            authentication_service=self.mock_service,
+        )
 
     def test_factory_initialization(self):
         """Test whether the factory class can be instantiated."""
         self.assertIsInstance(self.factory, FastAppFactory)
+        self.assertEqual(self.factory.authentication_controller, self.mock_controller)
+        self.assertEqual(self.factory.authentication_service, self.mock_service)
 
     def test_create_app_returns_fastapi_instance(self):
         """Test that create_app returns a FastAPI application instance."""
@@ -28,10 +36,18 @@ class TestFastAppFactory(unittest.TestCase):
         # register_exception_handlers should be called exactly once
         mock_register.assert_called_once()
 
-        # Additional assertion: the function should receive a FastAPI instance
-        # call_args[0] contains the positional arguments from the first call
+        # It should receive a FastAPI instance
         call_args = mock_register.call_args
         self.assertIsInstance(call_args[0][0], FastAPI)
+
+    def test_auth_middleware_added(self):
+        """Test that AuthMiddleware is added to the FastAPI app."""
+        app = self.factory.create_app()
+        # FastAPI middleware is stored in app.user_middleware
+        middleware_classes = [m.cls for m in app.user_middleware]
+        from backend.utils.auth_middleware import AuthMiddleware
+
+        self.assertIn(AuthMiddleware, middleware_classes)
 
 
 if __name__ == "__main__":

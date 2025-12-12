@@ -177,3 +177,15 @@ py_library(
     name = "mentorship_enums",
     srcs = ["mentorship_enums.py"],
 )
+
+py_library(
+    name = "user_role",
+    srcs = [
+        "user_role.py",
+    ],
+)
+
+py_library(
+    name = "api_endpoints",
+    srcs = ["api_endpoints.py"],
+)

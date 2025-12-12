@@ -7,6 +7,8 @@ from backend.common.environment_constants import (
 )
 
 
+@patch("backend.utils.app_dependency_builder.AuthenticationController")
+@patch("backend.utils.app_dependency_builder.AuthenticationService")
 @patch("backend.utils.app_dependency_builder.FastAppFactory")
 @patch("backend.utils.app_dependency_builder.SummaryService")
 @patch("backend.utils.app_dependency_builder.PubSubPullManager")
@@ -96,6 +98,8 @@ class TestAppDependencyBuilder(TestCase):
         mock_pubsub_pull_manager_cls,
         mock_summary_service_cls,
         mock_fast_app_factory_cls,
+        mock_authentication_service_cls,
+        mock_authentication_controller_cls,
     ):
         """
         Tests that the AppDependencyBuilder correctly instantiates and wires all its dependencies.
@@ -358,7 +362,14 @@ class TestAppDependencyBuilder(TestCase):
             jira_analytics_service=mock_jira_analytics_service_cls.return_value,
             date_time_util=mock_date_time_util_cls.return_value,
         )
-        mock_fast_app_factory_cls.assert_called_once()
+
+        mock_authentication_service_cls.assert_called_once_with(logger=mock_logger)
+        mock_authentication_controller_cls.assert_called_once()
+
+        mock_fast_app_factory_cls.assert_called_once_with(
+            authentication_controller=mock_authentication_controller_cls.return_value,
+            authentication_service=mock_authentication_service_cls.return_value,
+        )
 
         # Assert that the builder's internal attributes are the created mock instances
         mock_google_client_instance.create_chat_client.assert_called_once()
@@ -513,6 +524,13 @@ class TestAppDependencyBuilder(TestCase):
         )
         self.assertEqual(builder.jira_client, mock_jira_client)
         self.assertEqual(builder.jira_history_sync_service, mock_jira_history_service)
+        self.assertEqual(
+            builder.authentication_service, mock_authentication_service_cls.return_value
+        )
+        self.assertEqual(
+            builder.authentication_controller,
+            mock_authentication_controller_cls.return_value,
+        )
 
 
 if __name__ == "__main__":
