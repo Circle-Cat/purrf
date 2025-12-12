@@ -1,0 +1,187 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import {
+  parseDateParts,
+  formatDateFromParts,
+  formatTimeDuration,
+  getDaysSince,
+  isValidEmail,
+  months,
+  years,
+  currentYear,
+} from "@/pages/profile/utils";
+
+describe("Profile Utils", () => {
+  describe("Constants", () => {
+    it("months should have 12 valid month names", () => {
+      // Verify months array contains all 12 months in order
+      expect(months).toHaveLength(12);
+      expect(months[0]).toBe("January");
+      expect(months[11]).toBe("December");
+    });
+
+    it("years should generate 50 years descending from current year", () => {
+      // Verify years array generates 50 years descending from currentYear
+      expect(years).toHaveLength(50);
+      expect(years[0]).toBe(currentYear);
+      expect(years[49]).toBe(currentYear - 49);
+    });
+  });
+
+  describe("parseDateParts", () => {
+    /**
+     * Test cases include:
+     * - Valid date strings
+     * - Empty or null values
+     * - Invalid format or out-of-range month
+     */
+    const testCases = [
+      { input: "2023-01-01", expected: { month: "January", year: "2023" } },
+      { input: "1999-12-31", expected: { month: "December", year: "1999" } },
+      { input: "2025-06-15", expected: { month: "June", year: "2025" } },
+      { input: "", expected: { month: "", year: "" } },
+      { input: null, expected: { month: "", year: "" } },
+      { input: undefined, expected: { month: "", year: "" } },
+      { input: "invalid-date", expected: { month: "", year: "" } },
+      { input: "2023-13-01", expected: { month: "", year: "" } },
+    ];
+
+    it.each(testCases)(
+      'should parse "$input" to $expected',
+      ({ input, expected }) => {
+        expect(parseDateParts(input)).toEqual(expected);
+      },
+    );
+  });
+
+  describe("formatDateFromParts", () => {
+    /**
+     * Test cases include:
+     * - Valid month/year combinations
+     * - Numeric year input
+     * - Missing month or year
+     * - Invalid month string
+     */
+    const testCases = [
+      { month: "January", year: "2023", expected: "2023-01-01" },
+      { month: "December", year: 2025, expected: "2025-12-01" },
+      { month: "September", year: "1990", expected: "1990-09-01" },
+      { month: "", year: "2023", expected: null },
+      { month: "January", year: "", expected: null },
+      { month: null, year: "2023", expected: null },
+      { month: "NotAMonth", year: "2023", expected: null },
+    ];
+
+    it.each(testCases)(
+      'should format ($month, $year) to "$expected"',
+      ({ month, year, expected }) => {
+        expect(formatDateFromParts(month, year)).toBe(expected);
+      },
+    );
+  });
+
+  describe("formatTimeDuration", () => {
+    /**
+     * Test cases include:
+     * - Full start and end dates
+     * - Currently ongoing positions (isCurrent = true)
+     * - Only start or only end date provided
+     * - Empty values
+     */
+    const testCases = [
+      {
+        args: ["September", "2020", "January", "2022", false],
+        expected: "Sep 2020 - Jan 2022",
+      },
+      {
+        args: ["September", "2020", "", "", true],
+        expected: "Sep 2020 - Present",
+      },
+      {
+        args: ["May", "2023", "June", "2024", true],
+        expected: "May 2023 - Present",
+      },
+      { args: ["March", "2019", "", "", false], expected: "Mar 2019" },
+      { args: ["", "", "July", "2025", false], expected: "Jul 2025" },
+      { args: ["", "", "", "", false], expected: "" },
+    ];
+
+    it.each(testCases)(
+      'should format args %j to "$expected"',
+      ({ args, expected }) => {
+        const [startMonth, startYear, endMonth, endYear, isCurrent] = args;
+        expect(
+          formatTimeDuration(
+            startMonth,
+            startYear,
+            endMonth,
+            endYear,
+            isCurrent,
+          ),
+        ).toBe(expected);
+      },
+    );
+  });
+
+  describe("getDaysSince", () => {
+    /**
+     * Use a fixed mock date (2025-01-10) to test day differences.
+     * Test cases include:
+     * - Same day
+     * - Past days
+     * - Future days
+     * - Empty/null input
+     */
+    const MOCK_NOW = new Date("2025-01-10T00:00:00Z");
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.setSystemTime(MOCK_NOW);
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    const testCases = [
+      { date: "2025-01-10", expected: 0 },
+      { date: "2025-01-09", expected: 1 },
+      { date: "2024-12-11", expected: 30 },
+      { date: "2025-01-11", expected: 1 },
+      { date: null, expected: 999 },
+      { date: "", expected: 999 },
+    ];
+
+    it.each(testCases)(
+      'should return $expected days for date "$date" relative to 2025-01-10',
+      ({ date, expected }) => {
+        expect(getDaysSince(date)).toBe(expected);
+      },
+    );
+  });
+
+  describe("isValidEmail", () => {
+    /**
+     * Test cases include:
+     * - Valid email addresses
+     * - Invalid formats (missing @, missing domain, contains spaces, empty string)
+     */
+    const testCases = [
+      { email: "test@example.com", expected: true },
+      { email: "user.name@domain.co", expected: true },
+      { email: "user+tag@domain.org", expected: true },
+      { email: "invalid-email", expected: false },
+      { email: "test@domain", expected: false },
+      { email: "@domain.com", expected: false },
+      { email: "user@.com", expected: false },
+      { email: "user @domain.com", expected: false },
+      { email: "", expected: false },
+    ];
+
+    it.each(testCases)(
+      'should return $expected for email "$email"',
+      ({ email, expected }) => {
+        expect(isValidEmail(email)).toBe(expected);
+      },
+    );
+  });
+});
