@@ -1,5 +1,5 @@
 {
-  "lockFileVersion": 18,
+  "lockFileVersion": 24,
   "registryFileHashes": {
     "https://bcr.bazel.build/bazel_registry.json": "8a28e4aff06ee60aed2a8c281907fb8bcbf3b753c91fb5a5c57da3215d5b3497",
     "https://bcr.bazel.build/modules/abseil-cpp/20210324.2/MODULE.bazel": "7cd0312e064fde87c8d1cd79ba06c876bd23630c83466e9500321be55c96ace2",
@@ -187,7 +187,7 @@
   "moduleExtensions": {
     "@@buildifier_prebuilt+//:defs.bzl%buildifier_prebuilt_deps_extension": {
       "general": {
-        "bzlTransitiveDigest": "izaEjT7NE6vV9H5axiYiPrvmFtCLNkfjhj+bpMolt1A=",
+        "bzlTransitiveDigest": "o1WPvgvSISMJsXVrFW1v+M17eIj9AJjkcTAucRVb3vI=",
         "usagesDigest": "eWMDBEn8E8CrwAPXrlrjIap2pseSMhxDyDdrntHBOOE=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
@@ -326,7 +326,7 @@
     },
     "@@rules_buf+//buf:extensions.bzl%ext": {
       "general": {
-        "bzlTransitiveDigest": "SDu9W4CQUvGE9A6LTAEbu5g75w34Inmz0/AX9wecDv4=",
+        "bzlTransitiveDigest": "m6JhnDQjtv1Gv36qXoZpNqTHIQN6fD/+MYRZa5Mtr48=",
         "usagesDigest": "RTc2BMQ2b0wGU8CRvN3EoPz34m3LMe+K/oSkFkN83+M=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
@@ -350,7 +350,7 @@
     },
     "@@rules_kotlin+//src/main/starlark/core/repositories:bzlmod_setup.bzl%rules_kotlin_extensions": {
       "general": {
-        "bzlTransitiveDigest": "OlvsB0HsvxbR8ZN+J9Vf00X/+WVz/Y/5Xrq2LgcVfdo=",
+        "bzlTransitiveDigest": "rL/34P1aFDq2GqVC2zCFgQ8nTuOC6ziogocpvG50Qz8=",
         "usagesDigest": "QI2z8ZUR+mqtbwsf2fLqYdJAkPOHdOV+tF2yVAUgRzw=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
@@ -600,7 +600,7 @@
     },
     "@@rules_oci+//oci:extensions.bzl%oci": {
       "general": {
-        "bzlTransitiveDigest": "Tm/YtGfTOdzSYZRo/3XlrBLg9T0xfCoGfwHbQEY5qug=",
+        "bzlTransitiveDigest": "rLHsziik7vhyQEv5gH8TFG7gA5SVuS1OgSUQM2JwgDQ=",
         "usagesDigest": "omUwS1b7oGjTdgnZNaEYgeLhBhJA9SriyXro/Y2Lvys=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
@@ -1171,5 +1171,6 @@
         "recordedRepoMappingEntries": []
       }
     }
-  }
+  },
+  "facts": {}
 }
