@@ -111,6 +111,15 @@ bazel run //frontend:vite_preview
 
 ### Before pushing code
 
+Before pushing any frontend changes, you **must run both commands below** to build the frontend and preview it in an environment **that is consistent with production**.
+
+This step is required to verify that the built artifacts behave **exactly as expected in production**, not just in the development server.
+
+```bash
+bazel build //frontend:dist
+bazel run //frontend:vite_preview
+
+
 Before running the repository unit tests under `tests/backend_test/repository_test`,
 export the test database URL (replace the placeholders as needed):
 
