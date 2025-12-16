@@ -128,3 +128,49 @@ export const getDaysSince = (dateString) => {
 export const isValidEmail = (email) => {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 };
+
+/**
+ * Convert year and month to a comparable numeric score.
+ * @param {number|string} year - The year value
+ * @param {number|string} monthName - The month name (e.g., "January")
+ * @returns {number} Numeric score representing the year and month
+ */
+export const getDateScore = (year, monthName) => {
+  if (!year) return 0;
+
+  const y = parseInt(year, 10);
+
+  // Get month index (0-11). Defaults to 0 if not found.
+  const mIndex = months.indexOf(monthName);
+  const m = mIndex !== -1 ? mIndex : 0;
+
+  return y * 12 + m;
+};
+
+/**
+ * Sort a list of experience or education entries.
+ * Sorting rules:
+ * 1. Currently working entries come first (isCurrentlyWorking = true)
+ * 2. Sort by end date descending (newest first)
+ * 3. Sort by start date descending (newest first)
+ * @param {Object} a - First entry
+ * @param {Object} b - Second entry
+ * @returns {number} Comparison result for Array.prototype.sort
+ */
+export const sortExperienceOrEducationList = (a, b) => {
+  // Prioritize currently working entries
+  if (a.isCurrentlyWorking && !b.isCurrentlyWorking) return -1;
+  if (!a.isCurrentlyWorking && b.isCurrentlyWorking) return 1;
+
+  // Compare end dates
+  const endScoreA = getDateScore(a.endYear, a.endMonth);
+  const endScoreB = getDateScore(b.endYear, b.endMonth);
+  if (endScoreA !== endScoreB) {
+    return endScoreB - endScoreA; // Descending order
+  }
+
+  // Compare start dates
+  const startScoreA = getDateScore(a.startYear, a.startMonth);
+  const startScoreB = getDateScore(b.startYear, b.startMonth);
+  return startScoreB - startScoreA;
+};

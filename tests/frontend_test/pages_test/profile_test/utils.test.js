@@ -8,7 +8,9 @@ import {
   months,
   years,
   currentYear,
-} from "@/pages/profile/utils";
+  getDateScore,
+  sortExperienceOrEducationList,
+} from "@/pages/Profile/utils";
 
 describe("Profile Utils", () => {
   describe("Constants", () => {
@@ -183,5 +185,143 @@ describe("Profile Utils", () => {
         expect(isValidEmail(email)).toBe(expected);
       },
     );
+  });
+
+  describe("getDateScore", () => {
+    /**
+     * Logic: year * 12 + monthIndex (0-11)
+     * If year is missing, returns 0.
+     * If month is invalid/missing, defaults to index 0.
+     */
+    const testCases = [
+      { year: 2023, month: "January", expected: 2023 * 12 + 0 }, // 24276
+      { year: "2023", month: "December", expected: 2023 * 12 + 11 }, // 24287
+      { year: 2020, month: "June", expected: 2020 * 12 + 5 },
+      // Edge cases
+      { year: null, month: "January", expected: 0 },
+      { year: "", month: "January", expected: 0 },
+      { year: 2023, month: "InvalidMonth", expected: 2023 * 12 + 0 }, // Defaults to 0
+      { year: 2023, month: null, expected: 2023 * 12 + 0 }, // Defaults to 0
+    ];
+
+    it.each(testCases)(
+      "should return score $expected for year: $year, month: $month",
+      ({ year, month, expected }) => {
+        expect(getDateScore(year, month)).toBe(expected);
+      },
+    );
+  });
+
+  describe("sortExperienceOrEducationList", () => {
+    // Helper to create mock entries
+    const createEntry = (id, isCurrent, startY, startM, endY, endM) => ({
+      id,
+      isCurrentlyWorking: isCurrent,
+      startYear: startY,
+      startMonth: startM,
+      endYear: endY,
+      endMonth: endM,
+    });
+
+    it("should prioritize currently working positions first", () => {
+      const currentJob = createEntry(1, true, "2023", "January", "", "");
+      const pastJob = createEntry(
+        2,
+        false,
+        "2020",
+        "January",
+        "2022",
+        "January",
+      );
+
+      const list = [pastJob, currentJob];
+      const sorted = list.sort(sortExperienceOrEducationList);
+
+      expect(sorted[0].id).toBe(1); // Current job first
+      expect(sorted[1].id).toBe(2);
+    });
+
+    it("should sort by end date descending (newest end date first)", () => {
+      const olderJob = createEntry(1, false, "2018", "Jan", "2019", "January");
+      const newerJob = createEntry(2, false, "2020", "Jan", "2021", "January");
+
+      const list = [olderJob, newerJob];
+      const sorted = list.sort(sortExperienceOrEducationList);
+
+      expect(sorted[0].id).toBe(2); // Ended in 2021
+      expect(sorted[1].id).toBe(1); // Ended in 2019
+    });
+
+    it("should sort by start date descending if end dates are equal", () => {
+      // Both ended in Dec 2022, but Job 2 started later (shorter duration, but more recent start)
+      const jobStartedJan = createEntry(
+        1,
+        false,
+        "2022",
+        "January",
+        "2022",
+        "December",
+      );
+      const jobStartedJune = createEntry(
+        2,
+        false,
+        "2022",
+        "June",
+        "2022",
+        "December",
+      );
+
+      const list = [jobStartedJan, jobStartedJune];
+      const sorted = list.sort(sortExperienceOrEducationList);
+
+      expect(sorted[0].id).toBe(2); // Started June 2022 (Newer start)
+      expect(sorted[1].id).toBe(1); // Started Jan 2022
+    });
+
+    it("should handle two currently working positions by sorting start date", () => {
+      // Both are current, so end date score is 0 for both.
+      // Comparison falls through to start date.
+      const oldCurrentJob = createEntry(1, true, "2020", "January", "", "");
+      const newCurrentJob = createEntry(2, true, "2023", "January", "", "");
+
+      const list = [oldCurrentJob, newCurrentJob];
+      const sorted = list.sort(sortExperienceOrEducationList);
+
+      expect(sorted[0].id).toBe(2); // Started 2023 (Newest)
+      expect(sorted[1].id).toBe(1); // Started 2020
+    });
+
+    it("should handle mixed scenarios correctly", () => {
+      const itemA = createEntry("A", true, "2023", "January", "", ""); // Current
+      const itemB = createEntry(
+        "B",
+        false,
+        "2020",
+        "January",
+        "2022",
+        "December",
+      ); // Ended 2022
+      const itemC = createEntry(
+        "C",
+        false,
+        "2010",
+        "January",
+        "2012",
+        "January",
+      ); // Ended 2012
+      const itemD = createEntry(
+        "D",
+        false,
+        "2020",
+        "January",
+        "2022",
+        "January",
+      ); // Ended 2022 (Earlier month than B)
+
+      const list = [itemC, itemA, itemD, itemB];
+      const sorted = list.sort(sortExperienceOrEducationList);
+
+      expect(sorted.map((i) => i.id)).toEqual(["A", "B", "D", "C"]);
+    });
   });
 });
