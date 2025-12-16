@@ -52,25 +52,23 @@ gcloud config set project {google_project_id}
 See: backend/common/environment_constants.py
 
 ### Init PostgreSQL Database
-**Warning**: Do **not** use the same database for development and testing.
-The init_db command will **drop all existing data** and recreate an empty database with only the table structure. Using the same database for tests will erase your development data.
+**Warning**: The init_db command will **drop all existing data** and recreate an empty database with only the table structure. Using the same database for tests will erase your development data.
 
-Create and initialize the development database:
+Note: The init_db script always reads DATABASE_URL to determine which database to initialize. Be careful to avoid running tests on production or important development data, as it may be cleared.
+
+Create and initialize the database:
 ```bash
 export DATABASE_URL=postgresql+asyncpg://<user>:<password>@<host>:<port>/<database>
 bazel run //tools:init_db
 ```
 
-Create and initialize the test database (separate from the development database):
-Note: The init_db script always reads DATABASE_URL to determine which database to initialize.
-To initialize the test database, temporarily point DATABASE_URL to the test database.
-```bash
-export TEST_DATABASE_URL=postgresql+asyncpg://<user>:<password>@<host>:<port>/<test_database>
-export DATABASE_URL=$TEST_DATABASE_URL
-bazel run //tools:init_db
-```
-Both databases must be initialized with init_db before running the backend or unit tests.
-This ensures the development database has your working environment and the test database is clean for testing.
+**Important Notes:**
+
+* Both development and test code use the same database.
+
+* init_db should be run before starting the backend or running unit tests to ensure a clean environment.
+
+* Any existing data will be deleted when running init_db.
 
 ####  Running the backend project for development
 
@@ -124,7 +122,7 @@ Before running the repository unit tests under `tests/backend_test/repository_te
 export the test database URL (replace the placeholders as needed):
 
 ```bash
-export TEST_DATABASE_URL=postgresql+asyncpg://<user>:<password>@<host>:<port>/<database>
+export DATABASE_URL=postgresql+asyncpg://<user>:<password>@<host>:<port>/<database>
 ```
 
 Run all test methods:

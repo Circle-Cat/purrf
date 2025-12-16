@@ -7,7 +7,6 @@ py_binary(
     deps = [
         "//backend/common:base",
         "//backend/common:database",
-        "//backend/common:environment_constants",
         "//backend/common:logger",
         "//backend/entity:entities",
         "@pypi//alembic",

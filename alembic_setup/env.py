@@ -9,7 +9,6 @@ from alembic import context
 
 from backend.common.base import Base
 from backend.common.environment_constants import DATABASE_URL
-import os
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -26,7 +25,7 @@ if config.config_file_name is not None:
 # target_metadata = mymodel.Base.metadata
 target_metadata = Base.metadata
 
-db_url = os.getenv(DATABASE_URL)
+db_url = DATABASE_URL
 if db_url:
     config.set_main_option("sqlalchemy.url", db_url)
 

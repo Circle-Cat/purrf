@@ -169,6 +169,7 @@ py_library(
     srcs = ["database.py"],
     deps = [
         "base",
+        ":environment_constants",
         "@pypi//sqlalchemy",
     ],
 )

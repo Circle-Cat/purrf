@@ -2,8 +2,6 @@ from backend.common.database import Database
 from backend.common.base import Base
 from alembic.config import Config
 from alembic import command
-import os
-from backend.common.environment_constants import DATABASE_URL
 import asyncio
 import pkgutil
 import importlib
@@ -48,7 +46,7 @@ async def reset_database():
     """
     load_all_entities()
 
-    db = Database(os.getenv(DATABASE_URL), echo=False)
+    db = Database(echo=False)
     engine = db.get_engine()
 
     async with engine.begin() as conn:

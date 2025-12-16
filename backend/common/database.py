@@ -1,4 +1,5 @@
 import contextlib
+from backend.common.environment_constants import DATABASE_URL
 from typing import AsyncIterator
 
 from sqlalchemy.ext.asyncio import (
@@ -9,15 +10,17 @@ from sqlalchemy.ext.asyncio import (
 
 
 class Database:
-    def __init__(self, database_url, echo=False):
+    def __init__(self, echo=False):
         """
         Initialize a Database instance.
 
         Args:
-            database_url (str): The database connection string.
             echo (bool): If True, SQLAlchemy will output executed SQL statements.
         """
-        self._engine = create_async_engine(database_url, echo=echo)
+        self.database_url = DATABASE_URL
+        if not self.database_url:
+            raise ValueError("DATABASE_URL must be set")
+        self._engine = create_async_engine(self.database_url, echo=echo)
         self._session_factory = async_sessionmaker(
             bind=self._engine,
             autoflush=False,

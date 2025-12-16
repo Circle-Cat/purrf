@@ -1,8 +1,6 @@
 import unittest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from backend.common.database import Database
-from tests.backend_test.repository_test.test_constants import TEST_DATABASE_URL
-import os
 
 
 class BaseRepositoryTestLib(unittest.IsolatedAsyncioTestCase):
@@ -18,7 +16,7 @@ class BaseRepositoryTestLib(unittest.IsolatedAsyncioTestCase):
 
     async def asyncSetUp(self):
         # 1. Initialize database wrapper
-        self.db = Database(os.getenv(TEST_DATABASE_URL), echo=True)
+        self.db = Database(echo=True)
 
         # 2. Open manual connection
         self.connection = await self.db.get_engine().connect()
