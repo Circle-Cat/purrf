@@ -1,0 +1,86 @@
+.training-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  margin-top: 20px;
+  font-size: 0.9375rem;
+  color: var(--text-color-dark);
+  border: 1px solid var(--border-color-light);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.training-table th,
+.training-table td {
+  padding: 16px 20px;
+  text-align: left;
+  border-bottom: 1px solid var(--border-color-light);
+}
+
+.training-table th {
+  background-color: var(--bg-color-header);
+  font-weight: 600;
+  color: var(--text-color-dark);
+  font-size: 0.875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.training-table tbody tr {
+  background-color: var(--bg-color-light);
+  transition: all 0.2s ease;
+}
+
+.training-table tbody tr:hover {
+  background-color: var(--bg-color-row-hover);
+}
+
+.training-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.training-table a {
+  color: var(--primary-color);
+  text-decoration: none;
+  font-weight: 500;
+  transition: color 0.2s ease;
+}
+
+.training-table a:hover {
+  color: var(--primary-color);
+  text-decoration: underline;
+}
+
+/* Training tag for table */
+.training-table .training-tag {
+  font-size: 0.75rem;
+  padding: 4px 10px;
+  height: auto;
+}
+
+.training-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+  height: 28px;
+  transition: all 0.2s ease;
+}
+
+.training-tag.done {
+  background-color: #D1FAE5;
+  color: #065F46;
+}
+
+.training-tag.in-progress {
+  background-color: #DBEAFE;
+  color: #1E40AF;
+}
+
+.training-tag.todo {
+  background-color: #FEF3C7;
+  color: #92400E;
+}

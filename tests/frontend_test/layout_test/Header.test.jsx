@@ -1,9 +1,4 @@
-import {
-  render,
-  screen,
-  cleanup,
-  waitFor,
-} from "@testing-library/react";
+import { render, screen, cleanup, waitFor } from "@testing-library/react";
 import { describe, test, expect, afterEach, vi } from "vitest";
 import Header from "@/components/layout/Header";
 import Profile from "@/pages/Profile";

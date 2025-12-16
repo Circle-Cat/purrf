@@ -29,11 +29,11 @@
   /* Background Colors */
   --bg-color-light: #ffffff;
   /* Primary background color for content areas and cards (white). */
-  --bg-color-header: #eeeeee;
+  --bg-color-header: #fafafa;
   /* Background color specifically for the header section (very light grey). */
   --bg-color-stripe-even: #f9f9f9;
-  /* 新增：表格偶数行的背景色 (斑马纹) */
-  --bg-color-row-hover: #f1f1f1;
+  /* background color for even table rows (zebra striping) */
+  --bg-color-row-hover: #fafafa;
   /* Border Colors */
   --border-color-light: #eeeeee;
   /* Light border color, for subtle separators or input fields. */
@@ -47,7 +47,12 @@
   /* Orange/Yellow, indicates warnings or caution. */
   --error-color: #e74c3c;
   /* Red, indicates errors or critical states. */
+
+  --shadow-sm: 0 1px 3px var(--border-color-light);
+  --shadow-md: 2px 0 5px var(--border-color-light);
+  --shadow-lg: 0 10px 25px var(--border-color-light);
 }
+
 
 /* Global Body Settings */
 body {

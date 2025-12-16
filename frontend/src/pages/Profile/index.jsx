@@ -1,0 +1,114 @@
+import React, { useState } from "react";
+import "@/pages/Profile/Profile.css";
+
+import { useProfileData } from "@/pages/Profile/hooks/useProfileData";
+
+import ProfileHeader from "@/pages/Profile/components/ProfileHeader";
+import ContactSection from "@/pages/Profile/components/ContactSection";
+import ExperienceSection from "@/pages/Profile/components/ExperienceSection";
+import EducationSection from "@/pages/Profile/components/EducationSection";
+import TrainingSection from "@/pages/Profile/components/TrainingSection";
+
+import PersonalEditModal from "@/pages/Profile/modals/PersonalEditModal";
+import ExperienceEditModal from "@/pages/Profile/modals/ExperienceEditModal";
+import EducationEditModal from "@/pages/Profile/modals/EducationEditModal";
+
+/**
+ * Profile page component.
+ *
+ * Handles display of profile info, experience, education, training,
+ * and modal state management for editing sections.
+ */
+const Profile = () => {
+  /** Fetch profile data and core logic from the hook */
+  const {
+    isLoading,
+    personalInfo,
+    experienceList,
+    educationList,
+    canEditPersonalInfo,
+    nextEditableDate,
+    handleUpdateProfile,
+  } = useProfileData();
+
+  /**
+   * Modal visibility state for personal, experience, and education edit sections.
+   */
+  const [modalState, setModalState] = useState({
+    personal: false,
+    experience: false,
+    education: false,
+  });
+
+  /**
+   * Toggle modal visibility for a given section.
+   * @param {string} key - The modal key ('personal', 'experience', 'education')
+   * @param {boolean} isOpen - True to open, false to close
+   */
+  const toggleModal = (key, isOpen) => {
+    setModalState((prev) => ({ ...prev, [key]: isOpen }));
+  };
+
+  /** Display loading state while fetching profile data */
+  if (isLoading) {
+    return <div className="profile-page-container">Loading profile...</div>;
+  }
+
+  return (
+    <div className="profile-page-container">
+      <div className="profile-content-area">
+        {/** Top section with personal info */}
+        <div className="profile-info-section">
+          <ProfileHeader
+            info={personalInfo}
+            canEdit={canEditPersonalInfo}
+            nextEditableDate={nextEditableDate}
+            onEditClick={() => toggleModal("personal", true)}
+          />
+        </div>
+
+        {/** Main content area: tabs or sections */}
+        <div className="tab-content-wrapper">
+          <div className="tab-content-personal">
+            <ContactSection info={personalInfo} />
+            <ExperienceSection
+              list={experienceList}
+              onEditClick={() => toggleModal("experience", true)}
+            />
+            <EducationSection
+              list={educationList}
+              onEditClick={() => toggleModal("education", true)}
+            />
+            <TrainingSection list={personalInfo.completedTraining} />
+          </div>
+        </div>
+      </div>
+
+      {/** Modal components */}
+      <PersonalEditModal
+        isOpen={modalState.personal}
+        onClose={() => toggleModal("personal", false)}
+        initialData={personalInfo}
+        onSave={handleUpdateProfile}
+        canEdit={canEditPersonalInfo}
+        nextEditableDate={nextEditableDate}
+      />
+
+      <ExperienceEditModal
+        isOpen={modalState.experience}
+        onClose={() => toggleModal("experience", false)}
+        initialData={experienceList}
+        onSave={handleUpdateProfile}
+      />
+
+      <EducationEditModal
+        isOpen={modalState.education}
+        onClose={() => toggleModal("education", false)}
+        initialData={educationList}
+        onSave={handleUpdateProfile}
+      />
+    </div>
+  );
+};
+
+export default Profile;

@@ -84,7 +84,9 @@ const Header = () => {
               </p>
               <div className="spacer"></div>
               <p className="admin-email-text">Admin Email:</p>
-              <p className="admin-email">outreach-programs-comms@circlecat.org</p>
+              <p className="admin-email">
+                outreach-programs-comms@circlecat.org
+              </p>
             </div>
           </DialogContent>
         </Dialog>
