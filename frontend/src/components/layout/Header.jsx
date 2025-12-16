@@ -11,6 +11,7 @@ import {
   DialogClose,
   DialogOverlay,
 } from "@radix-ui/react-dialog";
+import { ROUTE_PATHS } from "@/constants/RoutePaths";
 
 const Header = () => {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -18,7 +19,7 @@ const Header = () => {
   const navigate = useNavigate();
 
   const goToProfile = () => {
-    navigate("/profile");
+    navigate(ROUTE_PATHS.PROFILE);
   };
 
   const openContactUs = () => {
