@@ -61,31 +61,6 @@
     height: 16px;
 }
 
-/* Search button styling */
-.search-button {
-    padding: 6px 12px;
-    background-color: var(--primary-color);
-    color: var(--text-color-white);
-    border: 1px solid var(--primary-color);
-    border-radius: 4px;
-    cursor: pointer;
-    transition: background-color 0.2s ease, border-color 0.2s ease;
-    height: 32px;
-    font-size: 0.9em;
-    flex-shrink: 0;
-}
-
-/* Button states for hover and focus */
-.search-button:hover {
-    background-color: var(--secondary-color);
-    border-color: var(--secondary-color);
-}
-
-.search-button:focus {
-    outline: none;
-    outline: 2px solid var(--primary-color);
-}
-
 /* Table container styling */
 .table-container {
     flex-grow: 1;
