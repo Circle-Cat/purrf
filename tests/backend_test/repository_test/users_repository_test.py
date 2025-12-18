@@ -23,7 +23,7 @@ class TestUsersRepository(BaseRepositoryTestLib):
             UsersEntity(
                 first_name="Alice",
                 last_name="Admin",
-                timezone=UserTimezone.Asia_Shanghai,
+                timezone=UserTimezone.ASIA_SHANGHAI,
                 communication_channel="email",
                 primary_email="alice@example.com",
                 is_active=True,
@@ -33,7 +33,7 @@ class TestUsersRepository(BaseRepositoryTestLib):
             UsersEntity(
                 first_name="Bob",
                 last_name="Smith",
-                timezone=UserTimezone.America_New_York,
+                timezone=UserTimezone.AMERICA_NEW_YORK,
                 communication_channel="slack",
                 primary_email="bob@example.com",
                 alternative_emails=["b1@example.com", "b2@example.com"],
@@ -44,7 +44,7 @@ class TestUsersRepository(BaseRepositoryTestLib):
             UsersEntity(
                 first_name="Charlie",
                 last_name="Inactive",
-                timezone=UserTimezone.Asia_Shanghai,
+                timezone=UserTimezone.ASIA_SHANGHAI,
                 communication_channel="email",
                 primary_email="charlie@example.com",
                 is_active=False,
@@ -124,7 +124,7 @@ class TestUsersRepository(BaseRepositoryTestLib):
         new_user = UsersEntity(
             first_name="Dave",
             last_name="New",
-            timezone=UserTimezone.Asia_Shanghai,
+            timezone=UserTimezone.ASIA_SHANGHAI,
             communication_channel="email",
             primary_email="dave@example.com",
             is_active=True,

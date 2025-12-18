@@ -25,7 +25,7 @@ class TestTrainingRepository(BaseRepositoryTestLib):
             UsersEntity(
                 first_name="Alice",
                 last_name="Admin",
-                timezone=UserTimezone.Asia_Shanghai,
+                timezone=UserTimezone.ASIA_SHANGHAI,
                 communication_channel="email",
                 primary_email="alice@example.com",
                 is_active=True,
@@ -35,7 +35,7 @@ class TestTrainingRepository(BaseRepositoryTestLib):
             UsersEntity(
                 first_name="Bob",
                 last_name="MultiRole",
-                timezone=UserTimezone.America_Los_Angeles,
+                timezone=UserTimezone.AMERICA_LOS_ANGELES,
                 communication_channel="slack",
                 primary_email="bob@example.com",
                 alternative_emails=["b1@example.com", "b2@example.com"],
