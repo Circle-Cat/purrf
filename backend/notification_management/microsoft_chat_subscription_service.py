@@ -80,7 +80,8 @@ class MicrosoftChatSubscriptionService:
         try:
             pipeline.execute()
             self.logger.info(
-                f"Successfully updated client_state for subscription_id: '{subscription_id}'"
+                "Successfully updated client_state for subscription_id: %s",
+                subscription_id,
             )
         except Exception as e:
             raise RuntimeError(
@@ -164,7 +165,7 @@ class MicrosoftChatSubscriptionService:
                 and sub.lifecycle_notification_url == lifecycle_notification_url
             ):
                 self.logger.info(
-                    "Found valid existing subscription. No need to create a new one.",
+                    "Found valid existing subscription. No need to create a new one. chat ID: %s, subscription ID: %s",
                     chat_id,
                     sub.id,
                 )
