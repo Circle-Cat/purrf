@@ -1,6 +1,4 @@
 from backend.entity.users_entity import UsersEntity
-from backend.entity.experience_entity import ExperienceEntity
-from backend.dto.user_experience_dto import UserExperienceDto
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -75,32 +73,3 @@ class UsersRepository:
         await session.flush()
 
         return merged_entity
-
-    async def get_user_and_experience_by_user_id(
-        self, session: AsyncSession, user_id: int
-    ) -> UserExperienceDto | None:
-        """
-        Fetch a user with their experience (if exists)
-        """
-
-        stmt = (
-            select(UsersEntity, ExperienceEntity)
-            .outerjoin(
-                ExperienceEntity, ExperienceEntity.user_id == UsersEntity.user_id
-            )
-            .where(UsersEntity.user_id == user_id)
-        )
-
-        result = await session.execute(stmt)
-        row = result.first()
-
-        if not row:
-            return None
-
-        user, experience = row
-
-        return UserExperienceDto(
-            user=user,
-            education=experience.education if experience else None,
-            work_experience=experience.work_experience if experience else None,
-        )

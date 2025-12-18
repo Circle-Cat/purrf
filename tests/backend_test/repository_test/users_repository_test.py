@@ -6,7 +6,6 @@ from backend.repository.users_repository import UsersRepository
 from backend.entity.users_entity import UsersEntity
 from backend.entity.experience_entity import ExperienceEntity
 from backend.common.mentorship_enums import UserTimezone
-from backend.dto.user_experience_dto import UserExperienceDto
 from tests.backend_test.repository_test.base_repository_test_lib import (
     BaseRepositoryTestLib,
 )
@@ -151,37 +150,6 @@ class TestUsersRepository(BaseRepositoryTestLib):
 
         self.assertFalse(user.is_active)
         self.assertEqual(user.subject_identifier, self.user_entity.subject_identifier)
-
-    async def test_get_user_with_experience(self):
-        dto: UserExperienceDto = await self.repo.get_user_and_experience_by_user_id(
-            self.session, self.user_entity.user_id
-        )
-        self.assertIsNotNone(dto)
-        self.assertEqual(dto.user.user_id, self.user_entity.user_id)
-        self.assertEqual(dto.education["school"], "Harvard")
-        self.assertEqual(dto.work_experience["company"], "OpenAI")
-
-    async def test_get_user_with_experience_multi_role(self):
-        dto: UserExperienceDto = await self.repo.get_user_and_experience_by_user_id(
-            self.session, self.users[1].user_id
-        )
-        self.assertIsNotNone(dto)
-        self.assertEqual(dto.user.user_id, self.users[1].user_id)
-        self.assertEqual(dto.education["school"], "MIT")
-        self.assertEqual(dto.work_experience["company"], "Google")
-
-    async def test_get_user_without_experience(self):
-        dto: UserExperienceDto = await self.repo.get_user_and_experience_by_user_id(
-            self.session, self.users[2].user_id
-        )
-        self.assertIsNotNone(dto)
-        self.assertEqual(dto.user.user_id, self.users[2].user_id)
-        self.assertIsNone(dto.education)
-        self.assertIsNone(dto.work_experience)
-
-    async def test_get_non_existent_user(self):
-        dto = await self.repo.get_user_and_experience_by_user_id(self.session, 9999)
-        self.assertIsNone(dto)
 
 
 if __name__ == "__main__":
