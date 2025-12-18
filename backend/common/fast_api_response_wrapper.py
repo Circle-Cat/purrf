@@ -1,4 +1,5 @@
 from fastapi.responses import JSONResponse
+from fastapi.encoders import jsonable_encoder
 from http import HTTPStatus
 
 
@@ -42,8 +43,9 @@ def api_response(
         "message": message,
         "data": data or {},
     }
+    serialized_body = jsonable_encoder(response_body)
 
     return JSONResponse(
         status_code=status_code.value,
-        content=response_body,
+        content=serialized_body,
     )

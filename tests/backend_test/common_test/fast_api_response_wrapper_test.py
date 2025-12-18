@@ -4,6 +4,8 @@ from starlette.applications import Starlette
 from starlette.routing import Route
 from starlette.testclient import TestClient
 from backend.common.fast_api_response_wrapper import api_response
+from datetime import datetime
+from uuid import UUID
 
 
 def route_success(request):
@@ -18,6 +20,21 @@ def route_error(request):
     return api_response("Fail", False, status_code=HTTPStatus.BAD_REQUEST)
 
 
+def route_with_datetime(request):
+    return api_response(
+        "Datetime Test", True, {"timestamp": datetime.now()}, HTTPStatus.OK
+    )
+
+
+def route_with_uuid(request):
+    return api_response(
+        "UUID Test",
+        True,
+        {"user_uuid": UUID("885b2abc-bf44-4d39-83b8-afcc0ea855b3")},
+        HTTPStatus.OK,
+    )
+
+
 class TestApiResponseWrapper(TestCase):
     def setUp(self):
         # Create a minimal Starlette app to test JSONResponse
@@ -26,6 +43,8 @@ class TestApiResponseWrapper(TestCase):
                 Route("/test_success", route_success),
                 Route("/test_empty", route_empty),
                 Route("/test_error", route_error),
+                Route("/test_datetime", route_with_datetime),
+                Route("/test_uuid", route_with_uuid),
             ]
         )
         self.client = TestClient(self.app)
@@ -50,6 +69,26 @@ class TestApiResponseWrapper(TestCase):
         payload = res.json()
         self.assertEqual(payload["data"], {})
         self.assertEqual(payload["message"], "Fail")
+
+    def test_success_with_datetime(self):
+        res = self.client.get("/test_datetime")
+        self.assertEqual(res.status_code, HTTPStatus.OK)
+        payload = res.json()
+
+        self.assertTrue("timestamp" in payload["data"])
+        self.assertTrue(isinstance(payload["data"]["timestamp"], str))
+        self.assertTrue(payload["data"]["timestamp"].count("-") == 2)
+
+    def test_success_with_uuid(self):
+        res = self.client.get("/test_uuid")
+        self.assertEqual(res.status_code, HTTPStatus.OK)
+        payload = res.json()
+
+        self.assertTrue("user_uuid" in payload["data"])
+        self.assertTrue(isinstance(payload["data"]["user_uuid"], str))
+        self.assertEqual(
+            payload["data"]["user_uuid"], "885b2abc-bf44-4d39-83b8-afcc0ea855b3"
+        )
 
 
 if __name__ == "__main__":
