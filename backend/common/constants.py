@@ -250,3 +250,9 @@ DATE_FORMAT_YMD_NOSEP = "%Y%m%d"
 DATETIME_ISO8601_FORMAT = "%Y-%m-%dT%H:%M:%S.%f%z"
 DATETIME_FORMAT_YMD_HMS = "%Y-%m-%d %H:%M:%S"
 THREE_MONTHS_IN_SECONDS = 60 * 60 * 24 * 90
+
+
+class ProfileField(Enum):
+    TRAINING = "training"
+    WORK_HISTORY = "workHistory"
+    EDUCATION = "education"

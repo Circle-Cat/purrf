@@ -6,6 +6,7 @@ py_library(
     name = "profile",
     srcs = glob(["*.py"]),
     deps = [
+        "//backend/common:constants",
         "//backend/dto",
         "//backend/entity:entities",
         "@pypi//sqlalchemy",

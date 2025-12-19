@@ -7,6 +7,7 @@ from backend.common.environment_constants import (
 )
 
 
+@patch("backend.utils.app_dependency_builder.ProfileService")
 @patch("backend.utils.app_dependency_builder.ProfileCommandService")
 @patch("backend.utils.app_dependency_builder.ProfileQueryService")
 @patch("backend.utils.app_dependency_builder.ProfileMapper")
@@ -112,6 +113,7 @@ class TestAppDependencyBuilder(TestCase):
         mock_profile_mapper_cls,
         mock_profile_query_service_cls,
         mock_profile_command_service_cls,
+        mock_profile_service_cls,
     ):
         """
         Tests that the AppDependencyBuilder correctly instantiates and wires all its dependencies.
@@ -390,6 +392,10 @@ class TestAppDependencyBuilder(TestCase):
         mock_profile_command_service_cls.assert_called_once_with(
             users_repository=mock_users_repo_cls.return_value, logger=mock_logger
         )
+        mock_profile_service_cls.assert_called_once_with(
+            query_service=mock_profile_query_service_cls.return_value,
+            command_service=mock_profile_command_service_cls.return_value,
+        )
 
         mock_fast_app_factory_cls.assert_called_once_with(
             authentication_controller=mock_authentication_controller_cls.return_value,
@@ -593,6 +599,10 @@ class TestAppDependencyBuilder(TestCase):
         self.assertEqual(
             builder.profile_command_service,
             mock_profile_command_service_cls.return_value,
+        )
+        self.assertEqual(
+            builder.profile_service,
+            mock_profile_service_cls.return_value,
         )
 
 

@@ -19,3 +19,12 @@ py_test(
         "//backend/profile",
     ],
 )
+
+py_test(
+    name = "profile_service_test",
+    srcs = ["profile_service_test.py"],
+    deps = [
+        "//backend/common:constants",
+        "//backend/profile",
+    ],
+)
