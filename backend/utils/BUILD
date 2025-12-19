@@ -91,6 +91,7 @@ py_library(
         "//backend/authentication:authentication_controller",
         "//backend/authentication:authentication_service",
         "//backend/common:asyncio_event_loop_manager",
+        "//backend/common:database",
         "//backend/common:gerrit_client",
         "//backend/common:jira_client",
         "//backend/common:json_schema_validator",

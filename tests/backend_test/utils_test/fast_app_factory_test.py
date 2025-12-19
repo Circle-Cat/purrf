@@ -8,6 +8,8 @@ class TestFastAppFactory(unittest.TestCase):
     def setUp(self):
         self.mock_controller = MagicMock()
         self.mock_controller.router = MagicMock()
+        self.mock_profile_controller = MagicMock()
+        self.mock_profile_controller.router = MagicMock()
         self.mock_service = MagicMock()
 
         self.factory = FastAppFactory(
@@ -17,6 +19,7 @@ class TestFastAppFactory(unittest.TestCase):
             historical_controller=self.mock_controller,
             consumer_controller=self.mock_controller,
             frontend_controller=self.mock_controller,
+            profile_controller=self.mock_profile_controller,
         )
 
     def test_factory_initialization(self):

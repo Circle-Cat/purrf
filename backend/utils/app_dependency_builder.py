@@ -79,6 +79,8 @@ from backend.profile.profile_query_service import ProfileQueryService
 from backend.profile.profile_command_service import ProfileCommandService
 from backend.profile.profile_mapper import ProfileMapper
 from backend.profile.profile_service import ProfileService
+from backend.common.database import Database
+from backend.profile.profile_controller import ProfileController
 
 
 class AppDependencyBuilder:
@@ -331,14 +333,7 @@ class AppDependencyBuilder:
         )
         self.authentication_service = AuthenticationService(logger=self.logger)
         self.authentication_controller = AuthenticationController()
-        self.fast_app_factory = FastAppFactory(
-            authentication_controller=self.authentication_controller,
-            authentication_service=self.authentication_service,
-            notification_controller=self.notification_controller,
-            historical_controller=self.historical_controller,
-            consumer_controller=self.consumer_controller,
-            frontend_controller=self.frontend_controller,
-        )
+        self.database = Database(echo=False)
         self.users_repository = UsersRepository()
         self.experience_repository = ExperienceRepository()
         self.training_repository = TrainingRepository()
@@ -355,4 +350,17 @@ class AppDependencyBuilder:
         self.profile_service = ProfileService(
             query_service=self.profile_query_service,
             command_service=self.profile_command_service,
+        )
+        self.profile_controller = ProfileController(
+            profile_service=self.profile_service,
+            database=self.database,
+        )
+        self.fast_app_factory = FastAppFactory(
+            authentication_controller=self.authentication_controller,
+            authentication_service=self.authentication_service,
+            notification_controller=self.notification_controller,
+            historical_controller=self.historical_controller,
+            consumer_controller=self.consumer_controller,
+            frontend_controller=self.frontend_controller,
+            profile_controller=self.profile_controller,
         )

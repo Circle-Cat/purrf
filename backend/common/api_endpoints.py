@@ -40,3 +40,5 @@ GOOGLE_CHAT_COUNT_ENDPOINT = "/google/chat/count"
 GOOGLE_CHAT_SPACES_ENDPOINT = "/google/chat/spaces"
 
 SUMMARY_ENDPOINT = "/summary"
+
+MY_PROFILE_ENDPOINT = "/profiles/me"

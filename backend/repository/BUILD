@@ -8,6 +8,7 @@ py_library(
     deps = [
         "//backend/dto",
         "//backend/entity:entities",
+        "@pypi//asyncpg",
         "@pypi//sqlalchemy",
     ],
 )

@@ -7,6 +7,8 @@ from backend.common.environment_constants import (
 )
 
 
+@patch("backend.utils.app_dependency_builder.Database")
+@patch("backend.utils.app_dependency_builder.ProfileController")
 @patch("backend.utils.app_dependency_builder.ProfileService")
 @patch("backend.utils.app_dependency_builder.ProfileCommandService")
 @patch("backend.utils.app_dependency_builder.ProfileQueryService")
@@ -114,6 +116,8 @@ class TestAppDependencyBuilder(TestCase):
         mock_profile_query_service_cls,
         mock_profile_command_service_cls,
         mock_profile_service_cls,
+        mock_profile_controller_cls,
+        mock_database_cls,
     ):
         """
         Tests that the AppDependencyBuilder correctly instantiates and wires all its dependencies.
@@ -382,6 +386,7 @@ class TestAppDependencyBuilder(TestCase):
         mock_users_repo_cls.assert_called_once()
         mock_experience_repo_cls.assert_called_once()
         mock_training_repo_cls.assert_called_once()
+        mock_database_cls.assert_called_once()
         mock_profile_query_service_cls.assert_called_once_with(
             users_repository=mock_users_repo_cls.return_value,
             experience_repository=mock_experience_repo_cls.return_value,
@@ -395,6 +400,10 @@ class TestAppDependencyBuilder(TestCase):
             query_service=mock_profile_query_service_cls.return_value,
             command_service=mock_profile_command_service_cls.return_value,
         )
+        mock_profile_controller_cls.assert_called_once_with(
+            profile_service=mock_profile_service_cls.return_value,
+            database=mock_database_cls.return_value,
+        )
 
         mock_fast_app_factory_cls.assert_called_once_with(
             authentication_controller=mock_authentication_controller_cls.return_value,
@@ -403,6 +412,7 @@ class TestAppDependencyBuilder(TestCase):
             historical_controller=mock_historical_controller_cls.return_value,
             consumer_controller=mock_consumer_controller_cls.return_value,
             frontend_controller=mock_frontend_controller_cls.return_value,
+            profile_controller=mock_profile_controller_cls.return_value,
         )
 
         # Assert that the builder's internal attributes are the created mock instances
@@ -603,6 +613,10 @@ class TestAppDependencyBuilder(TestCase):
         self.assertEqual(
             builder.profile_service,
             mock_profile_service_cls.return_value,
+        )
+        self.assertEqual(builder.database, mock_database_cls.return_value)
+        self.assertEqual(
+            builder.profile_controller, mock_profile_controller_cls.return_value
         )
 
 

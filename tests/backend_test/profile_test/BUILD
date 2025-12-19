@@ -28,3 +28,14 @@ py_test(
         "//backend/profile",
     ],
 )
+
+py_test(
+    name = "profile_controller_test",
+    srcs = ["profile_controller_test.py"],
+    deps = [
+        "//backend/profile",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//starlette",
+    ],
+)

@@ -19,6 +19,7 @@ class FastAppFactory:
         historical_controller,
         consumer_controller,
         frontend_controller,
+        profile_controller,
     ):
         """
         Initialize the factory.
@@ -30,6 +31,7 @@ class FastAppFactory:
             notification_controller: An instance of HistoricalController that manages API routes for sync historical data.
             consumer_controller: An instance of ConsumerController that manages API routes to trigger, check, or stop subscribers.
             frontend_controller: An instance of FrontendController that manages API routes to query internal activity data.
+            profile_controller: Optional ProfileController instance to register profile routes.
         """
         self.authentication_controller = authentication_controller
         self.authentication_service = authentication_service
@@ -37,6 +39,7 @@ class FastAppFactory:
         self.historical_controller = historical_controller
         self.consumer_controller = consumer_controller
         self.frontend_controller = frontend_controller
+        self.profile_controller = profile_controller
 
     def create_app(self, is_prod: bool = False) -> FastAPI:
         """
@@ -86,6 +89,7 @@ class FastAppFactory:
         app.include_router(self.historical_controller.router, prefix="/api")
         app.include_router(self.consumer_controller.router, prefix="/api")
         app.include_router(self.frontend_controller.router, prefix="/api")
+        app.include_router(self.profile_controller.router, prefix="/api")
 
         @app.get("/fastapi/health")
         def health_check():
