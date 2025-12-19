@@ -7,6 +7,7 @@ from backend.common.environment_constants import (
 )
 
 
+@patch("backend.utils.app_dependency_builder.ProfileCommandService")
 @patch("backend.utils.app_dependency_builder.ProfileQueryService")
 @patch("backend.utils.app_dependency_builder.ProfileMapper")
 @patch("backend.utils.app_dependency_builder.TrainingRepository")
@@ -110,6 +111,7 @@ class TestAppDependencyBuilder(TestCase):
         mock_training_repo_cls,
         mock_profile_mapper_cls,
         mock_profile_query_service_cls,
+        mock_profile_command_service_cls,
     ):
         """
         Tests that the AppDependencyBuilder correctly instantiates and wires all its dependencies.
@@ -376,6 +378,19 @@ class TestAppDependencyBuilder(TestCase):
         mock_authentication_service_cls.assert_called_once_with(logger=mock_logger)
         mock_authentication_controller_cls.assert_called_once()
 
+        mock_users_repo_cls.assert_called_once()
+        mock_experience_repo_cls.assert_called_once()
+        mock_training_repo_cls.assert_called_once()
+        mock_profile_query_service_cls.assert_called_once_with(
+            users_repository=mock_users_repo_cls.return_value,
+            experience_repository=mock_experience_repo_cls.return_value,
+            training_repository=mock_training_repo_cls.return_value,
+            profile_mapper=mock_profile_mapper_cls.return_value,
+        )
+        mock_profile_command_service_cls.assert_called_once_with(
+            users_repository=mock_users_repo_cls.return_value, logger=mock_logger
+        )
+
         mock_fast_app_factory_cls.assert_called_once_with(
             authentication_controller=mock_authentication_controller_cls.return_value,
             authentication_service=mock_authentication_service_cls.return_value,
@@ -562,6 +577,20 @@ class TestAppDependencyBuilder(TestCase):
         self.assertEqual(
             builder.authentication_controller,
             mock_authentication_controller_cls.return_value,
+        )
+        self.assertEqual(builder.users_repository, mock_users_repo_cls.return_value)
+        self.assertEqual(
+            builder.experience_repository, mock_experience_repo_cls.return_value
+        )
+        self.assertEqual(
+            builder.training_repository, mock_training_repo_cls.return_value
+        )
+        self.assertEqual(
+            builder.profile_query_service, mock_profile_query_service_cls.return_value
+        )
+        self.assertEqual(
+            builder.profile_command_service,
+            mock_profile_command_service_cls.return_value,
         )
 
 

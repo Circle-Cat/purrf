@@ -11,3 +11,11 @@ py_test(
     srcs = ["profile_query_service_test.py"],
     deps = ["//backend/profile"],
 )
+
+py_test(
+    name = "profile_command_service_test",
+    srcs = ["profile_command_service_test.py"],
+    deps = [
+        "//backend/profile",
+    ],
+)

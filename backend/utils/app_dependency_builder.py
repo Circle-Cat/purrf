@@ -76,6 +76,7 @@ from backend.repository.users_repository import UsersRepository
 from backend.repository.experience_repository import ExperienceRepository
 from backend.repository.training_repository import TrainingRepository
 from backend.profile.profile_query_service import ProfileQueryService
+from backend.profile.profile_command_service import ProfileCommandService
 from backend.profile.profile_mapper import ProfileMapper
 
 
@@ -344,4 +345,7 @@ class AppDependencyBuilder:
             experience_repository=self.experience_repository,
             training_repository=self.training_repository,
             profile_mapper=self.profile_mapper,
+        )
+        self.profile_command_service = ProfileCommandService(
+            users_repository=self.users_repository, logger=self.logger
         )
