@@ -51,6 +51,12 @@
   --shadow-sm: 0 1px 3px var(--border-color-light);
   --shadow-md: 2px 0 5px var(--border-color-light);
   --shadow-lg: 0 10px 25px var(--border-color-light);
+
+    /* Button Colors */
+  --profile-btn-danger-bg: #EF4444;
+  --profile-btn-danger-hover: #DC2626;
+  --profile-btn-secondary-bg: #F5F5F5;
+  --profile-btn-secondary-hover: #E5E5E5;
 }
 
 

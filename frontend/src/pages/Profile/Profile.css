@@ -84,6 +84,11 @@
   box-shadow: var(--shadow-sm);
 }
 
+.edit-button:focus,
+.edit-button:active {
+  outline: none;
+}
+
 
 /* Experience and Education lists */
 .experience-list,

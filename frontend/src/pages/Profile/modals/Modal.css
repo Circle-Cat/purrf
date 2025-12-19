@@ -1,0 +1,300 @@
+
+/* Modal styles - Modern design */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(4px);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+  animation: fadeIn 0.2s ease;
+}
+
+.modal-content {
+  background-color: var(--bg-color-light);
+  padding: 40px;
+  border-radius: 16px;
+  max-width: 700px;
+  width: 90%;
+  max-height: 90vh;
+  overflow-y: auto;
+  border: 1px solid var(--border-color-light);
+  animation: slideUp 0.3s ease;
+}
+
+.modal-content h2 {
+  margin-top: 0;
+  margin-bottom: 32px;
+  color: var(--text-color-dark);
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  border-bottom: 2px solid var(--border-color-light);
+  padding-bottom: 20px;
+}
+
+.modal-content form label {
+  display: block;
+  margin-bottom: 24px;
+  font-weight: 600;
+  color: var(--text-color-dark);
+  font-size: 0.9375rem;
+}
+
+.modal-content form input[type="text"],
+.modal-content form select,
+.modal-content form textarea {
+  width: 100%;
+  padding: 12px 16px;
+  margin-top: 8px;
+  border: 2px solid var(--border-color-light);
+  border-radius: 10px;
+  font-size: 0.9375rem;
+  color: var(--text-color-dark);
+  background-color: var(--bg-color-light);
+  transition: all 0.2s ease;
+  box-sizing: border-box;
+}
+
+.modal-content form input[type="text"]:focus,
+.modal-content form select:focus,
+.modal-content form textarea:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px var(--teriary-color);
+}
+
+.modal-content form textarea {
+  min-height: 120px;
+  resize: vertical;
+}
+
+.modal-info-text {
+  font-size: 0.875rem;
+  color: var(--text-color-medium);
+  margin-bottom: 16px;
+  line-height: 1.6;
+  padding: 12px 16px;
+  background-color: var(--teriary-color);
+  border-radius: 8px;
+  border-left: 3px solid var(--teriary-color);
+}
+
+
+
+/* Delete button */
+.delete-btn {
+  padding: 6px 12px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  background-color: var(--profile-btn-danger-bg);
+  color: var(--text-color-white);
+  font-size: 1.125rem;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+  box-shadow: var(--shadow-sm);
+  min-width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.delete-btn:hover {
+  background-color: var(--profile-btn-danger-hover);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
+.delete-btn:active {
+  transform: translateY(0);
+}
+
+/* Delete button positioning in form */
+.edit-item-form .delete-btn {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 1;
+}
+
+.modal-actions {
+  margin-top: 40px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  border-top: 2px solid var(--profile-border-light);
+  padding-top: 24px;
+}
+
+.modal-actions button {
+  padding: 12px 28px;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  transition: all 0.2s ease;
+  box-shadow: var(--shadow-sm);
+}
+
+.modal-actions button:last-child {
+  background-color: var(--primary-color);
+  color: var(--text-color-white);
+}
+
+.modal-actions button:last-child:hover {
+  background-color: var(--secondary-color);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
+.modal-actions button:first-child {
+  background-color: transparent;
+  color: var(--primary-color);
+  border: 2px solid var(--teriary-color);
+}
+
+.modal-actions button:first-child:hover {
+ background-color: transparent;
+  border-color: var(--primary-color);
+  color: var(--primary-color);
+}
+
+.modal-actions button:focus,
+.modal-actions button:focus-visible,
+.modal-actions button:active {
+  outline: none;
+}
+
+/* Edit item form (Experience/Education) */
+.edit-item-form {
+  border: 2px solid var(--border-color-light);
+  padding: 24px;
+  margin-bottom: 20px;
+  border-radius: 12px;
+  background-color: var(--bg-color-header);
+  position: relative;
+  transition: all 0.2s ease;
+}
+
+.edit-item-form:hover {
+  border-color: var(--teriary-color);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Form group for general inputs */
+.form-group {
+  margin-bottom: 20px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: 600;
+  font-size: 0.875rem;
+  color: var(--text-color-dark);
+}
+
+.form-group input[type="text"],
+.form-group select {
+  width: 100%;
+  padding: 12px 16px;
+  border: 2px solid var(--border-color-light);
+  border-radius: 10px;
+  font-size: 0.9375rem;
+  color: var(--text-color-dark);
+  background-color: var(--bg-color-light);
+  box-sizing: border-box;
+  transition: all 0.2s ease;
+}
+
+.form-group input[type="text"]:focus,
+.form-group select:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Checkbox group */
+.form-group-checkbox {
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  padding: 12px 16px;
+  background-color: var(--teriary-color);
+  border-radius: 8px;
+}
+
+.form-group-checkbox input[type="checkbox"] {
+  margin-right: 10px;
+  transform: scale(1.2);
+  accent-color: var(--primary-color);
+}
+
+.form-group-checkbox label {
+  margin-bottom: 0;
+  font-weight: 500;
+  font-size: 0.9375rem;
+  cursor: pointer;
+  color: var(--text-color-dark);
+}
+
+/* Date input groups (Month/Year dropdowns) */
+.date-group {
+  margin-bottom: 20px;
+}
+
+.date-inputs {
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.date-inputs select {
+  flex: 1;
+  width: auto;
+  padding: 12px 16px;
+  border: 2px solid var(--border-color-light);
+  border-radius: 10px;
+  font-size: 0.9375rem;
+  color: var(--text-color-dark);
+  background-color: var(--bg-color-light);
+  box-sizing: border-box;
+  transition: all 0.2s ease;
+}
+
+.date-inputs select:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: var(--shadow-sm);
+}
+
+
+
+/* Error message text */
+.error-text {
+    color: var(--error-color);
+    font-size: 12px;
+    margin-top: 4px;
+    display: block;
+}
+
+/* Border style when the input field has an error */
+.input-error {
+    border-color: var(--error-color) !important;
+    outline: none;
+}
+
+.required {
+    color: var(--error-color);
+    margin-left: 4px;
+}
