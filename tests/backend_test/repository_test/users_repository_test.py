@@ -1,16 +1,11 @@
 import unittest
-from datetime import datetime, timedelta
+from datetime import datetime
 
 
 from backend.repository.users_repository import UsersRepository
 from backend.entity.users_entity import UsersEntity
-from backend.entity.training_entity import TrainingEntity
 from backend.entity.experience_entity import ExperienceEntity
-from backend.common.mentorship_enums import (
-    TrainingStatus,
-    TrainingCategory,
-    UserTimezone,
-)
+from backend.common.mentorship_enums import UserTimezone
 from tests.backend_test.repository_test.base_repository_test_lib import (
     BaseRepositoryTestLib,
 )
@@ -19,8 +14,6 @@ from tests.backend_test.repository_test.base_repository_test_lib import (
 class TestUsersRepository(BaseRepositoryTestLib):
     async def asyncSetUp(self):
         await super().asyncSetUp()
-
-        now = datetime.utcnow()
 
         # repo instance
         self.repo = UsersRepository()
@@ -78,34 +71,6 @@ class TestUsersRepository(BaseRepositoryTestLib):
         ]
 
         await self.insert_entities(self.experiences)
-
-        trainings = [
-            TrainingEntity(
-                user_id=self.users[0].user_id,
-                category=TrainingCategory.CORPORATE_CULTURE_COURSE,
-                completed_timestamp=now,
-                status=TrainingStatus.TO_DO,
-                deadline=now + timedelta(days=7),
-                link="http://example.com/1",
-            ),
-            TrainingEntity(
-                user_id=self.users[0].user_id,
-                category=TrainingCategory.RESIDENCY_PROGRAM_ONBOARDING,
-                completed_timestamp=now,
-                status=TrainingStatus.DONE,
-                deadline=now + timedelta(days=10),
-                link="http://example.com/2",
-            ),
-            TrainingEntity(
-                user_id=self.users[1].user_id,
-                category=TrainingCategory.CORPORATE_CULTURE_COURSE,
-                completed_timestamp=now,
-                status=TrainingStatus.TO_DO,
-                deadline=now + timedelta(days=7),
-                link="http://example.com/3",
-            ),
-        ]
-        await self.insert_entities(trainings)
 
     async def test_get_user_by_user_id(self):
         """Test retrieving an existing user by user ID."""
@@ -185,20 +150,6 @@ class TestUsersRepository(BaseRepositoryTestLib):
 
         self.assertFalse(user.is_active)
         self.assertEqual(user.subject_identifier, self.user_entity.subject_identifier)
-
-    async def test_get_training_by_user_id_existing(self):
-        """Test retrieving TrainingEntities for an existing user ID"""
-        result = await self.repo.get_training_by_user_id(
-            self.session, self.users[0].user_id
-        )
-
-        self.assertEqual(len(result), 2)
-        self.assertTrue(all(t.user_id == self.users[0].user_id for t in result))
-
-    async def test_get_training_by_user_id_non_existent(self):
-        """Test pass a non-existent user ID returns an empty list"""
-        result = await self.repo.get_training_by_user_id(self.session, 9999)
-        self.assertEqual(result, [])
 
 
 if __name__ == "__main__":

@@ -1,5 +1,4 @@
 from backend.entity.users_entity import UsersEntity
-from backend.entity.training_entity import TrainingEntity
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -74,15 +73,3 @@ class UsersRepository:
         await session.flush()
 
         return merged_entity
-
-    async def get_training_by_user_id(
-        self, session: AsyncSession, user_id: int
-    ) -> list[TrainingEntity]:
-        """
-        Fetch all training records for a given user_id.
-        """
-        result = await session.execute(
-            select(TrainingEntity).where(TrainingEntity.user_id == user_id)
-        )
-        trainings = result.scalars().all()
-        return trainings
