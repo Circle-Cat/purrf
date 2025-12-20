@@ -1,5 +1,5 @@
 """
-Production ASGI entry point for the FastAPI backend application.
+Development ASGI entry point for the FastAPI backend application.
 
 This script performs the following steps:
 1. Builds application dependencies via AppDependencyBuilder.

@@ -29,16 +29,27 @@ class FastAppFactory:
         self.authentication_service = authentication_service
         self.notification_controller = notification_controller
 
-    def create_app(self) -> FastAPI:
+    def create_app(self, is_prod: bool = False) -> FastAPI:
         """
         Create and configure a FastAPI application instance.
 
         This method performs the following setup steps:
             1. Initializes the FastAPI application.
+                - In production mode (is_prod=True), disables Swagger UI, ReDoc,
+                    and the OpenAPI schema endpoints.
+                - In non-production mode, exposes:
+                    * Swagger UI at '/docs'
+                    * ReDoc at '/redoc'
+                    * OpenAPI schema at '/openapi.json'
             2. Registers global exception handlers.
             3. Adds authentication middleware using AuthMiddleware.
             4. Registers the controller routes under the '/api' prefix.
             5. Adds a simple health check endpoint at '/fastapi/health'.
+
+        Args:
+            is_prod (bool): Whether the application is running in production mode.
+                If True, API documentation and schema endpoints are disabled.
+                Defaults to False.
 
         Returns:
             FastAPI: A fully configured FastAPI application instance.
@@ -48,7 +59,11 @@ class FastAppFactory:
             app = factory.create_app()
         """
         # Initialize the FastAPI app
-        app = FastAPI()
+        app = FastAPI(
+            docs_url=None if is_prod else "/docs",
+            redoc_url=None if is_prod else "/redoc",
+            openapi_url=None if is_prod else "/openapi.json"
+        )
 
         # Register global exception handlers
         register_exception_handlers(app)

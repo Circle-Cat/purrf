@@ -40,7 +40,6 @@ py_binary(
     srcs = ["prod_runner.py"],
     main = "prod_runner.py",
     deps = [
-        ":app",
         "//backend/utils:app_dependency_builder",
     ],
 )
