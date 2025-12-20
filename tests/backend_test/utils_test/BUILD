@@ -60,3 +60,11 @@ py_test(
         "@pypi//httpx",
     ],
 )
+
+py_test(
+    name = "permission_decorators_test",
+    srcs = ["permission_decorators_test.py"],
+    deps = [
+        "//backend/utils:permission_decorators",
+    ],
+)

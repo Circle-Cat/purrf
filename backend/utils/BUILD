@@ -55,6 +55,17 @@ py_library(
 )
 
 py_library(
+    name = "permission_decorators",
+    srcs = [
+        "permission_decorators.py",
+    ],
+    deps = [
+        "//backend/common:fast_api_response_wrapper",
+        "@pypi//starlette",
+    ],
+)
+
+py_library(
     name = "fast_app_factory",
     srcs = [
         "fast_app_factory.py",
