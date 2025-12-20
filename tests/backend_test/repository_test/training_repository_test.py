@@ -1,4 +1,5 @@
 import unittest
+import uuid
 from datetime import datetime, timedelta
 
 from backend.repository.training_repository import TrainingRepository
@@ -30,7 +31,7 @@ class TestTrainingRepository(BaseRepositoryTestLib):
                 primary_email="alice@example.com",
                 is_active=True,
                 updated_timestamp=datetime.utcnow(),
-                subject_identifier="sub1",
+                subject_identifier=str(uuid.uuid4()),
             ),
             UsersEntity(
                 first_name="Bob",
@@ -41,7 +42,7 @@ class TestTrainingRepository(BaseRepositoryTestLib):
                 alternative_emails=["b1@example.com", "b2@example.com"],
                 is_active=True,
                 updated_timestamp=datetime.utcnow(),
-                subject_identifier="sub2",
+                subject_identifier=str(uuid.uuid4()),
             ),
         ]
         await self.insert_entities(dummy_users)

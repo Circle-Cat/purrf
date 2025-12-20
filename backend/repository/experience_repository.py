@@ -1,5 +1,5 @@
 from backend.entity.experience_entity import ExperienceEntity
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -43,3 +43,22 @@ class ExperienceRepository:
         await session.flush()
 
         return merged_entity
+
+    async def update_work_history(
+        self,
+        session: AsyncSession,
+        user_id: int,
+        new_work_history: list[dict],
+    ) -> ExperienceEntity | None:
+        """
+        Update the work experience data for a given user ID (1:1 relationship)
+        and return the updated experience entity.
+        """
+        result = await session.execute(
+            update(ExperienceEntity)
+            .where(ExperienceEntity.user_id == user_id)
+            .values(work_history=new_work_history)
+            .returning(ExperienceEntity)
+        )
+
+        return result.scalars().one_or_none()

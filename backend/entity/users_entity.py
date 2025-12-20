@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Boolean, String, DateTime, Enum as SAEnum
+from sqlalchemy import Boolean, String, DateTime, func, Enum as SAEnum
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column
 from backend.common.base import Base
@@ -43,4 +43,6 @@ class UsersEntity(Base):
 
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False)
 
-    updated_timestamp: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    updated_timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), onupdate=func.now(), nullable=False
+    )

@@ -1,5 +1,6 @@
+from datetime import datetime
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy import Integer, ForeignKey
+from sqlalchemy import Integer, ForeignKey, DateTime, func
 from sqlalchemy.dialects.postgresql import JSONB
 from backend.common.base import Base
 
@@ -15,3 +16,6 @@ class ExperienceEntity(Base):
     )
     education: Mapped[list[dict] | None] = mapped_column(JSONB, nullable=True)
     work_history: Mapped[list[dict] | None] = mapped_column(JSONB, nullable=True)
+    updated_timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), onupdate=func.now(), nullable=False
+    )

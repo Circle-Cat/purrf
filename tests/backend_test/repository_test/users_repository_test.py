@@ -1,5 +1,6 @@
 import unittest
-from datetime import datetime
+import uuid
+from datetime import datetime, timezone
 
 
 from backend.repository.users_repository import UsersRepository
@@ -26,8 +27,8 @@ class TestUsersRepository(BaseRepositoryTestLib):
                 communication_channel="email",
                 primary_email="alice@example.com",
                 is_active=True,
-                updated_timestamp=datetime.utcnow(),
-                subject_identifier="sub1",
+                updated_timestamp=datetime.now(timezone.utc),
+                subject_identifier=str(uuid.uuid4()),
             ),
             UsersEntity(
                 first_name="Bob",
@@ -37,8 +38,8 @@ class TestUsersRepository(BaseRepositoryTestLib):
                 primary_email="bob@example.com",
                 alternative_emails=["b1@example.com", "b2@example.com"],
                 is_active=True,
-                updated_timestamp=datetime.utcnow(),
-                subject_identifier="sub2",
+                updated_timestamp=datetime.now(timezone.utc),
+                subject_identifier=str(uuid.uuid4()),
             ),
             UsersEntity(
                 first_name="Charlie",
@@ -47,8 +48,8 @@ class TestUsersRepository(BaseRepositoryTestLib):
                 communication_channel="email",
                 primary_email="charlie@example.com",
                 is_active=False,
-                updated_timestamp=datetime.utcnow(),
-                subject_identifier="sub3",
+                updated_timestamp=datetime.now(timezone.utc),
+                subject_identifier=str(uuid.uuid4()),
             ),
         ]
 
@@ -127,7 +128,7 @@ class TestUsersRepository(BaseRepositoryTestLib):
             communication_channel="email",
             primary_email="dave@example.com",
             is_active=True,
-            updated_timestamp=datetime.utcnow(),
+            updated_timestamp=datetime.now(timezone.utc),
             subject_identifier="sub4",
         )
 

@@ -1,5 +1,6 @@
 import unittest
-from datetime import datetime
+import uuid
+from datetime import datetime, timezone
 
 from backend.repository.experience_repository import ExperienceRepository
 from backend.entity.users_entity import UsersEntity
@@ -16,6 +17,19 @@ class TestExperienceRepository(BaseRepositoryTestLib):
 
         self.repo = ExperienceRepository()
 
+        self.initial_time = datetime.now(timezone.utc)
+
+        self.new_work_history = [
+            {
+                "company": "IBM",
+                "title": "Senior Engineer",
+            },
+            {
+                "company": "Google",
+                "title": "Founder",
+            },
+        ]
+
         self.users = [
             UsersEntity(
                 first_name="Alice",
@@ -24,8 +38,8 @@ class TestExperienceRepository(BaseRepositoryTestLib):
                 communication_channel="email",
                 primary_email="alice@example.com",
                 is_active=True,
-                updated_timestamp=datetime.utcnow(),
-                subject_identifier="sub1",
+                updated_timestamp=datetime.now(timezone.utc),
+                subject_identifier=str(uuid.uuid4()),
             ),
             UsersEntity(
                 first_name="Bob",
@@ -34,8 +48,8 @@ class TestExperienceRepository(BaseRepositoryTestLib):
                 communication_channel="slack",
                 primary_email="bob@example.com",
                 is_active=True,
-                updated_timestamp=datetime.utcnow(),
-                subject_identifier="sub2",
+                updated_timestamp=datetime.now(timezone.utc),
+                subject_identifier=str(uuid.uuid4()),
             ),
             UsersEntity(
                 first_name="Charlie",
@@ -45,7 +59,7 @@ class TestExperienceRepository(BaseRepositoryTestLib):
                 primary_email="charlie@example.com",
                 is_active=False,
                 updated_timestamp=datetime.utcnow(),
-                subject_identifier="sub3",
+                subject_identifier=str(uuid.uuid4()),
             ),
         ]
 
@@ -56,11 +70,13 @@ class TestExperienceRepository(BaseRepositoryTestLib):
                 user_id=self.users[0].user_id,
                 education=[{"school": "Harvard"}],
                 work_history=[{"company": "OpenAI"}],
+                updated_timestamp=self.initial_time,
             ),
             ExperienceEntity(
                 user_id=self.users[1].user_id,
                 education=[{"school": "MIT"}],
                 work_history=[{"company": "Google"}],
+                updated_timestamp=self.initial_time,
             ),
         ]
 
@@ -131,6 +147,35 @@ class TestExperienceRepository(BaseRepositoryTestLib):
             result.work_history,
             [{"company": "Google"}, {"company": "TikTok"}],
         )
+
+    async def test_update_work_history_success(self):
+        """Test successfully updating work experience"""
+        result = await self.repo.update_work_history(
+            self.session, self.users[0].user_id, self.new_work_history
+        )
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result.work_history, self.new_work_history)
+        self.assertEqual(result.user_id, self.users[0].user_id)
+        self.assertGreater(result.updated_timestamp, self.initial_time)
+
+    async def test_update_work_history_not_found(self):
+        """Test updating a non-existent user's work experience returns None."""
+        result = await self.repo.update_work_history(
+            self.session, 9999, self.new_work_history
+        )
+
+        self.assertIsNone(result)
+
+    async def test_update_work_history_to_empty(self):
+        """Test clearing work experience with an empty list."""
+        result = await self.repo.update_work_history(
+            self.session, self.users[0].user_id, []
+        )
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result.work_history, [])
+        self.assertGreater(result.updated_timestamp, self.initial_time)
 
 
 if __name__ == "__main__":
