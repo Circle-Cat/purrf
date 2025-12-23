@@ -49,3 +49,12 @@ py_test(
         ":base_repository_test_lib",
     ],
 )
+
+py_test(
+    name = "mentorship_round_repository_test",
+    srcs = ["mentorship_round_repository_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        ":base_repository_test_lib",
+    ],
+)
