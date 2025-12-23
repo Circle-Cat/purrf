@@ -45,12 +45,12 @@ class TestExperienceRepository(BaseRepositoryTestLib):
             ExperienceEntity(
                 user_id=self.users[0].user_id,
                 education=[{"school": "Harvard"}],
-                work_experience=[{"company": "OpenAI"}],
+                work_history=[{"company": "OpenAI"}],
             ),
             ExperienceEntity(
                 user_id=self.users[1].user_id,
                 education=[{"school": "MIT"}],
-                work_experience=[{"company": "Google"}],
+                work_history=[{"company": "Google"}],
             ),
         ]
 

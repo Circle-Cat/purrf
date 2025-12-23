@@ -59,13 +59,13 @@ class TestUsersRepository(BaseRepositoryTestLib):
         self.experiences = [
             ExperienceEntity(
                 user_id=self.users[0].user_id,
-                education={"school": "Harvard"},
-                work_experience={"company": "OpenAI"},
+                education=[{"school": "Harvard"}],
+                work_history=[{"company": "OpenAI"}],
             ),
             ExperienceEntity(
                 user_id=self.users[1].user_id,
-                education={"school": "MIT"},
-                work_experience={"company": "Google"},
+                education=[{"school": "MIT"}],
+                work_history=[{"company": "Google"}],
             ),
             # user 3 has no experience
         ]

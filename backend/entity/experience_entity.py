@@ -13,5 +13,5 @@ class ExperienceEntity(Base):
     user_id: Mapped[int] = mapped_column(
         ForeignKey("users.user_id"), nullable=False, unique=True
     )
-    education: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
-    work_experience: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    education: Mapped[list[dict] | None] = mapped_column(JSONB, nullable=True)
+    work_history: Mapped[list[dict] | None] = mapped_column(JSONB, nullable=True)
