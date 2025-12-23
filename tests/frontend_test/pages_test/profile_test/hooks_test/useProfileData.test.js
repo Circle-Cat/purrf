@@ -34,7 +34,7 @@ describe("useProfileData Hook", () => {
         communicationMethod: "google_chat",
         updatedTimestamp: "2023-01-01T00:00:00Z",
       },
-      experience: [
+      workHistory: [
         {
           id: "exp1",
           title: "Dev",

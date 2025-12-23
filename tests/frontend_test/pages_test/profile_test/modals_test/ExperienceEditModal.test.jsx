@@ -180,7 +180,7 @@ describe("ExperienceEditModal", () => {
     await waitFor(() => {
       expect(mockOnSave).toHaveBeenCalledWith({
         profile: {
-          experience: [
+          workHistory: [
             {
               id: 1,
               title: "Senior Engineer",

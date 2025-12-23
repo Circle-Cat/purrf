@@ -40,8 +40,8 @@ export const useProfileData = () => {
   const mapDataToState = useCallback((profile) => {
     if (!profile?.user) return;
 
-    const { user, experience = [], education = [], training = [] } = profile;
-    const currentJob = experience.find((exp) => exp.isCurrentJob) || {};
+    const { user, workHistory = [], education = [], training = [] } = profile;
+    const currentJob = workHistory.find((exp) => exp.isCurrentJob) || {};
 
     /**
      * Map user data to personalInfo state.
@@ -97,9 +97,9 @@ export const useProfileData = () => {
     }));
 
     /**
-     * Map experience list.
+     * Map workHistory list.
      */
-    const mappedExperience = experience
+    const mappedExperience = workHistory
       .map((exp) => {
         const startParts = parseDateParts(exp.startDate);
         const endParts = parseDateParts(exp.endDate);
@@ -154,7 +154,7 @@ export const useProfileData = () => {
       } = await getMyProfile({
         fields: [
           ProfileFields.USER,
-          ProfileFields.EXPERIENCE,
+          ProfileFields.WORK_HISTORY,
           ProfileFields.EDUCATION,
           ProfileFields.TRAINING,
         ],

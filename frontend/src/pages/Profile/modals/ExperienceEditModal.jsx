@@ -294,7 +294,7 @@ const ExperienceEditModal = ({ isOpen, onClose, initialData, onSave }) => {
     try {
       const payload = {
         profile: {
-          experience: list.map((item) => ({
+          workHistory: list.map((item) => ({
             ...(String(item.id).startsWith("new-") ? {} : { id: item.id }),
             title: item.title,
             companyOrOrganization: item.company,

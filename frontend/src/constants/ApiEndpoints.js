@@ -8,7 +8,7 @@ export const API_ENDPOINTS = {
  */
 export const ProfileFields = Object.freeze({
   USER: "user",
-  EXPERIENCE: "experience",
+  WORK_HISTORY: "workHistory",
   EDUCATION: "education",
   TRAINING: "training",
 });
