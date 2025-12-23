@@ -22,3 +22,24 @@ class ExperienceRepository:
         )
 
         return result.scalars().one_or_none()
+
+    async def upsert_experience(
+        self, session: AsyncSession, entity: ExperienceEntity
+    ) -> ExperienceEntity:
+        """
+        Inserts or updates an ExperienceEntity in the database.
+
+        Uses session.merge() to update the record if a matching primary key exists,
+        or inserts a new one otherwise.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            entity (ExperienceEntity): The entity containing work history data.
+
+        Returns:
+            ExperienceEntity: The merged entity instance synchronized with the session.
+        """
+        merged_entity = await session.merge(entity)
+        await session.flush()
+
+        return merged_entity

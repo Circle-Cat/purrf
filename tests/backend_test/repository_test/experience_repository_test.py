@@ -37,6 +37,16 @@ class TestExperienceRepository(BaseRepositoryTestLib):
                 updated_timestamp=datetime.utcnow(),
                 subject_identifier="sub2",
             ),
+            UsersEntity(
+                first_name="Charlie",
+                last_name="Inactive",
+                timezone=UserTimezone.ASIA_SHANGHAI,
+                communication_channel="email",
+                primary_email="charlie@example.com",
+                is_active=False,
+                updated_timestamp=datetime.utcnow(),
+                subject_identifier="sub3",
+            ),
         ]
 
         await self.insert_entities(self.users)
@@ -85,6 +95,42 @@ class TestExperienceRepository(BaseRepositoryTestLib):
         result = await self.repo.get_experience_by_user_id(self.session, None)
 
         self.assertIsNone(result)
+
+    async def test_upsert_experience_insert_entity(self):
+        """Test inset a new ExperienceEntity success"""
+        result = await self.repo.upsert_experience(
+            self.session,
+            ExperienceEntity(
+                user_id=self.users[2].user_id,
+                education=[{"school": "Cornell"}],
+                work_history=[{"company": "IBM"}],
+            ),
+        )
+
+        self.assertIsNotNone(result.experience_id)
+        self.assertEqual(result.user_id, self.users[2].user_id)
+        self.assertEqual(result.work_history, [{"company": "IBM"}])
+
+    async def test_upsert_experience_update_entity(self):
+        """Test update an existing ExperienceEntity success"""
+        result = await self.repo.upsert_experience(
+            self.session,
+            ExperienceEntity(
+                experience_id=self.experiences[1].experience_id,
+                user_id=self.users[1].user_id,
+                education=[{"school": "Yale"}, {"school": "Stanford"}],
+                work_history=[{"company": "Google"}, {"company": "TikTok"}],
+            ),
+        )
+
+        self.assertEqual(
+            result.education,
+            [{"school": "Yale"}, {"school": "Stanford"}],
+        )
+        self.assertEqual(
+            result.work_history,
+            [{"company": "Google"}, {"company": "TikTok"}],
+        )
 
 
 if __name__ == "__main__":
