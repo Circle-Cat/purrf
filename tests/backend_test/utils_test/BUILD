@@ -66,5 +66,6 @@ py_test(
     srcs = ["permission_decorators_test.py"],
     deps = [
         "//backend/utils:permission_decorators",
+        "@pypi//httpx",
     ],
 )

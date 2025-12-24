@@ -3,6 +3,14 @@ from unittest.mock import MagicMock, patch
 from http import HTTPStatus
 from starlette.requests import Request
 from backend.utils.permission_decorators import authenticate
+from fastapi import FastAPI, APIRouter
+from fastapi.testclient import TestClient
+from pydantic import BaseModel
+
+
+class ItemUpdatePayload(BaseModel):
+    name: str
+    description: str | None = None
 
 
 class TestAuthenticateDecorator(unittest.IsolatedAsyncioTestCase):
@@ -182,6 +190,159 @@ class TestAuthenticateDecorator(unittest.IsolatedAsyncioTestCase):
 
         # Assert: should return 403 api_response and not call the original method
         self.assertEqual(response.status_code, HTTPStatus.FORBIDDEN)
+
+
+class TestFastAPIParamsIntegration(unittest.TestCase):
+    def setUp(self):
+        self.app = FastAPI()
+
+        # Mock authentication middleware
+        @self.app.middleware("http")
+        async def mock_auth_middleware(request: Request, call_next):
+            role = request.headers.get("x-test-role", "admin")
+            user = type(
+                "User",
+                (),
+                {
+                    "sub": "user_12345",
+                    "roles": [role],
+                },
+            )
+            request.state.user = user
+            return await call_next(request)
+
+        class ComplexController:
+            def __init__(self):
+                self.router = APIRouter()
+
+                # 1. Test path parameters
+                self.router.add_api_route(
+                    "/items/{item_id}",
+                    endpoint=authenticate()(self.get_item),
+                    methods=["GET"],
+                )
+
+                # 2. Test query parameters
+                self.router.add_api_route(
+                    "/search",
+                    endpoint=authenticate()(self.search_items),
+                    methods=["GET"],
+                )
+
+                # 3. Mixed scenario: path + query + body + injected params
+                self.router.add_api_route(
+                    "/update/{item_id}",
+                    endpoint=authenticate(roles=["admin"])(self.update_item),
+                    methods=["PUT"],
+                )
+
+            async def get_item(self, item_id: str):
+                return {"item_id": item_id}
+
+            async def search_items(self, category: str, limit: int = 10):
+                return {"category": category, "limit": limit}
+
+            async def update_item(
+                self,
+                item_id: str,
+                payload: ItemUpdatePayload,
+                user_sub: str,
+                priority: int = 1,
+            ):
+                return {
+                    "item_id": item_id,
+                    "updated_by": user_sub,
+                    "new_name": payload.name,
+                    "priority": priority,
+                }
+
+        self.controller = ComplexController()
+        self.app.include_router(self.controller.router)
+        self.client = TestClient(self.app)
+
+    def test_path_parameter_works(self):
+        """Verify that the path parameter /{item_id} is passed correctly."""
+        item_id = "abc-789"
+        item_id = "abc-789"
+        response = self.client.get(f"/items/{item_id}")
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.assertEqual(response.json()["item_id"], item_id)
+
+    def test_query_parameter_works(self):
+        """Verify that query parameters ?category=xxx&limit=yyy are parsed correctly."""
+        response = self.client.get("/search?category=electronics&limit=50")
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        data = response.json()
+        self.assertEqual(data["category"], "electronics")
+        self.assertEqual(data["limit"], 50)
+
+    def test_complex_mixed_params(self):
+        """
+        Verify the mixed scenario of path + body + query + injected params.
+
+        URL: /update/item_456?priority=9
+        Body: {"name": "new_phone"}
+        Injected: user_sub (from decorator)
+        """
+        item_id = "item_456"
+        payload = {"name": "new_phone", "description": "some desc"}
+        priority = 9
+
+        response = self.client.put(
+            f"/update/{item_id}?priority={priority}",
+            json=payload,
+            headers={"x-test-role": "admin"},
+        )
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        data = response.json()
+
+        # Verify path parameter
+        self.assertEqual(data["item_id"], item_id)
+        # Verify injected parameter
+        self.assertEqual(data["updated_by"], "user_12345")
+        # Verify body parameter
+        self.assertEqual(data["new_name"], "new_phone")
+        # Verify query parameter
+        self.assertEqual(data["priority"], priority)
+
+    def test_invalid_query_param_type_still_triggers_fastapi_error(self):
+        """
+        Verify that the decorator does not break FastAPI's native validation.
+
+        If `limit` is passed as a string instead of an integer,
+        FastAPI should still return a 422 error.
+        """
+        response = self.client.get("/search?category=books&limit=not_an_int")
+        self.assertEqual(response.status_code, HTTPStatus.UNPROCESSABLE_ENTITY)
+
+    def test_openapi_schema_completeness(self):
+        """
+        Verify that the OpenAPI schema preserves path and query parameters,
+        while excluding injected parameters.。
+        """
+        schema = self.app.openapi()
+        params = schema["paths"]["/update/{item_id}"]["put"]["parameters"]
+
+        param_names = [p["name"] for p in params]
+
+        self.assertIn(
+            "item_id",
+            param_names,
+            "Path parameter 'item_id' should be present in schema",
+        )
+        self.assertIn(
+            "priority",
+            param_names,
+            "Query parameter 'priority' should be present in schema",
+        )
+        self.assertNotIn(
+            "user_sub",
+            param_names,
+            "Injected parameter 'user_sub' should NOT appear in schema",
+        )
 
 
 if __name__ == "__main__":

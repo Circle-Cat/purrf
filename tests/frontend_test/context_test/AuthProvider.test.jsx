@@ -26,7 +26,7 @@ describe("AuthProvider", () => {
 
   it("should provide admin and cc_internal role when API call is successful", async () => {
     const mockRolesData = [USER_ROLES.ADMIN, USER_ROLES.CC_INTERNAL];
-    getUserRoles.mockResolvedValue({data: { roles: mockRolesData } });
+    getUserRoles.mockResolvedValue({ data: { roles: mockRolesData } });
 
     const { result } = renderHook(() => useAuth(), {
       wrapper: AuthProvider,
@@ -38,7 +38,9 @@ describe("AuthProvider", () => {
   });
 
   it("should provide mentorship role when API call is successful", async () => {
-    getUserRoles.mockResolvedValue({data: { roles: [USER_ROLES.MENTORSHIP] } });
+    getUserRoles.mockResolvedValue({
+      data: { roles: [USER_ROLES.MENTORSHIP] },
+    });
 
     const { result } = renderHook(() => useAuth(), {
       wrapper: AuthProvider,
