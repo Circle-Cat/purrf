@@ -1,6 +1,6 @@
 import unittest
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from backend.repository.training_repository import TrainingRepository
 from backend.entity.training_entity import TrainingEntity
@@ -20,28 +20,30 @@ class TestTrainingRepository(BaseRepositoryTestLib):
         await super().asyncSetUp()
         self.repo = TrainingRepository()
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         dummy_users = [
             UsersEntity(
                 first_name="Alice",
                 last_name="Admin",
                 timezone=UserTimezone.ASIA_SHANGHAI,
+                timezone_updated_at=now,
                 communication_channel="email",
                 primary_email="alice@example.com",
                 is_active=True,
-                updated_timestamp=datetime.utcnow(),
+                updated_timestamp=(now),
                 subject_identifier=str(uuid.uuid4()),
             ),
             UsersEntity(
                 first_name="Bob",
                 last_name="MultiRole",
                 timezone=UserTimezone.AMERICA_LOS_ANGELES,
+                timezone_updated_at=now,
                 communication_channel="slack",
                 primary_email="bob@example.com",
                 alternative_emails=["b1@example.com", "b2@example.com"],
                 is_active=True,
-                updated_timestamp=datetime.utcnow(),
+                updated_timestamp=now,
                 subject_identifier=str(uuid.uuid4()),
             ),
         ]

@@ -1,6 +1,11 @@
 from enum import Enum
 
 
+class CommunicationMethod(str, Enum):
+    EMAIL = "email"
+    GOOGLE_CHAT = "google_chat"
+
+
 class UserTimezone(Enum):
     AMERICA_LOS_ANGELES = "America/Los_Angeles"
     AMERICA_NEW_YORK = "America/New_York"
