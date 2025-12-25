@@ -44,15 +44,11 @@ describe("profileApi", () => {
 
   describe("updateMyProfile", () => {
     it("should call request.patch with the correct URL and profile Object", async () => {
-      await updateMyProfile({ profile: {} });
+      const profile = {};
+      await updateMyProfile(profile);
 
       expect(request.patch).toHaveBeenCalledTimes(1);
-      expect(request.patch).toHaveBeenCalledWith(
-        "/profiles/me",
-        expect.objectContaining({
-          profile: expect.any(Object),
-        }),
-      );
+      expect(request.patch).toHaveBeenCalledWith("/profiles/me", profile);
     });
   });
 });

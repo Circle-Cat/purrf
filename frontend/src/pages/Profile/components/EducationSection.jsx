@@ -17,9 +17,16 @@ const EducationSection = ({ list, onEditClick }) => {
           {list.map((edu) => (
             <div key={edu.id} className="education-list-item">
               <h6>{edu.institution}</h6>
-              <p>
-                {edu.degree}'s degree, {edu.field}
-              </p>
+              {(edu.degree || edu.field) && (
+                <p>
+                  {edu.degree
+                    ? edu.field
+                      ? `${edu.degree}'s degree, ${edu.field}`
+                      : `${edu.degree}'s degree`
+                    : edu.field}
+                </p>
+              )}
+
               <p className="duration-text">
                 {formatTimeDuration(
                   edu.startMonth,

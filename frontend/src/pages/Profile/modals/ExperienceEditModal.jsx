@@ -145,7 +145,6 @@ const ExperienceFormItem = ({ item, errors, onChange, onDelete }) => {
       </div>
 
       <Button
-        type="Button"
         variant="destructive"
         size="sm"
         className="delete-btn"
@@ -296,18 +295,16 @@ const ExperienceEditModal = ({ isOpen, onClose, initialData, onSave }) => {
     setIsSaving(true);
     try {
       const payload = {
-        profile: {
-          workHistory: list.map((item) => ({
-            ...(String(item.id).startsWith("new-") ? {} : { id: item.id }),
-            title: item.title,
-            companyOrOrganization: item.company,
-            isCurrentJob: item.isCurrentlyWorking,
-            startDate: formatDateFromParts(item.startMonth, item.startYear),
-            endDate: item.isCurrentlyWorking
-              ? null
-              : formatDateFromParts(item.endMonth, item.endYear),
-          })),
-        },
+        workHistory: list.map((item) => ({
+          ...(String(item.id).startsWith("new-") ? {} : { id: item.id }),
+          title: item.title,
+          companyOrOrganization: item.company,
+          isCurrentJob: item.isCurrentlyWorking,
+          startDate: formatDateFromParts(item.startMonth, item.startYear),
+          endDate: item.isCurrentlyWorking
+            ? null
+            : formatDateFromParts(item.endMonth, item.endYear),
+        })),
       };
       await onSave(payload);
       onClose();

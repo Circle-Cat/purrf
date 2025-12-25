@@ -179,18 +179,16 @@ describe("ExperienceEditModal", () => {
 
     await waitFor(() => {
       expect(mockOnSave).toHaveBeenCalledWith({
-        profile: {
-          workHistory: [
-            {
-              id: 1,
-              title: "Senior Engineer",
-              companyOrOrganization: "Google",
-              isCurrentJob: false,
-              startDate: "2023-January",
-              endDate: "2024-February",
-            },
-          ],
-        },
+        workHistory: [
+          {
+            id: 1,
+            title: "Senior Engineer",
+            companyOrOrganization: "Google",
+            isCurrentJob: false,
+            startDate: "2023-January",
+            endDate: "2024-February",
+          },
+        ],
       });
     });
 

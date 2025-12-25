@@ -5,6 +5,7 @@ import {
   parseDateParts,
   getDaysSince,
   sortExperienceOrEducationList,
+  DegreeEnum,
 } from "@/pages/Profile/utils";
 import { ProfileFields } from "@/constants/ApiEndpoints";
 
@@ -130,7 +131,9 @@ export const useProfileData = () => {
         return {
           id: edu.id,
           institution: edu.school,
-          degree: edu.degree,
+          degree: Object.values(DegreeEnum).includes(edu.degree)
+            ? edu.degree
+            : "",
           field: edu.fieldOfStudy,
           startMonth: startParts.month,
           startYear: startParts.year,
@@ -153,7 +156,6 @@ export const useProfileData = () => {
         data: { profile },
       } = await getMyProfile({
         fields: [
-          ProfileFields.USER,
           ProfileFields.WORK_HISTORY,
           ProfileFields.EDUCATION,
           ProfileFields.TRAINING,

@@ -6,6 +6,7 @@ import {
   parseDateParts,
   getDaysSince,
   sortExperienceOrEducationList,
+  DegreeEnum,
 } from "@/pages/Profile/utils";
 
 vi.mock("@/api/profileApi", () => ({
@@ -13,11 +14,15 @@ vi.mock("@/api/profileApi", () => ({
   updateMyProfile: vi.fn(),
 }));
 
-vi.mock("@/pages/Profile/utils", () => ({
-  parseDateParts: vi.fn(),
-  getDaysSince: vi.fn(),
-  sortExperienceOrEducationList: vi.fn(),
-}));
+vi.mock("@/pages/Profile/utils", async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    parseDateParts: vi.fn(),
+    getDaysSince: vi.fn(),
+    sortExperienceOrEducationList: vi.fn(),
+  };
+});
 
 describe("useProfileData Hook", () => {
   /**
@@ -57,7 +62,8 @@ describe("useProfileData Hook", () => {
         {
           id: "edu1",
           school: "Uni A",
-          degree: "BS",
+          // Valid degree value that exists in DegreeEnum
+          degree: "Bachelor",
           startDate: "2016-01",
           endDate: "2020-01",
         },
@@ -65,6 +71,7 @@ describe("useProfileData Hook", () => {
         {
           id: "edu2",
           school: "Uni B",
+          // Invalid degree value NOT defined in DegreeEnum, should be mapped to empty string
           degree: "MS",
           startDate: "2020-09",
           endDate: "2022-06",
@@ -143,7 +150,12 @@ describe("useProfileData Hook", () => {
     expect(result.current.educationList[1]).toMatchObject({
       institution: "Uni B",
     });
-
+    expect(result.current.educationList[0]).toMatchObject({
+      degree: DegreeEnum.Bachelor,
+    });
+    expect(result.current.educationList[1]).toMatchObject({
+      degree: "",
+    });
     /**
      * Verify that the sort function was actually utilized.
      * Since both lists have >1 item, sort should be called at least twice.

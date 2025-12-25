@@ -13,10 +13,24 @@ export const months = [
   "December",
 ];
 
+export const DegreeEnum = {
+  Associate: "Associate",
+  Bachelor: "Bachelor",
+  Master: "Master",
+  Doctorate: "Doctorate",
+  Professional: "Professional",
+};
+
 export const currentYear = new Date().getFullYear();
 
 // Generate an array of 50 years counting backward from the current year
-export const years = Array.from({ length: 50 }, (v, i) => currentYear - i);
+export const years = Array.from({ length: 50 }, (_, i) => currentYear - i);
+
+// Generate an array of 60 years: past 49 years, current year, and next 10 years
+export const years60Range = Array.from(
+  { length: 60 },
+  (_, i) => currentYear + 10 - i,
+);
 
 /**
  * Parse an API date string formatted as "YYYY-MM-DD" into

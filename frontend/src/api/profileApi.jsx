@@ -11,7 +11,7 @@ export async function getMyProfile({ fields } = {}) {
   return await request.get(url);
 }
 
-export async function updateMyProfile({ profile }) {
+export async function updateMyProfile(profile) {
   const url = API_ENDPOINTS.MY_PROFILE;
-  return await request.patch(url, { profile });
+  return await request.patch(url, profile);
 }
