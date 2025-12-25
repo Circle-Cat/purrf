@@ -6,6 +6,14 @@ class CommunicationMethod(str, Enum):
     GOOGLE_CHAT = "google_chat"
 
 
+class Degree(str, Enum):
+    ASSOCIATE = "Associate"
+    BACHELOR = "Bachelor"
+    MASTER = "Master"
+    DOCTORATE = "Doctorate"
+    PROFESSIONAL = "Professional"
+
+
 class UserTimezone(Enum):
     AMERICA_LOS_ANGELES = "America/Los_Angeles"
     AMERICA_NEW_YORK = "America/New_York"
