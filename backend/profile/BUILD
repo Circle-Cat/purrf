@@ -3,12 +3,11 @@ load("@rules_python//python:defs.bzl", "py_library")
 package(default_visibility = ["//visibility:public"])
 
 py_library(
-    name = "dto",
-    srcs = glob(["*.py"]),
+    name = "profile_mapper",
+    srcs = ["profile_mapper.py"],
     deps = [
-        "//backend/common:mentorship_enums",
-        "//backend/common:user_role",
+        "//backend/dto",
         "//backend/entity:entities",
-        "@pypi//pydantic",
+        "@pypi//sqlalchemy",
     ],
 )

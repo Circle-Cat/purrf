@@ -1,13 +1,12 @@
-from dataclasses import dataclass
 from datetime import datetime
 from backend.common.mentorship_enums import TrainingStatus, TrainingCategory
+from backend.dto.base_dto import BaseDto
 
 
-@dataclass
-class TrainingDto:
+class TrainingDto(BaseDto):
     id: int
     category: TrainingCategory
-    completedTimestamp: datetime
+    completed_timestamp: datetime
     status: TrainingStatus
     deadline: datetime | None = None
     link: str | None = None

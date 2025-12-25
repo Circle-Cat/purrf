@@ -1,12 +1,11 @@
-from dataclasses import dataclass
 from datetime import date
+from backend.dto.base_dto import BaseDto
 
 
-@dataclass
-class WorkHistoryDto:
+class WorkHistoryDto(BaseDto):
     id: str
     title: str
-    companyOrOrganization: str
-    startDate: date
-    isCurrentJob: bool
-    endDate: date | None = None
+    company_or_organization: str
+    start_date: date
+    is_current_job: bool
+    end_date: date | None = None
