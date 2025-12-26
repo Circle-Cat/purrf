@@ -21,6 +21,43 @@ export const DegreeEnum = {
   Professional: "Professional",
 };
 
+export const CommunicationMethodEnum = {
+  Email: "email",
+  GoogleChat: "google_chat",
+};
+
+export const TimezoneEnum = {
+  AmericaLosAngeles: "America/Los_Angeles",
+  AmericaNewYork: "America/New_York",
+  AsiaShanghai: "Asia/Shanghai",
+  AmericaDenver: "America/Denver",
+};
+
+/**
+ * Formats a timezone string into a human-readable label.
+ *
+ * Converts a timezone like "America/Los_Angeles" into
+ * "Los Angeles (UTC-8)" or similar, based on the current offset.
+ *
+ * @param {string} tz - The IANA timezone identifier (e.g., "America/Los_Angeles")
+ * @returns {string} Formatted label including city and UTC offset
+ */
+export function formatTimezoneLabel(tz) {
+  const city = tz.split("/")[1].replace(/_/g, " ");
+
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz,
+    timeZoneName: "shortOffset", // e.g. GMT-8 / GMT-7
+  }).formatToParts(new Date());
+
+  const offset =
+    parts
+      .find((p) => p.type === "timeZoneName")
+      ?.value?.replace("GMT", "UTC") ?? "";
+
+  return `${city} (${offset})`;
+}
+
 export const currentYear = new Date().getFullYear();
 
 // Generate an array of 50 years counting backward from the current year

@@ -77,7 +77,7 @@ describe("Profile Component", () => {
     personalInfo: { completedTraining: [] },
     experienceList: [],
     educationList: [],
-    canEditPersonalInfo: true,
+    canEditTimezone: true,
     nextEditableDate: null,
     handleUpdateProfile: vi.fn(),
   };

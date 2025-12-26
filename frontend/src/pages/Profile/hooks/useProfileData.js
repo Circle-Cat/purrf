@@ -6,6 +6,7 @@ import {
   getDaysSince,
   sortExperienceOrEducationList,
   DegreeEnum,
+  TimezoneEnum,
 } from "@/pages/Profile/utils";
 import { ProfileFields } from "@/constants/ApiEndpoints";
 
@@ -73,10 +74,12 @@ export const useProfileData = () => {
       firstName: user.firstName || "",
       lastName: user.lastName || "",
       preferredName: user.preferredName || "",
-      timezone: user.timezone || "",
+      timezone: Object.values(TimezoneEnum).includes(user.timezone)
+        ? user.timezone
+        : "",
       linkedin: user.linkedinLink || "",
-      preferredCommunication: user.communicationMethod,
-      updatedTimestamp: user.updatedTimestamp,
+      communicationMethod: user.communicationMethod,
+      timezoneUpdatedAt: user.timezoneUpdatedAt,
       emails: emailList,
       title: currentJob.title || "",
       company: currentJob.companyOrOrganization || "",
@@ -192,27 +195,27 @@ export const useProfileData = () => {
   };
 
   /**
-   * Computed flag indicating whether personal info can be edited.
+   * Computed flag indicating whether user's timezone can be edited.
    * Editing is restricted to once every 30 days.
    */
-  const canEditPersonalInfo = useMemo(() => {
-    if (!personalInfo.updatedTimestamp) return true;
+  const canEditTimezone = useMemo(() => {
+    if (!personalInfo.timezoneUpdatedAt) return true;
 
-    const days = getDaysSince(personalInfo.updatedTimestamp);
+    const days = getDaysSince(personalInfo.timezoneUpdatedAt);
     return days >= 30;
-  }, [personalInfo.updatedTimestamp]);
+  }, [personalInfo.timezoneUpdatedAt]);
 
   /**
    * Computed string representing the next available edit date.
    */
   const nextEditableDate = useMemo(() => {
-    if (!personalInfo.updatedTimestamp) return "";
+    if (!personalInfo.timezoneUpdatedAt) return "";
 
-    const date = new Date(personalInfo.updatedTimestamp);
+    const date = new Date(personalInfo.timezoneUpdatedAt);
     date.setDate(date.getDate() + 30);
 
     return date.toLocaleDateString();
-  }, [personalInfo.updatedTimestamp]);
+  }, [personalInfo.timezoneUpdatedAt]);
 
   /**
    * Initial data load.
@@ -229,7 +232,7 @@ export const useProfileData = () => {
     personalInfo,
     experienceList,
     educationList,
-    canEditPersonalInfo,
+    canEditTimezone,
     nextEditableDate,
     handleUpdateProfile,
     refresh: fetchProfileData,

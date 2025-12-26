@@ -37,7 +37,8 @@ describe("useProfileData Hook", () => {
         primaryEmail: "john@primary.com",
         alternativeEmails: ["john@alt.com"],
         communicationMethod: "google_chat",
-        updatedTimestamp: "2023-01-01T00:00:00Z",
+        timezone: "America/Los_Angeles",
+        timezoneUpdatedAt: "2023-01-01T00:00:00Z",
       },
       workHistory: [
         {
@@ -210,14 +211,14 @@ describe("useProfileData Hook", () => {
     });
   });
 
-  describe("Computed Property: canEditPersonalInfo", () => {
-    it("should allow edit if updatedTimestamp is null", async () => {
+  describe("Computed Property: canEditTimezone", () => {
+    it("should allow edit if timezoneUpdatedAt is null", async () => {
       const noTimeProfile = {
         profile: {
           ...mockProfileResponse.profile,
           user: {
             ...mockProfileResponse.profile.user,
-            updatedTimestamp: null,
+            timezoneUpdatedAt: null,
           },
         },
       };
@@ -226,7 +227,7 @@ describe("useProfileData Hook", () => {
       const { result } = renderHook(() => useProfileData());
       await waitFor(() => expect(result.current.isLoading).toBe(false));
 
-      expect(result.current.canEditPersonalInfo).toBe(true);
+      expect(result.current.canEditTimezone).toBe(true);
     });
 
     it("should NOT allow edit if less than 30 days since update", async () => {
@@ -240,9 +241,9 @@ describe("useProfileData Hook", () => {
       const { result } = renderHook(() => useProfileData());
       await waitFor(() => expect(result.current.isLoading).toBe(false));
 
-      expect(result.current.canEditPersonalInfo).toBe(false);
+      expect(result.current.canEditTimezone).toBe(false);
       expect(getDaysSince).toHaveBeenCalledWith(
-        mockProfileResponse.profile.user.updatedTimestamp,
+        mockProfileResponse.profile.user.timezoneUpdatedAt,
       );
     });
 
@@ -257,12 +258,12 @@ describe("useProfileData Hook", () => {
       const { result } = renderHook(() => useProfileData());
       await waitFor(() => expect(result.current.isLoading).toBe(false));
 
-      expect(result.current.canEditPersonalInfo).toBe(true);
+      expect(result.current.canEditTimezone).toBe(true);
     });
   });
 
   describe("Computed Property: nextEditableDate", () => {
-    it("should return a formatted date 30 days from updatedTimestamp", async () => {
+    it("should return a formatted date 30 days from timezoneUpdatedAt", async () => {
       getMyProfile.mockResolvedValue({ data: mockProfileResponse });
 
       const { result } = renderHook(() => useProfileData());

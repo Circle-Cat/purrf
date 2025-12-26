@@ -226,3 +226,75 @@
     color: var(--error-color);
     margin-left: 4px;
 }
+
+/* Email editing section in modal */
+
+.email-edit-item {
+  display: flex;
+  align-items: center;
+  margin-bottom: 16px;
+  gap: 12px;
+  padding: 12px;
+  background-color: var(--bg-color-row-hover);
+  border-radius: 10px;
+  border: 1px solid var(--teriary-color);
+  transition: all 0.2s ease;
+}
+
+.email-edit-item:hover {
+  border-color: var(--primary-color);
+}
+
+.email-edit-item input[type="text"] {
+  flex-grow: 1;
+  padding: 10px 14px;
+  border: 2px solid var(--border-color-light);
+  border-radius: 8px;
+  font-size: 0.9375rem;
+  margin-top: 0;
+  background-color: var(--bg-color-light);
+}
+
+.email-edit-item input[type="text"]:focus {
+  border-color: var(--primary-color);
+  box-shadow: var(--shadow-sm);
+  outline: none;
+}
+
+.email-type-label {
+  display: flex;
+  align-items: center;
+  min-width: 110px;
+}
+
+.email-type-label .email-tag {
+  font-size: 0.75rem;
+  padding: 4px 10px;
+  border-radius: 16px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.radio-group {
+  display: flex;
+  align-items: center;
+  font-size: 0.9375rem;
+  white-space: nowrap;
+  cursor: pointer;
+  color: var(--text-color-dark);
+  transition: color 0.2s ease;
+}
+
+.radio-group input {
+  margin-right: 8px;
+  transform: scale(1.1);
+  accent-color: var(--primary-color);
+}
+
+.radio-group input + input {
+  margin-left: 12px;
+}
+
+.timezone-info-text {
+  font-size: 12px;
+}

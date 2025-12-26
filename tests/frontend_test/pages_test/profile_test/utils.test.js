@@ -10,9 +10,24 @@ import {
   currentYear,
   getDateScore,
   sortExperienceOrEducationList,
+  formatTimezoneLabel,
 } from "@/pages/Profile/utils";
 
 describe("Profile Utils", () => {
+  describe("formatTimezoneLabel", () => {
+    it("should correctly format a timezone label", () => {
+      const result = formatTimezoneLabel("America/Los_Angeles");
+      expect(result).toMatch(/Los Angeles \(UTC[-+]?\d+\)/);
+
+      vi.useRealTimers();
+    });
+
+    it("should handle city names with underscores", () => {
+      const result = formatTimezoneLabel("America/New_York");
+      expect(result).toContain("New York");
+    });
+  });
+
   describe("Constants", () => {
     it("months should have 12 valid month names", () => {
       // Verify months array contains all 12 months in order

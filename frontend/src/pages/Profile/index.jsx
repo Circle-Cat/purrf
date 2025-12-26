@@ -27,7 +27,7 @@ const Profile = () => {
     personalInfo,
     experienceList,
     educationList,
-    canEditPersonalInfo,
+    canEditTimezone,
     nextEditableDate,
     handleUpdateProfile,
   } = useProfileData();
@@ -64,8 +64,6 @@ const Profile = () => {
             <ProfileHeader
               info={personalInfo}
               onEditClick={() => toggleModal("personal", true)}
-              canEdit={canEditPersonalInfo}
-              nextEditableDate={nextEditableDate}
             />
           </CardHeader>
           {/* ContactSection */}
@@ -108,7 +106,7 @@ const Profile = () => {
         onClose={() => toggleModal("personal", false)}
         initialData={personalInfo}
         onSave={handleUpdateProfile}
-        canEdit={canEditPersonalInfo}
+        canEditTimezone={canEditTimezone}
         nextEditableDate={nextEditableDate}
       />
 
