@@ -72,6 +72,11 @@ from backend.common.asyncio_event_loop_manager import AsyncioEventLoopManager
 from backend.utils.fast_app_factory import FastAppFactory
 from backend.authentication.authentication_controller import AuthenticationController
 from backend.authentication.authentication_service import AuthenticationService
+from backend.repository.users_repository import UsersRepository
+from backend.repository.experience_repository import ExperienceRepository
+from backend.repository.training_repository import TrainingRepository
+from backend.profile.profile_query_service import ProfileQueryService
+from backend.profile.profile_mapper import ProfileMapper
 
 
 class AppDependencyBuilder:
@@ -329,4 +334,14 @@ class AppDependencyBuilder:
             authentication_controller=self.authentication_controller,
             authentication_service=self.authentication_service,
             notification_controller=self.notification_controller,
+        )
+        self.users_repository = UsersRepository()
+        self.experience_repository = ExperienceRepository()
+        self.training_repository = TrainingRepository()
+        self.profile_mapper = ProfileMapper()
+        self.profile_query_service = ProfileQueryService(
+            users_repository=self.users_repository,
+            experience_repository=self.experience_repository,
+            training_repository=self.training_repository,
+            profile_mapper=self.profile_mapper,
         )
