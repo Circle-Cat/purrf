@@ -18,22 +18,35 @@ class TestPreferencesRepository(BaseRepositoryTestLib):
 
         self.now = datetime.now(timezone.utc)
 
-        self.dummy_user = UsersEntity(
-            first_name="Alice",
-            last_name="Admin",
-            timezone=UserTimezone.ASIA_SHANGHAI,
-            timezone_updated_at=self.now,
-            communication_channel=CommunicationMethod.EMAIL,
-            primary_email="alice@example.com",
-            subject_identifier=str(uuid.uuid4()),
-            is_active=True,
-            updated_timestamp=self.now,
-        )
+        self.dummy_users = [
+            UsersEntity(
+                first_name="Alice",
+                last_name="Admin",
+                timezone=UserTimezone.ASIA_SHANGHAI,
+                timezone_updated_at=self.now,
+                communication_channel=CommunicationMethod.EMAIL,
+                primary_email="alice@example.com",
+                subject_identifier=str(uuid.uuid4()),
+                is_active=True,
+                updated_timestamp=self.now,
+            ),
+            UsersEntity(
+                first_name="Bob",
+                last_name="Smith",
+                timezone=UserTimezone.AMERICA_NEW_YORK,
+                timezone_updated_at=self.now,
+                communication_channel=CommunicationMethod.EMAIL,
+                primary_email="bob@example.com",
+                subject_identifier=str(uuid.uuid4()),
+                is_active=True,
+                updated_timestamp=self.now,
+            ),
+        ]
 
-        await self.insert_entities([self.dummy_user])
+        await self.insert_entities(self.dummy_users)
 
         self.dummy_preferences = PreferenceEntity(
-            user_id=self.dummy_user.user_id,
+            user_id=self.dummy_users[0].user_id,
             resume_guidance=True,
             career_path_guidance=True,
             experience_sharing=False,
@@ -50,11 +63,11 @@ class TestPreferencesRepository(BaseRepositoryTestLib):
     async def test_get_preferences_by_user_id_existing(self):
         """Test retrieving PreferenceEntity for an existing user ID"""
         result = await self.repo.get_preferences_by_user_id(
-            self.session, self.dummy_user.user_id
+            self.session, self.dummy_users[0].user_id
         )
 
         self.assertIsNotNone(result)
-        self.assertEqual(result.user_id, self.dummy_user.user_id)
+        self.assertEqual(result.user_id, self.dummy_users[0].user_id)
         self.assertTrue(result.resume_guidance)
         self.assertFalse(result.technical_skills)
         self.assertEqual(
@@ -66,6 +79,25 @@ class TestPreferencesRepository(BaseRepositoryTestLib):
         result = await self.repo.get_preferences_by_user_id(self.session, 9999)
 
         self.assertIsNone(result)
+
+    async def test_upsert_new_preference(self):
+        """Test inserting a new PreferenceEntity"""
+        new_preference = PreferenceEntity(
+            user_id=self.dummy_users[1].user_id, resume_guidance=True
+        )
+
+        result = await self.repo.upsert_preference(self.session, new_preference)
+
+        self.assertIsNotNone(result.preferences_id)
+        self.assertEqual(result.user_id, self.dummy_users[1].user_id)
+
+    async def test_upsert_existing_preference(self):
+        """Test updating a existing PreferenceEntity"""
+        self.dummy_preferences.soft_skills = False
+
+        result = await self.repo.upsert_preference(self.session, self.dummy_preferences)
+        self.assertFalse(result.soft_skills)
+        self.assertEqual(result.user_id, self.dummy_users[0].user_id)
 
 
 if __name__ == "__main__":
