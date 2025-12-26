@@ -30,6 +30,26 @@ class UsersRepository:
 
         return result.scalars().one_or_none()
 
+    async def get_all_by_ids(self, session: AsyncSession, user_ids: list[int]):
+        """
+        Retrieve multiple users entities by a list of user IDs.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            user_ids (list[int]): A list of user IDs to retrieve.
+
+        Returns:
+            list[UsersEntity]: A list of matching user entities.
+                               Returns an empty list if no matches are found.
+        """
+        if not user_ids:
+            return []
+
+        result = await session.execute(
+            select(UsersEntity).where(UsersEntity.user_id.in_(user_ids))
+        )
+        return list(result.scalars().all())
+
     async def get_user_by_subject_identifier(
         self, session: AsyncSession, sub: str
     ) -> UsersEntity | None:

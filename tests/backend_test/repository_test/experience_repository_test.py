@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from backend.repository.experience_repository import ExperienceRepository
 from backend.entity.users_entity import UsersEntity
 from backend.entity.experience_entity import ExperienceEntity
-from backend.common.mentorship_enums import UserTimezone
+from backend.common.mentorship_enums import UserTimezone, CommunicationMethod
 from tests.backend_test.repository_test.base_repository_test_lib import (
     BaseRepositoryTestLib,
 )
@@ -36,7 +36,7 @@ class TestExperienceRepository(BaseRepositoryTestLib):
                 last_name="Admin",
                 timezone=UserTimezone.ASIA_SHANGHAI,
                 timezone_updated_at=datetime.now(timezone.utc),
-                communication_channel="email",
+                communication_channel=CommunicationMethod.EMAIL,
                 primary_email="alice@example.com",
                 is_active=True,
                 updated_timestamp=datetime.now(timezone.utc),
@@ -47,7 +47,7 @@ class TestExperienceRepository(BaseRepositoryTestLib):
                 last_name="Smith",
                 timezone=UserTimezone.AMERICA_NEW_YORK,
                 timezone_updated_at=datetime.now(timezone.utc),
-                communication_channel="slack",
+                communication_channel=CommunicationMethod.EMAIL,
                 primary_email="bob@example.com",
                 is_active=True,
                 updated_timestamp=datetime.now(timezone.utc),
@@ -58,7 +58,7 @@ class TestExperienceRepository(BaseRepositoryTestLib):
                 last_name="Inactive",
                 timezone=UserTimezone.ASIA_SHANGHAI,
                 timezone_updated_at=datetime.now(timezone.utc),
-                communication_channel="email",
+                communication_channel=CommunicationMethod.EMAIL,
                 primary_email="charlie@example.com",
                 is_active=False,
                 updated_timestamp=datetime.utcnow(),

@@ -26,7 +26,11 @@ class UsersEntity(Base):
     timezone_updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
     communication_channel: Mapped[CommunicationMethod] = mapped_column(
-        SAEnum(CommunicationMethod, native_enum=False)
+        SAEnum(
+            CommunicationMethod,
+            name="communication_method",
+            values_callable=lambda obj: [e.value for e in obj],
+        )
     )
 
     has_mentorship_mentor_experience: Mapped[bool | None] = mapped_column(Boolean)

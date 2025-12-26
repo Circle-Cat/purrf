@@ -11,7 +11,9 @@ class ExperienceEntity(Base):
     experience_id: Mapped[int] = mapped_column(
         Integer, primary_key=True, autoincrement=True
     )
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.user_id"), unique=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.user_id", ondelete="CASCADE"), index=True, unique=True
+    )
     education: Mapped[list[dict] | None] = mapped_column(JSONB)
     work_history: Mapped[list[dict] | None] = mapped_column(JSONB)
     updated_timestamp: Mapped[datetime] = mapped_column(

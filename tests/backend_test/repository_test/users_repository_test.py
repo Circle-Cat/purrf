@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from backend.repository.users_repository import UsersRepository
 from backend.entity.users_entity import UsersEntity
 from backend.entity.experience_entity import ExperienceEntity
-from backend.common.mentorship_enums import UserTimezone
+from backend.common.mentorship_enums import UserTimezone, CommunicationMethod
 from tests.backend_test.repository_test.base_repository_test_lib import (
     BaseRepositoryTestLib,
 )
@@ -25,7 +25,7 @@ class TestUsersRepository(BaseRepositoryTestLib):
                 last_name="Admin",
                 timezone=UserTimezone.ASIA_SHANGHAI,
                 timezone_updated_at=datetime.now(timezone.utc),
-                communication_channel="email",
+                communication_channel=CommunicationMethod.EMAIL,
                 primary_email="alice@example.com",
                 is_active=True,
                 updated_timestamp=datetime.now(timezone.utc),
@@ -36,7 +36,7 @@ class TestUsersRepository(BaseRepositoryTestLib):
                 last_name="Smith",
                 timezone=UserTimezone.AMERICA_NEW_YORK,
                 timezone_updated_at=datetime.now(timezone.utc),
-                communication_channel="slack",
+                communication_channel=CommunicationMethod.EMAIL,
                 primary_email="bob@example.com",
                 alternative_emails=["b1@example.com", "b2@example.com"],
                 is_active=True,
@@ -48,7 +48,7 @@ class TestUsersRepository(BaseRepositoryTestLib):
                 last_name="Inactive",
                 timezone=UserTimezone.ASIA_SHANGHAI,
                 timezone_updated_at=datetime.now(timezone.utc),
-                communication_channel="email",
+                communication_channel=CommunicationMethod.EMAIL,
                 primary_email="charlie@example.com",
                 is_active=False,
                 updated_timestamp=datetime.now(timezone.utc),
@@ -75,6 +75,32 @@ class TestUsersRepository(BaseRepositoryTestLib):
         ]
 
         await self.insert_entities(self.experiences)
+
+    async def test_get_all_by_ids_success(self):
+        """Test fetching users in bulk with multiple valid user IDs."""
+        user_ids = [self.users[0].user_id, self.users[1].user_id]
+
+        users = await self.repo.get_all_by_ids(self.session, user_ids)
+
+        self.assertEqual(len(users), 2)
+
+        fetched_ids = [u.user_id for u in users]
+        self.assertIn(self.users[0].user_id, fetched_ids)
+        self.assertIn(self.users[1].user_id, fetched_ids)
+
+    async def test_get_all_by_ids_partial_match(self):
+        """Test behavior when some of the provided IDs do not exist."""
+        user_ids = [self.users[0].user_id, 99999]
+
+        users = await self.repo.get_all_by_ids(self.session, user_ids)
+
+        self.assertEqual(len(users), 1)
+        self.assertEqual(users[0].user_id, self.users[0].user_id)
+
+    async def test_get_all_by_ids_empty_list(self):
+        """Test behavior when an empty ID list is provided."""
+        users = await self.repo.get_all_by_ids(self.session, [])
+        self.assertEqual(users, [])
 
     async def test_get_user_by_user_id(self):
         """Test retrieving an existing user by user ID."""

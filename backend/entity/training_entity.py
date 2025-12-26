@@ -11,17 +11,25 @@ class TrainingEntity(Base):
     training_id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
 
     user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.user_id", ondelete="CASCADE")
+        ForeignKey("users.user_id", ondelete="CASCADE"), index=True
     )
 
     category: Mapped[TrainingCategory] = mapped_column(
-        Enum(TrainingCategory, native_enum=False)
+        Enum(
+            TrainingCategory,
+            name="training_category",
+            values_callable=lambda obj: [e.value for e in obj],
+        )
     )
 
     completed_timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
     status: Mapped[TrainingStatus] = mapped_column(
-        Enum(TrainingStatus, native_enum=False)
+        Enum(
+            TrainingStatus,
+            name="training_status",
+            values_callable=lambda obj: [e.value for e in obj],
+        )
     )
 
     deadline: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

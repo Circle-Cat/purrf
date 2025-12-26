@@ -9,6 +9,7 @@ from backend.common.mentorship_enums import (
     TrainingStatus,
     TrainingCategory,
     UserTimezone,
+    CommunicationMethod,
 )
 from tests.backend_test.repository_test.base_repository_test_lib import (
     BaseRepositoryTestLib,
@@ -28,7 +29,7 @@ class TestTrainingRepository(BaseRepositoryTestLib):
                 last_name="Admin",
                 timezone=UserTimezone.ASIA_SHANGHAI,
                 timezone_updated_at=now,
-                communication_channel="email",
+                communication_channel=CommunicationMethod.EMAIL,
                 primary_email="alice@example.com",
                 is_active=True,
                 updated_timestamp=(now),
@@ -39,7 +40,7 @@ class TestTrainingRepository(BaseRepositoryTestLib):
                 last_name="MultiRole",
                 timezone=UserTimezone.AMERICA_LOS_ANGELES,
                 timezone_updated_at=now,
-                communication_channel="slack",
+                communication_channel=CommunicationMethod.EMAIL,
                 primary_email="bob@example.com",
                 alternative_emails=["b1@example.com", "b2@example.com"],
                 is_active=True,
