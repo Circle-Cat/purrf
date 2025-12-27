@@ -122,6 +122,31 @@ class TestUsersRepository(BaseRepositoryTestLib):
         user = await self.repo.get_user_by_subject_identifier(self.session, "")
         self.assertIsNone(user)
 
+    async def test_get_user_by_primary_email(self):
+        """Test retrieving an existing user by primary email"""
+        user = await self.repo.get_user_by_primary_email(
+            self.session, self.user_entity.primary_email
+        )
+
+        self.assertEqual(user, self.user_entity)
+        self.assertEqual(user.primary_email, self.user_entity.primary_email)
+
+    async def test_get_user_by_primary_email_is_None(self):
+        """Test passing None as subject identifier returns None."""
+        user = await self.repo.get_user_by_primary_email(self.session, None)
+        self.assertIsNone(user)
+
+        user = await self.repo.get_user_by_primary_email(self.session, "")
+        self.assertIsNone(user)
+
+    async def test_get_user_by_primary_email_not_found(self):
+        """Test retrieving a non-existent user by email returns None."""
+        user = await self.repo.get_user_by_primary_email(
+            self.session, "non-existent@example.com"
+        )
+
+        self.assertIsNone(user)
+
     async def test_upsert_users_insert_user_entity(self):
         """Test insert a new UserEntity"""
         new_user = UsersEntity(

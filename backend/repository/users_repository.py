@@ -52,6 +52,28 @@ class UsersRepository:
 
         return result.scalars().one_or_none()
 
+    async def get_user_by_primary_email(
+        self, session: AsyncSession, primary_email: str
+    ) -> UsersEntity | None:
+        """
+        Retrieve a users entity by its primary email.
+
+        This method expects an externally managed AsyncSession, typically provided
+        by the service layer within a transactional context.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            primary_email (string): The primary email of the user to retrieve.
+
+        Returns:
+            UsersEntity | None: The matching user entity if found; otherwise None.
+        """
+        result = await session.execute(
+            select(UsersEntity).where(UsersEntity.primary_email == primary_email)
+        )
+
+        return result.scalars().one_or_none()
+
     async def upsert_users(
         self, session: AsyncSession, entity: UsersEntity
     ) -> UsersEntity:

@@ -31,7 +31,7 @@ class UsersEntity(Base):
 
     has_mentorship_mentor_experience: Mapped[bool | None] = mapped_column(Boolean)
 
-    primary_email: Mapped[str] = mapped_column(String)
+    primary_email: Mapped[str] = mapped_column(String, unique=True)
 
     # text[] array
     alternative_emails: Mapped[list[str] | None] = mapped_column(ARRAY(String))
