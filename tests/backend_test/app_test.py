@@ -8,11 +8,9 @@ HEALTH_API = "/health"
 
 class TestApp(TestCase):
     def setUp(self):
-        self.mock_consumer_controller = MagicMock()
         self.mock_frontend_controller = MagicMock()
 
         self.app_factory = App(
-            consumer_controller=self.mock_consumer_controller,
             frontend_controller=self.mock_frontend_controller,
         )
         self.app = self.app_factory.create_app()
@@ -23,7 +21,6 @@ class TestApp(TestCase):
         """
         Verify that all controller's register_routes methods are called.
         """
-        self.mock_consumer_controller.register_routes.assert_called_once()
         self.mock_frontend_controller.register_routes.assert_called_once()
 
     def test_health_check(self):

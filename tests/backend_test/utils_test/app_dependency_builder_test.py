@@ -396,6 +396,7 @@ class TestAppDependencyBuilder(TestCase):
             authentication_service=mock_authentication_service_cls.return_value,
             notification_controller=mock_notification_controller.return_value,
             historical_controller=mock_historical_controller_cls.return_value,
+            consumer_controller=mock_consumer_controller_cls.return_value,
         )
 
         # Assert that the builder's internal attributes are the created mock instances

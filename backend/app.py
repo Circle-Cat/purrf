@@ -12,17 +12,14 @@ class App:
 
     def __init__(
         self,
-        consumer_controller,
         frontend_controller,
     ):
         """
         Initializes the factory with controller dependencies.
 
         Args:
-            consumer_controller: An instance of ConsumerController.
             frontend_controller: An instance of FrontendController.
         """
-        self.consumer_controller = consumer_controller
         self.frontend_controller = frontend_controller
 
     def create_app(self) -> Flask:
@@ -40,7 +37,6 @@ class App:
         all_api_bp = Blueprint("all_api", __name__, url_prefix="/api")
 
         # Register routes using the injected controllers
-        self.consumer_controller.register_routes(all_api_bp)
         self.frontend_controller.register_routes(all_api_bp)
 
         app.register_blueprint(all_api_bp)

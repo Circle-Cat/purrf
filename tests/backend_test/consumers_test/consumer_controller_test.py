@@ -1,92 +1,152 @@
-from http import HTTPStatus
-from unittest import main, IsolatedAsyncioTestCase
+import unittest
 from unittest.mock import MagicMock
-from flask import Flask
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+from http import HTTPStatus
+
+from backend.common.user_role import UserRole
+from backend.common.api_endpoints import (
+    MICROSOFT_PULL_ENDPOINT,
+    GOOGLE_CHAT_PULL_ENDPOINT,
+    GERRIT_PULL_ENDPOINT,
+    PUBSUB_STATUS_ENDPOINT,
+    PUBSUB_STOP_ENDPOINT,
+)
+from backend.utils.auth_middleware import AuthMiddleware
 from backend.consumers.consumer_controller import ConsumerController
 
 
-PUBSUB_PULL_STATUS_STOP_API = "/api/pubsub/pull/{project_id}/{subscription_id}"
-TEST_PROJECT_ID = "test-project"
-TEST_SUBSCRIPTION_ID = "test-subscription"
+class TestConsumerIntegration(unittest.TestCase):
+    def setUp(self):
+        # 1. Mock authentication service
+        self.mock_auth_service = MagicMock()
 
+        # 2. Mock business services (four dependencies required by the controller)
+        self.mock_ms_service = MagicMock()
+        self.mock_google_service = MagicMock()
+        self.mock_gerrit_service = MagicMock()
+        self.mock_pull_manager = MagicMock()
 
-class TestConsumerController(IsolatedAsyncioTestCase):
-    async def asyncSetUp(self):
-        self.microsoft_message_processor_service = MagicMock()
-        self.google_chat_processor_service = MagicMock()
-        self.gerrit_processor_service = MagicMock()
-        self.pubsub_pull_manager = MagicMock()
+        # 3. Initialize controller
         self.controller = ConsumerController(
-            microsoft_message_processor_service=self.microsoft_message_processor_service,
-            google_chat_processor_service=self.google_chat_processor_service,
-            gerrit_processor_service=self.gerrit_processor_service,
-            pubsub_pull_manager=self.pubsub_pull_manager,
+            microsoft_message_processor_service=self.mock_ms_service,
+            google_chat_processor_service=self.mock_google_service,
+            gerrit_processor_service=self.mock_gerrit_service,
+            pubsub_pull_manager=self.mock_pull_manager,
         )
 
-        self.app = Flask(__name__)
-        self.app_context = self.app.app_context()
-        self.app_context.push()
+        # 4. Build FastAPI app
+        self.app = FastAPI()
+        self.app.add_middleware(AuthMiddleware, auth_service=self.mock_auth_service)
+        self.app.include_router(self.controller.router)
 
-    async def asyncTearDown(self):
-        self.app_context.pop()
+        self.client = TestClient(self.app)
 
-    async def test_start_microsoft_pulling(self):
-        response = self.controller.start_microsoft_pulling(
-            TEST_PROJECT_ID, TEST_SUBSCRIPTION_ID
+        # Test constants
+        self.project_id = "test-project"
+        self.sub_id = "test-subscription"
+
+    def _set_authenticated_user(self, roles=None, sub="test_user_123"):
+        """Helper method to configure mock_auth_service to return a user with given roles."""
+        if roles is None:
+            roles = [UserRole.ADMIN]
+        mock_user = MagicMock()
+        mock_user.sub = sub
+        mock_user.roles = roles
+        mock_user.primary_email = "test@example.com"
+        self.mock_auth_service.authenticate_request.return_value = mock_user
+
+    def _get_url(self, endpoint_template):
+        """Helper method to replace {project_id} and {subscription_id} in endpoint templates."""
+        return endpoint_template.format(
+            project_id=self.project_id, subscription_id=self.sub_id
         )
 
-        self.assertEqual(response.status_code, HTTPStatus.OK)
-        self.assertEqual(response.json["data"], {})
-        self.microsoft_message_processor_service.pull_microsoft_message.assert_called_once()
+    def test_start_google_chat_pulling_success(self):
+        """Test Google Chat pull endpoint with ADMIN role."""
+        self._set_authenticated_user(roles=[UserRole.ADMIN])
 
-    def test_start_google_pull(self):
-        response = self.controller.start_google_chat_pulling(
-            TEST_PROJECT_ID, TEST_SUBSCRIPTION_ID
+        url = self._get_url(GOOGLE_CHAT_PULL_ENDPOINT)
+        response = self.client.post(
+            url, headers={"Authorization": "Bearer valid-token"}
         )
 
         self.assertEqual(response.status_code, HTTPStatus.ACCEPTED)
-        self.assertEqual(response.json["data"], {})
-        self.google_chat_processor_service.pull_messages.assert_called_once()
+        self.assertTrue(response.json()["success"])
+        self.mock_google_service.pull_messages.assert_called_once_with(
+            self.project_id, self.sub_id
+        )
 
-    async def test_all_gerrit_topics(self):
-        response = self.controller.start_gerrit_pulling(
-            TEST_PROJECT_ID, TEST_SUBSCRIPTION_ID
+    def test_start_microsoft_pulling_success(self):
+        """Test Microsoft pull endpoint with ADMIN role."""
+        self._set_authenticated_user(roles=[UserRole.ADMIN])
+
+        url = self._get_url(MICROSOFT_PULL_ENDPOINT)
+        response = self.client.post(
+            url, headers={"Authorization": "Bearer valid-token"}
         )
 
         self.assertEqual(response.status_code, HTTPStatus.OK)
-        self.assertEqual(response.json["data"], {})
-        self.gerrit_processor_service.pull_gerrit.assert_called_once()
+        self.assertTrue("Microsoft" in response.json()["message"])
+        self.mock_ms_service.pull_microsoft_message.assert_called_once_with(
+            self.project_id, self.sub_id
+        )
 
-    def test_check_pulling_messages(self):
-        self.pubsub_pull_manager.check_pulling_status.return_value = {
-            "subscription_id": TEST_SUBSCRIPTION_ID,
-            "task_status": "RUNNING",
-            "message": "ok",
-            "timestamp": "2023-01-01T00:00:00Z",
-        }
+    def test_check_pulling_status_success(self):
+        """Test check pulling status endpoint with ADMIN role."""
+        self._set_authenticated_user(roles=[UserRole.ADMIN])
 
-        response = self.controller.check_pulling_messages(
-            TEST_PROJECT_ID, TEST_SUBSCRIPTION_ID
+        self.mock_pull_manager.check_pulling_status.return_value = {"status": "running"}
+
+        url = self._get_url(PUBSUB_STATUS_ENDPOINT)
+        response = self.client.get(url, headers={"Authorization": "Bearer valid-token"})
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.assertEqual(response.json()["data"]["status"], "running")
+        self.mock_pull_manager.check_pulling_status.assert_called_once()
+
+    def test_stop_pulling_success(self):
+        """Test stop pulling endpoint using DELETE method."""
+        self._set_authenticated_user(roles=[UserRole.ADMIN])
+
+        self.mock_pull_manager.stop_pulling_process.return_value = {"stopped": True}
+
+        url = self._get_url(PUBSUB_STOP_ENDPOINT)
+        response = self.client.delete(
+            url, headers={"Authorization": "Bearer valid-token"}
         )
 
         self.assertEqual(response.status_code, HTTPStatus.OK)
-        self.assertEqual(response.json["data"]["subscription_id"], TEST_SUBSCRIPTION_ID)
-        self.pubsub_pull_manager.check_pulling_status.assert_called_once()
+        self.assertTrue(response.json()["success"])
+        self.mock_pull_manager.stop_pulling_process.assert_called_once()
 
-    def test_stop_pulling(self):
-        self.pubsub_pull_manager.stop_pulling_process.return_value = {
-            "subscription_id": TEST_SUBSCRIPTION_ID,
-            "task_status": "RUNNING",
-            "message": "ok",
-            "timestamp": "2023-01-01T00:00:00Z",
-        }
+    def test_forbidden_access_for_normal_user(self):
+        """Test forbidden access: normal user tries to access ADMIN endpoint."""
+        # Simulate a normal user without ADMIN role
+        self._set_authenticated_user(roles=[UserRole.MENTORSHIP])
 
-        response = self.controller.stop_pulling(TEST_PROJECT_ID, TEST_SUBSCRIPTION_ID)
+        url = self._get_url(PUBSUB_STOP_ENDPOINT)
+        response = self.client.delete(
+            url, headers={"Authorization": "Bearer valid-token"}
+        )
 
-        self.assertEqual(response.status_code, HTTPStatus.OK)
-        self.assertEqual(response.json["data"]["subscription_id"], TEST_SUBSCRIPTION_ID)
-        self.pubsub_pull_manager.stop_pulling_process.assert_called_once()
+        # Should return 403 Forbidden
+        self.assertEqual(response.status_code, HTTPStatus.FORBIDDEN)
+        # Business logic should not be invoked
+        self.mock_pull_manager.stop_pulling_process.assert_not_called()
+
+    def test_auth_token_invalid(self):
+        """Test invalid authentication token."""
+        self.mock_auth_service.authenticate_request.side_effect = ValueError(
+            "Invalid token"
+        )
+
+        url = self._get_url(GERRIT_PULL_ENDPOINT)
+        response = self.client.post(url, headers={"Authorization": "Bearer bad-token"})
+
+        self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
+        self.assertEqual(response.json()["message"], "Invalid token")
 
 
 if __name__ == "__main__":
-    main()
+    unittest.main()

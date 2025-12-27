@@ -26,8 +26,11 @@ py_library(
         "consumer_controller.py",
     ],
     deps = [
-        "//backend/common:api_response_wrapper",
-        "@pypi//flask",
+        "//backend/common:api_endpoints",
+        "//backend/common:fast_api_response_wrapper",
+        "//backend/common:user_role",
+        "//backend/utils:permission_decorators",
+        "@pypi//fastapi",
     ],
 )
 

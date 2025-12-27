@@ -14,3 +14,9 @@ GOOGLE_CHAT_SYNC_HISTORY_MESSAGES_ENDPOINT = "/google/chat/spaces/messages"
 
 GERRIT_BACKFILL_CHANGES_ENDPOINT = "/gerrit/backfill"
 GERRIT_BACKFILL_PROJECTS_ENDPOINT = "/gerrit/projects/backfill"
+
+MICROSOFT_PULL_ENDPOINT = "/microsoft/pull/{project_id}/{subscription_id}"
+GOOGLE_CHAT_PULL_ENDPOINT = "/google/chat/pull/{project_id}/{subscription_id}"
+GERRIT_PULL_ENDPOINT = "/gerrit/pull/{project_id}/{subscription_id}"
+PUBSUB_STATUS_ENDPOINT = "/pubsub/pull/status/{project_id}/{subscription_id}"
+PUBSUB_STOP_ENDPOINT = "/pubsub/pull/{project_id}/{subscription_id}"

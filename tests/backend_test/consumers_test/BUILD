@@ -38,7 +38,10 @@ py_test(
     name = "consumer_controller_test",
     srcs = ["consumer_controller_test.py"],
     deps = [
+        "//backend/common:user_role",
         "//backend/consumers:consumer_controller",
+        "//backend/utils:auth_middleware",
+        "@pypi//httpx",
     ],
 )
 
