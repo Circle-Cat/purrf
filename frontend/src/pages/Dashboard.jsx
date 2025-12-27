@@ -6,7 +6,6 @@ import DateRangePicker from "@/components/common/DateRangePicker";
 import Card from "@/components/common/Card";
 import Table from "@/components/common/Table";
 import { getSummary, getLdapsAndDisplayNames } from "@/api/dashboardApi";
-import { getCookie, extractCloudflareUserName } from "@/utils/auth";
 import { Button } from "@/components/ui/button";
 
 /**
@@ -107,7 +106,6 @@ const Dashboard = () => {
   const [sortColumn, setSortColumn] = useState(null);
   const [sortDirection, setSortDirection] = useState("asc");
   const [tableData, setTableData] = useState([]);
-  const [greetingMessage, setGreetingMessage] = useState("Welcome");
 
   /**
    * Columns configuration for the members table.
@@ -327,25 +325,11 @@ const Dashboard = () => {
   useEffect(() => {
     handleInitialLoad();
 
-    const cloudflareJwtCookie = getCookie("CF_Authorization");
-    if (cloudflareJwtCookie) {
-      const extractedName = extractCloudflareUserName(cloudflareJwtCookie);
-      if (extractedName) {
-        setGreetingMessage(`Welcome, ${extractedName}`);
-      }
-    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
     <div className="dashboard-page">
-      <div className="welcome-header">
-        <span role="img" aria-label="clapping hands">
-          &#x1F44F;
-        </span>
-        <h2>{greetingMessage}</h2>
-      </div>
-
       <div className="summary-cards">
         <Card title="Members" value={summaryData.totalMembers} />
         <Card

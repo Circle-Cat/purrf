@@ -9,7 +9,6 @@ import DateRangePicker from "@/components/common/DateRangePicker";
 import { Group } from "@/constants/Groups";
 import { LdapStatus } from "@/constants/LdapStatus";
 import { getSummary, getLdapsAndDisplayNames } from "@/api/dashboardApi";
-import { getCookie, extractCloudflareUserName } from "@/utils/auth";
 
 vi.mock("@/components/common/DateRangePicker", () => {
   return {
@@ -91,11 +90,6 @@ vi.mock("@/api/dashboardApi", () => ({
   getLdapsAndDisplayNames: vi.fn(),
 }));
 
-vi.mock("@/utils/auth", () => ({
-  getCookie: vi.fn(),
-  extractCloudflareUserName: vi.fn(),
-}));
-
 const MOCK_TODAY = new Date("2024-02-15");
 const MOCK_FIRST_OF_MONTH = new Date("2024-02-01");
 const formatDate = (date) => date.toISOString().split("T")[0];
@@ -149,9 +143,6 @@ describe("Dashboard", () => {
     vi.useFakeTimers();
     const date = new Date(MOCK_TODAY);
     vi.setSystemTime(date);
-    // Reset mocks for auth functions before each test
-    getCookie.mockClear();
-    extractCloudflareUserName.mockClear();
     getSummary.mockResolvedValue({ data: [] }); // Default mock to prevent unwanted errors
   });
 
@@ -305,8 +296,6 @@ describe("Dashboard", () => {
     getLdapsAndDisplayNames.mockResolvedValue({ data: mockLdapsData });
 
     render(<Dashboard />);
-
-    expect(screen.getByText("Welcome")).toBeInTheDocument();
 
     expect(DateRangePicker).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -493,80 +482,45 @@ describe("Dashboard", () => {
     });
   });
 
-  describe("User Welcome Message", () => {
-    it("should display the username when the Cloudflare JWT cookie is present", async () => {
-      const mockJwt = "mock.jwt.token";
-      const mockUsername = "testuser";
+  it("correctly sums and displays floating-point meeting hours", async () => {
+    const mockDecimalSummaryData = [
+      {
+        ldap: "test.user1",
+        jira_issue_done: 1,
+        cl_merged: 1,
+        loc_merged: 1,
+        meeting_hours: 0.65,
+        chat_count: 1,
+      },
+      {
+        ldap: "test.user2",
+        jira_issue_done: 1,
+        cl_merged: 1,
+        loc_merged: 1,
+        meeting_hours: 0.71,
+        chat_count: 1,
+      },
+      {
+        ldap: "test.user3",
+        jira_issue_done: 1,
+        cl_merged: 1,
+        loc_merged: 1,
+        meeting_hours: 0.82,
+        chat_count: 1,
+      },
+    ];
 
-      getCookie.mockReturnValue(mockJwt);
-      extractCloudflareUserName.mockReturnValue(mockUsername);
+    getSummary.mockResolvedValue({ data: mockDecimalSummaryData });
+    getLdapsAndDisplayNames.mockResolvedValue({ data: mockLdapsData });
 
-      render(<Dashboard />);
+    render(<Dashboard />);
 
-      await vi.waitFor(() => {
-        expect(getCookie).toHaveBeenCalledWith("CF_Authorization");
-        expect(extractCloudflareUserName).toHaveBeenCalledWith(mockJwt);
-        expect(
-          screen.getByText(`Welcome, ${mockUsername}`),
-        ).toBeInTheDocument();
-      });
-    });
+    await vi.waitFor(() => {
+      const meetingHoursCard = screen.getByTestId("card-Meeting-Hours");
 
-    it("should display a generic welcome message if the cookie is not present", async () => {
-      getCookie.mockReturnValue(null);
+      expect(meetingHoursCard).toHaveTextContent("2.18");
 
-      render(<Dashboard />);
-
-      await vi.waitFor(() => {
-        expect(getCookie).toHaveBeenCalledWith("CF_Authorization");
-        expect(extractCloudflareUserName).not.toHaveBeenCalled();
-        expect(
-          screen.getByRole("heading", { name: /Welcome/ }),
-        ).toHaveTextContent("Welcome");
-        expect(screen.queryByText(/Welcome \S+/)).toBeNull();
-      });
-    });
-
-    it("correctly sums and displays floating-point meeting hours", async () => {
-      const mockDecimalSummaryData = [
-        {
-          ldap: "test.user1",
-          jira_issue_done: 1,
-          cl_merged: 1,
-          loc_merged: 1,
-          meeting_hours: 0.65,
-          chat_count: 1,
-        },
-        {
-          ldap: "test.user2",
-          jira_issue_done: 1,
-          cl_merged: 1,
-          loc_merged: 1,
-          meeting_hours: 0.71,
-          chat_count: 1,
-        },
-        {
-          ldap: "test.user3",
-          jira_issue_done: 1,
-          cl_merged: 1,
-          loc_merged: 1,
-          meeting_hours: 0.82,
-          chat_count: 1,
-        },
-      ];
-
-      getSummary.mockResolvedValue({ data: mockDecimalSummaryData });
-      getLdapsAndDisplayNames.mockResolvedValue({ data: mockLdapsData });
-
-      render(<Dashboard />);
-
-      await vi.waitFor(() => {
-        const meetingHoursCard = screen.getByTestId("card-Meeting-Hours");
-
-        expect(meetingHoursCard).toHaveTextContent("2.18");
-
-        expect(meetingHoursCard).not.toHaveTextContent("2.17999");
-      });
+      expect(meetingHoursCard).not.toHaveTextContent("2.17999");
     });
   });
 });

@@ -6,23 +6,6 @@
     box-sizing: border-box;
 }
 
-/* Header section */
-.welcome-header {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 20px;
-    flex-shrink: 0;
-}
-
-.welcome-header span[role="img"] {
-    font-size: 1.5em;
-}
-
-.welcome-header h2 {
-    margin: 0;
-}
-
 /* Summary cards layout */
 .summary-cards {
     display: flex;
