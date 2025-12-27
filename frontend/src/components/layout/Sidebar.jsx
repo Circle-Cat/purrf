@@ -18,6 +18,11 @@ const Sidebar = () => {
 
   const navItems = [
     {
+      label: "Personal Dashboard",
+      to: ROUTE_PATHS.PERSONAL_DASHBOARD,
+      roles: [USER_ROLES.MENTORSHIP],
+    },
+    {
       label: "Dashboard",
       to: ROUTE_PATHS.DASHBOARD,
       roles: [USER_ROLES.ADMIN, USER_ROLES.CC_INTERNAL],
@@ -26,11 +31,6 @@ const Sidebar = () => {
       label: "DataSearch",
       to: ROUTE_PATHS.DATASEARCH,
       roles: [USER_ROLES.ADMIN],
-    },
-    {
-      label: "Personal Dashboard",
-      to: ROUTE_PATHS.PERSONAL_DASHBOARD,
-      roles: [USER_ROLES.MENTORSHIP],
     },
   ];
 
