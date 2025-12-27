@@ -14,6 +14,7 @@ class TestFastAppFactory(unittest.TestCase):
             authentication_controller=self.mock_controller,
             authentication_service=self.mock_service,
             notification_controller=self.mock_controller,
+            historical_controller=self.mock_controller,
         )
 
     def test_factory_initialization(self):
@@ -21,6 +22,8 @@ class TestFastAppFactory(unittest.TestCase):
         self.assertIsInstance(self.factory, FastAppFactory)
         self.assertEqual(self.factory.authentication_controller, self.mock_controller)
         self.assertEqual(self.factory.authentication_service, self.mock_service)
+        self.assertEqual(self.factory.notification_controller, self.mock_controller)
+        self.assertEqual(self.factory.notification_controller, self.mock_controller)
 
     def test_create_app_returns_fastapi_instance(self):
         """Test that create_app returns a FastAPI application instance."""

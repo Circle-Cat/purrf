@@ -31,9 +31,12 @@ py_library(
     name = "historical_controller",
     srcs = ["historical_controller.py"],
     deps = [
-        "//backend/common:api_response_wrapper",
+        "//backend/common:api_endpoints",
+        "//backend/common:fast_api_response_wrapper",
+        "//backend/common:user_role",
         "//backend/utils:date_time_util",
-        "@pypi//flask",
+        "//backend/utils:permission_decorators",
+        "@pypi//fastapi",
     ],
 )
 

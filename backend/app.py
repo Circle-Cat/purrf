@@ -13,7 +13,6 @@ class App:
     def __init__(
         self,
         consumer_controller,
-        historical_controller,
         frontend_controller,
     ):
         """
@@ -21,11 +20,9 @@ class App:
 
         Args:
             consumer_controller: An instance of ConsumerController.
-            historical_controller: An instance of HistoricalController.
             frontend_controller: An instance of FrontendController.
         """
         self.consumer_controller = consumer_controller
-        self.historical_controller = historical_controller
         self.frontend_controller = frontend_controller
 
     def create_app(self) -> Flask:
@@ -44,7 +41,6 @@ class App:
 
         # Register routes using the injected controllers
         self.consumer_controller.register_routes(all_api_bp)
-        self.historical_controller.register_routes(all_api_bp)
         self.frontend_controller.register_routes(all_api_bp)
 
         app.register_blueprint(all_api_bp)

@@ -13,6 +13,8 @@ py_test(
     srcs = ["historical_controller_test.py"],
     deps = [
         "//backend/historical_data:historical_controller",
+        "//backend/utils:auth_middleware",
+        "@pypi//httpx",
     ],
 )
 

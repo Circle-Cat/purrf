@@ -1,8 +1,30 @@
-from flask import Blueprint, request
 from http import HTTPStatus
-from backend.common.api_response_wrapper import api_response
+from fastapi import APIRouter, Query
+from pydantic import BaseModel
 
-history_bp = Blueprint("history", __name__, url_prefix="/api")
+from backend.common.fast_api_response_wrapper import api_response
+from backend.common.user_role import UserRole
+from backend.utils.permission_decorators import authenticate
+from backend.common.api_endpoints import (
+    MICROSOFT_BACKFILL_LDAPS_ENDPOINT,
+    MICROSOFT_BACKFILL_CHAT_MESSAGES_ENDPOINT,
+    JIRA_SYNC_PROJECTS_ENDPOINT,
+    JIRA_BACKFILL_ISSUES_ENDPOINT,
+    JIRA_UPDATE_ISSUES_ENDPOINT,
+    GOOGLE_CALENDAR_PULL_HISTORY_ENDPOINT,
+    GERRIT_BACKFILL_CHANGES_ENDPOINT,
+    GERRIT_BACKFILL_PROJECTS_ENDPOINT,
+    GOOGLE_CHAT_SYNC_HISTORY_MESSAGES_ENDPOINT,
+)
+
+
+class GoogleCalendarPullRequest(BaseModel):
+    start_date: str | None = None
+    end_date: str | None = None
+
+
+class GerritBackfillRequest(BaseModel):
+    statuses: list[str] | None = None
 
 
 class HistoricalController:
@@ -36,77 +58,83 @@ class HistoricalController:
         self.gerrit_sync_service = gerrit_sync_service
         self.google_chat_history_sync_service = google_chat_history_sync_service
 
-    def register_routes(self, blueprint):
-        """
-        Register all historical data backfill routes to the given Flask blueprint.
+        self.router = APIRouter(tags=["history"])
 
-        Args:
-            blueprint: Flask Blueprint object to register routes on.
-        """
-        blueprint.add_url_rule(
-            "/microsoft/backfill/ldaps",
-            view_func=self.backfill_microsoft_ldaps,
+        self.router.add_api_route(
+            MICROSOFT_BACKFILL_LDAPS_ENDPOINT,
+            endpoint=authenticate(roles=[UserRole.ADMIN, UserRole.CRON_RUNNER])(
+                self.backfill_microsoft_ldaps
+            ),
             methods=["POST"],
         )
-        blueprint.add_url_rule(
-            "/microsoft/backfill/chat/messages/<chatId>",
-            view_func=self.backfill_microsoft_chat_messages,
+        self.router.add_api_route(
+            MICROSOFT_BACKFILL_CHAT_MESSAGES_ENDPOINT,
+            endpoint=authenticate(roles=[UserRole.ADMIN])(
+                self.backfill_microsoft_chat_messages
+            ),
             methods=["POST"],
         )
-        blueprint.add_url_rule(
-            "/jira/project",
-            view_func=self.sync_jira_projects,
+        self.router.add_api_route(
+            JIRA_SYNC_PROJECTS_ENDPOINT,
+            endpoint=authenticate(roles=[UserRole.ADMIN, UserRole.CRON_RUNNER])(
+                self.sync_jira_projects
+            ),
             methods=["POST"],
         )
-        blueprint.add_url_rule(
-            "/jira/backfill",
-            view_func=self.backfill_jira_issues,
+        self.router.add_api_route(
+            JIRA_BACKFILL_ISSUES_ENDPOINT,
+            endpoint=authenticate(roles=[UserRole.ADMIN])(self.backfill_jira_issues),
             methods=["POST"],
         )
-        blueprint.add_url_rule(
-            "/jira/update",
-            view_func=self.update_jira_issues,
+        self.router.add_api_route(
+            JIRA_UPDATE_ISSUES_ENDPOINT,
+            endpoint=authenticate(roles=[UserRole.ADMIN, UserRole.CRON_RUNNER])(
+                self.update_jira_issues
+            ),
             methods=["POST"],
         )
-        blueprint.add_url_rule(
-            "/google/calendar/history/pull",
-            view_func=self.pull_calendar_history_api,
+        self.router.add_api_route(
+            GOOGLE_CALENDAR_PULL_HISTORY_ENDPOINT,
+            endpoint=authenticate(roles=[UserRole.ADMIN, UserRole.CRON_RUNNER])(
+                self.pull_calendar_history_api
+            ),
             methods=["POST"],
         )
-        blueprint.add_url_rule(
-            "/gerrit/backfill",
-            view_func=self.backfill_gerrit_changes,
+        self.router.add_api_route(
+            GERRIT_BACKFILL_CHANGES_ENDPOINT,
+            endpoint=authenticate(roles=[UserRole.ADMIN])(self.backfill_gerrit_changes),
             methods=["POST"],
         )
-        blueprint.add_url_rule(
-            "/gerrit/projects/backfill",
-            view_func=self.backfill_gerrit_projects,
+        self.router.add_api_route(
+            GERRIT_BACKFILL_PROJECTS_ENDPOINT,
+            endpoint=authenticate(roles=[UserRole.ADMIN])(
+                self.backfill_gerrit_projects
+            ),
             methods=["POST"],
         )
-        blueprint.add_url_rule(
-            "/google/chat/spaces/messages",
-            view_func=self.sync_google_chat_history_messages,
+        self.router.add_api_route(
+            GOOGLE_CHAT_SYNC_HISTORY_MESSAGES_ENDPOINT,
+            endpoint=authenticate(roles=[UserRole.ADMIN])(
+                self.sync_google_chat_history_messages
+            ),
             methods=["POST"],
         )
 
-    def sync_google_chat_history_messages(self):
-        """API endpoint to trigger the fetching of messages for all SPACE type Google chat spaces and store them in Redis."""
-
+    async def sync_google_chat_history_messages(self):
+        """API endpoint to trigger the fetching of messages for all SPACE type Google chat spaces."""
         result = self.google_chat_history_sync_service.sync_history_messages()
         return api_response(
             success=True,
-            message="Saved successfully.",
+            message="Google Chat messages saved successfully.",
             data=result,
             status_code=HTTPStatus.OK,
         )
 
-    def update_jira_issues(self):
+    async def update_jira_issues(self, hours: int = Query(None)):
         """
-        Incrementally update Jira issues in Redis for issues created or updated within the last N hours.
-        This endpoint performs an incremental sync (created + updated).
+        Incrementally update Jira issues in Redis.
         Query parameter: hours (int)
         """
-        hours = request.args.get("hours", default=None, type=int)
         if hours is None or hours <= 0:
             return api_response(
                 success=False,
@@ -118,77 +146,59 @@ class HistoricalController:
         result = self.jira_history_sync_service.process_update_jira_issues(hours)
         return api_response(
             success=True,
-            message="Updated successfully",
+            message=f"Incremental Jira issues updated successfully for for the past {hours} hour(s).",
             data={"updated_issues": result},
             status_code=HTTPStatus.OK,
         )
 
-    def backfill_jira_issues(self):
-        """Backfill all Jira issues into Redis. This endpoint does not accept
-        any parameters.
-        """
+    async def backfill_jira_issues(self):
+        """Backfill all Jira issues into Redis."""
         result = self.jira_history_sync_service.backfill_all_jira_issues()
         return api_response(
             success=True,
-            message="Imported successfully",
+            message="Full Jira issues backfill completed successfully.",
             data=result,
             status_code=HTTPStatus.OK,
         )
 
     async def backfill_microsoft_ldaps(self):
-        """
-        API endpoint to backfill Microsoft 365 user LDAP information into Redis.
-        """
-
+        """API endpoint to backfill Microsoft 365 user LDAP information into Redis."""
         await self.microsoft_member_sync_service.sync_microsoft_members_to_redis()
-
         return api_response(
             success=True,
-            message="Successfully.",
+            message="Microsoft 365 user LDAP information backfilled successfully.",
             data=None,
             status_code=HTTPStatus.OK,
         )
 
-    async def backfill_microsoft_chat_messages(self, chatId):
+    async def backfill_microsoft_chat_messages(self, chatId: str):
         """API endpoint to backfill Microsoft Teams Chat messages into Redis."""
         await self.microsoft_chat_history_sync_service.sync_microsoft_chat_messages_by_chat_id(
             chatId
         )
-
         return api_response(
             success=True,
-            message="Saved successfully.",
+            message=f"Microsoft Teams chat messages for chat ID {chatId} backfilled successfully.",
             data=None,
             status_code=HTTPStatus.OK,
         )
 
-    def sync_jira_projects(self):
+    async def sync_jira_projects(self):
         """Import all Jira project IDs and their display names into Redis."""
-
         result = self.jira_history_sync_service.sync_jira_projects_id_and_name_mapping()
-
         return api_response(
             success=True,
-            message="Imported successfully",
+            message="Jira projects imported successfully.",
             data={"imported_projects": result},
             status_code=HTTPStatus.OK,
         )
 
-    def pull_calendar_history_api(self):
+    async def pull_calendar_history_api(self, request_body: GoogleCalendarPullRequest):
         """
         Endpoint to trigger fetching and caching Google Calendar history.
-
-        Request JSON params (optional):
-        - start_date: ISO format string, start of time range (default: now - 24h)
-        - end_date: ISO format string, end of time range (default: now)
         """
-        data = request.get_json(silent=True) or {}
-
-        start_date_str = data.get("start_date")  # Expecting "YYYY-MM-DD"
-        end_date_str = data.get("end_date")  # Expecting "YYYY-MM-DD"
-
         time_min, time_max = self.date_time_utils.resolve_start_end_timestamps(
-            start_date_str, end_date_str
+            request_body.start_date, request_body.end_date
         )
 
         self.google_calendar_sync_service.pull_calendar_history(time_min, time_max)
@@ -200,29 +210,24 @@ class HistoricalController:
             status_code=HTTPStatus.OK,
         )
 
-    async def backfill_gerrit_changes(self):
+    async def backfill_gerrit_changes(self, request_body: GerritBackfillRequest):
         """API endpoint to backfill Gerrit changes into Redis."""
-
-        body = request.get_json(silent=True) or {}
-        statuses = body.get("statuses")
-
-        self.gerrit_sync_service.fetch_and_store_changes(statuses=statuses)
+        self.gerrit_sync_service.fetch_and_store_changes(statuses=request_body.statuses)
 
         return api_response(
             success=True,
-            message="Saved successfully.",
+            message="Gerrit changes backfilled successfully.",
             data="",
             status_code=HTTPStatus.OK,
         )
 
-    def backfill_gerrit_projects(self):
+    async def backfill_gerrit_projects(self):
         """API endpoint to backfill Gerrit projects into Redis."""
-
         count = self.gerrit_sync_service.sync_gerrit_projects()
 
         return api_response(
             success=True,
-            message=f"Successfully synced {count} Gerrit projects.",
+            message="Gerrit projects backfilled successfully.",
             data={"project_count": count},
             status_code=HTTPStatus.OK,
         )
