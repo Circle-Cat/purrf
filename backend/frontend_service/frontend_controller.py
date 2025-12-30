@@ -1,14 +1,77 @@
-from flask import Blueprint, request
 from http import HTTPStatus
+from fastapi import APIRouter, Query
+from pydantic import BaseModel
+
+from backend.common.fast_api_response_wrapper import api_response
 from backend.common.constants import (
     MicrosoftAccountStatus,
     MicrosoftGroups,
     JiraIssueStatus,
 )
-from backend.common.api_response_wrapper import api_response
+from backend.common.user_role import UserRole
+from backend.utils.permission_decorators import authenticate
+from backend.common.api_endpoints import (
+    MICROSOFT_LDAPS_ENDPOINT,
+    MICROSOFT_CHAT_COUNT_ENDPOINT,
+    MICROSOFT_CHAT_TOPICS_ENDPOINT,
+    JIRA_PROJECTS_ENDPOINT,
+    JIRA_BRIEF_ENDPOINT,
+    JIRA_DETAIL_BATCH_ENDPOINT,
+    GOOGLE_CALENDAR_LIST_ENDPOINT,
+    GOOGLE_CALENDAR_EVENTS_ENDPOINT,
+    GERRIT_STATS_ENDPOINT,
+    GERRIT_PROJECTS_ENDPOINT,
+    GOOGLE_CHAT_COUNT_ENDPOINT,
+    GOOGLE_CHAT_SPACES_ENDPOINT,
+    SUMMARY_ENDPOINT,
+)
 
 
-frontend_bp = Blueprint("frontend", __name__, url_prefix="/api")
+class MicrosoftChatCountRequest(BaseModel):
+    ldaps: list[str] | None = None
+    startDate: str | None = None
+    endDate: str | None = None
+
+
+class GoogleCalendarEventsRequest(BaseModel):
+    calendarIds: list[str]
+    ldaps: list[str]
+    startDate: str | None = None
+    endDate: str | None = None
+
+
+class JiraBriefRequest(BaseModel):
+    statusList: list[JiraIssueStatus]
+    ldaps: list[str] | None = None
+    projectIds: list[str] | None = None
+    startDate: str | None = None
+    endDate: str | None = None
+
+
+class JiraDetailBatchRequest(BaseModel):
+    issueIds: list[str]
+
+
+class GerritStatsRequest(BaseModel):
+    ldaps: list[str] | None = None
+    startDate: str | None = None
+    endDate: str | None = None
+    project: list[str] | None = None
+    includeAllProjects: bool | None = False
+
+
+class GoogleChatCountRequest(BaseModel):
+    ldaps: list[str] | None = None
+    spaceIds: list[str] | None = None
+    startDate: str | None = None
+    endDate: str | None = None
+
+
+class SummaryRequest(BaseModel):
+    startDate: str | None = None
+    endDate: str | None = None
+    groups: list[str]
+    includeTerminated: bool | None = False
 
 
 class FrontendController:
@@ -48,85 +111,87 @@ class FrontendController:
         self.gerrit_analytics_service = gerrit_analytics_service
         self.summary_service = summary_service
 
-    def register_routes(self, blueprint):
-        """
-        Register the routes on the given Flask blueprint.
+        self.router = APIRouter(tags=["internal_activity"])
 
-        Args:
-            blueprint: Flask Blueprint object to register routes on.
-        """
-        blueprint.add_url_rule(
-            "/microsoft/<status>/ldaps",
-            view_func=self.get_ldaps_and_names,
+        self.router.add_api_route(
+            MICROSOFT_LDAPS_ENDPOINT,
+            endpoint=authenticate(roles=[UserRole.CC_INTERNAL])(
+                self.get_ldaps_and_names
+            ),
             methods=["GET"],
         )
-        blueprint.add_url_rule(
-            "/microsoft/chat/count",
-            view_func=self.count_microsoft_chat_messages,
+        self.router.add_api_route(
+            MICROSOFT_CHAT_COUNT_ENDPOINT,
+            endpoint=authenticate(roles=[UserRole.ADMIN])(
+                self.count_microsoft_chat_messages
+            ),
             methods=["POST"],
         )
-        blueprint.add_url_rule(
-            "/microsoft/chat/topics",
-            view_func=self.all_microsoft_chat_topics,
+        self.router.add_api_route(
+            MICROSOFT_CHAT_TOPICS_ENDPOINT,
+            endpoint=authenticate(roles=[UserRole.ADMIN])(
+                self.all_microsoft_chat_topics
+            ),
             methods=["GET"],
         )
-        blueprint.add_url_rule(
-            "/jira/projects",
-            view_func=self.get_all_jira_projects_api,
+        self.router.add_api_route(
+            JIRA_PROJECTS_ENDPOINT,
+            endpoint=authenticate(roles=[UserRole.ADMIN])(
+                self.get_all_jira_projects_api
+            ),
             methods=["GET"],
         )
-        blueprint.add_url_rule(
-            "/calendar/calendars",
-            view_func=self.get_all_calendars_api,
+        self.router.add_api_route(
+            GOOGLE_CALENDAR_LIST_ENDPOINT,
+            endpoint=authenticate(roles=[UserRole.ADMIN])(self.get_all_calendars_api),
             methods=["GET"],
         )
-        blueprint.add_url_rule(
-            "/calendar/events",
-            view_func=self.get_all_events_api,
+        self.router.add_api_route(
+            GOOGLE_CALENDAR_EVENTS_ENDPOINT,
+            endpoint=authenticate(roles=[UserRole.ADMIN])(self.get_all_events_api),
             methods=["POST"],
         )
-        blueprint.add_url_rule(
-            "/jira/brief",
-            view_func=self.get_jira_brief,
+        self.router.add_api_route(
+            JIRA_BRIEF_ENDPOINT,
+            endpoint=authenticate(roles=[UserRole.ADMIN])(self.get_jira_brief),
             methods=["POST"],
         )
-        blueprint.add_url_rule(
-            "/jira/detail/batch",
-            view_func=self.get_issue_detail_batch,
+        self.router.add_api_route(
+            JIRA_DETAIL_BATCH_ENDPOINT,
+            endpoint=authenticate(roles=[UserRole.ADMIN])(self.get_issue_detail_batch),
             methods=["POST"],
         )
-        blueprint.add_url_rule(
-            "/gerrit/stats",
-            view_func=self.get_gerrit_stats,
+        self.router.add_api_route(
+            GERRIT_STATS_ENDPOINT,
+            endpoint=authenticate(roles=[UserRole.ADMIN])(self.get_gerrit_stats),
             methods=["POST"],
         )
-        blueprint.add_url_rule(
-            "/gerrit/projects",
-            view_func=self.get_gerrit_projects,
+        self.router.add_api_route(
+            GERRIT_PROJECTS_ENDPOINT,
+            endpoint=authenticate(roles=[UserRole.ADMIN])(self.get_gerrit_projects),
             methods=["GET"],
+        )
+        self.router.add_api_route(
+            GOOGLE_CHAT_COUNT_ENDPOINT,
+            endpoint=authenticate(roles=[UserRole.ADMIN])(
+                self.get_google_chat_messages_count
+            ),
+            methods=["POST"],
+        )
+        self.router.add_api_route(
+            GOOGLE_CHAT_SPACES_ENDPOINT,
+            endpoint=authenticate(roles=[UserRole.ADMIN])(self.get_chat_spaces_route),
+            methods=["GET"],
+        )
+        self.router.add_api_route(
+            SUMMARY_ENDPOINT,
+            endpoint=authenticate(roles=[UserRole.CC_INTERNAL])(self.get_summary),
+            methods=["POST"],
         )
 
-        blueprint.add_url_rule(
-            "/google/chat/count",
-            view_func=self.get_google_chat_messages_count,
-            methods=["POST"],
-        )
-        blueprint.add_url_rule(
-            "/google/chat/spaces",
-            view_func=self.get_chat_spaces_route,
-            methods=["GET"],
-        )
-        blueprint.add_url_rule(
-            "/summary",
-            view_func=self.get_summary,
-            methods=["POST"],
-        )
-
-    def get_chat_spaces_route(self):
-        """API endpoint to retrieve chat spaces of a specified type, default SPACE type."""
-        space_type = request.args.get("spaceType", "SPACE")
-
-        spaces = self.google_chat_analytics_service.get_chat_spaces_by_type(space_type)
+    async def get_chat_spaces_route(self, spaceType: str = "SPACE"):
+        """API endpoint to retrieve chat spaces of a specified type."""
+        spaces = self.google_chat_analytics_service.get_chat_spaces_by_type(spaceType)
         return api_response(
             success=True,
             message="Successfully.",
@@ -134,42 +199,14 @@ class FrontendController:
             status_code=HTTPStatus.OK,
         )
 
-    def get_google_chat_messages_count(self):
-        """
-        Count chat messages in Redis within a specified date range.
-
-        JSON Body Parameters:
-            ldaps (list[str], optional): List of sender LDAPs.
-            spaceIds (list[str], optional): List of space IDs.
-            startDate (str, optional): Start date in "YYYY-MM-DD" format.
-            endDate (str, optional): End date in "YYYY-MM-DD" format.
-
-        Returns:
-            Response (JSON): Message counts grouped by sender and space. Example:
-            {
-                "alice": {
-                    "space1": 25,
-                    "space2": 5
-                },
-                "bob": {
-                    "space1": 11,
-                    "space2": 0
-                }
-            }
-        """
-        data = request.get_json(force=True)
-        sender_ldaps = data.get("ldaps")
-        space_ids = data.get("spaceIds")
-        start_date = data.get("startDate")
-        end_date = data.get("endDate")
-
+    async def get_google_chat_messages_count(self, body: GoogleChatCountRequest):
+        """Count chat messages in Redis within a specified date range."""
         result = self.google_chat_analytics_service.count_messages(
-            space_ids=space_ids,
-            sender_ldaps=sender_ldaps,
-            start_date=start_date,
-            end_date=end_date,
+            space_ids=body.spaceIds,
+            sender_ldaps=body.ldaps,
+            start_date=body.startDate,
+            end_date=body.endDate,
         )
-
         return api_response(
             success=True,
             message="Successfully.",
@@ -177,31 +214,11 @@ class FrontendController:
             status_code=HTTPStatus.OK,
         )
 
-    def get_issue_detail_batch(self):
-        """
-        Get Jira issue details in batch from Redis.
-
-        Fetch the full metadata of multiple Jira issues from Redis, given a list
-        of issueIds.
-
-        Request Body (JSON):
-            { "issueIds": ["issue-1", "issue-2", ...] }
-
-        Returns:
-            JSON response with success flag, message, and data containing issue
-            details.
-
-            [
-                {"issue_id": "issue-1", "field1": "value1", "field2": "value2"},
-                {"issue_id": "issue-2", "field1": "value1", "field2": "value2"},
-                {"issue_id": "issue-3", "field1": None, "field2": None}
-            ]
-        """
-        data = request.get_json(force=True)
-        issue_ids = data.get("issueIds") if data else None
-
-        result = self.jira_analytics_service.process_get_issue_detail_batch(issue_ids)
-
+    async def get_issue_detail_batch(self, body: JiraDetailBatchRequest):
+        """Get Jira issue details in batch from Redis."""
+        result = self.jira_analytics_service.process_get_issue_detail_batch(
+            body.issueIds
+        )
         return api_response(
             success=True,
             message="Successful",
@@ -209,57 +226,15 @@ class FrontendController:
             status_code=HTTPStatus.OK,
         )
 
-    def get_jira_brief(self):
-        """
-        Get Jira issue IDs in Redis by status: done, in_progress, todo, and all.
-
-        Request body (JSON):
-            {
-                "statusList": ["done", "in_progress", "todo"],    list of statuses
-                "ldaps": ["<ldap1>", "<ldap2>", ...],              list of users ldap
-                "projectIds": ["<project1>", "<project2>", ...],  list of projects
-                "startDate": "<yyyy-mm-dd>",
-                "endDate": "<yyyy-mm-dd>"
-            }
-
-        Returns:
-            Response (JSON): Standard API response with issue IDs grouped by status, ldap
-
-            {
-            "time_range": {
-                "start_dt": "2023-01-01T00:00:00+00:00",
-                "end_dt": "2023-01-31T23:59:59+00:00"
-            },
-            "user1": {
-                "done": ["done-issue-1", "done-issue-2"],
-                "in_progress": ["inprogress-issue-1"],
-                "todo": [],
-                "done_story_points_total": 8.0
-            },
-            "user2": {
-                "done": [],
-                "in_progress": ["inprogress-issue-2"],
-                "todo": ["todo-issue-1"],
-                "done_story_points_total": 0.0
-            }
-        }
-        """
-        data = request.get_json(force=True)
-        status_list_str = data.get("statusList")
-        status_list = [JiraIssueStatus(status_str) for status_str in status_list_str]
-        ldaps = data.get("ldaps")
-        project_ids = data.get("projectIds")
-        start_date = data.get("startDate")
-        end_date = data.get("endDate")
-
+    async def get_jira_brief(self, body: JiraBriefRequest):
+        """Get Jira issue IDs in Redis by status."""
         result = self.jira_analytics_service.get_issues_summary(
-            status_list=status_list,
-            ldaps=ldaps,
-            project_ids=project_ids,
-            start_date=start_date,
-            end_date=end_date,
+            status_list=body.statusList,
+            ldaps=body.ldaps,
+            project_ids=body.projectIds,
+            start_date=body.startDate,
+            end_date=body.endDate,
         )
-
         return api_response(
             success=True,
             message="Successfully.",
@@ -270,7 +245,6 @@ class FrontendController:
     async def all_microsoft_chat_topics(self):
         """Fetch Microsoft chat topics from Redis."""
         response = await self.microsoft_meeting_chat_topic_cache_service.get_microsoft_chat_topics()
-
         return api_response(
             success=True,
             message="Successfully.",
@@ -278,29 +252,20 @@ class FrontendController:
             status_code=HTTPStatus.OK,
         )
 
-    def get_ldaps_and_names(self, status):
-        """
-        API endpoint to retrieve Microsoft 365 user LDAP information from Redis, filtered by account status
-        and optionally by multiple Microsoft groups.
-
-        This endpoint expects the `groups[]` query parameter as a list (e.g., ?groups[]=interns&groups[]=employees).
-
-        Args:
-            status (str): The account status to filter by (e.g., "active", "terminated", "all").
-                          Will be validated and converted to a MicrosoftAccountStatus enum.
-
-        Returns:
-            Response: JSON response containing the LDAP data organized by group and status, with HTTP status code 200.
-
-        Example request:
-            GET /microsoft/all/ldaps?groups[]=interns&groups[]=employees
-        """
-        groups_list = request.args.getlist("groups[]")
+    async def get_ldaps_and_names(
+        self,
+        status: MicrosoftAccountStatus,
+        groups: list[MicrosoftGroups] = Query(
+            ...,
+            alias="groups[]",
+            min_items=1,
+        ),
+    ):
+        """Retrieve Microsoft 365 user LDAP information."""
         data = self.ldap_service.get_ldaps_by_status_and_group(
-            status=MicrosoftAccountStatus.validate_status(status),
-            groups=[MicrosoftGroups(g) for g in groups_list],
+            status=status,
+            groups=groups,
         )
-
         return api_response(
             success=True,
             message="Successfully.",
@@ -308,42 +273,13 @@ class FrontendController:
             status_code=HTTPStatus.OK,
         )
 
-    def count_microsoft_chat_messages(self):
-        """
-        Count Microsoft chat messages in Redis within a specified date range by sender.
-
-        Request Body (JSON):
-            {
-                "ldaps": ["alice", "bob"],       # optional, list of user ldaps
-                "startDate": "2024-06-01",     # optional
-                "endDate": "2024-06-28"        # optional
-            }
-
-        Returns:
-            Response (JSON): Message counts grouped by sender. Example:
-            {
-                "message": "Successfully.",
-                "data": {
-                            "start_date": "2024-06-01T00:00:00+00:00",
-                            "end_date": "2024-06-28T23:59:59.999999+00:00",
-                            "result": {
-                                "alice": 25,
-                                "bob": 11
-                            }
-                    }
-            }
-        """
-        data = request.get_json(force=True)
-        ldap_list = data.get("ldaps")
-        start_date = data.get("startDate")
-        end_date = data.get("endDate")
-
+    async def count_microsoft_chat_messages(self, body: MicrosoftChatCountRequest):
+        """Count Microsoft chat messages in Redis by sender."""
         response = self.microsoft_chat_analytics_service.count_microsoft_chat_messages_in_date_range(
-            ldap_list=ldap_list,
-            start_date=start_date,
-            end_date=end_date,
+            ldap_list=body.ldaps,
+            start_date=body.startDate,
+            end_date=body.endDate,
         )
-
         return api_response(
             success=True,
             message="Successfully.",
@@ -351,10 +287,9 @@ class FrontendController:
             status_code=HTTPStatus.OK,
         )
 
-    def get_all_jira_projects_api(self):
+    async def get_all_jira_projects_api(self):
         """API endpoint to get a mapping of all project IDs to their names."""
         jira_data = self.jira_analytics_service.get_all_jira_projects()
-
         return api_response(
             success=True,
             message="Fetch jira projects successful",
@@ -362,10 +297,9 @@ class FrontendController:
             status_code=HTTPStatus.OK,
         )
 
-    def get_all_calendars_api(self):
+    async def get_all_calendars_api(self):
         """API endpoint to get Google Calendar list from Redis."""
         calendar_data = self.google_calendar_analytics_service.get_all_calendars()
-
         return api_response(
             success=True,
             message="Calendar list fetched successfully.",
@@ -373,46 +307,23 @@ class FrontendController:
             status_code=HTTPStatus.OK,
         )
 
-    def get_all_events_api(self):
-        """
-        API endpoint to get Google Calendar events for users from Redis.
-
-        Request JSON Body:
-            calendarIds (List[str]): List of calendar IDs to fetch events from.
-            ldaps (List[str]): List of LDAP usernames.
-            startDate (str): ISO 8601 start datetime (inclusive).
-            endDate (str): ISO 8601 end datetime (exclusive).
-
-        Returns:
-            JSON: A dictionary mapping each LDAP to a list of event attendance details.
-
-        TODO:
-            This method currently calls `get_all_events` in a loop for each calendar,
-            which increases round-trip time (RTT) proportionally to the number of calendars.
-            Consider enhancing `get_all_events` to support fetching events from multiple
-            calendars in a single call to reduce RTT and improve overall performance.
-        """
-        data = request.get_json(silent=True) or {}
-        calendar_ids = data.get("calendarIds", [])
-        ldaps = data.get("ldaps", [])
-        start_date = data.get("startDate")
-        end_date = data.get("endDate")
-
-        if not calendar_ids:
+    async def get_all_events_api(self, body: GoogleCalendarEventsRequest):
+        """API endpoint to get Google Calendar events for users from Redis."""
+        if not body.calendarIds:
             return api_response(
                 success=False,
-                message="Missing required query parameters: calendar_ids.",
+                message="Missing required query parameters: calendarIds.",
                 status_code=HTTPStatus.BAD_REQUEST,
             )
 
         start_dt, end_dt = self.date_time_util.get_start_end_timestamps(
-            start_date, end_date
+            body.startDate, body.endDate
         )
 
         calendar_data = (
             self.google_calendar_analytics_service.get_all_events_from_calendars(
-                calendar_ids,
-                ldaps,
+                body.calendarIds,
+                body.ldaps,
                 start_dt,
                 end_dt,
             )
@@ -424,19 +335,16 @@ class FrontendController:
             status_code=HTTPStatus.OK,
         )
 
-    def get_gerrit_stats(self):
+    async def get_gerrit_stats(self, body: GerritStatsRequest):
         """API endpoint to retrieve aggregated Gerrit stats."""
-        body = request.get_json(silent=True) or {}
-
         response = self.gerrit_analytics_service.get_gerrit_stats(
-            ldap_list=body.get("ldaps"),
-            start_date_str=body.get("startDate"),
-            end_date_str=body.get("endDate"),
-            project_list=body.get("project"),
+            ldap_list=body.ldaps,
+            start_date_str=body.startDate,
+            end_date_str=body.endDate,
+            project_list=body.project,
             include_full_stats=True,
-            include_all_projects=body.get("includeAllProjects"),
+            include_all_projects=body.includeAllProjects,
         )
-
         return api_response(
             success=True,
             message="Successfully.",
@@ -444,7 +352,7 @@ class FrontendController:
             status_code=HTTPStatus.OK,
         )
 
-    def get_gerrit_projects(self):
+    async def get_gerrit_projects(self):
         """API endpoint to retrieve the list of Gerrit projects."""
         projects = self.gerrit_analytics_service.get_gerrit_projects()
         return api_response(
@@ -454,18 +362,11 @@ class FrontendController:
             status_code=HTTPStatus.OK,
         )
 
-    def get_summary(self):
+    async def get_summary(self, body: SummaryRequest):
         """API endpoint to retrieve the summary on the dashboard."""
-        data = request.get_json(force=True)
-        start_date = data.get("startDate")
-        end_date = data.get("endDate")
-        groups_list = data.get("groups", [])
-        include_terminated = data.get("includeTerminated", False)
-
         summary_data = self.summary_service.get_summary(
-            start_date, end_date, groups_list, include_terminated
+            body.startDate, body.endDate, body.groups, body.includeTerminated
         )
-
         return api_response(
             success=True,
             message="Summary fetched successfully",

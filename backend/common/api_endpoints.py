@@ -20,3 +20,23 @@ GOOGLE_CHAT_PULL_ENDPOINT = "/google/chat/pull/{project_id}/{subscription_id}"
 GERRIT_PULL_ENDPOINT = "/gerrit/pull/{project_id}/{subscription_id}"
 PUBSUB_STATUS_ENDPOINT = "/pubsub/pull/status/{project_id}/{subscription_id}"
 PUBSUB_STOP_ENDPOINT = "/pubsub/pull/{project_id}/{subscription_id}"
+
+
+MICROSOFT_LDAPS_ENDPOINT = "/microsoft/{status}/ldaps"
+MICROSOFT_CHAT_COUNT_ENDPOINT = "/microsoft/chat/count"
+MICROSOFT_CHAT_TOPICS_ENDPOINT = "/microsoft/chat/topics"
+
+JIRA_PROJECTS_ENDPOINT = "/jira/projects"
+JIRA_BRIEF_ENDPOINT = "/jira/brief"
+JIRA_DETAIL_BATCH_ENDPOINT = "/jira/detail/batch"
+
+GOOGLE_CALENDAR_LIST_ENDPOINT = "/calendar/calendars"
+GOOGLE_CALENDAR_EVENTS_ENDPOINT = "/calendar/events"
+
+GERRIT_STATS_ENDPOINT = "/gerrit/stats"
+GERRIT_PROJECTS_ENDPOINT = "/gerrit/projects"
+
+GOOGLE_CHAT_COUNT_ENDPOINT = "/google/chat/count"
+GOOGLE_CHAT_SPACES_ENDPOINT = "/google/chat/spaces"
+
+SUMMARY_ENDPOINT = "/summary"

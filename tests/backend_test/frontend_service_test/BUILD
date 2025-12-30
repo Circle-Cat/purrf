@@ -4,9 +4,13 @@ py_test(
     name = "frontend_controller_test",
     srcs = ["frontend_controller_test.py"],
     deps = [
+        "//backend/common:api_endpoints",
         "//backend/common:constants",
+        "//backend/common:user_role",
         "//backend/frontend_service:frontend_controller",
-        "@pypi//flask",
+        "//backend/utils:auth_middleware",
+        "@pypi//fastapi",
+        "@pypi//httpx",
     ],
 )
 

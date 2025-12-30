@@ -6,9 +6,13 @@ py_library(
     name = "frontend_controller",
     srcs = ["frontend_controller.py"],
     deps = [
-        "//backend/common:api_response_wrapper",
+        "//backend/common:api_endpoints",
         "//backend/common:constants",
-        "@pypi//flask",
+        "//backend/common:fast_api_response_wrapper",
+        "//backend/common:user_role",
+        "//backend/utils:date_time_util",
+        "//backend/utils:permission_decorators",
+        "@pypi//fastapi",
     ],
 )
 

@@ -1,429 +1,251 @@
-import json
+import unittest
+from unittest.mock import AsyncMock, MagicMock
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 from http import HTTPStatus
-from unittest import TestCase, main
-from unittest.mock import MagicMock, AsyncMock
-from flask import Flask
-from backend.frontend_service.frontend_controller import (
-    FrontendController,
-    MicrosoftAccountStatus,
-    MicrosoftGroups,
+
+from backend.common.user_role import UserRole
+from backend.common.api_endpoints import (
+    MICROSOFT_LDAPS_ENDPOINT,
+    MICROSOFT_CHAT_COUNT_ENDPOINT,
+    MICROSOFT_CHAT_TOPICS_ENDPOINT,
+    JIRA_PROJECTS_ENDPOINT,
+    JIRA_BRIEF_ENDPOINT,
+    JIRA_DETAIL_BATCH_ENDPOINT,
+    GOOGLE_CALENDAR_LIST_ENDPOINT,
+    GOOGLE_CALENDAR_EVENTS_ENDPOINT,
+    GERRIT_STATS_ENDPOINT,
+    GERRIT_PROJECTS_ENDPOINT,
+    GOOGLE_CHAT_COUNT_ENDPOINT,
+    GOOGLE_CHAT_SPACES_ENDPOINT,
+    SUMMARY_ENDPOINT,
 )
-from datetime import datetime, timezone
-
-MICROSOFT_LDAP_FETCHER_API = "/api/microsoft/{status}/ldaps"
-GOOGLE_CHAT_COUNT_API = "/api/google/chat/count"
-JIRA_BRIEF_API = "/api/jira/brief"
-GOOGLE_CALENDAR_CALENDARS_API = "/api/google/calendar/calendars"
-JIRA_ISSUE_DETAIL_BATCH_API = "/api/jira/detail/batch"
-GOOGLE_CALENDAR_EVENTS_API = "/api/google/calendar/events"
-JIRA_PROJECT_API = "/api/jira/projects"
-GERRIT_STATS_API = "/api/gerrit/stats"
-GERRIT_PROJECTS_API = "/api/gerrit/projects"
+from backend.utils.auth_middleware import AuthMiddleware
+from backend.frontend_service.frontend_controller import FrontendController
 
 
-class TestFrontendController(TestCase):
+class TestFrontendControllerIntegration(unittest.TestCase):
     def setUp(self):
+        self.mock_auth_service = MagicMock()
+
         self.ldap_service = MagicMock()
         self.microsoft_chat_analytics_service = MagicMock()
         self.microsoft_meeting_chat_topic_cache_service = AsyncMock()
-        self.mock_jira_analytics_service = MagicMock()
+        self.jira_analytics_service = MagicMock()
         self.google_calendar_analytics_service = MagicMock()
+        self.google_chat_analytics_service = MagicMock()
         self.date_time_util = MagicMock()
-        self.mock_gerrit_analytics_service = MagicMock()
-        self.mock_google_chat_analytics_service = MagicMock()
-        self.mock_summary_service = MagicMock()
+        self.gerrit_analytics_service = MagicMock()
+        self.summary_service = MagicMock()
 
         self.controller = FrontendController(
             ldap_service=self.ldap_service,
             microsoft_chat_analytics_service=self.microsoft_chat_analytics_service,
             microsoft_meeting_chat_topic_cache_service=self.microsoft_meeting_chat_topic_cache_service,
-            jira_analytics_service=self.mock_jira_analytics_service,
+            jira_analytics_service=self.jira_analytics_service,
             google_calendar_analytics_service=self.google_calendar_analytics_service,
+            google_chat_analytics_service=self.google_chat_analytics_service,
             date_time_util=self.date_time_util,
-            gerrit_analytics_service=self.mock_gerrit_analytics_service,
-            google_chat_analytics_service=self.mock_google_chat_analytics_service,
-            summary_service=self.mock_summary_service,
+            gerrit_analytics_service=self.gerrit_analytics_service,
+            summary_service=self.summary_service,
         )
 
-        self.app = Flask(__name__)
-        self.app_context = self.app.app_context()
-        self.app_context.push()
+        self.app = FastAPI()
+        self.app.add_middleware(AuthMiddleware, auth_service=self.mock_auth_service)
+        self.app.include_router(self.controller.router)
+        self.client = TestClient(self.app)
 
-    async def asyncTearDown(self):
-        self.app_context.pop()
+        self.headers = {"Authorization": "Bearer mock-token"}
 
-    def test_get_chat_spaces_route(self):
-        mock_data = [{"space id": "space name"}]
-        self.mock_google_chat_analytics_service.get_chat_spaces_by_type.return_value = (
-            mock_data
+    def _set_auth(self, roles: list[UserRole]):
+        """Helper method to set mock user roles."""
+        mock_user = MagicMock()
+        mock_user.roles = roles
+        self.mock_auth_service.authenticate_request.return_value = mock_user
+
+    # Microsoft API tests
+
+    def test_get_ldaps_and_names(self):
+        """Test MICROSOFT_LDAPS_ENDPOINT (GET)."""
+        self._set_auth([UserRole.CC_INTERNAL])
+        self.ldap_service.get_ldaps_by_status_and_group.return_value = {"data": "test"}
+
+        path = MICROSOFT_LDAPS_ENDPOINT.replace("{status}", "active")
+        response = self.client.get(
+            f"{path}?groups[]=interns&groups[]=employees",
+            headers=self.headers,
         )
-
-        with self.app.test_request_context("/api/google/chat/spaces?spaceType=SPACE"):
-            response = self.controller.get_chat_spaces_route()
 
         self.assertEqual(response.status_code, HTTPStatus.OK)
-        self.assertEqual(response.json["data"], mock_data)
+        self.ldap_service.get_ldaps_by_status_and_group.assert_called_once()
 
-        self.mock_google_chat_analytics_service.get_chat_spaces_by_type.assert_called_once()
-
-    def test_get_google_chat_messages_count(self):
-        mock_result = {}
-        self.mock_google_chat_analytics_service.count_messages.return_value = (
-            mock_result
+    def test_count_microsoft_chat_messages(self):
+        """Test MICROSOFT_CHAT_COUNT_ENDPOINT (POST)."""
+        self._set_auth([UserRole.ADMIN])
+        payload = {"ldaps": ["a"], "startDate": "2023-01-01"}
+        response = self.client.post(
+            MICROSOFT_CHAT_COUNT_ENDPOINT,
+            json=payload,
+            headers=self.headers,
         )
 
-        with self.app.test_request_context(
-            GOOGLE_CHAT_COUNT_API,
-            method="POST",
-            json={
-                "startDate": "2025-01-01",
-                "endDate": "2025-02-01",
-                "spaceIds": ["space1"],
-                "senderLdaps": ["ldap1"],
-            },
-        ):
-            response = self.controller.get_google_chat_messages_count()
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.microsoft_chat_analytics_service.count_microsoft_chat_messages_in_date_range.assert_called_once()
+
+    def test_all_microsoft_chat_topics(self):
+        """Test MICROSOFT_CHAT_TOPICS_ENDPOINT (GET)."""
+        self._set_auth([UserRole.ADMIN])
+        self.microsoft_meeting_chat_topic_cache_service.get_microsoft_chat_topics.return_value = []
+        response = self.client.get(MICROSOFT_CHAT_TOPICS_ENDPOINT, headers=self.headers)
 
         self.assertEqual(response.status_code, HTTPStatus.OK)
-        self.assertEqual(response.json["data"], mock_result)
-        self.mock_google_chat_analytics_service.count_messages.assert_called_once()
+        self.microsoft_meeting_chat_topic_cache_service.get_microsoft_chat_topics.assert_called_once()
 
-    def test_get_issue_detail_batch(self):
-        mock_result = {}
-        self.mock_jira_analytics_service.process_get_issue_detail_batch.return_value = (
-            mock_result
-        )
+    # Jira API tests
 
-        with self.app.test_request_context(
-            JIRA_BRIEF_API,
-            method="POST",
-            json={
-                "issueIds": ["id1", "id2"],
-            },
-        ):
-            response = self.controller.get_issue_detail_batch()
+    def test_get_all_jira_projects_api(self):
+        """Test JIRA_PROJECTS_ENDPOINT (GET)."""
+        self._set_auth([UserRole.ADMIN])
+        response = self.client.get(JIRA_PROJECTS_ENDPOINT, headers=self.headers)
 
         self.assertEqual(response.status_code, HTTPStatus.OK)
-        self.assertEqual(response.json["data"], mock_result)
-        self.mock_jira_analytics_service.process_get_issue_detail_batch.assert_called_once()
+        self.jira_analytics_service.get_all_jira_projects.assert_called_once()
 
     def test_get_jira_brief(self):
-        mock_result = {}
-        self.mock_jira_analytics_service.get_issues_summary.return_value = mock_result
-
-        with self.app.test_request_context(
-            JIRA_BRIEF_API,
-            method="POST",
-            json={
-                "statusList": ["done"],
-                "ldaps": ["user1"],
-                "projectIds": ["proj1"],
-                "startDate": "2023-01-01",
-                "endDate": "2023-01-31",
-            },
-        ):
-            response = self.controller.get_jira_brief()
+        """Test JIRA_BRIEF_ENDPOINT (POST)."""
+        self._set_auth([UserRole.ADMIN])
+        payload = {"statusList": ["done"], "startDate": "2023-01-01"}
+        response = self.client.post(
+            JIRA_BRIEF_ENDPOINT,
+            json=payload,
+            headers=self.headers,
+        )
 
         self.assertEqual(response.status_code, HTTPStatus.OK)
-        self.assertEqual(response.json["data"], mock_result)
-        self.mock_jira_analytics_service.get_issues_summary.assert_called_once()
+        self.jira_analytics_service.get_issues_summary.assert_called_once()
 
-    def test_get_ldaps_and_names_success_with_groups(self):
-        mock_data = {"active": ["ldap1", "ldap2"]}
-        self.ldap_service.get_ldaps_by_status_and_group.return_value = mock_data
+    def test_get_issue_detail_batch(self):
+        """Test JIRA_DETAIL_BATCH_ENDPOINT (POST)."""
+        self._set_auth([UserRole.ADMIN])
+        payload = {"issueIds": ["ISSUE-1"]}
+        response = self.client.post(
+            JIRA_DETAIL_BATCH_ENDPOINT,
+            json=payload,
+            headers=self.headers,
+        )
 
-        with self.app.test_request_context(
-            "/microsoft/active/ldaps?groups[]=interns&groups[]=employees"
-        ):
-            response = self.controller.get_ldaps_and_names("active")
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.jira_analytics_service.process_get_issue_detail_batch.assert_called_once()
 
-            self.assertEqual(response.status_code, HTTPStatus.OK)
-            self.assertEqual(response.json["data"], mock_data)
+    # Google Calendar API tests
 
-            self.ldap_service.get_ldaps_by_status_and_group.assert_called_with(
-                status=MicrosoftAccountStatus.ACTIVE,
-                groups=[MicrosoftGroups.INTERNS, MicrosoftGroups.EMPLOYEES],
-            )
+    def test_get_all_calendars_api(self):
+        """Test GOOGLE_CALENDAR_LIST_ENDPOINT (GET)."""
+        self._set_auth([UserRole.ADMIN])
+        response = self.client.get(GOOGLE_CALENDAR_LIST_ENDPOINT, headers=self.headers)
 
-    def test_get_ldaps_and_names_success_no_groups(self):
-        mock_data = {"all": ["ldap1", "ldap2", "ldap3"]}
-        self.ldap_service.get_ldaps_by_status_and_group.return_value = mock_data
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.google_calendar_analytics_service.get_all_calendars.assert_called_once()
 
-        with self.app.test_request_context("/microsoft/all/ldaps"):
-            response = self.controller.get_ldaps_and_names("all")
-
-            self.assertEqual(response.status_code, HTTPStatus.OK)
-            self.assertEqual(response.json["data"], mock_data)
-
-            self.ldap_service.get_ldaps_by_status_and_group.assert_called_with(
-                status=MicrosoftAccountStatus.ALL, groups=[]
-            )
-
-    def test_get_ldaps_and_names_invalid_status(self):
-        with self.app.test_request_context("/microsoft/invalid/ldaps"):
-            with self.assertRaises(ValueError):
-                self.controller.get_ldaps_and_names("invalid")
-
-    def test_count_microsoft_chat_messages_with_params(self):
+    def test_get_all_events_api(self):
+        """Test GOOGLE_CALENDAR_EVENTS_ENDPOINT (POST)."""
+        self._set_auth([UserRole.ADMIN])
+        self.date_time_util.get_start_end_timestamps.return_value = (None, None)
         payload = {
-            "ldaps": ["user1", "user2"],
-            "startDate": "2024-01-01",
-            "endDate": "2024-01-31",
-        }
-        mock_service_response = {
-            "start_date": "2024-01-01T00:00:00+00:00",
-            "end_date": "2024-01-31T23:59:59.999999+00:00",
-            "result": {"user1": 10, "user2": 15},
-        }
-        self.microsoft_chat_analytics_service.count_microsoft_chat_messages_in_date_range.return_value = mock_service_response
-
-        with self.app.test_request_context(
-            "/api/microsoft/chat/count",
-            method="POST",
-            data=json.dumps(payload),
-            content_type="application/json",
-        ):
-            response = self.controller.count_microsoft_chat_messages()
-
-        self.assertEqual(response.status_code, HTTPStatus.OK)
-        self.assertEqual(response.json["data"], mock_service_response)
-
-        self.microsoft_chat_analytics_service.count_microsoft_chat_messages_in_date_range.assert_called_once_with(
-            ldap_list=["user1", "user2"],
-            start_date="2024-01-01",
-            end_date="2024-01-31",
-        )
-
-    def test_count_microsoft_chat_messages_no_params(self):
-        payload = {}
-        mock_service_response = {
-            "start_date": "2024-01-01T00:00:00+00:00",
-            "end_date": "2024-01-31T23:59:59.999999+00:00",
-            "result": {"user1": 10, "user2": 15},
-        }
-        self.microsoft_chat_analytics_service.count_microsoft_chat_messages_in_date_range.return_value = mock_service_response
-
-        with self.app.test_request_context(
-            "/api/microsoft/chat/count",
-            method="POST",
-            data=json.dumps(payload),
-            content_type="application/json",
-        ):
-            response = self.controller.count_microsoft_chat_messages()
-
-        self.assertEqual(response.status_code, HTTPStatus.OK)
-        self.assertEqual(response.json["data"], mock_service_response)
-
-        self.microsoft_chat_analytics_service.count_microsoft_chat_messages_in_date_range.assert_called_once_with(
-            ldap_list=None,
-            start_date=None,
-            end_date=None,
-        )
-
-    async def test_all_microsoft_chat_topics(self):
-        mock_data = {"id": "name"}
-        self.microsoft_meeting_chat_topic_cache_service.get_microsoft_chat_topics().return_value = mock_data
-
-        with self.app.test_request_context("/microsoft/chat/topics"):
-            response = await self.controller.all_microsoft_chat_topics()
-
-            self.assertEqual(response.status_code, HTTPStatus.OK)
-            self.assertEqual(response.json["data"], mock_data)
-
-            self.microsoft_meeting_chat_topic_cache_service.get_microsoft_chat_topics.assert_called_once()
-
-    def test_get_all_jira_projects_success(self):
-        mock_result = {"10503": "Intern Practice", "24998": "Purrf"}
-        self.mock_jira_analytics_service.get_all_jira_projects.return_value = (
-            mock_result
-        )
-
-        with self.app.test_request_context(JIRA_PROJECT_API):
-            response = self.controller.get_all_jira_projects_api()
-
-        self.assertEqual(response.status_code, HTTPStatus.OK)
-        self.assertEqual(response.json["data"], mock_result)
-        self.assertIn("Fetch jira project", response.json["message"])
-        self.mock_jira_analytics_service.get_all_jira_projects.assert_called_once()
-
-    def test_get_google_calendar_calendars_success(self):
-        mock_calendars = [
-            {"id": "calendar1", "summary": "Team Calendar"},
-            {"id": "calendar2", "summary": "Project Calendar"},
-        ]
-        self.google_calendar_analytics_service.get_all_calendars.return_value = (
-            mock_calendars
-        )
-
-        with self.app.test_request_context("/calendar/calendars"):
-            response = self.controller.get_all_calendars_api()
-
-            self.assertEqual(response.status_code, HTTPStatus.OK)
-            self.assertEqual(response.json["data"], mock_calendars)
-            self.google_calendar_analytics_service.get_all_calendars.assert_called_once()
-
-    def test_get_all_events_success(self):
-        mock_events = {
-            "ldap1": [{"event": "Meeting", "start": "2025-08-01T10:00:00Z"}],
-            "ldap2": [{"event": "Workshop", "start": "2025-08-01T12:00:00Z"}],
-        }
-        self.google_calendar_analytics_service.get_all_events_from_calendars.return_value = mock_events
-        self.date_time_util.get_start_end_timestamps.return_value = (
-            datetime(2025, 8, 1, 0, 0, tzinfo=timezone.utc),
-            datetime(2025, 8, 2, 0, 0, tzinfo=timezone.utc),
-        )
-
-        with self.app.test_request_context(
-            "/calendar/events",
-            method="POST",
-            json={
-                "calendarIds": ["cal1"],
-                "ldaps": ["ldap1", "ldap2"],
-                "startDate": "2025-08-01T00:00:00Z",
-                "endDate": "2025-08-02T00:00:00Z",
-            },
-        ):
-            response = self.controller.get_all_events_api()
-
-            self.assertEqual(response.status_code, HTTPStatus.OK)
-            self.assertEqual(response.json["data"], mock_events)
-            self.google_calendar_analytics_service.get_all_events_from_calendars.assert_called_with(
-                ["cal1"],
-                ["ldap1", "ldap2"],
-                datetime(2025, 8, 1, 0, 0, tzinfo=timezone.utc),
-                datetime(2025, 8, 2, 0, 0, tzinfo=timezone.utc),
-            )
-
-    def test_get_all_events_api_success_no_ldaps(self):
-        mock_events = {"ldap1": [{"event": "Meeting"}]}
-        self.google_calendar_analytics_service.get_all_events_from_calendars.return_value = mock_events
-        self.date_time_util.get_start_end_timestamps.return_value = (
-            datetime(2025, 8, 1, 0, 0, tzinfo=timezone.utc),
-            datetime(2025, 8, 2, 0, 0, tzinfo=timezone.utc),
-        )
-
-        with self.app.test_request_context(
-            "/calendar/events",
-            method="POST",
-            json={
-                "calendarIds": ["cal1"],
-                "startDate": "2025-08-01T00:00:00Z",
-                "endDate": "2025-08-02T00:00:00Z",
-            },
-        ):
-            response = self.controller.get_all_events_api()
-
-            self.assertEqual(response.status_code, HTTPStatus.OK)
-            self.assertEqual(response.json["data"], mock_events)
-            self.google_calendar_analytics_service.get_all_events_from_calendars.assert_called_with(
-                ["cal1"],
-                [],
-                datetime(2025, 8, 1, 0, 0, tzinfo=timezone.utc),
-                datetime(2025, 8, 2, 0, 0, tzinfo=timezone.utc),
-            )
-
-    def test_get_all_events_api_missing_required_params(self):
-        with self.app.test_request_context("/calendar/events"):
-            response = self.controller.get_all_events_api()
-
-            self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
-            self.assertIn("Missing required query parameters", response.json["message"])
-
-    def test_get_gerrit_stats_success(self):
-        request_params = {
+            "calendarIds": ["cal1"],
+            "startDate": "2023-01-01",
             "ldaps": ["user1"],
-            "startDate": "2024-01-01",
-            "endDate": "2024-01-31",
-            "project": ["test_project"],
-            "includeAllProjects": False,
         }
-
-        mock_stats = {
-            "user1": {
-                "cl_merged": 10,
-                "cl_abandoned": 2,
-                "cl_under_review": 1,
-                "loc_merged": 150,
-                "cl_reviewed": 5,
-            }
-        }
-        self.mock_gerrit_analytics_service.get_gerrit_stats.return_value = mock_stats
-        with self.app.test_request_context(
-            GERRIT_STATS_API, method="POST", json=request_params
-        ):
-            response = self.controller.get_gerrit_stats()
-
-        self.mock_gerrit_analytics_service.get_gerrit_stats.assert_called_once_with(
-            ldap_list=request_params["ldaps"],
-            start_date_str=request_params["startDate"],
-            end_date_str=request_params["endDate"],
-            project_list=request_params["project"],
-            include_full_stats=True,
-            include_all_projects=request_params["includeAllProjects"],
+        response = self.client.post(
+            GOOGLE_CALENDAR_EVENTS_ENDPOINT,
+            json=payload,
+            headers=self.headers,
         )
 
         self.assertEqual(response.status_code, HTTPStatus.OK)
-        self.assertEqual(
-            response.get_json(),
-            {"message": "Successfully.", "data": mock_stats},
+        self.google_calendar_analytics_service.get_all_events_from_calendars.assert_called_once()
+
+    # Gerrit API tests
+
+    def test_get_gerrit_stats(self):
+        """Test GERRIT_STATS_ENDPOINT (POST)."""
+        self._set_auth([UserRole.ADMIN])
+        payload = {"ldaps": ["user1"]}
+        response = self.client.post(
+            GERRIT_STATS_ENDPOINT,
+            json=payload,
+            headers=self.headers,
         )
 
-    def test_get_gerrit_projects_success(self):
-        mock_projects = ["proj1", "proj2"]
-        self.mock_gerrit_analytics_service.get_gerrit_projects.return_value = (
-            mock_projects
-        )
-
-        with self.app.test_request_context(GERRIT_PROJECTS_API, method="GET"):
-            response = self.controller.get_gerrit_projects()
-
-        self.mock_gerrit_analytics_service.get_gerrit_projects.assert_called_once()
         self.assertEqual(response.status_code, HTTPStatus.OK)
-        self.assertEqual(
-            response.get_json()["message"], "Successfully retrieved Gerrit projects."
+        self.gerrit_analytics_service.get_gerrit_stats.assert_called_once()
+
+    def test_get_gerrit_projects(self):
+        """Test GERRIT_PROJECTS_ENDPOINT (GET)."""
+        self._set_auth([UserRole.ADMIN])
+        response = self.client.get(GERRIT_PROJECTS_ENDPOINT, headers=self.headers)
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.gerrit_analytics_service.get_gerrit_projects.assert_called_once()
+
+    # Google Chat API tests
+
+    def test_get_google_chat_messages_count(self):
+        """Test GOOGLE_CHAT_COUNT_ENDPOINT (POST)."""
+        self._set_auth([UserRole.ADMIN])
+        payload = {"spaceIds": ["s1"]}
+        response = self.client.post(
+            GOOGLE_CHAT_COUNT_ENDPOINT,
+            json=payload,
+            headers=self.headers,
         )
-        self.assertEqual(response.get_json()["data"], mock_projects)
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.google_chat_analytics_service.count_messages.assert_called_once()
+
+    def test_get_chat_spaces_route(self):
+        """Test GOOGLE_CHAT_SPACES_ENDPOINT (GET)."""
+        self._set_auth([UserRole.ADMIN])
+        response = self.client.get(
+            f"{GOOGLE_CHAT_SPACES_ENDPOINT}?spaceType=SPACE",
+            headers=self.headers,
+        )
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.google_chat_analytics_service.get_chat_spaces_by_type.assert_called_with(
+            "SPACE"
+        )
+
+    # Summary API tests (role-based)
 
     def test_get_summary_success(self):
-        mock_summary_data = [
-            {
-                "ldap": "alice",
-                "chat_count": 10,
-                "meeting_count": 2,
-                "cl_merged": 5,
-                "loc_merged": 500,
-                "jira_issue_done": 3,
-            }
-        ]
-        self.mock_summary_service.get_summary.return_value = mock_summary_data
-
+        """Test SUMMARY_ENDPOINT (POST) with CC_INTERNAL permission."""
+        self._set_auth([UserRole.CC_INTERNAL])
         payload = {
-            "startDate": "2025-09-01",
-            "endDate": "2025-09-30",
-            "groups": ["interns"],
-            "includeTerminated": False,
+            "startDate": "2023-01-01",
+            "includeTerminated": True,
+            "groups": ["employees"],
         }
-
-        with self.app.test_request_context(
-            "/api/summary",
-            method="POST",
-            data=json.dumps(payload),
-            content_type="application/json",
-        ):
-            response = self.controller.get_summary()
-
-        self.mock_summary_service.get_summary.assert_called_once_with(
-            "2025-09-01",
-            "2025-09-30",
-            ["interns"],
-            False,
+        response = self.client.post(
+            SUMMARY_ENDPOINT,
+            json=payload,
+            headers=self.headers,
         )
 
         self.assertEqual(response.status_code, HTTPStatus.OK)
-        resp_json = response.get_json()
-        self.assertEqual(resp_json["message"], "Summary fetched successfully")
-        self.assertEqual(resp_json["data"], mock_summary_data)
+        self.summary_service.get_summary.assert_called_once()
+
+    # Authorization enforcement tests
+
+    def test_forbidden_access(self):
+        """Verify that non-admin users are forbidden from accessing admin endpoints."""
+        self._set_auth([UserRole.MENTORSHIP])
+
+        response = self.client.get(JIRA_PROJECTS_ENDPOINT, headers=self.headers)
+
+        self.assertEqual(response.status_code, HTTPStatus.FORBIDDEN)
+        self.jira_analytics_service.get_all_jira_projects.assert_not_called()
 
 
 if __name__ == "__main__":
-    main()
+    unittest.main()

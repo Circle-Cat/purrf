@@ -337,6 +337,7 @@ class AppDependencyBuilder:
             notification_controller=self.notification_controller,
             historical_controller=self.historical_controller,
             consumer_controller=self.consumer_controller,
+            frontend_controller=self.frontend_controller,
         )
         self.users_repository = UsersRepository()
         self.experience_repository = ExperienceRepository()
