@@ -121,7 +121,8 @@ class GoogleCalendarSyncService:
                         return meeting_code
             event_id = event.get("id", "unknown")
             self.logger.warning(
-                "[GoogleCalendarSyncService] no valid Google Meet video entry found in the event: %s", event_id
+                "[GoogleCalendarSyncService] no valid Google Meet video entry found in the event: %s",
+                event_id,
             )
             return None
         except Exception as e:

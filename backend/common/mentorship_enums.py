@@ -21,6 +21,11 @@ class UserTimezone(Enum):
     AMERICA_DENVER = "America/Denver"
 
 
+class PairStatus(Enum):
+    ACTIVE = "active"
+    INACTIVE = "inactive"
+
+
 class TrainingCategory(str, Enum):
     MENTORSHIP_MENTEE_ONBOARDING = "mentorship_mentee_onboarding"
     MENTORSHIP_MENTOR_ONBOARDING = "mentorship_mentor_onboarding"
