@@ -7,6 +7,10 @@ from backend.common.environment_constants import (
 )
 
 
+@patch("backend.utils.app_dependency_builder.MentorshipController")
+@patch("backend.utils.app_dependency_builder.RoundsService")
+@patch("backend.utils.app_dependency_builder.MentorshipRoundRepository")
+@patch("backend.utils.app_dependency_builder.MentorshipMapper")
 @patch("backend.utils.app_dependency_builder.Database")
 @patch("backend.utils.app_dependency_builder.ProfileController")
 @patch("backend.utils.app_dependency_builder.ProfileService")
@@ -118,6 +122,10 @@ class TestAppDependencyBuilder(TestCase):
         mock_profile_service_cls,
         mock_profile_controller_cls,
         mock_database_cls,
+        mock_mentorship_mapper_cls,
+        mock_mentorship_round_repository_cls,
+        mock_rounds_service_cls,
+        mock_mentorship_controller_cls,
     ):
         """
         Tests that the AppDependencyBuilder correctly instantiates and wires all its dependencies.
@@ -404,6 +412,14 @@ class TestAppDependencyBuilder(TestCase):
             profile_service=mock_profile_service_cls.return_value,
             database=mock_database_cls.return_value,
         )
+        mock_mentorship_controller_cls.assert_called_once_with(
+            mentorship_service=mock_rounds_service_cls.return_value,
+            database=mock_database_cls.return_value,
+        )
+        mock_rounds_service_cls.assert_called_once_with(
+            mentorship_round_repository=mock_mentorship_round_repository_cls.return_value,
+            mentorship_mapper=mock_mentorship_mapper_cls.return_value,
+        )
 
         mock_fast_app_factory_cls.assert_called_once_with(
             authentication_controller=mock_authentication_controller_cls.return_value,
@@ -413,6 +429,7 @@ class TestAppDependencyBuilder(TestCase):
             consumer_controller=mock_consumer_controller_cls.return_value,
             frontend_controller=mock_frontend_controller_cls.return_value,
             profile_controller=mock_profile_controller_cls.return_value,
+            mentorship_controller=mock_mentorship_controller_cls.return_value,
         )
 
         # Assert that the builder's internal attributes are the created mock instances
@@ -617,6 +634,9 @@ class TestAppDependencyBuilder(TestCase):
         self.assertEqual(builder.database, mock_database_cls.return_value)
         self.assertEqual(
             builder.profile_controller, mock_profile_controller_cls.return_value
+        )
+        self.assertEqual(
+            builder.mentorship_controller, mock_mentorship_controller_cls.return_value
         )
 
 

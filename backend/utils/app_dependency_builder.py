@@ -75,6 +75,10 @@ from backend.authentication.authentication_service import AuthenticationService
 from backend.repository.users_repository import UsersRepository
 from backend.repository.experience_repository import ExperienceRepository
 from backend.repository.training_repository import TrainingRepository
+from backend.repository.mentorship_round_repository import MentorshipRoundRepository
+from backend.mentorship.mentorship_mapper import MentorshipMapper
+from backend.mentorship.mentorship_controller import MentorshipController
+from backend.mentorship.rounds_service import RoundsService
 from backend.profile.profile_query_service import ProfileQueryService
 from backend.profile.profile_command_service import ProfileCommandService
 from backend.profile.profile_mapper import ProfileMapper
@@ -333,7 +337,17 @@ class AppDependencyBuilder:
         )
         self.authentication_service = AuthenticationService(logger=self.logger)
         self.authentication_controller = AuthenticationController()
+        self.mentorship_round_repository = MentorshipRoundRepository()
+        self.mentorship_mapper = MentorshipMapper()
         self.database = Database(echo=False)
+        self.rounds_service = RoundsService(
+            mentorship_round_repository=self.mentorship_round_repository,
+            mentorship_mapper=self.mentorship_mapper,
+        )
+        self.mentorship_controller = MentorshipController(
+            mentorship_service=self.rounds_service,
+            database=self.database,
+        )
         self.users_repository = UsersRepository()
         self.experience_repository = ExperienceRepository()
         self.training_repository = TrainingRepository()
@@ -363,4 +377,5 @@ class AppDependencyBuilder:
             consumer_controller=self.consumer_controller,
             frontend_controller=self.frontend_controller,
             profile_controller=self.profile_controller,
+            mentorship_controller=self.mentorship_controller,
         )

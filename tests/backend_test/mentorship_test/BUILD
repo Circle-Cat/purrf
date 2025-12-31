@@ -5,3 +5,15 @@ py_test(
     srcs = ["mentorship_mapper_test.py"],
     deps = ["//backend/mentorship"],
 )
+
+py_test(
+    name = "mentorship_controller_test",
+    srcs = ["mentorship_controller_test.py"],
+    deps = ["//backend/mentorship"],
+)
+
+py_test(
+    name = "rounds_service_test",
+    srcs = ["rounds_service_test.py"],
+    deps = ["//backend/mentorship"],
+)

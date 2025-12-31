@@ -11,4 +11,4 @@ class RoundsDto(BaseDto):
     id: int
     name: str
     required_meetings: int
-    timeline: TimelineDto | None
+    timeline: TimelineDto | None = None
