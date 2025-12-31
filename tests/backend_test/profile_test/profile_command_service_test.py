@@ -1,12 +1,14 @@
 import unittest
 from unittest.mock import AsyncMock, MagicMock
-
+from datetime import datetime, timezone, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.profile.profile_command_service import ProfileCommandService
 from backend.entity.users_entity import UsersEntity
 from backend.dto.user_context_dto import UserContextDto
 from backend.common.user_role import UserRole
+from backend.dto.profile_create_dto import ProfileCreateDto, UsersRequestDto
+from backend.common.mentorship_enums import CommunicationMethod, UserTimezone
 
 
 class TestProfileCommandService(unittest.IsolatedAsyncioTestCase):
@@ -23,6 +25,23 @@ class TestProfileCommandService(unittest.IsolatedAsyncioTestCase):
         self.user_info = UserContextDto(
             sub="sub123", primary_email="alice@example.com", roles=[UserRole.MENTORSHIP]
         )
+
+    def _create_profile_dto(
+        self,
+        first_name="Alice",
+        timezone=UserTimezone.AMERICA_LOS_ANGELES,
+        communication_method=CommunicationMethod.EMAIL,
+    ) -> ProfileCreateDto:
+        user_dto = UsersRequestDto(
+            first_name=first_name,
+            last_name="Smith",
+            timezone=timezone,
+            communication_method=communication_method,
+            preferred_name="Ali",
+            alternative_emails=["ali@example.com"],
+            linkedin_link="https://linkedin.com/in/alice",
+        )
+        return ProfileCreateDto(user=user_dto)
 
     async def test_create_user_new_record_success(self):
         """Scenario: user does not exist, create a brand new record."""
@@ -88,6 +107,83 @@ class TestProfileCommandService(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertIsNone(result)
+
+    async def test_update_users_success_no_timezone_change(self):
+        """Successfully update user information without changing timezone."""
+        now = datetime.now(timezone.utc)
+        existing_user = UsersEntity(
+            user_id=1,
+            first_name="Old",
+            timezone=UserTimezone.AMERICA_LOS_ANGELES,
+            timezone_updated_at=now - timedelta(days=10),
+        )
+
+        profile_dto = self._create_profile_dto(
+            first_name="NewName", timezone=UserTimezone.AMERICA_LOS_ANGELES
+        )
+
+        self.users_repository.upsert_users.side_effect = lambda s, u: u
+
+        result = await self.service.update_users(
+            self.session, profile_dto, existing_user
+        )
+
+        self.assertEqual(result.first_name, "NewName")
+        self.assertEqual(result.timezone, UserTimezone.AMERICA_LOS_ANGELES)
+        self.users_repository.upsert_users.assert_awaited_once()
+
+    async def test_update_users_timezone_success_after_30_days(self):
+        """Update timezone successfully when more than 30 days have passed since last update."""
+        last_update = datetime.now(timezone.utc) - timedelta(days=31)
+        existing_user = UsersEntity(
+            user_id=1,
+            timezone=UserTimezone.AMERICA_LOS_ANGELES,
+            timezone_updated_at=last_update,
+        )
+
+        profile_dto = self._create_profile_dto(timezone=UserTimezone.ASIA_SHANGHAI)
+
+        self.users_repository.upsert_users.side_effect = lambda s, u: u
+
+        result = await self.service.update_users(
+            self.session, profile_dto, existing_user
+        )
+
+        self.assertEqual(result.timezone, UserTimezone.ASIA_SHANGHAI)
+        self.assertGreater(result.timezone_updated_at, last_update)
+
+    async def test_update_users_timezone_restriction_error(self):
+        """Updating timezone too frequently (less than 30 days) should raise ValueError."""
+        last_update = datetime.now(timezone.utc) - timedelta(days=5)
+        existing_user = UsersEntity(
+            user_id=1,
+            timezone=UserTimezone.AMERICA_LOS_ANGELES,
+            timezone_updated_at=last_update,
+        )
+
+        profile_dto = self._create_profile_dto(timezone=UserTimezone.AMERICA_NEW_YORK)
+
+        with self.assertRaises(ValueError):
+            await self.service.update_users(self.session, profile_dto, existing_user)
+
+        self.users_repository.upsert_users.assert_not_awaited()
+
+    async def test_update_users_database_error(self):
+        """Database error occurs during save; error should be logged and re-raised."""
+        existing_user = UsersEntity(
+            user_id=1,
+            timezone=UserTimezone.AMERICA_LOS_ANGELES,
+            timezone_updated_at=datetime.now(timezone.utc),
+        )
+
+        profile_dto = self._create_profile_dto(
+            timezone=UserTimezone.AMERICA_LOS_ANGELES
+        )
+
+        self.users_repository.upsert_users.side_effect = Exception("Connection Timeout")
+
+        with self.assertRaises(Exception):
+            await self.service.update_users(self.session, profile_dto, existing_user)
 
 
 if __name__ == "__main__":
