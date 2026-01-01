@@ -14,6 +14,7 @@ py_library(
     ],
     deps = [
         "//backend/common:constants",
+        "//backend/dto",
     ],
 )
 

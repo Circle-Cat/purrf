@@ -250,7 +250,6 @@ class AppDependencyBuilder:
             google_calendar_client=self.google_calendar_client,
             google_reports_client=self.google_reports_client,
             retry_utils=self.retry_utils,
-            json_schema_validator=self.json_schema_validator,
             google_service=self.google_service,
         )
         self.google_chat_history_sync_service = GoogleChatHistorySyncService(

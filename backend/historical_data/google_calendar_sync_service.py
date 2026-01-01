@@ -1,14 +1,16 @@
 import json
 import re
+import uuid
+import time
 from datetime import datetime, timezone
+
 from backend.common.constants import (
     GOOGLE_CALENDAR_LIST_INDEX_KEY,
     GOOGLE_CALENDAR_EVENT_DETAIL_KEY,
     GOOGLE_EVENT_ATTENDANCE_KEY,
     GOOGLE_CALENDAR_USER_EVENTS_KEY,
 )
-import uuid
-import time
+from backend.dto.calendar_dto import CalendarDTO, AttendanceDTO, CalendarEventDTO
 
 # Google Reports API rate limits:
 # - Batch requests can include at most 10 calls.
@@ -17,39 +19,63 @@ import time
 # Using 10 requests per batch + a 2.5s delay keeps us safely under the limit.
 BATCH_SIZE = 10
 SLEEP_BETWEEN_BATCHES = 2.5
+# Define the matching window: the join time must be within ±2 hours of the scheduled start time
+MATCH_WINDOW_SECONDS = 7200
 
 
 class GoogleCalendarSyncService:
     """
-    A service responsible for synchronizing Google Calendar and Google Meet attendance data
-    into Redis for efficient querying and analytics.
+    Synchronizes Google Calendar events and Google Meet attendance data into Redis
+    for efficient querying, analytics, and downstream processing.
 
-    This service handles:
-      - Fetching and caching calendar metadata.
-      - Retrieving and validating Google Calendar events.
-      - Extracting Google Meet meeting codes and attendance data.
-      - Caching structured event and attendance data in Redis for later processing.
+    This service integrates multiple Google Workspace APIs and is responsible for:
+      - Discovering and caching accessible calendars.
+      - Fetching calendar events within a given time range.
+      - Extracting Google Meet meeting codes from calendar events.
+      - Retrieving Google Meet attendance (join/leave) records via Admin Reports API.
+      - Normalizing and caching event and attendance data into Redis.
 
-    Core functionalities:
-      1. **Calendar Management**:
-         - Fetches all accessible calendars using the Google Calendar API.
-         - Filters out irrelevant or system-generated calendars.
-         - Caches valid calendar metadata (ID → summary) into Redis.
+    --------------------
+    IMPORTANT LIMITATIONS
+    --------------------
+    Google Meet attendance data is retrieved from the Google Admin Reports API
+    (`applications=meet`, `eventName=call_ended`), which has a strict data retention
+    policy:
 
-      2. **Event Retrieval and Caching**:
-         - Fetches events within a specific time range for each calendar.
-         - Handles pagination using Google Calendar batch requests.
-         - Extracts event details and associated Google Meet attendance.
-         - Validates data schemas before caching to ensure data consistency.
+      - Only the last **180 days** of audit logs are available.
+      - Attendance data older than 180 days is **permanently unrecoverable**.
+      - Providing a wider time range will result in API errors unless clamped.
 
-      3. **Attendance Tracking**:
-         - Retrieves Google Meet attendance reports via the Google Reports API.
-         - Supports batched attendance queries for multiple meeting codes.
-         - Only tracks attendance for meetings associated with Google accounts
-           (i.e., participants with valid Google email addresses like `@circlecat.org`).
-         - Meetings created by resources such as meeting rooms (without a Google account owner)
-           will not have attendance records and are skipped.
-         - Associates attendance records with calendar events in Redis.
+    As a result:
+      - This service can only synchronize Meet attendance within the most recent
+        180-day window.
+      - Long-term or historical attendance data must be cached proactively by this
+        service if it is required for future analysis.
+
+    --------------------
+    DESIGN NOTES
+    --------------------
+    - A single Google Meet meeting code may correspond to multiple calendar event
+      instances (e.g. recurring meetings). Attendance records are matched to the
+      correct event instance based on proximity between the actual join time and
+      the scheduled event start time.
+    - Only participants with valid Google Workspace user emails
+      (e.g. `@circlecat.org`) are tracked.
+    - Meetings created by resources (e.g. meeting rooms or devices without a user
+      account) do not produce attendance logs and are skipped.
+    - Third-party conference providers (e.g. Microsoft Teams) are explicitly
+      detected and excluded.
+
+    --------------------
+    DATA STORED IN REDIS
+    --------------------
+    - Calendar metadata (calendar_id → summary)
+    - Event metadata (summary, calendar_id, recurrence flag)
+    - Attendance records (per event, per user)
+    - User-to-event indices for efficient lookup
+
+    This class is designed to be idempotent, resilient to transient API failures,
+    and safe to run repeatedly within the supported time window.
     """
 
     def __init__(
@@ -59,7 +85,6 @@ class GoogleCalendarSyncService:
         google_calendar_client,
         google_reports_client,
         retry_utils,
-        json_schema_validator,
         google_service,
     ):
         """
@@ -70,7 +95,6 @@ class GoogleCalendarSyncService:
             redis_client: The Redis client instance.
             google_calendar_client: The GoogleClient factory instance.
             retry_utils: A RetryUtils for handling retries on transient errors.
-            json_schema_validator: A JsonSchemaValidator instance.
             google_service: The Google Service instance.
         """
         self.logger = logger
@@ -78,7 +102,6 @@ class GoogleCalendarSyncService:
         self.google_calendar_client = google_calendar_client
         self.google_reports_client = google_reports_client
         self.retry_utils = retry_utils
-        self.json_schema_validator = json_schema_validator
         self.google_service = google_service
 
     def _is_circlecat_email(self, email: str) -> bool:
@@ -93,51 +116,113 @@ class GoogleCalendarSyncService:
         """
         return email.endswith("@circlecat.org")
 
-    def _get_meeting_code_from_event(self, event):
+    def _detect_third_party_conference(self, event: dict) -> str | None:
+        """
+        Detect third-party conference providers from a Google Calendar event.
+
+        Design note:
+            Currently, only Microsoft Teams is supported, which is the only
+            third-party meeting type observed so far.
+
+        TODO:
+            When additional third-party conference providers (e.g. Zoom, Webex,
+            Lark) are introduced, refactor the return value into an enum-based
+            conference type instead of plain strings.
+
+        Returns:
+            str | None: provider name (e.g. 'microsoft_teams'),
+                        or None if not detected.
+        """
+        text = " ".join(
+            filter(
+                None,
+                [
+                    event.get("location", ""),
+                    event.get("description", ""),
+                ],
+            )
+        ).lower()
+
+        if "microsoft teams" in text:
+            return "microsoft_teams"
+        return None
+
+    def _get_meeting_code_from_event(self, event: dict) -> str | None:
         """
         Extracts the Google Meet meeting code from a Google Calendar event.
+
+        This method attempts to retrieve the Google Meet meeting code from the
+        event's `conferenceData.entryPoints`. If the event is detected as a
+        third-party conference (e.g. Microsoft Teams), it will be explicitly
+        skipped and return None.
 
         Args:
             event (dict): A Google Calendar event resource.
 
         Returns:
-            str or None: The meeting code, or None if not found.
+            str | None:
+                - The normalized Google Meet meeting code (hyphens removed),
+                if a valid Google Meet video entry is found.
+                - None if the event does not contain a Google Meet link or is a
+                supported third-party conference.
         """
         try:
             entry_points = event.get("conferenceData", {}).get("entryPoints", [])
             for entry in entry_points:
                 if entry.get("entryPointType") == "video" and "uri" in entry:
                     uri = entry["uri"]
-                    match = re.search(
-                        r"https?://meet\.google\.com/([a-z]+)(?:-([a-z]+))?(?:-([a-z]+))?",
-                        uri,
-                    )
+                    match = re.search(r"meet\.google\.com/([a-z-]+)", uri)
                     if match:
-                        groups = match.groups()
-                        meeting_code = "".join(filter(None, groups))
-                        self.logger.info(
-                            f"Extracted meeting code: {meeting_code} from URI: {uri}"
+                        meeting_code = match.group(1).replace("-", "")
+                        self.logger.debug(
+                            "[GoogleCalendarSyncService] extracted meeting code %s from URI %s",
+                            meeting_code,
+                            uri,
                         )
                         return meeting_code
+
+            meeting_source = self._detect_third_party_conference(event)
+            if meeting_source:
+                self.logger.info(
+                    "[GoogleCalendarSyncService] skipping third-party meeting provider=%s, summary=%s",
+                    meeting_source,
+                    event.get("summary", ""),
+                )
+                return None
+
             event_id = event.get("id", "unknown")
             self.logger.warning(
-                "[GoogleCalendarSyncService] no valid Google Meet video entry found in the event: %s",
+                "[GoogleCalendarSyncService] no valid Google Meet video entry found in event_id=%s",
                 event_id,
             )
             return None
+
         except Exception as e:
-            self.logger.exception(f"Error extracting meeting code from event: {e}")
+            self.logger.exception(
+                "[GoogleCalendarSyncService] error extracting meeting code from calendar event: %s",
+                e,
+            )
             return None
 
-    def _get_calendar_list(self):
+    def _get_calendar_list(self) -> list[CalendarDTO]:
         """
-        Fetches the list of calendars accessible using the Google Calendar API.
+        Retrieve all calendars accessible to the current Google account.
+
+        This method queries the Google Calendar API and returns a list of
+        calendars that the authenticated user has access to. Pagination is
+        handled internally until all calendar entries are fetched.
+
+        In case of any unexpected error (API failure, permission issue, etc.),
+        the method logs the error and returns an empty list instead of raising
+        an exception, allowing the synchronization process to continue safely.
 
         Returns:
-            A list of calendar dictionaries, each with:
-                - calendar_id
-                - summary
-            Returns an empty list if an error occurs or no calendars are found.
+            list[CalendarDTO]:
+                A list of CalendarDTO objects containing:
+                - calendar_id: The calendar identifier.
+                - summary: The human-readable calendar name.
+
+                Returns an empty list if no calendars are found or an error occurs.
         """
         try:
             calendars = []
@@ -156,10 +241,11 @@ class GoogleCalendarSyncService:
                 )
                 items = response.get("items", [])
                 for item in items:
-                    calendars.append({
-                        "calendar_id": item.get("id"),
-                        "summary": item.get("summary"),
-                    })
+                    calendars.append(
+                        CalendarDTO(
+                            calendar_id=item.get("id"), summary=item.get("summary", "")
+                        )
+                    )
                 page_token = response.get("nextPageToken")
                 if not page_token:
                     break
@@ -167,242 +253,244 @@ class GoogleCalendarSyncService:
             return calendars
 
         except Exception as e:
-            self.logger.error("Unexpected error fetching calendars", e)
+            self.logger.error(
+                "[GoogleCalendarSyncService] unexpected error fetching calendars %s", e
+            )
             return []
 
     def _get_calendars_events(
         self, calendar_ids: list[str], start_time: str, end_time: str
-    ):
+    ) -> dict[str, CalendarEventDTO]:
         """
-        Fetch events for multiple calendars in a batched way, deduplicated by event_id.
+        Fetch calendar events for multiple calendars using batched requests,
+        and deduplicate them by event ID.
+
+        This method:
+        - Queries Google Calendar events for each provided calendar ID.
+        - Handles pagination transparently via batch requests.
+        - Filters out cancelled events.
+        - Extracts Google Meet meeting codes when available.
+        - Deduplicates events that appear in multiple calendars
+            (e.g. shared or recurring events), preferring non-personal
+            calendar ownership.
 
         Args:
-            calendar_ids: list of calendar IDs to fetch.
-            start_time: RFC3339 start (inclusive).
-            end_time: RFC3339 end (exclusive).
+            calendar_ids:
+                A list of calendar IDs to fetch events from.
+            start_time:
+                RFC3339 timestamp (inclusive) representing the start of the query window.
+            end_time:
+                RFC3339 timestamp (exclusive) representing the end of the query window.
 
         Returns:
-            dict: {
-                event_id: {
-                    "calendar_ids": list[str],
-                    "summary": str,
-                    "start": str,
-                    "is_recurring": bool,
-                    "meeting_code": str,
-                }
-            }
+            dict[str, CalendarEventDTO]:
+                A mapping from event_id to CalendarEventDTO containing:
+                - event_id
+                - calendar_id (resolved ownership)
+                - summary
+                - start time
+                - recurrence flag
+                - Google Meet meeting code
         """
-        events_dict: dict[str, dict] = {}
+        events_dict: dict[str, CalendarEventDTO] = {}
         requests: list[tuple] = []
 
         def _enqueue_page(calendar_id: str, page_token: str | None = None):
+            """Enqueue a single calendar events.list request."""
             req = self.google_calendar_client.events().list(
                 calendarId=calendar_id,
                 timeMin=start_time,
                 timeMax=end_time,
                 singleEvents=True,
                 orderBy="startTime",
+                eventTypes="default",
+                timeZone="UTC",
                 pageToken=page_token,
             )
             requests.append((req, calendar_id))
 
+        # Initialize the first page request for each calendar
         for cid in calendar_ids:
             _enqueue_page(cid)
 
         def _callback(request_id, response, exception):
+            """Batch callback for processing calendar event responses."""
             calendar_id = request_id.split(":", 1)[0]
             if exception:
                 self.logger.warning(
-                    f"Batch request {request_id} for {calendar_id} failed: {exception}"
+                    "[GoogleCalendarSyncService] batch request failed: request_id=%s, calendar_id=%s, error=%s",
+                    request_id,
+                    calendar_id,
+                    exception,
                 )
                 return
 
-            page_events = response.get("items", [])
-            if not page_events:
-                return
+            for event in response.get("items", []):
+                # Skip cancelled events explicitly
+                if event.get("status") == "cancelled":
+                    continue
 
-            for event in page_events:
-                event_id = event.get("id")
-                summary = event.get("summary", "") or ""
                 meeting_code = self._get_meeting_code_from_event(event)
-                if not meeting_code:
+                start_str = event.get("start", {}).get("dateTime")
+                if not meeting_code or not start_str:
                     continue
 
-                start = event.get("start", {}).get("dateTime")
-                if not start:
-                    self.logger.debug(
-                        f"Skipping event {event_id} from {calendar_id}: missing start"
-                    )
-                    continue
+                eid = event.get("id")
+                dto = CalendarEventDTO(
+                    event_id=eid,
+                    calendar_id=calendar_id,
+                    summary=event.get("summary", ""),
+                    start=start_str,
+                    is_recurring="recurringEventId" in event,
+                    meeting_code=meeting_code,
+                )
 
-                is_recurring = "recurringEventId" in event
-
-                if event_id in events_dict:
+                if eid in events_dict:
+                    # Deduplication rule:
+                    # Prefer non-personal calendar ownership over personal calendars
                     if not self._is_circlecat_email(calendar_id):
-                        events_dict[event_id]["calendar_id"] = calendar_id
+                        events_dict[eid].calendar_id = calendar_id
                 else:
-                    events_dict[event_id] = {
-                        "calendar_id": calendar_id,
-                        "summary": summary,
-                        "start": start,
-                        "is_recurring": is_recurring,
-                        "meeting_code": meeting_code,
-                    }
+                    events_dict[eid] = dto
 
             next_token = response.get("nextPageToken")
             if next_token:
-                try:
-                    _enqueue_page(calendar_id, next_token)
-                except Exception as e:
-                    self.logger.warning(
-                        f"Failed to enqueue next page for {calendar_id}: {e}"
-                    )
+                _enqueue_page(calendar_id, next_token)
 
+        # Execute batched requests until all pages are processed
         while requests:
-            current_batch = []
-            for _ in range(min(BATCH_SIZE, len(requests))):
-                current_batch.append(requests.pop(0))
-
+            current_batch = [
+                requests.pop(0) for _ in range(min(BATCH_SIZE, len(requests)))
+            ]
             batch = self.google_calendar_client.new_batch_http_request(
                 callback=_callback
             )
             for req_obj, cid in current_batch:
-                rid = f"{cid}:{uuid.uuid4()}"
-                try:
-                    batch.add(req_obj, request_id=rid)
-                except Exception as e:
-                    self.logger.warning(
-                        f"Failed to add request for {cid} into batch: {e}"
-                    )
-
-            try:
-                self.retry_utils.get_retry_on_transient(batch.execute)
-            except Exception as e:
-                self.logger.warning(f"Batch execution failed: {e}")
+                batch.add(req_obj, request_id=f"{cid}:{uuid.uuid4()}")
+            self.retry_utils.get_retry_on_transient(batch.execute)
 
         return events_dict
 
     def _get_events_attendees(
-        self, events: dict[str, dict], time_min: str = None, time_max: str = None
-    ) -> dict[str, list]:
+        self, events: dict[str, CalendarEventDTO], time_min: str, time_max: str
+    ) -> dict[str, list[AttendanceDTO]]:
         """
-        Fetch attendance for all events in bulk and return dict keyed by event_id,
-        filtered by a time window if provided.
+        Fetch Google Meet attendance records and map them to calendar event instances.
+
+        This method:
+        - Queries Google Admin Reports API (`meet.call_ended`) in batches.
+        - Retrieves attendance records grouped by Google Meet meeting code.
+        - Filters participants to internal users only (circlecat.org).
+        - Resolves one-to-many relationships between meeting codes and calendar
+            event instances by matching join time to the closest scheduled start time
+            within a fixed time window.
+
+        Design notes:
+        - A single Google Meet meeting code may correspond to multiple calendar
+            event instances (e.g. recurring meetings).
+        - Attendance records are assigned to the best-matching instance based on
+            the smallest absolute time difference between join time and scheduled
+            event start time.
+        - Google Admin Reports API only retains audit logs for the last 180 days.
+            Callers are expected to clamp the time range accordingly.
 
         Args:
-            events: dict from _get_calendars_events(), keyed by event_id, each value containing:
-                    - "calendar_id": str
-                    - "summary": str
-                    - "start": str
-                    - "is_recurring": bool
-                    - "meeting_code": str
-            time_min: ISO 8601 start time (inclusive) to filter attendance.
-            time_max: ISO 8601 end time (exclusive) to filter attendance.
+            events:
+                Mapping from event_id to CalendarEventDTO.
+            time_min:
+                RFC3339 start time (inclusive).
+            time_max:
+                RFC3339 end time (exclusive).
 
         Returns:
-            dict: { event_id: [ { "ldap": str, "join_time": str, "leave_time": str }, ... ] }
+            dict[str, list[AttendanceDTO]]:
+                Mapping from event_id to a list of AttendanceDTO records.
         """
-        meeting_to_event = {
-            e_data["meeting_code"]: event_id
-            for event_id, e_data in events.items()
-            if e_data.get("meeting_code")
-        }
+        # Build meeting_code -> event_id(s) mapping (one code may map to multiple instances)
+        code_to_event_ids: dict[str, list[str]] = {}
+        for eid, dto in events.items():
+            code_to_event_ids.setdefault(dto.meeting_code, []).append(eid)
 
-        if not meeting_to_event:
-            return {}
-
-        results: dict[str, list] = {
-            event_id: [] for event_id in meeting_to_event.values()
-        }
-        meeting_codes = list(meeting_to_event.keys())
+        results: dict[str, list[AttendanceDTO]] = {eid: [] for eid in events.keys()}
+        meeting_codes = list(code_to_event_ids.keys())
 
         def _callback(request_id, response, exception):
-            code = request_id
-            event_id = meeting_to_event.get(code)
-            if not event_id:
-                return
-
+            """Batch callback for processing Meet audit log responses."""
             if exception:
                 self.logger.warning(
-                    f"Failed to fetch attendance for meeting {code}: {exception}"
+                    "[GoogleCalendarSyncService] audit API error for meeting_code=%s: %s",
+                    request_id,
+                    exception,
                 )
-                results[event_id] = []
                 return
+            code = request_id
 
-            activities = response.get("items", [])
-            attendance_list = []
-
-            for activity in activities:
-                for event in activity.get("events", []):
+            target_ids = code_to_event_ids.get(code, [])
+            if exception or not target_ids:
+                return
+            for activity in response.get("items", []):
+                for meet_event in activity.get("events", []):
                     params = {
                         p.get("name"): p.get("value") or p.get("intValue")
-                        for p in event.get("parameters", [])
+                        for p in meet_event.get("parameters", [])
                     }
 
-                    email = event.get("actor", {}).get("email") or params.get(
+                    email = meet_event.get("actor", {}).get("email") or params.get(
                         "identifier"
                     )
                     if not email or not self._is_circlecat_email(email):
                         continue
 
-                    ldap = email.split("@")[0]
-                    start_ts = int(params.get("start_timestamp_seconds"))
+                    # Parse actual join and leave timestamps
+                    join_ts = int(params.get("start_timestamp_seconds", 0))
                     duration = int(params.get("duration_seconds", 0))
-                    join_time_ts = start_ts
-                    leave_time_ts = start_ts + duration
+                    if join_ts == 0:
+                        continue
 
-                    join_date = datetime.utcfromtimestamp(join_time_ts).date()
-                    join_time = (
-                        datetime.fromtimestamp(join_time_ts, tz=timezone.utc)
-                        .isoformat()
-                        .replace("+00:00", "Z")
-                    )
-                    leave_time = (
-                        datetime.fromtimestamp(leave_time_ts, tz=timezone.utc)
-                        .isoformat()
-                        .replace("+00:00", "Z")
+                    ldap = email.split("@")[0]
+                    join_time = datetime.fromtimestamp(join_ts, tz=timezone.utc)
+                    leave_time = datetime.fromtimestamp(
+                        join_ts + duration, tz=timezone.utc
                     )
 
-                    if events[event_id].get("is_recurring"):
-                        try:
-                            recurrence_suffix = event_id.split("_")[-1]
-                            recurrence_instance_date = datetime.strptime(
-                                recurrence_suffix, "%Y%m%dT%H%M%SZ"
-                            ).date()
-                        except Exception as e:
-                            self.logger.warning(
-                                f"Failed to parse recurrence date for {event_id}: {e}"
+                    # Match attendance to the closest event instance by start time
+                    best_match_id = None
+                    min_diff = MATCH_WINDOW_SECONDS
+
+                    for eid in target_ids:
+                        # Parse scheduled start time.
+                        event_dto = events[eid]
+                        diff = abs(join_ts - event_dto.start_ts)
+                        if diff < min_diff:
+                            min_diff = diff
+                            best_match_id = eid
+
+                    if best_match_id:
+                        results[best_match_id].append(
+                            AttendanceDTO(
+                                ldap=ldap,
+                                join_time=join_time,
+                                leave_time=leave_time,
                             )
-                        if (
-                            recurrence_instance_date
-                            and join_date != recurrence_instance_date
-                        ):
-                            continue
+                        )
 
-                    attendance_list.append({
-                        "ldap": ldap,
-                        "join_time": join_time,
-                        "leave_time": leave_time,
-                    })
-
-            results[event_id] = attendance_list
-
+        # Call Google Admin Reports API in batches
         for i in range(0, len(meeting_codes), BATCH_SIZE):
             chunk = meeting_codes[i : i + BATCH_SIZE]
             batch = self.google_reports_client.new_batch_http_request(
                 callback=_callback
             )
-
             for code in chunk:
                 req = self.google_reports_client.activities().list(
                     userKey="all",
                     applicationName="meet",
                     eventName="call_ended",
                     filters=f"meeting_code=={code}",
+                    startTime=time_min,
+                    endTime=time_max,
                     maxResults=1000,
                 )
                 batch.add(req, request_id=code)
-
             self.retry_utils.get_retry_on_transient(batch.execute)
             time.sleep(SLEEP_BETWEEN_BATCHES)
 
@@ -410,126 +498,111 @@ class GoogleCalendarSyncService:
 
     def _cache_calendars(self) -> list[str]:
         """
-        Fetches calendar metadata from the Google Calendar API, filters out irrelevant calendars,
-        caches the valid calendar metadata into Redis, and inserts a static entry:
-        'personal' → 'Personal Calendars'.
+        Fetch calendar metadata from the Google Calendar API and cache it in Redis.
+
+        This method:
+        - Retrieves all accessible calendars via the Calendar API.
+        - Filters out personal user calendars and system-generated calendars.
+        - Caches valid calendar metadata into Redis as:
+                calendar_id -> calendar summary
+        - Inserts a static alias entry:
+                "personal" -> "Personal Calendars"
 
         Returns:
-            List of cached calendar IDs (excluding "personal").
-
-        Raises:
-            Any exception raised by `get_calendar_list` or Redis operations will be retried up to 3 times.
+            list[str]:
+                A list of cached calendar IDs, excluding the synthetic "personal" entry.
         """
-        calendar_list = self._get_calendar_list()
-
-        filtered_calendar_list = []
-
-        for calendar in calendar_list:
-            calendar_id = calendar.get("calendar_id", "")
-            if self._is_circlecat_email(calendar_id):  # Skip personal user calendars
-                continue
-            elif calendar_id.endswith(
-                "@group.v.calendar.google.com"
-            ):  # Skip system-generated calendars
-                continue
-            filtered_calendar_list.append(calendar)
-
+        calendars = self._get_calendar_list()
+        filtered_ids = []
         pipeline = self.redis_client.pipeline()
         pipeline.hset(GOOGLE_CALENDAR_LIST_INDEX_KEY, "personal", "Personal Calendars")
 
-        cached_calendar_ids = []
-
-        for calendar in filtered_calendar_list:
-            try:
-                self.json_schema_validator.validate_data(
-                    calendar, "calendar.schema.json"
-                )
-            except Exception as e:
-                self.logger.warning(f"Invalid calendar skipped: {e}")
+        for cal in calendars:
+            cid = cal.calendar_id
+            # Skip personal user calendars or system-generated calendars
+            if self._is_circlecat_email(cid) or cid.endswith(
+                "@group.v.calendar.google.com"
+            ):
                 continue
-
-            calendar_id = calendar["calendar_id"]
-            pipeline.hset(
-                GOOGLE_CALENDAR_LIST_INDEX_KEY, calendar_id, calendar["summary"]
-            )
-            self.logger.debug(f"Cached calendar {calendar_id} for purrf")
-            cached_calendar_ids.append(calendar_id)
+            pipeline.hset(GOOGLE_CALENDAR_LIST_INDEX_KEY, cid, cal.summary)
+            filtered_ids.append(cid)
 
         self.retry_utils.get_retry_on_transient(pipeline.execute)
-
-        return cached_calendar_ids
+        return filtered_ids
 
     def _cache_calendar_events(
         self, calendar_ids: list[str], time_min: str, time_max: str
-    ) -> dict[str, dict]:
+    ) -> dict[str, CalendarEventDTO]:
         """
-        Fetch events for multiple calendars, cache event details (summary, calendar_id alias, is_recurring),
-        and return events dictionary.
+        Cache calendar event metadata into Redis and return the corresponding DTO map.
+
+        This method:
+        - Fetches events for the given calendars within the specified time window.
+        - Normalizes recurring event IDs by stripping instance suffixes.
+        - Maps personal calendars to a unified "personal" alias.
+        - Caches lightweight event metadata into Redis for downstream lookups.
 
         Args:
-            calendar_ids: List of calendar IDs.
-            time_min: ISO 8601 start time (inclusive).
-            time_max: ISO 8601 end time (exclusive).
+            calendar_ids (list[str]):
+                List of calendar IDs to fetch events from.
+            time_min (str):
+                RFC3339 start time (inclusive).
+            time_max (str):
+                RFC3339 end time (exclusive).
 
         Returns:
-            dict: { event_id: event_dict } for all fetched events.
-                Each event_dict contains:
-                - calendar_id: str
-                - summary: str
-                - start: str
-                - is_recurring: bool
-                - meeting_code: str
+            dict[str, CalendarEventDTO]:
+                A mapping from event_id to CalendarEventDTO.
         """
-        events_dict = {}
+        all_events = self._get_calendars_events(calendar_ids, time_min, time_max)
         pipeline = self.redis_client.pipeline()
 
-        all_events = self._get_calendars_events(calendar_ids, time_min, time_max)
-
-        for event_id, event in all_events.items():
-            try:
-                self.json_schema_validator.validate_data(
-                    event, "calendar_event.schema.json"
-                )
-            except Exception as e:
-                self.logger.warning(f"Invalid event skipped: {e}")
-                continue
-
-            base_event_id = event_id.split("_")[0]
-
-            calendar_id = event.get("calendar_id", "")
-            if self._is_circlecat_email(calendar_id):
-                calendar_alias = "personal"
-            else:
-                calendar_alias = calendar_id
+        for eid, dto in all_events.items():
+            base_event_id = eid.split("_")[0]
+            calendar_alias = (
+                "personal"
+                if self._is_circlecat_email(dto.calendar_id)
+                else dto.calendar_id
+            )
 
             pipeline.set(
                 GOOGLE_CALENDAR_EVENT_DETAIL_KEY.format(event_id=base_event_id),
                 json.dumps({
-                    "summary": event.get("summary", ""),
+                    "summary": dto.summary,
                     "calendar_id": calendar_alias,
-                    "is_recurring": event.get("is_recurring", False),
+                    "is_recurring": dto.is_recurring,
                 }),
             )
 
-            events_dict[event_id] = event
-
         self.retry_utils.get_retry_on_transient(pipeline.execute)
-
-        return events_dict
+        return all_events
 
     def _cache_events_attendees(
-        self, events: dict[str, dict], time_min: str, time_max: str
+        self, events: dict[str, CalendarEventDTO], time_min: str, time_max: str
     ):
         """
-        Fetch and cache attendance data for a batch of events.
+        Cache Google Meet attendance records for calendar events into Redis.
+
+        This method:
+        - Fetches attendance records for the given events within the time window.
+        - Stores per-event attendance details (join/leave times) in Redis sets.
+        - Indexes user participation using sorted sets for efficient queries.
+
+        Design notes:
+        - Attendance data is fetched from the Google Admin Reports API, which
+            only retains audit logs for the last 180 days.
+        - Events without attendance records are silently skipped.
+        - Personal calendars are normalized under the "personal" alias.
 
         Args:
-            events: Dictionary of events keyed by event_id. Each event dict should include:
-                    - calendar_id: str
-                    - meeting_code
-                    - start
-                    - is_recurring
+            events (dict[str, CalendarEventDTO]):
+                Mapping from event_id to CalendarEventDTO.
+            time_min (str):
+                RFC3339 start time (inclusive).
+            time_max (str):
+                RFC3339 end time (exclusive).
         """
+
         if not events:
             return
 
@@ -537,39 +610,32 @@ class GoogleCalendarSyncService:
 
         pipeline = self.redis_client.pipeline()
 
-        for event_id, event in events.items():
-            attendees = attendance_map.get(event_id, [])
-            calendar_id = event.get("calendar_id", "")
+        for eid, dto in events.items():
+            attendees = attendance_map.get(eid, [])
+            score = dto.start_ts
 
-            try:
-                score = int(datetime.fromisoformat(event["start"]).timestamp())
-            except Exception as e:
-                self.logger.warning(f"Invalid start time for event {event_id}: {e}")
-                continue
-
-            for attendee in attendees:
-                ldap = attendee.get("ldap")
-                if not ldap:
+            for att in attendees:
+                if not att.ldap:
                     continue
-
                 record_str = json.dumps({
-                    "join_time": attendee.get("join_time"),
-                    "leave_time": attendee.get("leave_time"),
+                    "join_time": att.join_time.isoformat().replace("+00:00", "Z"),
+                    "leave_time": att.leave_time.isoformat().replace("+00:00", "Z"),
                 })
-
-                attendance_key = GOOGLE_EVENT_ATTENDANCE_KEY.format(
-                    event_id=event_id, ldap=ldap
+                pipeline.sadd(
+                    GOOGLE_EVENT_ATTENDANCE_KEY.format(event_id=eid, ldap=att.ldap),
+                    record_str,
                 )
-                pipeline.sadd(attendance_key, record_str)
 
-                calendar_alias = (
-                    "personal" if self._is_circlecat_email(calendar_id) else calendar_id
+                alias = (
+                    "personal"
+                    if self._is_circlecat_email(dto.calendar_id)
+                    else dto.calendar_id
                 )
                 pipeline.zadd(
                     GOOGLE_CALENDAR_USER_EVENTS_KEY.format(
-                        calendar_id=calendar_alias, ldap=ldap
+                        calendar_id=alias, ldap=att.ldap
                     ),
-                    {event_id: score},
+                    {eid: score},
                 )
 
         self.retry_utils.get_retry_on_transient(pipeline.execute)
@@ -577,6 +643,15 @@ class GoogleCalendarSyncService:
     def pull_calendar_history(self, time_min: str = None, time_max: str = None):
         """
         Pulls and caches historical calendar event data for all calendars.
+
+        IMPORTANT:
+            Google Admin Reports API (Google Meet `call_ended` events) only retains
+            audit logs for the last 180 days. As a result, attendance data older than
+            180 days cannot be retrieved and synchronized, even if an earlier
+            time range is provided.
+
+            To avoid API errors, the effective synchronization window should be
+            clamped to the most recent 180 days.
 
         Args:
             time_min (str): ISO 8601 start time (inclusive).

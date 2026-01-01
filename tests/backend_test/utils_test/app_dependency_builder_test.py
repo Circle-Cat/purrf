@@ -297,7 +297,6 @@ class TestAppDependencyBuilder(TestCase):
             google_calendar_client=mock_google_calendar_client,
             google_reports_client=mock_google_reports_client,
             retry_utils=mock_retry_utils_instance,
-            json_schema_validator=mock_json_schema_validator_cls.return_value,
             google_service=mock_google_service.return_value,
         )
         mock_gerrit_sync_service_cls.assert_called_once_with(

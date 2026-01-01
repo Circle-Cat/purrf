@@ -196,6 +196,10 @@ class HistoricalController:
     async def pull_calendar_history_api(self, request_body: GoogleCalendarPullRequest):
         """
         Endpoint to trigger fetching and caching Google Calendar history.
+
+        Note:
+            Due to Google Admin Reports API limitations, this endpoint only
+            supports synchronizing data within the last 180 days.
         """
         time_min, time_max = self.date_time_utils.resolve_start_end_timestamps(
             request_body.start_date, request_body.end_date
