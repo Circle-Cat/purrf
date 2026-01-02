@@ -45,6 +45,8 @@ class TestAuthenticationController(unittest.TestCase):
         """
         Helper method:
         Create a TestClient and inject a fake user into request.state before handling the request.
+        @authenticate decorator reads the user context from request.state.user to perform
+        authorization and argument injection.
         """
         mock_user = MagicMock()
         mock_user.roles = roles
@@ -84,15 +86,15 @@ class TestAuthenticationController(unittest.TestCase):
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertEqual(response.json()["data"]["roles"], [])
 
-    def test_get_my_roles_missing_user_state(self):
+    def test_get_my_roles_missing_user_context(self):
         """
-        Test: request.state.user is missing
-        (e.g., authentication middleware failed or is not applied).
+        Test: behavior when current_user is not provided.
+        Authenticate decorator should intercept the request with 401 Unauthorized.
         """
         client = TestClient(self.app, raise_server_exceptions=False)
         response = client.get(MY_ROLES)
 
-        self.assertEqual(response.status_code, HTTPStatus.INTERNAL_SERVER_ERROR)
+        self.assertEqual(response.status_code, HTTPStatus.UNAUTHORIZED)
 
 
 if __name__ == "__main__":

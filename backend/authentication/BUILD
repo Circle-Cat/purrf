@@ -8,6 +8,8 @@ py_library(
     deps = [
         "//backend/common:api_endpoints",
         "//backend/common:fast_api_response_wrapper",
+        "//backend/dto",
+        "//backend/utils:permission_decorators",
         "@pypi//fastapi",
     ],
 )
