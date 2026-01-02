@@ -60,6 +60,15 @@ py_test(
 )
 
 py_test(
+    name = "mentorship_round_participants_repository_test",
+    srcs = ["mentorship_round_participants_repository_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        ":base_repository_test_lib",
+    ],
+)
+
+py_test(
     name = "mentorship_pairs_repository_test",
     srcs = ["mentorship_pairs_repository_test.py"],
     env_inherit = ["DATABASE_URL"],

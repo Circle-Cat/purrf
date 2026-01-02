@@ -1,6 +1,13 @@
 from enum import Enum
 
 
+class ApprovalStatus(str, Enum):
+    SIGNED_UP = "signed_up"
+    MATCHED = "matched"
+    UN_MATCHED = "un_matched"
+    REJECTED = "rejected"
+
+
 class CommunicationMethod(str, Enum):
     EMAIL = "email"
     GOOGLE_CHAT = "google_chat"
@@ -24,6 +31,11 @@ class UserTimezone(Enum):
 class PairStatus(Enum):
     ACTIVE = "active"
     INACTIVE = "inactive"
+
+
+class ParticipantRole(Enum):
+    MENTOR = "mentor"
+    MENTEE = "mentee"
 
 
 class TrainingCategory(str, Enum):
