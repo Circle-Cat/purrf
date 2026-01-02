@@ -15,7 +15,7 @@ class UsersRequestDto(BaseRequestDto):
 
 
 class WorkHistoryRequestDto(BaseRequestDto):
-    id: str | None
+    id: str | None = None
     title: str
     company_or_organization: str
     start_date: date
@@ -24,7 +24,7 @@ class WorkHistoryRequestDto(BaseRequestDto):
 
 
 class EducationRequestDto(BaseRequestDto):
-    id: str | None
+    id: str | None = None
     degree: Degree
     school: str
     field_of_study: str
@@ -34,5 +34,5 @@ class EducationRequestDto(BaseRequestDto):
 
 class ProfileCreateDto(BaseRequestDto):
     user: UsersRequestDto | None = None
-    work_history: list[WorkHistoryRequestDto] = Field(default_factory=list)
-    education: list[EducationRequestDto] = Field(default_factory=list)
+    work_history: list[WorkHistoryRequestDto] | None = None
+    education: list[EducationRequestDto] | None = None

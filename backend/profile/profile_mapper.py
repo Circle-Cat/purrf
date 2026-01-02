@@ -59,7 +59,7 @@ class ProfileMapper:
             WorkHistoryDto(
                 id=item.get("id"),
                 title=item.get("title"),
-                company_or_organization=item.get("company"),
+                company_or_organization=item.get("company_or_organization"),
                 start_date=item.get("start_date"),
                 end_date=item.get("end_date"),
                 is_current_job=item.get("is_current_job", False),

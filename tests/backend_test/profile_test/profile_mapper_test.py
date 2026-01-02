@@ -68,7 +68,7 @@ class TestProfileMapper(unittest.TestCase):
                 {
                     "id": str(uuid4()),
                     "title": "Software Engineer",
-                    "company": "TechCorp",
+                    "company_or_organization": "TechCorp",
                     "start_date": "2015-01-01",
                     "end_date": "2019-12-31",
                     "is_currentJ_job": False,

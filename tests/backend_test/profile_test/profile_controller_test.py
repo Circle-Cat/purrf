@@ -132,6 +132,94 @@ class TestProfileController(unittest.TestCase):
 
         self.assertEqual(response.status_code, HTTPStatus.UNAUTHORIZED)
 
+    def test_update_my_profile_success(self):
+        """Tests successful profile update."""
+        client = self._get_client_with_mock_user()
+        mock_profile = self._make_profile_dto()
+
+        async_session_mock = AsyncMock()
+        self.mock_database.session.return_value.__aenter__.return_value = (
+            async_session_mock
+        )
+        self.mock_profile_service.update_profile = AsyncMock(return_value=mock_profile)
+
+        # Prepare request payload (camelCase to simulate frontend input)
+        update_payload = {
+            "workHistory": [
+                {
+                    "title": "Engineer",
+                    "companyOrOrganization": "Tech Corp",
+                    "startDate": "2020-01-01",
+                    "isCurrentJob": True,
+                }
+            ]
+        }
+
+        response = client.patch(MY_PROFILE_ENDPOINT, json=update_payload)
+        response_json = response.json()
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+
+        # Verify service was called with correct arguments
+        # FastAPI automatically converts JSON into a ProfileCreateDto
+        self.mock_profile_service.update_profile.assert_called_once()
+        args, kwargs = self.mock_profile_service.update_profile.call_args
+
+        # Verify the passed DTO content
+        passed_profile_dto = kwargs.get("profile") or args[2]
+        self.assertEqual(
+            passed_profile_dto.work_history[0].company_or_organization,
+            "Tech Corp",
+        )
+
+        # Verify response data
+        expected_data = {"profile": jsonable_encoder(mock_profile)}
+        self.assertEqual(response_json["data"], expected_data)
+
+    def test_update_my_profile_validation_error(self):
+        """Tests that invalid input data results in a 422 Unprocessable Entity response."""
+        client = self._get_client_with_mock_user()
+
+        # Prepare an invalid enum value (degree must be a valid Degree)
+        invalid_payload = {
+            "education": [
+                {
+                    "degree": "BS",
+                    "school": "Northeastern University",
+                    "fieldOfStudy": "CS",
+                    "startDate": "2020-01-01",
+                    "end_date": "2024-01-01",
+                }
+            ]
+        }
+
+        response = client.patch(MY_PROFILE_ENDPOINT, json=invalid_payload)
+
+        # FastAPI returns 422 for Pydantic validation errors by default
+        self.assertEqual(response.status_code, HTTPStatus.UNPROCESSABLE_ENTITY)
+        self.mock_profile_service.update_profile.assert_not_called()
+
+    def test_update_my_profile_unauthorized(self):
+        """Tests that an unauthenticated request returns 401 Unauthorized."""
+        client = TestClient(self.app, raise_server_exceptions=False)
+
+        response = client.patch(
+            MY_PROFILE_ENDPOINT,
+            json={
+                "workHistory": [
+                    {
+                        "title": "Engineer",
+                        "companyOrOrganization": "Tech Corp",
+                        "startDate": "2020-01-01",
+                        "isCurrentJob": True,
+                    }
+                ]
+            },
+        )
+
+        self.assertEqual(response.status_code, HTTPStatus.UNAUTHORIZED)
+        self.mock_profile_service.update_profile.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

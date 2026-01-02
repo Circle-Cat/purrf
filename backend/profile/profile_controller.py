@@ -6,6 +6,7 @@ from backend.common.fast_api_response_wrapper import api_response
 from backend.common.api_endpoints import MY_PROFILE_ENDPOINT
 from backend.common.constants import ProfileField
 from backend.utils.permission_decorators import authenticate
+from backend.dto.profile_create_dto import ProfileCreateDto
 
 
 class ProfileController:
@@ -32,6 +33,12 @@ class ProfileController:
             MY_PROFILE_ENDPOINT,
             endpoint=authenticate()(self.get_my_profile),
             methods=["GET"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            MY_PROFILE_ENDPOINT,
+            endpoint=authenticate()(self.update_my_profile),
+            methods=["PATCH"],
             response_model=None,
         )
 
@@ -73,5 +80,42 @@ class ProfileController:
 
         return api_response(
             message="Profile retrieved successfully",
+            data={"profile": profile},
+        )
+
+    async def update_my_profile(
+        self,
+        current_user: UserContextDto,
+        body: ProfileCreateDto,
+    ):
+        """
+        Update the profile of the currently authenticated user.
+
+        This endpoint updates one or more sections of a user's profile based on
+        the provided request body. Supported sections include:
+
+        - User basic information (e.g. name, timezone, communication method)
+        - Work history
+        - Education history
+
+        Only the sections present in the request body will be updated.
+        Omitted sections are left unchanged.
+
+        All updates are executed within a single database transaction.
+
+        Args:
+            user_sub (str): Subject identifier of the authenticated user.
+            body (ProfileCreateDto): Profile payload containing fields to update.
+
+        Returns:
+            A standardized API response containing the updated profile.
+        """
+        async with self.database.session() as session:
+            profile: ProfileDto = await self.profile_service.update_profile(
+                session=session, user_sub=current_user.sub, profile=body
+            )
+
+        return api_response(
+            message="Profile updated successfully",
             data={"profile": profile},
         )

@@ -1,10 +1,15 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timezone, timedelta
-
+from uuid import uuid4
 from backend.entity.users_entity import UsersEntity
 from backend.common.mentorship_enums import UserTimezone, CommunicationMethod
 from backend.dto.user_context_dto import UserContextDto
-from backend.dto.profile_create_dto import ProfileCreateDto
+from backend.dto.profile_create_dto import (
+    WorkHistoryRequestDto,
+    EducationRequestDto,
+    ProfileCreateDto,
+)
+from backend.entity.experience_entity import ExperienceEntity
 
 
 class ProfileCommandService:
@@ -15,16 +20,18 @@ class ProfileCommandService:
     It interacts with the UsersRepository to persist UsersEntity instances.
     """
 
-    def __init__(self, users_repository, logger):
+    def __init__(self, users_repository, logger, experience_repository):
         """
         Initialize the ProfileCommandService with a UsersRepository instance.
 
         Args:
             users_repository: Repository responsible for CRUD operations on UsersEntity.
+            experience_repository: Repository responsible for CRUD operations on ExperienceEntity.
             logger: The logger instance for logging messages.
         """
         self.users_repository = users_repository
         self.logger = logger
+        self.experience_repository = experience_repository
 
     async def create_user(
         self, session: AsyncSession, user_info: UserContextDto
@@ -216,3 +223,122 @@ class ProfileCommandService:
                 str(e),
             )
             raise
+
+    def _ensure_ids_and_detect_new(
+        self, data: list[EducationRequestDto | WorkHistoryRequestDto]
+    ) -> bool:
+        """
+        Ensures all items have an ID.
+        Assigns IDs to new items in-place.
+
+        Returns True if any new item was detected.
+        """
+        has_new_items = False
+
+        for item in data:
+            if not item.id:
+                item.id = str(uuid4())
+                has_new_items = True
+
+        return has_new_items
+
+    async def _upsert_experience_data(
+        self,
+        session,
+        user_id: int,
+        field_name: str,
+        data: list[EducationRequestDto | WorkHistoryRequestDto],
+    ):
+        """
+        Create or update a user's experience-related data (education or work history).
+
+        Behavior:
+        - Ensures each incoming item has a stable `id`. New items without an `id`
+          will be assigned one in-place.
+        - Converts request DTOs into snake_case dictionaries suitable for database storage.
+        - If an existing ExperienceEntity is found and no new items are detected:
+            - Compares the incoming data with the current stored data
+              while ignoring order.
+            - If the content is identical, the database update is skipped to
+              avoid unnecessary writes.
+        - If no ExperienceEntity exists for the user, a new one is created.
+        - Otherwise, the specified experience field is fully replaced with the
+          incoming data (full overwrite semantics).
+
+        Args:
+            session: Active SQLAlchemy async session.
+            user_id (int): Internal user ID.
+            field_name (str): Name of the experience field to update.
+                Expected values are "education" or "work_history".
+            data (list[EducationRequestDto | WorkHistoryRequestDto]):
+                Incoming experience data from the API request.
+
+        Returns:
+            ExperienceEntity: The created or updated experience entity.
+        """
+        experience_entity = await self.experience_repository.get_experience_by_user_id(
+            session, user_id
+        )
+
+        has_new_items = self._ensure_ids_and_detect_new(data)
+
+        new_data_dicts = [item.to_db_dict() for item in data]
+
+        if experience_entity and data and not has_new_items:
+            current_data_dicts = getattr(experience_entity, field_name) or []
+
+            if len(current_data_dicts) == len(new_data_dicts):
+                sorted_current = sorted(current_data_dicts, key=lambda x: x.get("id"))
+                sorted_new = sorted(new_data_dicts, key=lambda x: x.get("id"))
+
+                if sorted_current == sorted_new:
+                    self.logger.info(
+                        "[ProfileCommandService] no content change for user_id=%s in %s (order ignored). Skipping.",
+                        user_id,
+                        field_name,
+                    )
+                    return experience_entity
+
+        if not experience_entity:
+            experience_entity = ExperienceEntity(user_id=user_id)
+
+        setattr(experience_entity, field_name, new_data_dicts)
+        experience_entity.updated_timestamp = datetime.now(timezone.utc)
+
+        await self.experience_repository.upsert_experience(session, experience_entity)
+        self.logger.info(
+            "[ProfileCommandService] updated %s for user_id=%s.", field_name, user_id
+        )
+        return experience_entity
+
+    async def update_work_history(
+        self,
+        session,
+        latest_profile: ProfileCreateDto,
+        user_id: int,
+    ):
+        """
+        Updates user's work history.
+        """
+        return await self._upsert_experience_data(
+            session,
+            user_id,
+            "work_history",
+            latest_profile.work_history,
+        )
+
+    async def update_education(
+        self,
+        session,
+        latest_profile: ProfileCreateDto,
+        user_id: int,
+    ):
+        """
+        Updates user's education history.
+        """
+        return await self._upsert_experience_data(
+            session,
+            user_id,
+            "education",
+            latest_profile.education,
+        )

@@ -14,3 +14,10 @@ class BaseRequestDto(BaseModel):
         str_strip_whitespace=True,
         validate_assignment=True,
     )
+
+    def to_db_dict(self) -> dict:
+        return self.model_dump(
+            mode="json",
+            by_alias=False,
+            exclude_unset=True,
+        )

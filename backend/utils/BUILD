@@ -130,6 +130,7 @@ py_library(
         "//backend/service:google_service",
         "//backend/service:jira_search_service",
         "//backend/service:microsoft_service",
+        "//backend/user_identity:user_identity_service",
         "@pypi//asyncpg",
     ],
 )

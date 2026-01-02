@@ -7,6 +7,7 @@ from backend.common.environment_constants import (
 )
 
 
+@patch("backend.utils.app_dependency_builder.UserIdentityService")
 @patch("backend.utils.app_dependency_builder.MentorshipController")
 @patch("backend.utils.app_dependency_builder.RoundsService")
 @patch("backend.utils.app_dependency_builder.MentorshipRoundRepository")
@@ -126,6 +127,7 @@ class TestAppDependencyBuilder(TestCase):
         mock_mentorship_round_repository_cls,
         mock_rounds_service_cls,
         mock_mentorship_controller_cls,
+        mock_user_identity_service_cls,
     ):
         """
         Tests that the AppDependencyBuilder correctly instantiates and wires all its dependencies.
@@ -402,11 +404,17 @@ class TestAppDependencyBuilder(TestCase):
             profile_mapper=mock_profile_mapper_cls.return_value,
         )
         mock_profile_command_service_cls.assert_called_once_with(
-            users_repository=mock_users_repo_cls.return_value, logger=mock_logger
+            users_repository=mock_users_repo_cls.return_value,
+            experience_repository=mock_experience_repo_cls.return_value,
+            logger=mock_logger,
+        )
+        mock_user_identity_service_cls.assert_called_once_with(
+            mock_users_repo_cls.return_value
         )
         mock_profile_service_cls.assert_called_once_with(
             query_service=mock_profile_query_service_cls.return_value,
             command_service=mock_profile_command_service_cls.return_value,
+            user_identity_service=mock_user_identity_service_cls.return_value,
         )
         mock_profile_controller_cls.assert_called_once_with(
             profile_service=mock_profile_service_cls.return_value,

@@ -85,6 +85,7 @@ from backend.profile.profile_mapper import ProfileMapper
 from backend.profile.profile_service import ProfileService
 from backend.common.database import Database
 from backend.profile.profile_controller import ProfileController
+from backend.user_identity.user_identity_service import UserIdentityService
 
 
 class AppDependencyBuilder:
@@ -359,11 +360,15 @@ class AppDependencyBuilder:
             profile_mapper=self.profile_mapper,
         )
         self.profile_command_service = ProfileCommandService(
-            users_repository=self.users_repository, logger=self.logger
+            users_repository=self.users_repository,
+            experience_repository=self.experience_repository,
+            logger=self.logger,
         )
+        self.user_identity_service = UserIdentityService(self.users_repository)
         self.profile_service = ProfileService(
             query_service=self.profile_query_service,
             command_service=self.profile_command_service,
+            user_identity_service=self.user_identity_service,
         )
         self.profile_controller = ProfileController(
             profile_service=self.profile_service,
