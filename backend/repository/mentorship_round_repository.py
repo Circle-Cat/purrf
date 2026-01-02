@@ -5,12 +5,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 class MentorshipRoundRepository:
     """
-    Repository for handling database operations related to MentorshipRoundRepository.
+    Repository for handling database operations related to MentorshipRoundEntity.
     """
 
     async def get_all_rounds(
         self, session: AsyncSession
-    ) -> list[MentorshipRoundEntity] | None:
+    ) -> list[MentorshipRoundEntity]:
         """
         Retrieve all mentorship round entities.
 
@@ -22,6 +22,7 @@ class MentorshipRoundRepository:
 
         Returns:
             list[MentorshipRoundEntity]: A list of all matching MentorshipRound.
+                                        Returns an empty list if no records are found.
         """
         result = await session.execute(select(MentorshipRoundEntity))
 

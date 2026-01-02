@@ -32,10 +32,10 @@ class TestMentorShipRoundRepository(BaseRepositoryTestLib):
             ),
         ]
 
+    async def test_get_all_rounds(self):
+        """Test retrieve all mentorship round entities"""
         await self.insert_entities(self.rounds)
 
-    async def test_get_all_rounds(self):
-        """Test retrieving all mentorship round entities"""
         rounds = await self.repo.get_all_rounds(self.session)
 
         self.assertEqual(len(rounds), len(self.rounds))
@@ -53,6 +53,13 @@ class TestMentorShipRoundRepository(BaseRepositoryTestLib):
             self.assertEqual(
                 round_entity.required_meetings, self.rounds[i].required_meetings
             )
+
+    async def test_get_all_rounds_empty(self):
+        """Test retrieve an empty list when no mentorship rounds exist."""
+        rounds = await self.repo.get_all_rounds(self.session)
+
+        self.assertIsInstance(rounds, list)
+        self.assertEqual(rounds, [])
 
 
 if __name__ == "__main__":
