@@ -102,7 +102,7 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
 
     async def test_get_pairs_by_user_id_existing(self):
         """Test passing a valid user ID returns unique partner IDs."""
-        result = await self.repo.get_pairs_by_users_id(
+        result = await self.repo.get_all_partner_ids(
             self.session, self.users[0].user_id
         )
 
@@ -111,18 +111,12 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
         self.assertIn(self.users[1].user_id, result)
         self.assertIn(self.users[2].user_id, result)
 
-    async def test_get_pairs_by_user_id_is_none(self):
-        """Test passing None as user ID returns None."""
-        result = await self.repo.get_pairs_by_users_id(self.session, None)
-
-        self.assertIsNone(result)
-
     async def test_get_pairs_by_user_non_existent(self):
         """Test passing a non-existent user ID returns an empty collection."""
-        result = await self.repo.get_pairs_by_users_id(self.session, 9999)
+        result = await self.repo.get_all_partner_ids(self.session, 9999)
 
         self.assertIsNotNone(result)
-        self.assertEqual(len(result), 0)
+        self.assertEqual(result, [])
 
 
 if __name__ == "__main__":

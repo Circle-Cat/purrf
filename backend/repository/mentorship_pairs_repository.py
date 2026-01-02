@@ -8,9 +8,9 @@ class MentorshipPairsRepository:
     Repository for handling database operations related to MentorshipPairsEntity.
     """
 
-    async def get_pairs_by_users_id(
+    async def get_all_partner_ids(
         self, session: AsyncSession, user_id: int
-    ) -> list[int] | None:
+    ) -> list[int]:
         """
         Retrieve a list of unique partner IDs (mentors or mentees) for a given user ID.
 
@@ -23,10 +23,11 @@ class MentorshipPairsRepository:
             user_id (int): The ID of the user whose partners are being retrieved.
 
         Returns:
-            list[int] | None: A list of unique partner IDs, or None if user_id is empty.
+            list[int]: A list of unique partner IDs. Returns an empty list if
+                    no partners are found or user_id is invalid.
         """
         if not user_id:
-            return None
+            return []
 
         partner_id_case = case(
             (
