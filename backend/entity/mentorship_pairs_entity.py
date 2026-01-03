@@ -2,7 +2,11 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy import Integer, ForeignKey, Enum, CheckConstraint, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 from backend.common.base import Base
-from backend.common.mentorship_enums import PairStatus
+from backend.common.mentorship_enums import (
+    PairStatus,
+    MentorActionStatus,
+    MenteeActionStatus,
+)
 
 
 class MentorshipPairsEntity(Base):
@@ -17,6 +21,20 @@ class MentorshipPairsEntity(Base):
         Enum(
             PairStatus,
             name="pair_status_enum",
+            values_callable=lambda obj: [e.value for e in obj],
+        )
+    )
+    mentor_action_status: Mapped[MentorActionStatus] = mapped_column(
+        Enum(
+            MentorActionStatus,
+            name="mentor_action_status_enum",
+            values_callable=lambda obj: [e.value for e in obj],
+        )
+    )
+    mentee_action_status: Mapped[MenteeActionStatus] = mapped_column(
+        Enum(
+            MenteeActionStatus,
+            name="mentee_action_status_enum",
             values_callable=lambda obj: [e.value for e in obj],
         )
     )

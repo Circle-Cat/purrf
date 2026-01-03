@@ -12,6 +12,8 @@ from backend.common.mentorship_enums import (
     PairStatus,
     UserTimezone,
     CommunicationMethod,
+    MentorActionStatus,
+    MenteeActionStatus,
 )
 
 
@@ -81,6 +83,8 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
                 mentee_id=self.users[1].user_id,
                 completed_count=5,
                 status=PairStatus.ACTIVE,
+                mentor_action_status=MentorActionStatus.CONFIRMED,
+                mentee_action_status=MenteeActionStatus.CONFIRMED,
             ),
             MentorshipPairsEntity(
                 round_id=self.rounds[1].round_id,
@@ -88,6 +92,8 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
                 mentee_id=self.users[1].user_id,
                 completed_count=2,
                 status=PairStatus.ACTIVE,
+                mentor_action_status=MentorActionStatus.CONFIRMED,
+                mentee_action_status=MenteeActionStatus.CONFIRMED,
             ),
             MentorshipPairsEntity(
                 round_id=self.rounds[0].round_id,
@@ -95,6 +101,8 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
                 mentee_id=self.users[0].user_id,
                 completed_count=3,
                 status=PairStatus.ACTIVE,
+                mentor_action_status=MentorActionStatus.PENDING,
+                mentee_action_status=MenteeActionStatus.CONFIRMED,
             ),
         ]
 

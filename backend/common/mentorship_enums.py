@@ -33,6 +33,17 @@ class PairStatus(Enum):
     INACTIVE = "inactive"
 
 
+class MentorActionStatus(str, Enum):
+    PENDING = "pending"
+    CONFIRMED = "confirmed"
+
+
+class MenteeActionStatus(str, Enum):
+    PENDING = "pending"
+    TIME_PROPOSED = "time_proposed"
+    CONFIRMED = "confirmed"
+
+
 class ParticipantRole(Enum):
     MENTOR = "mentor"
     MENTEE = "mentee"
