@@ -118,6 +118,35 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
         self.assertIsNotNone(result)
         self.assertEqual(result, [])
 
+    async def test_get_partner_ids_by_user_and_round(self):
+        """Test passing both user_id and round_id returns the unique partner IDs."""
+        result = await self.repo.get_partner_ids_by_user_and_round(
+            self.session, self.users[0].user_id, self.rounds[0].round_id
+        )
+
+        self.assertIsNotNone(result)
+        self.assertEqual(len(result), 2)
+        self.assertIn(self.users[1].user_id, result)
+        self.assertIn(self.users[2].user_id, result)
+
+    async def test_get_partner_ids_by_user_and_round_by_user_non_existent(self):
+        """Test passing non-existent user ID and valid rounds ID returns an empty collection."""
+        result = await self.repo.get_partner_ids_by_user_and_round(
+            self.session, 9999, self.rounds[0].round_id
+        )
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result, [])
+
+    async def test_get_partner_ids_by_user_and_round_by_round_non_existent(self):
+        """Test passing valid user ID and non-existent rounds ID returns an empty collection."""
+        result = await self.repo.get_partner_ids_by_user_and_round(
+            self.session, self.users[0].user_id, 9999
+        )
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result, [])
+
 
 if __name__ == "__main__":
     unittest.main()
