@@ -93,6 +93,8 @@ const Dashboard = () => {
   const [groups, setGroups] = useState([Group.Interns, Group.Employees]);
   const groupsData = Object.values(Group);
 
+  const [error, setError] = useState("");
+
   const [summaryData, setSummaryData] = useState({
     totalMembers: 0,
     totalCompletedTickets: 0,
@@ -135,11 +137,15 @@ const Dashboard = () => {
    */
   const handleGroupChange = (groupName) => {
     setGroups((prevGroups) => {
-      if (prevGroups.includes(groupName)) {
-        return prevGroups.filter((g) => g !== groupName);
-      } else {
-        return [...prevGroups, groupName];
+      const updatedGroups = prevGroups.includes(groupName)
+        ? prevGroups.filter((g) => g !== groupName)
+        : [...prevGroups, groupName];
+
+      if (updatedGroups.length > 0) {
+        setError("");
       }
+
+      return updatedGroups;
     });
   };
 
@@ -255,12 +261,17 @@ const Dashboard = () => {
    * Handler for the search button click.
    */
   const handleSearchClick = () => {
-    fetchDataAndRender({
-      startDate: selectedStartDate,
-      endDate: selectedEndDate,
-      groups: groups,
-      includeTerminated: includeTerminated,
-    });
+    if (groups.length === 0) {
+      setError("Groups are required.");
+    } else {
+      setError("");
+      fetchDataAndRender({
+        startDate: selectedStartDate,
+        endDate: selectedEndDate,
+        groups: groups,
+        includeTerminated: includeTerminated,
+      });
+    }
   };
 
   /**
@@ -356,25 +367,41 @@ const Dashboard = () => {
           defaultEndDate={defaultEnd}
           onChange={handleDateChange}
         />
-        {groupsData.map((group) => (
-          <label key={group} className="checkbox-item">
+
+        <div className="checkbox-container">
+          {groupsData.map((group) => {
+            const isRequired = [Group.Interns, Group.Employees, Group.Volunteers].includes(
+              group,
+            );
+            const errorClass = error ? "error" : "";
+
+            return (
+              <div key={group} className="checkbox-item">
+                <label
+                  className={`group-label ${errorClass} ${isRequired ? "required" : ""}`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={groups.includes(group)}
+                    onChange={() => handleGroupChange(group)}
+                  />
+                  <span>{group}</span>
+                </label>
+              </div>
+            );
+          })}
+
+          <label className="checkbox-item">
             <input
               type="checkbox"
-              checked={groups.includes(group)}
-              onChange={() => handleGroupChange(group)}
+              checked={includeTerminated}
+              onChange={(e) => setIncludeTerminated(e.target.checked)}
             />
-            <span>{group}</span>
+            <span>Include Terminated Members</span>
           </label>
-        ))}
+        </div>
 
-        <label className="checkbox-item">
-          <input
-            type="checkbox"
-            checked={includeTerminated}
-            onChange={(e) => setIncludeTerminated(e.target.checked)}
-          />
-          <span>Include Terminated Members</span>
-        </label>
+        {error && <div className="error-message">{error}</div>}
 
         <Button size="sm" onClick={handleSearchClick}>
           Search

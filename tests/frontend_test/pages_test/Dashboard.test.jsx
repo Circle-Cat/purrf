@@ -420,6 +420,79 @@ describe("Dashboard", () => {
     );
   });
 
+  it("shows an error when no any groups are selected", async () => {
+    render(<Dashboard />);
+
+    const checkboxes = screen.getAllByRole("checkbox");
+
+    checkboxes.forEach((checkbox) => {
+      if (checkbox.checked) {
+        fireEvent.click(checkbox);
+      }
+    });
+
+    const searchButton = screen.getByRole("button", { name: /search/i });
+    await fireEvent.click(searchButton);
+
+    await vi.waitFor(() => {
+      expect(screen.getByText(/Groups are required/i)).toBeInTheDocument();
+    });
+  });
+
+  it("removes error message when a group is selected", async () => {
+    render(<Dashboard />);
+
+    const checkboxes = screen.getAllByRole("checkbox");
+    checkboxes.forEach((checkbox) => {
+      if (checkbox.checked) {
+        fireEvent.click(checkbox);
+      }
+    });
+
+    const groupCheckbox = screen.getByLabelText(/interns/i);
+    await fireEvent.click(groupCheckbox);
+
+    await vi.waitFor(() => {
+      expect(
+        screen.queryByText(/Groups are required/i),
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  it("allows searching when at least one required group is selected", async () => {
+    getSummary.mockResolvedValue({ data: mockSummaryData });
+    getLdapsAndDisplayNames.mockResolvedValue({ data: mockLdapsData });
+
+    render(<Dashboard />);
+
+    const checkboxes = screen.getAllByRole("checkbox");
+
+    checkboxes.forEach((checkbox) => {
+      if (checkbox.checked) {
+        fireEvent.click(checkbox);
+      }
+    });
+
+    const internsCheckbox = screen.getByLabelText(/interns/i);
+    await fireEvent.click(internsCheckbox);
+
+    const searchButton = screen.getByRole("button", { name: /search/i });
+    await fireEvent.click(searchButton);
+
+    expect(getSummary).toHaveBeenCalledWith({
+      startDate: expect.any(String),
+      endDate: expect.any(String),
+      groups: expect.arrayContaining(["interns"]),
+      includeTerminated: false,
+    });
+
+    await vi.waitFor(() => {
+      expect(screen.getByText("test.user1")).toBeInTheDocument();
+      expect(screen.getByText("test.user2")).toBeInTheDocument();
+      expect(screen.getByText("test.user3")).toBeInTheDocument();
+    });
+  });
+
   describe("User Welcome Message", () => {
     it("should display the username when the Cloudflare JWT cookie is present", async () => {
       const mockJwt = "mock.jwt.token";
