@@ -1,6 +1,10 @@
 export const API_ENDPOINTS = {
   MY_PROFILE: "/profiles/me",
   MY_ROLES: "/roles/me",
+  MENTORSHIP_REGISTRATION: (roundId) =>
+    `/mentorship/rounds/${roundId}/registration`,
+  MENTORSHIP_PARTNERS: "/mentorship/partners/me",
+  MENTORSHIP_ROUNDS: "/mentorship/rounds",
 };
 
 /**
