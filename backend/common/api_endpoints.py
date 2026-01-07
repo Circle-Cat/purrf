@@ -44,3 +44,4 @@ SUMMARY_ENDPOINT = "/summary"
 MY_PROFILE_ENDPOINT = "/profiles/me"
 
 MENTORSHIP_ROUNDS_ENDPOINT = "/mentorship/rounds"
+MENTORSHIP_PARTNERS_ENDPOINT = "/mentorship/partners/me"

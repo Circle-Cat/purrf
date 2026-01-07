@@ -11,6 +11,8 @@ py_library(
         "//backend/dto",
         "//backend/entity:entities",
         "//backend/repository:repositories",
+        "//backend/user_identity:user_identity_service",
+        "//backend/utils:permission_decorators",
         "@pypi//fastapi",
         "@pypi//sqlalchemy",
     ],

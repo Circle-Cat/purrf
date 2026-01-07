@@ -9,7 +9,9 @@ from backend.common.environment_constants import (
 
 @patch("backend.utils.app_dependency_builder.UserIdentityService")
 @patch("backend.utils.app_dependency_builder.MentorshipController")
+@patch("backend.utils.app_dependency_builder.ParticipationService")
 @patch("backend.utils.app_dependency_builder.RoundsService")
+@patch("backend.utils.app_dependency_builder.MentorshipPairsRepository")
 @patch("backend.utils.app_dependency_builder.MentorshipRoundRepository")
 @patch("backend.utils.app_dependency_builder.MentorshipMapper")
 @patch("backend.utils.app_dependency_builder.Database")
@@ -125,7 +127,9 @@ class TestAppDependencyBuilder(TestCase):
         mock_database_cls,
         mock_mentorship_mapper_cls,
         mock_mentorship_round_repository_cls,
+        mock_mentorship_pairs_repo_cls,
         mock_rounds_service_cls,
+        mock_participation_service_cls,
         mock_mentorship_controller_cls,
         mock_user_identity_service_cls,
     ):
@@ -394,8 +398,10 @@ class TestAppDependencyBuilder(TestCase):
         mock_authentication_controller_cls.assert_called_once()
 
         mock_users_repo_cls.assert_called_once()
+        mock_mentorship_pairs_repo_cls.assert_called_once()
         mock_experience_repo_cls.assert_called_once()
         mock_training_repo_cls.assert_called_once()
+        mock_mentorship_mapper_cls.assert_called_once()
         mock_database_cls.assert_called_once()
         mock_profile_query_service_cls.assert_called_once_with(
             user_identity_service=mock_user_identity_service_cls.return_value,
@@ -421,12 +427,20 @@ class TestAppDependencyBuilder(TestCase):
             database=mock_database_cls.return_value,
         )
         mock_mentorship_controller_cls.assert_called_once_with(
-            mentorship_service=mock_rounds_service_cls.return_value,
+            rounds_service=mock_rounds_service_cls.return_value,
+            participation_service=mock_participation_service_cls.return_value,
             database=mock_database_cls.return_value,
         )
         mock_rounds_service_cls.assert_called_once_with(
             mentorship_round_repository=mock_mentorship_round_repository_cls.return_value,
             mentorship_mapper=mock_mentorship_mapper_cls.return_value,
+        )
+        mock_participation_service_cls.assert_called_once_with(
+            logger=mock_logger,
+            users_repository=mock_users_repo_cls.return_value,
+            mentorship_pairs_repository=mock_mentorship_pairs_repo_cls.return_value,
+            mentorship_mapper=mock_mentorship_mapper_cls.return_value,
+            user_identity_service=mock_user_identity_service_cls.return_value,
         )
 
         mock_fast_app_factory_cls.assert_called_once_with(
@@ -606,7 +620,8 @@ class TestAppDependencyBuilder(TestCase):
         )
         self.assertEqual(builder.summary_service, mock_summary_service_cls.return_value)
         self.assertEqual(
-            builder.internal_activity_controller, mock_internal_activity_controller_cls.return_value
+            builder.internal_activity_controller,
+            mock_internal_activity_controller_cls.return_value,
         )
         self.assertEqual(
             builder.microsoft_meeting_chat_topic_cache_service,

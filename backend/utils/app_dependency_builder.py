@@ -40,18 +40,24 @@ from backend.historical_data.google_calendar_sync_service import (
 )
 from backend.historical_data.gerrit_sync_service import GerritSyncService
 from backend.internal_activity_service.ldap_service import LdapService
-from backend.internal_activity_service.jira_analytics_service import JiraAnalyticsService
+from backend.internal_activity_service.jira_analytics_service import (
+    JiraAnalyticsService,
+)
 from backend.internal_activity_service.google_calendar_analytics_service import (
     GoogleCalendarAnalyticsService,
 )
-from backend.internal_activity_service.internal_activity_controller import InternalActivityController
+from backend.internal_activity_service.internal_activity_controller import (
+    InternalActivityController,
+)
 from backend.internal_activity_service.microsoft_chat_analytics_service import (
     MicrosoftChatAnalyticsService,
 )
 from backend.internal_activity_service.microsoft_meeting_chat_topic_cache_service import (
     MicrosoftMeetingChatTopicCacheService,
 )
-from backend.internal_activity_service.gerrit_analytics_service import GerritAnalyticsService
+from backend.internal_activity_service.gerrit_analytics_service import (
+    GerritAnalyticsService,
+)
 from backend.historical_data.microsoft_chat_history_sync_service import (
     MicrosoftChatHistorySyncService,
 )
@@ -76,9 +82,11 @@ from backend.repository.users_repository import UsersRepository
 from backend.repository.experience_repository import ExperienceRepository
 from backend.repository.training_repository import TrainingRepository
 from backend.repository.mentorship_round_repository import MentorshipRoundRepository
+from backend.repository.mentorship_pairs_repository import MentorshipPairsRepository
 from backend.mentorship.mentorship_mapper import MentorshipMapper
 from backend.mentorship.mentorship_controller import MentorshipController
 from backend.mentorship.rounds_service import RoundsService
+from backend.mentorship.participation_service import ParticipationService
 from backend.profile.profile_query_service import ProfileQueryService
 from backend.profile.profile_command_service import ProfileCommandService
 from backend.profile.profile_mapper import ProfileMapper
@@ -336,22 +344,31 @@ class AppDependencyBuilder:
             google_chat_analytics_service=self.google_chat_analytics_service,
             summary_service=self.summary_service,
         )
+        self.users_repository = UsersRepository()
+        self.user_identity_service = UserIdentityService(
+            logger=self.logger, users_repository=self.users_repository
+        )
         self.authentication_service = AuthenticationService(logger=self.logger)
         self.authentication_controller = AuthenticationController()
         self.mentorship_round_repository = MentorshipRoundRepository()
+        self.mentorship_pairs_repository = MentorshipPairsRepository()
         self.mentorship_mapper = MentorshipMapper()
         self.database = Database(echo=False)
         self.rounds_service = RoundsService(
             mentorship_round_repository=self.mentorship_round_repository,
             mentorship_mapper=self.mentorship_mapper,
         )
-        self.mentorship_controller = MentorshipController(
-            mentorship_service=self.rounds_service,
-            database=self.database,
+        self.participation_service = ParticipationService(
+            logger=self.logger,
+            users_repository=self.users_repository,
+            mentorship_pairs_repository=self.mentorship_pairs_repository,
+            mentorship_mapper=self.mentorship_mapper,
+            user_identity_service=self.user_identity_service,
         )
-        self.users_repository = UsersRepository()
-        self.user_identity_service = UserIdentityService(
-            logger=self.logger, users_repository=self.users_repository
+        self.mentorship_controller = MentorshipController(
+            rounds_service=self.rounds_service,
+            participation_service=self.participation_service,
+            database=self.database,
         )
         self.experience_repository = ExperienceRepository()
         self.training_repository = TrainingRepository()
