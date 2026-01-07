@@ -25,24 +25,6 @@ py_test(
 )
 
 py_test(
-    name = "api_response_wrapper_test",
-    srcs = ["api_response_wrapper_test.py"],
-    deps = [
-        "//backend/common:api_response_wrapper",
-        "@pypi//flask",
-    ],
-)
-
-py_test(
-    name = "error_handler_test",
-    srcs = ["error_handler_test.py"],
-    deps = [
-        "//backend/common:error_handler",
-        "@pypi//flask",
-    ],
-)
-
-py_test(
     name = "fast_api_error_handler_test",
     srcs = ["fast_api_error_handler_test.py"],
     deps = [

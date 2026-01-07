@@ -47,27 +47,6 @@ py_library(
 )
 
 py_library(
-    name = "api_response_wrapper",
-    srcs = [
-        "api_response_wrapper.py",
-    ],
-    deps = [
-        "@pypi//flask",
-    ],
-)
-
-py_library(
-    name = "error_handler",
-    srcs = [
-        "error_handler.py",
-    ],
-    deps = [
-        ":api_response_wrapper",
-        ":logger",
-    ],
-)
-
-py_library(
     name = "fast_api_response_wrapper",
     srcs = [
         "fast_api_response_wrapper.py",
