@@ -1,30 +1,14 @@
 .profile-page-container {
   min-height: 100vh;
-  background-color: var(--bg-color-light);
   padding: 32px 24px;
 }
 
 .profile-content-area {
   max-width: 1000px;
   margin: 0 auto;
-  background-color: var(--bg-color-light);
-  box-shadow: var(--shadow-md);
-  border-radius: 16px;
-  border: 1px solid var(--border-color-light);
-  padding: 48px;
-}
-
-.profile-info-section {
   display: flex;
-  align-items: center;
-  margin-bottom: 40px;
-  border-bottom: 1px solid var(--border-color-light);
-  padding-bottom: 32px;
-}
-
-/* Content sections */
-.tab-content-wrapper {
-  padding-top: 8px;
+  flex-direction: column;
+  gap: 16px;
 }
 
 .section {

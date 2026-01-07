@@ -12,6 +12,7 @@ import TrainingSection from "@/pages/Profile/components/TrainingSection";
 import PersonalEditModal from "@/pages/Profile/modals/PersonalEditModal";
 import ExperienceEditModal from "@/pages/Profile/modals/ExperienceEditModal";
 import EducationEditModal from "@/pages/Profile/modals/EducationEditModal";
+import { Card, CardHeader, CardContent } from "@/components/ui/card";
 
 /**
  * Profile page component.
@@ -58,30 +59,47 @@ const Profile = () => {
     <div className="profile-page-container">
       <div className="profile-content-area">
         {/** Top section with personal info */}
-        <div className="profile-info-section">
-          <ProfileHeader
-            info={personalInfo}
-            canEdit={canEditPersonalInfo}
-            nextEditableDate={nextEditableDate}
-            onEditClick={() => toggleModal("personal", true)}
-          />
-        </div>
-
-        {/** Main content area: tabs or sections */}
-        <div className="tab-content-wrapper">
-          <div className="tab-content-personal">
+        <Card>
+          <CardHeader>
+            <ProfileHeader
+              info={personalInfo}
+              onEditClick={() => toggleModal("personal", true)}
+              canEdit={canEditPersonalInfo}
+              nextEditableDate={nextEditableDate}
+            />
+          </CardHeader>
+          {/* ContactSection */}
+          <CardContent>
             <ContactSection info={personalInfo} />
+          </CardContent>
+        </Card>
+
+        {/* Experience Card */}
+        <Card>
+          <CardContent>
             <ExperienceSection
               list={experienceList}
               onEditClick={() => toggleModal("experience", true)}
             />
+          </CardContent>
+        </Card>
+
+        {/* Education Card */}
+        <Card>
+          <CardContent>
             <EducationSection
               list={educationList}
               onEditClick={() => toggleModal("education", true)}
             />
+          </CardContent>
+        </Card>
+
+        {/* Training Card */}
+        <Card>
+          <CardContent>
             <TrainingSection list={personalInfo.completedTraining} />
-          </div>
-        </div>
+          </CardContent>
+        </Card>
       </div>
 
       {/** Modal components */}
