@@ -1,18 +1,15 @@
 import React from "react";
 import { formatTimeDuration } from "@/pages/Profile/utils";
+import { Button } from "@/components/ui/button";
 
 const ExperienceSection = ({ list, onEditClick }) => {
   return (
     <div className="section">
       <div className="section-header">
         <h3>Experience</h3>
-        <button
-          className="edit-button"
-          aria-label="Edit Experience"
-          onClick={onEditClick}
-        >
+        <Button size="sm" aria-label="Edit Experience" onClick={onEditClick}>
           +
-        </button>
+        </Button>
       </div>
 
       {list && list.length > 0 ? (

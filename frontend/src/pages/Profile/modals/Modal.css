@@ -86,38 +86,6 @@
 }
 
 
-
-/* Delete button */
-.delete-btn {
-  padding: 6px 12px;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  background-color: var(--profile-btn-danger-bg);
-  color: var(--text-color-white);
-  font-size: 1.125rem;
-  font-weight: 600;
-  line-height: 1;
-  white-space: nowrap;
-  transition: all 0.2s ease;
-  box-shadow: var(--shadow-sm);
-  min-width: 28px;
-  height: 28px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.delete-btn:hover {
-  background-color: var(--profile-btn-danger-hover);
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-md);
-}
-
-.delete-btn:active {
-  transform: translateY(0);
-}
-
 /* Delete button positioning in form */
 .edit-item-form .delete-btn {
   position: absolute;
@@ -133,46 +101,6 @@
   gap: 12px;
   border-top: 2px solid var(--profile-border-light);
   padding-top: 24px;
-}
-
-.modal-actions button {
-  padding: 12px 28px;
-  border: none;
-  border-radius: 10px;
-  cursor: pointer;
-  font-size: 0.9375rem;
-  font-weight: 600;
-  transition: all 0.2s ease;
-  box-shadow: var(--shadow-sm);
-}
-
-.modal-actions button:last-child {
-  background-color: var(--primary-color);
-  color: var(--text-color-white);
-}
-
-.modal-actions button:last-child:hover {
-  background-color: var(--secondary-color);
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-md);
-}
-
-.modal-actions button:first-child {
-  background-color: transparent;
-  color: var(--primary-color);
-  border: 2px solid var(--teriary-color);
-}
-
-.modal-actions button:first-child:hover {
- background-color: transparent;
-  border-color: var(--primary-color);
-  color: var(--primary-color);
-}
-
-.modal-actions button:focus,
-.modal-actions button:focus-visible,
-.modal-actions button:active {
-  outline: none;
 }
 
 /* Edit item form (Experience/Education) */

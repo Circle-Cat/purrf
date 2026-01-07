@@ -4,6 +4,7 @@ import MemberSelector from "@/components/common/MemberSelector";
 import DateRangePicker from "@/components/common/DateRangePicker";
 import { DataSourceSelector } from "@/components/common/DataSourceSelector";
 import Tab from "@/components/common/Tab.jsx";
+import { Button } from "@/components/ui/button";
 
 /**
  * DataSearch Page
@@ -125,9 +126,9 @@ export default function DataSearch() {
             onChange={handleDateChange}
           />
         </div>
-        <button className="datasearch-button" onClick={handleSearchClick}>
+        <Button size="sm" onClick={handleSearchClick}>
           Search
-        </button>
+        </Button>
       </div>
 
       {/* MemberSelector modal (controlled) */}

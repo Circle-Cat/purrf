@@ -1,4 +1,5 @@
 import React from "react";
+import { Button } from "@/components/ui/button";
 
 const EducationEditModal = ({ isOpen, onClose, initialData, onSave }) => {
   if (!isOpen) return null;
@@ -13,9 +14,9 @@ const EducationEditModal = ({ isOpen, onClose, initialData, onSave }) => {
         <pre>{JSON.stringify(initialData, null, 2)}</pre>
 
         <div style={{ marginTop: 16 }}>
-          <button onClick={() => onSave(initialData)}>Save</button>
+          <Button onClick={() => onSave(initialData)}>Save</Button>
 
-          <button onClick={onClose}>Close</button>
+          <Button onClick={onClose}>Close</Button>
         </div>
       </div>
     </div>

@@ -21,7 +21,7 @@ function App() {
   return (
     <AuthProvider>
       <Router>
-        <div className="app-container">
+        <div className="app-container legacy-styles">
           <Header />
           <div className="app-body">
             <Sidebar />

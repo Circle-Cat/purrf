@@ -1,14 +1,14 @@
-.app-container {
+.legacy-styles .app-container {
   display: flex;
   flex-direction: column; /* Header on top, Body below */
 }
 
-.app-body {
+.legacy-styles .app-body {
   display: flex;
   flex-grow: 1;
 }
 
-.main-content {
+.legacy-styles .main-content {
   flex-grow: 1;
   display: flex;
   flex-direction: column;
@@ -19,7 +19,7 @@
   min-height: calc(100vh - 64px);
 }
 
-.sidebar {
+.legacy-styles .sidebar {
   position: fixed;
   top: 64px;
   left: 0;
@@ -34,20 +34,20 @@
   z-index: 90;
 }
 
-.sidebar-nav {
+.legacy-styles .sidebar-nav {
   padding: 16px;
 }
-.sidebar-nav ul {
+.legacy-styles .sidebar-nav ul {
   list-style: none;
   padding: 0;
   margin: 0;
 }
 
-.sidebar-nav li {
+.legacy-styles .sidebar-nav li {
   margin-bottom: 5px;
 }
 
-.sidebar-nav a {
+.legacy-styles .sidebar-nav a {
   display: flex;
   align-items: center;
   padding: 12px 16px;
@@ -59,12 +59,12 @@
   transition: all 0.2s ease;
 }
 
-.sidebar-nav a:hover{
+.legacy-styles .sidebar-nav a:hover{
   background-color: var(--bg-color-stripe-even);
   color:var(--text-color-dark);
 }
 
-.sidebar-nav a.active-link {
+.legacy-styles .sidebar-nav a.active-link {
   color: var(--text-color-white);
   background-color: var(--primary-color);
   border: none;

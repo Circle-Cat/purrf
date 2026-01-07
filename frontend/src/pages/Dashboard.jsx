@@ -7,6 +7,7 @@ import Card from "@/components/common/Card";
 import Table from "@/components/common/Table";
 import { getSummary, getLdapsAndDisplayNames } from "@/api/dashboardApi";
 import { getCookie, extractCloudflareUserName } from "@/utils/auth";
+import { Button } from "@/components/ui/button";
 
 /**
  * @typedef {Object} SummaryData
@@ -375,9 +376,9 @@ const Dashboard = () => {
           <span>Include Terminated Members</span>
         </label>
 
-        <button className="search-button" onClick={handleSearchClick}>
+        <Button size="sm" onClick={handleSearchClick}>
           Search
-        </button>
+        </Button>
       </div>
 
       <Table

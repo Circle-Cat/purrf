@@ -1,191 +1,129 @@
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
+@layer legacy, base, components, utilities;
+
+@layer legacy {
+  @import "./legacy.css";
+}
+
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+  --radius-4xl: calc(var(--radius) + 16px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
 }
 
 :root {
-  /* Primary brand color, often used for main interactive elements like buttons and links. */
-  --primary-color: #6035F3;
-  /* A deep purple */
-
-  /* Secondary color, a semi-transparent version of the primary color.
-     Used for subtle effects like hover states, selected backgrounds, or minor highlights. */
-  --secondary-color: #8b6ef7;
-
-  /* Teriary color */
-  --teriary-color: #E8E2FE;
-
-  /* Text Colors */
-  --text-color-dark: #333333;
-  /* Main text color, dark grey, for headings and primary content. */
-  --text-color-medium: #666666;
-  /* Secondary text color, medium grey, for descriptions or less emphasis. */
-  --text-color-light: #999999;
-  /* Light text color, light grey, for auxiliary information or disabled states. */
-  --text-color-white: #ffffff;
-  /* White text, typically used on dark backgrounds for contrast. */
-
-  /* Background Colors */
-  --bg-color-light: #ffffff;
-  /* Primary background color for content areas and cards (white). */
-  --bg-color-header: #fafafa;
-  /* Background color specifically for the header section (very light grey). */
-  --bg-color-stripe-even: #f9f9f9;
-  /* background color for even table rows (zebra striping) */
-  --bg-color-row-hover: #fafafa;
-  /* Border Colors */
-  --border-color-light: #eeeeee;
-  /* Light border color, for subtle separators or input fields. */
-  --border-color-medium: #dddddd;
-  /* Medium border color, for more pronounced separations like table borders. */
-
-  /* Status Colors (Optional) */
-  --success-color: #27ae60;
-  /* Green, indicates success or positive status. */
-  --warning-color: #f39c12;
-  /* Orange/Yellow, indicates warnings or caution. */
-  --error-color: #e74c3c;
-  /* Red, indicates errors or critical states. */
-
-  --shadow-sm: 0 1px 3px var(--border-color-light);
-  --shadow-md: 2px 0 5px var(--border-color-light);
-  --shadow-lg: 0 10px 25px var(--border-color-light);
-
-    /* Button Colors */
-  --profile-btn-danger-bg: #EF4444;
-  --profile-btn-danger-hover: #DC2626;
-  --profile-btn-secondary-bg: #F5F5F5;
-  --profile-btn-secondary-hover: #E5E5E5;
+  --radius: 0.625rem;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.51 0.25 286);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.96 0.01 286);
+  --secondary-foreground: oklch(0.3 0.15 286);
+  --muted: oklch(0.96 0.01 286);
+  --muted-foreground: oklch(0.55 0.05 286);
+  --accent: oklch(0.94 0.03 286);
+  --accent-foreground: oklch(0.3 0.15 286);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.51 0.25 286);
+  --chart-1: oklch(0.51 0.25 286);
+  --chart-2: oklch(0.65 0.2 286);
+  --chart-3: oklch(0.75 0.15 286);
+  --chart-4: oklch(0.85 0.1 286);
+  --chart-5: oklch(0.92 0.05 286);
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.51 0.25 286);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.96 0.02 286);
+  --sidebar-accent-foreground: oklch(0.51 0.25 286);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.51 0.25 286);
 }
 
-
-/* Global Body Settings */
-body {
-  /* Font stack: Prioritizes 'Inter' (if loaded), then 'Helvetica Neue', Helvetica, Arial, finally any sans-serif. */
-  font-family: 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif;
-  font-size: 16px;
-  /* Base font size */
-  line-height: 1.6;
-  /* Default line height */
-  font-weight: 400;
-  /* Default font weight, regular. */
-
-  color: var(--text-color-dark);
-  /* Apply default text color using a CSS variable */
-  background-color: var(--bg-color-light);
-  /* Apply default page background color using a CSS variable */
-  margin: 0;
-  /* Remove default body margins */
-
-  /* Font rendering optimizations */
-  font-synthesis: none;
-  /* Prevents browser from synthesizing bold/italic if native glyphs are missing. */
-  text-rendering: optimizeLegibility;
-  /* Prioritizes text readability over rendering speed. */
-  -webkit-font-smoothing: antialiased;
-  /* Anti-aliasing for smoother font rendering on WebKit/Blink browsers. */
-  -moz-osx-font-smoothing: grayscale;
-  /* Anti-aliasing for smoother font rendering on Firefox. */
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.18 0.02 286);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.18 0.02 286);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.65 0.2 286); 
+  --primary-foreground: oklch(0.1 0.1 286);
+  --secondary: oklch(0.25 0.05 286);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.25 0.05 286);
+  --muted-foreground: oklch(0.7 0.05 286);
+  --accent: oklch(0.25 0.05 286);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 15%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.65 0.2 286);
+  --chart-1: oklch(0.7 0.2 286);
+  --chart-2: oklch(0.8 0.15 295);
+  --chart-3: oklch(0.6 0.25 275);
+  --chart-4: oklch(0.85 0.1 280);
+  --chart-5: oklch(0.75 0.2 315);
+  --sidebar: oklch(0.18 0.02 286);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.65 0.2 286);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.25 0.05 286);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 15%);
+  --sidebar-ring: oklch(0.65 0.2 286);
 }
 
-/* Heading Font Settings */
-h1,
-h2,
-h3,
-h4,
-h5,
-h6 {
-  /* font-family is inherited from body, no need to repeat here unless different font is desired */
-  color: var(--text-color-dark);
-  /* Headings use dark text */
-  margin-top: 0.8em;
-  margin-bottom: 0.5em;
-  line-height: 1.2;
-  /* Slightly tighter line height for headings */
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
 }
-
-/* Specific Heading Sizes (ensure no duplication) */
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
-}
-
-/* Consolidate h1 settings here */
-h2 {
-  font-size: 2em;
-}
-
-h3 {
-  font-size: 1.75em;
-}
-
-h4 {
-  font-size: 1.5em;
-}
-
-h5 {
-  font-size: 1.25em;
-}
-
-h6 {
-  font-size: 1em;
-}
-
-/* Default paragraph and link styles */
-p {
-  margin-top: 0.5em;
-  margin-bottom: 0.5em;
-}
-
-a {
-  color: var(--primary-color);
-  text-decoration: none;
-  transition: color 0.3s ease;
-}
-
-a:hover {
-  /* In pure CSS, you need to pick a darker color manually or use a CSS custom property for hover */
-  /* For example, a slightly darker purple */
-  color: var(--secondary-color);
-  /* Example darker shade of --primary-color */
-  text-decoration: underline;
-}
-
-/* Remove default list styles */
-ul,
-ol {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
-
-/* --- Below styles should ideally be in component-specific CSS files --- */
-/* Button styles (move to Button.css or similar) */
-button {
-  padding: 6px 12px;
-  background-color: var(--primary-color);
-  color: var(--text-color-white);
-  border: 1px solid var(--primary-color);
-  border-radius: 4px;
-  cursor: pointer;
-  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
-  height: 32px;
-  font-size: 0.9em;
-  line-height: 1;
-  flex-shrink: 0;
-}
-
-button:hover {
-  background-color: var(--secondary-color);
-  border-color: var(--secondary-color);
-}
-button:focus {
-  outline: none;
-}
-button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-/* --- End of component-specific styles --- */

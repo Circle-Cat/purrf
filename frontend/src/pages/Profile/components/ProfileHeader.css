@@ -36,31 +36,6 @@
     color: var(--text-color-medium);
 }
 
-.edit-name-button {
-    background-color: var(--primary-color);
-    color: var(--text-color-white);
-    border: 1px solid var(--primary-color);
-    padding: 6px 12px;
-    font-size: 0.3em;
-    border-radius: 4px;
-    cursor: pointer;
-    margin-left: 24px;
-    white-space: nowrap;
-    transition: background-color 0.2s ease, border-color 0.2s ease;
-    font-weight: 600;
-    box-shadow: var(--shadow-sm);
-}
-
-.edit-name-button:hover {
-    background-color: var(--secondary-color);
-    border-color: var(--secondary-color);
-}
-
-.edit-name-button:focus {
-    outline: none;
-    outline: 2px solid var(--primary-color);
-}
-
 .tooltip-container {
     position: relative;
     display: inline-block;   

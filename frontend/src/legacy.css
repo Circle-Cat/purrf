@@ -1,0 +1,191 @@
+.legacy-styles *,
+.legacy-styles *::before,
+.legacy-styles *::after {
+  box-sizing: border-box;
+}
+
+:root {
+  /* Primary brand color, often used for main interactive elements like buttons and links. */
+  --primary-color: #6035F3;
+  /* A deep purple */
+
+  /* Secondary color, a semi-transparent version of the primary color.
+     Used for subtle effects like hover states, selected backgrounds, or minor highlights. */
+  --secondary-color: #8b6ef7;
+
+  /* Teriary color */
+  --teriary-color: #E8E2FE;
+
+  /* Text Colors */
+  --text-color-dark: #333333;
+  /* Main text color, dark grey, for headings and primary content. */
+  --text-color-medium: #666666;
+  /* Secondary text color, medium grey, for descriptions or less emphasis. */
+  --text-color-light: #999999;
+  /* Light text color, light grey, for auxiliary information or disabled states. */
+  --text-color-white: #ffffff;
+  /* White text, typically used on dark backgrounds for contrast. */
+
+  /* Background Colors */
+  --bg-color-light: #ffffff;
+  /* Primary background color for content areas and cards (white). */
+  --bg-color-header: #fafafa;
+  /* Background color specifically for the header section (very light grey). */
+  --bg-color-stripe-even: #f9f9f9;
+  /* background color for even table rows (zebra striping) */
+  --bg-color-row-hover: #fafafa;
+  /* Border Colors */
+  --border-color-light: #eeeeee;
+  /* Light border color, for subtle separators or input fields. */
+  --border-color-medium: #dddddd;
+  /* Medium border color, for more pronounced separations like table borders. */
+
+  /* Status Colors (Optional) */
+  --success-color: #27ae60;
+  /* Green, indicates success or positive status. */
+  --warning-color: #f39c12;
+  /* Orange/Yellow, indicates warnings or caution. */
+  --error-color: #e74c3c;
+  /* Red, indicates errors or critical states. */
+
+  --shadow-sm: 0 1px 3px var(--border-color-light);
+  --shadow-md: 2px 0 5px var(--border-color-light);
+  --shadow-lg: 0 10px 25px var(--border-color-light);
+
+    /* Button Colors */
+  --profile-btn-danger-bg: #EF4444;
+  --profile-btn-danger-hover: #DC2626;
+  --profile-btn-secondary-bg: #F5F5F5;
+  --profile-btn-secondary-hover: #E5E5E5;
+}
+
+
+/* Global Body Settings */
+.legacy-styles {
+  /* Font stack: Prioritizes 'Inter' (if loaded), then 'Helvetica Neue', Helvetica, Arial, finally any sans-serif. */
+  font-family: 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-size: 16px;
+  /* Base font size */
+  line-height: 1.6;
+  /* Default line height */
+  font-weight: 400;
+  /* Default font weight, regular. */
+
+  color: var(--text-color-dark);
+  /* Apply default text color using a CSS variable */
+  background-color: var(--bg-color-light);
+  /* Apply default page background color using a CSS variable */
+  margin: 0;
+  /* Remove default body margins */
+
+  /* Font rendering optimizations */
+  font-synthesis: none;
+  /* Prevents browser from synthesizing bold/italic if native glyphs are missing. */
+  text-rendering: optimizeLegibility;
+  /* Prioritizes text readability over rendering speed. */
+  -webkit-font-smoothing: antialiased;
+  /* Anti-aliasing for smoother font rendering on WebKit/Blink browsers. */
+  -moz-osx-font-smoothing: grayscale;
+  /* Anti-aliasing for smoother font rendering on Firefox. */
+}
+
+/* Heading Font Settings */
+.legacy-styles h1,
+.legacy-styles h2,
+.legacy-styles h3,
+.legacy-styles h4,
+.legacy-styles h5,
+.legacy-styles h6 {
+  /* font-family is inherited from body, no need to repeat here unless different font is desired */
+  color: var(--text-color-dark);
+  /* Headings use dark text */
+  margin-top: 0.8em;
+  margin-bottom: 0.5em;
+  line-height: 1.2;
+  /* Slightly tighter line height for headings */
+}
+
+/* Specific Heading Sizes (ensure no duplication) */
+.legacy-styles h1 {
+  font-size: 3.2em;
+  line-height: 1.1;
+}
+
+/* Consolidate h1 settings here */
+.legacy-styles h2 {
+  font-size: 2em;
+}
+
+.legacy-styles h3 {
+  font-size: 1.75em;
+}
+
+.legacy-styles h4 {
+  font-size: 1.5em;
+}
+
+.legacy-styles h5 {
+  font-size: 1.25em;
+}
+
+.legacy-styles h6 {
+  font-size: 1em;
+}
+
+/* Default paragraph and link styles */
+.legacy-styles p {
+  margin-top: 0.5em;
+  margin-bottom: 0.5em;
+}
+
+.legacy-styles a {
+  color: var(--primary-color);
+  text-decoration: none;
+  transition: color 0.3s ease;
+}
+
+.legacy-styles a:hover {
+  /* In pure CSS, you need to pick a darker color manually or use a CSS custom property for hover */
+  /* For example, a slightly darker purple */
+  color: var(--secondary-color);
+  /* Example darker shade of --primary-color */
+  text-decoration: underline;
+}
+
+/* Remove default list styles */
+.legacy-styles ul,
+.legacy-styles ol {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+/* --- Below styles should ideally be in component-specific CSS files --- */
+/* Button styles (move to Button.css or similar) */
+.legacy-styles button {
+  padding: 6px 12px;
+  background-color: var(--primary-color);
+  color: var(--text-color-white);
+  border: 1px solid var(--primary-color);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+  height: 32px;
+  font-size: 0.9em;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.legacy-styles button:hover {
+  background-color: var(--secondary-color);
+  border-color: var(--secondary-color);
+}
+.legacy-styles button:focus {
+  outline: none;
+}
+.legacy-styles button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* --- End of component-specific styles --- */

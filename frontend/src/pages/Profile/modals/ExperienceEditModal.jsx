@@ -6,6 +6,7 @@ import {
   formatDateFromParts,
   getDateScore,
 } from "@/pages/Profile/utils";
+import { Button } from "@/components/ui/button";
 
 /**
  * Form item for editing a single experience entry.
@@ -143,13 +144,15 @@ const ExperienceFormItem = ({ item, errors, onChange, onDelete }) => {
         )}
       </div>
 
-      <button
-        type="button"
+      <Button
+        type="Button"
+        variant="destructive"
+        size="sm"
         className="delete-btn"
         onClick={() => onDelete(item.id)}
       >
         -
-      </button>
+      </Button>
     </div>
   );
 };
@@ -320,9 +323,9 @@ const ExperienceEditModal = ({ isOpen, onClose, initialData, onSave }) => {
       <div className="modal-content">
         <div className="section-header">
           <h3>Edit Experience</h3>
-          <button className="edit-button" onClick={handleAdd}>
+          <Button size="sm" onClick={handleAdd}>
             +
-          </button>
+          </Button>
         </div>
 
         <div className="scrollable-form-area">
@@ -338,17 +341,16 @@ const ExperienceEditModal = ({ isOpen, onClose, initialData, onSave }) => {
         </div>
 
         <div className="modal-actions">
-          <button type="button" onClick={onClose} disabled={isSaving}>
+          <Button variant="outline" onClick={onClose} disabled={isSaving}>
             Cancel
-          </button>
-          <button
-            type="button"
+          </Button>
+          <Button
             onClick={handleSubmit}
             disabled={isSaving}
             className="save-btn"
           >
             {isSaving ? "Saving..." : "Save"}
-          </button>
+          </Button>
         </div>
       </div>
     </div>
