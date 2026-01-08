@@ -21,7 +21,7 @@ def api_response(
         message (str): A descriptive message explaining the result of the API call.
         success (bool): Whether the API call succeeded (True) or failed (False).
         data (dict | None): Optional payload to include in the response body.
-                            Defaults to an empty dict if None is provided.
+                            Can be None.
         status_code (HTTPStatus): The HTTP status code for the response.
                                   Defaults to HTTPStatus.OK (200).
 
@@ -41,7 +41,7 @@ def api_response(
     response_body = {
         "success": success,
         "message": message,
-        "data": data or {},
+        "data": data,
     }
     serialized_body = jsonable_encoder(response_body)
 

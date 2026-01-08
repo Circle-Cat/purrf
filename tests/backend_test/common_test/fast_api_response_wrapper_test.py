@@ -12,8 +12,22 @@ def route_success(request):
     return api_response("OK", True, {"a": 1}, HTTPStatus.OK)
 
 
+def route_string(request):
+    return api_response(
+        "String Test", True, {"message": "Hello, World!"}, HTTPStatus.OK
+    )
+
+
+def route_float(request):
+    return api_response("Float Test", True, {"value": 3.14}, HTTPStatus.OK)
+
+
+def route_boolean(request):
+    return api_response("Boolean Test", True, {"is_active": True}, HTTPStatus.OK)
+
+
 def route_empty(request):
-    return api_response("Empty", True)
+    return api_response("Empty", True, None, HTTPStatus.OK)
 
 
 def route_error(request):
@@ -35,6 +49,10 @@ def route_with_uuid(request):
     )
 
 
+def route_none(request):
+    return api_response("No Data", True, None, HTTPStatus.OK)
+
+
 class TestApiResponseWrapper(TestCase):
     def setUp(self):
         # Create a minimal Starlette app to test JSONResponse
@@ -45,6 +63,10 @@ class TestApiResponseWrapper(TestCase):
                 Route("/test_error", route_error),
                 Route("/test_datetime", route_with_datetime),
                 Route("/test_uuid", route_with_uuid),
+                Route("/test_none", route_none),
+                Route("/test_string", route_string),
+                Route("/test_float", route_float),
+                Route("/test_boolean", route_boolean),
             ]
         )
         self.client = TestClient(self.app)
@@ -60,14 +82,14 @@ class TestApiResponseWrapper(TestCase):
         res = self.client.get("/test_empty")
         self.assertEqual(res.status_code, HTTPStatus.OK)
         payload = res.json()
-        self.assertEqual(payload["data"], {})
+        self.assertEqual(payload["data"], None)
         self.assertEqual(payload["message"], "Empty")
 
     def test_error_response(self):
         res = self.client.get("/test_error")
         self.assertEqual(res.status_code, HTTPStatus.BAD_REQUEST)
         payload = res.json()
-        self.assertEqual(payload["data"], {})
+        self.assertEqual(payload["data"], None)
         self.assertEqual(payload["message"], "Fail")
 
     def test_success_with_datetime(self):
@@ -89,6 +111,35 @@ class TestApiResponseWrapper(TestCase):
         self.assertEqual(
             payload["data"]["user_uuid"], "885b2abc-bf44-4d39-83b8-afcc0ea855b3"
         )
+
+    def test_success_with_none_data(self):
+        res = self.client.get("/test_none")
+        self.assertEqual(res.status_code, HTTPStatus.OK)
+        payload = res.json()
+
+        self.assertEqual(payload["data"], None)
+        self.assertEqual(payload["message"], "No Data")
+
+    def test_success_with_string_data(self):
+        res = self.client.get("/test_string")
+        self.assertEqual(res.status_code, HTTPStatus.OK)
+        payload = res.json()
+        self.assertEqual(payload["data"], {"message": "Hello, World!"})
+        self.assertEqual(payload["message"], "String Test")
+
+    def test_success_with_float_data(self):
+        res = self.client.get("/test_float")
+        self.assertEqual(res.status_code, HTTPStatus.OK)
+        payload = res.json()
+        self.assertEqual(payload["data"], {"value": 3.14})
+        self.assertEqual(payload["message"], "Float Test")
+
+    def test_success_with_boolean_data(self):
+        res = self.client.get("/test_boolean")
+        self.assertEqual(res.status_code, HTTPStatus.OK)
+        payload = res.json()
+        self.assertEqual(payload["data"], {"is_active": True})
+        self.assertEqual(payload["message"], "Boolean Test")
 
 
 if __name__ == "__main__":
