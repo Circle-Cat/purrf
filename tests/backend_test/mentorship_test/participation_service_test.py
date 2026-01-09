@@ -5,6 +5,11 @@ from unittest.mock import MagicMock, AsyncMock
 from backend.mentorship.participation_service import ParticipationService
 from backend.dto.partner_dto import PartnerDto
 from backend.dto.user_context_dto import UserContextDto
+from backend.common.mentorship_enums import ParticipantRole
+from backend.common.user_role import UserRole
+from backend.entity.mentorship_round_participants_entity import (
+    MentorshipRoundParticipantsEntity,
+)
 from backend.entity.users_entity import UsersEntity
 
 
@@ -17,6 +22,11 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
         self.mock_pairs_repo.get_all_partner_ids = AsyncMock()
         self.mock_pairs_repo.get_partner_ids_by_user_and_round = AsyncMock()
 
+        self.mock_round_participants_repo = MagicMock()
+        self.mock_round_participants_repo.get_recent_participant_by_user_id = (
+            AsyncMock()
+        )
+
         self.mock_session = AsyncMock()
         self.mock_mapper = MagicMock()
         self.logger = MagicMock()
@@ -28,6 +38,7 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
             logger=self.logger,
             users_repository=self.mock_users_repo,
             mentorship_pairs_repository=self.mock_pairs_repo,
+            mentorship_round_participants_repo=self.mock_round_participants_repo,
             mentorship_mapper=self.mock_mapper,
             user_identity_service=self.mock_identity_service,
         )
@@ -171,3 +182,72 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
         self.mock_pairs_repo.get_all_partner_ids.assert_awaited_once_with(
             session=self.mock_session, user_id=self.mock_current_user.user_id
         )
+
+    async def test_resolve_role_from_most_recent_participation(self):
+        """Uses the role from the most recent participant when the user has prior participation."""
+        self.mock_identity_service.get_user.return_value = (
+            self.mock_current_user,
+            False,
+        )
+
+        mock_recent = MagicMock(
+            spec=MentorshipRoundParticipantsEntity,
+            participant_role=ParticipantRole.MENTOR,
+        )
+        self.mock_round_participants_repo.get_recent_participant_by_user_id.return_value = mock_recent
+
+        (
+            role,
+            should_commit,
+        ) = await self.participation_service._resolve_participant_role_with_fallback(
+            session=self.mock_session, user_context=self.user_context
+        )
+
+        self.assertEqual(role, ParticipantRole.MENTOR)
+        self.assertFalse(should_commit)
+        self.mock_identity_service.get_user.assert_awaited_once_with(
+            session=self.mock_session, user_info=self.user_context
+        )
+        self.mock_round_participants_repo.get_recent_participant_by_user_id.assert_awaited_once()
+
+    async def test_infers_mentor_role_from_user_permissions(self):
+        """Uses mentor role if user has no participation history and has mentor permission."""
+        self.mock_identity_service.get_user.return_value = (
+            self.mock_current_user,
+            True,
+        )
+        self.mock_round_participants_repo.get_recent_participant_by_user_id.return_value = None
+        self.user_context.has_role.side_effect = (
+            lambda role: role == UserRole.CONTACT_GOOGLE_CHAT
+        )
+
+        (
+            role,
+            should_commit,
+        ) = await self.participation_service._resolve_participant_role_with_fallback(
+            session=self.mock_session, user_context=self.user_context
+        )
+
+        self.assertEqual(role, ParticipantRole.MENTOR)
+        self.assertTrue(should_commit)
+
+    async def test_infers_mentee_role_from_user_permissions(self):
+        """Uses mentee role if user has neither participation history nor mentor permission."""
+        self.mock_identity_service.get_user.return_value = (
+            self.mock_current_user,
+            False,
+        )
+        self.mock_round_participants_repo.get_recent_participant_by_user_id.return_value = None
+        self.user_context.has_role.side_effect = (
+            lambda role: role == UserRole.MENTORSHIP
+        )
+
+        (
+            role,
+            should_commit,
+        ) = await self.participation_service._resolve_participant_role_with_fallback(
+            session=self.mock_session, user_context=self.user_context
+        )
+
+        self.assertEqual(role, ParticipantRole.MENTEE)
+        self.assertFalse(should_commit)

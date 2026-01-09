@@ -1,5 +1,7 @@
 from backend.dto.partner_dto import PartnerDto
 from backend.dto.user_context_dto import UserContextDto
+from backend.common.mentorship_enums import ParticipantRole
+from backend.common.user_role import UserRole
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -11,11 +13,12 @@ class ParticipationService:
         logger,
         users_repository,
         mentorship_pairs_repository,
+        mentorship_round_participants_repo,
         mentorship_mapper,
         user_identity_service,
     ):
         """
-        Initializes the participationService with required dependencies.
+        Initializes the ParticipationService with required dependencies.
 
         Args:
             logger: The logger instance for logging messages.
@@ -23,6 +26,8 @@ class ParticipationService:
                 The repository for accessing users entity data.
             mentorship_pairs_repository (MentorshipPairsRepository):
                 The repository for accessing pairs entity data.
+            mentorship_round_participants_repo (MentorshipRoundParticipantsRepository):
+                The repository for accessing participants entity data.
             mentorship_mapper (MentorshipMapper):
                 The mapper for converting mentorship rounds and entities to DTOs.
             user_identity_service (UserIdentityService):
@@ -31,6 +36,7 @@ class ParticipationService:
         self.logger = logger
         self.users_repository = users_repository
         self.mentorship_pairs_repository = mentorship_pairs_repository
+        self.mentorship_round_participants_repo = mentorship_round_participants_repo
         self.mentorship_mapper = mentorship_mapper
         self.user_identity_service = user_identity_service
 
@@ -59,6 +65,45 @@ class ParticipationService:
             return []
 
         return self.mentorship_mapper.map_to_partner_dto(partner_user_entities)
+
+    async def _resolve_participant_role_with_fallback(
+        self, session: AsyncSession, user_context: UserContextDto
+    ) -> tuple[ParticipantRole, bool]:
+        """
+        Resolve the participant role using a temporary fallback strategy.
+
+        This method infers participant role when:
+        - the current round participant record does not exist.
+        - role auto-assignment and user self-selection are not implemented yet.
+
+        Resolution order:
+        1. Use the most recent round participant role.
+        2. Infer from user permissions.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            user_context (UserContextDto): Authenticated user context.
+
+        Returns:
+            tuple[ParticipantRole, bool]:
+                ParticipantRole: ParticipantRole: The inferred or resolved role (either 'MENTOR' or 'MENTEE').
+                should_commit: True if the transaction needs to be committed.
+        """
+        current_user, should_commit = await self.user_identity_service.get_user(
+            session=session, user_info=user_context
+        )
+
+        recent_participant = await self.mentorship_round_participants_repo.get_recent_participant_by_user_id(
+            session=session, user_id=current_user.user_id
+        )
+
+        if recent_participant:
+            return recent_participant.participant_role, should_commit
+
+        if user_context.has_role(UserRole.CONTACT_GOOGLE_CHAT):
+            return ParticipantRole.MENTOR, should_commit
+
+        return ParticipantRole.MENTEE, should_commit
 
     async def get_partners_for_user(
         self,

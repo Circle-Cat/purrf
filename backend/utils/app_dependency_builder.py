@@ -83,6 +83,9 @@ from backend.repository.experience_repository import ExperienceRepository
 from backend.repository.training_repository import TrainingRepository
 from backend.repository.mentorship_round_repository import MentorshipRoundRepository
 from backend.repository.mentorship_pairs_repository import MentorshipPairsRepository
+from backend.repository.mentorship_round_participants_repository import (
+    MentorshipRoundParticipantsRepository,
+)
 from backend.mentorship.mentorship_mapper import MentorshipMapper
 from backend.mentorship.mentorship_controller import MentorshipController
 from backend.mentorship.rounds_service import RoundsService
@@ -353,6 +356,9 @@ class AppDependencyBuilder:
         self.authentication_controller = AuthenticationController()
         self.mentorship_round_repository = MentorshipRoundRepository()
         self.mentorship_pairs_repository = MentorshipPairsRepository()
+        self.mentorship_round_participants_repo = (
+            MentorshipRoundParticipantsRepository()
+        )
         self.mentorship_mapper = MentorshipMapper()
         self.database = Database(echo=False)
         self.rounds_service = RoundsService(
@@ -363,6 +369,7 @@ class AppDependencyBuilder:
             logger=self.logger,
             users_repository=self.users_repository,
             mentorship_pairs_repository=self.mentorship_pairs_repository,
+            mentorship_round_participants_repo=self.mentorship_round_participants_repo,
             mentorship_mapper=self.mentorship_mapper,
             user_identity_service=self.user_identity_service,
         )
