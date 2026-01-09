@@ -100,6 +100,38 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
 
         self.assertIsNone(result)
 
+    async def test_get_recent_participant_by_user_id(self):
+        """Ensure the most recent participant is returned."""
+        participants = [
+            MentorshipRoundParticipantsEntity(
+                user_id=self.user.user_id,
+                round_id=self.rounds[0].round_id,
+            ),
+            MentorshipRoundParticipantsEntity(
+                user_id=self.user.user_id,
+                round_id=self.rounds[1].round_id,
+            ),
+        ]
+        await self.insert_entities(participants)
+
+        result = await self.repo.get_recent_participant_by_user_id(
+            self.session, user_id=self.user.user_id
+        )
+
+        self.assertIsNotNone(result)
+        self.assertEqual(
+            result.round_id,
+            max(self.rounds[0].round_id, self.rounds[1].round_id),
+        )
+
+    async def test_get_recent_participant_by_user_id_empty(self):
+        """Should return None if the user has no participant records."""
+        result = await self.repo.get_recent_participant_by_user_id(
+            self.session, user_id=self.user.user_id
+        )
+
+        self.assertIsNone(result)
+
 
 if __name__ == "__main__":
     unittest.main()

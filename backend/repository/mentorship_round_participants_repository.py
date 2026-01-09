@@ -34,3 +34,26 @@ class MentorshipRoundParticipantsRepository:
         )
 
         return result.scalars().one_or_none()
+
+    async def get_recent_participant_by_user_id(
+        self, session: AsyncSession, user_id: int
+    ) -> MentorshipRoundParticipantsEntity | None:
+        """
+        Retrieve the most recent mentorship round participant for a user,
+        ordered by round_id descending.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            user_id (int): User id.
+
+        Returns:
+            MentorshipRoundParticipantsEntity | None: The matching participant or None.
+        """
+        result = await session.execute(
+            select(MentorshipRoundParticipantsEntity)
+            .where(MentorshipRoundParticipantsEntity.user_id == user_id)
+            .order_by(MentorshipRoundParticipantsEntity.round_id.desc())
+            .limit(1)
+        )
+
+        return result.scalars().one_or_none()
