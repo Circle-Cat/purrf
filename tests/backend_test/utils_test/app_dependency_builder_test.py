@@ -398,7 +398,7 @@ class TestAppDependencyBuilder(TestCase):
         mock_training_repo_cls.assert_called_once()
         mock_database_cls.assert_called_once()
         mock_profile_query_service_cls.assert_called_once_with(
-            users_repository=mock_users_repo_cls.return_value,
+            user_identity_service=mock_user_identity_service_cls.return_value,
             experience_repository=mock_experience_repo_cls.return_value,
             training_repository=mock_training_repo_cls.return_value,
             profile_mapper=mock_profile_mapper_cls.return_value,
@@ -409,7 +409,7 @@ class TestAppDependencyBuilder(TestCase):
             logger=mock_logger,
         )
         mock_user_identity_service_cls.assert_called_once_with(
-            mock_users_repo_cls.return_value
+            logger=mock_logger, users_repository=mock_users_repo_cls.return_value
         )
         mock_profile_service_cls.assert_called_once_with(
             query_service=mock_profile_query_service_cls.return_value,
@@ -491,7 +491,7 @@ class TestAppDependencyBuilder(TestCase):
         mock_profile_mapper_cls.assert_called_once()
 
         mock_profile_query_service_cls.assert_called_once_with(
-            users_repository=mock_users_repo_cls.return_value,
+            user_identity_service=mock_user_identity_service_cls.return_value,
             experience_repository=mock_experience_repo_cls.return_value,
             training_repository=mock_training_repo_cls.return_value,
             profile_mapper=mock_profile_mapper_cls.return_value,

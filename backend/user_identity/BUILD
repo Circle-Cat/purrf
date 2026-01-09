@@ -5,5 +5,8 @@ package(default_visibility = ["//visibility:public"])
 py_library(
     name = "user_identity_service",
     srcs = ["user_identity_service.py"],
-    deps = ["//backend/entity:entities"],
+    deps = [
+        "//backend/dto",
+        "//backend/entity:entities",
+    ],
 )

@@ -41,7 +41,7 @@ class ProfileService:
         fields: set[ProfileField] | None = None,
     ) -> ProfileDto:
         """
-        Retrieve a user profile. If the user does not exist, it will be created.
+        Retrieve a user profile.
 
         Args:
             session (AsyncSession): Active DB session.
@@ -60,28 +60,21 @@ class ProfileService:
             "include_education": ProfileField.EDUCATION in fields,
         }
 
-        profile = await self.query_service.get_profile(
+        profile, should_commit = await self.query_service.get_profile(
             session=session,
-            user_sub=user_context.sub,
+            user_info=user_context,
             **includes,
         )
 
-        if profile is None:
-            await self.command_service.create_user(session, user_context)
+        if should_commit:
             await session.commit()
-
-            profile = await self.query_service.get_profile(
-                session=session,
-                user_sub=user_context.sub,
-                **includes,
-            )
 
         return profile
 
     async def update_profile(
         self,
         session: AsyncSession,
-        user_sub: str,
+        user_context: UserContextDto,
         profile: ProfileCreateDto,
     ) -> ProfileDto:
         """
@@ -97,20 +90,23 @@ class ProfileService:
         - work_history: Work experience history (stored as JSONB)
 
         Return behavior:
-        - After the update is committed, the method re-queries the profile and returns
-        a fully populated `ProfileDto`.
+        - After the update is flushed to the session, the method re-queries the profile and
+        returns a fully populated `ProfileDto`.
 
         Args:
             session (AsyncSession): Active SQLAlchemy async session.
-            user_sub (str): Subject identifier of the authenticated user.
+            user_context (UserContextDto): Authenticated user context.
             profile (ProfileCreateDto): Incoming profile data containing the fields
                 to be updated. Only non-null sections will be applied.
 
         Returns:
             ProfileDto: The updated user profile after all changes have been persisted.
         """
-        users_entity = await self.user_identity_service.get_user_by_subject_identifier(
-            session=session, subject=user_sub
+        (
+            users_entity,
+            _,
+        ) = await self.user_identity_service.get_user(
+            session=session, user_info=user_context
         )
 
         if profile.user:
@@ -128,14 +124,14 @@ class ProfileService:
                 session=session, latest_profile=profile, user_id=users_entity.user_id
             )
 
-        await session.commit()
-
-        updated_profile = await self.query_service.get_profile(
+        updated_profile, _ = await self.query_service.get_profile(
             session=session,
-            user_sub=user_sub,
+            user_info=user_context,
             include_training=True,
             include_work_history=True,
             include_education=True,
         )
+
+        await session.commit()
 
         return updated_profile

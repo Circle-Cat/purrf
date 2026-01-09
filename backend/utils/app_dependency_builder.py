@@ -350,11 +350,14 @@ class AppDependencyBuilder:
             database=self.database,
         )
         self.users_repository = UsersRepository()
+        self.user_identity_service = UserIdentityService(
+            logger=self.logger, users_repository=self.users_repository
+        )
         self.experience_repository = ExperienceRepository()
         self.training_repository = TrainingRepository()
         self.profile_mapper = ProfileMapper()
         self.profile_query_service = ProfileQueryService(
-            users_repository=self.users_repository,
+            user_identity_service=self.user_identity_service,
             experience_repository=self.experience_repository,
             training_repository=self.training_repository,
             profile_mapper=self.profile_mapper,
@@ -364,7 +367,6 @@ class AppDependencyBuilder:
             experience_repository=self.experience_repository,
             logger=self.logger,
         )
-        self.user_identity_service = UserIdentityService(self.users_repository)
         self.profile_service = ProfileService(
             query_service=self.profile_query_service,
             command_service=self.profile_command_service,

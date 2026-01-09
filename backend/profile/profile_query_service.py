@@ -1,5 +1,6 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.dto.profile_dto import ProfileDto
+from backend.dto.user_context_dto import UserContextDto
 
 
 class ProfileQueryService:
@@ -13,7 +14,7 @@ class ProfileQueryService:
 
     def __init__(
         self,
-        users_repository,
+        user_identity_service,
         experience_repository,
         training_repository,
         profile_mapper,
@@ -22,12 +23,12 @@ class ProfileQueryService:
         Initialize ProfileQueryService with required repositories.
 
         Args:
-            users_repository: Repository handling UsersEntity.
+            user_identity_service: Service responsible for retrieving user identity information.
             experience_repository: Repository handling ExperienceEntity.
             training_repository: Repository handling TrainingEntity.
             profile_mapper: Mapper used to convert entities into ProfileDto.
         """
-        self.users_repository = users_repository
+        self.user_identity_service = user_identity_service
         self.experience_repository = experience_repository
         self.training_repository = training_repository
         self.profile_mapper = profile_mapper
@@ -35,39 +36,39 @@ class ProfileQueryService:
     async def get_profile(
         self,
         session: AsyncSession,
-        user_sub: str,
+        user_info: UserContextDto,
         include_training: bool,
         include_work_history: bool,
         include_education: bool,
-    ) -> ProfileDto | None:
+    ) -> tuple[ProfileDto, bool]:
         """
-        Retrieve a user's profile by subject identifier.
+        Retrieve a user's profile based on the provided user context.
 
         This method:
-        1. Loads the user entity by `user_sub`.
-        2. Returns None if the user does not exist.
-        3. Conditionally loads related experience and training data
+        1. Loads the user entity by `user_info`.
+        2. Conditionally loads related experience and training data
         based on the provided include flags.
-        4. Maps the loaded entities into a ProfileDto.
+        3. Maps the loaded entities into a ProfileDto.
 
         Args:
             session (AsyncSession): Active SQLAlchemy async session.
-            user_sub (str): Subject identifier of the user (e.g. from Auth provider).
+            user_info (UserContextDto): DTO containing user info (sub, email, roles).
             include_training (bool): Whether to include training information.
             include_work_history (bool): Whether to include work history information.
             include_education (bool): Whether to include education information.
 
         Returns:
-            ProfileDto | None:
-                A ProfileDto containing only the requested fields,
-                or None if the user does not exist.
+            tuple[ProfileDto, bool]:
+                ProfileDto: DTO containing only the requested fields.
+                should_commit: True if the transaction needs to be committed.
         """
 
-        users_entity = await self.users_repository.get_user_by_subject_identifier(
-            session, user_sub
+        (
+            users_entity,
+            should_commit,
+        ) = await self.user_identity_service.get_user(
+            session=session, user_info=user_info
         )
-        if not users_entity:
-            return None
 
         user_id = users_entity.user_id
         experience_entity = None
@@ -91,4 +92,4 @@ class ProfileQueryService:
             trainings=training_entities,
             include_work_history=include_work_history,
             include_education=include_education,
-        )
+        ), should_commit

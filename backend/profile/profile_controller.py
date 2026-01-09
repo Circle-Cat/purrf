@@ -104,7 +104,7 @@ class ProfileController:
         All updates are executed within a single database transaction.
 
         Args:
-            user_sub (str): Subject identifier of the authenticated user.
+            current_user (UserContextDto): Authenticated user context.
             body (ProfileCreateDto): Profile payload containing fields to update.
 
         Returns:
@@ -112,7 +112,7 @@ class ProfileController:
         """
         async with self.database.session() as session:
             profile: ProfileDto = await self.profile_service.update_profile(
-                session=session, user_sub=current_user.sub, profile=body
+                session=session, user_context=current_user, profile=body
             )
 
         return api_response(

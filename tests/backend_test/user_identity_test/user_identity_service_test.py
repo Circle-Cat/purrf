@@ -1,9 +1,11 @@
 import unittest
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 from datetime import datetime, timezone
 
 from backend.user_identity.user_identity_service import UserIdentityService
 from backend.entity.users_entity import UsersEntity
+from backend.dto.user_context_dto import UserContextDto
+from backend.common.user_role import UserRole
 from backend.common.mentorship_enums import UserTimezone, CommunicationMethod
 
 
@@ -11,8 +13,11 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.repo = AsyncMock()
         self.session = AsyncMock()
+        self.logger = MagicMock()
 
-        self.service = UserIdentityService(self.repo)
+        self.service = UserIdentityService(
+            logger=self.logger, users_repository=self.repo
+        )
 
         self.users_entity = UsersEntity(
             first_name="Alice",
@@ -25,30 +30,83 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
             updated_timestamp=datetime.now(timezone.utc),
         )
 
-    async def test_get_user_by_subject_identifier(self):
+        self.user_info = UserContextDto(
+            sub="sub123", primary_email="alice@example.com", roles=[UserRole.MENTORSHIP]
+        )
+
+        self.existing_user = MagicMock(
+            spec=UsersEntity,
+            user_id=10,
+            primary_email=self.user_info.primary_email,
+            subject_identifier="",
+        )
+
+    async def test_get_user_success(self):
         """Test retrieve a existing users entity by subject."""
         self.repo.get_user_by_subject_identifier.return_value = self.users_entity
-        result = await self.service.get_user_by_subject_identifier(
-            self.session, self.users_entity.subject_identifier
+
+        saved_user, should_commit = await self.service.get_user(
+            self.session, self.user_info
         )
 
-        self.assertIs(result, self.users_entity)
-        self.assertEqual(
-            result.subject_identifier, self.users_entity.subject_identifier
-        )
+        self.assertIs(saved_user, self.users_entity)
+        self.assertFalse(should_commit)
         self.repo.get_user_by_subject_identifier.assert_awaited_once_with(
-            self.session, self.users_entity.subject_identifier
+            session=self.session, sub=self.user_info.sub
         )
+        self.repo.upsert_users.assert_not_awaited()
 
-    async def test_get_user_by_subject_identifier_not_found(self):
-        """Test passing an invalid subject returns None."""
+    async def test_get_user_sync_fail(self):
+        """Scenario: sync user raise error, should not try to create new user."""
         self.repo.get_user_by_subject_identifier.return_value = None
+        self.repo.get_user_by_primary_email.return_value = self.existing_user
 
-        result = await self.service.get_user_by_subject_identifier(
-            self.session, "non-existent-sub"
+        self.repo.upsert_users.side_effect = Exception("DB Error")
+
+        with self.assertRaises(Exception) as context:
+            await self.service.get_user(self.session, self.user_info)
+
+        self.assertEqual(str(context.exception), "DB Error")
+        self.logger.error.assert_called_once_with(
+            "[UserIdentityService] failed to sync historical user ID %s: %s",
+            10,
+            "DB Error",
+        )
+        self.repo.upsert_users.assert_awaited_once()
+
+    async def test_get_user_create_new(self):
+        """Scenario: create a new user when no existing user is found."""
+        # Repository returns None to indicate no historical record found
+        self.repo.get_user_by_subject_identifier.return_value = None
+        self.repo.get_user_by_primary_email.return_value = None
+
+        # Repository returns the saved entity
+        mock_user = MagicMock(spec=UsersEntity, user_id=99)
+        self.repo.upsert_users.return_value = mock_user
+
+        saved_user, should_commit = await self.service.get_user(
+            self.session, self.user_info
         )
 
-        self.assertIsNone(result)
+        self.assertTrue(should_commit)
+        self.assertEqual(saved_user.user_id, 99)
+        self.repo.upsert_users.assert_awaited_once()
+
+    async def test_get_user_sync_success(self):
+        """Scenario: historical user exists by email only, perform sync logic."""
+        # Simulate an existing historical record created by manual backfill
+        # where subject_identifier is not the real Auth provider sub
+        self.repo.get_user_by_subject_identifier.return_value = None
+        self.repo.get_user_by_primary_email.return_value = self.existing_user
+        self.repo.upsert_users.return_value = self.existing_user
+
+        saved_user, should_commit = await self.service.get_user(
+            self.session, self.user_info
+        )
+
+        self.assertTrue(should_commit)
+        self.assertEqual(saved_user.user_id, 10)
+        self.repo.upsert_users.assert_awaited_once()
 
 
 if __name__ == "__main__":

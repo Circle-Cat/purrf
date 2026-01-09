@@ -12,6 +12,7 @@ from backend.profile.profile_controller import ProfileController
 from backend.dto.user_context_dto import UserContextDto
 from backend.dto.profile_dto import ProfileDto
 from backend.dto.users_dto import UsersDto
+from backend.dto.profile_create_dto import ProfileCreateDto
 from backend.common.mentorship_enums import UserTimezone, CommunicationMethod
 from backend.common.constants import ProfileField
 
@@ -20,6 +21,14 @@ class TestProfileController(unittest.TestCase):
     def setUp(self):
         self.mock_profile_service = MagicMock()
         self.mock_database = MagicMock()
+        self.mock_session = AsyncMock()
+        self.mock_database.session.return_value.__aenter__.return_value = (
+            self.mock_session
+        )
+
+        self.mock_profile_service = MagicMock(
+            get_profile=AsyncMock(), update_profile=AsyncMock()
+        )
 
         self.controller = ProfileController(
             profile_service=self.mock_profile_service,
@@ -83,44 +92,35 @@ class TestProfileController(unittest.TestCase):
 
     def test_get_my_profile_success(self):
         client = self._get_client_with_mock_user()
-
         mock_profile = self._make_profile_dto()
-
-        async_session_mock = AsyncMock()
-        self.mock_database.session.return_value.__aenter__.return_value = (
-            async_session_mock
-        )
-
-        self.mock_profile_service.get_profile = AsyncMock(return_value=mock_profile)
+        self.mock_profile_service.get_profile.return_value = mock_profile
 
         response = client.get(MY_PROFILE_ENDPOINT)
         response_json = response.json()
 
-        expected_data = {"profile": jsonable_encoder(mock_profile)}
-
         self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.assertEqual(
+            response_json["data"]["profile"], jsonable_encoder(mock_profile)
+        )
         self.assertEqual(response_json["message"], "Profile retrieved successfully")
-        self.assertEqual(response_json["data"], expected_data)
-        self.mock_api_response.assert_called_once()
+        self.mock_profile_service.get_profile.assert_called_once_with(
+            self.mock_session,
+            UserContextDto(
+                sub="sub-123", primary_email="user@example.com", roles=["user"]
+            ),
+            None,
+        )
 
     def test_get_my_profile_with_fields(self):
         client = self._get_client_with_mock_user()
-
         mock_profile = self._make_profile_dto()
-
-        async_session_mock = AsyncMock()
-        self.mock_database.session.return_value.__aenter__.return_value = (
-            async_session_mock
-        )
-
-        self.mock_profile_service.get_profile = AsyncMock(return_value=mock_profile)
+        self.mock_profile_service.get_profile.return_value = mock_profile
 
         response = client.get(f"{MY_PROFILE_ENDPOINT}?fields=training,education")
 
         self.assertEqual(response.status_code, HTTPStatus.OK)
-        self.mock_profile_service.get_profile.assert_called_once()
-        _, _, fields_set = self.mock_profile_service.get_profile.call_args[0]
-        self.assertEqual(fields_set, {ProfileField.TRAINING, ProfileField.EDUCATION})
+        args, _ = self.mock_profile_service.get_profile.call_args
+        self.assertEqual(args[2], {ProfileField.TRAINING, ProfileField.EDUCATION})
 
     def test_get_my_profile_missing_user_state(self):
         """
@@ -136,12 +136,7 @@ class TestProfileController(unittest.TestCase):
         """Tests successful profile update."""
         client = self._get_client_with_mock_user()
         mock_profile = self._make_profile_dto()
-
-        async_session_mock = AsyncMock()
-        self.mock_database.session.return_value.__aenter__.return_value = (
-            async_session_mock
-        )
-        self.mock_profile_service.update_profile = AsyncMock(return_value=mock_profile)
+        self.mock_profile_service.update_profile.return_value = mock_profile
 
         # Prepare request payload (camelCase to simulate frontend input)
         update_payload = {
@@ -162,14 +157,14 @@ class TestProfileController(unittest.TestCase):
 
         # Verify service was called with correct arguments
         # FastAPI automatically converts JSON into a ProfileCreateDto
-        self.mock_profile_service.update_profile.assert_called_once()
-        args, kwargs = self.mock_profile_service.update_profile.call_args
-
-        # Verify the passed DTO content
-        passed_profile_dto = kwargs.get("profile") or args[2]
-        self.assertEqual(
-            passed_profile_dto.work_history[0].company_or_organization,
-            "Tech Corp",
+        self.mock_profile_service.update_profile.assert_called_once_with(
+            session=self.mock_session,
+            user_context=UserContextDto(
+                sub="sub-123",
+                primary_email="user@example.com",
+                roles=["user"],
+            ),
+            profile=ProfileCreateDto(**update_payload),
         )
 
         # Verify response data

@@ -53,7 +53,7 @@ class TestProfileService(unittest.IsolatedAsyncioTestCase):
 
     async def test_get_profile_user_exists(self):
         """Test when user exists, query_service.get_profile returns profile."""
-        self.query_service.get_profile.return_value = self.profile_dto
+        self.query_service.get_profile.return_value = (self.profile_dto, False)
 
         profile = await self.service.get_profile(
             session=self.session, user_context=self.user_context
@@ -61,34 +61,18 @@ class TestProfileService(unittest.IsolatedAsyncioTestCase):
 
         self.query_service.get_profile.assert_awaited_once_with(
             session=self.session,
-            user_sub="user_sub",
+            user_info=self.user_context,
             include_training=True,
             include_work_history=True,
             include_education=True,
         )
         self.assertEqual(profile, self.profile_dto)
-        self.command_service.create_user.assert_not_awaited()
+        self.user_identity_service.get_user.assert_not_awaited()
         self.session.commit.assert_not_awaited()
 
-    async def test_get_profile_user_not_exists_creates_user(self):
-        """Test when user does not exist, command_service.create_user is called."""
-        self.query_service.get_profile.side_effect = [None, self.profile_dto]
-        self.command_service.create_user.return_value = self.user_dto
-
-        profile = await self.service.get_profile(
-            session=self.session, user_context=self.user_context
-        )
-
-        self.command_service.create_user.assert_awaited_once_with(
-            self.session, self.user_context
-        )
-        self.assertEqual(self.query_service.get_profile.await_count, 2)
-        self.assertEqual(profile, self.profile_dto)
-        self.session.commit.assert_awaited_once()
-
     async def test_get_profile_with_fields(self):
-        """Test requesting only specific fields."""
-        self.query_service.get_profile.return_value = self.profile_dto
+        """Test requesting an existing profile with only specific fields."""
+        self.query_service.get_profile.return_value = (self.profile_dto, False)
 
         profile = await self.service.get_profile(
             session=self.session,
@@ -98,23 +82,24 @@ class TestProfileService(unittest.IsolatedAsyncioTestCase):
 
         self.query_service.get_profile.assert_awaited_once_with(
             session=self.session,
-            user_sub="user_sub",
+            user_info=self.user_context,
             include_training=True,
             include_work_history=True,
             include_education=False,
         )
         self.assertEqual(profile, self.profile_dto)
-        self.command_service.create_user.assert_not_awaited()
+        self.user_identity_service.get_user.assert_not_awaited()
         self.session.commit.assert_not_awaited()
 
     async def test_update_profile_all_fields_success(self):
         """Tests a full update where all profile sections are provided and all command methods are called."""
         mock_user_entity = MagicMock()
         mock_user_entity.user_id = 1
-        self.user_identity_service.get_user_by_subject_identifier.return_value = (
-            mock_user_entity
+        self.user_identity_service.get_user.return_value = (
+            mock_user_entity,
+            True,
         )
-        self.query_service.get_profile.return_value = self.profile_dto
+        self.query_service.get_profile.return_value = (self.profile_dto, False)
 
         update_dto = ProfileCreateDto(
             user=UsersRequestDto(
@@ -129,12 +114,12 @@ class TestProfileService(unittest.IsolatedAsyncioTestCase):
 
         result = await self.service.update_profile(
             session=self.session,
-            user_sub="user_sub",
+            user_context=self.user_context,
             profile=update_dto,
         )
 
-        self.user_identity_service.get_user_by_subject_identifier.assert_awaited_once_with(
-            session=self.session, subject="user_sub"
+        self.user_identity_service.get_user.assert_awaited_once_with(
+            session=self.session, user_info=self.user_context
         )
 
         self.command_service.update_users.assert_awaited_once_with(
@@ -156,7 +141,7 @@ class TestProfileService(unittest.IsolatedAsyncioTestCase):
         self.session.commit.assert_awaited_once()
         self.query_service.get_profile.assert_awaited_once_with(
             session=self.session,
-            user_sub="user_sub",
+            user_info=self.user_context,
             include_training=True,
             include_work_history=True,
             include_education=True,
@@ -167,10 +152,11 @@ class TestProfileService(unittest.IsolatedAsyncioTestCase):
         """Tests a partial update where only user information is updated."""
         mock_user_entity = MagicMock()
         mock_user_entity.user_id = 1
-        self.user_identity_service.get_user_by_subject_identifier.return_value = (
-            mock_user_entity
+        self.user_identity_service.get_user.return_value = (
+            mock_user_entity,
+            True,
         )
-        self.query_service.get_profile.return_value = self.profile_dto
+        self.query_service.get_profile.return_value = (self.profile_dto, False)
 
         update_dto = ProfileCreateDto(
             user=UsersRequestDto(
@@ -183,10 +169,18 @@ class TestProfileService(unittest.IsolatedAsyncioTestCase):
 
         await self.service.update_profile(
             session=self.session,
-            user_sub="user_sub",
+            user_context=self.user_context,
             profile=update_dto,
         )
 
+        self.user_identity_service.get_user.assert_awaited_once()
+        self.query_service.get_profile.assert_awaited_once_with(
+            session=self.session,
+            user_info=self.user_context,
+            include_training=True,
+            include_work_history=True,
+            include_education=True,
+        )
         self.command_service.update_users.assert_awaited_once()
         self.command_service.update_education.assert_not_awaited()
         self.command_service.update_work_history.assert_not_awaited()
@@ -195,15 +189,17 @@ class TestProfileService(unittest.IsolatedAsyncioTestCase):
     async def test_update_profile_empty_dto_skips_commands(self):
         """Tests an empty update where no command methods are called but the transaction is committed."""
         mock_user_entity = MagicMock()
-        self.user_identity_service.get_user_by_subject_identifier.return_value = (
-            mock_user_entity
+        self.user_identity_service.get_user.return_value = (
+            mock_user_entity,
+            False,
         )
+        self.query_service.get_profile.return_value = (self.profile_dto, False)
 
         update_dto = ProfileCreateDto()
 
-        await self.service.update_profile(
+        result = await self.service.update_profile(
             session=self.session,
-            user_sub="user_sub",
+            user_context=self.user_context,
             profile=update_dto,
         )
 
@@ -212,7 +208,27 @@ class TestProfileService(unittest.IsolatedAsyncioTestCase):
         self.command_service.update_work_history.assert_not_awaited()
 
         self.session.commit.assert_awaited_once()
-        self.query_service.get_profile.assert_awaited_once()
+        self.user_identity_service.get_user.assert_awaited_once()
+        self.query_service.get_profile.assert_awaited_once_with(
+            session=self.session,
+            user_info=self.user_context,
+            include_training=True,
+            include_work_history=True,
+            include_education=True,
+        )
+
+        self.assertEqual(result, self.profile_dto)
+
+    async def test_get_profile_commits_transaction_when_indicated(self):
+        """Test when query service indicates a commit is needed (e.g., new user created)."""
+        self.query_service.get_profile.return_value = (self.profile_dto, True)
+
+        profile = await self.service.get_profile(
+            session=self.session, user_context=self.user_context
+        )
+
+        self.assertEqual(profile, self.profile_dto)
+        self.session.commit.assert_awaited_once()
 
 
 if __name__ == "__main__":
