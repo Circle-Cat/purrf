@@ -10,25 +10,36 @@ from backend.mentorship.mentorship_mapper import MentorshipMapper
 from backend.common.mentorship_enums import UserTimezone, CommunicationMethod
 
 
-class TestMentorhsipMapper(unittest.TestCase):
+class TestMentorshipMapper(unittest.TestCase):
     def setUp(self):
         """Prepare test data."""
         self.now = datetime.now(timezone.utc)
-
         self.mapper = MentorshipMapper()
 
-        self.mentorship_round_entity = [
+        self.test_dates = {
+            "promotion_start_at": date(2025, 7, 1),
+            "application_deadline_at": date(2025, 7, 15),
+            "review_start_at": date(2025, 7, 16),
+            "acceptance_notification_at": date(2025, 7, 30),
+            "matching_completed_at": date(2025, 8, 5),
+            "match_notification_at": date(2025, 8, 6),
+            "first_meeting_deadline_at": date(2025, 8, 20),
+            "meetings_completion_deadline_at": date(2025, 11, 20),
+            "feedback_deadline_at": date(2025, 11, 22),
+        }
+
+        self.mentorship_round_entities = [
             MentorshipRoundEntity(
                 round_id=1,
                 name="Spring-2025",
-                description={
-                    "start_date": date(2025, 7, 1),
-                    "end_date": date(2025, 11, 22),
-                },
+                description=self.test_dates,
                 required_meetings=4,
             ),
             MentorshipRoundEntity(
-                round_id=2, name="Summer-2025", description=None, required_meetings=5
+                round_id=2, name="Summer-2025", description={}, required_meetings=5
+            ),
+            MentorshipRoundEntity(
+                round_id=3, name="Spring-2026", description=None, required_meetings=5
             ),
         ]
 
@@ -48,29 +59,18 @@ class TestMentorhsipMapper(unittest.TestCase):
         ]
 
     def test_map_to_rounds_dto_with_full_data(self):
-        """Test mapping mentorship round entity with complete data."""
-        dtos = self.mapper.map_to_rounds_dto(self.mentorship_round_entity)
+        """Test mapping a mentorship round entity with complete timeline data."""
+        dtos = self.mapper.map_to_rounds_dto(self.mentorship_round_entities)
         dto = dtos[0]
 
         self.assertIsInstance(dto, RoundsDto)
         self.assertEqual(dto.id, 1)
         self.assertEqual(dto.name, "Spring-2025")
         self.assertEqual(dto.required_meetings, 4)
-        self.assertEqual(
-            dto.timeline,
-            TimelineDto(start_date=date(2025, 7, 1), end_date=date(2025, 11, 22)),
-        )
 
-    def test_map_to_rounds_dto_without_description(self):
-        """Test mapping mentorship round entity with missing description."""
-        dtos = self.mapper.map_to_rounds_dto(self.mentorship_round_entity)
-        dto = dtos[1]
-
-        self.assertIsInstance(dto, RoundsDto)
-        self.assertIsNone(dto.timeline)
-        self.assertEqual(dto.id, 2)
-        self.assertEqual(dto.name, "Summer-2025")
-        self.assertEqual(dto.required_meetings, 5)
+        expected_timeline = TimelineDto(**self.test_dates)
+        self.assertIsNotNone(dto.timeline)
+        self.assertEqual(dto.timeline, expected_timeline)
 
     def test_map_to_partner_dto_with_full_data(self):
         """Test mapping users entity has preferred_name to partner dto."""
