@@ -140,7 +140,7 @@ export const useMentorshipData = () => {
   const saveRegistration = async (data) => {
     // Only allow saving when registration is open and a valid round exists
     if (!roundStatus.regRoundId || !roundStatus.isRegistrationOpen) return;
-    return await postMyMentorshipRegistration(roundStatus.regRoundId, data);
+    return postMyMentorshipRegistration(roundStatus.regRoundId, data);
   };
 
   return {
