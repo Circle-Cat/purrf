@@ -45,7 +45,7 @@ from backend.common.environment_constants import (
 @patch("backend.utils.app_dependency_builder.MicrosoftMeetingChatTopicCacheService")
 @patch("backend.utils.app_dependency_builder.MicrosoftChatAnalyticsService")
 @patch("backend.utils.app_dependency_builder.LdapService")
-@patch("backend.utils.app_dependency_builder.FrontendController")
+@patch("backend.utils.app_dependency_builder.InternalActivityController")
 @patch("backend.utils.app_dependency_builder.MicrosoftMemberSyncService")
 @patch("backend.utils.app_dependency_builder.HistoricalController")
 @patch("backend.utils.app_dependency_builder.ConsumerController")
@@ -89,7 +89,7 @@ class TestAppDependencyBuilder(TestCase):
         mock_consumer_controller_cls,
         mock_historical_controller_cls,
         mock_microsoft_member_sync_service_cls,
-        mock_frontend_controller_cls,
+        mock_internal_activity_controller_cls,
         mock_ldap_service_cls,
         mock_microsoft_chat_analytics_service_cls,
         mock_microsoft_meeting_chat_topic_cache_service_cls,
@@ -435,7 +435,7 @@ class TestAppDependencyBuilder(TestCase):
             notification_controller=mock_notification_controller.return_value,
             historical_controller=mock_historical_controller_cls.return_value,
             consumer_controller=mock_consumer_controller_cls.return_value,
-            frontend_controller=mock_frontend_controller_cls.return_value,
+            internal_activity_controller=mock_internal_activity_controller_cls.return_value,
             profile_controller=mock_profile_controller_cls.return_value,
             mentorship_controller=mock_mentorship_controller_cls.return_value,
         )
@@ -474,7 +474,7 @@ class TestAppDependencyBuilder(TestCase):
             ldap_service=mock_ldap_service_cls.return_value,
         )
 
-        mock_frontend_controller_cls.assert_called_once_with(
+        mock_internal_activity_controller_cls.assert_called_once_with(
             ldap_service=mock_ldap_service_cls.return_value,
             microsoft_chat_analytics_service=mock_microsoft_chat_analytics_service_cls.return_value,
             microsoft_meeting_chat_topic_cache_service=mock_microsoft_meeting_chat_topic_cache_service_cls.return_value,
@@ -606,7 +606,7 @@ class TestAppDependencyBuilder(TestCase):
         )
         self.assertEqual(builder.summary_service, mock_summary_service_cls.return_value)
         self.assertEqual(
-            builder.frontend_controller, mock_frontend_controller_cls.return_value
+            builder.internal_activity_controller, mock_internal_activity_controller_cls.return_value
         )
         self.assertEqual(
             builder.microsoft_meeting_chat_topic_cache_service,

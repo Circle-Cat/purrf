@@ -18,7 +18,7 @@ class FastAppFactory:
         notification_controller,
         historical_controller,
         consumer_controller,
-        frontend_controller,
+        internal_activity_controller,
         profile_controller,
         mentorship_controller,
     ):
@@ -31,7 +31,7 @@ class FastAppFactory:
             notification_controller: An instance of NotificationController that manages API routes for subscribe_microsoft_chat_messages and subscribe_google_chat_space.
             notification_controller: An instance of HistoricalController that manages API routes for sync historical data.
             consumer_controller: An instance of ConsumerController that manages API routes to trigger, check, or stop subscribers.
-            frontend_controller: An instance of FrontendController that manages API routes to query internal activity data.
+            internal_activity_controller: An instance of InternalActivityController that manages API routes to query internal activity data.
             profile_controller: Optional ProfileController instance to register profile routes.
             mentorship_controller: An instance of MentorshipController that manages API routes for mentorship services.
         """
@@ -40,7 +40,7 @@ class FastAppFactory:
         self.notification_controller = notification_controller
         self.historical_controller = historical_controller
         self.consumer_controller = consumer_controller
-        self.frontend_controller = frontend_controller
+        self.internal_activity_controller = internal_activity_controller
         self.profile_controller = profile_controller
         self.mentorship_controller = mentorship_controller
 
@@ -91,7 +91,7 @@ class FastAppFactory:
         app.include_router(self.notification_controller.router, prefix="/api")
         app.include_router(self.historical_controller.router, prefix="/api")
         app.include_router(self.consumer_controller.router, prefix="/api")
-        app.include_router(self.frontend_controller.router, prefix="/api")
+        app.include_router(self.internal_activity_controller.router, prefix="/api")
         app.include_router(self.profile_controller.router, prefix="/api")
         app.include_router(self.mentorship_controller.router, prefix="/api")
 

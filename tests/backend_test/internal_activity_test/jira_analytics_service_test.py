@@ -5,7 +5,7 @@ from backend.common.constants import (
     JiraIssueStatus,
     JIRA_ISSUE_DETAILS_KEY,
 )
-from backend.frontend_service.jira_analytics_service import JiraAnalyticsService
+from backend.internal_activity_service.jira_analytics_service import JiraAnalyticsService
 from datetime import datetime, timezone
 
 
@@ -147,7 +147,7 @@ class TestJiraAnalyticsService(TestCase):
         self.assertEqual(result["user1"]["done_story_points_total"], 8.0)
 
     @patch(
-        "backend.frontend_service.jira_analytics_service.JiraAnalyticsService.get_all_jira_projects",
+        "backend.internal_activity_service.jira_analytics_service.JiraAnalyticsService.get_all_jira_projects",
         return_value={"proj1": "Project 1"},
     )
     def test_get_issues_summary_with_defaults(self, mock_get_projects):

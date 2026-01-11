@@ -2,7 +2,7 @@ from unittest import TestCase, main
 from unittest.mock import Mock
 import json
 from datetime import datetime
-from backend.frontend_service.google_calendar_analytics_service import (
+from backend.internal_activity_service.google_calendar_analytics_service import (
     GoogleCalendarAnalyticsService,
 )
 

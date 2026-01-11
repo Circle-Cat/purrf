@@ -39,28 +39,28 @@ from backend.historical_data.google_calendar_sync_service import (
     GoogleCalendarSyncService,
 )
 from backend.historical_data.gerrit_sync_service import GerritSyncService
-from backend.frontend_service.ldap_service import LdapService
-from backend.frontend_service.jira_analytics_service import JiraAnalyticsService
-from backend.frontend_service.google_calendar_analytics_service import (
+from backend.internal_activity_service.ldap_service import LdapService
+from backend.internal_activity_service.jira_analytics_service import JiraAnalyticsService
+from backend.internal_activity_service.google_calendar_analytics_service import (
     GoogleCalendarAnalyticsService,
 )
-from backend.frontend_service.frontend_controller import FrontendController
-from backend.frontend_service.microsoft_chat_analytics_service import (
+from backend.internal_activity_service.internal_activity_controller import InternalActivityController
+from backend.internal_activity_service.microsoft_chat_analytics_service import (
     MicrosoftChatAnalyticsService,
 )
-from backend.frontend_service.microsoft_meeting_chat_topic_cache_service import (
+from backend.internal_activity_service.microsoft_meeting_chat_topic_cache_service import (
     MicrosoftMeetingChatTopicCacheService,
 )
-from backend.frontend_service.gerrit_analytics_service import GerritAnalyticsService
+from backend.internal_activity_service.gerrit_analytics_service import GerritAnalyticsService
 from backend.historical_data.microsoft_chat_history_sync_service import (
     MicrosoftChatHistorySyncService,
 )
 from backend.historical_data.jira_history_sync_service import JiraHistorySyncService
 from backend.service.jira_search_service import JiraSearchService
-from backend.frontend_service.google_chat_analytics_service import (
+from backend.internal_activity_service.google_chat_analytics_service import (
     GoogleChatAnalyticsService,
 )
-from backend.frontend_service.summary_service import SummaryService
+from backend.internal_activity_service.summary_service import SummaryService
 from backend.common.environment_constants import (
     JIRA_SERVER,
     JIRA_USER,
@@ -98,7 +98,7 @@ class AppDependencyBuilder:
     - Redis client
     - Microsoft Graph client
     - Business services (e.g. MicrosoftService, MicrosoftChatService)
-    - HTTP API controllers (e.g. HistoryController, FrontendController, ConsumerController)
+    - HTTP API controllers (e.g. HistoryController, InternalActivityController, ConsumerController)
 
     Example:
         builder = AppDependencyBuilder()
@@ -325,7 +325,7 @@ class AppDependencyBuilder:
             jira_analytics_service=self.jira_analytics_service,
             date_time_util=self.date_time_util,
         )
-        self.frontend_controller = FrontendController(
+        self.internal_activity_controller = InternalActivityController(
             ldap_service=self.ldap_service,
             microsoft_chat_analytics_service=self.microsoft_chat_analytics_service,
             microsoft_meeting_chat_topic_cache_service=self.microsoft_meeting_chat_topic_cache_service,
@@ -380,7 +380,7 @@ class AppDependencyBuilder:
             notification_controller=self.notification_controller,
             historical_controller=self.historical_controller,
             consumer_controller=self.consumer_controller,
-            frontend_controller=self.frontend_controller,
+            internal_activity_controller=self.internal_activity_controller,
             profile_controller=self.profile_controller,
             mentorship_controller=self.mentorship_controller,
         )

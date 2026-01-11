@@ -1,6 +1,6 @@
 from unittest import TestCase, main
 from unittest.mock import Mock
-from backend.frontend_service.summary_service import SummaryService
+from backend.internal_activity_service.summary_service import SummaryService
 
 
 class TestSummaryService(TestCase):

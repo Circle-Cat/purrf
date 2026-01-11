@@ -3,8 +3,8 @@ load("@rules_python//python:defs.bzl", "py_library")
 package(default_visibility = ["//visibility:public"])
 
 py_library(
-    name = "frontend_controller",
-    srcs = ["frontend_controller.py"],
+    name = "internal_activity_controller",
+    srcs = ["internal_activity_controller.py"],
     deps = [
         "//backend/common:api_endpoints",
         "//backend/common:constants",

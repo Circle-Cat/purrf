@@ -74,7 +74,7 @@ class SummaryRequest(BaseModel):
     includeTerminated: bool | None = False
 
 
-class FrontendController:
+class InternalActivityController:
     def __init__(
         self,
         ldap_service,
@@ -88,7 +88,7 @@ class FrontendController:
         summary_service,
     ):
         """
-        Initialize the FrontendController with required dependencies.
+        Initialize the InternalActivityController with required dependencies.
 
         Args:
             ldap_service: LdapService instance.

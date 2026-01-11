@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import MagicMock, call
 import datetime
 from backend.common.constants import CREATED_GOOGLE_CHAT_MESSAGES_INDEX_KEY
-from backend.frontend_service.google_chat_analytics_service import (
+from backend.internal_activity_service.google_chat_analytics_service import (
     GoogleChatAnalyticsService,
 )
 

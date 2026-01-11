@@ -6,7 +6,7 @@ from backend.common.constants import (
     MICROSOFT_CHAT_MESSAGES_INDEX_KEY,
     MicrosoftChatMessagesChangeType,
 )
-from backend.frontend_service.microsoft_chat_analytics_service import (
+from backend.internal_activity_service.microsoft_chat_analytics_service import (
     MicrosoftChatAnalyticsService,
 )
 

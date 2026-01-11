@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import MagicMock, patch, call
 from datetime import date, datetime, timezone
-from backend.frontend_service.gerrit_analytics_service import GerritAnalyticsService
+from backend.internal_activity_service.gerrit_analytics_service import GerritAnalyticsService
 from backend.common.constants import (
     GERRIT_STATS_PROJECT_BUCKET_KEY,
     GERRIT_UNMERGED_CL_KEY_BY_PROJECT,
@@ -56,7 +56,7 @@ class TestGerritAnalyticsService(unittest.TestCase):
         }
         self.mock_pipeline.reset_mock()
 
-    @patch("backend.frontend_service.gerrit_analytics_service.datetime")
+    @patch("backend.internal_activity_service.gerrit_analytics_service.datetime")
     def test_empty_project_list_defaults_to_global(self, mock_dt):
         """
         Test that when project_list is empty, None, or contains empty strings,
@@ -169,7 +169,7 @@ class TestGerritAnalyticsService(unittest.TestCase):
                     expected_under_review,
                 )
 
-    @patch("backend.frontend_service.gerrit_analytics_service.datetime")
+    @patch("backend.internal_activity_service.gerrit_analytics_service.datetime")
     def test_full_stats_with_under_review_today_and_projects(self, mock_dt):
         """
         Test full stats (abandoned, under-review) when end_date is today.
@@ -276,7 +276,7 @@ class TestGerritAnalyticsService(unittest.TestCase):
                 result[ldap][GERRIT_CL_UNDER_REVIEW_FIELD], expected_under_review
             )
 
-    @patch("backend.frontend_service.gerrit_analytics_service.datetime")
+    @patch("backend.internal_activity_service.gerrit_analytics_service.datetime")
     def test_basic_global_stats_no_full_stats_not_today(self, mock_dt):
         """
         Test basic case: no project list, full stats not included, and end_date is not today.
@@ -327,7 +327,7 @@ class TestGerritAnalyticsService(unittest.TestCase):
         self.assertEqual(result["user1"][GERRIT_CL_ABANDONED_FIELD], 0)
         self.assertEqual(result["user1"][GERRIT_CL_UNDER_REVIEW_FIELD], 0)
 
-    @patch("backend.frontend_service.gerrit_analytics_service.datetime")
+    @patch("backend.internal_activity_service.gerrit_analytics_service.datetime")
     def test_no_active_ldap_users_found(self, mock_dt):
         """
         Test when ldap_service.get_all_active_interns_and_employees_ldaps returns empty,

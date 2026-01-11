@@ -21,10 +21,10 @@ from backend.common.api_endpoints import (
     SUMMARY_ENDPOINT,
 )
 from backend.utils.auth_middleware import AuthMiddleware
-from backend.frontend_service.frontend_controller import FrontendController
+from backend.internal_activity_service.internal_activity_controller import InternalActivityController
 
 
-class TestFrontendControllerIntegration(unittest.TestCase):
+class TestInternalActivityControllerIntegration(unittest.TestCase):
     def setUp(self):
         self.mock_auth_service = MagicMock()
 
@@ -38,7 +38,7 @@ class TestFrontendControllerIntegration(unittest.TestCase):
         self.gerrit_analytics_service = MagicMock()
         self.summary_service = MagicMock()
 
-        self.controller = FrontendController(
+        self.controller = InternalActivityController(
             ldap_service=self.ldap_service,
             microsoft_chat_analytics_service=self.microsoft_chat_analytics_service,
             microsoft_meeting_chat_topic_cache_service=self.microsoft_meeting_chat_topic_cache_service,

@@ -1,7 +1,7 @@
 import os
 from unittest import IsolatedAsyncioTestCase, main
 from unittest.mock import patch, AsyncMock, MagicMock
-from backend.frontend_service.microsoft_meeting_chat_topic_cache_service import (
+from backend.internal_activity_service.microsoft_meeting_chat_topic_cache_service import (
     MicrosoftMeetingChatTopicCacheService,
 )
 from backend.common.environment_constants import (

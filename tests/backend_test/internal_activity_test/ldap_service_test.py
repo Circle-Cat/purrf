@@ -6,7 +6,7 @@ from backend.common.constants import (
     MicrosoftAccountStatus,
     MicrosoftGroups,
 )
-from backend.frontend_service.ldap_service import LdapService
+from backend.internal_activity_service.ldap_service import LdapService
 
 
 class TestLdapService(TestCase):

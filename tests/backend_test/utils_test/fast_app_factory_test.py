@@ -18,7 +18,7 @@ class TestFastAppFactory(unittest.TestCase):
             notification_controller=self.mock_controller,
             historical_controller=self.mock_controller,
             consumer_controller=self.mock_controller,
-            frontend_controller=self.mock_controller,
+            internal_activity_controller=self.mock_controller,
             profile_controller=self.mock_profile_controller,
             mentorship_controller=self.mock_controller,
         )
@@ -31,7 +31,7 @@ class TestFastAppFactory(unittest.TestCase):
         self.assertEqual(self.factory.notification_controller, self.mock_controller)
         self.assertEqual(self.factory.historical_controller, self.mock_controller)
         self.assertEqual(self.factory.consumer_controller, self.mock_controller)
-        self.assertEqual(self.factory.frontend_controller, self.mock_controller)
+        self.assertEqual(self.factory.internal_activity_controller, self.mock_controller)
         self.assertEqual(self.factory.mentorship_controller, self.mock_controller)
 
     def test_create_app_returns_fastapi_instance(self):
