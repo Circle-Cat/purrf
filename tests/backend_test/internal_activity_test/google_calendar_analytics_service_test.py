@@ -12,10 +12,12 @@ class TestGoogleCalendarAnalyticsService(TestCase):
         self.mock_logger = Mock()
         self.mock_redis = Mock()
         self.mock_retry_utils = Mock()
+        self.mock_ldap_service = Mock()
         self.service = GoogleCalendarAnalyticsService(
             logger=self.mock_logger,
             redis_client=self.mock_redis,
             retry_utils=self.mock_retry_utils,
+            ldap_service=self.mock_ldap_service,
         )
 
     def test_get_calendar_name_success(self):
@@ -193,6 +195,128 @@ class TestGoogleCalendarAnalyticsService(TestCase):
             start_date=start_date,
             end_date=end_date,
         )
+
+    def test_get_all_events_with_ldaps_none(self):
+        """Test get_all_events when ldaps=None, use ldap_service to fill"""
+        calendar_id = "personal"
+        ldaps = None
+        start_date = datetime.fromisoformat("2025-07-01")
+        end_date = datetime.fromisoformat("2025-08-02")
+
+        # Reuse the mock ldap_service from setUp
+        self.mock_ldap_service.get_all_active_interns_and_employees_ldaps.return_value = [
+            "user1"
+        ]
+
+        mock_pipeline = Mock()
+        self.mock_redis.pipeline.return_value = mock_pipeline
+        self.mock_retry_utils.get_retry_on_transient.side_effect = [
+            [["event123"]],  # get event ids
+            [
+                [
+                    json.dumps({
+                        "join_time": "2025-08-01T10:00:00",
+                        "leave_time": "2025-08-01T10:30:00",
+                    }),
+                    json.dumps({
+                        "join_time": "2025-08-01T11:00:00",
+                        "leave_time": "2025-08-01T11:45:00",
+                    }),
+                ]
+            ],  # get attendance
+            [
+                json.dumps({
+                    "summary": "Team Sync",
+                    "calendar_id": "personal",
+                    "is_recurring": True,
+                })
+            ],  # get event details
+            "Personal Calendar",  # get calendar name
+        ]
+
+        expected_result = {
+            "user1": [
+                {
+                    "event_id": "event123",
+                    "summary": "Team Sync",
+                    "calendar_name": "Personal Calendar",
+                    "is_recurring": True,
+                    "attendance": [
+                        {
+                            "join_time": "2025-08-01T10:00:00",
+                            "leave_time": "2025-08-01T10:30:00",
+                        },
+                        {
+                            "join_time": "2025-08-01T11:00:00",
+                            "leave_time": "2025-08-01T11:45:00",
+                        },
+                    ],
+                }
+            ]
+        }
+
+        result = self.service.get_all_events(calendar_id, ldaps, start_date, end_date)
+        self.assertEqual(result, expected_result)
+        self.assertTrue(self.mock_redis.pipeline.called)
+        self.assertTrue(self.mock_retry_utils.get_retry_on_transient.called)
+        self.mock_ldap_service.get_all_active_interns_and_employees_ldaps.assert_called_once()
+
+    def test_get_all_events_with_ldaps_empty(self):
+        """Test get_all_events when ldaps=[], use ldap_service to fill"""
+        calendar_id = "personal"
+        ldaps = []
+        start_date = datetime.fromisoformat("2025-07-01")
+        end_date = datetime.fromisoformat("2025-08-02")
+
+        # Reuse the mock ldap_service from setUp
+        self.mock_ldap_service.get_all_active_interns_and_employees_ldaps.return_value = [
+            "user2"
+        ]
+
+        mock_pipeline = Mock()
+        self.mock_redis.pipeline.return_value = mock_pipeline
+        self.mock_retry_utils.get_retry_on_transient.side_effect = [
+            [["event456"]],  # get event ids
+            [
+                [
+                    json.dumps({
+                        "join_time": "2025-08-02T09:00:00",
+                        "leave_time": "2025-08-02T10:00:00",
+                    }),
+                ]
+            ],  # get attendance
+            [
+                json.dumps({
+                    "summary": "Project Meeting",
+                    "calendar_id": "personal",
+                    "is_recurring": False,
+                })
+            ],  # get event details
+            "Personal Calendar",  # get calendar name
+        ]
+
+        expected_result = {
+            "user2": [
+                {
+                    "event_id": "event456",
+                    "summary": "Project Meeting",
+                    "calendar_name": "Personal Calendar",
+                    "is_recurring": False,
+                    "attendance": [
+                        {
+                            "join_time": "2025-08-02T09:00:00",
+                            "leave_time": "2025-08-02T10:00:00",
+                        },
+                    ],
+                }
+            ]
+        }
+
+        result = self.service.get_all_events(calendar_id, ldaps, start_date, end_date)
+        self.assertEqual(result, expected_result)
+        self.assertTrue(self.mock_redis.pipeline.called)
+        self.assertTrue(self.mock_retry_utils.get_retry_on_transient.called)
+        self.mock_ldap_service.get_all_active_interns_and_employees_ldaps.assert_called_once()
 
 
 if __name__ == "__main__":

@@ -307,6 +307,7 @@ class AppDependencyBuilder:
             logger=self.logger,
             redis_client=self.redis_client,
             retry_utils=self.retry_utils,
+            ldap_service=self.ldap_service,
         )
         self.gerrit_analytics_service = GerritAnalyticsService(
             logger=self.logger,

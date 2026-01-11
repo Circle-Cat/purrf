@@ -367,6 +367,7 @@ class TestAppDependencyBuilder(TestCase):
             logger=mock_logger,
             redis_client=mock_redis_client,
             retry_utils=mock_retry_utils_instance,
+            ldap_service=mock_ldap_service_cls.return_value,
         )
         mock_gerrit_analytics_service_cls.assert_called_once_with(
             logger=mock_logger,

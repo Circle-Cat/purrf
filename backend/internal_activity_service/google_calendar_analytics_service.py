@@ -9,7 +9,7 @@ from datetime import datetime
 
 
 class GoogleCalendarAnalyticsService:
-    def __init__(self, logger, redis_client, retry_utils):
+    def __init__(self, logger, redis_client, retry_utils, ldap_service):
         """
         Initialize the GoogleCalendarAnalyticsService with necessary clients and logger.
 
@@ -17,10 +17,13 @@ class GoogleCalendarAnalyticsService:
             logger: The logger instance for logging messages.
             redis_client: The Redis client instance.
             retry_utils: A RetryUtils for handling retries on transient errors.
+            ldap_service: The LDAP service instance for retrieving LDAP data.
+              Missing LDAP data will be backfilled.
         """
         self.logger = logger
         self.redis_client = redis_client
         self.retry_utils = retry_utils
+        self.ldap_service = ldap_service
 
         if not logger:
             raise ValueError("Logger not provided.")
@@ -65,7 +68,7 @@ class GoogleCalendarAnalyticsService:
     def get_all_events(
         self,
         calendar_id: str,
-        ldaps: list[str],
+        ldaps: list[str] | None,
         start_date: datetime,
         end_date: datetime,
     ) -> dict[str, list[dict[str, any]]]:
@@ -74,13 +77,17 @@ class GoogleCalendarAnalyticsService:
 
         Args:
             calendar_id (str): The calendar ID.
-            ldaps (List[str]): List of LDAP usernames.
+            ldaps (list[str] | None): List of LDAP usernames. If None, LDAPs will be backfilled with all active interns and employees.
             start_date (datetime): Start date in ISO format (inclusive).
             end_date (datetime): End date in ISO format (inclusive).
 
         Returns:
-            Dict[str, List[Dict]]: Each LDAP maps to a list of event dicts with id, date, join/leave times.
+            dict[str, list[dict]]: Each LDAP maps to a list of event dicts with id, date, join/leave times.
         """
+
+        if not ldaps:
+            ldaps = self.ldap_service.get_all_active_interns_and_employees_ldaps()
+
         result: dict[str, list[dict[str, any]]] = {}
 
         start_ts = int(start_date.timestamp())
