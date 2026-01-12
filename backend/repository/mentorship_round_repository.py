@@ -28,6 +28,30 @@ class MentorshipRoundRepository:
 
         return result.scalars().all()
 
+    async def get_by_round_id(
+        self, session: AsyncSession, round_id: int
+    ) -> MentorshipRoundEntity | None:
+        """
+        Retrieve a mentorship round entity by its round ID.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            round_id (int): The ID of the mentorship round to retrieve.
+
+        Returns:
+            MentorshipRoundEntity | None: The mentorship round entity, otherwise None.
+        """
+        if not round_id:
+            return None
+
+        result = await session.execute(
+            select(MentorshipRoundEntity).where(
+                MentorshipRoundEntity.round_id == round_id,
+            )
+        )
+
+        return result.scalar_one_or_none()
+
     async def upsert_round(
         self, session: AsyncSession, entity: MentorshipRoundEntity
     ) -> MentorshipRoundEntity:

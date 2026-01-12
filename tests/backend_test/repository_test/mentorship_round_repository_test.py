@@ -1,5 +1,4 @@
 import unittest
-
 from backend.entity.mentorship_round_entity import MentorshipRoundEntity
 from backend.repository.mentorship_round_repository import MentorshipRoundRepository
 from tests.backend_test.repository_test.base_repository_test_lib import (
@@ -60,6 +59,41 @@ class TestMentorShipRoundRepository(BaseRepositoryTestLib):
 
         self.assertIsInstance(rounds, list)
         self.assertEqual(rounds, [])
+
+    async def test_get_by_round_id_success(self):
+        """Test successful retrieval of mentorship round by round_id"""
+        await self.insert_entities(self.rounds)
+
+        round_id = self.rounds[0].round_id
+        expected_round = self.rounds[0]
+
+        result = await self.repo.get_by_round_id(self.session, round_id)
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result.round_id, expected_round.round_id)
+        self.assertEqual(result.name, expected_round.name)
+        self.assertAlmostEqual(
+            result.mentee_average_score, expected_round.mentee_average_score
+        )
+        self.assertAlmostEqual(
+            result.mentor_average_score, expected_round.mentor_average_score
+        )
+        self.assertEqual(result.expectations, expected_round.expectations)
+        self.assertEqual(result.description, expected_round.description)
+        self.assertEqual(result.required_meetings, expected_round.required_meetings)
+
+    async def test_get_by_round_id_not_found(self):
+        """Test when mentorship round is not found then None."""
+        round_id = 9999
+
+        result = await self.repo.get_by_round_id(self.session, round_id)
+        self.assertIsNone(result)
+
+    async def test_get_by_round_id_invalid(self):
+        """Test when mentorship round is invalid then None."""
+        result = await self.repo.get_by_round_id(self.session, None)
+
+        self.assertIsNone(result)
 
     async def test_upsert_round_insert_mentorship_round_entity(self):
         """Test insert a new MentorshipRoundEntity"""
