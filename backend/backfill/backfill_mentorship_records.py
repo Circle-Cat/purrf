@@ -5,17 +5,24 @@ import asyncio
 import traceback
 import io
 import requests
+import json
+import uuid
 from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.entity.users_entity import UsersEntity
+from backend.entity.experience_entity import ExperienceEntity
+from backend.entity.preference_entity import PreferenceEntity
 from backend.common.mentorship_enums import CommunicationMethod, UserTimezone
 from backend.common.database import Database
 from backend.repository.users_repository import UsersRepository
 from backend.repository.experience_repository import ExperienceRepository
+from backend.repository.preferences_repository import PreferencesRepository
 from backend.common.logger import get_logger
 
 logger = get_logger()
+
+DEFAULT_DATE_STR = "1970-01-01"
 
 TIMEZONE_MAP = {
     "PST": UserTimezone.AMERICA_LOS_ANGELES,
@@ -28,6 +35,28 @@ COMM_MAP = {
     "email": CommunicationMethod.EMAIL,
     "google_chat": CommunicationMethod.GOOGLE_CHAT,
     None: CommunicationMethod.EMAIL,
+}
+
+SKILLSET_COL_MAP = {
+    "Resume/LinkedIn Profile": "resume_guidance",
+    "Career Path Guidance": "career_path_guidance",
+    "Experience Sharing": "experience_sharing",
+    "Industry Trends": "industry_trends",
+    "Technical Skills Development": "technical_skills",
+    "Technical Skills": "technical_skills",
+    "Soft Skills Enhancement": "soft_skills",
+    "Soft Skills": "soft_skills",
+    "Networking": "networking",
+    "Project Management": "project_management",
+}
+
+INDUSTRY_MAP = {
+    "Software Engineering": "swe",
+    "Data Science": "ds",
+    "Machine Learning": "ds",
+    "Product Management": "pm",
+    "Technical Program Management": "pm",
+    "UI/UX Design": "uiux",
 }
 
 
@@ -84,16 +113,18 @@ class MentorshipImportService:
     operations to repository classes.
     """
 
-    def __init__(self, user_repo, exp_repo):
+    def __init__(self, user_repo, exp_repo, pref_repo):
         """
         Initialize the mentorship import service.
 
         Args:
             user_repo: Repository responsible for user persistence operations.
             exp_repo: Repository responsible for experience-related persistence.
+            pref_repo: Repository responsible for preferences-related persistence.
         """
         self.user_repo = user_repo
         self.exp_repo = exp_repo
+        self.pref_repo = pref_repo
 
     async def _upsert_user_base(
         self, session: AsyncSession, email: str, data: dict
@@ -156,6 +187,217 @@ class MentorshipImportService:
 
         return TIMEZONE_MAP.get(clean_tz, UserTimezone.AMERICA_LOS_ANGELES)
 
+    def _parse_date_to_iso(self, value) -> str | None:
+        """
+        Normalize various date-like inputs to ISO date string (YYYY-MM-DD).
+
+        Returns None if value is empty, NaN, or invalid.
+        """
+        if value is None or pd.isna(value):
+            return None
+
+        try:
+            return pd.to_datetime(value).date().isoformat()
+        except Exception:
+            return None
+
+    def _parse_skillsets_to_dict(self, skillset_str: str) -> dict:
+        """
+        Parse a raw skillset string into a boolean dictionary.
+
+        The input string is expected to be a comma-separated list of skillset keys.
+        Each known skillset is mapped to a boolean flag indicating whether it
+        was selected by the user.
+
+        If the input is empty or NaN, all skillset flags will be set to False.
+
+        Example:
+            Input: "resumeGuidance, networking"
+            Output: {
+                "resume_guidance": True,
+                "networking": True,
+                ...
+            }
+
+        Args:
+            skillset_str: Raw skillset string from the source data
+
+        Return:
+            Dictionary mapping skillset columns to boolean values
+        """
+        result = {col: False for col in SKILLSET_COL_MAP.values()}
+        if not skillset_str or pd.isna(skillset_str):
+            return result
+        items = [i.strip() for i in str(skillset_str).split(",")]
+        for item in items:
+            if item in SKILLSET_COL_MAP:
+                result[SKILLSET_COL_MAP[item]] = True
+        return result
+
+    def _parse_industries_to_fixed_dict(self, industry_str: str) -> dict:
+        """
+        Parse a raw industry string into a fixed industry boolean dictionary.
+
+        The returned dictionary always contains the same set of industry keys
+        (swe, uiux, ds, pm), each mapped to a boolean value.
+
+        The input may contain comma- or semicolon-separated values.
+        Unknown industries are ignored.
+
+        If the input is empty or NaN, all industries will be set to False.
+
+        Args:
+            industry_str: Raw industry string from the source data
+
+        Return:
+            Dictionary with fixed industry keys and boolean values
+        """
+
+        result = {"swe": False, "uiux": False, "ds": False, "pm": False}
+        if not industry_str or pd.isna(industry_str):
+            return result
+        raw_items = [i.strip() for i in str(industry_str).replace(";", ",").split(",")]
+        for item in raw_items:
+            key = INDUSTRY_MAP.get(item)
+            if key in result:
+                result[key] = True
+        return result
+
+    async def _upsert_experience_data(
+        self, session: AsyncSession, user_id: int, row: pd.Series
+    ):
+        """
+        Parse and upsert education and work history data for a user.
+
+        Education and work history are parsed from raw user data.
+        If both education and work history are missing or invalid,
+        the function exits without making any database changes.
+
+        Any existing experience record will be updated; otherwise,
+        a new experience entity will be created.
+
+        Parsing errors are logged and do not interrupt the overall sync flow.
+
+        Args:
+            session: Active async database session
+            user_id: ID of the user whose experience data is being synced
+            row: Pandas Series containing raw user data
+        """
+        raw_edu_str = row.get("education") or row.get("mentee.education")
+        past_history_raw = row.get("past_work_history")
+
+        formatted_edu_list: list[dict] = []
+        formatted_work_list: list[dict] = []
+
+        # Education
+        if raw_edu_str and not pd.isna(raw_edu_str):
+            try:
+                edu_data = (
+                    json.loads(raw_edu_str)
+                    if isinstance(raw_edu_str, str)
+                    else raw_edu_str
+                )
+
+                for item in edu_data:
+                    formatted_edu_list.append({
+                        "id": str(uuid.uuid4()),
+                        "degree": item.get("degree"),
+                        "school": item.get("school") or "",
+                        "field_of_study": item.get("field_of_study"),
+                        "start_date": self._parse_date_to_iso(item.get("start_date"))
+                        or DEFAULT_DATE_STR,
+                        "end_date": self._parse_date_to_iso(item.get("end_date"))
+                        or DEFAULT_DATE_STR,
+                    })
+            except (json.JSONDecodeError, TypeError) as e:
+                logger.warning(
+                    "Failed to parse education data for user %s: %s",
+                    user_id,
+                    e,
+                )
+
+        # Work History
+        if past_history_raw and not pd.isna(past_history_raw):
+            try:
+                past_history = (
+                    json.loads(past_history_raw)
+                    if isinstance(past_history_raw, str)
+                    else past_history_raw
+                )
+
+                for entry in past_history:
+                    formatted_work_list.append({
+                        "id": str(uuid.uuid4()),
+                        "title": entry.get("title"),
+                        "company_or_organization": entry.get("company"),
+                        "start_date": self._parse_date_to_iso(entry.get("start_date"))
+                        or DEFAULT_DATE_STR,
+                        "end_date": self._parse_date_to_iso(entry.get("end_date")),
+                        "is_current_job": entry.get("end_date")
+                        in [None, "Present", "present"],
+                    })
+            except (json.JSONDecodeError, TypeError) as e:
+                logger.warning(
+                    "Failed to parse work history for user %s: %s",
+                    user_id,
+                    e,
+                )
+
+        # Early Return
+        if not formatted_edu_list and not formatted_work_list:
+            logger.debug(
+                "No experience data found for user %s, skipping upsert",
+                user_id,
+            )
+            return
+
+        # Upsert
+        experience = await self.exp_repo.get_experience_by_user_id(session, user_id)
+        if not experience:
+            experience = ExperienceEntity(user_id=user_id)
+
+        experience.education = formatted_edu_list
+        experience.work_history = formatted_work_list
+
+        await self.exp_repo.upsert_experience(session, experience)
+
+    async def _upsert_preference(
+        self, session: AsyncSession, user_id: int, skillset_raw: str, industry_raw: str
+    ):
+        """
+        Parse and upsert user preference data.
+
+        This method converts raw skillset and industry strings into
+        structured preference fields and persists them to the database.
+
+        Existing preference records are updated; otherwise, a new
+        preference entity is created.
+
+        Any parsing or persistence error is logged and re-raised
+        to ensure upstream visibility.
+
+        Args:
+            session: Active async database session
+            user_id: ID of the user whose preferences are being synced
+            skillset_raw: Raw skillset string
+            industry_raw: Raw industry string
+        """
+
+        try:
+            pref = await self.pref_repo.get_preferences_by_user_id(session, user_id)
+            if not pref:
+                pref = PreferenceEntity(user_id=user_id)
+
+            skill_bools = self._parse_skillsets_to_dict(skillset_raw)
+            for attr, value in skill_bools.items():
+                setattr(pref, attr, value)
+
+            pref.specific_industry = self._parse_industries_to_fixed_dict(industry_raw)
+            await self.pref_repo.upsert_preference(session, pref)
+        except Exception as e:
+            logger.error(f"Error syncing preferences for user_id {user_id}: {e}")
+            raise e
+
     async def sync_mentor_users_from_row(self, session: AsyncSession, df: pd.DataFrame):
         """
         Import mentor users from a DataFrame.
@@ -177,8 +419,16 @@ class MentorshipImportService:
                     "timezone": row.get("timezone"),
                     "comm_channel": COMM_MAP.get(row.get("preferred_comms_channel")),
                 }
-                await self._upsert_user_base(session, row["primary_email"], user_data)
-
+                user = await self._upsert_user_base(
+                    session, row["primary_email"], user_data
+                )
+                await self._upsert_experience_data(session, user.user_id, row)
+                await self._upsert_preference(
+                    session,
+                    user.user_id,
+                    row.get("skillsets"),
+                    row.get("mentoring_field"),
+                )
             except Exception as e:
                 logger.error(
                     f"Error importing mentor at row {index} ({row.get('primary_email')}): {e}"
@@ -212,8 +462,14 @@ class MentorshipImportService:
                     if pd.notna(alt_emails)
                     else [],
                 }
-                await self._upsert_user_base(session, email, user_data)
+                user = await self._upsert_user_base(session, email, user_data)
+                await self._upsert_experience_data(session, user.user_id, row)
 
+                skill_col = "2025 3rd Round - skillsets"
+                industry_col = "2025 3rd Round - Which specific industry or field are you most interested in?"
+                await self._upsert_preference(
+                    session, user.user_id, row.get(skill_col), row.get(industry_col)
+                )
             except Exception as e:
                 logger.error(f"Error importing mentee at row {index} ({email}): {e}")
 
@@ -230,8 +486,9 @@ async def main():
     """
     logger.info("Script started...")
     db = Database(echo=True)
-
-    service = MentorshipImportService(UsersRepository(), ExperienceRepository())
+    service = MentorshipImportService(
+        UsersRepository(), ExperienceRepository(), PreferencesRepository()
+    )
 
     mentor_path = "backend/backfill/Mentor.csv"
     mentee_path = "backend/backfill/Mentee.csv"
@@ -240,7 +497,6 @@ async def main():
         try:
             df_mentor = load_dataframe_from_path(mentor_path)
             await service.sync_mentor_users_from_row(session, df_mentor)
-            await session.flush()
 
             df_mentee = load_dataframe_from_path(mentee_path)
             await service.sync_mentee_users_from_row(session, df_mentee)
