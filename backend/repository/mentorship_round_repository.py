@@ -27,3 +27,25 @@ class MentorshipRoundRepository:
         result = await session.execute(select(MentorshipRoundEntity))
 
         return result.scalars().all()
+
+    async def upsert_round(
+        self, session: AsyncSession, entity: MentorshipRoundEntity
+    ) -> MentorshipRoundEntity:
+        """
+        Inserts or updates a MentorshipRoundEntity object in the database.
+
+        This method using session.merge() handles data persistence, it will
+        update the entity if the primary key exists, or inserts it otherwise
+
+        Args:
+            session (AsyncSession): The active async database session.
+            entity: The MentorshipRound object containing the round data.
+
+        Returns:
+            MentorshipRound: The entity object synchronized with the database, reflecting
+            the latest state, generated keys, and default values.
+        """
+        merged_entity = await session.merge(entity)
+        await session.flush()
+
+        return merged_entity
