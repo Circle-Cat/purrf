@@ -23,3 +23,9 @@ py_test(
     srcs = ["participation_service_test.py"],
     deps = ["//backend/mentorship"],
 )
+
+py_test(
+    name = "registration_service_test",
+    srcs = ["registration_service_test.py"],
+    deps = ["//backend/mentorship"],
+)
