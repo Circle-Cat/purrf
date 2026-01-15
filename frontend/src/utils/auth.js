@@ -19,6 +19,24 @@ export const getCookie = (name) => {
 };
 
 /**
+ * Generic utility function for parsing a JWT payload
+ */
+export const getJwtPayload = (jwtString) => {
+  if (!jwtString) return null;
+  try {
+    const parts = jwtString.split(".");
+    if (parts.length !== 3) {
+      console.warn("JWT format is incorrect, not a valid JWT.");
+      return null;
+    }
+    return JSON.parse(atob(parts[1]));
+  } catch (e) {
+    console.warn("Failed to decode JWT Payload:", e);
+    return null;
+  }
+};
+
+/**
  * Extracts the username from a Cloudflare Access JWT.
  *
  * This function takes a Cloudflare Access JWT string, decodes it, and extracts the username
@@ -44,22 +62,8 @@ export const extractCloudflareUserName = (jwtString) => {
     return null;
   }
   try {
-    const parts = jwtString.split(".");
-    if (parts.length !== 3) {
-      console.warn("JWT format is incorrect, not a valid JWT.");
-      return null;
-    }
-
-    const payloadBase64 = parts[1];
-    const decodedPayloadStr = atob(payloadBase64);
-
-    if (!decodedPayloadStr) {
-      console.warn("Failed to decode JWT Payload.");
-      return null;
-    }
-
-    const jwtPayload = JSON.parse(decodedPayloadStr);
-
+    const jwtPayload = getJwtPayload(jwtString);
+    if (!jwtPayload) return null;
     let extractedName = null;
 
     // Extract username with priority
@@ -89,4 +93,81 @@ export const extractCloudflareUserName = (jwtString) => {
     );
     return null;
   }
+};
+
+/**
+ * Global logout handler that dynamically detects Auth0 vs LDAP users
+ */
+export const performGlobalLogout = () => {
+  // Load base configuration
+  const {
+    VITE_AUTH0_DOMAIN: auth0Domain,
+    VITE_AUTH0_CLIENT_ID: clientId,
+    VITE_CF_ACCESS_TENANT_DOMAIN: cfTenantDomain,
+  } = import.meta.env;
+
+  const currentOrigin = window.location.origin;
+  const appHome = `${currentOrigin}/`;
+
+  // Retrieve current user info to determine identity provider (IdP)
+  const jwt = getCookie("CF_Authorization");
+  const payload = getJwtPayload(jwt);
+
+  // Determine whether the user is an Auth0 user
+  // Signal 1: custom.sub contains 'email|'
+  // Signal 2: top-level email equals the Auth0 Client ID
+  const isAuth0User =
+    payload &&
+    ((payload.custom?.sub && payload.custom.sub.includes("email|")) ||
+      payload.email === clientId);
+
+  // Environment check: determine whether to skip Cloudflare logout
+  const isLocal =
+    currentOrigin.includes("localhost") ||
+    currentOrigin.includes("127.0.0.1") ||
+    currentOrigin.includes("172.31");
+
+  // Build Cloudflare logout chain
+  // For all non-local environments, Cloudflare logout is always required
+  let cfLogoutStep;
+  if (isLocal) {
+    cfLogoutStep = appHome;
+    console.log(
+      "Local environment detected, clearing local state only and skipping external logout.",
+    );
+  } else {
+    // Domain-level logout → tenant-level logout → final redirect to home
+    const cfDomainLogout = `${currentOrigin}/cdn-cgi/access/logout?returnTo=${encodeURIComponent(
+      appHome,
+    )}`;
+    cfLogoutStep = `https://${cfTenantDomain}/cdn-cgi/access/logout?returnTo=${encodeURIComponent(
+      cfDomainLogout,
+    )}`;
+  }
+
+  // Final redirect decision
+  let finalUrl;
+
+  if (isAuth0User) {
+    // Auth0 users must clear the Auth0 session first, then return to the CF logout chain
+    console.log("Detected Auth0 user, initiating full logout chain.");
+    finalUrl = `https://${auth0Domain}/v2/logout?client_id=${clientId}&returnTo=${encodeURIComponent(
+      cfLogoutStep,
+    )}`;
+  } else {
+    // LDAP or other users skip Auth0 and go directly through Cloudflare
+    console.log("Detected LDAP or non-Auth0 user, skipping Auth0 logout.");
+    finalUrl = cfLogoutStep;
+  }
+
+  // Clear local state and perform redirect
+  localStorage.clear();
+  sessionStorage.clear();
+
+  // Log final redirect URL in development for debugging
+  if (import.meta.env.DEV) {
+    console.log("Logout redirecting to:", finalUrl);
+  }
+
+  window.location.href = finalUrl;
 };

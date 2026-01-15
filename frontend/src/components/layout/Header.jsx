@@ -3,7 +3,11 @@ import { useNavigate } from "react-router-dom";
 import "./Header.css";
 import { Root, Trigger, Content, Item } from "@radix-ui/react-dropdown-menu";
 import logo from "@/assets/logo.png";
-import { getCookie, extractCloudflareUserName } from "@/utils/auth";
+import {
+  getCookie,
+  extractCloudflareUserName,
+  performGlobalLogout,
+} from "@/utils/auth";
 import {
   Dialog,
   DialogContent,
@@ -67,6 +71,13 @@ const Header = () => {
               aria-label="Contact Us"
             >
               Contact Us
+            </Item>
+            <Item
+              onClick={performGlobalLogout}
+              className="dropdown-item"
+              aria-label="Logout"
+            >
+              Logout
             </Item>
           </Content>
         </Root>

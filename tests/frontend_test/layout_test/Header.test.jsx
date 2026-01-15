@@ -2,7 +2,11 @@ import { render, screen, cleanup, waitFor } from "@testing-library/react";
 import { describe, test, expect, afterEach, vi } from "vitest";
 import Header from "@/components/layout/Header";
 import Profile from "@/pages/Profile";
-import { getCookie, extractCloudflareUserName } from "@/utils/auth";
+import {
+  getCookie,
+  extractCloudflareUserName,
+  performGlobalLogout,
+} from "@/utils/auth";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import userEvent from "@testing-library/user-event";
 
@@ -11,6 +15,7 @@ import "@testing-library/jest-dom/vitest";
 vi.mock("@/utils/auth", () => ({
   getCookie: vi.fn(),
   extractCloudflareUserName: vi.fn(),
+  performGlobalLogout: vi.fn(),
 }));
 
 vi.mock("@/pages/Profile", () => ({
@@ -179,5 +184,17 @@ describe("Header Component", () => {
     const closeContactUs = await screen.findByText("×");
     await user.click(closeContactUs);
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  test("should call performGlobalLogout when logout is clicked", async () => {
+    setup("some-jwt", "Alice");
+    const user = userEvent.setup();
+
+    await user.click(screen.getByText("A"));
+
+    const logoutItem = await screen.findByText("Logout");
+    await user.click(logoutItem);
+
+    expect(performGlobalLogout).toHaveBeenCalled();
   });
 });
