@@ -1,7 +1,9 @@
 import unittest
 from unittest.mock import MagicMock, patch, call
 from datetime import date, datetime, timezone
-from backend.internal_activity_service.gerrit_analytics_service import GerritAnalyticsService
+from backend.internal_activity_service.gerrit_analytics_service import (
+    GerritAnalyticsService,
+)
 from backend.common.constants import (
     GERRIT_STATS_PROJECT_BUCKET_KEY,
     GERRIT_UNMERGED_CL_KEY_BY_PROJECT,

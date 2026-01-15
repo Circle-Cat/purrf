@@ -370,9 +370,11 @@ const Dashboard = () => {
 
         <div className="checkbox-container">
           {groupsData.map((group) => {
-            const isRequired = [Group.Interns, Group.Employees, Group.Volunteers].includes(
-              group,
-            );
+            const isRequired = [
+              Group.Interns,
+              Group.Employees,
+              Group.Volunteers,
+            ].includes(group);
             const errorClass = error ? "error" : "";
 
             return (

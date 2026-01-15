@@ -5,7 +5,9 @@ from backend.common.constants import (
     JiraIssueStatus,
     JIRA_ISSUE_DETAILS_KEY,
 )
-from backend.internal_activity_service.jira_analytics_service import JiraAnalyticsService
+from backend.internal_activity_service.jira_analytics_service import (
+    JiraAnalyticsService,
+)
 from datetime import datetime, timezone
 
 

@@ -21,7 +21,9 @@ from backend.common.api_endpoints import (
     SUMMARY_ENDPOINT,
 )
 from backend.utils.auth_middleware import AuthMiddleware
-from backend.internal_activity_service.internal_activity_controller import InternalActivityController
+from backend.internal_activity_service.internal_activity_controller import (
+    InternalActivityController,
+)
 
 
 class TestInternalActivityControllerIntegration(unittest.TestCase):
