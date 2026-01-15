@@ -7,3 +7,7 @@ output "computed_domains" {
 output "resource_prefix" {
   value = local.name_prefix
 }
+
+output "redis_endpoint" {
+  value = upstash_redis_database.redis.endpoint
+}

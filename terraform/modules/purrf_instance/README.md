@@ -4,7 +4,9 @@ No requirements.
 
 ## Providers
 
-No providers.
+| Name | Version |
+|------|---------|
+| <a name="provider_upstash"></a> [upstash](#provider\_upstash) | n/a |
 
 ## Modules
 
@@ -12,7 +14,9 @@ No modules.
 
 ## Resources
 
-No resources.
+| Name | Type |
+|------|------|
+| [upstash_redis_database.redis](https://registry.terraform.io/providers/upstash/upstash/latest/docs/resources/redis_database) | resource |
 
 ## Inputs
 
@@ -28,4 +32,5 @@ No resources.
 | Name | Description |
 |------|-------------|
 | <a name="output_computed_domains"></a> [computed\_domains](#output\_computed\_domains) | Computed domain names for this Purrf instance. |
+| <a name="output_redis_endpoint"></a> [redis\_endpoint](#output\_redis\_endpoint) | n/a |
 | <a name="output_resource_prefix"></a> [resource\_prefix](#output\_resource\_prefix) | Resource name prefix used by this module. |

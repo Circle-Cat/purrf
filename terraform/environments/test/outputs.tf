@@ -7,3 +7,7 @@ output "test_domains" {
 output "resource_prefix" {
   value = module.purrf_instance.resource_prefix
 }
+
+output "redis_endpoint" {
+  value = module.purrf_instance.redis_endpoint
+}
