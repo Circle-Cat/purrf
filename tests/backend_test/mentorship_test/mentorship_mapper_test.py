@@ -2,12 +2,22 @@ import unittest
 import uuid
 from datetime import date, datetime, timezone
 
+from backend.dto.preference_dto import SpecificIndustryDto, SkillsetsDto
+from backend.dto.registration_dto import GlobalPreferencesDto, RoundPreferencesDto
 from backend.dto.rounds_dto import RoundsDto, TimelineDto
 from backend.dto.partner_dto import PartnerDto
 from backend.entity.users_entity import UsersEntity
+from backend.entity.preference_entity import PreferenceEntity
+from backend.entity.mentorship_round_participants_entity import (
+    MentorshipRoundParticipantsEntity,
+)
 from backend.entity.mentorship_round_entity import MentorshipRoundEntity
 from backend.mentorship.mentorship_mapper import MentorshipMapper
-from backend.common.mentorship_enums import UserTimezone, CommunicationMethod
+from backend.common.mentorship_enums import (
+    UserTimezone,
+    CommunicationMethod,
+    ParticipantRole,
+)
 
 
 class TestMentorshipMapper(unittest.TestCase):
@@ -40,6 +50,56 @@ class TestMentorshipMapper(unittest.TestCase):
             ),
             MentorshipRoundEntity(
                 round_id=3, name="Spring-2026", description=None, required_meetings=5
+            ),
+        ]
+
+        self.preference_entity = [
+            PreferenceEntity(
+                preferences_id=1,
+                user_id=1,
+                resume_guidance=False,
+                career_path_guidance=False,
+                experience_sharing=True,
+                industry_trends=True,
+                technical_skills=False,
+                soft_skills=False,
+                networking=False,
+                project_management=True,
+                specific_industry={
+                    "swe": False,
+                    "uiux": True,
+                    "ds": False,
+                    "pm": False,
+                },
+            ),
+            PreferenceEntity(
+                preferences_id=2,
+                user_id=1,
+                resume_guidance=None,
+                specific_industry=None,
+            ),
+        ]
+
+        self.participants_entity = [
+            MentorshipRoundParticipantsEntity(
+                participant_id=uuid.uuid4(),
+                user_id=1,
+                round_id=1,
+                participant_role=ParticipantRole.MENTEE,
+                expected_partner_user_id=[456],
+                unexpected_partner_user_id=[],
+                max_partners=1,
+                goal="I want to learn project management skills.",
+            ),
+            MentorshipRoundParticipantsEntity(
+                participant_id=uuid.uuid4(),
+                user_id=1,
+                round_id=2,
+                participant_role=ParticipantRole.MENTEE,
+                expected_partner_user_id=None,
+                unexpected_partner_user_id=None,
+                max_partners=None,
+                goal=None,
             ),
         ]
 
@@ -92,6 +152,60 @@ class TestMentorshipMapper(unittest.TestCase):
 
         self.assertIsInstance(dto, PartnerDto)
         self.assertEqual(dto.preferred_name, self.users[0].first_name)
+
+    def test_map_to_global_preferences_dto_success(self):
+        """Test mapping preference entity to global preferences dto correctly."""
+        dto = self.mapper.map_to_global_preferences_dto(self.preference_entity[0])
+
+        self.assertIsInstance(dto, GlobalPreferencesDto)
+
+        self.assertIsInstance(dto.skillsets, SkillsetsDto)
+        self.assertFalse(dto.skillsets.resume_guidance)
+        self.assertTrue(dto.skillsets.experience_sharing)
+
+        self.assertIsInstance(dto.specific_industry, SpecificIndustryDto)
+        self.assertFalse(dto.specific_industry.swe)
+        self.assertTrue(dto.specific_industry.uiux)
+
+    def test_map_to_global_preferences_dto_none_fields(self):
+        """Should return default values when optional fields are not provided."""
+        dto = self.mapper.map_to_global_preferences_dto(self.preference_entity[1])
+
+        self.assertFalse(dto.skillsets.resume_guidance)
+        self.assertFalse(dto.specific_industry.swe)
+        self.assertFalse(dto.specific_industry.uiux)
+
+    def test_map_to_round_preference_dto_success(self):
+        """Test mapping mentorship round preference entity to round preferences dto correctly."""
+        dto = self.mapper.map_to_round_preference_dto(self.participants_entity[0])
+
+        self.assertIsInstance(dto, RoundPreferencesDto)
+
+        self.assertEqual(
+            dto.participant_role, self.participants_entity[0].participant_role
+        )
+        self.assertEqual(
+            dto.expected_partner_ids,
+            self.participants_entity[0].expected_partner_user_id,
+        )
+        self.assertEqual(
+            dto.unexpected_partner_ids,
+            self.participants_entity[0].unexpected_partner_user_id,
+        )
+        self.assertEqual(dto.max_partners, self.participants_entity[0].max_partners)
+        self.assertEqual(dto.goal, self.participants_entity[0].goal)
+
+    def test_map_to_round_preference_dto_none_fields(self):
+        """Should return default values when optional fields are not provided."""
+        dto = self.mapper.map_to_round_preference_dto(self.participants_entity[1])
+
+        self.assertEqual(
+            dto.participant_role, self.participants_entity[1].participant_role
+        )
+        self.assertEqual(dto.expected_partner_ids, [])
+        self.assertEqual(dto.unexpected_partner_ids, [])
+        self.assertEqual(dto.max_partners, 1)
+        self.assertEqual(dto.goal, "")
 
 
 if __name__ == "__main__":
