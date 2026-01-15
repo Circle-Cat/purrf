@@ -1,17 +1,37 @@
-# Terraform Google Cloud Infrastructure Setup
+# Terraform Infrastructure Setup
 
-./terraform contains Terraform code to create and manage Google Cloud resources including:
+This directory manages the Terraform infrastructure for Purrf, organized by environment and reusable modules.
 
-- Pub/Sub topics, subscriptions, and dead-letter queues
-- Cloud Functions
-- Cloud Scheduler jobs
+## Directory Structure
+```text
+terraform/
+├── environments/
+│   ├── golbal/   # Shared global infrastructure
+│   ├── prod/
+│   ├── staging/
+│   └── test/
+├── modules
+│   └── purrf_instance
+└── README.md
+```
 
-## How to use
+## Prerequisites
 
 ### Authenticate your Google Cloud account with Application Default Credentials:
 
 ```bash
 gcloud auth application-default login
+```
+
+## How to use
+
+*Always run Terraform commands inside a specific environment directory
+(e.g. environments/test, environments/staging, or environments/prod)*
+
+### Select an environment
+
+```bash
+cd terraform/environments/test
 ```
 
 ### Initialize Terraform
@@ -34,7 +54,7 @@ terraform apply
 Confirm by typing yes when prompted.
 
 
-### Destroy the infrastructure
+### Destroy the infrastructure(if needed)
 
 ```bash
 terraform destroy
