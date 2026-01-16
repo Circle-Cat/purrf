@@ -3,5 +3,8 @@ terraform {
     upstash = {
       source = "upstash/upstash"
     }
+    auth0 = {
+      source = "auth0/auth0"
+    }
   }
 }

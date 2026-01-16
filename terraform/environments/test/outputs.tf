@@ -11,3 +11,7 @@ output "resource_prefix" {
 output "redis_endpoint" {
   value = module.purrf_instance.redis_endpoint
 }
+
+output "auth0_client_id" {
+  value = module.purrf_instance.auth0_client_id
+}
