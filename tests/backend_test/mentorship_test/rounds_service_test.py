@@ -46,3 +46,7 @@ class TestRoundsService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, [])
         self.mock_repo.get_all_rounds.assert_awaited_once_with(self.mock_session)
         self.mock_mapper.map_to_rounds_dto.assert_called_once_with([])
+
+
+if __name__ == "__main__":
+    unittest.main()
