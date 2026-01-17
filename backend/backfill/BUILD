@@ -10,6 +10,7 @@ py_binary(
     data = [
         "Mentee.csv",
         "Mentor.csv",
+        "Rounds.csv",
     ],
     deps = [
         "//backend/common:database",

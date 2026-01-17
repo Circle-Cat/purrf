@@ -13,11 +13,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.entity.users_entity import UsersEntity
 from backend.entity.experience_entity import ExperienceEntity
 from backend.entity.preference_entity import PreferenceEntity
+from backend.entity.mentorship_round_entity import MentorshipRoundEntity
 from backend.common.mentorship_enums import CommunicationMethod, UserTimezone
 from backend.common.database import Database
 from backend.repository.users_repository import UsersRepository
 from backend.repository.experience_repository import ExperienceRepository
 from backend.repository.preferences_repository import PreferencesRepository
+from backend.repository.mentorship_round_repository import MentorshipRoundRepository
 from backend.common.logger import get_logger
 
 logger = get_logger()
@@ -113,7 +115,7 @@ class MentorshipImportService:
     operations to repository classes.
     """
 
-    def __init__(self, user_repo, exp_repo, pref_repo):
+    def __init__(self, user_repo, exp_repo, pref_repo, round_repo):
         """
         Initialize the mentorship import service.
 
@@ -121,10 +123,12 @@ class MentorshipImportService:
             user_repo: Repository responsible for user persistence operations.
             exp_repo: Repository responsible for experience-related persistence.
             pref_repo: Repository responsible for preferences-related persistence.
+            round_repo: Repository responsible for rounds-related persistence.
         """
         self.user_repo = user_repo
         self.exp_repo = exp_repo
         self.pref_repo = pref_repo
+        self.round_repo = round_repo
 
     async def _upsert_user_base(
         self, session: AsyncSession, email: str, data: dict
@@ -303,7 +307,7 @@ class MentorshipImportService:
                         "id": str(uuid.uuid4()),
                         "degree": item.get("degree"),
                         "school": item.get("school") or "",
-                        "field_of_study": item.get("field_of_study"),
+                        "field_of_study": item.get("field_of_study") or "",
                         "start_date": self._parse_date_to_iso(item.get("start_date"))
                         or DEFAULT_DATE_STR,
                         "end_date": self._parse_date_to_iso(item.get("end_date"))
@@ -473,6 +477,63 @@ class MentorshipImportService:
             except Exception as e:
                 logger.error(f"Error importing mentee at row {index} ({email}): {e}")
 
+    async def sync_rounds_from_row(
+        self,
+        session: AsyncSession,
+        df: pd.DataFrame,
+    ):
+        """
+        Sync mentorship round definitions from a DataFrame.
+
+        Each row represents a mentorship round and will be upserted into the database.
+        Rows without a valid round name are skipped.
+
+        Timeline-related date fields are normalized into ISO date strings and stored
+        as a JSON object in the `description` column.
+        """
+
+        for _, row in df.iterrows():
+            name = row.get("name")
+            if not name or pd.isna(name):
+                continue
+
+            timeline = {
+                "promotion_start_at": self._parse_date_to_iso(
+                    row.get("promotion_start_at")
+                ),
+                "application_deadline_at": self._parse_date_to_iso(
+                    row.get("application_deadline_at")
+                ),
+                "review_start_at": self._parse_date_to_iso(row.get("review_start_at")),
+                "acceptance_notification_at": self._parse_date_to_iso(
+                    row.get("acceptance_notification_at")
+                ),
+                "matching_completed_at": self._parse_date_to_iso(
+                    row.get("matching_completed_at")
+                ),
+                "match_notification_at": self._parse_date_to_iso(
+                    row.get("match_notification_at")
+                ),
+                "first_meeting_deadline_at": self._parse_date_to_iso(
+                    row.get("first_meeting_deadline_at")
+                ),
+                "meetings_completion_deadline_at": self._parse_date_to_iso(
+                    row.get("meetings_completion_deadline_at")
+                ),
+                "feedback_deadline_at": self._parse_date_to_iso(
+                    row.get("feedback_deadline_at")
+                ),
+            }
+
+            required_meetings = row.get("required_meetings") or 5
+
+            round_entity = MentorshipRoundEntity(
+                name=name,
+                required_meetings=int(required_meetings),
+                description=timeline,
+            )
+            await self.round_repo.upsert_round(session=session, entity=round_entity)
+
 
 async def main():
     """
@@ -487,14 +548,21 @@ async def main():
     logger.info("Script started...")
     db = Database(echo=True)
     service = MentorshipImportService(
-        UsersRepository(), ExperienceRepository(), PreferencesRepository()
+        user_repo=UsersRepository(),
+        exp_repo=ExperienceRepository(),
+        pref_repo=PreferencesRepository(),
+        round_repo=MentorshipRoundRepository(),
     )
 
     mentor_path = "backend/backfill/Mentor.csv"
     mentee_path = "backend/backfill/Mentee.csv"
+    rounds_path = "backend/backfill/Rounds.csv"
 
     async with db.session() as session:
         try:
+            df_rounds = load_dataframe_from_path(rounds_path)
+            await service.sync_rounds_from_row(session, df_rounds)
+
             df_mentor = load_dataframe_from_path(mentor_path)
             await service.sync_mentor_users_from_row(session, df_mentor)
 
