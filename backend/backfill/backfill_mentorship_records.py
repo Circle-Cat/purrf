@@ -159,7 +159,7 @@ class MentorshipImportService:
         user.last_name = data.get("last_name")
         user.preferred_name = data.get("preferred_name")
         user.linkedin_link = data.get("linkedin")
-        user.is_active = True
+        user.is_active = data.get("is_active")
 
         user.timezone = self._parse_timezone(data.get("timezone"))
         user.communication_channel = data.get("comm_channel", CommunicationMethod.EMAIL)
@@ -422,6 +422,7 @@ class MentorshipImportService:
                     "linkedin": row.get("linkedIn"),
                     "timezone": row.get("timezone"),
                     "comm_channel": COMM_MAP.get(row.get("preferred_comms_channel")),
+                    "is_active": row.get("eligible_next_round"),
                 }
                 user = await self._upsert_user_base(
                     session, row["primary_email"], user_data
@@ -465,6 +466,7 @@ class MentorshipImportService:
                     "alt_emails": [e.strip() for e in str(alt_emails).split(",")]
                     if pd.notna(alt_emails)
                     else [],
+                    "is_active": row.get("mentee_profile.eligible_next_round"),
                 }
                 user = await self._upsert_user_base(session, email, user_data)
                 await self._upsert_experience_data(session, user.user_id, row)
