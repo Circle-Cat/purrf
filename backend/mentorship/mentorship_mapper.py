@@ -21,6 +21,9 @@ class MentorshipMapper:
             RoundsDto(
                 id=r.round_id,
                 name=r.name,
+                mentee_average_score=r.mentee_average_score,
+                mentor_average_score=r.mentor_average_score,
+                expectations=r.expectations,
                 required_meetings=r.required_meetings,
                 timeline=self._map_timeline(r.description) if r.description else None,
             )

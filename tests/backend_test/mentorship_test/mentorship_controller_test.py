@@ -1,7 +1,10 @@
 import unittest
 from unittest.mock import MagicMock, AsyncMock, patch
 from http import HTTPStatus
+from datetime import date
 from backend.dto.rounds_dto import RoundsDto
+from backend.dto.rounds_create_dto import TimelineCreateDto
+from backend.dto.rounds_create_dto import RoundsCreateDto
 from backend.dto.partner_dto import PartnerDto
 from backend.dto.user_context_dto import UserContextDto
 from backend.dto.registration_dto import RegistrationDto
@@ -13,6 +16,7 @@ class TestMentorshipController(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.mock_rounds_service = MagicMock()
         self.mock_rounds_service.get_all_rounds = AsyncMock()
+        self.mock_rounds_service.upsert_rounds = AsyncMock()
 
         self.mock_participation_service = MagicMock()
         self.mock_participation_service.get_partners_for_user = AsyncMock()
@@ -43,6 +47,18 @@ class TestMentorshipController(unittest.IsolatedAsyncioTestCase):
                 "data": data,
                 "status_code": status_code,
             }
+        )
+
+        self.timeline_data = TimelineCreateDto(
+            promotion_start_at=date(2025, 12, 1),
+            application_deadline_at=date(2026, 1, 15),
+            review_start_at=date(2026, 1, 16),
+            acceptance_notification_at=date(2026, 1, 25),
+            matching_completed_at=date(2026, 1, 31),
+            match_notification_at=date(2026, 2, 2),
+            first_meeting_deadline_at=date(2026, 2, 25),
+            meetings_completion_deadline_at=date(2026, 5, 25),
+            feedback_deadline_at=date(2026, 6, 10),
         )
 
     async def asyncTearDown(self):
@@ -160,6 +176,54 @@ class TestMentorshipController(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             response["message"],
             "Successfully updated mentorship round registration information.",
+        )
+
+    async def test_upsert_rounds_create(self):
+        """Test creating a new mentorship round."""
+        payload = RoundsCreateDto(
+            name="2026-spring",
+            mentee_average_score=4.5,
+            mentor_average_score=5.0,
+            expectations="Expectations text",
+            timeline=self.timeline_data,
+            required_meetings=5,
+        )
+
+        mock_entity = MagicMock()
+        self.mock_rounds_service.upsert_rounds.return_value = mock_entity
+
+        response = await self.controller.upsert_rounds(payload)
+
+        self.mock_rounds_service.upsert_rounds.assert_awaited_once_with(
+            session=self.mock_session, data=payload
+        )
+        self.mock_api_response.assert_called_once_with(
+            message="Successfully created or updated the mentorship round.",
+            data=mock_entity,
+        )
+
+        self.assertEqual(response["data"], mock_entity)
+
+    async def test_upsert_rounds_error(self):
+        """Test handling errors when updating or creating a mentorship round."""
+        payload = RoundsCreateDto(
+            name="2026-spring",
+            mentee_average_score=4.5,
+            mentor_average_score=5.0,
+            expectations="Expectations text",
+            timeline=self.timeline_data,
+            required_meetings=5,
+        )
+
+        self.mock_rounds_service.upsert_rounds.side_effect = ValueError(
+            "Round not found"
+        )
+
+        with self.assertRaises(ValueError):
+            await self.controller.upsert_rounds(payload)
+
+        self.mock_rounds_service.upsert_rounds.assert_awaited_once_with(
+            session=self.mock_session, data=payload
         )
 
 

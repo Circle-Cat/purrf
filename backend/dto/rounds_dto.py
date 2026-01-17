@@ -17,5 +17,8 @@ class TimelineDto(BaseDto):
 class RoundsDto(BaseDto):
     id: int
     name: str
+    mentee_average_score: float | None = None
+    mentor_average_score: float | None = None
+    expectations: str | None = None
     required_meetings: int
     timeline: TimelineDto | None = None

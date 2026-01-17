@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 from backend.dto.rounds_dto import RoundsDto
+from backend.dto.rounds_create_dto import RoundsCreateDto
 from backend.dto.partner_dto import PartnerDto
 from backend.dto.user_context_dto import UserContextDto
 from backend.dto.registration_dto import RegistrationDto
@@ -11,6 +12,7 @@ from backend.common.api_endpoints import (
     MENTORSHIP_ROUNDS_REGISTRATION_ENDPOINT,
     MENTORSHIP_PARTNERS_ENDPOINT,
 )
+from backend.common.user_role import UserRole
 
 
 class MentorshipController:
@@ -62,6 +64,13 @@ class MentorshipController:
         self.router.add_api_route(
             MENTORSHIP_ROUNDS_REGISTRATION_ENDPOINT,
             endpoint=authenticate()(self.update_registration_info),
+            methods=["POST"],
+            response_model=None,
+        )
+
+        self.router.add_api_route(
+            MENTORSHIP_ROUNDS_ENDPOINT,
+            endpoint=authenticate(roles=[UserRole.ADMIN])(self.upsert_rounds),
             methods=["POST"],
             response_model=None,
         )
@@ -158,4 +167,24 @@ class MentorshipController:
         return api_response(
             message="Successfully updated mentorship round registration information.",
             data=updated_registration_info,
+        )
+
+    async def upsert_rounds(self, payload: RoundsCreateDto):
+        """
+        Create or update a mentorship round based on the provided data.
+
+        Args:
+            payload (RoundsCreateDto): The data for creating or updating a mentorship round.
+
+        Returns:
+            API response indicating success or failure.
+        """
+        async with self.database.session() as session:
+            upsert_rounds: RoundsDto = await self.rounds_service.upsert_rounds(
+                session=session, data=payload
+            )
+
+        return api_response(
+            message="Successfully created or updated the mentorship round.",
+            data=upsert_rounds,
         )
