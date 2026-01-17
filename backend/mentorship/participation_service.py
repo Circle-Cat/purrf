@@ -1,5 +1,6 @@
 from backend.dto.partner_dto import PartnerDto
 from backend.dto.user_context_dto import UserContextDto
+from backend.dto.registration_dto import RoundPreferencesDto
 from backend.common.mentorship_enums import ParticipantRole
 from backend.common.user_role import UserRole
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -67,8 +68,8 @@ class ParticipationService:
         return self.mentorship_mapper.map_to_partner_dto(partner_user_entities)
 
     async def _resolve_participant_role_with_fallback(
-        self, session: AsyncSession, user_context: UserContextDto
-    ) -> tuple[ParticipantRole, bool]:
+        self, session: AsyncSession, user_context: UserContextDto, user_id: int
+    ) -> ParticipantRole:
         """
         Resolve the participant role using a temporary fallback strategy.
 
@@ -83,27 +84,22 @@ class ParticipationService:
         Args:
             session (AsyncSession): Active database async session.
             user_context (UserContextDto): Authenticated user context.
+            user_id (int): The ID of the current user.
 
         Returns:
-            tuple[ParticipantRole, bool]:
-                ParticipantRole: ParticipantRole: The inferred or resolved role (either 'MENTOR' or 'MENTEE').
-                should_commit: True if the transaction needs to be committed.
+            ParticipantRole: ParticipantRole: The inferred or resolved role (either 'MENTOR' or 'MENTEE').
         """
-        current_user, should_commit = await self.user_identity_service.get_user(
-            session=session, user_info=user_context
-        )
-
         recent_participant = await self.mentorship_round_participants_repo.get_recent_participant_by_user_id(
-            session=session, user_id=current_user.user_id
+            session=session, user_id=user_id
         )
 
         if recent_participant:
-            return recent_participant.participant_role, should_commit
+            return recent_participant.participant_role
 
         if user_context.has_role(UserRole.CONTACT_GOOGLE_CHAT):
-            return ParticipantRole.MENTOR, should_commit
+            return ParticipantRole.MENTOR
 
-        return ParticipantRole.MENTEE, should_commit
+        return ParticipantRole.MENTEE
 
     async def get_partners_for_user(
         self,
@@ -160,4 +156,56 @@ class ParticipationService:
 
         return await self._get_partners_info(
             session=session, partners_id_list=partner_ids
+        )
+
+    async def get_user_round_preferences(
+        self,
+        session: AsyncSession,
+        user_context: UserContextDto,
+        user_id: int,
+        round_id: int,
+    ) -> RoundPreferencesDto:
+        """
+        Retrieves preferences for a specific mentorship round with historical fallback.
+
+        This method:
+        1. Attempts to fetch participation records for the specified round.
+        2. If no record is found, it falls back to the most recent historical participation.
+        3. For new participants with no history, it provides a default configuration with an inferred role.
+
+        Args:
+            session (AsyncSession): Active SQLAlchemy async session.
+            user_context (UserContextDto): Authenticated user context.
+            user_id (int): The ID of the current user.
+            round_id (int): The ID of the mentorship round.
+
+        Returns:
+            RoundPreferencesDto: The resolved round-specific preferences.
+        """
+        participant = (
+            await self.mentorship_round_participants_repo.get_by_user_id_and_round_id(
+                session=session, user_id=user_id, round_id=round_id
+            )
+        )
+
+        if not participant:
+            participant = await self.mentorship_round_participants_repo.get_recent_participant_by_user_id(
+                session=session, user_id=user_id
+            )
+
+        if participant:
+            return self.mentorship_mapper.map_to_round_preference_dto(
+                participants_entity=participant
+            )
+
+        participant_role = await self._resolve_participant_role_with_fallback(
+            session=session, user_context=user_context, user_id=user_id
+        )
+
+        return RoundPreferencesDto(
+            participant_role=participant_role,
+            expected_partner_ids=[],
+            unexpected_partner_ids=[],
+            max_partners=1,
+            goal="",
         )

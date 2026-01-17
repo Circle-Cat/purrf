@@ -4,6 +4,7 @@ from http import HTTPStatus
 from backend.dto.rounds_dto import RoundsDto
 from backend.dto.partner_dto import PartnerDto
 from backend.dto.user_context_dto import UserContextDto
+from backend.dto.registration_dto import RegistrationDto
 from backend.mentorship.mentorship_controller import MentorshipController
 
 
@@ -15,6 +16,9 @@ class TestMentorshipController(unittest.IsolatedAsyncioTestCase):
         self.mock_participation_service = MagicMock()
         self.mock_participation_service.get_partners_for_user = AsyncMock()
 
+        self.mock_registration_service = MagicMock()
+        self.mock_registration_service.get_registration_info = AsyncMock()
+
         self.mock_database = MagicMock()
         self.mock_session = AsyncMock()
         self.mock_database.session.return_value.__aenter__.return_value = (
@@ -25,6 +29,7 @@ class TestMentorshipController(unittest.IsolatedAsyncioTestCase):
         self.controller = MentorshipController(
             rounds_service=self.mock_rounds_service,
             participation_service=self.mock_participation_service,
+            registration_service=self.mock_registration_service,
             database=self.mock_database,
         )
 
@@ -103,6 +108,26 @@ class TestMentorshipController(unittest.IsolatedAsyncioTestCase):
             session=self.mock_session, user_context=mock_user, round_id=None
         )
         self.assertEqual(response["data"], mock_data)
+
+    async def test_get_registration_info(self):
+        """Test retrieve registration info for a user."""
+        mock_user = MagicMock(spec=UserContextDto, sub="valid-sub")
+        mock_round_id = 1
+        mock_data = MagicMock(spec=RegistrationDto)
+        self.mock_registration_service.get_registration_info.return_value = mock_data
+
+        response = await self.controller.get_registration_info(
+            current_user=mock_user, round_id=mock_round_id
+        )
+
+        self.mock_registration_service.get_registration_info.assert_awaited_once_with(
+            session=self.mock_session, user_context=mock_user, round_id=mock_round_id
+        )
+        self.assertEqual(response["data"], mock_data)
+        self.mock_api_response.assert_called_once_with(
+            message="Successfully fetched mentorship round registration information.",
+            data=mock_data,
+        )
 
 
 if __name__ == "__main__":

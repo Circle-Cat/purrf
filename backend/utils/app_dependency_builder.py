@@ -86,10 +86,12 @@ from backend.repository.mentorship_pairs_repository import MentorshipPairsReposi
 from backend.repository.mentorship_round_participants_repository import (
     MentorshipRoundParticipantsRepository,
 )
+from backend.repository.preferences_repository import PreferencesRepository
 from backend.mentorship.mentorship_mapper import MentorshipMapper
 from backend.mentorship.mentorship_controller import MentorshipController
 from backend.mentorship.rounds_service import RoundsService
 from backend.mentorship.participation_service import ParticipationService
+from backend.mentorship.registration_service import RegistrationService
 from backend.profile.profile_query_service import ProfileQueryService
 from backend.profile.profile_command_service import ProfileCommandService
 from backend.profile.profile_mapper import ProfileMapper
@@ -359,6 +361,7 @@ class AppDependencyBuilder:
         self.mentorship_round_participants_repo = (
             MentorshipRoundParticipantsRepository()
         )
+        self.preferences_repository = PreferencesRepository()
         self.mentorship_mapper = MentorshipMapper()
         self.database = Database(echo=False)
         self.rounds_service = RoundsService(
@@ -373,9 +376,17 @@ class AppDependencyBuilder:
             mentorship_mapper=self.mentorship_mapper,
             user_identity_service=self.user_identity_service,
         )
+        self.registration_service = RegistrationService(
+            logger=self.logger,
+            preferences_repository=self.preferences_repository,
+            participation_service=self.participation_service,
+            user_identity_service=self.user_identity_service,
+            mentorship_mapper=self.mentorship_mapper,
+        )
         self.mentorship_controller = MentorshipController(
             rounds_service=self.rounds_service,
             participation_service=self.participation_service,
+            registration_service=self.registration_service,
             database=self.database,
         )
         self.experience_repository = ExperienceRepository()

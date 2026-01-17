@@ -2,12 +2,12 @@ from fastapi import APIRouter
 from backend.dto.rounds_dto import RoundsDto
 from backend.dto.partner_dto import PartnerDto
 from backend.dto.user_context_dto import UserContextDto
-from backend.mentorship.rounds_service import RoundsService
-from backend.mentorship.participation_service import ParticipationService
+from backend.dto.registration_dto import RegistrationDto
 from backend.common.fast_api_response_wrapper import api_response
 from backend.utils.permission_decorators import authenticate
 from backend.common.api_endpoints import (
     MENTORSHIP_ROUNDS_ENDPOINT,
+    MENTORSHIP_ROUNDS_REGISTRATION_ENDPOINT,
     MENTORSHIP_PARTNERS_ENDPOINT,
 )
 
@@ -15,8 +15,9 @@ from backend.common.api_endpoints import (
 class MentorshipController:
     def __init__(
         self,
-        rounds_service: RoundsService,
-        participation_service: ParticipationService,
+        rounds_service,
+        participation_service,
+        registration_service,
         database,
     ):
         """
@@ -25,15 +26,13 @@ class MentorshipController:
         Args:
             rounds_service: RoundsService instance.
             participation_service: ParticipationService instance.
+            registration_service: RegistrationService instance.
             database (Database): Database access object providing async session management.
         """
-        if not rounds_service:
-            raise ValueError("RoundsService instance is required.")
-        if not participation_service:
-            raise ValueError("ParticipationService instance is required.")
 
         self.rounds_service = rounds_service
         self.participation_service = participation_service
+        self.registration_service = registration_service
         self.database = database
 
         self.router = APIRouter(tags=["mentorship"])
@@ -48,6 +47,13 @@ class MentorshipController:
         self.router.add_api_route(
             MENTORSHIP_PARTNERS_ENDPOINT,
             endpoint=authenticate()(self.get_partners_for_user),
+            methods=["GET"],
+            response_model=None,
+        )
+
+        self.router.add_api_route(
+            MENTORSHIP_ROUNDS_REGISTRATION_ENDPOINT,
+            endpoint=authenticate()(self.get_registration_info),
             methods=["GET"],
             response_model=None,
         )
@@ -92,4 +98,27 @@ class MentorshipController:
         return api_response(
             message="Successfully fetched mentorship partners.",
             data=partners,
+        )
+
+    async def get_registration_info(self, current_user: UserContextDto, round_id: int):
+        """
+        Fetch the registration information for the current user in a specific mentorship round.
+
+        Args:
+            current_user (UserContextDto): The authenticated user context.
+            round_id (int): The ID of the specific mentorship round the user is registering for.
+
+        Returns:
+            API response containing the unified RegistrationDto.
+        """
+        async with self.database.session() as session:
+            registration_info: RegistrationDto = (
+                await self.registration_service.get_registration_info(
+                    session=session, user_context=current_user, round_id=round_id
+                )
+            )
+
+        return api_response(
+            message="Successfully fetched mentorship round registration information.",
+            data=registration_info,
         )
