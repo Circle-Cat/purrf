@@ -9,11 +9,15 @@ import json
 import uuid
 from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from backend.entity.users_entity import UsersEntity
 from backend.entity.experience_entity import ExperienceEntity
 from backend.entity.preference_entity import PreferenceEntity
 from backend.entity.mentorship_round_entity import MentorshipRoundEntity
+from backend.entity.mentorship_round_participants_entity import (
+    MentorshipRoundParticipantsEntity,
+)
 from backend.common.mentorship_enums import CommunicationMethod, UserTimezone
 from backend.common.database import Database
 from backend.repository.users_repository import UsersRepository
@@ -21,6 +25,10 @@ from backend.repository.experience_repository import ExperienceRepository
 from backend.repository.preferences_repository import PreferencesRepository
 from backend.repository.mentorship_round_repository import MentorshipRoundRepository
 from backend.common.logger import get_logger
+from backend.common.mentorship_enums import (
+    ParticipantRole,
+    ApprovalStatus,
+)
 
 logger = get_logger()
 
@@ -402,6 +410,113 @@ class MentorshipImportService:
             logger.error(f"Error syncing preferences for user_id {user_id}: {e}")
             raise e
 
+    async def sync_next_round_participants_from_row(
+        self, session: AsyncSession, df: pd.DataFrame, participant_role: ParticipantRole
+    ):
+        """
+        Sync participant records for the next mentorship round from a DataFrame.
+
+        This method imports participants into the predefined next round
+        ("2026 1st round") for users whose `r1_2026_enrolled` value is "YES".
+
+        Args:
+            session (AsyncSession): Active async SQLAlchemy session.
+            df (pd.DataFrame): Source data containing user emails, matched partner
+                information, and retention feedback.
+            participant_role (ParticipantRole): Role of the participant in the round
+                (e.g. mentor or mentee).
+
+        Behavior:
+            - Looks up the round ID for the hard-coded next round name ("2026 1st round").
+            - Resolves users and partners via primary email.
+            - Creates `MentorshipRoundParticipantsEntity` records with expected and
+            unexpected partner preferences.
+
+        Logging:
+            - Logs an error if the target round cannot be found.
+            - Logs warnings when a user or partner cannot be resolved.
+
+        Returns:
+            None
+        """
+        # Get round id by name
+        round_stmt = select(MentorshipRoundEntity.round_id).where(
+            MentorshipRoundEntity.name == "2026 1st round"
+        )
+        round_result = await session.execute(round_stmt)
+        round_id = round_result.scalar_one_or_none()
+
+        if not round_id:
+            logger.error("Error: Round '2026 1st round' not found.")
+            return
+
+        participants: list[MentorshipRoundParticipantsEntity] = []
+        for _, row in df.iterrows():
+            # Check if the current user is willing to enroll in the next round
+            next_round_enroll = row.get("r1_2026_enrolled")
+            if (
+                pd.isna(next_round_enroll)
+                or str(next_round_enroll).strip().lower() != "yes"
+            ):
+                continue
+
+            # Get user_id by primary_email using the repository
+            email_raw = (
+                row.get("primary_email")
+                or row.get("mentee_profile.primary_email")
+                or ""
+            )
+            if pd.isna(email_raw) or not str(email_raw).strip():
+                continue
+
+            email = str(email_raw).strip().lower()
+            # Parse retention feedback
+            partner_email = row.get("2025 3rd - Matched Mentee Email") or row.get(
+                "2025 3rd Round - Matched Mentor Email"
+            )
+            retention_feedback = row.get("2025 3rd - Retention Feedback") or row.get(
+                "2025 3rd Round - Retention Feedback"
+            )
+
+            user = await self.user_repo.get_user_by_primary_email(session, email)
+
+            if not user:
+                logger.warning(
+                    f"Mentor {email} not found in database. Skipping round participation."
+                )
+                continue
+
+            expected_partner_user_id = None
+            unexpected_partner_user_id = None
+
+            if pd.notna(partner_email):
+                partner_user = await self.user_repo.get_user_by_primary_email(
+                    session, partner_email.strip().lower()
+                )
+
+                if partner_user:
+                    # Logic: if they want to continue, add to expected; if they want someone else, add to unexpected
+                    if retention_feedback == "Continue with my current mentor/mentee":
+                        expected_partner_user_id = [partner_user.user_id]
+                    elif (
+                        retention_feedback
+                        == "Be matched with a different mentor/mentee"
+                    ):
+                        unexpected_partner_user_id = [partner_user.user_id]
+
+            # 3. Create Participation Entity
+            new_participant = MentorshipRoundParticipantsEntity(
+                round_id=round_id,
+                user_id=user.user_id,
+                participant_role=participant_role,
+                expected_partner_user_id=expected_partner_user_id or [],
+                unexpected_partner_user_id=unexpected_partner_user_id or [],
+                approval_status=ApprovalStatus.SIGNED_UP,
+            )
+            participants.append(new_participant)
+
+        session.add_all(participants)
+
     async def sync_mentor_users_from_row(self, session: AsyncSession, df: pd.DataFrame):
         """
         Import mentor users from a DataFrame.
@@ -422,7 +537,7 @@ class MentorshipImportService:
                     "linkedin": row.get("linkedIn"),
                     "timezone": row.get("timezone"),
                     "comm_channel": COMM_MAP.get(row.get("preferred_comms_channel")),
-                    "is_active": row.get("eligible_next_round"),
+                    "is_active": row.get("eligible"),
                 }
                 user = await self._upsert_user_base(
                     session, row["primary_email"], user_data
@@ -434,6 +549,7 @@ class MentorshipImportService:
                     row.get("skillsets"),
                     row.get("mentoring_field"),
                 )
+
             except Exception as e:
                 logger.error(
                     f"Error importing mentor at row {index} ({row.get('primary_email')}): {e}"
@@ -466,7 +582,7 @@ class MentorshipImportService:
                     "alt_emails": [e.strip() for e in str(alt_emails).split(",")]
                     if pd.notna(alt_emails)
                     else [],
-                    "is_active": row.get("mentee_profile.eligible_next_round"),
+                    "is_active": row.get("mentee_profile.eligible"),
                 }
                 user = await self._upsert_user_base(session, email, user_data)
                 await self._upsert_experience_data(session, user.user_id, row)
@@ -570,6 +686,13 @@ async def main():
 
             df_mentee = load_dataframe_from_path(mentee_path)
             await service.sync_mentee_users_from_row(session, df_mentee)
+
+            await service.sync_next_round_participants_from_row(
+                session, df_mentor, ParticipantRole.MENTOR
+            )
+            await service.sync_next_round_participants_from_row(
+                session, df_mentee, ParticipantRole.MENTEE
+            )
 
             await session.commit()
             logger.info("Import successful!")
