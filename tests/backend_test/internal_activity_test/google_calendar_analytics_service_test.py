@@ -318,6 +318,42 @@ class TestGoogleCalendarAnalyticsService(TestCase):
         self.assertTrue(self.mock_retry_utils.get_retry_on_transient.called)
         self.mock_ldap_service.get_all_active_interns_and_employees_ldaps.assert_called_once()
 
+    def test_get_all_events_from_calendars_with_ldaps_none(self):
+        """Test get_all_events_from_calendars when ldaps=None"""
+        calendar_ids = ["cal1"]
+        ldaps = None
+        start_date = datetime.fromisoformat("2025-07-01")
+        end_date = datetime.fromisoformat("2025-08-02")
+
+        self.mock_ldap_service.get_all_active_interns_and_employees_ldaps.return_value = [
+            "user1",
+            "user2",
+        ]
+
+        self.service.get_all_events = Mock(
+            return_value={
+                "user1": [{"event_id": "e1"}],
+                "user2": [{"event_id": "e2"}],
+            }
+        )
+
+        result = self.service.get_all_events_from_calendars(
+            calendar_ids=calendar_ids,
+            ldaps=ldaps,
+            start_date=start_date,
+            end_date=end_date,
+        )
+
+        self.assertEqual(
+            result,
+            {
+                "user1": [{"event_id": "e1"}],
+                "user2": [{"event_id": "e2"}],
+            },
+        )
+
+        self.mock_ldap_service.get_all_active_interns_and_employees_ldaps.assert_called_once()
+
 
 if __name__ == "__main__":
     main()

@@ -167,6 +167,30 @@ class TestInternalActivityControllerIntegration(unittest.TestCase):
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.google_calendar_analytics_service.get_all_events_from_calendars.assert_called_once()
 
+    def test_get_all_events_api_without_ldaps(self):
+        """Test GOOGLE_CALENDAR_EVENTS_ENDPOINT (POST) without ldaps."""
+        self._set_auth([UserRole.ADMIN])
+        self.date_time_util.get_start_end_timestamps.return_value = (None, None)
+
+        payload = {
+            "calendarIds": ["cal1"],
+            "startDate": "2023-01-01",
+        }
+
+        response = self.client.post(
+            GOOGLE_CALENDAR_EVENTS_ENDPOINT,
+            json=payload,
+            headers=self.headers,
+        )
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.google_calendar_analytics_service.get_all_events_from_calendars.assert_called_once_with(
+            ["cal1"],
+            [],
+            None,
+            None,
+        )
+
     # Gerrit API tests
 
     def test_get_gerrit_stats(self):

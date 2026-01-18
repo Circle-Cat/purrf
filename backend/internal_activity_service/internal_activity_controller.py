@@ -35,7 +35,7 @@ class MicrosoftChatCountRequest(BaseModel):
 
 class GoogleCalendarEventsRequest(BaseModel):
     calendarIds: list[str]
-    ldaps: list[str]
+    ldaps: list[str] | None = None
     startDate: str | None = None
     endDate: str | None = None
 
@@ -320,10 +320,12 @@ class InternalActivityController:
             body.startDate, body.endDate
         )
 
+        ldaps = body.ldaps or []
+
         calendar_data = (
             self.google_calendar_analytics_service.get_all_events_from_calendars(
                 body.calendarIds,
-                body.ldaps,
+                ldaps,
                 start_dt,
                 end_dt,
             )

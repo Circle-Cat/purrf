@@ -190,7 +190,7 @@ class GoogleCalendarAnalyticsService:
     def get_all_events_from_calendars(
         self,
         calendar_ids: list[str],
-        ldaps: list[str],
+        ldaps: list[str] | None,
         start_date: datetime,
         end_date: datetime,
     ) -> dict[str, list[dict[str, any]]]:
@@ -198,14 +198,16 @@ class GoogleCalendarAnalyticsService:
         Fetch all events (with attendance info) for multiple calendars.
 
         Args:
-            calendar_id (List[str]): List of calendar ID.
-            ldaps (List[str]): List of LDAP usernames.
+            calendar_id (list[str]): List of calendar ID.
+            ldaps (list[str] | None): List of LDAP usernames.
             start_date (datetime): Start date in ISO format (inclusive).
             end_date (datetime): End date in ISO format (inclusive).
 
         Returns:
-            Dict[str, List[Dict]]: Each LDAP maps to a list of event dicts.
+            Dict[str, list[Dict]]: Each LDAP maps to a list of event dicts.
         """
+        if not ldaps:
+            ldaps = self.ldap_service.get_all_active_interns_and_employees_ldaps()
         combined_result: dict[str, list[dict[str, any]]] = {ldap: [] for ldap in ldaps}
 
         for cal_id in calendar_ids:
