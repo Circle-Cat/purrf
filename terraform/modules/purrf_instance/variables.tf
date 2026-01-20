@@ -24,6 +24,10 @@ variable "gcp_region" {
   default     = "us-west1"
 }
 
+variable "neon_org_id" {
+  type = string
+}
+
 locals {
   # Derived values based on environment configuration
   is_prod = var.env_name == "prod"
@@ -49,8 +53,18 @@ locals {
   neon_project_name = "${local.name_prefix}-neon"
   neon_db_name      = "${local.name_prefix}-db"
   neon_role_name    = "${local.name_prefix}-role"
-}
 
-variable "neon_org_id" {
-  type = string
+  pubsub_names = [
+    "chat-google-events",
+    "chat-microsoft-events",
+    "gerrit-events"
+  ]
+
+  pubsub_map = {
+    for name in local.pubsub_names : name => {
+      full_name             = "${local.name_prefix}-${name}"
+      ack_deadline_seconds  = 20
+      max_delivery_attempts = 5
+    }
+  }
 }

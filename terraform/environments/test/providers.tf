@@ -12,3 +12,8 @@ provider "auth0" {
 provider "neon" {
   api_key = var.neon_api_key
 }
+
+provider "google" {
+  project = "purrf-452300"
+  region  = "us-west1"
+}

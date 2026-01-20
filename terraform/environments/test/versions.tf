@@ -12,5 +12,9 @@ terraform {
       source  = "kislerdm/neon"
       version = ">= 0.2.2"
     }
+    google = {
+      source  = "hashicorp/google"
+      version = "~> 5.0"
+    }
   }
 }

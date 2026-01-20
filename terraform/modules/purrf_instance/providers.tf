@@ -9,5 +9,8 @@ terraform {
     neon = {
       source = "kislerdm/neon"
     }
+    google = {
+      source = "hashicorp/google"
+    }
   }
 }
