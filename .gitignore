@@ -198,7 +198,7 @@ crash.log
 crash.*
 
 # Ignore temporary zip files generated during module packaging
-modules/**/*.zip
+*.zip
 
 # Logs
 logs

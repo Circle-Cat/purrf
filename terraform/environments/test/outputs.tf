@@ -27,3 +27,7 @@ output "neon_default_branch_id" {
 output "neon_database_user" {
   value = module.purrf_instance.neon_database_user
 }
+
+output "default_gsa_account" {
+  value = module.purrf_instance.default_account
+}

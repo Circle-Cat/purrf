@@ -28,6 +28,7 @@ No resources.
 | <a name="input_auth0_client_id"></a> [auth0\_client\_id](#input\_auth0\_client\_id) | n/a | `string` | n/a | yes |
 | <a name="input_auth0_client_secret"></a> [auth0\_client\_secret](#input\_auth0\_client\_secret) | n/a | `string` | n/a | yes |
 | <a name="input_auth0_domain"></a> [auth0\_domain](#input\_auth0\_domain) | n/a | `string` | n/a | yes |
+| <a name="input_cloudflare_api_token"></a> [cloudflare\_api\_token](#input\_cloudflare\_api\_token) | n/a | `string` | n/a | yes |
 | <a name="input_neon_api_key"></a> [neon\_api\_key](#input\_neon\_api\_key) | n/a | `string` | n/a | yes |
 | <a name="input_upstash_api_key"></a> [upstash\_api\_key](#input\_upstash\_api\_key) | Upstash Management API Key | `string` | n/a | yes |
 | <a name="input_upstash_email"></a> [upstash\_email](#input\_upstash\_email) | Upstash account email | `string` | n/a | yes |
@@ -37,6 +38,7 @@ No resources.
 | Name | Description |
 |------|-------------|
 | <a name="output_auth0_client_id"></a> [auth0\_client\_id](#output\_auth0\_client\_id) | n/a |
+| <a name="output_default_gsa_account"></a> [default\_gsa\_account](#output\_default\_gsa\_account) | n/a |
 | <a name="output_neon_database_user"></a> [neon\_database\_user](#output\_neon\_database\_user) | n/a |
 | <a name="output_neon_default_branch_id"></a> [neon\_default\_branch\_id](#output\_neon\_default\_branch\_id) | n/a |
 | <a name="output_neon_project_id"></a> [neon\_project\_id](#output\_neon\_project\_id) | n/a |

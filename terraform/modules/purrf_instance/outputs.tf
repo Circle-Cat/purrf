@@ -26,3 +26,7 @@ output "neon_default_branch_id" {
 output "neon_database_user" {
   value = neon_project.this.database_user
 }
+
+output "default_account" {
+  value = data.google_compute_default_service_account.default.email
+}

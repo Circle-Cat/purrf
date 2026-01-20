@@ -28,6 +28,51 @@ variable "neon_org_id" {
   type = string
 }
 
+variable "cloudflare_account_id" {
+  description = "Cloudflare Account ID"
+  type        = string
+}
+
+variable "cloudflare_zone_id" {
+  description = "Cloudflare Zone ID"
+  type        = string
+}
+
+variable "cloudflare_tunnel_id" {
+  description = "Cloudflare Tunnel ID"
+  type        = string
+}
+
+variable "microsoft_chat_code_dir" {
+  type        = string
+  description = "The relative path to the Microsoft Chat producer source code directory."
+}
+
+variable "microsoft_chat_entry_point" {
+  type        = string
+  description = "The name of the Python function to be executed for Microsoft Chat."
+}
+
+variable "microsoft_lifecycle_code_dir" {
+  type        = string
+  description = "The relative path to the Microsoft Lifecycle handler source code directory."
+}
+
+variable "microsoft_lifecycle_entry_point" {
+  type        = string
+  description = "The name of the Python function to be executed for Microsoft Lifecycle events."
+}
+
+variable "gerrit_producer_code_dir" {
+  type        = string
+  description = "The relative path to the Gerrit producer source code directory."
+}
+
+variable "gerrit_producer_entry_point" {
+  type        = string
+  description = "The name of the Python function to be executed for Gerrit events."
+}
+
 locals {
   # Derived values based on environment configuration
   is_prod = var.env_name == "prod"
@@ -65,6 +110,36 @@ locals {
       full_name             = "${local.name_prefix}-${name}"
       ack_deadline_seconds  = 20
       max_delivery_attempts = 5
+    }
+  }
+
+  functions_config = {
+    "microsoft-chat" = {
+      source_dir  = "${path.module}/${var.microsoft_chat_code_dir}"
+      entry_point = var.microsoft_chat_entry_point
+      memory_mb   = 256
+      need_redis  = true
+      env_vars = {
+        PROJECT_ID = var.gcp_project_id
+        TOPIC_ID   = google_pubsub_topic.topics["chat-microsoft-events"].name
+      }
+    },
+    "microsoft-chat-lifecycle" = {
+      source_dir  = "${path.module}/${var.microsoft_lifecycle_code_dir}"
+      entry_point = var.microsoft_lifecycle_entry_point
+      memory_mb   = 256
+      need_redis  = true
+      env_vars    = {}
+    },
+    "gerrit-events" = {
+      source_dir  = "${path.module}/${var.gerrit_producer_code_dir}"
+      entry_point = var.gerrit_producer_entry_point
+      memory_mb   = 256
+      need_redis  = true
+      env_vars = {
+        PROJECT_ID = var.gcp_project_id
+        TOPIC_ID   = google_pubsub_topic.topics["gerrit-events"].name
+      }
     }
   }
 }
