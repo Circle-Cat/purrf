@@ -45,5 +45,12 @@ locals {
     managed_by = "terraform"
     project    = "purrf"
   }
+
+  neon_project_name = "${local.name_prefix}-neon"
+  neon_db_name      = "${local.name_prefix}-db"
+  neon_role_name    = "${local.name_prefix}-role"
 }
 
+variable "neon_org_id" {
+  type = string
+}

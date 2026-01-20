@@ -15,3 +15,15 @@ output "redis_endpoint" {
 output "auth0_client_id" {
   value = module.purrf_instance.auth0_client_id
 }
+
+output "neon_project_id" {
+  value = module.purrf_instance.neon_project_id
+}
+
+output "neon_default_branch_id" {
+  value = module.purrf_instance.neon_default_branch_id
+}
+
+output "neon_database_user" {
+  value = module.purrf_instance.neon_database_user
+}

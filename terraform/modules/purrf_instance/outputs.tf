@@ -15,3 +15,14 @@ output "redis_endpoint" {
 output "auth0_client_id" {
   value = auth0_client.purrf_auth0.client_id
 }
+
+output "neon_project_id" {
+  value = neon_project.this.id
+}
+
+output "neon_default_branch_id" {
+  value = neon_project.this.default_branch_id
+}
+output "neon_database_user" {
+  value = neon_project.this.database_user
+}

@@ -6,5 +6,8 @@ terraform {
     auth0 = {
       source = "auth0/auth0"
     }
+    neon = {
+      source = "kislerdm/neon"
+    }
   }
 }

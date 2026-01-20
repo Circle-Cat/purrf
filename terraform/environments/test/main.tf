@@ -4,4 +4,5 @@ module "purrf_instance" {
 
   env_name       = "test"
   gcp_project_id = "purrf-452300"
+  neon_org_id    = "org-restless-scene-93869523"
 }
