@@ -35,3 +35,90 @@ resource "cloudflare_ruleset" "cors_headers" {
     }
   ]
 }
+
+# Get purrf project details
+data "google_project" "main_gcp_project_data" {
+  project_id = var.main_gcp_project_id
+}
+
+# Get circlecat project details
+data "google_project" "circlecat_project_data" {
+  project_id = var.circlecat_project_id
+}
+
+
+# Define an Access Context Manager policy for VPC Service Controls perimeter
+resource "google_access_context_manager_access_policy" "purrf_internal" {
+  parent = "organizations/${var.organization_id}"
+  scopes = ["projects/${data.google_project.main_gcp_project_data.number}"]
+  title  = "purrf_internal"
+}
+
+# Create a VPC Service Controls perimeter to protect the Purrf project
+resource "google_access_context_manager_service_perimeter" "purrf_primary_perimeter" {
+  description               = "Perimeter covering the Purrf project and Circlecat's main network."
+  name                      = "accessPolicies/${google_access_context_manager_access_policy.purrf_internal.name}/servicePerimeters/purrf_primary_perimeter"
+  parent                    = "accessPolicies/${google_access_context_manager_access_policy.purrf_internal.name}"
+  perimeter_type            = "PERIMETER_TYPE_REGULAR"
+  title                     = "purrf-primary-perimeter"
+  use_explicit_dry_run_spec = false
+  status {
+    access_levels = []
+    resources = [
+      "projects/${data.google_project.main_gcp_project_data.number}",
+    ]
+    restricted_services = ["cloudfunctions.googleapis.com"]
+
+    # Egress policy: allow perimeter resources to call any service
+    egress_policies {
+      egress_from {
+        identities         = []
+        identity_type      = "ANY_IDENTITY"
+        source_restriction = null
+      }
+      egress_to {
+        external_resources = []
+        resources          = ["*"]
+        operations {
+          service_name = "*"
+        }
+      }
+    }
+
+    # Ingress policy: allow traffic from Circlecat's main VPC network
+    ingress_policies {
+      ingress_from {
+        identities    = []
+        identity_type = "ANY_IDENTITY"
+        sources {
+          access_level = null
+          resource     = "//compute.googleapis.com/${data.google_project.circlecat_project_data.id}/global/networks/main"
+        }
+      }
+      ingress_to {
+        resources = ["*"]
+        operations {
+          service_name = "*"
+        }
+      }
+    }
+
+    # Ingress policy: allow traffic from a specific user
+    ingress_policies {
+      ingress_from {
+        identities    = ["user:yuji@circlecat.org"]
+        identity_type = null
+        sources {
+          access_level = "*"
+          resource     = null
+        }
+      }
+      ingress_to {
+        resources = ["*"]
+        operations {
+          service_name = "*"
+        }
+      }
+    }
+  }
+}
