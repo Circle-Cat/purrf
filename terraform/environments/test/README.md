@@ -23,15 +23,7 @@ No resources.
 
 ## Inputs
 
-| Name | Description | Type | Default | Required |
-|------|-------------|------|---------|:--------:|
-| <a name="input_auth0_client_id"></a> [auth0\_client\_id](#input\_auth0\_client\_id) | n/a | `string` | n/a | yes |
-| <a name="input_auth0_client_secret"></a> [auth0\_client\_secret](#input\_auth0\_client\_secret) | n/a | `string` | n/a | yes |
-| <a name="input_auth0_domain"></a> [auth0\_domain](#input\_auth0\_domain) | n/a | `string` | n/a | yes |
-| <a name="input_cloudflare_api_token"></a> [cloudflare\_api\_token](#input\_cloudflare\_api\_token) | n/a | `string` | n/a | yes |
-| <a name="input_neon_api_key"></a> [neon\_api\_key](#input\_neon\_api\_key) | n/a | `string` | n/a | yes |
-| <a name="input_upstash_api_key"></a> [upstash\_api\_key](#input\_upstash\_api\_key) | Upstash Management API Key | `string` | n/a | yes |
-| <a name="input_upstash_email"></a> [upstash\_email](#input\_upstash\_email) | Upstash account email | `string` | n/a | yes |
+No inputs.
 
 ## Outputs
 

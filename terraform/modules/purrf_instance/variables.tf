@@ -73,6 +73,16 @@ variable "gerrit_producer_entry_point" {
   description = "The name of the Python function to be executed for Gerrit events."
 }
 
+variable "auth0_callbacks" {
+  type        = list(string)
+  description = "Allowed callback URLs for Auth0"
+}
+
+variable "auth0_logout_urls" {
+  type        = list(string)
+  description = "Allowed logout URLs for Auth0"
+}
+
 locals {
   # Derived values based on environment configuration
   is_prod = var.env_name == "prod"

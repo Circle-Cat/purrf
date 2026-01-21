@@ -1,17 +1,8 @@
-provider "upstash" {
-  email   = var.upstash_email
-  api_key = var.upstash_api_key
-}
+provider "upstash" {}
 
-provider "auth0" {
-  domain        = var.auth0_domain
-  client_id     = var.auth0_client_id
-  client_secret = var.auth0_client_secret
-}
+provider "auth0" {}
 
-provider "neon" {
-  api_key = var.neon_api_key
-}
+provider "neon" {}
 
 provider "google" {
   project = "purrf-452300"

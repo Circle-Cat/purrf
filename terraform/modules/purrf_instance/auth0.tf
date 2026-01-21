@@ -2,10 +2,10 @@ resource "auth0_client" "purrf_auth0" {
   description                                          = "Managed by Terraform"
   name                                                 = "Purrf (${var.env_name})"
   allowed_clients                                      = []
-  allowed_logout_urls                                  = ["https://ccat-dev.cloudflareaccess.com/cdn-cgi/access/logout"]
+  allowed_logout_urls                                  = var.auth0_logout_urls
   allowed_origins                                      = []
   app_type                                             = "regular_web"
-  callbacks                                            = ["https://ccat-dev.cloudflareaccess.com/cdn-cgi/access/callback"]
+  callbacks                                            = var.auth0_callbacks
   client_aliases                                       = []
   client_metadata                                      = {}
   compliance_level                                     = null
