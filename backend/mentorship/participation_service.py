@@ -67,7 +67,7 @@ class ParticipationService:
 
         return self.mentorship_mapper.map_to_partner_dto(partner_user_entities)
 
-    async def _resolve_participant_role_with_fallback(
+    async def resolve_participant_role_with_fallback(
         self, session: AsyncSession, user_context: UserContextDto, user_id: int
     ) -> ParticipantRole:
         """
@@ -198,7 +198,7 @@ class ParticipationService:
                 participants_entity=participant
             )
 
-        participant_role = await self._resolve_participant_role_with_fallback(
+        participant_role = await self.resolve_participant_role_with_fallback(
             session=session, user_context=user_context, user_id=user_id
         )
 

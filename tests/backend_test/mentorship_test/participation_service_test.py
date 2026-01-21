@@ -182,7 +182,7 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
         )
         self.mock_round_participants_repo.get_recent_participant_by_user_id.return_value = mock_recent
 
-        role = await self.participation_service._resolve_participant_role_with_fallback(
+        role = await self.participation_service.resolve_participant_role_with_fallback(
             session=self.mock_session,
             user_context=self.user_context,
             user_id=self.mock_current_user.user_id,
@@ -200,7 +200,7 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
             lambda role: role == UserRole.CONTACT_GOOGLE_CHAT
         )
 
-        role = await self.participation_service._resolve_participant_role_with_fallback(
+        role = await self.participation_service.resolve_participant_role_with_fallback(
             session=self.mock_session,
             user_context=self.user_context,
             user_id=self.mock_current_user.user_id,
@@ -219,7 +219,7 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
             lambda role: role == UserRole.MENTORSHIP
         )
 
-        role = await self.participation_service._resolve_participant_role_with_fallback(
+        role = await self.participation_service.resolve_participant_role_with_fallback(
             session=self.mock_session,
             user_context=self.user_context,
             user_id=self.mock_current_user.user_id,

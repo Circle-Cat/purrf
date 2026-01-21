@@ -5,6 +5,7 @@ from backend.dto.rounds_dto import RoundsDto
 from backend.dto.partner_dto import PartnerDto
 from backend.dto.user_context_dto import UserContextDto
 from backend.dto.registration_dto import RegistrationDto
+from backend.dto.registration_create_dto import RegistrationCreateDto
 from backend.mentorship.mentorship_controller import MentorshipController
 
 
@@ -18,6 +19,7 @@ class TestMentorshipController(unittest.IsolatedAsyncioTestCase):
 
         self.mock_registration_service = MagicMock()
         self.mock_registration_service.get_registration_info = AsyncMock()
+        self.mock_registration_service.update_registration_info = AsyncMock()
 
         self.mock_database = MagicMock()
         self.mock_session = AsyncMock()
@@ -127,6 +129,37 @@ class TestMentorshipController(unittest.IsolatedAsyncioTestCase):
         self.mock_api_response.assert_called_once_with(
             message="Successfully fetched mentorship round registration information.",
             data=mock_data,
+        )
+
+    async def test_update_registration_info(self):
+        """Test update or create registration information for a user."""
+        mock_user = MagicMock(spec=UserContextDto, sub="valid-sub")
+        mock_round_id = 1
+        mock_data = MagicMock(spec=RegistrationCreateDto)
+
+        mock_dto = MagicMock(spec=RegistrationDto)
+        self.mock_registration_service.update_registration_info.return_value = mock_dto
+
+        response = await self.controller.update_registration_info(
+            current_user=mock_user, round_id=mock_round_id, preferences_data=mock_data
+        )
+
+        self.mock_registration_service.update_registration_info.assert_awaited_once_with(
+            session=self.mock_session,
+            user_context=mock_user,
+            round_id=mock_round_id,
+            preferences_data=mock_data,
+        )
+
+        self.mock_api_response.assert_called_once_with(
+            message="Successfully updated mentorship round registration information.",
+            data=mock_dto,
+        )
+
+        self.assertEqual(response["data"], mock_dto)
+        self.assertEqual(
+            response["message"],
+            "Successfully updated mentorship round registration information.",
         )
 
 

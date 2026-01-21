@@ -57,3 +57,22 @@ class MentorshipRoundParticipantsRepository:
         )
 
         return result.scalars().one_or_none()
+
+    async def upsert_participant(
+        self, session: AsyncSession, entity: MentorshipRoundParticipantsEntity
+    ) -> MentorshipRoundParticipantsEntity:
+        """
+        Inserts or updates a MentorshipRoundParticipantsEntity in the database.
+
+        Args:
+            session (AsyncSession): Active async database session.
+            entity (MentorshipRoundParticipantsEntity): The entity containing
+                mentorship round participation data.
+
+        Returns:
+            MentorshipRoundParticipantsEntity: The merged entity instance synchronized with the session.
+        """
+        merged_entity = await session.merge(entity)
+        await session.flush()
+
+        return merged_entity

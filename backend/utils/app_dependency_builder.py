@@ -379,6 +379,8 @@ class AppDependencyBuilder:
         self.registration_service = RegistrationService(
             logger=self.logger,
             preferences_repository=self.preferences_repository,
+            mentorship_round_repository=self.mentorship_round_repository,
+            mentorship_round_participants_repository=self.mentorship_round_participants_repo,
             participation_service=self.participation_service,
             user_identity_service=self.user_identity_service,
             mentorship_mapper=self.mentorship_mapper,

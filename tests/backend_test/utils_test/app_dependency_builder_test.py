@@ -454,6 +454,8 @@ class TestAppDependencyBuilder(TestCase):
         mock_registration_service_cls.assert_called_once_with(
             logger=mock_logger,
             preferences_repository=mock_preferences_repo_cls.return_value,
+            mentorship_round_repository=mock_mentorship_round_repository_cls.return_value,
+            mentorship_round_participants_repository=mock_mentorship_round_participants_repo_cls.return_value,
             participation_service=mock_participation_service_cls.return_value,
             user_identity_service=mock_user_identity_service_cls.return_value,
             mentorship_mapper=mock_mentorship_mapper_cls.return_value,

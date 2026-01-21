@@ -3,6 +3,7 @@ from backend.dto.rounds_dto import RoundsDto
 from backend.dto.partner_dto import PartnerDto
 from backend.dto.user_context_dto import UserContextDto
 from backend.dto.registration_dto import RegistrationDto
+from backend.dto.registration_create_dto import RegistrationCreateDto
 from backend.common.fast_api_response_wrapper import api_response
 from backend.utils.permission_decorators import authenticate
 from backend.common.api_endpoints import (
@@ -55,6 +56,13 @@ class MentorshipController:
             MENTORSHIP_ROUNDS_REGISTRATION_ENDPOINT,
             endpoint=authenticate()(self.get_registration_info),
             methods=["GET"],
+            response_model=None,
+        )
+
+        self.router.add_api_route(
+            MENTORSHIP_ROUNDS_REGISTRATION_ENDPOINT,
+            endpoint=authenticate()(self.update_registration_info),
+            methods=["POST"],
             response_model=None,
         )
 
@@ -121,4 +129,33 @@ class MentorshipController:
         return api_response(
             message="Successfully fetched mentorship round registration information.",
             data=registration_info,
+        )
+
+    async def update_registration_info(
+        self,
+        current_user: UserContextDto,
+        round_id: int,
+        preferences_data: RegistrationCreateDto,
+    ):
+        """
+        Update or create the registration information for the current user in a specific mentorship round.
+
+        Args:
+            current_user (UserContextDto): The authenticated user context.
+            round_id (int): The ID of the specific mentorship round the user is registering for.
+            preferences_data (RegistrationDto): A DTO containing updated global and round-specific preferences.
+        """
+        async with self.database.session() as session:
+            updated_registration_info: RegistrationDto = (
+                await self.registration_service.update_registration_info(
+                    session=session,
+                    user_context=current_user,
+                    round_id=round_id,
+                    preferences_data=preferences_data,
+                )
+            )
+
+        return api_response(
+            message="Successfully updated mentorship round registration information.",
+            data=updated_registration_info,
         )

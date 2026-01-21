@@ -132,6 +132,48 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
 
         self.assertIsNone(result)
 
+    async def test_upsert_participant_insert(self):
+        """Test insert a new participant entity correctly."""
+        participant = MentorshipRoundParticipantsEntity(
+            user_id=self.user.user_id,
+            round_id=self.rounds[1].round_id,
+        )
+
+        result = await self.repo.upsert_participant(self.session, participant)
+
+        self.assertIsNotNone(result.participant_id)
+        self.assertEqual(result.user_id, self.user.user_id)
+        self.assertEqual(result.round_id, self.rounds[1].round_id)
+
+    async def test_upsert_participant_update(self):
+        """Test update an existing participant entity correctly."""
+        old_participant = MentorshipRoundParticipantsEntity(
+            user_id=self.user.user_id,
+            round_id=self.rounds[0].round_id,
+            match_email_sent=False,
+            expected_partner_user_id=[],
+            goal="",
+        )
+        await self.insert_entities([old_participant])
+
+        participant = MentorshipRoundParticipantsEntity(
+            participant_id=old_participant.participant_id,
+            user_id=self.user.user_id,
+            round_id=self.rounds[0].round_id,
+            match_email_sent=True,
+            expected_partner_user_id=[456],
+            goal="New goal",
+        )
+
+        result = await self.repo.upsert_participant(self.session, participant)
+
+        self.assertEqual(result.participant_id, old_participant.participant_id)
+        self.assertTrue(result.match_email_sent)
+        self.assertEqual(
+            result.expected_partner_user_id, participant.expected_partner_user_id
+        )
+        self.assertEqual(result.goal, participant.goal)
+
 
 if __name__ == "__main__":
     unittest.main()
