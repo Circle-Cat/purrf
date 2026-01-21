@@ -36,6 +36,24 @@ resource "cloudflare_ruleset" "cors_headers" {
   ]
 }
 
+resource "cloudflare_ruleset" "global_waf" {
+  zone_id = "9a0308ba411ef3466582881dcd274f18"
+  name    = "Allow Microsoft and Gerrit IPs only"
+  kind    = "zone"
+  phase   = "http_request_firewall_custom"
+
+  rules = [
+    for key, env in local.environments : {
+      action = "block"
+      expression = format("(http.host eq \"%s\") and not ip.src in {%s}",
+        env.cf_host,
+      join(" ", local.webhook_ips))
+      description = "IP Restriction for ${env.name}"
+      enabled     = true
+    }
+  ]
+}
+
 # Get purrf project details
 data "google_project" "main_gcp_project_data" {
   project_id = var.main_gcp_project_id
