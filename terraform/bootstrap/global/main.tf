@@ -347,3 +347,28 @@ resource "cloudflare_dns_record" "root_test" {
     ]
   }
 }
+
+resource "cloudflare_zero_trust_tunnel_cloudflared_config" "gcp_tunnel_config" {
+  account_id = local.cloudflare_account_id
+  tunnel_id  = local.cloudflare_tunnel_id
+
+  config = {
+    ingress = concat(
+      flatten([
+        for env_key, env_cfg in local.environments : [
+          for func_name in local.google_cloud_function_names : {
+            hostname = env_cfg.cf_host
+            path     = "/purrf-${env_cfg.name}-${func_name}"
+            service  = "https://us-west1-purrf-452300.cloudfunctions.net"
+            origin_request = {
+              http_host_header = "us-west1-purrf-452300.cloudfunctions.net"
+            }
+          }
+        ]
+      ]),
+      [{
+        service = "http_status:404"
+      }]
+    )
+  }
+}

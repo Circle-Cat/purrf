@@ -32,6 +32,7 @@ No modules.
 | [cloudflare_pages_project.purrf_production](https://registry.terraform.io/providers/cloudflare/cloudflare/latest/docs/resources/pages_project) | resource |
 | [cloudflare_ruleset.cors_headers](https://registry.terraform.io/providers/cloudflare/cloudflare/latest/docs/resources/ruleset) | resource |
 | [cloudflare_ruleset.global_waf](https://registry.terraform.io/providers/cloudflare/cloudflare/latest/docs/resources/ruleset) | resource |
+| [cloudflare_zero_trust_tunnel_cloudflared_config.gcp_tunnel_config](https://registry.terraform.io/providers/cloudflare/cloudflare/latest/docs/resources/zero_trust_tunnel_cloudflared_config) | resource |
 | [google_access_context_manager_access_policy.purrf_internal](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/access_context_manager_access_policy) | resource |
 | [google_access_context_manager_service_perimeter.purrf_primary_perimeter](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/access_context_manager_service_perimeter) | resource |
 | [google_project.circlecat_project_data](https://registry.terraform.io/providers/hashicorp/google/latest/docs/data-sources/project) | data source |
