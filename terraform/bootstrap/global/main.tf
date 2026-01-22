@@ -1,5 +1,5 @@
 resource "cloudflare_ruleset" "cors_headers" {
-  zone_id = "9a0308ba411ef3466582881dcd274f18"
+  zone_id = local.zone_id
   name    = "default"
   kind    = "zone"
   phase   = "http_response_headers_transform"
@@ -37,7 +37,7 @@ resource "cloudflare_ruleset" "cors_headers" {
 }
 
 resource "cloudflare_ruleset" "global_waf" {
-  zone_id = "9a0308ba411ef3466582881dcd274f18"
+  zone_id = local.zone_id
   name    = "Allow Microsoft and Gerrit IPs only"
   kind    = "zone"
   phase   = "http_request_firewall_custom"
@@ -138,5 +138,212 @@ resource "google_access_context_manager_service_perimeter" "purrf_primary_perime
         }
       }
     }
+  }
+}
+
+data "terraform_remote_state" "test_env" {
+  backend = "gcs"
+  config = {
+    bucket = "purrf-terraform-state"
+    prefix = "test"
+  }
+}
+
+data "terraform_remote_state" "prod_env" {
+  backend = "gcs"
+  config = {
+    bucket = "purrf-terraform-state"
+    prefix = "prod"
+  }
+}
+
+resource "cloudflare_pages_project" "purrf_production" {
+  account_id        = local.cloudflare_account_id
+  name              = "purrf"
+  production_branch = "prod"
+  build_config = {
+    build_command = <<EOF
+    go run github.com/bazelbuild/bazelisk@latest build //frontend:dist \
+      --action_env=VITE_API_BASE_URL=$VITE_API_BASE_URL \
+      --action_env=VITE_AUTH0_CLIENT_ID=$VITE_AUTH0_CLIENT_ID \
+      --action_env=VITE_AUTH0_DOMAIN=$VITE_AUTH0_DOMAIN \
+      --action_env=VITE_CF_ACCESS_TENANT_DOMAIN=$VITE_CF_ACCESS_TENANT_DOMAIN
+    EOF
+
+    destination_dir = "bazel-bin/frontend/dist"
+    root_dir        = ""
+  }
+  source = {
+    type = "github"
+    config = {
+      owner                          = "Circle-Cat"
+      repo_name                      = "purrf"
+      production_branch              = "prod"
+      production_deployments_enabled = true
+      pr_comments_enabled            = true
+      preview_deployment_setting     = "custom"
+      preview_branch_includes = [
+        "main",
+      ]
+      path_includes = [
+        "frontend/*",
+      ]
+    }
+  }
+  deployment_configs = {
+    preview = {
+      always_use_latest_compatibility_date = false
+      build_image_major_version            = 3
+      compatibility_date                   = "2025-09-18"
+      env_vars = {
+        "VITE_API_BASE_URL" = {
+          type  = "plain_text"
+          value = "https://${local.environments.test.api_host}"
+
+        }
+        "VITE_AUTH0_CLIENT_ID" = {
+          type  = "plain_text"
+          value = data.terraform_remote_state.test_env.outputs.auth0_client_id
+        }
+        "VITE_AUTH0_DOMAIN" = {
+          type  = "plain_text"
+          value = "dev-6mz4iysn6gfkcudu.us.auth0.com"
+        }
+        "VITE_CF_ACCESS_TENANT_DOMAIN" = {
+          type  = "plain_text"
+          value = "ccat-dev.cloudflareaccess.com"
+        }
+        "SKIP_DEPENDENCY_INSTALL" = {
+          type  = "plain_text"
+          value = "true"
+        }
+      }
+      fail_open = true
+    }
+    production = {
+      always_use_latest_compatibility_date = false
+      build_image_major_version            = 3
+      compatibility_date                   = "2025-09-18"
+      env_vars = {
+        "VITE_API_BASE_URL" = {
+          type  = "plain_text"
+          value = "https://${local.environments.prod.api_host}"
+
+        }
+        "VITE_AUTH0_CLIENT_ID" = {
+          type  = "plain_text"
+          value = data.terraform_remote_state.prod_env.outputs.auth0_client_id
+        }
+        "VITE_AUTH0_DOMAIN" = {
+          type  = "plain_text"
+          value = "dev-6mz4iysn6gfkcudu.us.auth0.com"
+        }
+        "VITE_CF_ACCESS_TENANT_DOMAIN" = {
+          type  = "plain_text"
+          value = "ccat-dev.cloudflareaccess.com"
+        }
+        "SKIP_DEPENDENCY_INSTALL" = {
+          type  = "plain_text"
+          value = "true"
+        }
+      }
+      fail_open = true
+    }
+  }
+}
+
+resource "cloudflare_pages_domain" "purrf_io_prod" {
+  account_id   = local.cloudflare_account_id
+  project_name = "purrf"
+  name         = "purrf.io"
+}
+
+resource "cloudflare_pages_domain" "purrf_io_test" {
+  account_id   = local.cloudflare_account_id
+  project_name = "purrf"
+  name         = "test.purrf.io"
+}
+
+resource "cloudflare_dns_record" "api_prod" {
+  zone_id = local.zone_id
+  name    = "api"
+  type    = "CNAME"
+  content = "0a108bed-55ea-4c18-88b3-fd9bb68105ae.cfargotunnel.com"
+  proxied = true
+  ttl     = 1
+  lifecycle {
+    ignore_changes = [
+      comment,
+    ]
+  }
+}
+
+resource "cloudflare_dns_record" "cf_prod" {
+  zone_id = local.zone_id
+  name    = "cf"
+  type    = "CNAME"
+  content = "dd604706-9340-414a-8afb-2bf673049bbd.cfargotunnel.com"
+  proxied = true
+  ttl     = 1
+  lifecycle {
+    ignore_changes = [
+      comment,
+    ]
+  }
+}
+
+resource "cloudflare_dns_record" "root_prod" {
+  zone_id = local.zone_id
+  name    = "@"
+  type    = "CNAME"
+  content = "purrf.pages.dev"
+  proxied = true
+  ttl     = 1
+  lifecycle {
+    ignore_changes = [
+      comment,
+    ]
+  }
+}
+
+resource "cloudflare_dns_record" "api_test" {
+  zone_id = local.zone_id
+  name    = "test-api"
+  type    = "CNAME"
+  content = "0a108bed-55ea-4c18-88b3-fd9bb68105ae.cfargotunnel.com"
+  proxied = true
+  ttl     = 1
+  lifecycle {
+    ignore_changes = [
+      comment,
+    ]
+  }
+}
+
+resource "cloudflare_dns_record" "cf_test" {
+  zone_id = local.zone_id
+  name    = "test-cf"
+  type    = "CNAME"
+  content = "dd604706-9340-414a-8afb-2bf673049bbd.cfargotunnel.com"
+  proxied = true
+  ttl     = 1
+  lifecycle {
+    ignore_changes = [
+      comment,
+    ]
+  }
+}
+
+resource "cloudflare_dns_record" "root_test" {
+  zone_id = local.zone_id
+  name    = "test"
+  type    = "CNAME"
+  content = "main.purrf.pages.dev"
+  proxied = true
+  ttl     = 1
+  lifecycle {
+    ignore_changes = [
+      comment,
+    ]
   }
 }
