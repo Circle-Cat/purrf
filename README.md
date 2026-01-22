@@ -98,9 +98,27 @@ ibazel run //frontend:dev_server
 
 #### Locally preview the frontend production build
 
+Export the required variables
 ```bash
-bazel build //frontend:dist
-bazel run //frontend:vite_preview
+export VITE_API_BASE_URL="https://api.example.com"
+export VITE_AUTH0_DOMAIN="your-auth-domain.auth0.com"
+export VITE_AUTH0_CLIENT_ID="your-client-id"
+export VITE_CF_ACCESS_TENANT_DOMAIN="your-tenant.cloudflareaccess.com"
+```
+# Build the production assets
+
+```bash
+bazel build //frontend:dist \
+  --action_env=VITE_API_BASE_URL=$VITE_API_BASE_URL \
+  --action_env=VITE_AUTH0_CLIENT_ID=$VITE_AUTH0_CLIENT_ID \
+  --action_env=VITE_AUTH0_DOMAIN=$VITE_AUTH0_DOMAIN \
+  --action_env=VITE_CF_ACCESS_TENANT_DOMAIN=$VITE_CF_ACCESS_TENANT_DOMAIN
+
+bazel run //frontend:vite_preview \
+  --action_env=VITE_API_BASE_URL=$VITE_API_BASE_URL \
+  --action_env=VITE_AUTH0_CLIENT_ID=$VITE_AUTH0_CLIENT_ID \
+  --action_env=VITE_AUTH0_DOMAIN=$VITE_AUTH0_DOMAIN \
+  --action_env=VITE_CF_ACCESS_TENANT_DOMAIN=$VITE_CF_ACCESS_TENANT_DOMAIN
 ```
 
 ### Before pushing code

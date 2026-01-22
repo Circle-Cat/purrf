@@ -35,10 +35,22 @@ js_library(
     ],
 )
 
+genrule(
+    name = "gen_env",
+    outs = [".env.production"],
+    cmd = """
+      echo "VITE_AUTH0_DOMAIN=$${VITE_AUTH0_DOMAIN:-}" >> $@
+      echo "VITE_CF_ACCESS_TENANT_DOMAIN=$${VITE_CF_ACCESS_TENANT_DOMAIN:-}" >> $@
+      echo "VITE_API_BASE_URL=$${VITE_API_BASE_URL:-}" > $@
+      echo "VITE_AUTH0_CLIENT_ID=$${VITE_AUTH0_CLIENT_ID:-}" >> $@
+    """,
+)
+
 vite_bin.vite(
     name = "dist",
     srcs = [
         ":all_srcs",
+        ":gen_env",
         "//:npm_deps",
     ],
     args = [
