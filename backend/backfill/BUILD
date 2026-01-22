@@ -25,3 +25,21 @@ py_binary(
         "@pypi//sqlalchemy",
     ],
 )
+
+py_binary(
+    name = "export_mentorship_records",
+    srcs = [
+        "export_mentorship_records.py",
+    ],
+    deps = [
+        "//backend/common:database",
+        "//backend/common:logger",
+        "//backend/common:mentorship_enums",
+        "//backend/entity:entities",
+        "//backend/repository:repositories",
+        "@pypi//asyncpg",
+        "@pypi//openpyxl",
+        "@pypi//pandas",
+        "@pypi//sqlalchemy",
+    ],
+)
