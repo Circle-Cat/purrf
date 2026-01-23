@@ -372,3 +372,46 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_config" "gcp_tunnel_config" {
     )
   }
 }
+
+resource "cloudflare_zero_trust_access_application" "purrf_app" {
+  account_id = local.cloudflare_account_id
+  name       = "purrf"
+  domain     = local.environments.prod.origin_web
+  type       = "self_hosted"
+  destinations = [
+    { type = "public", uri = local.environments.prod.origin_web },
+    { type = "public", uri = local.environments.prod.api_host },
+    { type = "public", uri = local.environments.test.origin_web },
+    { type = "public", uri = local.environments.test.api_host },
+    {
+      type = "public"
+      uri  = "*.purrf.pages.dev"
+    },
+  ]
+  allowed_idps         = ["762bbddc-6753-4c4b-898e-89e18ecc410c", "e0e42a6d-d9a1-4e9e-9338-9643176c5fc4"]
+  session_duration     = "24h"
+  app_launcher_visible = true
+
+  auto_redirect_to_identity = false
+  cors_headers = {
+    allow_all_methods = true
+    allow_credentials = true
+    allowed_headers   = ["content-type"]
+    allowed_origins   = ["https://${local.environments.prod.origin_web}", "https://${local.environments.test.origin_web}"]
+  }
+  enable_binding_cookie      = false
+  http_only_cookie_attribute = false
+  options_preflight_bypass   = false
+  policies = [
+    {
+      id         = "db15487b-4f79-4f3a-a267-1a7be4fe19f8"
+      precedence = 1
+
+    },
+    { # Auth0
+      id         = "791a5e24-4a75-4d7e-9f7d-5fafd25a1602"
+      precedence = 2
+    },
+  ]
+
+}

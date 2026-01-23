@@ -23,3 +23,4 @@ module "purrf_instance" {
   gerrit_http_pass            = var.gerrit_http_pass
   image_tag                   = "20260123-130704"
 }
+
