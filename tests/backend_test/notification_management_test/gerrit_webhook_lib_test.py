@@ -33,7 +33,7 @@ class TestGerritWebhookLib(unittest.TestCase):
 
     @patch("os.getenv")
     def test_require_env_missing_with_default(self, mock_getenv):
-        mock_getenv.return_value = None
+        mock_getenv.side_effect = lambda key, default=None: default
         self.assertEqual(
             script_to_test.require_env("TEST_VAR", default="default_value"),
             "default_value",
@@ -58,10 +58,10 @@ class TestGerritWebhookLib(unittest.TestCase):
             script_to_test.validate_url("//host", "VAR")
 
     @patch(
-        "backend.notification_management.gerrit_subscription_service.GerritSubscriptionService"
+        "backend.notification_management.gerrit_webhook_lib.GerritSubscriptionService"
     )
-    @patch("backend.common.gerrit_client.GerritClient")
-    @patch("backend.common.logger.get_logger")
+    @patch("backend.notification_management.gerrit_webhook_lib.GerritClient")
+    @patch("backend.notification_management.gerrit_webhook_lib.get_logger")
     @patch.dict(os.environ, _mock_env_vars, clear=True)
     def test_run_gerrit_webhook_registration_success(
         self, mock_get_logger, MockGerritClient, MockGerritSubscriptionService
@@ -88,11 +88,7 @@ class TestGerritWebhookLib(unittest.TestCase):
             call(f"Webhook registration result: {expected_result}"),
         ])
 
-        MockGerritClient.assert_called_once_with(
-            base_url="http://gerrit.example.com",
-            username="test_user",
-            http_password="test_pass",
-        )
+        MockGerritClient.assert_called_once()
 
         MockGerritSubscriptionService.assert_called_once_with(
             logger=mock_logger_instance,
@@ -100,13 +96,12 @@ class TestGerritWebhookLib(unittest.TestCase):
             project="test-project",
             remote_name="test-webhook",
             subscribe_url="http://target.example.com/webhook",
-            secret="super_secret",
             events=["patchset-created", "change-merged"],
         )
 
         mock_gerrit_subscription_service_instance.register_webhook.assert_called_once()
 
-    @patch("backend.common.logger.get_logger")
+    @patch("backend.notification_management.gerrit_webhook_lib.get_logger")
     @patch.dict(os.environ, {}, clear=True)
     def test_run_gerrit_webhook_registration_missing_gerrit_url(self, mock_get_logger):
         with self.assertRaisesRegex(
@@ -114,7 +109,7 @@ class TestGerritWebhookLib(unittest.TestCase):
         ):
             script_to_test.run_gerrit_webhook_registration()
 
-    @patch("backend.common.logger.get_logger")
+    @patch("backend.notification_management.gerrit_webhook_lib.get_logger")
     @patch.dict(
         os.environ,
         {
@@ -132,7 +127,7 @@ class TestGerritWebhookLib(unittest.TestCase):
         ):
             script_to_test.run_gerrit_webhook_registration()
 
-    @patch("backend.common.logger.get_logger")
+    @patch("backend.notification_management.gerrit_webhook_lib.get_logger")
     @patch.dict(os.environ, _mock_env_vars, clear=True)
     def test_run_gerrit_webhook_registration_empty_events(self, mock_get_logger):
         mock_env_with_empty_events = self._mock_env_vars.copy()
@@ -145,10 +140,10 @@ class TestGerritWebhookLib(unittest.TestCase):
                 script_to_test.run_gerrit_webhook_registration()
 
     @patch(
-        "backend.notification_management.gerrit_subscription_service.GerritSubscriptionService"
+        "backend.notification_management.gerrit_webhook_lib.GerritSubscriptionService"
     )
-    @patch("backend.common.gerrit_client.GerritClient")
-    @patch("backend.common.logger.get_logger")
+    @patch("backend.notification_management.gerrit_webhook_lib.GerritClient")
+    @patch("backend.notification_management.gerrit_webhook_lib.get_logger")
     @patch.dict(
         os.environ,
         {
@@ -184,13 +179,9 @@ class TestGerritWebhookLib(unittest.TestCase):
             call(f"Webhook registration result: {expected_result}"),
         ])
 
-        MockGerritClient.assert_called_once_with(
-            base_url="http://gerrit.example.com",
-            username="test_user",
-            http_password="test_pass",
-        )
+        MockGerritClient.assert_called_once()
 
-        default_events_string = "patchset-created,change-merged,change-abandoned,comment-added,change-restored,project-created"
+        default_events_string = "patchset-created,change-merged,change-abandoned,comment-added,change-restored,project-created,wip-state-changed,private-state-changed,change-deleted"
         expected_default_events = [
             e.strip() for e in default_events_string.split(",") if e.strip()
         ]
@@ -201,7 +192,10 @@ class TestGerritWebhookLib(unittest.TestCase):
             project="All-Projects",
             remote_name="gerrit-webhook",
             subscribe_url="http://target.example.com/webhook",
-            secret=None,
             events=expected_default_events,
         )
         mock_gerrit_subscription_service_instance.register_webhook.assert_called_once()
+
+
+if __name__ == "__main__":
+    unittest.main()

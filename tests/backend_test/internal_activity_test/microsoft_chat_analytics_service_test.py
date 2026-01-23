@@ -1,4 +1,4 @@
-from unittest import TestCase
+from unittest import TestCase, main
 from datetime import datetime, timezone
 from unittest.mock import Mock, call
 
@@ -127,3 +127,7 @@ class TestMicrosoftChatAnalyticsService(TestCase):
             },
         }
         self.assertEqual(result, expected_result)
+
+
+if __name__ == "__main__":
+    main()

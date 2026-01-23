@@ -179,3 +179,7 @@ class TestMicrosoftChatHistorySyncService(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(result)
 
         self.microsoft_chat_message_util.sync_history_chat_messages_to_redis.assert_not_called()
+
+
+if __name__ == "__main__":
+    unittest.main()
