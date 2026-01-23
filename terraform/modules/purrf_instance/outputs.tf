@@ -12,6 +12,15 @@ output "redis_endpoint" {
   value = upstash_redis_database.redis.endpoint
 }
 
+output "redis_password" {
+  value     = upstash_redis_database.redis.password
+  sensitive = true
+}
+
+output "redis_port" {
+  value = upstash_redis_database.redis.port
+}
+
 output "auth0_client_id" {
   value = auth0_client.purrf_auth0.client_id
 }
@@ -23,7 +32,7 @@ output "neon_project_id" {
 output "neon_default_branch_id" {
   value = neon_project.this.default_branch_id
 }
-output "neon_database_user" {
+output "neon_database_owner" {
   value = neon_project.this.database_user
 }
 

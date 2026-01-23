@@ -1,0 +1,124 @@
+# Default values for purrf.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+replicaCount: 1
+
+image:
+  repository: us-docker.pkg.dev/k8s-dev-437501/purrf/purrf
+  pullPolicy: IfNotPresent
+  # Overrides the image tag whose default is the chart appVersion.
+  tag: ""
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+labels:
+  app: purrf
+
+selectorLabels:
+  app: purrf
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  automount: true
+  # Annotations to add to the service account
+  annotations:
+    iam.gke.io/gcp-service-account: "purrf-service@purrf-452300.iam.gserviceaccount.com"
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+podAnnotations: {}
+
+podSecurityContext:
+  fsGroup: 65532
+
+securityContext: {}
+  # capabilities:
+  #   drop:
+  #   - ALL
+  # readOnlyRootFilesystem: true
+  # runAsNonRoot: true
+  # runAsUser: 1000
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 5001
+
+ingress:
+  enabled: true
+  className: "cloudflare-tunnel"
+  hosts:
+    - host: api.purrf.io
+      paths:
+        - path: /
+          pathType: Prefix
+
+resources:
+  # We usually recommend not to specify default resources and to leave this as a conscious
+  # choice for the user. This also increases chances charts run on environments with little
+  # resources, such as Minikube. If you do want to specify resources, uncomment the following
+  # lines, adjust them as necessary, and remove the curly braces after 'resources:'.
+  # limits:
+  #   cpu: 100m
+  #   memory: 128Mi
+  requests:
+    cpu: 50m
+    memory: 325Mi
+
+livenessProbe: null
+readinessProbe: null
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 100
+  targetCPUUtilizationPercentage: 80
+  # targetMemoryUtilizationPercentage: 80
+
+volumes: []
+volumeMounts: []
+
+nodeSelector:
+  cloud.google.com/gke-spot: "true"
+
+tolerations: []
+
+affinity: {}
+
+azureWorkloadIdentity:
+  audience: "api://AzureADTokenExchange"
+  path: azure-token
+  tokenMountPath: "/var/run/secrets/azure/tokens"
+  tokenExpirationSeconds: 3600
+
+# Secret configuration
+secret:
+
+cronjobDefaults:
+  resources:
+    limits:
+      cpu: 100m
+      memory: 128Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
+cronjobs:
+  - name: update-ldap
+    schedule: "20 10 * * *"   # 10:20 UTC
+    url: "/api/microsoft/backfill/ldaps"
+  - name: update-jira-projects
+    schedule: "30 10 * * *"   # 10:30 UTC
+    url: "/api/jira/project"
+  - name: update-jira-issues
+    schedule: "40 10 * * *"   # 10:40 UTC
+    url: "/api/jira/update?hours=24"
+  - name: update-google-calendar-events
+    schedule: "50 10 * * *"   # 10:50 UTC
+    url: "/api/google/calendar/history/pull"
+    body: {}

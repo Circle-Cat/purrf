@@ -1,0 +1,64 @@
+{{- range .Values.cronjobs }}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "purrf.fullname" $ }}-{{ .name }}
+spec:
+  schedule: {{ .schedule | quote }}
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          securityContext:
+            {{- toYaml $.Values.securityContext | nindent 12 }}
+          serviceAccountName: {{ include "purrf.serviceAccountName" $ }}
+          containers:
+            - name: {{ .name }}
+              image: curlimages/curl:latest
+              command:
+                - /bin/sh
+                - -c
+              args:
+                - |
+                  echo "Fetching Google ID Token..."
+                  TOKEN=$(curl -s -f -H "Metadata-Flavor: Google" \
+                    "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/identity?audience={{ $.Values.labels.app }}")
+
+                  {{- if hasKey . "body" }}
+                  cat << 'EOF' > /tmp/post_body.json
+                  {{ toJson .body }}
+                  EOF
+                  {{- end }}
+
+                  echo "Calling API..."
+                  curl -X POST -s -f \
+                    -H "Authorization: Bearer $TOKEN" \
+                    {{- if hasKey . "body" }}
+                    -H "Content-Type: application/json" \
+                    -d @/tmp/post_body.json \
+                    {{- end }}
+                    "http://{{ include "purrf.fullname" $ }}:{{ $.Values.service.port }}{{ .url }}"
+
+              resources:
+                {{- if .resources }}
+                {{- toYaml .resources | nindent 16 }}
+                {{- else }}
+                {{- toYaml $.Values.cronjobDefaults.resources | nindent 16 }}
+                {{- end }}
+              securityContext:
+                {{- toYaml $.Values.containerSecurityContext | nindent 16 }}
+
+          affinity:
+            podAffinity:
+              preferredDuringSchedulingIgnoredDuringExecution:
+                - weight: 100
+                  podAffinityTerm:
+                    labelSelector:
+                      matchLabels:
+                        app.kubernetes.io/name: {{ include "purrf.name" $ }}
+                        app.kubernetes.io/instance: {{ $.Release.Name }}
+                    topologyKey: "kubernetes.io/hostname"
+
+          restartPolicy: OnFailure
+{{- end }}

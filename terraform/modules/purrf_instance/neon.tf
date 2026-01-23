@@ -9,7 +9,7 @@ resource "neon_project" "this" {
 resource "neon_role" "this" {
   project_id = neon_project.this.id
   branch_id  = neon_project.this.default_branch_id
-  name       = local.neon_role_name
+  name       = local.neon_owner_role_name
 }
 
 resource "neon_database" "this" {

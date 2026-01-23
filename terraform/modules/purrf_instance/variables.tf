@@ -83,6 +83,21 @@ variable "auth0_logout_urls" {
   description = "Allowed logout URLs for Auth0"
 }
 
+variable "image_tag" {
+  type        = string
+  description = "Deployed image tag"
+}
+
+variable "jira_password" {
+  type      = string
+  sensitive = true
+}
+
+variable "gerrit_http_pass" {
+  type      = string
+  sensitive = true
+}
+
 locals {
   # Derived values based on environment configuration
   is_prod = var.env_name == "prod"
@@ -105,9 +120,10 @@ locals {
     project    = "purrf"
   }
 
-  neon_project_name = "${local.name_prefix}-neon"
-  neon_db_name      = "${local.name_prefix}-db"
-  neon_role_name    = "${local.name_prefix}-role"
+  neon_project_name        = "${local.name_prefix}-neon"
+  neon_db_name             = "${local.name_prefix}-db"
+  neon_owner_role_name     = "${local.name_prefix}-owner"
+  app_sqlalchemy_async_url = "postgresql+asyncpg://${neon_role.this.name}:${neon_role.this.password}@${neon_project.this.default_branch_id}.aws-us-east-1.aws.neon.tech/${neon_database.this.name}?ssl=require"
 
   pubsub_names = [
     "chat-google-events",

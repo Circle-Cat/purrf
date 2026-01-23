@@ -2,7 +2,7 @@
 module "purrf_instance" {
   source = "../../modules/purrf_instance"
 
-  env_name              = "test"
+  env_name              = "prod"
   gcp_project_id        = "purrf-452300"
   auth0_callbacks       = ["https://ccat-dev.cloudflareaccess.com/cdn-cgi/access/callback"]
   auth0_logout_urls     = ["https://ccat-dev.cloudflareaccess.com/cdn-cgi/access/logout"]
@@ -21,5 +21,5 @@ module "purrf_instance" {
   gerrit_producer_entry_point = "gerrit_event_webhook"
   jira_password               = var.jira_password
   gerrit_http_pass            = var.gerrit_http_pass
-  image_tag                   = "latest"
+  image_tag                   = "20260123-130704"
 }

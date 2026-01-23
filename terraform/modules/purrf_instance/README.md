@@ -9,6 +9,7 @@ No requirements.
 | <a name="provider_archive"></a> [archive](#provider\_archive) | n/a |
 | <a name="provider_auth0"></a> [auth0](#provider\_auth0) | n/a |
 | <a name="provider_google"></a> [google](#provider\_google) | n/a |
+| <a name="provider_helm"></a> [helm](#provider\_helm) | n/a |
 | <a name="provider_neon"></a> [neon](#provider\_neon) | n/a |
 | <a name="provider_upstash"></a> [upstash](#provider\_upstash) | n/a |
 
@@ -36,9 +37,11 @@ No modules.
 | [google_pubsub_topic.dlq](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/pubsub_topic) | resource |
 | [google_pubsub_topic.topics](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/pubsub_topic) | resource |
 | [google_service_account.function_sa](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/service_account) | resource |
+| [google_service_account_iam_member.purrf_service_wi](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/service_account_iam_member) | resource |
 | [google_storage_bucket.function_bucket](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/storage_bucket) | resource |
 | [google_storage_bucket_iam_binding.purrf_internal](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/storage_bucket_iam_binding) | resource |
 | [google_storage_bucket_object.function_zips](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/storage_bucket_object) | resource |
+| [helm_release.purrf_app](https://registry.terraform.io/providers/hashicorp/helm/latest/docs/resources/release) | resource |
 | [neon_database.this](https://registry.terraform.io/providers/kislerdm/neon/latest/docs/resources/database) | resource |
 | [neon_project.this](https://registry.terraform.io/providers/kislerdm/neon/latest/docs/resources/project) | resource |
 | [neon_role.this](https://registry.terraform.io/providers/kislerdm/neon/latest/docs/resources/role) | resource |
@@ -51,6 +54,8 @@ No modules.
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|:--------:|
+| <a name="input_auth0_callbacks"></a> [auth0\_callbacks](#input\_auth0\_callbacks) | Allowed callback URLs for Auth0 | `list(string)` | n/a | yes |
+| <a name="input_auth0_logout_urls"></a> [auth0\_logout\_urls](#input\_auth0\_logout\_urls) | Allowed logout URLs for Auth0 | `list(string)` | n/a | yes |
 | <a name="input_base_domain"></a> [base\_domain](#input\_base\_domain) | Base domain name | `string` | `"purrf.io"` | no |
 | <a name="input_cloudflare_account_id"></a> [cloudflare\_account\_id](#input\_cloudflare\_account\_id) | Cloudflare Account ID | `string` | n/a | yes |
 | <a name="input_cloudflare_tunnel_id"></a> [cloudflare\_tunnel\_id](#input\_cloudflare\_tunnel\_id) | Cloudflare Tunnel ID | `string` | n/a | yes |
@@ -58,8 +63,11 @@ No modules.
 | <a name="input_env_name"></a> [env\_name](#input\_env\_name) | Environment name: prod, test, or staging | `string` | n/a | yes |
 | <a name="input_gcp_project_id"></a> [gcp\_project\_id](#input\_gcp\_project\_id) | GCP project ID | `string` | n/a | yes |
 | <a name="input_gcp_region"></a> [gcp\_region](#input\_gcp\_region) | GCP region | `string` | `"us-west1"` | no |
+| <a name="input_gerrit_http_pass"></a> [gerrit\_http\_pass](#input\_gerrit\_http\_pass) | n/a | `string` | n/a | yes |
 | <a name="input_gerrit_producer_code_dir"></a> [gerrit\_producer\_code\_dir](#input\_gerrit\_producer\_code\_dir) | The relative path to the Gerrit producer source code directory. | `string` | n/a | yes |
 | <a name="input_gerrit_producer_entry_point"></a> [gerrit\_producer\_entry\_point](#input\_gerrit\_producer\_entry\_point) | The name of the Python function to be executed for Gerrit events. | `string` | n/a | yes |
+| <a name="input_image_tag"></a> [image\_tag](#input\_image\_tag) | Deployed image tag | `string` | n/a | yes |
+| <a name="input_jira_password"></a> [jira\_password](#input\_jira\_password) | n/a | `string` | n/a | yes |
 | <a name="input_microsoft_chat_code_dir"></a> [microsoft\_chat\_code\_dir](#input\_microsoft\_chat\_code\_dir) | The relative path to the Microsoft Chat producer source code directory. | `string` | n/a | yes |
 | <a name="input_microsoft_chat_entry_point"></a> [microsoft\_chat\_entry\_point](#input\_microsoft\_chat\_entry\_point) | The name of the Python function to be executed for Microsoft Chat. | `string` | n/a | yes |
 | <a name="input_microsoft_lifecycle_code_dir"></a> [microsoft\_lifecycle\_code\_dir](#input\_microsoft\_lifecycle\_code\_dir) | The relative path to the Microsoft Lifecycle handler source code directory. | `string` | n/a | yes |
@@ -73,8 +81,10 @@ No modules.
 | <a name="output_auth0_client_id"></a> [auth0\_client\_id](#output\_auth0\_client\_id) | n/a |
 | <a name="output_computed_domains"></a> [computed\_domains](#output\_computed\_domains) | Computed domain names for this Purrf instance. |
 | <a name="output_default_account"></a> [default\_account](#output\_default\_account) | n/a |
-| <a name="output_neon_database_user"></a> [neon\_database\_user](#output\_neon\_database\_user) | n/a |
+| <a name="output_neon_database_owner"></a> [neon\_database\_owner](#output\_neon\_database\_owner) | n/a |
 | <a name="output_neon_default_branch_id"></a> [neon\_default\_branch\_id](#output\_neon\_default\_branch\_id) | n/a |
 | <a name="output_neon_project_id"></a> [neon\_project\_id](#output\_neon\_project\_id) | n/a |
 | <a name="output_redis_endpoint"></a> [redis\_endpoint](#output\_redis\_endpoint) | n/a |
+| <a name="output_redis_password"></a> [redis\_password](#output\_redis\_password) | n/a |
+| <a name="output_redis_port"></a> [redis\_port](#output\_redis\_port) | n/a |
 | <a name="output_resource_prefix"></a> [resource\_prefix](#output\_resource\_prefix) | Resource name prefix used by this module. |
