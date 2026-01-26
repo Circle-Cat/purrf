@@ -33,34 +33,23 @@ class SummaryService:
         self.jira_analytics_service = jira_analytics_service
         self.date_time_util = date_time_util
 
-    def get_summary(self, start_date, end_date, groups_list, include_terminated):
-        status = (
-            MicrosoftAccountStatus.ALL
-            if include_terminated
-            else MicrosoftAccountStatus.ACTIVE
-        )
-        ldap_mapping = self.ldap_service.get_ldaps_by_status_and_group(
-            status=status,
-            groups=[MicrosoftGroups(g) for g in groups_list],
-        )
-
-        user_ldaps = []
-        for group_data in ldap_mapping.values():
-            for status_data in group_data.values():
-                user_ldaps.extend(status_data.keys())
+    def _search_summary_data(self, ldaps: list[str], start_date, end_date) -> list:
+        """Private method to fetch summary data for given LDAPs"""
+        if not ldaps:
+            return []
 
         start_dt, end_dt = self.date_time_util.get_start_end_timestamps(
             start_date, end_date
         )
 
         ms_chat_data = self.microsoft_chat_analytics_service.count_microsoft_chat_messages_in_date_range(
-            ldap_list=user_ldaps,
+            ldap_list=ldaps,
             start_date=start_date,
             end_date=end_date,
         ).get("result", {})
 
         google_chat_data = self.google_chat_analytics_service.count_messages(
-            sender_ldaps=user_ldaps,
+            sender_ldaps=ldaps,
             start_date=start_date,
             end_date=end_date,
         ).get("result", {})
@@ -71,28 +60,28 @@ class SummaryService:
         meeting_hours_data = (
             self.google_calendar_analytics_service.get_meeting_hours_for_user(
                 calendar_ids=calendar_ids,
-                ldap_list=user_ldaps,
+                ldap_list=ldaps,
                 start_date=start_dt,
                 end_date=end_dt,
             )
         )
 
         gerrit_stats = self.gerrit_analytics_service.get_gerrit_stats(
-            ldap_list=user_ldaps,
+            ldap_list=ldaps,
             start_date_str=start_date,
             end_date_str=end_date,
         )
 
         jira_summary = self.jira_analytics_service.get_issues_summary(
             status_list=[JiraIssueStatus.DONE],
-            ldaps=user_ldaps,
+            ldaps=ldaps,
             project_ids=None,
             start_date=start_date,
             end_date=end_date,
         )
 
         summary_data = []
-        for ldap_user in user_ldaps:
+        for ldap_user in ldaps:
             ms_chat_count = ms_chat_data.get(ldap_user, 0)
 
             google_chat_spaces = google_chat_data.get(ldap_user, {})
@@ -127,3 +116,27 @@ class SummaryService:
             })
 
         return summary_data
+
+    def get_summary(self, start_date, end_date, groups_list, include_terminated):
+        """
+        Get summary data for a list of groups, optionally including terminated users.
+        Delegates actual data aggregation to _search_summary_data.
+        """
+        status = (
+            MicrosoftAccountStatus.ALL
+            if include_terminated
+            else MicrosoftAccountStatus.ACTIVE
+        )
+
+        ldap_mapping = self.ldap_service.get_ldaps_by_status_and_group(
+            status=status,
+            groups=[MicrosoftGroups(g) for g in groups_list],
+        )
+
+        user_ldaps = []
+        for group_data in ldap_mapping.values():
+            for status_data in group_data.values():
+                user_ldaps.extend(status_data.keys())
+
+        # Call private method to aggregate summary data
+        return self._search_summary_data(user_ldaps, start_date, end_date)
