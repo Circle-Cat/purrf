@@ -20,7 +20,7 @@ resource "cloudflare_ruleset" "cors_headers" {
           }
           "Access-Control-Allow-Methods" = {
             operation = "set"
-            value     = "GET, POST, OPTIONS, DELETE, PUT"
+            value     = "GET, POST, OPTIONS, DELETE, PUT, PATCH"
           }
           "Access-Control-Allow-Headers" = {
             operation = "set"
