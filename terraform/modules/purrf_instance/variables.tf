@@ -123,8 +123,9 @@ locals {
   neon_project_name        = "${local.name_prefix}-neon"
   neon_db_name             = "${local.name_prefix}-db"
   neon_owner_role_name     = "${local.name_prefix}-owner"
-  app_sqlalchemy_async_url = "postgresql+asyncpg://${neon_role.this.name}:${neon_role.this.password}@${neon_project.this.default_branch_id}.aws-us-east-1.aws.neon.tech/${neon_database.this.name}?ssl=require"
-
+  raw_host                 = data.neon_branch_endpoints.all.endpoints[0].host
+  pooler_host              = replace(local.raw_host, "/^(ep-[^.]+)/", "$1-pooler")
+  app_sqlalchemy_async_url = "postgresql+asyncpg://${neon_role.this.name}:${neon_role.this.password}@${local.pooler_host}/${neon_database.this.name}?ssl=require"
   pubsub_names = [
     "chat-google-events",
     "chat-microsoft-events",

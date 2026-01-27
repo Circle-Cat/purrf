@@ -19,3 +19,7 @@ resource "neon_database" "this" {
   name       = local.neon_db_name
 }
 
+data "neon_branch_endpoints" "all" {
+  project_id = neon_project.this.id
+  branch_id  = neon_project.this.default_branch_id
+}
