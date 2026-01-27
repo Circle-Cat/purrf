@@ -183,8 +183,8 @@ For local **development only**, you can spin up a PostgreSQL database using the 
 
 #### Give the script execute permission and start the PostgreSQL container
 ```bash
-chmod +x docker/postgres_up.sh
-./docker/postgres_up.sh
+chmod +x script/postgres_up.sh
+./script/postgres_up.sh
 ```
 
 This launches a PostgreSQL 16 container on:
