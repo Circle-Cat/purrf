@@ -4,6 +4,10 @@ from backend.entity.users_entity import UsersEntity
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.dto.user_context_dto import UserContextDto
 from backend.common.mentorship_enums import UserTimezone, CommunicationMethod
+from backend.common.constants import (
+    INTERNAL_MICROSOFT_ACCOUNT_DOMAIN,
+    INTERNAL_GOOGLE_ACCOUNT_DOMAIN,
+)
 
 
 class UserIdentityService:
@@ -25,6 +29,8 @@ class UserIdentityService:
         This method:
         1. Find an existing user by subject identifier (sub).
         2. If not found, attempts to link a historical user by primary email.
+            For internal users, it normalizes the primary email domain from @u.circlecat.org
+            to @circlecat.org.
         3. Otherwise, create a new user with the provided user context.
 
         Args:
@@ -47,7 +53,9 @@ class UserIdentityService:
         should_commit = True
 
         user = await self._sync_user_subject_identifier(
-            session=session, primary_email=user_info.primary_email, sub=user_info.sub
+            session=session,
+            primary_email=self._fix_email_domain(user_info.primary_email),
+            sub=user_info.sub,
         )
         if user:
             self.logger.info(
@@ -59,11 +67,23 @@ class UserIdentityService:
 
         return user, should_commit
 
+    def _fix_email_domain(self, email: str) -> str:
+        """Replace the internal Microsoft account domain uniformly with Google account domain."""
+        if email.endswith(INTERNAL_MICROSOFT_ACCOUNT_DOMAIN):
+            return email.replace(
+                INTERNAL_MICROSOFT_ACCOUNT_DOMAIN, INTERNAL_GOOGLE_ACCOUNT_DOMAIN
+            )
+
+        return email
+
     async def _create_user(
         self, session: AsyncSession, user_info: UserContextDto
     ) -> UsersEntity:
         """
         Create a new UsersEntity in the database from UserContextDto.
+
+        For internal users, it will normalizes the primary email domain
+        from @u.circlecat.org to @circlecat.org.
 
         Args:
             session (AsyncSession): Active database session.
@@ -72,7 +92,7 @@ class UserIdentityService:
         Returns:
             UsersEntity: The newly created user entity.
         """
-        primary_email = user_info.primary_email
+        primary_email = self._fix_email_domain(user_info.primary_email)
         sub = user_info.sub
 
         new_user = UsersEntity(

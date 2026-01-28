@@ -7,6 +7,10 @@ from backend.entity.users_entity import UsersEntity
 from backend.dto.user_context_dto import UserContextDto
 from backend.common.user_role import UserRole
 from backend.common.mentorship_enums import UserTimezone, CommunicationMethod
+from backend.common.constants import (
+    INTERNAL_MICROSOFT_ACCOUNT_DOMAIN,
+    INTERNAL_GOOGLE_ACCOUNT_DOMAIN,
+)
 
 
 class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
@@ -107,6 +111,31 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(should_commit)
         self.assertEqual(saved_user.user_id, 10)
         self.repo.upsert_users.assert_awaited_once()
+
+    async def test_get_user_internal_user_email_conversion(self):
+        """Scenario: convert Microsoft email to Google email for internal user."""
+        user_info = UserContextDto(
+            sub="sub_internal",
+            primary_email=f"internal{INTERNAL_MICROSOFT_ACCOUNT_DOMAIN}",
+            roles=[UserRole.MENTORSHIP],
+        )
+
+        self.repo.get_user_by_subject_identifier.return_value = None
+        self.repo.get_user_by_primary_email.return_value = None
+        self.repo.upsert_users.return_value = MagicMock(spec=UsersEntity)
+
+        await self.service.get_user(self.session, user_info)
+
+        self.assertTrue(
+            self.repo.get_user_by_primary_email.call_args[0][1].endswith(
+                INTERNAL_GOOGLE_ACCOUNT_DOMAIN
+            )
+        )
+        self.assertTrue(
+            self.repo.upsert_users.call_args[0][1].primary_email.endswith(
+                INTERNAL_GOOGLE_ACCOUNT_DOMAIN
+            )
+        )
 
 
 if __name__ == "__main__":

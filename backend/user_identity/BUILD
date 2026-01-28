@@ -8,5 +8,6 @@ py_library(
     deps = [
         "//backend/dto",
         "//backend/entity:entities",
+        "//backend/common:constants",
     ],
 )

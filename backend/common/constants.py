@@ -56,6 +56,9 @@ MICROSOFT_CHAT_MESSAGES_DETAILS_KEY = "microsoft:messages:{message_id}"
 MICROSOFT_CHAT_TOPICS = "microsoft:chat:topics"
 PUBSUB_PULL_MESSAGES_STATUS_KEY = "pull_status:{subscription_id}"
 
+INTERNAL_MICROSOFT_ACCOUNT_DOMAIN = "@u.circlecat.org"
+INTERNAL_GOOGLE_ACCOUNT_DOMAIN = "@circlecat.org"
+
 
 class MicrosoftAccountStatus(str, Enum):
     ACTIVE = "active"
