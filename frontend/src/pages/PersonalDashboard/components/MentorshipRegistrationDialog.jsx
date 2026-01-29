@@ -137,7 +137,7 @@ export default function MentorshipRegistrationDialog({
         </Button>
       </DialogTrigger>
 
-      <DialogContent className="sm:max-w-[450px]">
+      <DialogContent className="sm:max-w-[450px] top-[64px] translate-y-0">
         <DialogHeader>
           <DialogTitle>Mentorship Registration</DialogTitle>
         </DialogHeader>

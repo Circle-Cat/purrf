@@ -3,7 +3,7 @@
  * Each option represents a selectable industry preference.
  */
 export const INDUSTRY_CONFIG = [
-  { id: "swe", name: "SWE" },
+  { id: "swe", name: "Software Engineering" },
   { id: "uiux", name: "UI / UX" },
   { id: "ds", name: "Data Science" },
   { id: "pm", name: "Product Management" },

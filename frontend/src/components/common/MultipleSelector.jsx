@@ -181,10 +181,11 @@ export default function MultipleSelector({
       <PopoverContent
         className="p-0 w-[var(--radix-popover-trigger-width)]"
         align="start"
+        onWheel={(e) => e.stopPropagation()}
       >
-        <Command>
+        <Command className="flex flex-col h-full">
           <CommandInput placeholder="Search..." />
-          <CommandList className="max-h-[300px]">
+          <CommandList className="max-h-[300px] overflow-y-auto overflow-x-hidden">
             <CommandEmpty>No results found.</CommandEmpty>
 
             {Object.entries(groupedOptions).map(([groupName, items]) => {
