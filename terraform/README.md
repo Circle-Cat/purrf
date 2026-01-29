@@ -22,7 +22,10 @@ terraform/
 ```bash
 gcloud auth application-default login
 ```
-
+### Authenticate your Azure account with Application Default Credentials:
+```bash
+az login --use-device-code
+```
 ## How to use
 
 *Always run Terraform commands inside a specific environment directory
@@ -59,6 +62,18 @@ Confirm by typing yes when prompted.
 ```bash
 terraform destroy
 ```
+
+### Use terraform-docs to generate README.md
+
+Install terraform-docs:
+```bash
+go install github.com/terraform-docs/terraform-docs@v0.21.0
+
+Generate the README:
+```bash
+terraform-docs markdown table . > README.md
+```
+
 
 **WARNING:**
 **Do not forcibly terminate (Ctrl+C) Terraform while it is running.**

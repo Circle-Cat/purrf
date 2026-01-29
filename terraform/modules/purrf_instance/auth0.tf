@@ -62,3 +62,85 @@ resource "auth0_client" "purrf_auth0" {
     token_lifetime               = 31557600
   }
 }
+
+resource "auth0_custom_domain" "purrf_custom_domain" {
+  domain     = local.domains.login
+  type       = "auth0_managed_certs"
+  tls_policy = "recommended"
+}
+
+
+resource "auth0_connection" "db" {
+  name     = "Username-Password-Authentication"
+  strategy = "auth0"
+
+  options {
+    disable_signup         = true
+    brute_force_protection = true
+  }
+}
+
+resource "auth0_connection_clients" "disable_db_for_all" {
+  connection_id   = auth0_connection.db.id
+  enabled_clients = [] # Keep this empty to ensure Terraform removes all associated applications.
+}
+
+resource "auth0_connection" "email" {
+  name                 = "email"
+  is_domain_connection = false
+  strategy             = "email"
+  authentication {
+    active = true
+  }
+  connected_accounts {
+    active = false
+  }
+  options {
+    api_enable_users       = false
+    brute_force_protection = true
+    disable_signup         = true
+    from                   = "{{ application.name }} <root@auth0.com>"
+    subject                = "Welcome to {{ application.name }}"
+    name                   = "email"
+    syntax                 = "liquid"
+    totp {
+      length    = 6
+      time_step = 180
+    }
+  }
+}
+
+resource "auth0_connection_clients" "email_assoc" {
+  connection_id   = auth0_connection.email.id
+  enabled_clients = [auth0_client.purrf_auth0.id]
+}
+
+resource "auth0_prompt" "prompts" {
+  identifier_first               = true
+  universal_login_experience     = "new"
+  webauthn_platform_first_factor = false
+}
+
+resource "auth0_prompt_custom_text" "en_login_id" {
+  prompt   = "login-id"
+  language = "en"
+  body = jsonencode({
+    "login-id" : {
+      "description" : "Log in as an external mentee using your email address used in the application.",
+      "federatedConnectionButtonText" : "Log in as a Googler mentor"
+    }
+  })
+}
+
+resource "auth0_trigger_actions" "post_login" {
+  trigger = "post-login"
+  actions {
+    display_name = "googlers"
+    id           = "3f25be15-8881-416d-80c8-f7eabaef662c"
+  }
+}
+
+# Auth0 Free plan includes a built-in `google-oauth2` social connection.
+# We use this default connection, but to restrict allowed user domains,
+# we manually add a post-login Action and attach it to the Login trigger
+# (start -> action -> completed). This must be done manually on the Free plan.

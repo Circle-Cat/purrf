@@ -8,6 +8,7 @@ No requirements.
 |------|---------|
 | <a name="provider_archive"></a> [archive](#provider\_archive) | n/a |
 | <a name="provider_auth0"></a> [auth0](#provider\_auth0) | n/a |
+| <a name="provider_azuread"></a> [azuread](#provider\_azuread) | n/a |
 | <a name="provider_google"></a> [google](#provider\_google) | n/a |
 | <a name="provider_helm"></a> [helm](#provider\_helm) | n/a |
 | <a name="provider_neon"></a> [neon](#provider\_neon) | n/a |
@@ -22,6 +23,15 @@ No modules.
 | Name | Type |
 |------|------|
 | [auth0_client.purrf_auth0](https://registry.terraform.io/providers/auth0/auth0/latest/docs/resources/client) | resource |
+| [auth0_connection.db](https://registry.terraform.io/providers/auth0/auth0/latest/docs/resources/connection) | resource |
+| [auth0_connection.email](https://registry.terraform.io/providers/auth0/auth0/latest/docs/resources/connection) | resource |
+| [auth0_connection_clients.disable_db_for_all](https://registry.terraform.io/providers/auth0/auth0/latest/docs/resources/connection_clients) | resource |
+| [auth0_connection_clients.email_assoc](https://registry.terraform.io/providers/auth0/auth0/latest/docs/resources/connection_clients) | resource |
+| [auth0_custom_domain.purrf_custom_domain](https://registry.terraform.io/providers/auth0/auth0/latest/docs/resources/custom_domain) | resource |
+| [auth0_prompt.prompts](https://registry.terraform.io/providers/auth0/auth0/latest/docs/resources/prompt) | resource |
+| [auth0_prompt_custom_text.en_login_id](https://registry.terraform.io/providers/auth0/auth0/latest/docs/resources/prompt_custom_text) | resource |
+| [auth0_trigger_actions.post_login](https://registry.terraform.io/providers/auth0/auth0/latest/docs/resources/trigger_actions) | resource |
+| [azuread_application_federated_identity_credential.azure_wif](https://registry.terraform.io/providers/hashicorp/azuread/latest/docs/resources/application_federated_identity_credential) | resource |
 | [google_cloudfunctions_function.functions](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/cloudfunctions_function) | resource |
 | [google_cloudfunctions_function_iam_member.invoker](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/cloudfunctions_function_iam_member) | resource |
 | [google_project_iam_member.cloud_build_artifactregistry_creator](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/project_iam_member) | resource |
@@ -49,6 +59,7 @@ No modules.
 | [archive_file.function_zips](https://registry.terraform.io/providers/hashicorp/archive/latest/docs/data-sources/file) | data source |
 | [google_compute_default_service_account.default](https://registry.terraform.io/providers/hashicorp/google/latest/docs/data-sources/compute_default_service_account) | data source |
 | [google_project.main_gcp_project_data](https://registry.terraform.io/providers/hashicorp/google/latest/docs/data-sources/project) | data source |
+| [neon_branch_endpoints.all](https://registry.terraform.io/providers/kislerdm/neon/latest/docs/data-sources/branch_endpoints) | data source |
 
 ## Inputs
 
