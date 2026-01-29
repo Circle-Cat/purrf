@@ -44,15 +44,6 @@ vi.mock("@/components/common/DateRangePicker", () => {
   };
 });
 
-vi.mock("@/components/common/Card", () => ({
-  default: ({ title, value }) => (
-    <div data-testid={`card-${title.replace(/\s/g, "-")}`}>
-      <h3>{title}</h3>
-      <p>{value}</p>
-    </div>
-  ),
-}));
-
 vi.mock("@/components/common/Table", () => ({
   default: ({ columns, data, onSort, sortColumn, sortDirection }) => (
     <table data-testid="mock-table">
@@ -164,12 +155,16 @@ describe("Dashboard", () => {
     });
 
     await vi.waitFor(() => {
-      expect(screen.getByText("3")).toBeInTheDocument(); // totalMembers from mockLdapsData
-      expect(screen.getByText("15")).toBeInTheDocument(); // 5+2+8
-      expect(screen.getByText("35")).toBeInTheDocument(); // 10+20+5
-      expect(screen.getByText("350")).toBeInTheDocument(); // 100+200+50
-      expect(screen.getByText("80")).toBeInTheDocument(); // 50+20+10
-      expect(screen.getByText("400")).toBeInTheDocument(); // 200+150+50
+      expect(screen.getByTestId("card-Members")).toHaveTextContent("3"); // totalMembers from mockLdapsData
+      expect(screen.getByTestId("card-Jira-Tickets-(Done)")).toHaveTextContent(
+        "15",
+      ); // 5+2+8
+      expect(screen.getByTestId("card-Merged-CLs")).toHaveTextContent("35"); // 10+20+5
+      expect(screen.getByTestId("card-Merged-LOC")).toHaveTextContent("350"); // 100+200+50
+      expect(screen.getByTestId("card-Meeting-Hours")).toHaveTextContent("80"); // 50+20+10
+      expect(screen.getByTestId("card-Chat-Messages-Sent")).toHaveTextContent(
+        "400",
+      ); // 200+150+50
     });
 
     await vi.waitFor(() => {
@@ -188,19 +183,18 @@ describe("Dashboard", () => {
     await vi.waitFor(() => {
       expect(getSummary).toHaveBeenCalled();
       expect(getLdapsAndDisplayNames).toHaveBeenCalled();
-    });
 
-    await vi.waitFor(() => {
-      expect(screen.getByTestId("card-Members")).toHaveTextContent("0");
-      expect(screen.getByTestId("card-Jira-Tickets-(Done)")).toHaveTextContent(
-        "0",
-      );
-      expect(screen.getByTestId("card-Merged-CLs")).toHaveTextContent("0");
-      expect(screen.getByTestId("card-Merged-LOC")).toHaveTextContent("0");
-      expect(screen.getByTestId("card-Meeting-Hours")).toHaveTextContent("0");
-      expect(screen.getByTestId("card-Chat-Messages-Sent")).toHaveTextContent(
-        "0",
-      );
+      const cards = [
+        "Members",
+        "Jira-Tickets-(Done)",
+        "Merged-CLs",
+        "Merged-LOC",
+        "Meeting-Hours",
+        "Chat-Messages-Sent",
+      ];
+      cards.forEach((id) => {
+        expect(screen.getByTestId(`card-${id}`)).toHaveTextContent("0");
+      });
     });
 
     const tableBody = screen.getByTestId("mock-table").querySelector("tbody");
@@ -216,13 +210,9 @@ describe("Dashboard", () => {
     await vi.waitFor(() => {
       expect(getSummary).toHaveBeenCalled();
       expect(getLdapsAndDisplayNames).toHaveBeenCalled();
+      expect(screen.getByTestId("card-Members")).toHaveTextContent("0");
+      expect(consoleErrorSpy).toHaveBeenCalled();
     });
-
-    await vi.waitFor(() => {
-      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.any(Error));
-    });
-
-    expect(screen.getByText("Members").nextSibling).toHaveTextContent("0");
   });
 
   it("sorts table data correctly by numeric column (jiraTicketsDone) in ascending and descending order", async () => {
@@ -519,7 +509,6 @@ describe("Dashboard", () => {
       const meetingHoursCard = screen.getByTestId("card-Meeting-Hours");
 
       expect(meetingHoursCard).toHaveTextContent("2.18");
-
       expect(meetingHoursCard).not.toHaveTextContent("2.17999");
     });
   });

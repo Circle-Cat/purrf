@@ -6,8 +6,8 @@ py_library(
     name = "user_identity_service",
     srcs = ["user_identity_service.py"],
     deps = [
+        "//backend/common:constants",
         "//backend/dto",
         "//backend/entity:entities",
-        "//backend/common:constants",
     ],
 )

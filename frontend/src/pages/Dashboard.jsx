@@ -3,10 +3,10 @@ import "@/pages/Dashboard.css";
 import { Group } from "@/constants/Groups";
 import { LdapStatus } from "@/constants/LdapStatus";
 import DateRangePicker from "@/components/common/DateRangePicker";
-import Card from "@/components/common/Card";
 import Table from "@/components/common/Table";
 import { getSummary, getLdapsAndDisplayNames } from "@/api/dashboardApi";
 import { Button } from "@/components/ui/button";
+import { Card, CardHeader, CardContent, CardTitle } from "@/components/ui/card";
 
 /**
  * @typedef {Object} SummaryData
@@ -330,19 +330,33 @@ const Dashboard = () => {
 
   return (
     <div className="dashboard-page">
-      <div className="summary-cards">
-        <Card title="Members" value={summaryData.totalMembers} />
-        <Card
-          title="Jira Tickets (Done)"
-          value={summaryData.totalCompletedTickets}
-        />
-        <Card title="Merged CLs" value={summaryData.totalMergedCls} />
-        <Card title="Merged LOC" value={summaryData.totalMergedLoc} />
-        <Card title="Meeting Hours" value={summaryData.totalMeetingHours} />
-        <Card
-          title="Chat Messages Sent"
-          value={summaryData.totalMessagesSent}
-        />
+      <div className="flex flex-row gap-3 overflow-x-auto pb-2">
+        {[
+          { title: "Members", value: summaryData.totalMembers },
+          {
+            title: "Jira Tickets (Done)",
+            value: summaryData.totalCompletedTickets,
+          },
+          { title: "Merged CLs", value: summaryData.totalMergedCls },
+          { title: "Merged LOC", value: summaryData.totalMergedLoc },
+          { title: "Meeting Hours", value: summaryData.totalMeetingHours },
+          { title: "Chat Messages Sent", value: summaryData.totalMessagesSent },
+        ].map((item, index) => (
+          <Card
+            key={index}
+            className="flex-1 min-w-[140px] gap-0 py-3"
+            data-testid={`card-${item.title.replace(/\s+/g, "-")}`}
+          >
+            <CardHeader className="p-3 pb-0">
+              <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                {item.title}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-3 pt-1">
+              <div className="text-lg font-bold">{item.value}</div>
+            </CardContent>
+          </Card>
+        ))}
       </div>
 
       <div className="search-filter-row">

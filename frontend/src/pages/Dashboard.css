@@ -6,13 +6,6 @@
     box-sizing: border-box;
 }
 
-/* Summary cards layout */
-.summary-cards {
-    display: flex;
-    margin-bottom: 20px;
-    justify-content: space-around;
-}
-
 /* Search and filter row */
 .search-filter-row {
     display: flex;
