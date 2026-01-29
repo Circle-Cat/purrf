@@ -68,6 +68,7 @@ No modules.
 | <a name="input_auth0_callbacks"></a> [auth0\_callbacks](#input\_auth0\_callbacks) | Allowed callback URLs for Auth0 | `list(string)` | n/a | yes |
 | <a name="input_auth0_logout_urls"></a> [auth0\_logout\_urls](#input\_auth0\_logout\_urls) | Allowed logout URLs for Auth0 | `list(string)` | n/a | yes |
 | <a name="input_base_domain"></a> [base\_domain](#input\_base\_domain) | Base domain name | `string` | `"purrf.io"` | no |
+| <a name="input_cf_aud_tag"></a> [cf\_aud\_tag](#input\_cf\_aud\_tag) | n/a | `string` | n/a | yes |
 | <a name="input_cloudflare_account_id"></a> [cloudflare\_account\_id](#input\_cloudflare\_account\_id) | Cloudflare Account ID | `string` | n/a | yes |
 | <a name="input_cloudflare_tunnel_id"></a> [cloudflare\_tunnel\_id](#input\_cloudflare\_tunnel\_id) | Cloudflare Tunnel ID | `string` | n/a | yes |
 | <a name="input_cloudflare_zone_id"></a> [cloudflare\_zone\_id](#input\_cloudflare\_zone\_id) | Cloudflare Zone ID | `string` | n/a | yes |

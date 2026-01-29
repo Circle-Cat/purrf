@@ -32,7 +32,7 @@ resource "helm_release" "purrf_app" {
         { name = "GERRIT_HTTP_PASS", value = var.gerrit_http_pass },
         { name = "DATABASE_URL", value = local.app_sqlalchemy_async_url },
         { name = "CF_TEAM_DOMAIN", value = "ccat-dev.cloudflareaccess.com" },
-        { name = "CF_AUD_TAG", value = "7bd981f24369c85f68a65377878aacf56c32de6bd10688074524b51ad7c98f08" },
+        { name = "CF_AUD_TAG", value = var.cf_aud_tag },
         { name = "GOOGLE_AUDIENCE", value = "purrf" }
       ]
 

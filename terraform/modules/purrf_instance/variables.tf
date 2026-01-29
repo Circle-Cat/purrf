@@ -98,6 +98,10 @@ variable "gerrit_http_pass" {
   sensitive = true
 }
 
+variable "cf_aud_tag" {
+  type = string
+}
+
 locals {
   # Derived values based on environment configuration
   is_prod = var.env_name == "prod"

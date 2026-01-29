@@ -136,7 +136,7 @@ resource "auth0_trigger_actions" "post_login" {
   trigger = "post-login"
   actions {
     display_name = "googlers"
-    id           = "3f25be15-8881-416d-80c8-f7eabaef662c"
+    id           = "a6b7a44e-ad92-43d9-a93f-6177e66fa504"
   }
 }
 
