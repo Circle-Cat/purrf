@@ -236,7 +236,7 @@ resource "cloudflare_pages_project" "purrf_production" {
         }
         "VITE_AUTH0_DOMAIN" = {
           type  = "plain_text"
-          value = "dev-6mz4iysn6gfkcudu.us.auth0.com"
+          value = "login.purrf.io"
         }
         "VITE_CF_ACCESS_TENANT_DOMAIN" = {
           type  = "plain_text"
@@ -298,6 +298,20 @@ resource "cloudflare_dns_record" "root_prod" {
   type    = "CNAME"
   content = "purrf.pages.dev"
   proxied = true
+  ttl     = 1
+  lifecycle {
+    ignore_changes = [
+      comment,
+    ]
+  }
+}
+
+resource "cloudflare_dns_record" "login_prod" {
+  zone_id = local.zone_id
+  name    = "login"
+  type    = "CNAME"
+  content = "purrf-prod-cd-aghawplri72sh97p.edge.tenants.us.auth0.com"
+  proxied = false
   ttl     = 1
   lifecycle {
     ignore_changes = [
@@ -413,5 +427,33 @@ resource "cloudflare_zero_trust_access_application" "purrf_app" {
       precedence = 2
     },
   ]
-
 }
+
+resource "cloudflare_zero_trust_access_identity_provider" "mentorship_login_prod" {
+  account_id = local.cloudflare_account_id
+  name       = "Mentorship Login"
+  type       = "oidc"
+
+  config = {
+    auth_url  = "https://login.purrf.io/authorize"
+    token_url = "https://login.purrf.io/oauth/token"
+    certs_url = "https://login.purrf.io/.well-known/jwks.json"
+    client_id = data.terraform_remote_state.prod_env.outputs.auth0_client_id
+
+    scopes = [
+      "openid",
+      "email",
+      "profile",
+    ]
+
+    claims = [
+      "email",
+      "phone_number",
+      "sub",
+    ]
+
+    email_claim_name = "aud"
+    pkce_enabled     = true
+  }
+}
+
