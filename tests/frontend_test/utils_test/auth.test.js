@@ -196,8 +196,7 @@ describe("auth utils", () => {
     it("Auth0 production environment: full chain redirection (Auth0 -> CF -> Home)", () => {
       window.location.origin = "https://example.com";
       const jwt = createMockJwt({
-        custom: { sub: "email|12345" },
-        email: "user@test.com",
+        email: "MOCK_CLIENT_ID",
       });
       setMockCookie(`CF_Authorization=${jwt}`);
 
@@ -228,15 +227,6 @@ describe("auth utils", () => {
         "tenant.cloudflareaccess.com/cdn-cgi/access/logout",
       );
       expect(decodedUrl).toContain("https://example.com/cdn-cgi/access/logout");
-    });
-
-    it("Feature detection: email matches ClientID recognized as Auth0 user", () => {
-      window.location.origin = "https://example.com";
-      const jwt = createMockJwt({ email: "MOCK_CLIENT_ID" });
-      setMockCookie(`CF_Authorization=${jwt}`);
-
-      performGlobalLogout();
-      expect(window.location.href).toContain("auth.test.com/v2/logout");
     });
   });
 });

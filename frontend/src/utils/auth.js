@@ -114,12 +114,9 @@ export const performGlobalLogout = () => {
   const payload = getJwtPayload(jwt);
 
   // Determine whether the user is an Auth0 user
-  // Signal 1: custom.sub contains 'email|'
-  // Signal 2: top-level email equals the Auth0 Client ID
+  // Signal: the email matches the Auth0 Client ID (case-insensitive)
   const isAuth0User =
-    payload &&
-    ((payload.custom?.sub && payload.custom.sub.includes("email|")) ||
-      payload.email === clientId);
+    payload && payload.email?.toLowerCase() === clientId.toLowerCase();
 
   // Environment check: determine whether to skip Cloudflare logout
   const isLocal =
