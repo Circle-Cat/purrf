@@ -85,7 +85,9 @@ const Header = () => {
           <DialogOverlay className="dialog-overlay" />
           <DialogContent className="dialog-content" role="dialog">
             <div className="dialog-header">
-              <DialogTitle>Contact Administrators</DialogTitle>
+              <DialogTitle className="text-lg leading-tight font-semibold">
+                Contact Administrators
+              </DialogTitle>
               <DialogClose className="dialog-close" onClick={closeContactUs}>
                 ×
               </DialogClose>
