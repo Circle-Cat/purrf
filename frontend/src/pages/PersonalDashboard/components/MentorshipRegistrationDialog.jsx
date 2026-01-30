@@ -215,13 +215,19 @@ export default function MentorshipRegistrationDialog({
             <Label className="text-sm font-semibold">
               Goal for Current Round
             </Label>
-            <textarea
-              disabled={isLocked}
-              placeholder="What do you hope to achieve?"
-              value={goal}
-              onChange={(e) => setGoal(e.target.value)}
-              className="w-full p-2 border rounded-md text-sm min-h-[80px] focus:outline-none focus:ring-2 focus:ring-ring"
-            />
+            <div className="relative">
+              <textarea
+                disabled={isLocked}
+                placeholder="What do you hope to achieve?"
+                value={goal}
+                onChange={(e) => setGoal(e.target.value)}
+                maxLength={300}
+                className="w-full p-2 border rounded-md text-sm min-h-[80px] focus:outline-none focus:ring-2 focus:ring-ring"
+              />
+              <div className="absolute bottom-2 right-2 text-xs text-muted-foreground pointer-events-none">
+                {(goal || "").length} / 300
+              </div>
+            </div>
           </div>
 
           {/* Preference section hint */}

@@ -179,7 +179,7 @@ describe("MentorshipRegistrationDialog Component", () => {
     expect(screen.getByText(/3 mentees/i)).toBeInTheDocument();
   });
 
-  it("should handle Goal text input changes", async () => {
+  it("should handle Goal text input changes and enforce 300 character limit", async () => {
     render(<MentorshipRegistrationDialog {...defaultProps} />);
 
     await user.click(screen.getByText("Toggle Dialog"));
@@ -190,6 +190,15 @@ describe("MentorshipRegistrationDialog Component", () => {
     await user.type(textarea, "I want to learn React");
 
     expect(textarea).toHaveValue("I want to learn React");
+
+    const longText = "A".repeat(305);
+    await user.type(textarea, longText);
+    const expectedTest =
+      "I want to learn React" +
+      "A".repeat(300 - "I want to learn React".length);
+
+    expect(textarea).toHaveValue(expectedTest);
+    expect(screen.getByText("300 / 300")).toBeInTheDocument();
   });
 
   it("should call onSave with mapped data when Submit is clicked", async () => {

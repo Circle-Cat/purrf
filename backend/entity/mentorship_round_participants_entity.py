@@ -44,6 +44,6 @@ class MentorshipRoundParticipantsEntity(Base):
     program_feedback: Mapped[str | None] = mapped_column(String)
     expected_partner_user_id: Mapped[list[int] | None] = mapped_column(ARRAY(Integer))
     unexpected_partner_user_id: Mapped[list[int] | None] = mapped_column(ARRAY(Integer))
-    goal: Mapped[str | None] = mapped_column(String)
+    goal: Mapped[str | None] = mapped_column(String(300))
 
     __table_args__ = (UniqueConstraint("round_id", "user_id"),)
