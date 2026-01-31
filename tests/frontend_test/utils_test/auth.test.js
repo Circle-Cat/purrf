@@ -190,43 +190,35 @@ describe("auth utils", () => {
       window.location.origin = "http://localhost:5173";
       performGlobalLogout();
       expect(localStorage.clear).toHaveBeenCalled();
+      expect(sessionStorage.clear).toHaveBeenCalled();
       expect(window.location.href).toBe("http://localhost:5173/");
     });
 
-    it("Auth0 production environment: full chain redirection (Auth0 -> CF -> Home)", () => {
+    it("Non-local environment: full logout chain (Auth0 -> CF -> Home)", () => {
       window.location.origin = "https://example.com";
-      const jwt = createMockJwt({
-        email: "MOCK_CLIENT_ID",
-      });
-      setMockCookie(`CF_Authorization=${jwt}`);
 
       performGlobalLogout();
 
       const rawUrl = window.location.href;
+
+      // Must hit Auth0 logout
       expect(rawUrl).toContain("https://auth.test.com/v2/logout");
 
+      // Decode twice: Auth0 returnTo -> CF returnTo -> app
       const decodedTwice = decodeURIComponent(decodeURIComponent(rawUrl));
+
+      // tenant logout
       expect(decodedTwice).toContain(
         "tenant.cloudflareaccess.com/cdn-cgi/access/logout",
       );
-      expect(decodedTwice).toContain("example.com/cdn-cgi/access/logout");
-      expect(decodedTwice).toContain("returnTo=https://example.com/");
-    });
 
-    it("LDAP user production environment: direct CF chain", () => {
-      window.location.origin = "https://example.com";
-      const jwt = createMockJwt({ custom: { upn: "ldap@circlecat.org" } });
-      setMockCookie(`CF_Authorization=${jwt}`);
-
-      performGlobalLogout();
-
-      const rawUrl = window.location.href;
-      expect(rawUrl).not.toContain("auth.test.com");
-      const decodedUrl = decodeURIComponent(rawUrl);
-      expect(decodedUrl).toContain(
-        "tenant.cloudflareaccess.com/cdn-cgi/access/logout",
+      // CF domain logout
+      expect(decodedTwice).toContain(
+        "https://example.com/cdn-cgi/access/logout",
       );
-      expect(decodedUrl).toContain("https://example.com/cdn-cgi/access/logout");
+
+      // Final return to app home
+      expect(decodedTwice).toContain("returnTo=https://example.com/");
     });
   });
 });

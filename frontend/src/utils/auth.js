@@ -96,7 +96,7 @@ export const extractCloudflareUserName = (jwtString) => {
 };
 
 /**
- * Global logout handler that dynamically detects Auth0 vs LDAP users
+ * Global logout handler that dynamically detects prod or dev
  */
 export const performGlobalLogout = () => {
   // Load base configuration
@@ -109,62 +109,36 @@ export const performGlobalLogout = () => {
   const currentOrigin = window.location.origin;
   const appHome = `${currentOrigin}/`;
 
-  // Retrieve current user info to determine identity provider (IdP)
-  const jwt = getCookie("CF_Authorization");
-  const payload = getJwtPayload(jwt);
-
-  // Determine whether the user is an Auth0 user
-  // Signal: the email matches the Auth0 Client ID (case-insensitive)
-  const isAuth0User =
-    payload && payload.email?.toLowerCase() === clientId.toLowerCase();
-
-  // Environment check: determine whether to skip Cloudflare logout
+  // Environment check: determine whether to skip logout
   const isLocal =
     currentOrigin.includes("localhost") ||
     currentOrigin.includes("127.0.0.1") ||
     currentOrigin.includes("172.31");
 
-  // Build Cloudflare logout chain
-  // For all non-local environments, Cloudflare logout is always required
-  let cfLogoutStep;
-  if (isLocal) {
-    cfLogoutStep = appHome;
-    console.log(
-      "Local environment detected, clearing local state only and skipping external logout.",
-    );
-  } else {
-    // Domain-level logout → tenant-level logout → final redirect to home
-    const cfDomainLogout = `${currentOrigin}/cdn-cgi/access/logout?returnTo=${encodeURIComponent(
-      appHome,
-    )}`;
-    cfLogoutStep = `https://${cfTenantDomain}/cdn-cgi/access/logout?returnTo=${encodeURIComponent(
-      cfDomainLogout,
-    )}`;
-  }
-
-  // Final redirect decision
-  let finalUrl;
-
-  if (isAuth0User) {
-    // Auth0 users must clear the Auth0 session first, then return to the CF logout chain
-    console.log("Detected Auth0 user, initiating full logout chain.");
-    finalUrl = `https://${auth0Domain}/v2/logout?client_id=${clientId}&returnTo=${encodeURIComponent(
-      cfLogoutStep,
-    )}`;
-  } else {
-    // LDAP or other users skip Auth0 and go directly through Cloudflare
-    console.log("Detected LDAP or non-Auth0 user, skipping Auth0 logout.");
-    finalUrl = cfLogoutStep;
-  }
-
-  // Clear local state and perform redirect
   localStorage.clear();
   sessionStorage.clear();
 
-  // Log final redirect URL in development for debugging
-  if (import.meta.env.DEV) {
-    console.log("Logout redirecting to:", finalUrl);
+  if (isLocal) {
+    if (import.meta.env.DEV) {
+      console.log("Local logout: redirecting directly to home");
+    }
+    window.location.href = appHome;
+    return;
   }
+
+  // Build logout chain
+  // For all non-local environments, Cloudflare and Auth0 logout is always required
+  const cfDomainLogout = `${currentOrigin}/cdn-cgi/access/logout?returnTo=${encodeURIComponent(
+    appHome,
+  )}`;
+
+  const cfTenantLogout = `https://${cfTenantDomain}/cdn-cgi/access/logout?returnTo=${encodeURIComponent(
+    cfDomainLogout,
+  )}`;
+
+  const finalUrl = `https://${auth0Domain}/v2/logout?client_id=${clientId}&returnTo=${encodeURIComponent(
+    cfTenantLogout,
+  )}`;
 
   window.location.href = finalUrl;
 };
