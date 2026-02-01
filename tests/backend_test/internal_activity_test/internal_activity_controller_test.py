@@ -19,11 +19,13 @@ from backend.common.api_endpoints import (
     GOOGLE_CHAT_COUNT_ENDPOINT,
     GOOGLE_CHAT_SPACES_ENDPOINT,
     SUMMARY_ENDPOINT,
+    MY_SUMMARY_ENDPOINT,
 )
 from backend.utils.auth_middleware import AuthMiddleware
 from backend.internal_activity_service.internal_activity_controller import (
     InternalActivityController,
 )
+from backend.dto.internal_activity_summary_response_dto import ActivitySummaryDto
 
 
 class TestInternalActivityControllerIntegration(unittest.TestCase):
@@ -260,6 +262,29 @@ class TestInternalActivityControllerIntegration(unittest.TestCase):
 
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.summary_service.get_summary.assert_called_once()
+
+    def test_get_my_summary_success(self):
+        """Test MY_SUMMARY_ENDPOINT (POST) minimal assertions."""
+        self._set_auth([UserRole.CC_INTERNAL])
+        self.summary_service.get_my_summary.return_value = ActivitySummaryDto(
+            ldap="test",
+            chat_count=0,
+            meeting_hours=0,
+            cl_merged=0,
+            loc_merged=0,
+            jira_issue_done=0,
+        )
+
+        payload = {"startDate": "2025-01-01", "endDate": "2026-01-31"}
+
+        response = self.client.post(
+            f"{MY_SUMMARY_ENDPOINT}?sub=test&primary_email=test@u.circlecat.org",
+            json=payload,
+            headers=self.headers,
+        )
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.summary_service.get_my_summary.assert_called_once()
 
     # Authorization enforcement tests
 

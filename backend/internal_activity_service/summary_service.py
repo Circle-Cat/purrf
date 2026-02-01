@@ -1,5 +1,7 @@
 from backend.common.constants import MicrosoftAccountStatus, MicrosoftGroups
 from backend.common.constants import JiraIssueStatus
+from backend.dto.user_context_dto import UserContextDto
+from backend.dto.internal_activity_summary_response_dto import ActivitySummaryDto
 
 
 class SummaryService:
@@ -117,6 +119,22 @@ class SummaryService:
 
         return summary_data
 
+    def _summary_mapper(self, summary_dict: dict) -> ActivitySummaryDto:
+        """
+        Map raw summary data (dict) to ActivitySummaryDto.
+
+        This mapper is intentionally kept separate from _search_summary_data
+        to avoid changing the existing summary API response format.
+        """
+        return ActivitySummaryDto(
+            ldap=summary_dict.get("ldap", ""),
+            chat_count=summary_dict.get("chat_count", 0),
+            meeting_hours=summary_dict.get("meeting_hours", 0.0),
+            cl_merged=summary_dict.get("cl_merged", 0),
+            loc_merged=summary_dict.get("loc_merged", 0),
+            jira_issue_done=summary_dict.get("jira_issue_done", 0),
+        )
+
     def get_summary(self, start_date, end_date, groups_list, include_terminated):
         """
         Get summary data for a list of groups, optionally including terminated users.
@@ -140,3 +158,30 @@ class SummaryService:
 
         # Call private method to aggregate summary data
         return self._search_summary_data(user_ldaps, start_date, end_date)
+
+    def get_my_summary(
+        self, user: UserContextDto, start_date=None, end_date=None
+    ) -> ActivitySummaryDto:
+        """
+        Get summary data for the current user based on their primary email.
+
+        Args:
+            user (UserContextDto): The current user's context.
+            start_date (str | None): Optional start date.
+            end_date (str | None): Optional end date.
+
+        Returns:
+            ActivitySummaryDto: Activity summary for the current user. Metrics default to zero when no activity data is found.
+        """
+        primary_email = getattr(user, "primary_email", None)
+        if not primary_email:
+            raise ValueError("primary_email is missing from the user context.")
+
+        ldap = primary_email.split("@")[0]
+
+        data = self._search_summary_data([ldap], start_date, end_date)
+
+        if not data:
+            return ActivitySummaryDto(ldap=ldap)
+
+        return self._summary_mapper(data[0])

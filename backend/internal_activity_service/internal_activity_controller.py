@@ -1,6 +1,11 @@
 from http import HTTPStatus
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
+from backend.dto.user_context_dto import UserContextDto
+from backend.dto.internal_activity_summary_request_dto import MySummaryRequest
+
+from fastapi import Body
+
 
 from backend.common.fast_api_response_wrapper import api_response
 from backend.common.constants import (
@@ -24,6 +29,7 @@ from backend.common.api_endpoints import (
     GOOGLE_CHAT_COUNT_ENDPOINT,
     GOOGLE_CHAT_SPACES_ENDPOINT,
     SUMMARY_ENDPOINT,
+    MY_SUMMARY_ENDPOINT,
 )
 
 
@@ -186,6 +192,11 @@ class InternalActivityController:
         self.router.add_api_route(
             SUMMARY_ENDPOINT,
             endpoint=authenticate(roles=[UserRole.CC_INTERNAL])(self.get_summary),
+            methods=["POST"],
+        )
+        self.router.add_api_route(
+            MY_SUMMARY_ENDPOINT,
+            endpoint=authenticate(roles=[UserRole.CC_INTERNAL])(self.get_my_summary),
             methods=["POST"],
         )
 
@@ -372,6 +383,23 @@ class InternalActivityController:
         return api_response(
             success=True,
             message="Summary fetched successfully",
+            data=summary_data,
+            status_code=HTTPStatus.OK,
+        )
+
+    async def get_my_summary(
+        self,
+        current_user: UserContextDto,
+        body: MySummaryRequest = Body(default_factory=MySummaryRequest),
+    ):
+        summary_data = self.summary_service.get_my_summary(
+            user=current_user,
+            start_date=body.start_date,
+            end_date=body.end_date,
+        )
+        return api_response(
+            success=True,
+            message="My summary fetched successfully",
             data=summary_data,
             status_code=HTTPStatus.OK,
         )

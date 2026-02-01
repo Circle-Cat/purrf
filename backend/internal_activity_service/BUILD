@@ -10,6 +10,7 @@ py_library(
         "//backend/common:constants",
         "//backend/common:fast_api_response_wrapper",
         "//backend/common:user_role",
+        "//backend/dto",
         "//backend/utils:date_time_util",
         "//backend/utils:permission_decorators",
         "@pypi//fastapi",
@@ -90,5 +91,6 @@ py_library(
     ],
     deps = [
         "//backend/common:constants",
+        "//backend/dto",
     ],
 )

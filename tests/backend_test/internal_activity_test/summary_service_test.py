@@ -1,6 +1,7 @@
 from unittest import TestCase, main
 from unittest.mock import Mock
 from backend.internal_activity_service.summary_service import SummaryService
+from backend.dto.user_context_dto import UserContextDto
 
 
 class TestSummaryService(TestCase):
@@ -211,6 +212,72 @@ class TestSummaryService(TestCase):
             }
         ]
         self.assertEqual(result, expected)
+
+    def test_get_my_summary_no_primary_email(self):
+        user = UserContextDto(sub="user1", primary_email=None, roles=[])
+
+        with self.assertRaises(ValueError):
+            self.service.get_my_summary(
+                user, start_date="2025-09-01", end_date="2025-09-30"
+            )
+
+    def test_get_my_summary_correct_ldap_extraction(self):
+        user = UserContextDto(sub="user1", primary_email="user1@example.com", roles=[])
+        self.service._search_summary_data = Mock(
+            return_value=[
+                {
+                    "ldap": "user1",
+                    "chat_count": 10,
+                    "meeting_hours": 4.5,
+                    "cl_merged": 10,
+                    "loc_merged": 500,
+                    "jira_issue_done": 2,
+                }
+            ]
+        )
+        result = self.service.get_my_summary(
+            user, start_date="2025-09-01", end_date="2025-09-30"
+        )
+        self.assertEqual(result.ldap, "user1")
+        self.assertEqual(result.chat_count, 10)
+        self.assertEqual(result.meeting_hours, 4.5)
+        self.assertEqual(result.cl_merged, 10)
+        self.assertEqual(result.loc_merged, 500)
+        self.assertEqual(result.jira_issue_done, 2)
+
+    def test_get_my_summary_calls_search_summary_data(self):
+        user = UserContextDto(sub="user1", primary_email="user1@example.com", roles=[])
+        self.service._search_summary_data = Mock(
+            return_value=[
+                {
+                    "ldap": "user1",
+                    "chat_count": 10,
+                    "meeting_hours": 4.5,
+                    "cl_merged": 10,
+                    "loc_merged": 500,
+                    "jira_issue_done": 2,
+                }
+            ]
+        )
+        self.service.get_my_summary(
+            user, start_date="2025-09-01", end_date="2025-09-30"
+        )
+        self.service._search_summary_data.assert_called_once_with(
+            ["user1"], "2025-09-01", "2025-09-30"
+        )
+
+    def test_get_my_summary_empty_data(self):
+        user = UserContextDto(sub="user1", primary_email="user1@example.com", roles=[])
+        self.service._search_summary_data = Mock(return_value=[])
+        result = self.service.get_my_summary(
+            user, start_date="2025-09-01", end_date="2025-09-30"
+        )
+        self.assertEqual(result.ldap, "user1")
+        self.assertEqual(result.chat_count, 0)
+        self.assertEqual(result.meeting_hours, 0)
+        self.assertEqual(result.cl_merged, 0)
+        self.assertEqual(result.loc_merged, 0)
+        self.assertEqual(result.jira_issue_done, 0)
 
 
 if __name__ == "__main__":
