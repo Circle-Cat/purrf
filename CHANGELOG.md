@@ -25,8 +25,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 - Security-related fixes.
 
+## [1.0.0] - 2026-02-03
 
-## [1.0.0] - 2026-01-30
+Backend (Tag: 20260203-163352)
+Frontend (Tag: a6923bc)
+
+### Fixed
+- [PUR-378] Restrict start date for experience and education
+  ([#9108](https://review.circlecat.org/c/purrf/+/9108))
+- [PUR-377] Fix missing registration reminder
+  ([#9107](https://review.circlecat.org/c/purrf/+/9107))
+- [PUR-369] Ensure complete logout by always clearing Auth0 session
+  ([#9090](https://review.circlecat.org/c/purrf/+/9090))
+
+## [1.0.0rc] - 2026-01-30
 
 ### Added
 
