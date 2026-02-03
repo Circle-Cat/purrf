@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import EducationEditModal from "@/pages/Profile/modals/EducationEditModal";
 
@@ -122,6 +122,38 @@ describe("EducationEditModal", () => {
       screen.getByText("End date cannot be earlier than start date"),
     ).toBeInTheDocument();
     expect(mockOnSave).not.toHaveBeenCalled();
+  });
+
+  it("should show error when start date is in the future", async () => {
+    vi.useFakeTimers();
+    const mockNow = new Date(2023, 0, 1);
+    vi.setSystemTime(mockNow);
+
+    render(
+      <EducationEditModal
+        isOpen
+        onClose={mockOnClose}
+        initialData={[
+          {
+            ...mockInitialData[0],
+            startMonth: "March",
+            startYear: "2024",
+            endMonth: "January",
+            endYear: "2025",
+          },
+        ]}
+        onSave={mockOnSave}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(
+      screen.getByText("Start date cannot be in the future"),
+    ).toBeInTheDocument();
+    expect(mockOnSave).not.toHaveBeenCalled();
+
+    vi.useRealTimers();
   });
 
   it("should delete an education item", async () => {

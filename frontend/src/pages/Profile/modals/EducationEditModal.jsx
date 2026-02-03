@@ -239,7 +239,13 @@ const EducationEditModal = ({ isOpen, onClose, initialData, onSave }) => {
 
   const validate = () => {
     const newErrors = {};
+    const now = new Date();
+    const currentScore = getDateScore(
+      now.getFullYear(),
+      months[now.getMonth()],
+    );
     list.forEach((item) => {
+      const startScore = getDateScore(item.startYear, item.startMonth);
       if (!item.institution?.trim())
         newErrors[`${item.id}-institution`] = "School is required";
       if (!item.degree?.trim())
@@ -249,12 +255,16 @@ const EducationEditModal = ({ isOpen, onClose, initialData, onSave }) => {
 
       if (!item.startMonth || !item.startYear) {
         newErrors[`${item.id}-startDate`] = "Start date is required";
+      } else {
+        if (startScore > currentScore) {
+          newErrors[`${item.id}-startDate`] =
+            "Start date cannot be in the future";
+        }
       }
 
       if (!item.endMonth || !item.endYear) {
         newErrors[`${item.id}-endDate`] = "End date is required";
       } else {
-        const startScore = getDateScore(item.startYear, item.startMonth);
         const endScore = getDateScore(item.endYear, item.endMonth);
         if (endScore < startScore) {
           newErrors[`${item.id}-endDate`] =
