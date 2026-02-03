@@ -68,6 +68,8 @@ class TestRegistrationService(unittest.IsolatedAsyncioTestCase):
             ),
         )
         self.sample_registration_dto = RegistrationDto(
+            is_registered=True,
+            round_name="test round",
             global_preferences=GlobalPreferencesResponseDto(
                 specific_industry=SpecificIndustryDto(swe=True, uiux=False),
                 skillsets=SkillsetsDto(project_management=True, networking=False),
@@ -157,8 +159,12 @@ class TestRegistrationService(unittest.IsolatedAsyncioTestCase):
             self.sample_registration_dto.global_preferences
         )
         self.mock_participation_service.get_user_round_preferences.return_value = (
-            self.sample_registration_dto.round_preferences
+            self.sample_registration_dto.round_preferences,
+            True,
         )
+        mock_round = MagicMock()
+        mock_round.name = "test_round"
+        self.mock_round_repo.get_by_round_id.return_value = mock_round
 
         await self.service.get_registration_info(
             session=self.mock_session,
@@ -215,6 +221,7 @@ class TestRegistrationService(unittest.IsolatedAsyncioTestCase):
         """Test: Post registration info, containing updated global and round preferences."""
         mock_round = MagicMock()
         mock_round.description = {"application_deadline_at": "2099-01-01"}
+        mock_round.name = "test round"
         self.mock_round_repo.get_by_round_id.return_value = mock_round
 
         self.mock_user_identity_service.get_user.return_value = (self.mock_user, False)
@@ -307,6 +314,7 @@ class TestRegistrationService(unittest.IsolatedAsyncioTestCase):
         """Test: Overrides user-provided role with fallback logic regardless of frontend input."""
         mock_round = MagicMock()
         mock_round.description = {"application_deadline_at": "2099-01-01"}
+        mock_round.name = "test round"
         self.mock_round_repo.get_by_round_id.return_value = mock_round
         self.mock_user_identity_service.get_user.return_value = (self.mock_user, False)
 

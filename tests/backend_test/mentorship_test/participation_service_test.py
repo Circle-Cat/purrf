@@ -245,7 +245,10 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
 
         self.mock_mapper.map_to_round_preference_dto.return_value = expected_dto
 
-        result = await self.participation_service.get_user_round_preferences(
+        (
+            result,
+            is_registered,
+        ) = await self.participation_service.get_user_round_preferences(
             session=self.mock_session,
             user_context=self.user_context,
             user_id=self.mock_current_user.user_id,
@@ -253,6 +256,7 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(result, expected_dto)
+        self.assertEqual(is_registered, True)
         self.assertEqual(result.participant_role, ParticipantRole.MENTOR)
 
         self.mock_round_participants_repo.get_by_user_id_and_round_id.assert_awaited_once_with(
@@ -282,7 +286,10 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
         )
         self.mock_mapper.map_to_round_preference_dto.return_value = historical_dto
 
-        result = await self.participation_service.get_user_round_preferences(
+        (
+            result,
+            is_registered,
+        ) = await self.participation_service.get_user_round_preferences(
             session=self.mock_session,
             user_context=self.user_context,
             user_id=self.mock_current_user.user_id,
@@ -290,6 +297,7 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(result, historical_dto)
+        self.assertEqual(is_registered, False)
         self.mock_round_participants_repo.get_by_user_id_and_round_id.assert_awaited_once()
         self.mock_round_participants_repo.get_recent_participant_by_user_id.assert_awaited_once()
         self.mock_mapper.map_to_round_preference_dto.assert_called_once_with(
@@ -306,7 +314,10 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
 
         self.user_context.has_role.return_value = False
 
-        result = await self.participation_service.get_user_round_preferences(
+        (
+            result,
+            is_registered,
+        ) = await self.participation_service.get_user_round_preferences(
             session=self.mock_session,
             user_context=self.user_context,
             user_id=self.mock_current_user.user_id,
@@ -314,6 +325,7 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertIsInstance(result, RoundPreferencesDto)
+        self.assertEqual(is_registered, False)
         self.assertEqual(result.participant_role, ParticipantRole.MENTEE)
         self.assertEqual(result.expected_partner_ids, [])
         self.assertEqual(result.goal, "")

@@ -201,14 +201,14 @@ describe("MentorshipRegistrationDialog Component", () => {
     expect(screen.getByText("300 / 300")).toBeInTheDocument();
   });
 
-  it("should call onSave with mapped data when Submit is clicked", async () => {
+  it("should call onSave with mapped data when Register is clicked", async () => {
     const mockPayload = { api: "data" };
     mapFormToApi.mockReturnValue(mockPayload);
 
     render(<MentorshipRegistrationDialog {...defaultProps} />);
     await user.click(screen.getByText("Toggle Dialog"));
 
-    await user.click(screen.getByText("Submit"));
+    await user.click(screen.getByText("Register"));
 
     expect(mapFormToApi).toHaveBeenCalled();
     expect(defaultProps.onSave).toHaveBeenCalledWith(mockPayload);

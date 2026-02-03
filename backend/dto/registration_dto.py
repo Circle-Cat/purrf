@@ -17,5 +17,7 @@ class RoundPreferencesDto(BaseDto):
 
 
 class RegistrationDto(BaseDto):
+    is_registered: bool
+    round_name: str
     global_preferences: GlobalPreferencesDto
     round_preferences: RoundPreferencesDto

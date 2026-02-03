@@ -137,6 +137,8 @@ class RegistrationService:
             round_preferences=self.mentorship_mapper.map_to_round_preference_dto(
                 round_pref
             ),
+            round_name=round_entity.name,
+            is_registered=True,
         )
 
     async def _update_skill_and_industry_preferences(
@@ -286,12 +288,25 @@ class RegistrationService:
         if should_commit:
             await session.commit()
 
+        round_entity = await self.mentorship_round_repo.get_by_round_id(
+            session=session, round_id=round_id
+        )
+        if not round_entity:
+            self.logger.error(
+                "[RegistrationService] user tried to retrieve non-existent mentorship round %s.",
+                round_id,
+            )
+            raise ValueError(f"Mentorship round {round_id} not found.")
+
         current_user_id = current_user.user_id
 
         global_preferences = await self._get_skill_and_industry_preferences(
             session=session, user_id=current_user_id
         )
-        round_preferences = await self.participation_service.get_user_round_preferences(
+        (
+            round_preferences,
+            is_registered,
+        ) = await self.participation_service.get_user_round_preferences(
             session=session,
             user_context=user_context,
             user_id=current_user_id,
@@ -299,7 +314,10 @@ class RegistrationService:
         )
 
         return RegistrationDto(
-            global_preferences=global_preferences, round_preferences=round_preferences
+            global_preferences=global_preferences,
+            round_preferences=round_preferences,
+            round_name=round_entity.name,
+            is_registered=is_registered,
         )
 
     async def _get_skill_and_industry_preferences(

@@ -164,7 +164,7 @@ class ParticipationService:
         user_context: UserContextDto,
         user_id: int,
         round_id: int,
-    ) -> RoundPreferencesDto:
+    ) -> tuple[RoundPreferencesDto, bool]:
         """
         Retrieves preferences for a specific mentorship round with historical fallback.
 
@@ -180,23 +180,27 @@ class ParticipationService:
             round_id (int): The ID of the mentorship round.
 
         Returns:
-            RoundPreferencesDto: The resolved round-specific preferences.
+            tuple[RoundPreferencesDto, bool]
+                - RoundPreferencesDto: The resolved round-specific preferences.
+                - bool: Whether the user has registered for this round.
         """
+        is_registered = False
         participant = (
             await self.mentorship_round_participants_repo.get_by_user_id_and_round_id(
                 session=session, user_id=user_id, round_id=round_id
             )
         )
-
-        if not participant:
+        if participant:
+            is_registered = True
+        else:
             participant = await self.mentorship_round_participants_repo.get_recent_participant_by_user_id(
                 session=session, user_id=user_id
             )
 
         if participant:
             return self.mentorship_mapper.map_to_round_preference_dto(
-                participants_entity=participant
-            )
+                participants_entity=participant,
+            ), is_registered
 
         participant_role = await self.resolve_participant_role_with_fallback(
             session=session, user_context=user_context, user_id=user_id
@@ -208,4 +212,4 @@ class ParticipationService:
             unexpected_partner_ids=[],
             max_partners=1,
             goal="",
-        )
+        ), is_registered

@@ -92,7 +92,6 @@ export const mapFormToApi = (formData, currentRegistration) => {
   );
 
   return {
-    ...currentRegistration,
     globalPreferences: {
       ...currentRegistration?.globalPreferences,
       specificIndustry: industryObj,

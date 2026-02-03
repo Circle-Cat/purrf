@@ -16,6 +16,7 @@ import PersonalDashboard from "@/pages/PersonalDashboard";
 import { AuthProvider } from "@/context/auth";
 import { USER_ROLES } from "@/constants/UserRoles";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
+import { Toaster } from "@/components/ui/sonner";
 
 function App() {
   return (
@@ -77,6 +78,7 @@ function App() {
             </main>
           </div>
         </div>
+        <Toaster richColors position="top-center" closeButton />
       </Router>
     </AuthProvider>
   );

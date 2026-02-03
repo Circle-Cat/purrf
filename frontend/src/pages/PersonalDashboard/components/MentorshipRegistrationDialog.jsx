@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { toast } from "sonner";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import MultipleSelector from "@/components/common/MultipleSelector";
 import { Info } from "lucide-react";
@@ -42,6 +43,7 @@ export default function MentorshipRegistrationDialog({
   const participantRole =
     currentRegistration?.roundPreferences?.participantRole;
   const isMentor = participantRole === MentorshipParticipantRoles.MENTOR;
+  const isUpdating = currentRegistration?.isRegistered;
 
   // Form state
   const [selectedIndustries, setSelectedIndustries] = useState([]);
@@ -83,7 +85,7 @@ export default function MentorshipRegistrationDialog({
   /**
    * Build API payload from form state and submit it.
    */
-  const handleSave = () => {
+  const handleSave = async () => {
     const payload = mapFormToApi(
       {
         industries: selectedIndustries,
@@ -96,8 +98,16 @@ export default function MentorshipRegistrationDialog({
       currentRegistration,
     );
 
-    onSave(payload);
+    await onSave(payload);
     setIsOpen(false);
+
+    toast.success(
+      isUpdating ? "Registration Updated" : "Registration Completed",
+      {
+        description: `Your preferences for ${currentRegistration?.roundName || "this round"} have been ${isUpdating ? "updated" : "submitted"} successfully.`,
+        duration: 4000,
+      },
+    );
   };
 
   // Cross-filtered partner options
@@ -139,7 +149,15 @@ export default function MentorshipRegistrationDialog({
 
       <DialogContent className="sm:max-w-[450px] top-[64px] translate-y-0">
         <DialogHeader>
-          <DialogTitle>Mentorship Registration</DialogTitle>
+          <DialogTitle>
+            {" "}
+            {currentRegistration?.roundName} Mentorship Registration
+          </DialogTitle>
+          {isUpdating && (
+            <p className="text-[11px] text-destructive italic mt-1">
+              You are already registered for this round.
+            </p>
+          )}
         </DialogHeader>
 
         <div className="py-4 space-y-6 max-h-[70vh] overflow-y-auto px-1">
@@ -294,7 +312,11 @@ export default function MentorshipRegistrationDialog({
               Close
             </Button>
           </DialogTrigger>
-          {!isLocked && <Button onClick={handleSave}>Submit</Button>}
+          {!isLocked && (
+            <Button onClick={handleSave}>
+              {isUpdating ? "Update Registration" : "Register"}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -126,16 +126,15 @@ describe("mentorshipRegistration utils", () => {
       };
 
       const currentRegistration = {
-        id: "existing-id",
         globalPreferences: { foo: "bar" },
-        roundPreferences: { baz: "qux" },
+        roundPreferences: { baz: "qux", participantRole: "mentee" },
       };
 
       const result = mapFormToApi(formData, currentRegistration);
 
-      expect(result.id).toBe("existing-id");
       expect(result.globalPreferences.foo).toBe("bar");
       expect(result.roundPreferences.baz).toBe("qux");
+      expect(result.roundPreferences.participantRole).toBe("mentee");
     });
   });
 });
