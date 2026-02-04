@@ -1,5 +1,12 @@
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy import Integer, ForeignKey, Enum, CheckConstraint, UniqueConstraint
+from sqlalchemy import (
+    Integer,
+    ForeignKey,
+    Enum,
+    CheckConstraint,
+    UniqueConstraint,
+    String,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 from backend.common.base import Base
 from backend.common.mentorship_enums import (
@@ -38,6 +45,7 @@ class MentorshipPairsEntity(Base):
             values_callable=lambda obj: [e.value for e in obj],
         )
     )
+    recommendation_reason: Mapped[str] = mapped_column(String(300))
     meeting_log: Mapped[dict | None] = mapped_column(JSONB)
 
     __table_args__ = (

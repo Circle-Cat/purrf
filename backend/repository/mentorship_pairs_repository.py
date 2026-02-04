@@ -94,3 +94,21 @@ class MentorshipPairsRepository:
         )
 
         return result.scalars().all()
+
+    async def upsert_pairs(
+        self, session: AsyncSession, entity: MentorshipPairsEntity
+    ) -> MentorshipPairsEntity:
+        """
+        Inserts or updates a MentorshipPairsEntity in the database.
+
+        Args:
+            session (AsyncSession): Active async database session.
+            entity (MentorshipPairsEntity): The entity containing pairs data.
+
+        Returns:
+            MentorshipPairsEntity: The merged entity instance synchronized with the session.
+        """
+        merged_entity = await session.merge(entity)
+        await session.flush()
+
+        return merged_entity

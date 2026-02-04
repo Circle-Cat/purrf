@@ -72,6 +72,10 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
                 name="2025-fall",
                 required_meetings=5,
             ),
+            MentorshipRoundEntity(
+                name="2026-spring",
+                required_meetings=5,
+            ),
         ]
 
         await self.insert_entities(self.rounds)
@@ -85,6 +89,7 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
                 status=PairStatus.ACTIVE,
                 mentor_action_status=MentorActionStatus.CONFIRMED,
                 mentee_action_status=MenteeActionStatus.CONFIRMED,
+                recommendation_reason="",
             ),
             MentorshipPairsEntity(
                 round_id=self.rounds[1].round_id,
@@ -94,6 +99,7 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
                 status=PairStatus.ACTIVE,
                 mentor_action_status=MentorActionStatus.CONFIRMED,
                 mentee_action_status=MenteeActionStatus.CONFIRMED,
+                recommendation_reason="Mentor's area of expertise matches mentee's interests.",
             ),
             MentorshipPairsEntity(
                 round_id=self.rounds[0].round_id,
@@ -103,6 +109,7 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
                 status=PairStatus.ACTIVE,
                 mentor_action_status=MentorActionStatus.PENDING,
                 mentee_action_status=MenteeActionStatus.CONFIRMED,
+                recommendation_reason="Confirmed partnership for next round",
             ),
         ]
 
@@ -154,6 +161,47 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
 
         self.assertIsNotNone(result)
         self.assertEqual(result, [])
+
+    async def test_upsert_pairs_insert(self):
+        """Test insert a new mentorship pairs entity correctly."""
+        pair = MentorshipPairsEntity(
+            round_id=self.rounds[2].round_id,
+            mentor_id=self.users[1].user_id,
+            mentee_id=self.users[2].user_id,
+            completed_count=0,
+            status=PairStatus.ACTIVE,
+            mentor_action_status=MentorActionStatus.PENDING,
+            mentee_action_status=MenteeActionStatus.PENDING,
+            recommendation_reason="Confirmed partnership for next round.",
+        )
+
+        result = await self.repo.upsert_pairs(self.session, pair)
+
+        self.assertIsNotNone(result.pair_id)
+        self.assertEqual(result.mentor_id, pair.mentor_id)
+        self.assertEqual(result.mentee_id, pair.mentee_id)
+        self.assertEqual(result.round_id, pair.round_id)
+
+    async def test_upsert_pairs_update(self):
+        """Test update an existing mentorship_pairs entity correctly."""
+        pair = MentorshipPairsEntity(
+            round_id=self.rounds[2].round_id,
+            mentor_id=self.users[1].user_id,
+            mentee_id=self.users[2].user_id,
+            completed_count=1,
+            status=PairStatus.ACTIVE,
+            mentor_action_status=MentorActionStatus.CONFIRMED,
+            mentee_action_status=MenteeActionStatus.CONFIRMED,
+            recommendation_reason="Strong alignment in goals.",
+            meeting_log={"Date": "Feb 27, 2026", "Time": "8:30 AM - 9:00 AM (CST)"},
+        )
+
+        result = await self.repo.upsert_pairs(self.session, pair)
+
+        self.assertEqual(result.mentor_action_status, pair.mentor_action_status)
+        self.assertEqual(result.mentee_action_status, pair.mentee_action_status)
+        self.assertEqual(result.recommendation_reason, pair.recommendation_reason)
+        self.assertEqual(result.meeting_log, pair.meeting_log)
 
 
 if __name__ == "__main__":
