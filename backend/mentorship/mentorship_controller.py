@@ -11,6 +11,7 @@ from backend.common.api_endpoints import (
     MENTORSHIP_ROUNDS_ENDPOINT,
     MENTORSHIP_ROUNDS_REGISTRATION_ENDPOINT,
     MENTORSHIP_PARTNERS_ENDPOINT,
+    MENTORSHIP_MATCH_RESULT_ENDPOINT,
 )
 from backend.common.user_role import UserRole
 
@@ -73,6 +74,36 @@ class MentorshipController:
             endpoint=authenticate(roles=[UserRole.ADMIN])(self.upsert_rounds),
             methods=["POST"],
             response_model=None,
+        )
+        self.router.add_api_route(
+            MENTORSHIP_MATCH_RESULT_ENDPOINT,
+            endpoint=authenticate(roles=[UserRole.MENTORSHIP])(
+                self.get_my_match_result
+            ),
+            methods=["GET"],
+            response_model=None,
+        )
+
+    async def get_my_match_result(self, current_user: UserContextDto, round_id: int):
+        """
+        Retrieve the current user's mentorship match result for a specific round.
+
+        Args:
+            current_user (UserContextDto): The context of the currently authenticated user.
+            round_id (int): The mentorship round ID to retrieve the match result for.
+
+        Returns:
+            ApiResponse:
+                A standardized API response containing the user's match result data.
+        """
+        async with self.database.session() as session:
+            result = await self.participation_service.get_my_match_result_by_round_id(
+                session=session, user_context=current_user, round_id=round_id
+            )
+
+        return api_response(
+            message="Successfully fetched match result.",
+            data=result,
         )
 
     async def get_all_rounds(self):

@@ -9,6 +9,7 @@ from backend.entity.preference_entity import PreferenceEntity
 from backend.entity.mentorship_round_participants_entity import (
     MentorshipRoundParticipantsEntity,
 )
+from backend.common.mentorship_enums import ApprovalStatus
 
 
 class RegistrationService:
@@ -240,7 +241,9 @@ class RegistrationService:
 
         if not entity:
             entity = MentorshipRoundParticipantsEntity(
-                user_id=user_id, round_id=round_id
+                user_id=user_id,
+                round_id=round_id,
+                approval_status=ApprovalStatus.SIGNED_UP,
             )
 
         round_pref = data.round_preferences

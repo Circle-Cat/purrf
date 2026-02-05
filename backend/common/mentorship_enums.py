@@ -8,6 +8,17 @@ class ApprovalStatus(str, Enum):
     REJECTED = "rejected"
 
 
+class MatchStatus(str, Enum):
+    """Enumeration of match statuses returned to the frontend"""
+
+    UNREGISTERED = "unregistered"  # User has not signed up for the round
+    PENDING = "pending"  # Signed up, but matching process has not started
+    MATCHED = "matched"  # Successfully matched with partner(s)
+    UNMATCHED = "unmatched"  # Matching process finished but no partner found
+    REJECTED = "rejected"  # Application to participate was denied
+    UNKNOWN = "unknown"  # Fallback for undefined internal states
+
+
 class CommunicationMethod(str, Enum):
     EMAIL = "email"
     GOOGLE_CHAT = "google_chat"

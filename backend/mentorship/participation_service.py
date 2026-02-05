@@ -1,9 +1,14 @@
 from backend.dto.partner_dto import PartnerDto
+from backend.dto.matches_dto import MatchesDto
 from backend.dto.user_context_dto import UserContextDto
 from backend.dto.registration_dto import RoundPreferencesDto
 from backend.common.mentorship_enums import ParticipantRole
 from backend.common.user_role import UserRole
 from sqlalchemy.ext.asyncio import AsyncSession
+from backend.common.mentorship_enums import (
+    ApprovalStatus,
+    MatchStatus,
+)
 
 
 class ParticipationService:
@@ -213,3 +218,85 @@ class ParticipationService:
             max_partners=1,
             goal="",
         ), is_registered
+
+    async def get_my_match_result_by_round_id(
+        self, session: AsyncSession, user_context: UserContextDto, round_id: int
+    ) -> MatchesDto:
+        """
+        Retrieve the current user's mentorship match result for a specific round.
+
+        This method resolves the current user from the provided user context,
+        determines the user's participation and matching status for the given
+        mentorship round, and returns the corresponding match result.
+
+        If the user is not in a MATCHED state, an empty partners list is returned
+        along with the current match status. If the user is MATCHED, this method
+        retrieves all mentorship pairs involving the user and constructs partner
+        details for each matched counterpart.
+
+        Args:
+            session (AsyncSession): The SQLAlchemy async session used for database operations.
+            user_context (UserContextDto): Context information used to identify the current user.
+            round_id (int): The mentorship round ID to retrieve match results for.
+
+        Returns:
+            MatchesDto:
+                An object containing:
+                - round_id: The mentorship round ID.
+                - current_status: The user's match status for the round.
+                - partners: A list of PartnerDto objects representing matched partners.
+        """
+        current_user, should_commit = await self.user_identity_service.get_user(
+            session=session, user_info=user_context
+        )
+        if should_commit:
+            await session.commit()
+        uid = current_user.user_id
+
+        participant = (
+            await self.mentorship_round_participants_repo.get_by_user_id_and_round_id(
+                session=session, user_id=uid, round_id=round_id
+            )
+        )
+
+        status_map = {
+            ApprovalStatus.SIGNED_UP: MatchStatus.PENDING,
+            ApprovalStatus.UN_MATCHED: MatchStatus.UNMATCHED,
+            ApprovalStatus.REJECTED: MatchStatus.REJECTED,
+            ApprovalStatus.MATCHED: MatchStatus.MATCHED,
+        }
+        current_status = (
+            status_map.get(participant.approval_status, MatchStatus.UNKNOWN)
+            if participant
+            else MatchStatus.UNREGISTERED
+        )
+
+        partners: list[PartnerDto] = []
+
+        if current_status != MatchStatus.MATCHED:
+            return MatchesDto(
+                round_id=round_id, current_status=current_status, partners=partners
+            )
+
+        pairs_data = await self.mentorship_pairs_repository.get_pairs_with_partner_info(
+            session=session, user_id=uid, round_id=round_id
+        )
+
+        for pair, p_user in pairs_data:
+            partners.append(
+                PartnerDto(
+                    id=p_user.user_id,
+                    preferred_name=p_user.preferred_name,
+                    first_name=p_user.first_name,
+                    last_name=p_user.last_name,
+                    primary_email=p_user.primary_email,
+                    participant_role=ParticipantRole.MENTEE
+                    if pair.mentor_id == uid
+                    else ParticipantRole.MENTOR,
+                    recommendation_reason=pair.recommendation_reason,
+                )
+            )
+
+        return MatchesDto(
+            round_id=round_id, current_status=current_status, partners=partners
+        )

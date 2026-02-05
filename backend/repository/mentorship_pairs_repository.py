@@ -1,4 +1,5 @@
 from backend.entity.mentorship_pairs_entity import MentorshipPairsEntity
+from backend.entity.users_entity import UsersEntity
 from sqlalchemy import select, or_, case
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -112,3 +113,48 @@ class MentorshipPairsRepository:
         await session.flush()
 
         return merged_entity
+
+    async def get_pairs_with_partner_info(
+        self, session: AsyncSession, user_id: int, round_id: int
+    ) -> list[tuple[MentorshipPairsEntity, UsersEntity]]:
+        """
+        Retrieve all mentorship pairs for a given user in a specific round,
+        along with the corresponding partner's user information.
+
+        This query returns each mentorship pair where the given user participates
+        either as a mentor or a mentee, and joins the UsersEntity table to fetch
+        the *other* participant (i.e., the partner) in the pair.
+
+        Args:
+            session (AsyncSession): The SQLAlchemy async session used to execute the query.
+            user_id (int): The ID of the current user (mentor or mentee).
+            round_id (int): The mentorship round ID to filter pairs.
+
+        Returns:
+            list[tuple[MentorshipPairsEntity, UsersEntity]]:
+                A list of tuples where:
+                - The first element is a MentorshipPairsEntity representing the pairing.
+                - The second element is a UsersEntity representing the partner user.
+        """
+        stmt = (
+            select(MentorshipPairsEntity, UsersEntity)
+            .join(
+                UsersEntity,
+                case(
+                    (
+                        MentorshipPairsEntity.mentor_id == user_id,
+                        UsersEntity.user_id == MentorshipPairsEntity.mentee_id,
+                    ),
+                    else_=UsersEntity.user_id == MentorshipPairsEntity.mentor_id,
+                ),
+            )
+            .where(
+                MentorshipPairsEntity.round_id == round_id,
+                or_(
+                    MentorshipPairsEntity.mentor_id == user_id,
+                    MentorshipPairsEntity.mentee_id == user_id,
+                ),
+            )
+        )
+        result = await session.execute(stmt)
+        return result.all()

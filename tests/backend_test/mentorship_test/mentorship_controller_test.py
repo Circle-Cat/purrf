@@ -64,6 +64,34 @@ class TestMentorshipController(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         self.patcher.stop()
 
+    async def test_get_my_match_result(self):
+        """Test retrieve current user's mentorship match result for a round."""
+        mock_user = MagicMock(spec=UserContextDto)
+        mock_round_id = 1
+        mock_result = MagicMock()
+
+        self.mock_participation_service.get_my_match_result_by_round_id = AsyncMock(
+            return_value=mock_result
+        )
+
+        response = await self.controller.get_my_match_result(
+            current_user=mock_user,
+            round_id=mock_round_id,
+        )
+
+        self.mock_participation_service.get_my_match_result_by_round_id.assert_awaited_once_with(
+            session=self.mock_session,
+            user_context=mock_user,
+            round_id=mock_round_id,
+        )
+
+        self.mock_api_response.assert_called_once_with(
+            message="Successfully fetched match result.",
+            data=mock_result,
+        )
+
+        self.assertEqual(response["data"], mock_result)
+
     async def test_get_all_rounds(self):
         """Test retrieve mentorship rounds with complete data."""
         mock_data = [MagicMock(spec=RoundsDto)]

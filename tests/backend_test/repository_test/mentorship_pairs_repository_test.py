@@ -203,6 +203,60 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
         self.assertEqual(result.recommendation_reason, pair.recommendation_reason)
         self.assertEqual(result.meeting_log, pair.meeting_log)
 
+    async def test_get_pairs_with_partner_info_as_mentor(self):
+        """Test retrieving pairs where current user is the mentor."""
+        # Alice (users[0]) is the mentor for Bob (users[1]) in round[0]
+        result = await self.repo.get_pairs_with_partner_info(
+            self.session, self.users[0].user_id, self.rounds[0].round_id
+        )
+
+        # Alice should have 2 pairs in round 0: one with Bob, one with Charlie
+        self.assertEqual(len(result), 2)
+
+        # Verify the specific pair where Alice is Mentor
+        pair_with_bob_tuple = next(
+            (p, u) for p, u in result if u.user_id == self.users[1].user_id
+        )
+        pair, partner = pair_with_bob_tuple
+        self.assertEqual(pair.mentee_id, self.users[1].user_id)
+        self.assertEqual(partner.first_name, "Bob")
+
+    async def test_get_pairs_with_partner_info_as_mentee(self):
+        """Test retrieving pairs where current user is the mentee."""
+        # Alice (users[0]) is the mentee for Charlie (users[2]) in round[0]
+        result = await self.repo.get_pairs_with_partner_info(
+            self.session, self.users[0].user_id, self.rounds[0].round_id
+        )
+
+        # Verify the specific pair where Alice is Mentee
+        pair_with_charlie_tuple = next(
+            (p, u) for p, u in result if u.user_id == self.users[2].user_id
+        )
+        pair, partner = pair_with_charlie_tuple
+        self.assertEqual(pair.mentor_id, self.users[2].user_id)
+        self.assertEqual(partner.first_name, "Charlie")
+
+    async def test_get_pairs_with_partner_info_round_filter(self):
+        """Test that results are correctly filtered by the round_id."""
+        # Alice has only 1 pair in round[1] (with Bob)
+        result = await self.repo.get_pairs_with_partner_info(
+            self.session, self.users[0].user_id, self.rounds[1].round_id
+        )
+
+        self.assertEqual(len(result), 1)
+        pair, partner = result[0]
+        self.assertEqual(pair.round_id, self.rounds[1].round_id)
+        self.assertEqual(partner.user_id, self.users[1].user_id)
+
+    async def test_get_pairs_with_partner_info_no_result(self):
+        """Test that an empty list is returned if no matches found for the user/round."""
+        # Bob (users[1]) has no pairs in round[0] (He is in round[0] pair, but let's use Charlie who has none in round 1)
+        result = await self.repo.get_pairs_with_partner_info(
+            self.session, self.users[2].user_id, self.rounds[1].round_id
+        )
+
+        self.assertEqual(result, [])
+
 
 if __name__ == "__main__":
     unittest.main()
