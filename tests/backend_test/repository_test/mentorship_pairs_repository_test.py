@@ -257,6 +257,66 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
 
         self.assertEqual(result, [])
 
+    async def test_get_pairs_by_user_and_round_success(self):
+        """Test that all pairs for the user in a given round are returned."""
+        # In round[0], Alice (users[0]) is the mentor of Bob and the mentee of Charlie
+        result = await self.repo.get_pairs_by_user_and_round(
+            self.session, self.users[0].user_id, self.rounds[0].round_id
+        )
+
+        self.assertIsNotNone(result)
+        self.assertEqual(len(result), 2)
+        self.assertIn(self.pairs[0].pair_id, [p.pair_id for p in result])
+        self.assertIn(self.pairs[2].pair_id, [p.pair_id for p in result])
+
+    async def test_get_pairs_by_user_and_round_non_existent_user(self):
+        """Test that passing a non-existent user ID returns an empty list."""
+        result = await self.repo.get_pairs_by_user_and_round(
+            self.session, 999, self.rounds[0].round_id
+        )
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result, [])
+
+    async def test_get_pairs_by_user_and_round_non_existent_round(self):
+        """Test that passing a non-existent round ID returns an empty list."""
+        result = await self.repo.get_pairs_by_user_and_round(
+            self.session, self.users[0].user_id, 999
+        )
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result, [])
+
+    async def test_get_pair_by_mentee_and_round_success(self):
+        """Test retrieving a pair by a valid mentee and round returns the correct entity."""
+        # Bob (users[1]) is the mentee in round[0]
+        result = await self.repo.get_pair_by_mentee_and_round(
+            self.session, self.users[1].user_id, self.rounds[0].round_id
+        )
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result.pair_id, self.pairs[0].pair_id)
+        self.assertEqual(result.mentee_id, self.users[1].user_id)
+        self.assertEqual(result.mentor_id, self.users[0].user_id)
+        self.assertEqual(result.round_id, self.rounds[0].round_id)
+
+    async def test_get_pair_by_mentee_and_round_non_existent_round(self):
+        """Test that passing a non-existent round ID returns None."""
+        result = await self.repo.get_pair_by_mentee_and_round(
+            self.session, self.users[1].user_id, 999
+        )
+
+        self.assertIsNone(result)
+
+    async def test_get_pair_by_mentee_and_round_user_is_mentor(self):
+        """Test that a user who is only a mentor in the round returns None."""
+        # Charlie (users[2]) is the mentor in round[0], not a mentee
+        result = await self.repo.get_pair_by_mentee_and_round(
+            self.session, self.users[2].user_id, self.rounds[0].round_id
+        )
+
+        self.assertIsNone(result)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -6,8 +6,10 @@ from backend.dto.preference_dto import SpecificIndustryDto, SkillsetsDto
 from backend.dto.registration_dto import GlobalPreferencesDto, RoundPreferencesDto
 from backend.dto.rounds_dto import RoundsDto, TimelineDto
 from backend.dto.partner_dto import PartnerDto
+from backend.dto.meeting_dto import MeetingDto
 from backend.entity.users_entity import UsersEntity
 from backend.entity.preference_entity import PreferenceEntity
+from backend.entity.mentorship_pairs_entity import MentorshipPairsEntity
 from backend.entity.mentorship_round_participants_entity import (
     MentorshipRoundParticipantsEntity,
 )
@@ -17,6 +19,9 @@ from backend.common.mentorship_enums import (
     UserTimezone,
     CommunicationMethod,
     ParticipantRole,
+    PairStatus,
+    MenteeActionStatus,
+    MentorActionStatus,
 )
 
 
@@ -100,6 +105,48 @@ class TestMentorshipMapper(unittest.TestCase):
                 unexpected_partner_user_id=None,
                 max_partners=None,
                 goal=None,
+            ),
+        ]
+
+        self.pair_entities = [
+            MentorshipPairsEntity(
+                pair_id=12,
+                round_id=1,
+                mentor_id=456,
+                mentee_id=1,
+                completed_count=1,
+                status=PairStatus.ACTIVE,
+                mentor_action_status=MentorActionStatus.CONFIRMED,
+                mentee_action_status=MenteeActionStatus.CONFIRMED,
+                recommendation_reason="Mutual preference.",
+                meeting_log={
+                    "meeting_time_list": [
+                        {
+                            "meeting_id": str(uuid.uuid4()),
+                            "start_datetime": "2025-09-01T22:30:00Z",
+                            "end_datetime": "2025-09-01T23:00:00Z",
+                            "is_completed": True,
+                        },
+                        {
+                            "meeting_id": str(uuid.uuid4()),
+                            "end_datetime": "2025-09-02T18:00:00Z",
+                            "is_completed": True,
+                            "start_datetime": "2025-09-02T17:00:00Z",
+                        },
+                    ],
+                },
+            ),
+            MentorshipPairsEntity(
+                pair_id=11,
+                round_id=2,
+                mentor_id=20,
+                mentee_id=1,
+                completed_count=0,
+                status=PairStatus.ACTIVE,
+                mentor_action_status=MentorActionStatus.PENDING,
+                mentee_action_status=MenteeActionStatus.TIME_PROPOSED,
+                recommendation_reason="Skill alignment.",
+                meeting_log=None,
             ),
         ]
 
@@ -206,6 +253,48 @@ class TestMentorshipMapper(unittest.TestCase):
         self.assertEqual(dto.unexpected_partner_ids, [])
         self.assertEqual(dto.max_partners, 1)
         self.assertEqual(dto.goal, "")
+
+    def test_map_to_meeting_dto_success(self):
+        """Test mapping pair entities with valid meeting log to meetting dto correctly."""
+        pair_entity = self.pair_entities[0]
+        partner_id = pair_entity.mentor_id
+
+        dto = self.mapper.map_to_meeting_dto(
+            round_id=1,
+            user_timezone=UserTimezone.ASIA_SHANGHAI,
+            grouped_pairs=[(pair_entity, partner_id)],
+        )
+        info = dto.meeting_info[0]
+
+        self.assertIsInstance(dto, MeetingDto)
+        self.assertEqual(dto.round_id, 1)
+
+        self.assertEqual(info.partner_id, 456)
+        self.assertEqual(info.user_role, ParticipantRole.MENTEE)
+        self.assertEqual(len(info.meeting_time_list), 2)
+
+        self.assertTrue(info.meeting_time_list[0].is_completed)
+        self.assertEqual(
+            info.meeting_time_list[0].start_datetime.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "2025-09-01T22:30:00Z",
+        )
+
+    def test_meeting_dto_no_meeting_log(self):
+        """Test mapping pair entities with None meeting log returns empty meeting list."""
+        pair_entity = self.pair_entities[1]
+        partner_id = pair_entity.mentor_id
+
+        dto = self.mapper.map_to_meeting_dto(
+            round_id=2,
+            user_timezone=UserTimezone.ASIA_SHANGHAI,
+            grouped_pairs=[(pair_entity, partner_id)],
+        )
+
+        self.assertIsInstance(dto, MeetingDto)
+        self.assertEqual(len(dto.meeting_info), 1)
+
+        info = dto.meeting_info[0]
+        self.assertEqual(info.meeting_time_list, [])
 
 
 if __name__ == "__main__":

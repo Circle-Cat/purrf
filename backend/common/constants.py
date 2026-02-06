@@ -254,6 +254,8 @@ DATETIME_ISO8601_FORMAT = "%Y-%m-%dT%H:%M:%S.%f%z"
 DATETIME_FORMAT_YMD_HMS = "%Y-%m-%d %H:%M:%S"
 THREE_MONTHS_IN_SECONDS = 60 * 60 * 24 * 90
 
+DATETIME_UTC_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
+
 
 class ProfileField(Enum):
     TRAINING = "training"

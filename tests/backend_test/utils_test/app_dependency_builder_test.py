@@ -9,6 +9,7 @@ from backend.common.environment_constants import (
 
 @patch("backend.utils.app_dependency_builder.UserIdentityService")
 @patch("backend.utils.app_dependency_builder.MentorshipController")
+@patch("backend.utils.app_dependency_builder.MeetingService")
 @patch("backend.utils.app_dependency_builder.RegistrationService")
 @patch("backend.utils.app_dependency_builder.ParticipationService")
 @patch("backend.utils.app_dependency_builder.RoundsService")
@@ -136,6 +137,7 @@ class TestAppDependencyBuilder(TestCase):
         mock_rounds_service_cls,
         mock_participation_service_cls,
         mock_registration_service_cls,
+        mock_meeting_service_cls,
         mock_mentorship_controller_cls,
         mock_user_identity_service_cls,
     ):
@@ -437,6 +439,7 @@ class TestAppDependencyBuilder(TestCase):
             rounds_service=mock_rounds_service_cls.return_value,
             participation_service=mock_participation_service_cls.return_value,
             registration_service=mock_registration_service_cls.return_value,
+            meeting_service=mock_meeting_service_cls.return_value,
             database=mock_database_cls.return_value,
         )
         mock_rounds_service_cls.assert_called_once_with(
@@ -459,6 +462,12 @@ class TestAppDependencyBuilder(TestCase):
             participation_service=mock_participation_service_cls.return_value,
             user_identity_service=mock_user_identity_service_cls.return_value,
             mentorship_mapper=mock_mentorship_mapper_cls.return_value,
+        )
+        mock_meeting_service_cls.assert_called_once_with(
+            logger=mock_logger,
+            mentorship_pairs_repository=mock_mentorship_pairs_repo_cls.return_value,
+            mentorship_mapper=mock_mentorship_mapper_cls.return_value,
+            user_identity_service=mock_user_identity_service_cls.return_value,
         )
 
         mock_fast_app_factory_cls.assert_called_once_with(

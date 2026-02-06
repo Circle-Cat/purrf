@@ -92,6 +92,7 @@ from backend.mentorship.mentorship_controller import MentorshipController
 from backend.mentorship.rounds_service import RoundsService
 from backend.mentorship.participation_service import ParticipationService
 from backend.mentorship.registration_service import RegistrationService
+from backend.mentorship.meeting_service import MeetingService
 from backend.profile.profile_query_service import ProfileQueryService
 from backend.profile.profile_command_service import ProfileCommandService
 from backend.profile.profile_mapper import ProfileMapper
@@ -385,10 +386,17 @@ class AppDependencyBuilder:
             user_identity_service=self.user_identity_service,
             mentorship_mapper=self.mentorship_mapper,
         )
+        self.meeting_service = MeetingService(
+            logger=self.logger,
+            mentorship_pairs_repository=self.mentorship_pairs_repository,
+            mentorship_mapper=self.mentorship_mapper,
+            user_identity_service=self.user_identity_service,
+        )
         self.mentorship_controller = MentorshipController(
             rounds_service=self.rounds_service,
             participation_service=self.participation_service,
             registration_service=self.registration_service,
+            meeting_service=self.meeting_service,
             database=self.database,
         )
         self.experience_repository = ExperienceRepository()

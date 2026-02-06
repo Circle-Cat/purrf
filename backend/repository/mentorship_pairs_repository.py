@@ -158,3 +158,33 @@ class MentorshipPairsRepository:
         )
         result = await session.execute(stmt)
         return result.all()
+
+    async def get_pairs_by_user_and_round(
+        self, session: AsyncSession, user_id: int, round_id: int
+    ) -> list[MentorshipPairsEntity]:
+        if not user_id or not round_id:
+            return []
+
+        result = await session.execute(
+            select(MentorshipPairsEntity).where(
+                MentorshipPairsEntity.round_id == round_id,
+                or_(
+                    MentorshipPairsEntity.mentor_id == user_id,
+                    MentorshipPairsEntity.mentee_id == user_id,
+                ),
+            )
+        )
+
+        return result.scalars().all()
+
+    async def get_pair_by_mentee_and_round(
+        self, session: AsyncSession, mentee_id: int, round_id: int
+    ) -> MentorshipPairsEntity | None:
+        result = await session.execute(
+            select(MentorshipPairsEntity).where(
+                MentorshipPairsEntity.round_id == round_id,
+                MentorshipPairsEntity.mentee_id == mentee_id,
+            )
+        )
+
+        return result.scalars().one_or_none()

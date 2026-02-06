@@ -2,6 +2,8 @@ from fastapi import APIRouter
 from backend.dto.rounds_dto import RoundsDto
 from backend.dto.rounds_create_dto import RoundsCreateDto
 from backend.dto.partner_dto import PartnerDto
+from backend.dto.meeting_dto import MeetingDto
+from backend.dto.meeting_create_dto import MeetingCreateDto
 from backend.dto.user_context_dto import UserContextDto
 from backend.dto.registration_dto import RegistrationDto
 from backend.dto.registration_create_dto import RegistrationCreateDto
@@ -12,6 +14,7 @@ from backend.common.api_endpoints import (
     MENTORSHIP_ROUNDS_REGISTRATION_ENDPOINT,
     MENTORSHIP_PARTNERS_ENDPOINT,
     MENTORSHIP_MATCH_RESULT_ENDPOINT,
+    MENTORSHIP_MEETINGS_ENDPOINT,
 )
 from backend.common.user_role import UserRole
 
@@ -22,6 +25,7 @@ class MentorshipController:
         rounds_service,
         participation_service,
         registration_service,
+        meeting_service,
         database,
     ):
         """
@@ -31,12 +35,14 @@ class MentorshipController:
             rounds_service: RoundsService instance.
             participation_service: ParticipationService instance.
             registration_service: RegistrationService instance.
+            meeting_service: MeetingService instance.
             database (Database): Database access object providing async session management.
         """
 
         self.rounds_service = rounds_service
         self.participation_service = participation_service
         self.registration_service = registration_service
+        self.meeting_service = meeting_service
         self.database = database
 
         self.router = APIRouter(tags=["mentorship"])
@@ -81,6 +87,22 @@ class MentorshipController:
                 self.get_my_match_result
             ),
             methods=["GET"],
+            response_model=None,
+        )
+
+        self.router.add_api_route(
+            MENTORSHIP_MEETINGS_ENDPOINT,
+            endpoint=authenticate(roles=[UserRole.MENTORSHIP])(
+                self.get_meetings_for_user
+            ),
+            methods=["GET"],
+            response_model=None,
+        )
+
+        self.router.add_api_route(
+            MENTORSHIP_MEETINGS_ENDPOINT,
+            endpoint=authenticate(roles=[UserRole.MENTORSHIP])(self.upsert_meetings),
+            methods=["POST"],
             response_model=None,
         )
 
@@ -218,4 +240,31 @@ class MentorshipController:
         return api_response(
             message="Successfully created or updated the mentorship round.",
             data=upsert_rounds,
+        )
+
+    async def get_meetings_for_user(self, current_user: UserContextDto, round_id: int):
+        async with self.database.session() as session:
+            meetings: MeetingDto = (
+                await self.meeting_service.get_meetings_by_user_and_round(
+                    session=session, user_context=current_user, round_id=round_id
+                )
+            )
+
+        return api_response(
+            message="Successfully fetched mentorship meeting logs.",
+            data=meetings,
+        )
+
+    async def upsert_meetings(
+        self, current_user: UserContextDto, payload: MeetingCreateDto
+    ):
+        async with self.database.session() as session:
+            updated_meeting_log: MeetingDto = (
+                await self.meeting_service.upsert_meetings(
+                    session=session, user_context=current_user, data=payload
+                )
+            )
+        return api_response(
+            message="Successfully updated mentorship meeting logs.",
+            data=updated_meeting_log,
         )

@@ -25,6 +25,10 @@ class TestMentorshipController(unittest.IsolatedAsyncioTestCase):
         self.mock_registration_service.get_registration_info = AsyncMock()
         self.mock_registration_service.update_registration_info = AsyncMock()
 
+        self.mock_meeting_service = MagicMock()
+        self.mock_meeting_service.get_meetings_by_user_and_round = AsyncMock()
+        self.mock_meeting_service.upsert_meetings = AsyncMock()
+
         self.mock_database = MagicMock()
         self.mock_session = AsyncMock()
         self.mock_database.session.return_value.__aenter__.return_value = (
@@ -36,6 +40,7 @@ class TestMentorshipController(unittest.IsolatedAsyncioTestCase):
             rounds_service=self.mock_rounds_service,
             participation_service=self.mock_participation_service,
             registration_service=self.mock_registration_service,
+            meeting_service=self.mock_meeting_service,
             database=self.mock_database,
         )
 
@@ -253,6 +258,52 @@ class TestMentorshipController(unittest.IsolatedAsyncioTestCase):
         self.mock_rounds_service.upsert_rounds.assert_awaited_once_with(
             session=self.mock_session, data=payload
         )
+
+    async def test_get_meetings_for_user(self):
+        """Test retrieve mentorship meeting logs for current user."""
+        mock_user = MagicMock(spec=UserContextDto, sub="valid-sub")
+        mock_round_id = 1
+        mock_meeting_data = MagicMock()
+
+        self.mock_meeting_service.get_meetings_by_user_and_round.return_value = (
+            mock_meeting_data
+        )
+
+        response = await self.controller.get_meetings_for_user(
+            current_user=mock_user, round_id=mock_round_id
+        )
+
+        self.mock_meeting_service.get_meetings_by_user_and_round.assert_awaited_once_with(
+            session=self.mock_session, user_context=mock_user, round_id=mock_round_id
+        )
+
+        self.mock_api_response.assert_called_once_with(
+            message="Successfully fetched mentorship meeting logs.",
+            data=mock_meeting_data,
+        )
+        self.assertEqual(response["data"], mock_meeting_data)
+
+    async def test_upsert_meetings(self):
+        """Test update or create mentorship meeting logs."""
+        mock_user = MagicMock(spec=UserContextDto, sub="valid-sub")
+        mock_payload = MagicMock()
+        mock_updated_data = MagicMock()
+
+        self.mock_meeting_service.upsert_meetings.return_value = mock_updated_data
+
+        response = await self.controller.upsert_meetings(
+            current_user=mock_user, payload=mock_payload
+        )
+
+        self.mock_meeting_service.upsert_meetings.assert_awaited_once_with(
+            session=self.mock_session, user_context=mock_user, data=mock_payload
+        )
+
+        self.mock_api_response.assert_called_once_with(
+            message="Successfully updated mentorship meeting logs.",
+            data=mock_updated_data,
+        )
+        self.assertEqual(response["data"], mock_updated_data)
 
 
 if __name__ == "__main__":

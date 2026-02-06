@@ -2,12 +2,15 @@ from backend.dto.rounds_dto import RoundsDto, TimelineDto
 from backend.dto.partner_dto import PartnerDto
 from backend.dto.preference_dto import SpecificIndustryDto, SkillsetsDto
 from backend.dto.registration_dto import GlobalPreferencesDto, RoundPreferencesDto
+from backend.dto.meeting_dto import MeetingDto, MeetingInfoDto, MeetingTimeDto
+from backend.entity.mentorship_pairs_entity import MentorshipPairsEntity
 from backend.entity.preference_entity import PreferenceEntity
 from backend.entity.mentorship_round_participants_entity import (
     MentorshipRoundParticipantsEntity,
 )
 from backend.entity.users_entity import UsersEntity
 from backend.entity.mentorship_round_entity import MentorshipRoundEntity
+from backend.common.mentorship_enums import ParticipantRole, UserTimezone
 
 
 class MentorshipMapper:
@@ -106,4 +109,29 @@ class MentorshipMapper:
             if participants_entity.max_partners is not None
             else 1,
             goal=participants_entity.goal or "",
+        )
+
+    def map_to_meeting_dto(
+        self,
+        round_id: int,
+        user_timezone: UserTimezone,
+        grouped_pairs: list[tuple[MentorshipPairsEntity, int]],
+    ) -> MeetingDto:
+        """Map (MentorshipPairsEntity, partner_id) tuples to MeetingDto."""
+        return MeetingDto(
+            round_id=round_id,
+            user_timezone=user_timezone,
+            meeting_info=[
+                MeetingInfoDto(
+                    partner_id=partner_id,
+                    user_role=ParticipantRole.MENTEE
+                    if partner_id == pair.mentor_id
+                    else ParticipantRole.MENTOR,
+                    meeting_time_list=[
+                        MeetingTimeDto(**m)
+                        for m in (pair.meeting_log or {}).get("meeting_time_list") or []
+                    ],
+                )
+                for pair, partner_id in grouped_pairs
+            ],
         )
