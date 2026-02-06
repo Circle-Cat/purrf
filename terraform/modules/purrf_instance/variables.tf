@@ -102,6 +102,19 @@ variable "cf_aud_tag" {
   type = string
 }
 
+variable "azure_client_id" {
+  type = string
+}
+
+variable "azure_client_secert" {
+  type      = string
+  sensitive = true
+}
+
+variable "azure_tenant_id" {
+  type = string
+}
+
 locals {
   # Derived values based on environment configuration
   is_prod = var.env_name == "prod"
@@ -160,7 +173,11 @@ locals {
       entry_point = var.microsoft_lifecycle_entry_point
       memory_mb   = 256
       need_redis  = true
-      env_vars    = {}
+      env_vars = {
+        AZURE_CLIENT_ID     = var.azure_client_id
+        AZURE_CLIENT_SECRET = var.azure_client_secert // TODO: https://jira.circlecat.org/browse/PUR-383?filter=-1 Implement Workload Identity Federation for GCP Cloud Functions to access Azure
+        AZURE_TENANT_ID     = var.azure_tenant_id
+      }
     },
     "gerrit-events" = {
       source_dir  = "${path.module}/${var.gerrit_producer_code_dir}"
