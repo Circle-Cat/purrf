@@ -2,6 +2,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Target, ExternalLink } from "lucide-react";
 import MentorshipRegistrationDialog from "@/pages/PersonalDashboard/components/MentorshipRegistrationDialog";
+import MatchingResultDialog from "@/pages/PersonalDashboard/components/MatchingResultDialog";
 
 export default function MentorshipInfoBanner({
   registration,
@@ -12,6 +13,9 @@ export default function MentorshipInfoBanner({
   isPartnersLoading,
   onLoadPastPartners,
   refreshRegistration,
+  matchResult,
+  matchResultRoundName,
+  canViewMatch,
 }) {
   // Do not render the banner if there is no registration data,
   // registration is closed, and feedback is not enabled
@@ -53,6 +57,17 @@ export default function MentorshipInfoBanner({
               onSave={onSaveRegistration}
             />
 
+            {/* Render these buttons only when the user is registered for the current round */}
+            {registration?.isRegistered && (
+              <>
+                {/* View Matching result */}
+                <MatchingResultDialog
+                  roundName={matchResultRoundName}
+                  canViewMatch={canViewMatch}
+                  matchData={matchResult}
+                />
+              </>
+            )}
             {/* Feedback button */}
             <Button
               variant="outline"

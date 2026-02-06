@@ -21,7 +21,46 @@ describe("calculateMentorshipSlots", () => {
       isFeedbackEnabled: false,
       regRoundId: null,
       isRegistrationOpen: false,
+      matchResultRoundName: "",
+      canViewMatch: false,
     });
+  });
+
+  it("should enable canViewMatch when today is within the announcement period", () => {
+    const rounds = [
+      {
+        id: "round-active",
+        name: "Spring 2024",
+        timeline: {
+          promotionStartAt: "2023-09-01",
+          matchNotificationAt: "2023-10-10", // 10-15 is after this
+          feedbackDeadlineAt: "2023-10-20", // 10-15 is before this
+        },
+      },
+    ];
+
+    const result = calculateMentorshipSlots(rounds);
+    expect(result.canViewMatch).toBe(true);
+    expect(result.matchResultRoundName).toBe("Spring 2024");
+  });
+
+  it("should disable canViewMatch when today is before the notification date", () => {
+    const rounds = [
+      {
+        id: "round-future",
+        name: "Autumn 2024",
+        timeline: {
+          promotionStartAt: "2023-10-01",
+          matchNotificationAt: "2023-11-01", // 10-15 is before this
+          feedbackDeadlineAt: "2023-11-15",
+        },
+      },
+    ];
+
+    const result = calculateMentorshipSlots(rounds);
+    expect(result.canViewMatch).toBe(false);
+    // Should still pick up the name from lastStartedRound as a fallback
+    expect(result.matchResultRoundName).toBe("Autumn 2024");
   });
 
   it("should correctly identify a round that is currently open for registration", () => {

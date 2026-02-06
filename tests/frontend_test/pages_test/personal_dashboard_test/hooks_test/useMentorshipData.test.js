@@ -6,6 +6,7 @@ import {
   getMyMentorshipRegistration,
   getMyMentorshipPartners,
   postMyMentorshipRegistration,
+  getMyMentorshipMatchResult,
 } from "@/api/mentorshipApi";
 import { calculateMentorshipSlots } from "@/pages/PersonalDashboard/utils/mentorshipRounds";
 
@@ -14,6 +15,7 @@ vi.mock("@/api/mentorshipApi", () => ({
   getMyMentorshipPartners: vi.fn(),
   getMyMentorshipRegistration: vi.fn(),
   postMyMentorshipRegistration: vi.fn(),
+  getMyMentorshipMatchResult: vi.fn(),
 }));
 
 vi.mock("@/pages/PersonalDashboard/utils/mentorshipRounds", () => ({
@@ -23,6 +25,88 @@ vi.mock("@/pages/PersonalDashboard/utils/mentorshipRounds", () => ({
 describe("useMentorshipData Hook", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it("should fetch match results if the user is registered", async () => {
+    // 1. Setup Rounds and Slots
+    getAllMentorshipRounds.mockResolvedValue({ data: [{ id: "round-1" }] });
+    calculateMentorshipSlots.mockReturnValue({
+      regRoundId: "round-1",
+      canViewMatch: true,
+    });
+
+    // 2. Setup Registration (User IS registered)
+    const mockRegData = { id: "reg-123", isRegistered: true };
+    getMyMentorshipRegistration.mockResolvedValue({ data: mockRegData });
+
+    // 3. Setup Match Result
+    const mockMatchData = {
+      currentStatus: "matched",
+      partners: [{ id: "p1" }],
+    };
+    getMyMentorshipMatchResult.mockResolvedValue({ data: mockMatchData });
+
+    const { result } = renderHook(() => useMentorshipData());
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    // Verify both APIs were called
+    expect(getMyMentorshipRegistration).toHaveBeenCalledWith("round-1");
+    expect(getMyMentorshipMatchResult).toHaveBeenCalledWith("round-1");
+
+    // Verify state update
+    expect(result.current.matchResult).toEqual(mockMatchData);
+  });
+
+  it("should NOT fetch match results if the user is not registered", async () => {
+    getAllMentorshipRounds.mockResolvedValue({ data: [{ id: "round-1" }] });
+    calculateMentorshipSlots.mockReturnValue({ regRoundId: "round-1" });
+
+    // User is NOT registered
+    const mockRegData = { id: "reg-123", isRegistered: false };
+    getMyMentorshipRegistration.mockResolvedValue({ data: mockRegData });
+
+    const { result } = renderHook(() => useMentorshipData());
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    expect(getMyMentorshipRegistration).toHaveBeenCalled();
+    // Verify match result API was skipped
+    expect(getMyMentorshipMatchResult).not.toHaveBeenCalled();
+    expect(result.current.matchResult).toBeNull();
+  });
+
+  it("should handle match result API failure gracefully", async () => {
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    getAllMentorshipRounds.mockResolvedValue({ data: [{ id: "round-1" }] });
+    calculateMentorshipSlots.mockReturnValue({ regRoundId: "round-1" });
+
+    // Registration succeeds
+    getMyMentorshipRegistration.mockResolvedValue({
+      data: { isRegistered: true },
+    });
+
+    // Match result fails
+    getMyMentorshipMatchResult.mockRejectedValue(new Error("Match API Error"));
+
+    const { result } = renderHook(() => useMentorshipData());
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    // Hook should still finish loading even if match fetch fails
+    expect(result.current.isLoading).toBe(false);
+    expect(result.current.matchResult).toBeNull();
+    expect(consoleSpy).toHaveBeenCalledWith(
+      "Failed to fetch match result",
+      expect.any(Error),
+    );
+
+    consoleSpy.mockRestore();
   });
 
   it("should fetch rounds on initial load and fetch registration data based on the result", async () => {

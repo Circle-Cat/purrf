@@ -192,12 +192,10 @@ describe("MentorshipRegistrationDialog Component", () => {
     expect(textarea).toHaveValue("I want to learn React");
 
     const longText = "A".repeat(305);
-    await user.type(textarea, longText);
-    const expectedTest =
-      "I want to learn React" +
-      "A".repeat(300 - "I want to learn React".length);
+    await user.clear(textarea);
+    await user.paste(longText);
 
-    expect(textarea).toHaveValue(expectedTest);
+    expect(textarea).toHaveValue("A".repeat(300));
     expect(screen.getByText("300 / 300")).toBeInTheDocument();
   });
 

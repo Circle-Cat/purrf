@@ -3,6 +3,7 @@ import {
   getMyMentorshipPartners,
   getMyMentorshipRegistration,
   postMyMentorshipRegistration,
+  getMyMentorshipMatchResult,
 } from "@/api/mentorshipApi";
 
 import { calculateMentorshipSlots } from "@/pages/PersonalDashboard/utils/mentorshipRounds";
@@ -41,8 +42,11 @@ export const useMentorshipData = () => {
     feedbackRoundId: null,
     isRegistrationOpen: false,
     isFeedbackEnabled: false,
+    matchResultRoundId: null,
+    matchResultRoundName: "",
+    canViewMatch: false,
   });
-
+  const [matchResult, setMatchResult] = useState(null);
   // Current user's registration data for the active round
   const [registration, setRegistration] = useState(null);
 
@@ -99,6 +103,19 @@ export const useMentorshipData = () => {
             status.regRoundId,
           );
           setRegistration(regData);
+
+          if (regData && regData.isRegistered) {
+            try {
+              const { data: matchData } = await getMyMentorshipMatchResult(
+                status.regRoundId,
+              );
+              setMatchResult(matchData);
+            } catch (matchErr) {
+              console.error("Failed to fetch match result", matchErr);
+            }
+          } else {
+            setMatchResult(null);
+          }
         }
       } catch (err) {
         console.error("Failed to fetch mentorship data", err);
@@ -152,5 +169,6 @@ export const useMentorshipData = () => {
     isPartnersLoading,
     loadPastPartners,
     pastPartners,
+    matchResult,
   };
 };

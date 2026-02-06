@@ -3,6 +3,7 @@ export const API_ENDPOINTS = {
   MY_ROLES: "/roles/me",
   MENTORSHIP_REGISTRATION: (roundId) =>
     `/mentorship/rounds/${roundId}/registration`,
+  MENTORSHIP_MATCH_RESULT: (roundId) => `/mentorship/rounds/${roundId}/matches`,
   MENTORSHIP_PARTNERS: "/mentorship/partners/me",
   MENTORSHIP_ROUNDS: "/mentorship/rounds",
 };

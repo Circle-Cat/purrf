@@ -67,6 +67,18 @@ export const calculateMentorshipSlots = (allRounds) => {
     (r) => today >= r.timeline.promotionStartAt,
   );
 
+  /**
+   *  3. Match Result Logic
+   *
+   * Goal: Identify the round that is currently in the announcement period.
+   * Logic: The current date must fall between `matchNotificationAt` and `feedbackDeadlineAt`.
+   */
+  const activeMatchRound = sorted.find(
+    (r) =>
+      r.timeline.matchNotificationAt &&
+      today >= r.timeline.matchNotificationAt &&
+      today <= r.timeline.feedbackDeadlineAt,
+  );
   return {
     // Controls the "Feedback" button
     feedbackRoundId: feedbackRound?.id || null,
@@ -75,5 +87,10 @@ export const calculateMentorshipSlots = (allRounds) => {
     // Controls the "Register" / "View" button
     regRoundId: currentRegRound?.id || lastStartedRound?.id || null,
     isRegistrationOpen: Boolean(currentRegRound), // true = "Register", false = "View"
+    matchResultRoundName:
+      activeMatchRound?.name || lastStartedRound?.name || "",
+
+    // Set to true only during the announcement period
+    canViewMatch: !!activeMatchRound,
   };
 };

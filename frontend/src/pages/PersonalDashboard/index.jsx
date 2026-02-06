@@ -26,6 +26,9 @@ const PersonalDashboard = () => {
     isPartnersLoading, // Whether partner data is currently loading
     loadPastPartners, // Function to trigger loading of past partners
     refreshRegistration, // Function to refresh registration data
+    canViewMatch, // Whether the matching result is visible to the user (e.g. during the announcement period)
+    matchResult, // The Matching result data
+    matchResultRoundName, // Display name of the matching result round
   } = useMentorshipData();
 
   return (
@@ -50,6 +53,9 @@ const PersonalDashboard = () => {
         isPartnersLoading={isPartnersLoading}
         onLoadPastPartners={loadPastPartners}
         refreshRegistration={refreshRegistration}
+        matchResult={matchResult}
+        matchResultRoundName={matchResultRoundName}
+        canViewMatch={canViewMatch}
       />
     </div>
   );

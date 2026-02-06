@@ -24,6 +24,13 @@ export const getMyMentorshipRegistration = (roundId) =>
   request.get(API_ENDPOINTS.MENTORSHIP_REGISTRATION(roundId));
 
 /**
+ * Fetch the mentorship match result for a specific round.
+ * @param {string} roundId - The ID of the mentorship round.
+ */
+export const getMyMentorshipMatchResult = (roundId) =>
+  request.get(API_ENDPOINTS.MENTORSHIP_MATCH_RESULT(roundId));
+
+/**
  * Register for a specific mentorship round with the provided data.
  * @param {string} roundId - The ID of the mentorship round.
  * @param {object} data - The registration data.

@@ -13,6 +13,15 @@ vi.mock(
   }),
 );
 
+vi.mock("@/pages/PersonalDashboard/components/MatchingResultDialog", () => ({
+  default: vi.fn((props) => (
+    <div data-testid="mock-matching-dialog">
+      Round: {props.roundName} | Can View: {props.canViewMatch ? "Yes" : "No"} |
+      Status: {props.matchData?.currentStatus || "N/A"}
+    </div>
+  )),
+}));
+
 describe("MentorshipInfoBanner", () => {
   const defaultProps = {
     registration: null,
@@ -22,10 +31,54 @@ describe("MentorshipInfoBanner", () => {
     pastPartners: [],
     isPartnersLoading: false,
     onLoadPastPartners: vi.fn(),
+    matchResult: null,
+    matchResultRoundName: "Spring 2026",
+    canViewMatch: false,
   };
 
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it("renders the MatchingResultDialog only when the user is registered", () => {
+    const { rerender } = render(
+      <MentorshipInfoBanner
+        {...defaultProps}
+        registration={{ isRegistered: false }}
+      />,
+    );
+
+    expect(
+      screen.queryByTestId("mock-matching-dialog"),
+    ).not.toBeInTheDocument();
+
+    rerender(
+      <MentorshipInfoBanner
+        {...defaultProps}
+        registration={{ isRegistered: true }}
+      />,
+    );
+
+    expect(screen.getByTestId("mock-matching-dialog")).toBeInTheDocument();
+  });
+
+  it("passes match data props correctly to MatchingResultDialog", () => {
+    const mockMatchData = { currentStatus: "matched" };
+
+    render(
+      <MentorshipInfoBanner
+        {...defaultProps}
+        registration={{ isRegistered: true }}
+        matchResult={mockMatchData}
+        matchResultRoundName="Test Round"
+        canViewMatch={true}
+      />,
+    );
+
+    const dialog = screen.getByTestId("mock-matching-dialog");
+    expect(dialog).toHaveTextContent("Round: Test Round");
+    expect(dialog).toHaveTextContent("Can View: Yes");
+    expect(dialog).toHaveTextContent("Status: matched");
   });
 
   it("does not render when registration is closed, no registration exists, and feedback is disabled", () => {
