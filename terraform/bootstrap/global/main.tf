@@ -207,7 +207,7 @@ resource "cloudflare_pages_project" "purrf_production" {
         }
         "VITE_AUTH0_DOMAIN" = {
           type  = "plain_text"
-          value = "dev-6mz4iysn6gfkcudu.us.auth0.com"
+          value = "test-login.purrf.io"
         }
         "VITE_CF_ACCESS_TENANT_DOMAIN" = {
           type  = "plain_text"
@@ -311,6 +311,20 @@ resource "cloudflare_dns_record" "login_prod" {
   name    = "login"
   type    = "CNAME"
   content = "purrf-prod-cd-aghawplri72sh97p.edge.tenants.us.auth0.com"
+  proxied = false
+  ttl     = 1
+  lifecycle {
+    ignore_changes = [
+      comment,
+    ]
+  }
+}
+
+resource "cloudflare_dns_record" "login_test" {
+  zone_id = local.zone_id
+  name    = "test-login"
+  type    = "CNAME"
+  content = "dev-6mz4iysn6gfkcudu-cd-hu0gldgw5s3o5lwv.edge.tenants.us.auth0.com"
   proxied = false
   ttl     = 1
   lifecycle {

@@ -7,3 +7,8 @@ variable "gerrit_http_pass" {
   type      = string
   sensitive = true
 }
+
+variable "azure_client_secert" {
+  type      = string
+  sensitive = true
+}

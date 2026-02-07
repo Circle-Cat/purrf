@@ -9,6 +9,8 @@ resource "helm_release" "purrf_app" {
   values = [
     yamlencode({
 
+      fullnameOverride = local.name_prefix
+
       image = {
         repository = "us-docker.pkg.dev/k8s-dev-437501/purrf/purrf"
         tag        = var.image_tag

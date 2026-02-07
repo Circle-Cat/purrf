@@ -132,6 +132,7 @@ resource "auth0_prompt_custom_text" "en_login_id" {
   })
 }
 
+/*
 resource "auth0_trigger_actions" "post_login" {
   trigger = "post-login"
   actions {
@@ -139,6 +140,7 @@ resource "auth0_trigger_actions" "post_login" {
     id           = "a6b7a44e-ad92-43d9-a93f-6177e66fa504"
   }
 }
+*/
 
 # Auth0 Free plan includes a built-in `google-oauth2` social connection.
 # We use this default connection, but to restrict allowed user domains,
