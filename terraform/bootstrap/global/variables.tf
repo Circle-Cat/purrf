@@ -61,3 +61,9 @@ variable "main_gcp_region" {
   type        = string
   default     = "us-west1"
 }
+
+variable "auth0_test_client_secret" {
+  description = "Auth0 test client secret"
+  type        = string
+  default     = "us-west1"
+}

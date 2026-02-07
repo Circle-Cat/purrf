@@ -409,12 +409,6 @@ resource "cloudflare_zero_trust_access_application" "purrf_app" {
   destinations = [
     { type = "public", uri = local.environments.prod.origin_web },
     { type = "public", uri = local.environments.prod.api_host },
-    { type = "public", uri = local.environments.test.origin_web },
-    { type = "public", uri = local.environments.test.api_host },
-    {
-      type = "public"
-      uri  = "*.purrf.pages.dev"
-    },
   ]
   allowed_idps         = ["762bbddc-6753-4c4b-898e-89e18ecc410c", "e0e42a6d-d9a1-4e9e-9338-9643176c5fc4"]
   session_duration     = "24h"
@@ -425,7 +419,7 @@ resource "cloudflare_zero_trust_access_application" "purrf_app" {
     allow_all_methods = true
     allow_credentials = true
     allowed_headers   = ["content-type"]
-    allowed_origins   = ["https://${local.environments.prod.origin_web}", "https://${local.environments.test.origin_web}"]
+    allowed_origins   = ["https://${local.environments.prod.origin_web}"]
   }
   enable_binding_cookie      = false
   http_only_cookie_attribute = false
@@ -471,3 +465,82 @@ resource "cloudflare_zero_trust_access_identity_provider" "mentorship_login_prod
   }
 }
 
+resource "cloudflare_zero_trust_access_identity_provider" "mentorship_login_test" {
+  account_id = local.cloudflare_account_id
+  name       = "Test Mentorship Login"
+  type       = "oidc"
+
+  config = {
+    auth_url      = "https://test-login.purrf.io/authorize"
+    token_url     = "https://test-login.purrf.io/oauth/token"
+    certs_url     = "https://test-login.purrf.io/.well-known/jwks.json"
+    client_id     = data.terraform_remote_state.test_env.outputs.auth0_client_id
+    client_secret = var.auth0_test_client_secret
+
+    scopes = [
+      "openid",
+      "email",
+      "profile",
+    ]
+
+    claims = [
+      "email",
+      "phone_number",
+      "sub",
+    ]
+
+    email_claim_name = "aud"
+    pkce_enabled     = true
+  }
+}
+
+resource "cloudflare_zero_trust_access_policy" "purrf_auth0_test" {
+  account_id = local.cloudflare_account_id
+  name       = "Test Auth0 Login Policy"
+  decision   = "allow"
+  include = [{
+    login_method = {
+      id = cloudflare_zero_trust_access_identity_provider.mentorship_login_test.id
+    }
+  }]
+}
+
+resource "cloudflare_zero_trust_access_application" "purrf_app_test" {
+  account_id = local.cloudflare_account_id
+  name       = "purrf_test"
+  domain     = local.environments.test.origin_web
+  type       = "self_hosted"
+  destinations = [
+    { type = "public", uri = local.environments.test.origin_web },
+    { type = "public", uri = local.environments.test.api_host },
+    {
+      type = "public"
+      uri  = "*.purrf.pages.dev"
+    },
+  ]
+  allowed_idps         = ["762bbddc-6753-4c4b-898e-89e18ecc410c", cloudflare_zero_trust_access_identity_provider.mentorship_login_test.id]
+  session_duration     = "24h"
+  app_launcher_visible = true
+
+  auto_redirect_to_identity = false
+  cors_headers = {
+    allow_all_methods = true
+    allow_credentials = true
+    allowed_headers   = ["content-type"]
+    allowed_origins   = ["https://${local.environments.test.origin_web}", "https://*.purrf.pages.dev"]
+  }
+  enable_binding_cookie      = false
+  http_only_cookie_attribute = false
+  options_preflight_bypass   = false
+  policies = [
+    {
+      id         = "db15487b-4f79-4f3a-a267-1a7be4fe19f8"
+      precedence = 1
+
+    },
+    { # Auth0
+      id         = cloudflare_zero_trust_access_policy.purrf_auth0_test.id
+      precedence = 2
+    },
+  ]
+}
