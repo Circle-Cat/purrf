@@ -5,13 +5,14 @@ This directory manages the Terraform infrastructure for Purrf, organized by envi
 ## Directory Structure
 ```text
 terraform/
+├── bootstrap/
+│   ├── global/  # Global shared infrastructure, including networking and frontend Pages
+│   └── state_backend/  # Bootstrap resources for Terraform remote state (GCS bucket)
 ├── environments/
-│   ├── golbal/   # Shared global infrastructure
-│   ├── prod/
-│   ├── staging/
-│   └── test/
+│   ├── prod/   # Production environment configuration
+│   └── test/   # Test environment configuration
 ├── modules
-│   └── purrf_instance
+│   └── purrf_instance  # Reusable Terraform module for provisioning a Purrf instance
 └── README.md
 ```
 
