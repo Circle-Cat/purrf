@@ -21,7 +21,7 @@ module "purrf_instance" {
   gerrit_producer_entry_point = "gerrit_event_webhook"
   jira_password               = var.jira_password
   gerrit_http_pass            = var.gerrit_http_pass
-  image_tag                   = "20260203-163352"
+  image_tag                   = "20260211-021832"
   cf_aud_tag                  = "7bd981f24369c85f68a65377878aacf56c32de6bd10688074524b51ad7c98f08"
   azure_client_id             = "8f3f85f2-be71-4ed5-95e8-3c777f4c6e13"
   azure_tenant_id             = "08502fd6-503a-4dfd-85b7-f13b141dc0c4"
