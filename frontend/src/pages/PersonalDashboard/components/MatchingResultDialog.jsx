@@ -55,7 +55,7 @@ export default function MatchingResultDialog({
   const statusConfig = {
     [MatchStatus.MATCHED]: {
       title: "Congratulations!",
-      description: "Here are your partner's info for this round.",
+      description: "Here is your partner's info for this round.",
       color: "text-green-600",
     },
     [MatchStatus.UNMATCHED]: {
@@ -147,7 +147,7 @@ export default function MatchingResultDialog({
                       <Sparkles className="h-4 w-4 text-amber-500 mt-0.5 flex-shrink-0" />
                       <div>
                         <span className="font-medium text-foreground">
-                          Reasons you got matched:{" "}
+                          Reasons you got matched by AI:{" "}
                         </span>
                         <span className="text-muted-foreground">
                           {partner.recommendationReason}
