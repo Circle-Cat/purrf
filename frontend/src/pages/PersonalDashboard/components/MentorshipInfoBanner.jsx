@@ -1,4 +1,4 @@
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardTitle, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Target, ExternalLink } from "lucide-react";
 import MentorshipRegistrationDialog from "@/pages/PersonalDashboard/components/MentorshipRegistrationDialog";
@@ -25,11 +25,16 @@ export default function MentorshipInfoBanner({
 
   return (
     <Card className="border-gray-200 shadow-sm bg-gradient-to-r from-purple-50 to-white">
-      <CardContent className="pt-6">
-        <div className="space-y-4">
+      <CardHeader className="pb-0">
+        <CardTitle className="text-xl font-bold text-purple-900 leading-none pb-0">
+          {registration?.roundName}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="pt-0">
+        <div className="space-y-4 pt-0">
           {/* Only render this section when a goal is available */}
           {displayGoal && (
-            <div className="flex items-start gap-3">
+            <div className="flex items-start gap-3 pt-0">
               <div className="p-2 bg-purple-100 rounded-lg shrink-0">
                 <Target className="h-5 w-5 text-[#6035F3]" />
               </div>

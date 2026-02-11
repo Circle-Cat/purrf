@@ -151,7 +151,7 @@ export default function MentorshipRegistrationDialog({
         <DialogHeader>
           <DialogTitle>
             {" "}
-            {currentRegistration?.roundName} Mentorship Registration
+            {currentRegistration?.roundName} Registration
           </DialogTitle>
           {isUpdating && (
             <p className="text-[11px] text-destructive italic mt-1">
