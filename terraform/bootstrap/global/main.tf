@@ -124,7 +124,7 @@ resource "google_access_context_manager_service_perimeter" "purrf_primary_perime
     # Ingress policy: allow traffic from a specific user
     ingress_policies {
       ingress_from {
-        identities    = ["user:yuji@circlecat.org"]
+        identities    = ["user:yuji@circlecat.org", "user:yhuang@circlecat.org"]
         identity_type = null
         sources {
           access_level = "*"
