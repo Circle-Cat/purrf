@@ -55,7 +55,7 @@ export default function MatchingResultDialog({
   const statusConfig = {
     [MatchStatus.MATCHED]: {
       title: "Congratulations!",
-      description: "Here are your partner details for this round.",
+      description: "Here are your partner's info for this round.",
       color: "text-green-600",
     },
     [MatchStatus.UNMATCHED]: {
@@ -67,12 +67,12 @@ export default function MatchingResultDialog({
     [MatchStatus.REJECTED]: {
       title: "Application Update",
       description:
-        "Thank you for applying. Unfortunately, we couldn't include you in this round.",
+        "Thank you for applying. Unfortunately, you are not eligible for this round.",
       color: "text-destructive",
     },
     [MatchStatus.PENDING]: {
       title: "Matching Has Not Started",
-      description: "The matching process for this round hasn't begun yet.",
+      description: "The matching process for this round hasn't started yet.",
       color: "text-blue-600",
     },
     [MatchStatus.UNKNOWN]: {
@@ -147,7 +147,7 @@ export default function MatchingResultDialog({
                       <Sparkles className="h-4 w-4 text-amber-500 mt-0.5 flex-shrink-0" />
                       <div>
                         <span className="font-medium text-foreground">
-                          Why you matched:{" "}
+                          Reasons you got matched:{" "}
                         </span>
                         <span className="text-muted-foreground">
                           {partner.recommendationReason}
