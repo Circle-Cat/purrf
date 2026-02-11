@@ -25,6 +25,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 - Security-related fixes.
 
+## [1.0.1] - 2026-02-11
+
+### Added
+
+- Add View Matching Result button to the Matching Result component
+
+- Add GET /api/mentorship/rounds/{round_id}/matches API to retrieve match results by round ID
+
+### Fixed
+
+- [PUR-374] Fix font size issue in the Contact Administrators text
+  (Gerrit: https://review.circlecat.org/c/purrf/+/9080)
+
+
+
 ## [1.0.0] - 2026-02-03
 
 Backend (Tag: 20260203-163352)
