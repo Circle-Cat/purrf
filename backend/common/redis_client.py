@@ -87,11 +87,14 @@ class RedisClient:
             self.logger.info("Created Redis client successfully.")
         except (RedisConnectionError, TimeoutError) as e:
             self.logger.error(
-                f"Failed to connect to Redis server {self._redis_host}:{self._redis_port} after retries: {e}"
+                "Failed to connect to Redis server %s:%s after retries: %s",
+                os.environ.get(REDIS_HOST),
+                os.environ.get(REDIS_PORT),
+                e,
             )
             raise RedisClientError("Failed to create Redis client.")
         except Exception as e:
-            self.logger.error(f"Unexpected error during Redis client creation: {e}")
+            self.logger.error("Unexpected error during Redis client creation: %s", e)
             raise
 
         return redis_client
