@@ -12,15 +12,27 @@ from sqlalchemy.ext.asyncio import (
 class Database:
     def __init__(self, echo=False):
         """
-        Initialize a Database instance.
+        Initialize a Database instance with an async SQLAlchemy engine and session factory.
+
+        Creates an async engine configured for Neon's connection pooler:
+        - pool_recycle=25: Recycle connections before Neon pooler's 30s idle timeout.
+        - pool_pre_ping=True: Validate connections before use to avoid stale connection errors.
 
         Args:
             echo (bool): If True, SQLAlchemy will output executed SQL statements.
+
+        Raises:
+            ValueError: If the DATABASE_URL environment variable is not set.
         """
         self.database_url = DATABASE_URL
         if not self.database_url:
             raise ValueError("DATABASE_URL must be set")
-        self._engine = create_async_engine(self.database_url, echo=echo)
+        self._engine = create_async_engine(
+            self.database_url,
+            echo=echo,
+            pool_recycle=25,
+            pool_pre_ping=True,
+        )
         self._session_factory = async_sessionmaker(
             bind=self._engine,
             autoflush=False,

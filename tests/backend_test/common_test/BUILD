@@ -91,3 +91,11 @@ py_test(
         "//backend/common:microsoft_graph_service_client",
     ],
 )
+
+py_test(
+    name = "database_test",
+    srcs = ["database_test.py"],
+    deps = [
+        "//backend/common:database",
+    ],
+)
