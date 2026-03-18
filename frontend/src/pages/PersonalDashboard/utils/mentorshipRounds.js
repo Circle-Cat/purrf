@@ -94,3 +94,63 @@ export const calculateMentorshipSlots = (allRounds) => {
     canViewMatch: !!activeMatchRound,
   };
 };
+
+/**
+ * Compute the display status for all mentorship rounds and identify
+ * the default round to show in the participant card.
+ *
+ * Status rules for each round:
+ * - "active": today is between roundStart (matchNotificationAt or promotionStartAt)
+ *    and meetingsCompletionDeadlineAt (inclusive).
+ * - "upcoming": roundStart is in the future.
+ * - "completed": meetingsCompletionDeadlineAt is in the past.
+ *
+ * activeRoundId priority: active → upcoming → null.
+ *
+ * @param {Array<Object>} allRounds - All mentorship rounds with timeline data.
+ * @returns {{
+ *   sortedRounds: Array<Object & { status: "active"|"upcoming"|"completed"|null }>,
+ *   activeRoundId: string | null
+ * }}
+ */
+export const calculateRoundStatus = (allRounds) => {
+  const today = new Date();
+  const sortedRounds = [...allRounds]
+    .map((round) => {
+      const timeline = round.timeline || {};
+      const roundStart = timeline.matchNotificationAt
+        ? new Date(timeline.matchNotificationAt)
+        : timeline.promotionStartAt
+          ? new Date(timeline.promotionStartAt)
+          : null;
+      const roundEnd = timeline.meetingsCompletionDeadlineAt
+        ? new Date(timeline.meetingsCompletionDeadlineAt)
+        : null;
+
+      const status =
+        roundStart && roundEnd && today >= roundStart && today <= roundEnd
+          ? "active"
+          : roundStart && today < roundStart
+            ? "upcoming"
+            : roundEnd && today > roundEnd
+              ? "completed"
+              : null;
+
+      return {
+        ...round,
+        status,
+        _parsedEnd: roundEnd,
+      };
+    })
+    .sort((a, b) => b._parsedEnd - a._parsedEnd);
+
+  const activeRound =
+    sortedRounds.find((r) => r.status === "active") ||
+    sortedRounds.find((r) => r.status === "upcoming") ||
+    null;
+
+  return {
+    sortedRounds,
+    activeRoundId: activeRound?.id || null,
+  };
+};

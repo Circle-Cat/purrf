@@ -6,6 +6,7 @@ export const API_ENDPOINTS = {
   MENTORSHIP_MATCH_RESULT: (roundId) => `/mentorship/rounds/${roundId}/matches`,
   MENTORSHIP_PARTNERS: "/mentorship/partners/me",
   MENTORSHIP_ROUNDS: "/mentorship/rounds",
+  MENTORSHIP_MEETINGS_ENDPOINT: "/mentorship/v1/meetings",
 };
 
 /**

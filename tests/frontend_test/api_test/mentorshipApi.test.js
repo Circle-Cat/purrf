@@ -5,6 +5,8 @@ import {
   getMyMentorshipPartners,
   getMyMentorshipRegistration,
   postMyMentorshipRegistration,
+  getMyMentorshipMeetingLog,
+  postMyMentorshipMeetingLog,
 } from "@/api/mentorshipApi";
 import { API_ENDPOINTS } from "@/constants/ApiEndpoints";
 
@@ -67,5 +69,41 @@ describe("Mentorship Service API", () => {
     request.get.mockRejectedValue(mockError);
 
     await expect(getAllMentorshipRounds()).rejects.toThrow("Network Error");
+  });
+
+  it("getMyMentorshipMeetingLog should call the correct GET endpoint", async () => {
+    const roundId = "777";
+    const mockData = { meeting_info: [] };
+    request.get.mockResolvedValue(mockData);
+
+    const result = await getMyMentorshipMeetingLog(roundId);
+
+    expect(request.get).toHaveBeenCalledWith(
+      API_ENDPOINTS.MENTORSHIP_MEETINGS_ENDPOINT,
+      {
+        params: { round_id: roundId },
+      },
+    );
+    expect(result).toEqual(mockData);
+  });
+
+  it("postMyMentorshipMeetingLog should call the correct POST endpoint with the payload", async () => {
+    const payload = {
+      roundId: 1,
+      chosenTimezone: "Asia/Shanghai",
+      startDatetime: "2026-03-13T10:00:00+08:00",
+      endDatetime: "2026-03-13T11:00:00+08:00",
+      is_completed: true,
+    };
+    const mockResponse = { success: true };
+    request.post.mockResolvedValue(mockResponse);
+
+    const result = await postMyMentorshipMeetingLog(payload);
+
+    expect(request.post).toHaveBeenCalledWith(
+      API_ENDPOINTS.MENTORSHIP_MEETINGS_ENDPOINT,
+      payload,
+    );
+    expect(result).toEqual(mockResponse);
   });
 });

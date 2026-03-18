@@ -7,8 +7,12 @@ import {
   getMyMentorshipPartners,
   postMyMentorshipRegistration,
   getMyMentorshipMatchResult,
+  getMyMentorshipMeetingLog,
 } from "@/api/mentorshipApi";
-import { calculateMentorshipSlots } from "@/pages/PersonalDashboard/utils/mentorshipRounds";
+import {
+  calculateMentorshipSlots,
+  calculateRoundStatus,
+} from "@/pages/PersonalDashboard/utils/mentorshipRounds";
 
 vi.mock("@/api/mentorshipApi", () => ({
   getAllMentorshipRounds: vi.fn(),
@@ -16,15 +20,21 @@ vi.mock("@/api/mentorshipApi", () => ({
   getMyMentorshipRegistration: vi.fn(),
   postMyMentorshipRegistration: vi.fn(),
   getMyMentorshipMatchResult: vi.fn(),
+  getMyMentorshipMeetingLog: vi.fn(),
 }));
 
 vi.mock("@/pages/PersonalDashboard/utils/mentorshipRounds", () => ({
   calculateMentorshipSlots: vi.fn(),
+  calculateRoundStatus: vi.fn(),
 }));
 
 describe("useMentorshipData Hook", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    calculateRoundStatus.mockReturnValue({
+      sortedRounds: [],
+      activeRoundId: null,
+    });
   });
 
   it("should fetch match results if the user is registered", async () => {
@@ -305,5 +315,236 @@ describe("useMentorshipData Hook", () => {
     );
 
     consoleSpy.mockRestore();
+  });
+});
+
+describe("refreshMeetings", () => {
+  const mockRound = { id: "round-1", name: "Spring 2026", requiredMeetings: 5 };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getAllMentorshipRounds.mockResolvedValue({ data: [mockRound] });
+    calculateMentorshipSlots.mockReturnValue({ regRoundId: null });
+    calculateRoundStatus.mockReturnValue({
+      sortedRounds: [mockRound],
+      activeRoundId: "round-1",
+    });
+  });
+
+  it("should build partnerMeetingOverview with merged meeting data", async () => {
+    getMyMentorshipMeetingLog.mockResolvedValue({
+      data: {
+        userTimezone: "Asia/Shanghai",
+        meetingInfo: [
+          {
+            partnerId: 99,
+            participantRole: "Mentee",
+            meetingTimeList: [
+              {
+                meetingId: "m1",
+                startDatetime: "2026-03-18T02:00:00Z",
+                endDatetime: "2026-03-18T03:00:00Z",
+                isCompleted: true,
+              },
+            ],
+          },
+        ],
+      },
+    });
+    getMyMentorshipPartners.mockResolvedValue({
+      data: [{ id: 99, preferredName: "Alice" }],
+    });
+
+    const { result } = renderHook(() => useMentorshipData());
+
+    await waitFor(() => {
+      expect(result.current.participantDetails.roundInfo).not.toBeNull();
+    });
+
+    const overview = result.current.participantDetails.partnerMeetingOverview;
+    expect(overview).toHaveLength(1);
+    expect(overview[0]).toEqual(
+      expect.objectContaining({
+        partnerId: 99,
+        preferredName: "Alice",
+        requiredMeetings: 5,
+        completedCount: 1,
+        completedRate: 20,
+      }),
+    );
+    expect(getMyMentorshipMeetingLog).toHaveBeenCalledWith("round-1");
+    expect(getMyMentorshipPartners).toHaveBeenCalledWith("round-1");
+  });
+
+  it("should set empty partnerMeetingOverview when no partners are found", async () => {
+    getMyMentorshipMeetingLog.mockResolvedValue({ data: { meetingInfo: [] } });
+    getMyMentorshipPartners.mockResolvedValue({ data: [] });
+
+    const { result } = renderHook(() => useMentorshipData());
+
+    await waitFor(() =>
+      expect(result.current.participantDetails.roundInfo).not.toBeNull(),
+    );
+
+    expect(result.current.participantDetails.partnerMeetingOverview).toEqual(
+      [],
+    );
+  });
+
+  it("should set completedRate to 0 when there are no completed meetings", async () => {
+    getMyMentorshipMeetingLog.mockResolvedValue({
+      data: {
+        userTimezone: "America/New_York",
+        meetingInfo: [
+          {
+            partnerId: 5,
+            participantRole: "Mentee",
+            meetingTimeList: [],
+          },
+        ],
+      },
+    });
+    getMyMentorshipPartners.mockResolvedValue({
+      data: [{ id: 5, preferredName: "Bob" }],
+    });
+
+    const { result } = renderHook(() => useMentorshipData());
+    await waitFor(() =>
+      expect(
+        result.current.participantDetails.partnerMeetingOverview,
+      ).toHaveLength(1),
+    );
+
+    const overview = result.current.participantDetails.partnerMeetingOverview;
+    expect(overview[0].completedCount).toBe(0);
+    expect(overview[0].completedRate).toBe(0);
+  });
+
+  it("should set userTimezone from meeting log response", async () => {
+    getMyMentorshipMeetingLog.mockResolvedValue({
+      data: { userTimezone: "America/New_York", meetingInfo: [] },
+    });
+    getMyMentorshipPartners.mockResolvedValue({ data: [] });
+
+    const { result } = renderHook(() => useMentorshipData());
+
+    await waitFor(() =>
+      expect(result.current.participantDetails.roundInfo).not.toBeNull(),
+    );
+
+    expect(result.current.userTimezone).toBe("America/New_York");
+  });
+
+  it("should not call getMyMentorshipPartners again when switching back to a cached round", async () => {
+    getMyMentorshipMeetingLog.mockResolvedValue({ data: { meetingInfo: [] } });
+    getMyMentorshipPartners.mockResolvedValue({
+      data: [{ id: 1, preferredName: "Alice" }],
+    });
+
+    const switchAndWait = async (roundId) => {
+      act(() => result.current.handleRoundChange(roundId));
+      await waitFor(() => {
+        expect(result.current.selectedRoundId).toBe(roundId);
+        expect(result.current.isMeetingsLoading).toBe(false);
+      });
+    };
+
+    const { result } = renderHook(() => useMentorshipData());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    await switchAndWait("round-2");
+    await switchAndWait("round-1");
+
+    const round1Calls = getMyMentorshipPartners.mock.calls.filter(
+      (c) => c[0] === "round-1",
+    );
+    expect(round1Calls).toHaveLength(1);
+  });
+
+  it("should log an error and stop loading when the API call fails", async () => {
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    getMyMentorshipMeetingLog.mockRejectedValue(new Error("API Error"));
+    getMyMentorshipPartners.mockRejectedValue(new Error("API Error"));
+
+    renderHook(() => useMentorshipData());
+
+    await waitFor(() =>
+      expect(consoleSpy).toHaveBeenCalledWith(
+        "Failed to fetch meeting log",
+        expect.any(Error),
+      ),
+    );
+
+    expect(consoleSpy).toHaveBeenCalledWith(
+      "Failed to fetch meeting log",
+      expect.any(Error),
+    );
+    consoleSpy.mockRestore();
+  });
+});
+
+describe("handleRoundChange", () => {
+  const mockRound = { id: "round-1", requiredMeetings: 3 };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getAllMentorshipRounds.mockResolvedValue({ data: [mockRound] });
+    calculateMentorshipSlots.mockReturnValue({ regRoundId: null });
+    calculateRoundStatus.mockReturnValue({
+      sortedRounds: [mockRound],
+      activeRoundId: "round-1",
+    });
+    getMyMentorshipMeetingLog.mockResolvedValue({ data: { meetingInfo: [] } });
+    getMyMentorshipPartners.mockResolvedValue({ data: [] });
+  });
+
+  it("should update selectedRoundId when a different round is selected", async () => {
+    const { result } = renderHook(() => useMentorshipData());
+    await waitFor(() =>
+      expect(result.current.participantDetails.roundInfo).not.toBeNull(),
+    );
+
+    act(() => {
+      result.current.handleRoundChange("round-2");
+    });
+
+    expect(result.current.selectedRoundId).toBe("round-2");
+  });
+
+  it("should clear participantDetails immediately when switching to a different round", async () => {
+    const { result } = renderHook(() => useMentorshipData());
+    await waitFor(() =>
+      expect(result.current.participantDetails.roundInfo).not.toBeNull(),
+    );
+
+    act(() => {
+      result.current.handleRoundChange("round-2");
+    });
+
+    // Stale data should be cleared right away before the new round loads
+    expect(result.current.participantDetails.partnerMeetingOverview).toEqual(
+      [],
+    );
+    expect(result.current.participantDetails.participantRole).toBeNull();
+  });
+
+  it("should not clear participantDetails when the same round is re-selected", async () => {
+    getMyMentorshipPartners.mockResolvedValue({
+      data: [{ id: 1, preferredName: "Alice" }],
+    });
+
+    const { result } = renderHook(() => useMentorshipData());
+    await waitFor(() =>
+      expect(
+        result.current.participantDetails.partnerMeetingOverview,
+      ).toHaveLength(1),
+    );
+
+    const detailsBefore = result.current.participantDetails;
+
+    act(() => {
+      result.current.handleRoundChange("round-1");
+    });
+
+    expect(result.current.participantDetails).toEqual(detailsBefore);
   });
 });

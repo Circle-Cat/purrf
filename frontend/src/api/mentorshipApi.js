@@ -13,7 +13,7 @@ export const getAllMentorshipRounds = () =>
  */
 export const getMyMentorshipPartners = (roundId) =>
   request.get(API_ENDPOINTS.MENTORSHIP_PARTNERS, {
-    params: { roundId },
+    params: { round_id: roundId },
   });
 
 /**
@@ -37,3 +37,17 @@ export const getMyMentorshipMatchResult = (roundId) =>
  */
 export const postMyMentorshipRegistration = (roundId, data) =>
   request.post(API_ENDPOINTS.MENTORSHIP_REGISTRATION(roundId), data);
+
+/** Fetch the mentorship meeting log for a specific round
+ * @param {string} roundId - The ID of the mentorship round.
+ */
+export const getMyMentorshipMeetingLog = (roundId) =>
+  request.get(API_ENDPOINTS.MENTORSHIP_MEETINGS_ENDPOINT, {
+    params: { round_id: roundId },
+  });
+
+/** Submit the mentorship meeting log for a specific round
+ * @param {object} data - The meeting log data
+ */
+export const postMyMentorshipMeetingLog = (data) =>
+  request.post(API_ENDPOINTS.MENTORSHIP_MEETINGS_ENDPOINT, data);

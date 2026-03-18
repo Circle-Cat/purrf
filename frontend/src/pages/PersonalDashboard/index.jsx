@@ -1,4 +1,5 @@
 import MentorshipInfoBanner from "@/pages/PersonalDashboard/components/MentorshipInfoBanner";
+import MentorshipParticipantsCard from "@/pages/PersonalDashboard/components/MentorshipParticipantsCard";
 import { useMentorshipData } from "@/pages/PersonalDashboard/hooks/useMentorshipData";
 
 /**
@@ -29,6 +30,13 @@ const PersonalDashboard = () => {
     canViewMatch, // Whether the matching result is visible to the user (e.g. during the announcement period)
     matchResult, // The Matching result data
     matchResultRoundName, // Display name of the matching result round
+    roundSelectionData, // Sorted list of all rounds and the active round ID for the round selector
+    selectedRoundId, // Currently selected round ID for the participant card
+    handleRoundChange, // Callback to update the selected round
+    participantDetails, // Round info, per-partner meeting overview, and user role
+    refreshMeetings, // Trigger a refresh of meeting log data for the selected round
+    isMeetingsLoading, // Whether meeting log data is currently loading
+    userTimezone, // Current user's IANA timezone string from their profile
   } = useMentorshipData();
 
   return (
@@ -56,6 +64,17 @@ const PersonalDashboard = () => {
         matchResult={matchResult}
         matchResultRoundName={matchResultRoundName}
         canViewMatch={canViewMatch}
+      />
+
+      {/* Mentorship participant card */}
+      <MentorshipParticipantsCard
+        userTimezone={userTimezone}
+        roundSelectionData={roundSelectionData}
+        selectedRoundId={selectedRoundId}
+        onRoundChange={handleRoundChange}
+        isMeetingsLoading={isMeetingsLoading}
+        participantDetails={participantDetails}
+        refreshMeetings={refreshMeetings}
       />
     </div>
   );

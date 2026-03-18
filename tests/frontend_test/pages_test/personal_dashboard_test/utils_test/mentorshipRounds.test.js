@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { calculateMentorshipSlots } from "@/pages/PersonalDashboard/utils/mentorshipRounds";
+import {
+  calculateMentorshipSlots,
+  calculateRoundStatus,
+} from "@/pages/PersonalDashboard/utils/mentorshipRounds";
 
 describe("calculateMentorshipSlots", () => {
   // Mock current date: 2023-10-15
@@ -176,5 +179,126 @@ describe("calculateMentorshipSlots", () => {
     expect(result.isFeedbackEnabled).toBe(true);
     expect(result.regRoundId).toBe("active-reg");
     expect(result.isRegistrationOpen).toBe(true);
+  });
+});
+
+describe("calculateRoundStatus", () => {
+  const MOCK_TODAY = "2026-03-18T12:00:00Z";
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(MOCK_TODAY));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("should return empty sortedRounds and null activeRoundId for empty input", () => {
+    const result = calculateRoundStatus([]);
+    expect(result.sortedRounds).toEqual([]);
+    expect(result.activeRoundId).toBeNull();
+  });
+
+  it("should mark a round as active when today is within its date range", () => {
+    const rounds = [
+      {
+        id: "round-active",
+        timeline: {
+          matchNotificationAt: "2026-01-01",
+          meetingsCompletionDeadlineAt: "2026-12-31",
+        },
+      },
+    ];
+    const result = calculateRoundStatus(rounds);
+    expect(result.sortedRounds[0].status).toBe("active");
+    expect(result.activeRoundId).toBe("round-active");
+  });
+
+  it("should mark a round as upcoming when roundStart is in the future", () => {
+    const rounds = [
+      {
+        id: "round-future",
+        timeline: {
+          promotionStartAt: "2027-01-01",
+          meetingsCompletionDeadlineAt: "2027-12-31",
+        },
+      },
+    ];
+    const result = calculateRoundStatus(rounds);
+    expect(result.sortedRounds[0].status).toBe("upcoming");
+    expect(result.activeRoundId).toBe("round-future");
+  });
+
+  it("should mark a round as completed when today is past meetingsCompletionDeadlineAt", () => {
+    const rounds = [
+      {
+        id: "round-done",
+        timeline: {
+          promotionStartAt: "2025-01-01",
+          meetingsCompletionDeadlineAt: "2025-12-31",
+        },
+      },
+    ];
+    const result = calculateRoundStatus(rounds);
+    expect(result.sortedRounds[0].status).toBe("completed");
+    expect(result.activeRoundId).toBeNull();
+  });
+
+  it("should prefer active round over upcoming round for activeRoundId", () => {
+    const rounds = [
+      {
+        id: "round-upcoming",
+        timeline: {
+          promotionStartAt: "2027-01-01",
+          meetingsCompletionDeadlineAt: "2027-12-31",
+        },
+      },
+      {
+        id: "round-active",
+        timeline: {
+          matchNotificationAt: "2026-01-01",
+          meetingsCompletionDeadlineAt: "2026-12-31",
+        },
+      },
+    ];
+    const result = calculateRoundStatus(rounds);
+    expect(result.activeRoundId).toBe("round-active");
+  });
+
+  it("should sort rounds in descending order by end date", () => {
+    const rounds = [
+      {
+        id: "round-earlier",
+        timeline: {
+          promotionStartAt: "2025-01-01",
+          meetingsCompletionDeadlineAt: "2025-06-30",
+        },
+      },
+      {
+        id: "round-later",
+        timeline: {
+          promotionStartAt: "2025-07-01",
+          meetingsCompletionDeadlineAt: "2025-12-31",
+        },
+      },
+    ];
+    const result = calculateRoundStatus(rounds);
+    expect(result.sortedRounds[0].id).toBe("round-later");
+    expect(result.sortedRounds[1].id).toBe("round-earlier");
+  });
+
+  it("should use promotionStartAt as roundStart when matchNotificationAt is absent", () => {
+    const rounds = [
+      {
+        id: "round-promo",
+        timeline: {
+          promotionStartAt: "2026-01-01",
+          meetingsCompletionDeadlineAt: "2026-12-31",
+        },
+      },
+    ];
+    const result = calculateRoundStatus(rounds);
+    expect(result.sortedRounds[0].status).toBe("active");
   });
 });

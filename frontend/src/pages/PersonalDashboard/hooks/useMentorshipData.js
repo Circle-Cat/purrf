@@ -4,10 +4,14 @@ import {
   getMyMentorshipRegistration,
   postMyMentorshipRegistration,
   getMyMentorshipMatchResult,
+  getMyMentorshipMeetingLog,
 } from "@/api/mentorshipApi";
 
-import { calculateMentorshipSlots } from "@/pages/PersonalDashboard/utils/mentorshipRounds";
-import { useEffect, useState } from "react";
+import {
+  calculateMentorshipSlots,
+  calculateRoundStatus,
+} from "@/pages/PersonalDashboard/utils/mentorshipRounds";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 /**
  * React hook for loading and managing mentorship-related data
@@ -33,7 +37,8 @@ import { useEffect, useState } from "react";
  *   saveRegistration: (data: Object) => Promise<any> | undefined,
  *   isLoading: boolean,
  *   isPartnersLoading: boolean,
- *   loadPastPartners: () => Promise<void>
+ *   loadPastPartners: () => Promise<void>,
+ *   userTimezone: string | null
  * }}
  */
 export const useMentorshipData = () => {
@@ -56,8 +61,27 @@ export const useMentorshipData = () => {
   // Cached list of past mentorship partners
   const [pastPartners, setPastPartners] = useState([]);
 
+  // Loading state for user profile timezone
+  const [userTimezone, setUserTimezone] = useState(null);
+
   // Loading state for partners data
   const [isPartnersLoading, setIsPartnersLoading] = useState(false);
+
+  // Round Selector
+  const [roundSelectionData, setRoundSelectionData] = useState({
+    sortedRounds: [],
+    activeRoundId: null,
+  });
+  const [participantDetails, setParticipantDetails] = useState({
+    roundInfo: null,
+    partnerMeetingOverview: [],
+    participantRole: null,
+  });
+  const [selectedRoundId, setSelectedRoundId] = useState(null);
+  // Loading state for meeting log
+  const [isMeetingsLoading, setIsMeetingsLoading] = useState(false);
+  // Cache for partners data per round, reset on page mount
+  const partnersCacheRef = useRef({});
 
   /**
    * refreshRegistration
@@ -93,6 +117,7 @@ export const useMentorshipData = () => {
     const fetchData = async () => {
       try {
         const { data: rounds } = await getAllMentorshipRounds();
+
         const status = calculateMentorshipSlots(rounds);
         setRoundStatus(status);
 
@@ -116,6 +141,13 @@ export const useMentorshipData = () => {
           } else {
             setMatchResult(null);
           }
+        }
+
+        const selectionData = calculateRoundStatus(rounds);
+        setRoundSelectionData(selectionData);
+
+        if (selectionData.activeRoundId) {
+          setSelectedRoundId(selectionData.activeRoundId);
         }
       } catch (err) {
         console.error("Failed to fetch mentorship data", err);
@@ -160,15 +192,130 @@ export const useMentorshipData = () => {
     return postMyMentorshipRegistration(roundStatus.regRoundId, data);
   };
 
+  const handleRoundChange = useCallback(
+    (id) => {
+      if (id !== selectedRoundId) {
+        setParticipantDetails({
+          roundInfo: null,
+          partnerMeetingOverview: [],
+          participantRole: null,
+        });
+      }
+      setSelectedRoundId(id);
+    },
+    [selectedRoundId],
+  );
+
+  const refreshMeetings = useCallback(async () => {
+    if (!selectedRoundId) return;
+    setIsMeetingsLoading(true);
+
+    try {
+      const [{ data: meetingLog }, { data: partnersInfo }] = await Promise.all([
+        getMyMentorshipMeetingLog(selectedRoundId),
+        partnersCacheRef.current[selectedRoundId]
+          ? Promise.resolve({ data: partnersCacheRef.current[selectedRoundId] })
+          : getMyMentorshipPartners(selectedRoundId),
+      ]);
+
+      partnersCacheRef.current[selectedRoundId] ??= partnersInfo;
+      setUserTimezone((prev) => prev ?? meetingLog?.userTimezone ?? null);
+
+      const currentRound = roundSelectionData.sortedRounds.find(
+        (r) => r.id.toString() === selectedRoundId.toString(),
+      );
+
+      if (!partnersInfo || partnersInfo.length === 0) {
+        const isRegisteredForRound =
+          selectedRoundId?.toString() === roundStatus.regRoundId?.toString() &&
+          registration?.isRegistered === true;
+        setParticipantDetails({
+          roundInfo: currentRound,
+          partnerMeetingOverview: [],
+          participantRole: null,
+          isRegistered: isRegisteredForRound,
+        });
+        return;
+      }
+
+      const requiredMeetings = currentRound?.requiredMeetings ?? 0;
+      const partnerMeeting = (partnersInfo || []).map((partner) => {
+        const info = meetingLog?.meetingInfo?.find(
+          (i) => i.partnerId.toString() === partner.id.toString(),
+        );
+        const completedCount =
+          info?.meetingTimeList?.filter((m) => m.isCompleted).length ?? 0;
+        const completedRate =
+          requiredMeetings > 0
+            ? Math.round((completedCount / requiredMeetings) * 100)
+            : 0;
+
+        return {
+          partnerId: partner.id,
+          preferredName: partner.preferredName,
+          requiredMeetings,
+          completedCount,
+          completedRate,
+          meetingTimeList: info?.meetingTimeList || [],
+          participantRole: info?.participantRole,
+        };
+      });
+
+      const globalParticipantRole =
+        partnerMeeting?.[0]?.participantRole ?? null;
+
+      setParticipantDetails({
+        roundInfo: currentRound,
+        partnerMeetingOverview: partnerMeeting,
+        participantRole: globalParticipantRole,
+      });
+    } catch (MeetingErr) {
+      console.error("Failed to fetch meeting log", MeetingErr);
+    } finally {
+      setIsMeetingsLoading(false);
+    }
+  }, [
+    selectedRoundId,
+    roundSelectionData.sortedRounds,
+    roundStatus.regRoundId,
+    registration?.isRegistered,
+  ]);
+
+  useEffect(() => {
+    if (!selectedRoundId) {
+      setParticipantDetails({
+        roundInfo: null,
+        partnerMeetingOverview: [],
+        participantRole: null,
+      });
+      return;
+    }
+    refreshMeetings();
+  }, [selectedRoundId, refreshMeetings]);
+
   return {
     ...roundStatus,
+    // registration
     registration,
     saveRegistration,
-    isLoading,
     refreshRegistration,
+    // loading states
+    isLoading,
+    isMeetingsLoading,
     isPartnersLoading,
+    // partner history
     loadPastPartners,
     pastPartners,
+    // match result
     matchResult,
+    // round selector for participant card
+    selectedRoundId,
+    roundSelectionData,
+    handleRoundChange,
+    // meeting
+    refreshMeetings,
+    participantDetails,
+    // user profile timezone
+    userTimezone,
   };
 };
