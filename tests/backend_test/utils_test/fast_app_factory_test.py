@@ -21,6 +21,7 @@ class TestFastAppFactory(unittest.TestCase):
             internal_activity_controller=self.mock_controller,
             profile_controller=self.mock_profile_controller,
             mentorship_controller=self.mock_controller,
+            launchdarkly_client=MagicMock(),
         )
 
     def test_factory_initialization(self):

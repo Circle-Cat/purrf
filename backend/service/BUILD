@@ -26,3 +26,11 @@ py_library(
     name = "google_service",
     srcs = ["google_service.py"],
 )
+
+py_library(
+    name = "launchdarkly_service",
+    srcs = ["launchdarkly_service.py"],
+    deps = [
+        "//backend/common:launchdarkly_client",
+    ],
+)

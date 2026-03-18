@@ -7,6 +7,8 @@ from backend.common.environment_constants import (
 )
 
 
+@patch("backend.utils.app_dependency_builder.LaunchDarklyService")
+@patch("backend.utils.app_dependency_builder.LaunchDarklyClient")
 @patch("backend.utils.app_dependency_builder.UserIdentityService")
 @patch("backend.utils.app_dependency_builder.MentorshipController")
 @patch("backend.utils.app_dependency_builder.MeetingService")
@@ -140,6 +142,8 @@ class TestAppDependencyBuilder(TestCase):
         mock_meeting_service_cls,
         mock_mentorship_controller_cls,
         mock_user_identity_service_cls,
+        mock_launchdarkly_client_cls,
+        mock_launchdarkly_service_cls,
     ):
         """
         Tests that the AppDependencyBuilder correctly instantiates and wires all its dependencies.
@@ -479,6 +483,7 @@ class TestAppDependencyBuilder(TestCase):
             internal_activity_controller=mock_internal_activity_controller_cls.return_value,
             profile_controller=mock_profile_controller_cls.return_value,
             mentorship_controller=mock_mentorship_controller_cls.return_value,
+            launchdarkly_client=mock_launchdarkly_client_cls.return_value,
         )
 
         # Assert that the builder's internal attributes are the created mock instances

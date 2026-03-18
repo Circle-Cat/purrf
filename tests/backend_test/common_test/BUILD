@@ -85,6 +85,14 @@ py_test(
 )
 
 py_test(
+    name = "launchdarkly_client_test",
+    srcs = ["launchdarkly_client_test.py"],
+    deps = [
+        "//backend/common:launchdarkly_client",
+    ],
+)
+
+py_test(
     name = "microsoft_graph_service_client_test",
     srcs = ["microsoft_graph_service_client_test.py"],
     deps = [

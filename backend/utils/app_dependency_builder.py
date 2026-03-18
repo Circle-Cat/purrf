@@ -100,6 +100,8 @@ from backend.profile.profile_service import ProfileService
 from backend.common.database import Database
 from backend.profile.profile_controller import ProfileController
 from backend.user_identity.user_identity_service import UserIdentityService
+from backend.common.launchdarkly_client import LaunchDarklyClient
+from backend.service.launchdarkly_service import LaunchDarklyService
 
 
 class AppDependencyBuilder:
@@ -125,6 +127,12 @@ class AppDependencyBuilder:
 
         self.logger = get_logger()
         self.retry_utils = RetryUtils()
+
+        self.launchdarkly_client = LaunchDarklyClient(logger=self.logger)
+        self.launchdarkly_service = LaunchDarklyService(
+            logger=self.logger,
+            launchdarkly_client=self.launchdarkly_client,
+        )
 
         self.gerrit_client = GerritClient()
         self.redis_client = RedisClient(
@@ -431,4 +439,5 @@ class AppDependencyBuilder:
             internal_activity_controller=self.internal_activity_controller,
             profile_controller=self.profile_controller,
             mentorship_controller=self.mentorship_controller,
+            launchdarkly_client=self.launchdarkly_client,
         )

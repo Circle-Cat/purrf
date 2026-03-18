@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from backend.common.fast_api_error_handler import register_exception_handlers
 from backend.utils.auth_middleware import AuthMiddleware
@@ -21,6 +22,7 @@ class FastAppFactory:
         internal_activity_controller,
         profile_controller,
         mentorship_controller,
+        launchdarkly_client,
     ):
         """
         Initialize the factory.
@@ -29,11 +31,12 @@ class FastAppFactory:
             authentication_controller: Controller instance responsible for authentication routes.
             authentication_service: AuthenticationService instance used by middleware to validate requests.
             notification_controller: An instance of NotificationController that manages API routes for subscribe_microsoft_chat_messages and subscribe_google_chat_space.
-            notification_controller: An instance of HistoricalController that manages API routes for sync historical data.
+            historical_controller: An instance of HistoricalController that manages API routes for sync historical data.
             consumer_controller: An instance of ConsumerController that manages API routes to trigger, check, or stop subscribers.
             internal_activity_controller: An instance of InternalActivityController that manages API routes to query internal activity data.
             profile_controller: Optional ProfileController instance to register profile routes.
             mentorship_controller: An instance of MentorshipController that manages API routes for mentorship services.
+            launchdarkly_client: LaunchDarklyClient instance for feature flag lifecycle management.
         """
         self.authentication_controller = authentication_controller
         self.authentication_service = authentication_service
@@ -43,6 +46,7 @@ class FastAppFactory:
         self.internal_activity_controller = internal_activity_controller
         self.profile_controller = profile_controller
         self.mentorship_controller = mentorship_controller
+        self.launchdarkly_client = launchdarkly_client
 
     def create_app(self, is_prod: bool = False) -> FastAPI:
         """
@@ -73,8 +77,16 @@ class FastAppFactory:
             factory = FastAppFactory(auth_controller, auth_service)
             app = factory.create_app()
         """
+
+        @asynccontextmanager
+        async def lifespan(app):
+            self.launchdarkly_client.initialize()
+            yield
+            self.launchdarkly_client.close()
+
         # Initialize the FastAPI app
         app = FastAPI(
+            lifespan=lifespan,
             docs_url=None if is_prod else "/docs",
             redoc_url=None if is_prod else "/redoc",
             openapi_url=None if is_prod else "/openapi.json",

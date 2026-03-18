@@ -23,3 +23,12 @@ py_test(
         "//backend/service:google_service",
     ],
 )
+
+py_test(
+    name = "launchdarkly_service_test",
+    srcs = ["launchdarkly_service_test.py"],
+    deps = [
+        "//backend/dto",
+        "//backend/service:launchdarkly_service",
+    ],
+)

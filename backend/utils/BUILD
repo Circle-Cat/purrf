@@ -61,6 +61,7 @@ py_library(
     ],
     deps = [
         "//backend/common:fast_api_response_wrapper",
+        "//backend/common:user_role",
         "@pypi//starlette",
     ],
 )
@@ -95,6 +96,7 @@ py_library(
         "//backend/common:gerrit_client",
         "//backend/common:jira_client",
         "//backend/common:json_schema_validator",
+        "//backend/common:launchdarkly_client",
         "//backend/common:logger",
         "//backend/common:microsoft_graph_service_client",
         "//backend/common:redis_client",
@@ -129,6 +131,7 @@ py_library(
         "//backend/repository:repositories",
         "//backend/service:google_service",
         "//backend/service:jira_search_service",
+        "//backend/service:launchdarkly_service",
         "//backend/service:microsoft_service",
         "//backend/user_identity:user_identity_service",
         "@pypi//asyncpg",

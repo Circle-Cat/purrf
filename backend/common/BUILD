@@ -169,3 +169,13 @@ py_library(
     name = "api_endpoints",
     srcs = ["api_endpoints.py"],
 )
+
+py_library(
+    name = "launchdarkly_client",
+    srcs = ["launchdarkly_client.py"],
+    deps = [
+        ":environment_constants",
+        "//backend/dto",
+        "@pypi//launchdarkly_server_sdk",
+    ],
+)
