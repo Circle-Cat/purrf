@@ -49,3 +49,4 @@ MENTORSHIP_ROUNDS_REGISTRATION_ENDPOINT = "/mentorship/rounds/{round_id}/registr
 MENTORSHIP_MATCH_RESULT_ENDPOINT = "/mentorship/rounds/{round_id}/matches"
 MENTORSHIP_PARTNERS_ENDPOINT = "/mentorship/partners/me"
 MENTORSHIP_MEETINGS_ENDPOINT = "/mentorship/v1/meetings"
+MENTORSHIP_MEETING_V2_ENDPOINT = "/mentorship/v2/meetings"

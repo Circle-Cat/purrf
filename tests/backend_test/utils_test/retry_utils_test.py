@@ -1,4 +1,5 @@
-from tenacity import Retrying
+import unittest
+from tenacity import AsyncRetrying, Retrying
 from unittest import TestCase, main
 from unittest.mock import MagicMock
 from backend.utils.retry_utils import RetryUtils
@@ -65,6 +66,63 @@ class TestRetryUtils(TestCase):
 
         self.assertEqual(result, "Success")
         self.assertEqual(mock_func.call_count, 1)  # Called only once
+
+
+class TestRetryUtilsAsync(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.retry_utils = RetryUtils()
+
+    def test_get_async_retry_on_transient_returns_async_retrying_instance(self):
+        retrier = self.retry_utils.get_async_retry_on_transient
+        self.assertIsInstance(retrier, AsyncRetrying)
+
+    def test_get_async_retry_on_transient_returns_new_instance_each_time(self):
+        """Each access returns a fresh instance to avoid shared state in concurrent calls."""
+        retrier_a = self.retry_utils.get_async_retry_on_transient
+        retrier_b = self.retry_utils.get_async_retry_on_transient
+        self.assertIsNot(retrier_a, retrier_b)
+
+    async def test_get_async_retry_on_transient_executes_successfully(self):
+        mock_func = MagicMock(return_value="ok")
+
+        result = None
+        async for attempt in self.retry_utils.get_async_retry_on_transient:
+            with attempt:
+                result = mock_func()
+
+        self.assertEqual(result, "ok")
+        self.assertEqual(mock_func.call_count, 1)
+
+    async def test_get_async_retry_on_transient_retries_on_general_exception(self):
+        mock_func = MagicMock(side_effect=[IOError("transient"), None])
+
+        async for attempt in self.retry_utils.get_async_retry_on_transient:
+            with attempt:
+                mock_func()
+
+        self.assertEqual(mock_func.call_count, 2)
+
+    async def test_get_async_retry_on_transient_stops_after_three_attempts(self):
+        mock_func = MagicMock(
+            side_effect=[Exception("1"), Exception("2"), Exception("3")]
+        )
+
+        with self.assertRaises(Exception):
+            async for attempt in self.retry_utils.get_async_retry_on_transient:
+                with attempt:
+                    mock_func()
+
+        self.assertEqual(mock_func.call_count, 3)
+
+    async def test_get_async_retry_on_transient_does_not_retry_on_value_error(self):
+        mock_func = MagicMock(side_effect=ValueError("invalid"))
+
+        with self.assertRaises(ValueError):
+            async for attempt in self.retry_utils.get_async_retry_on_transient:
+                with attempt:
+                    mock_func()
+
+        self.assertEqual(mock_func.call_count, 1)
 
 
 if __name__ == "__main__":

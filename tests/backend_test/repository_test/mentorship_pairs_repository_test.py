@@ -406,6 +406,122 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
 
         self.assertIsNone(result)
 
+    async def test_get_pair_with_lock_returns_result_as_mentor(self):
+        """Test that with_lock=True returns the correct pair and partner when user is the mentor."""
+        pair = self.pairs[0]
+        result = await self.repo.get_pair_with_partner_by_round_and_users_and_status(
+            session=self.session,
+            round_id=pair.round_id,
+            user_id=pair.mentor_id,
+            partner_id=pair.mentee_id,
+            status=PairStatus.ACTIVE,
+            with_lock=True,
+        )
+
+        self.assertIsNotNone(result)
+        returned_pair, returned_partner = result
+        self.assertEqual(returned_pair.pair_id, pair.pair_id)
+        self.assertEqual(returned_partner.user_id, pair.mentee_id)
+
+    async def test_get_pair_with_lock_returns_result_as_mentee(self):
+        """Test that with_lock=True returns the correct pair and partner when user is the mentee."""
+        pair = self.pairs[0]
+        result = await self.repo.get_pair_with_partner_by_round_and_users_and_status(
+            session=self.session,
+            round_id=pair.round_id,
+            user_id=pair.mentee_id,
+            partner_id=pair.mentor_id,
+            status=PairStatus.ACTIVE,
+            with_lock=True,
+        )
+
+        self.assertIsNotNone(result)
+        returned_pair, returned_partner = result
+        self.assertEqual(returned_pair.pair_id, pair.pair_id)
+        self.assertEqual(returned_partner.user_id, pair.mentor_id)
+
+    async def test_get_pair_with_lock_returns_none_when_no_match(self):
+        """Test that with_lock=True returns None when no matching pair exists."""
+        result = await self.repo.get_pair_with_partner_by_round_and_users_and_status(
+            session=self.session,
+            round_id=9999,
+            user_id=9999,
+            partner_id=9998,
+            status=PairStatus.ACTIVE,
+            with_lock=True,
+        )
+
+        self.assertIsNone(result)
+
+    async def test_get_pair_with_lock_emits_for_update_sql(self):
+        """Test that with_lock=True generates a FOR UPDATE OF clause in the executed SQL."""
+        from sqlalchemy import event
+        from sqlalchemy.dialects import postgresql
+
+        pair = self.pairs[0]
+        captured_stmts = []
+
+        def capture(conn, clauseelement, multiparams, params, execution_options):
+            captured_stmts.append(clauseelement)
+
+        event.listen(self.connection.sync_connection, "before_execute", capture)
+        try:
+            await self.repo.get_pair_with_partner_by_round_and_users_and_status(
+                session=self.session,
+                round_id=pair.round_id,
+                user_id=pair.mentor_id,
+                partner_id=pair.mentee_id,
+                status=PairStatus.ACTIVE,
+                with_lock=True,
+            )
+        finally:
+            event.remove(self.connection.sync_connection, "before_execute", capture)
+
+        pg_dialect = postgresql.dialect()
+        compiled_sqls = [
+            str(stmt.compile(dialect=pg_dialect))
+            for stmt in captured_stmts
+            if hasattr(stmt, "compile")
+        ]
+        self.assertTrue(
+            any("FOR UPDATE" in sql for sql in compiled_sqls),
+            f"Expected FOR UPDATE in SQL when with_lock=True. Got: {compiled_sqls}",
+        )
+
+    async def test_get_pair_without_lock_does_not_emit_for_update_sql(self):
+        """Test that with_lock=False (default) does not generate a FOR UPDATE clause."""
+        from sqlalchemy import event
+        from sqlalchemy.dialects import postgresql
+
+        pair = self.pairs[0]
+        captured_stmts = []
+
+        def capture(conn, clauseelement, multiparams, params, execution_options):
+            captured_stmts.append(clauseelement)
+
+        event.listen(self.connection.sync_connection, "before_execute", capture)
+        try:
+            await self.repo.get_pair_with_partner_by_round_and_users_and_status(
+                session=self.session,
+                round_id=pair.round_id,
+                user_id=pair.mentor_id,
+                partner_id=pair.mentee_id,
+                status=PairStatus.ACTIVE,
+            )
+        finally:
+            event.remove(self.connection.sync_connection, "before_execute", capture)
+
+        pg_dialect = postgresql.dialect()
+        compiled_sqls = [
+            str(stmt.compile(dialect=pg_dialect))
+            for stmt in captured_stmts
+            if hasattr(stmt, "compile")
+        ]
+        self.assertFalse(
+            any("FOR UPDATE" in sql for sql in compiled_sqls),
+            f"Expected no FOR UPDATE in SQL when with_lock=False. Got: {compiled_sqls}",
+        )
+
     async def test_get_all_active_pairs_by_round(self):
         """Test retrieving all active pairs by round."""
         result = await self.repo.get_active_pairs_by_round(

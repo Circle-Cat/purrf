@@ -159,6 +159,7 @@ class AppDependencyBuilder:
         ).get_jira_client()
         self.google_calendar_client = self.google_client.create_calendar_client()
         self.google_reports_client = self.google_client.create_reports_client()
+        self.meet_spaces_client = self.google_client.create_meet_spaces_client()
 
         self.microsoft_service = MicrosoftService(
             logger=self.logger,
@@ -222,6 +223,8 @@ class AppDependencyBuilder:
             google_people_client=self.google_people_client,
             google_workspaceevents_client=self.google_workspaceevents_client,
             retry_utils=self.retry_utils,
+            google_calendar_client=self.google_calendar_client,
+            meet_spaces_client=self.meet_spaces_client,
         )
         self.google_chat_processor_service = GoogleChatProcessorService(
             logger=self.logger,
@@ -401,6 +404,7 @@ class AppDependencyBuilder:
             mentorship_mapper=self.mentorship_mapper,
             user_identity_service=self.user_identity_service,
             rounds_service=self.rounds_service,
+            google_service=self.google_service,
         )
         self.mentorship_controller = MentorshipController(
             rounds_service=self.rounds_service,

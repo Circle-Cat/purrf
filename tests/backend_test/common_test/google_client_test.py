@@ -242,5 +242,60 @@ class TestGoogleClient(TestCase):
         self.assertIs(publisher_client, mock_publisher_instance)
 
 
+class TestCreateMeetSpacesClient(TestCase):
+    def setUp(self):
+        env = {
+            "USER_EMAIL": TEST_USER_EMAIL,
+            "SERVICE_ACCOUNT_EMAIL": TEST_SERVICE_ACCOUNT_EMAIL,
+            "ADMIN_EMAIL": TEST_ADMIN_EMAIL,
+        }
+        self.env_patcher = patch.dict(os.environ, env)
+        self.env_patcher.start()
+
+        self.mock_logger = Mock()
+        self.mock_retry_utils = Mock(spec=MockRetryUtils)
+
+        def mock_retry_caller(func):
+            return func()
+
+        self.mock_retry_utils.get_retry_on_transient.side_effect = mock_retry_caller
+
+        self.client = GoogleClient(
+            logger=self.mock_logger,
+            retry_utils=self.mock_retry_utils,
+        )
+        self.mock_credentials = Mock(spec=UserCredentials)
+
+    def tearDown(self):
+        self.env_patcher.stop()
+
+    @patch("backend.common.google_client.meet_v2")
+    @patch.object(GoogleClient, "_get_impersonate_credentials")
+    def test_create_meet_spaces_client_success(self, mock_get_creds, mock_meet_v2):
+        """Returns a SpacesServiceAsyncClient built with impersonated credentials."""
+        mock_get_creds.return_value = self.mock_credentials
+        mock_client_instance = Mock()
+        mock_meet_v2.SpacesServiceAsyncClient.return_value = mock_client_instance
+
+        result = self.client.create_meet_spaces_client()
+
+        self.mock_retry_utils.get_retry_on_transient.assert_called_once()
+        mock_meet_v2.SpacesServiceAsyncClient.assert_called_once_with(
+            credentials=self.mock_credentials,
+        )
+        self.assertIs(result, mock_client_instance)
+        self.mock_logger.info.assert_called_once()
+
+    @patch.object(GoogleClient, "_get_impersonate_credentials")
+    def test_create_meet_spaces_client_no_credentials_raises(self, mock_get_creds):
+        """Raises ValueError when credentials cannot be obtained."""
+        mock_get_creds.return_value = None
+
+        with self.assertRaises(ValueError) as cm:
+            self.client.create_meet_spaces_client()
+
+        self.assertIn("Credentials are not available", str(cm.exception))
+
+
 if __name__ == "__main__":
     main()

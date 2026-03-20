@@ -1,6 +1,7 @@
 from google.auth.impersonated_credentials import Credentials as ImpersonatedCredentials
 from google.cloud.pubsub_v1 import SubscriberClient, PublisherClient
 from googleapiclient.discovery import build
+from google.apps import meet_v2
 from google.auth import default
 from backend.common.constants import GOOGLE_USER_SCOPES_LIST, GOOGLE_ADMIN_SCOPES_LIST
 from backend.common.environment_constants import (
@@ -241,3 +242,21 @@ class GoogleClient:
         return self._create_client(
             "admin", "reports_v1", self._admin_email, GOOGLE_ADMIN_SCOPES_LIST
         )
+
+    def create_meet_spaces_client(self):
+        """
+        Creates a Google Meet API v2 SpacesService async client.
+
+        Returns:
+            meet_v2.SpacesServiceAsyncClient
+        """
+        credentials = self.retry_utils.get_retry_on_transient(
+            lambda: self._get_impersonate_credentials()
+        )
+        if not credentials:
+            raise ValueError("Credentials are not available for creating the client.")
+        client = meet_v2.SpacesServiceAsyncClient(
+            credentials=credentials,
+        )
+        self.logger.info("Created Meet SpacesService client successfully.")
+        return client

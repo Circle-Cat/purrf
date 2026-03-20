@@ -31,6 +31,7 @@ py_library(
         ":environment_constants",
         ":logger",
         "@pypi//google_api_python_client",
+        "@pypi//google_apps_meet",
         "@pypi//google_auth_oauthlib",
         "@pypi//google_cloud_pubsub",
         "@pypi//grpcio",

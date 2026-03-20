@@ -180,6 +180,10 @@ class TestAppDependencyBuilder(TestCase):
         mock_google_client_instance.create_calendar_client.return_value = (
             mock_google_calendar_client
         )
+        mock_meet_spaces_client = MagicMock()
+        mock_google_client_instance.create_meet_spaces_client.return_value = (
+            mock_meet_spaces_client
+        )
         mock_google_reports_client = MagicMock()
         mock_google_client_instance.create_reports_client.return_value = (
             mock_google_reports_client
@@ -230,6 +234,7 @@ class TestAppDependencyBuilder(TestCase):
         mock_google_client_instance.create_workspaceevents_client.assert_called_once()
         mock_google_client_instance.create_calendar_client.assert_called_once()
         mock_google_client_instance.create_reports_client.assert_called_once()
+        mock_google_client_instance.create_meet_spaces_client.assert_called_once()
         mock_retry_utils_cls.assert_called_once()
         mock_gerrit_client_cls.assert_called_once()
         mock_jira_client_cls.assert_called_once()
@@ -478,6 +483,7 @@ class TestAppDependencyBuilder(TestCase):
             mentorship_mapper=mock_mentorship_mapper_cls.return_value,
             user_identity_service=mock_user_identity_service_cls.return_value,
             rounds_service=mock_rounds_service_cls.return_value,
+            google_service=mock_google_service.return_value,
         )
 
         mock_fast_app_factory_cls.assert_called_once_with(
@@ -508,6 +514,8 @@ class TestAppDependencyBuilder(TestCase):
             google_people_client=mock_google_people_client,
             google_workspaceevents_client=mock_google_workspaceevents_client,
             retry_utils=mock_retry_utils_instance,
+            google_calendar_client=mock_google_calendar_client,
+            meet_spaces_client=mock_meet_spaces_client,
         )
 
         mock_google_chat_processor_service.assert_called_once_with(

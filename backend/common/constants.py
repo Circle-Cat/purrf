@@ -6,6 +6,8 @@ GOOGLE_USER_SCOPES_LIST = [
     "https://www.googleapis.com/auth/chat.memberships.readonly",
     "https://www.googleapis.com/auth/chat.messages.readonly",
     "https://www.googleapis.com/auth/calendar.readonly",
+    "https://www.googleapis.com/auth/calendar.events.owned",
+    "https://www.googleapis.com/auth/meetings.space.settings",
 ]
 
 GOOGLE_ADMIN_SCOPES_LIST = [

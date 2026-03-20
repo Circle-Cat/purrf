@@ -15,8 +15,10 @@ from backend.common.api_endpoints import (
     MENTORSHIP_PARTNERS_ENDPOINT,
     MENTORSHIP_MATCH_RESULT_ENDPOINT,
     MENTORSHIP_MEETINGS_ENDPOINT,
+    MENTORSHIP_MEETING_V2_ENDPOINT,
 )
 from backend.common.user_role import UserRole
+from backend.dto.google_meeting_create_dto import GoogleMeetingCreateDto
 
 
 class MentorshipController:
@@ -105,6 +107,15 @@ class MentorshipController:
         self.router.add_api_route(
             MENTORSHIP_MEETINGS_ENDPOINT,
             endpoint=authenticate(roles=[UserRole.MENTORSHIP])(self.upsert_meetings),
+            methods=["POST"],
+            response_model=None,
+        )
+
+        self.router.add_api_route(
+            MENTORSHIP_MEETING_V2_ENDPOINT,
+            endpoint=authenticate(roles=[UserRole.MENTORSHIP])(
+                self.create_google_meeting
+            ),
             methods=["POST"],
             response_model=None,
         )
@@ -274,3 +285,34 @@ class MentorshipController:
             )
 
         raise PermissionError("Manual submit meeting feature is not yet available.")
+
+    async def create_google_meeting(
+        self, current_user: UserContextDto, payload: GoogleMeetingCreateDto
+    ):
+        """
+        Create a Google Calendar meeting for a mentorship pair.
+
+        Args:
+            current_user (UserContextDto): The context of the currently authenticated user.
+            payload (GoogleMeetingCreateDto): The meeting creation request containing
+                partner_id, round_id, and UTC start/end times.
+
+        Returns:
+            ApiResponse: A standardized API response containing the created meeting details.
+        """
+        if self.launchdarkly_service.is_create_google_meeting_enabled(current_user):
+            async with self.database.session() as session:
+                result = await self.meeting_service.create_google_meeting(
+                    session=session,
+                    user_context=current_user,
+                    partner_id=payload.partner_id,
+                    round_id=payload.round_id,
+                    start_datetime=payload.start_datetime,
+                    end_datetime=payload.end_datetime,
+                )
+
+            return api_response(
+                message="Successfully created mentorship meeting.",
+                data=result,
+            )
+        raise PermissionError("Create Google meeting feature is not yet available.")

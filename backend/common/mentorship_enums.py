@@ -60,6 +60,9 @@ class ParticipantRole(Enum):
     MENTEE = "mentee"
 
 
+MEETING_SUMMARY_TEMPLATE = "Circlecat Mentorship - {current_user_name} / {partner_name}"
+
+
 class TrainingCategory(str, Enum):
     MENTORSHIP_MENTEE_ONBOARDING = "mentorship_mentee_onboarding"
     MENTORSHIP_MENTOR_ONBOARDING = "mentorship_mentor_onboarding"

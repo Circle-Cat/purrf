@@ -1,3 +1,9 @@
+from datetime import datetime
+
+from google.apps import meet_v2
+from google.protobuf import field_mask_pb2
+
+
 class GoogleService:
     """Service class for interacting with Google APIs."""
 
@@ -8,6 +14,8 @@ class GoogleService:
         google_people_client,
         google_workspaceevents_client,
         retry_utils,
+        google_calendar_client,
+        meet_spaces_client,
     ):
         """
         Initializes the GoogleService with necessary clients and logger.
@@ -18,12 +26,16 @@ class GoogleService:
             google_people_client: Authenticated Google People client.
             google_workspaceevents_client: Authenticated Google Workspace Events client.
             retry_utils: A RetryUtils for handling retries on transient errors.
+            google_calendar_client: Authenticated Google Calendar client.
+            meet_spaces_client: Authenticated Google Meet SpacesServiceAsyncClient.
         """
         self.logger = logger
         self.google_chat_client = google_chat_client
         self.google_people_client = google_people_client
         self.google_workspaceevents_client = google_workspaceevents_client
         self.retry_utils = retry_utils
+        self.google_calendar_client = google_calendar_client
+        self.meet_spaces_client = meet_spaces_client
 
     def get_chat_spaces(self, space_type: str) -> dict:
         """Retrieves a dictionary of Google Chat spaces with their display names.
@@ -262,4 +274,118 @@ class GoogleService:
             )
             raise RuntimeError(
                 f"Failed to renew subscription '{subscription_name}'"
+            ) from e
+
+    def insert_google_meeting(
+        self,
+        summary: str,
+        start_time: datetime,
+        end_time: datetime,
+        attendees_emails: list[str],
+        request_id: str,
+        event_id: str = None,
+    ) -> dict:
+        """
+        Calls Google Calendar API to create an event with a Meet link.
+        """
+        event_body = {
+            "summary": summary,
+            "start": {"dateTime": start_time.isoformat(), "timeZone": "Etc/UTC"},
+            "end": {"dateTime": end_time.isoformat(), "timeZone": "Etc/UTC"},
+            "attendees": [{"email": email} for email in attendees_emails],
+            "conferenceData": {
+                "createRequest": {
+                    "requestId": request_id,
+                    "conferenceSolutionKey": {"type": "hangoutsMeet"},
+                }
+            },
+            "transparency": "opaque",
+            "visibility": "default",
+        }
+
+        if event_id:
+            event_body["id"] = event_id
+
+        req = self.google_calendar_client.events().insert(
+            calendarId="primary",
+            body=event_body,
+            conferenceDataVersion=1,
+            sendUpdates="all",
+        )
+        try:
+            response = self.retry_utils.get_retry_on_transient(req.execute)
+            self.logger.info(
+                "[GoogleService] Successfully created Google Meeting: %s",
+                response.get("hangoutLink"),
+            )
+            return response
+        except Exception as e:
+            self.logger.error(
+                "Failed to create Google Meeting (request_id=%s): %s",
+                request_id,
+                e,
+                exc_info=True,
+            )
+            raise RuntimeError(
+                "Unable to create Google Meeting via Calendar API"
+            ) from e
+
+    async def get_meet_space_name(self, meeting_code: str) -> str:
+        """
+        Resolves the internal Meet space resource name from a meeting code.
+
+        Args:
+            meeting_code (str): The Meet meeting code, e.g. "abc-defg-hij".
+
+        Returns:
+            str: The space resource name, e.g. "spaces/XXXXXXXXXXXXXXXX".
+        """
+        try:
+            space = await self.retry_utils.get_async_retry_on_transient(
+                self.meet_spaces_client.get_space, name=f"spaces/{meeting_code}"
+            )
+            return space.name
+        except Exception as e:
+            self.logger.error(
+                "[GoogleService] Failed to resolve Meet space for meeting_code=%s: %s",
+                meeting_code,
+                e,
+                exc_info=True,
+            )
+            raise RuntimeError(
+                f"Unable to resolve Meet space for meeting code: {meeting_code}"
+            ) from e
+
+    async def update_meet_space_type_to_open(self, space_name: str) -> None:
+        """
+        Updates a Google Meet space's access type to OPEN.
+
+        Args:
+            space_name (str): The Meet space resource name, e.g. "spaces/XXXXXXXXXXXXXXXX".
+        """
+        request = meet_v2.UpdateSpaceRequest(
+            space=meet_v2.Space(
+                name=space_name,
+                config=meet_v2.SpaceConfig(
+                    access_type=meet_v2.SpaceConfig.AccessType.OPEN,
+                ),
+            ),
+            update_mask=field_mask_pb2.FieldMask(paths=["config.access_type"]),
+        )
+        try:
+            await self.retry_utils.get_async_retry_on_transient(
+                self.meet_spaces_client.update_space, request=request
+            )
+            self.logger.info(
+                "[GoogleService] Meet space %s access type set to OPEN", space_name
+            )
+        except Exception as e:
+            self.logger.error(
+                "[GoogleService] Failed to update Meet space %s to OPEN: %s",
+                space_name,
+                e,
+                exc_info=True,
+            )
+            raise RuntimeError(
+                f"Unable to update Meet space access type: {space_name}"
             ) from e

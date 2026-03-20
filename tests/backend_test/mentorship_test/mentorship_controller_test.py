@@ -9,6 +9,7 @@ from backend.dto.partner_dto import PartnerDto
 from backend.dto.user_context_dto import UserContextDto
 from backend.dto.registration_dto import RegistrationDto
 from backend.dto.registration_create_dto import RegistrationCreateDto
+from backend.dto.google_meeting_create_dto import GoogleMeetingCreateDto
 from backend.mentorship.mentorship_controller import MentorshipController
 
 
@@ -28,10 +29,14 @@ class TestMentorshipController(unittest.IsolatedAsyncioTestCase):
         self.mock_meeting_service = MagicMock()
         self.mock_meeting_service.get_meetings_by_user_and_round = AsyncMock()
         self.mock_meeting_service.upsert_meetings = AsyncMock()
+        self.mock_meeting_service.create_google_meeting = AsyncMock()
 
         self.mock_launchdarkly_service = MagicMock()
         self.mock_launchdarkly_service.is_manual_submit_meeting_enabled = MagicMock(
             return_value=True
+        )
+        self.mock_launchdarkly_service.is_create_google_meeting_enabled = MagicMock(
+            return_value=False
         )
 
         self.mock_database = MagicMock()
@@ -292,6 +297,7 @@ class TestMentorshipController(unittest.IsolatedAsyncioTestCase):
     async def test_upsert_meetings(self):
         """Test update or create mentorship meeting logs."""
         mock_user = MagicMock(spec=UserContextDto, sub="valid-sub")
+        mock_user.has_role = MagicMock(return_value=False)
         mock_payload = MagicMock()
         mock_updated_data = MagicMock()
 
@@ -325,6 +331,87 @@ class TestMentorshipController(unittest.IsolatedAsyncioTestCase):
             )
 
         self.mock_meeting_service.upsert_meetings.assert_not_awaited()
+
+    async def test_create_google_meeting(self):
+        """Test successful meeting creation delegates to service and returns response."""
+        self.mock_launchdarkly_service.is_create_google_meeting_enabled.return_value = (
+            True
+        )
+        mock_user = MagicMock(spec=UserContextDto)
+        mock_result = MagicMock()
+        self.mock_meeting_service.create_google_meeting.return_value = mock_result
+
+        payload = GoogleMeetingCreateDto(
+            partner_id=2,
+            round_id=1,
+            start_datetime="2026-03-20T10:00:00Z",
+            end_datetime="2026-03-20T11:00:00Z",
+        )
+
+        response = await self.controller.create_google_meeting(
+            current_user=mock_user, payload=payload
+        )
+
+        self.mock_meeting_service.create_google_meeting.assert_awaited_once_with(
+            session=self.mock_session,
+            user_context=mock_user,
+            partner_id=payload.partner_id,
+            round_id=payload.round_id,
+            start_datetime=payload.start_datetime,
+            end_datetime=payload.end_datetime,
+        )
+
+        self.mock_api_response.assert_called_once_with(
+            message="Successfully created mentorship meeting.",
+            data=mock_result,
+        )
+
+        self.assertEqual(response["data"], mock_result)
+
+    async def test_create_google_meeting_service_error(self):
+        """Test that service errors propagate through the controller."""
+        self.mock_launchdarkly_service.is_create_google_meeting_enabled.return_value = (
+            True
+        )
+        mock_user = MagicMock(spec=UserContextDto)
+        self.mock_meeting_service.create_google_meeting.side_effect = ValueError(
+            "The specified partner could not be found."
+        )
+
+        payload = GoogleMeetingCreateDto(
+            partner_id=999,
+            round_id=1,
+            start_datetime="2026-03-20T10:00:00Z",
+            end_datetime="2026-03-20T11:00:00Z",
+        )
+
+        with self.assertRaises(ValueError):
+            await self.controller.create_google_meeting(
+                current_user=mock_user, payload=payload
+            )
+
+        self.mock_api_response.assert_not_called()
+
+    async def test_create_google_meeting_feature_disabled(self):
+        """Test that PermissionError is raised when feature flag is disabled."""
+        self.mock_launchdarkly_service.is_create_google_meeting_enabled.return_value = (
+            False
+        )
+        mock_user = MagicMock(spec=UserContextDto)
+
+        payload = GoogleMeetingCreateDto(
+            partner_id=2,
+            round_id=1,
+            start_datetime="2026-03-20T10:00:00Z",
+            end_datetime="2026-03-20T11:00:00Z",
+        )
+
+        with self.assertRaises(PermissionError):
+            await self.controller.create_google_meeting(
+                current_user=mock_user, payload=payload
+            )
+
+        self.mock_meeting_service.create_google_meeting.assert_not_awaited()
 
 
 if __name__ == "__main__":

@@ -7,15 +7,15 @@ py_library(
     srcs = glob(["*.py"]),
     deps = [
         "//backend/common:api_endpoints",
+        "//backend/common:constants",
         "//backend/common:fast_api_response_wrapper",
+        "//backend/common:mentorship_enums",
         "//backend/common:user_role",
         "//backend/dto",
         "//backend/entity:entities",
         "//backend/repository:repositories",
         "//backend/service:launchdarkly_service",
-        "//backend/user_identity:user_identity_service",
         "//backend/utils:permission_decorators",
-        "@pypi//fastapi",
         "@pypi//sqlalchemy",
     ],
 )

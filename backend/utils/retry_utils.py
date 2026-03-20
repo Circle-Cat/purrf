@@ -2,6 +2,7 @@ from tenacity import (
     stop_after_attempt,
     wait_exponential,
     retry_if_exception,
+    AsyncRetrying,
     Retrying,
 )
 
@@ -27,3 +28,17 @@ class RetryUtils:
         excluding `ValueError` from the retry conditions.
         """
         return self._retry_on_transient
+
+    @property
+    def get_async_retry_on_transient(self) -> AsyncRetrying:
+        """
+        Returns a Tenacity AsyncRetrying instance configured for transient errors.
+        Use with `async with` for awaitable callables.
+        Retries up to 3 times with exponential backoff, excluding `ValueError`.
+        """
+        return AsyncRetrying(
+            retry=retry_if_exception(lambda e: not isinstance(e, ValueError)),
+            stop=stop_after_attempt(3),
+            wait=wait_exponential(multiplier=1, min=1, max=3),
+            reraise=True,
+        )

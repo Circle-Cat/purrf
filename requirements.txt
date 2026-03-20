@@ -17,7 +17,8 @@ uvicorn==0.34.0
 pytest==8.3.3
 pytest-cov==6.0.0
 
-# google_chat
+# Google client
+google-apps-meet==0.4.0
 google-auth==2.38.0
 proto-plus==1.26.0
 google-api-core==2.24.1

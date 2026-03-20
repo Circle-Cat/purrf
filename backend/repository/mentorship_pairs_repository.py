@@ -265,6 +265,7 @@ class MentorshipPairsRepository:
         user_id: int,
         partner_id: int,
         status: PairStatus,
+        with_lock: bool = False,
     ) -> tuple[MentorshipPairsEntity, UsersEntity] | None:
         """
         Retrieve a mentorship pair and the corresponding partner user
@@ -281,6 +282,8 @@ class MentorshipPairsRepository:
             user_id (int): The current user's ID.
             partner_id (int): The partner user's ID.
             status (PairStatus): The expected status of the mentorship pair.
+            with_lock (bool): If True, acquires a FOR UPDATE row lock on the pair row
+                to prevent concurrent status changes until the transaction commits.
 
         Returns:
             tuple[MentorshipPairsEntity, UsersEntity] | None:
@@ -297,7 +300,7 @@ class MentorshipPairsRepository:
             else_=MentorshipPairsEntity.mentor_id,
         )
 
-        result = await session.execute(
+        stmt = (
             select(MentorshipPairsEntity, UsersEntity)
             .join(UsersEntity, partner_join_condition)
             .where(
@@ -312,6 +315,10 @@ class MentorshipPairsRepository:
             )
         )
 
+        if with_lock:
+            stmt = stmt.with_for_update(of=MentorshipPairsEntity)
+
+        result = await session.execute(stmt)
         return result.one_or_none()
 
     async def get_active_pairs_by_round(
@@ -333,6 +340,7 @@ class MentorshipPairsRepository:
                 MentorshipPairsEntity.status == PairStatus.ACTIVE,
             )
         )
+
         return result.scalars().all()
 
     async def clear_google_meetings_by_user_pair_and_round(

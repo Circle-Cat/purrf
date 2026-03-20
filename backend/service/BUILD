@@ -25,6 +25,11 @@ py_library(
 py_library(
     name = "google_service",
     srcs = ["google_service.py"],
+    deps = [
+        "//backend/utils:retry_utils",
+        "@pypi//google_apps_meet",
+        "@pypi//protobuf",
+    ],
 )
 
 py_library(

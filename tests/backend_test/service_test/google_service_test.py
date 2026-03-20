@@ -1,7 +1,9 @@
+import unittest
 from unittest import TestCase, main
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 from backend.service.google_service import GoogleService
+from backend.utils.retry_utils import RetryUtils
 
 
 class TestGoogleService(TestCase):
@@ -10,6 +12,8 @@ class TestGoogleService(TestCase):
         self.mock_google_chat_client = MagicMock()
         self.mock_google_people_client = MagicMock()
         self.mock_google_workspaceevents_client = MagicMock()
+        self.mock_google_calendar_client = MagicMock()
+        self.mock_meet_spaces_client = MagicMock()
         self.mock_retry_utils = MagicMock()
         self.mock_retry_utils.get_retry_on_transient.side_effect = lambda fn: fn()
 
@@ -18,7 +22,9 @@ class TestGoogleService(TestCase):
             google_chat_client=self.mock_google_chat_client,
             google_people_client=self.mock_google_people_client,
             google_workspaceevents_client=self.mock_google_workspaceevents_client,
+            google_calendar_client=self.mock_google_calendar_client,
             retry_utils=self.mock_retry_utils,
+            meet_spaces_client=self.mock_meet_spaces_client,
         )
 
     def test_get_chat_spaces_success_single_page(self):
@@ -519,6 +525,75 @@ class TestGoogleService(TestCase):
         self.assertIn(
             f"Failed to renew subscription '{subscription_name}'", str(cm.exception)
         )
+        self.mock_logger.error.assert_called_once()
+
+
+class TestGoogleServiceMeet(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.mock_logger = MagicMock()
+        self.mock_meet_spaces_client = AsyncMock()
+        self.retry_utils = RetryUtils()
+
+        self.service = GoogleService(
+            logger=self.mock_logger,
+            google_chat_client=MagicMock(),
+            google_people_client=MagicMock(),
+            google_workspaceevents_client=MagicMock(),
+            google_calendar_client=MagicMock(),
+            retry_utils=self.retry_utils,
+            meet_spaces_client=self.mock_meet_spaces_client,
+        )
+
+    async def test_get_meet_space_name_success(self):
+        """Returns the internal space resource name resolved from a meeting code."""
+        mock_space = MagicMock()
+        mock_space.name = "spaces/INTERNALID123"
+        self.mock_meet_spaces_client.get_space.return_value = mock_space
+
+        result = await self.service.get_meet_space_name("abc-def-ghi")
+
+        self.assertEqual(result, "spaces/INTERNALID123")
+        self.mock_meet_spaces_client.get_space.assert_called_once_with(
+            name="spaces/abc-def-ghi"
+        )
+
+    async def test_get_meet_space_name_api_error_raises_runtime_error(self):
+        """Raises RuntimeError and logs error when get_space fails."""
+        self.mock_meet_spaces_client.get_space.side_effect = Exception("API error")
+
+        with self.assertRaises(RuntimeError) as cm:
+            await self.service.get_meet_space_name("abc-def-ghi")
+
+        self.assertIn("abc-def-ghi", str(cm.exception))
+        self.mock_logger.error.assert_called_once()
+
+    async def test_update_meet_space_type_to_open_success(self):
+        """Calls update_space with OPEN access type and correct space name."""
+        from google.apps import meet_v2
+
+        self.mock_meet_spaces_client.update_space.return_value = None
+
+        await self.service.update_meet_space_type_to_open("spaces/INTERNALID123")
+
+        self.mock_meet_spaces_client.update_space.assert_called_once()
+        call_kwargs = self.mock_meet_spaces_client.update_space.call_args.kwargs
+        request = call_kwargs["request"]
+        self.assertEqual(request.space.name, "spaces/INTERNALID123")
+        self.assertEqual(
+            request.space.config.access_type,
+            meet_v2.SpaceConfig.AccessType.OPEN,
+        )
+        self.assertEqual(list(request.update_mask.paths), ["config.access_type"])
+        self.mock_logger.info.assert_called_once()
+
+    async def test_update_meet_space_type_to_open_api_error_raises_runtime_error(self):
+        """Raises RuntimeError and logs error when update_space fails."""
+        self.mock_meet_spaces_client.update_space.side_effect = Exception("403 denied")
+
+        with self.assertRaises(RuntimeError) as cm:
+            await self.service.update_meet_space_type_to_open("spaces/INTERNALID123")
+
+        self.assertIn("spaces/INTERNALID123", str(cm.exception))
         self.mock_logger.error.assert_called_once()
 
 
