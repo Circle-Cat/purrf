@@ -35,7 +35,11 @@ resource "helm_release" "purrf_app" {
         { name = "DATABASE_URL", value = local.app_sqlalchemy_async_url },
         { name = "CF_TEAM_DOMAIN", value = "ccat-dev.cloudflareaccess.com" },
         { name = "CF_AUD_TAG", value = var.cf_aud_tag },
-        { name = "GOOGLE_AUDIENCE", value = "purrf" }
+        { name = "GOOGLE_AUDIENCE", value = "purrf" },
+        { name = "PUBSUB_PROJECT_ID", value = var.gcp_project_id },
+        { name = "MICROSOFT_SUBSCRIPTION_ID", value = google_pubsub_subscription.subscriptions["chat-microsoft-events"].name },
+        { name = "GOOGLE_CHAT_SUBSCRIPTION_ID", value = google_pubsub_subscription.subscriptions["chat-google-events"].name },
+        { name = "GERRIT_SUBSCRIPTION_ID", value = google_pubsub_subscription.subscriptions["gerrit-events"].name },
       ]
 
       ingress = {
