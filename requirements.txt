@@ -136,6 +136,9 @@ et_xmlfile==1.1.0
 pytz==2024.1
 tzdata==2024.1
 
+# Logging
+python-json-logger==3.3.0
+
 # Feature Flags
 launchdarkly-server-sdk==9.8.0
 launchdarkly-eventsource==1.5.1

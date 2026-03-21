@@ -15,7 +15,10 @@ py_library(
 py_library(
     name = "logger",
     srcs = ["logger.py"],
-    deps = [":environment_constants"],
+    deps = [
+        ":environment_constants",
+        "@pypi//python_json_logger",
+    ],
 )
 
 py_library(

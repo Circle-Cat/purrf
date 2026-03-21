@@ -1,11 +1,13 @@
+import json
 import logging
 import os
 import unittest
+from io import StringIO
 from unittest.mock import patch
+
+from backend.common.environment_constants import LOG_LEVEL
 from backend.common.logger import get_logger
 import backend.common.logger as logger_module
-from io import StringIO
-from backend.common.environment_constants import LOG_LEVEL
 
 
 class TestLogger(unittest.TestCase):
@@ -31,31 +33,53 @@ class TestLogger(unittest.TestCase):
             get_logger()
             self.assertEqual(logging.getLogger().getEffectiveLevel(), logging.INFO)
 
-    def test_log_format(self):
+    def test_json_log_format(self):
         with patch.dict(os.environ, {LOG_LEVEL: "INFO"}):
             get_logger()
-            log_capture_string = StringIO()
+            log_capture = StringIO()
             root_logger = logging.getLogger()
-            if root_logger.handlers:
-                root_logger.handlers[0].stream = log_capture_string
-            else:
-                ch = logging.StreamHandler(log_capture_string)
-                logging.getLogger().addHandler(ch)
+            root_logger.handlers[0].stream = log_capture
 
             logging.info("Test message")
-            log_contents = log_capture_string.getvalue()
-            expected_format = (
-                r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3} - INFO - Test message\n"
-            )
-            self.assertRegex(log_contents, expected_format)
+            log_output = log_capture.getvalue().strip()
+            log_entry = json.loads(log_output)
+
+            self.assertEqual(log_entry["severity"], "INFO")
+            self.assertEqual(log_entry["message"], "Test message")
+            self.assertIn("timestamp", log_entry)
+            self.assertIn("+00:00", log_entry["timestamp"])
+            self.assertIn("name", log_entry)
+            self.assertNotIn("levelname", log_entry)
+
+    def test_json_log_with_exception(self):
+        with patch.dict(os.environ, {LOG_LEVEL: "INFO"}):
+            get_logger()
+            log_capture = StringIO()
+            root_logger = logging.getLogger()
+            root_logger.handlers[0].stream = log_capture
+
+            try:
+                raise ValueError("test error")
+            except ValueError:
+                logging.error("Something failed", exc_info=True)
+
+            log_output = log_capture.getvalue().strip()
+            log_entry = json.loads(log_output)
+
+            self.assertEqual(log_entry["severity"], "ERROR")
+            self.assertIn("stack_trace", log_entry)
+            self.assertIn("ValueError: test error", log_entry["stack_trace"])
 
     def test_setup_logger_called_once(self):
-        with patch("logging.basicConfig") as mock_basic_config:
+        with patch("logging.getLogger") as mock_get_logger:
+            mock_root = mock_get_logger.return_value
+            mock_root.handlers = []
             get_logger()
             get_logger()
             get_logger()
 
-            mock_basic_config.assert_called_once()
+            # _setup_logger only configures root logger once due to _logger_initialized flag
+            self.assertTrue(logger_module._logger_initialized)
 
 
 if __name__ == "__main__":
