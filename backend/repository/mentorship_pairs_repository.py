@@ -1,7 +1,8 @@
 from backend.entity.mentorship_pairs_entity import MentorshipPairsEntity
 from backend.entity.users_entity import UsersEntity
-from sqlalchemy import select, or_, case
+from sqlalchemy import select, or_, case, update, func, cast, type_coerce
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.dialects.postgresql import JSONB, array
 
 
 class MentorshipPairsRepository:
@@ -188,3 +189,72 @@ class MentorshipPairsRepository:
         )
 
         return result.scalars().one_or_none()
+
+    async def remove_meeting_from_log(
+        self, session: AsyncSession, user_id: int, meeting_id: str
+    ) -> bool:
+        """
+        Remove a meeting entry from the meeting_log JSONB field for a mentorship pair
+        associated with the given user.
+
+        Note:
+            This method performs a direct database update. If callers need to access the
+            latest pair data afterward from an already-loaded ORM object, they should call
+            `session.refresh(...)` to ensure the entity reflects the updated state.
+
+        Args:
+            session (AsyncSession): Active async database session.
+            user_id (int): Current user ID. Must match mentor_id or mentee_id.
+            meeting_id (str): The meeting ID to remove.
+
+        Returns:
+            bool: True if a meeting was removed, otherwise False.
+        """
+        meeting_elements = (
+            func.jsonb_array_elements(
+                MentorshipPairsEntity.meeting_log["google_meetings"]
+            )
+            .table_valued("value")
+            .alias("meeting_elements")
+        )
+
+        filtered_meeting_list = (
+            select(
+                func.coalesce(
+                    func.jsonb_agg(meeting_elements.c.value),
+                    type_coerce([], JSONB),
+                )
+            )
+            .select_from(meeting_elements)
+            .where(cast(meeting_elements.c.value, JSONB)["meeting_id"].astext != meeting_id)
+            .scalar_subquery()
+        )
+
+        target_meeting_json = {
+            "google_meetings": [{"meeting_id": meeting_id}]
+        }
+
+        stmt = (
+            update(MentorshipPairsEntity)
+            .where(
+                or_(
+                    MentorshipPairsEntity.mentor_id == user_id,
+                    MentorshipPairsEntity.mentee_id == user_id,
+                ),
+                MentorshipPairsEntity.meeting_log.contains(
+                    target_meeting_json
+                ),
+            )
+            .values(
+                meeting_log=func.jsonb_set(
+                    MentorshipPairsEntity.meeting_log,
+                    array(["google_meetings"]),
+                    filtered_meeting_list,
+                    False,
+                )
+            )
+            .returning(MentorshipPairsEntity.pair_id)
+        )
+
+        result = await session.execute(stmt)
+        return result.scalar_one_or_none() is not None
