@@ -73,8 +73,7 @@ fi
 # Reset positional parameters to the new argument list
 set -- "${args_without_all[@]}"
 
-echo "Final arguments:"
-printf '  %s\n' "$@"
+echo "Linting ${#} target(s)..."
 
 fix=""
 buildevents=$(mktemp)
@@ -129,19 +128,37 @@ else
 fi
 valid_reports=$("$JQ_CMD" --arg ext .out --raw-output "$filter" "$buildevents" | tr -d '\r')
 has_failure=0
-# Show the results.
+total=0
+passed=0
+failed=0
+# Show the results — only print reports that have actual errors.
 while IFS= read -r report; do
 	# Exclude coverage reports, and check if the output is empty.
 	if [[ "$report" == *coverage.dat ]] || [[ ! -s "$report" ]]; then
-		# Report is empty. No linting errors.
 		continue
 	fi
-	echo "From ${report}:"
-	cat "${report}"
-	if ! grep -q "All checks passed!" "${report}"; then
-		has_failure=1
+	total=$((total + 1))
+	if grep -q "All checks passed!" "${report}"; then
+		passed=$((passed + 1))
+		continue
 	fi
+	# Filter out ESLint "File ignored" warnings (both variants)
+	filtered=$(grep -v "File ignored because" "${report}" | grep -v "^$" || true)
+	# If only the ESLint summary line remains (e.g. "✖ N problems (0 errors, N warnings)"), skip this report
+	if echo "$filtered" | grep -qP '^\s*$|✖.*\(0 errors'; then
+		passed=$((passed + 1))
+		continue
+	fi
+	failed=$((failed + 1))
+	has_failure=1
+	# Extract target name from report path for cleaner output
+	target=$(echo "$report" | sed 's|.*/bin/||; s|\.AspectRulesLint.*||; s|/|:|')
+	echo ""
+	echo "=== FAIL: ${target} ==="
+	echo "$filtered"
 done <<<"$valid_reports"
+echo ""
+echo "--- Summary: ${passed} passed, ${failed} failed, ${total} total ---"
 if [ -n "$fix" ]; then
 	valid_patches=$("$JQ_CMD" --arg ext .patch --raw-output "$filter" "$buildevents" | tr -d '\r')
 	while IFS= read -r patch; do
