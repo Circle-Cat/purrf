@@ -82,6 +82,7 @@ class LaunchDarklyClient:
             Context.builder(user_context.sub)
             .kind("user")
             .set("email", user_context.primary_email or "")
+            .set("roles", user_context.roles or [])
             .build()
         )
         return self._client.variation(flag_key, context, default_value)

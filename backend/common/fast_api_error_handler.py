@@ -15,9 +15,16 @@ async def global_exception_handler(request: Request, exc: Exception):
     """
 
     # Determine the HTTP status code based on the type of exception.
+    # Exception-to-status mapping:
+    #   ValueError / RequestValidationError → 400 Bad Request
+    #   PermissionError                     → 403 Forbidden
+    #   RuntimeError                        → 503 Service Unavailable
+    #   Everything else                     → 500 Internal Server Error
     match exc:
         case ValueError() | RequestValidationError():
             status = HTTPStatus.BAD_REQUEST
+        case PermissionError():
+            status = HTTPStatus.FORBIDDEN
         case RuntimeError():
             status = HTTPStatus.SERVICE_UNAVAILABLE
         case _:

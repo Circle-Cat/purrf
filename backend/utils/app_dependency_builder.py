@@ -405,6 +405,7 @@ class AppDependencyBuilder:
             participation_service=self.participation_service,
             registration_service=self.registration_service,
             meeting_service=self.meeting_service,
+            launchdarkly_service=self.launchdarkly_service,
             database=self.database,
         )
         self.experience_repository = ExperienceRepository()

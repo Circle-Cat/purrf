@@ -26,6 +26,7 @@ class MentorshipController:
         participation_service,
         registration_service,
         meeting_service,
+        launchdarkly_service,
         database,
     ):
         """
@@ -36,6 +37,7 @@ class MentorshipController:
             participation_service: ParticipationService instance.
             registration_service: RegistrationService instance.
             meeting_service: MeetingService instance.
+            launchdarkly_service: LaunchDarklyService instance.
             database (Database): Database access object providing async session management.
         """
 
@@ -43,6 +45,7 @@ class MentorshipController:
         self.participation_service = participation_service
         self.registration_service = registration_service
         self.meeting_service = meeting_service
+        self.launchdarkly_service = launchdarkly_service
         self.database = database
 
         self.router = APIRouter(tags=["mentorship"])
@@ -258,13 +261,16 @@ class MentorshipController:
     async def upsert_meetings(
         self, current_user: UserContextDto, payload: MeetingCreateDto
     ):
-        async with self.database.session() as session:
-            updated_meeting_log: MeetingDto = (
-                await self.meeting_service.upsert_meetings(
-                    session=session, user_context=current_user, data=payload
+        if self.launchdarkly_service.is_manual_submit_meeting_enabled(current_user):
+            async with self.database.session() as session:
+                updated_meeting_log: MeetingDto = (
+                    await self.meeting_service.upsert_meetings(
+                        session=session, user_context=current_user, data=payload
+                    )
                 )
+            return api_response(
+                message="Successfully updated mentorship meeting logs.",
+                data=updated_meeting_log,
             )
-        return api_response(
-            message="Successfully updated mentorship meeting logs.",
-            data=updated_meeting_log,
-        )
+
+        raise PermissionError("Manual submit meeting feature is not yet available.")

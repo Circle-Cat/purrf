@@ -444,6 +444,7 @@ class TestAppDependencyBuilder(TestCase):
             participation_service=mock_participation_service_cls.return_value,
             registration_service=mock_registration_service_cls.return_value,
             meeting_service=mock_meeting_service_cls.return_value,
+            launchdarkly_service=mock_launchdarkly_service_cls.return_value,
             database=mock_database_cls.return_value,
         )
         mock_rounds_service_cls.assert_called_once_with(

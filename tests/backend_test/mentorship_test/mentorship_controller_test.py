@@ -29,6 +29,11 @@ class TestMentorshipController(unittest.IsolatedAsyncioTestCase):
         self.mock_meeting_service.get_meetings_by_user_and_round = AsyncMock()
         self.mock_meeting_service.upsert_meetings = AsyncMock()
 
+        self.mock_launchdarkly_service = MagicMock()
+        self.mock_launchdarkly_service.is_manual_submit_meeting_enabled = MagicMock(
+            return_value=True
+        )
+
         self.mock_database = MagicMock()
         self.mock_session = AsyncMock()
         self.mock_database.session.return_value.__aenter__.return_value = (
@@ -41,6 +46,7 @@ class TestMentorshipController(unittest.IsolatedAsyncioTestCase):
             participation_service=self.mock_participation_service,
             registration_service=self.mock_registration_service,
             meeting_service=self.mock_meeting_service,
+            launchdarkly_service=self.mock_launchdarkly_service,
             database=self.mock_database,
         )
 
@@ -304,6 +310,21 @@ class TestMentorshipController(unittest.IsolatedAsyncioTestCase):
             data=mock_updated_data,
         )
         self.assertEqual(response["data"], mock_updated_data)
+
+    async def test_upsert_meetings_flag_off_denied(self):
+        """When flag is off, users are denied access."""
+        self.mock_launchdarkly_service.is_manual_submit_meeting_enabled = MagicMock(
+            return_value=False
+        )
+        mock_user = MagicMock(spec=UserContextDto, sub="valid-sub")
+        mock_payload = MagicMock()
+
+        with self.assertRaises(PermissionError):
+            await self.controller.upsert_meetings(
+                current_user=mock_user, payload=mock_payload
+            )
+
+        self.mock_meeting_service.upsert_meetings.assert_not_awaited()
 
 
 if __name__ == "__main__":

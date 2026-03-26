@@ -9,6 +9,9 @@ from backend.common.fast_api_error_handler import register_exception_handlers
 
 # Constant definitions
 VALUE_ERROR_MSG = "Invalid input"
+PERMISSION_ERROR_MSG = (
+    "This feature is not yet available. Only internal users can access this feature."
+)
 RUNTIME_ERROR_MSG = "Service unavailable"
 UNEXPECTED_ERROR_MSG = "Unexpected fatal error"
 GENERIC_SERVER_ERROR_MSG = "Internal Server Error. Please contact support."
@@ -81,6 +84,21 @@ class TestFastAPIExceptionHandler(TestCase):
 
         # Should log as warning
         self.mock_logger.warning.assert_called_once()
+
+    def test_handle_permission_error(self):
+        """403 Forbidden: the raw error message should be shown and logged as warning."""
+        route = "/api/test/permission_error"
+
+        @self.app.get(route)
+        def trigger_error():
+            raise PermissionError(PERMISSION_ERROR_MSG)
+
+        response = self.client.get(route)
+
+        self.assertEqual(response.status_code, HTTPStatus.FORBIDDEN)
+        self.assertEqual(response.json().get(ERROR_KEY), PERMISSION_ERROR_MSG)
+        self.mock_logger.warning.assert_called_once()
+        self.mock_logger.error.assert_not_called()
 
     def test_handle_runtime_error(self):
         """503 Service Unavailable: error message should be masked; log should be error level."""
