@@ -124,7 +124,7 @@ class MentorshipMapper:
             meeting_info=[
                 MeetingInfoDto(
                     partner_id=partner_id,
-                    user_role=ParticipantRole.MENTEE
+                    participant_role=ParticipantRole.MENTEE
                     if partner_id == pair.mentor_id
                     else ParticipantRole.MENTOR,
                     meeting_time_list=[

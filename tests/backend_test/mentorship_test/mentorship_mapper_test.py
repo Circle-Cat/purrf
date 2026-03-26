@@ -270,7 +270,7 @@ class TestMentorshipMapper(unittest.TestCase):
         self.assertEqual(dto.round_id, 1)
 
         self.assertEqual(info.partner_id, 456)
-        self.assertEqual(info.user_role, ParticipantRole.MENTEE)
+        self.assertEqual(info.participant_role, ParticipantRole.MENTEE)
         self.assertEqual(len(info.meeting_time_list), 2)
 
         self.assertTrue(info.meeting_time_list[0].is_completed)
