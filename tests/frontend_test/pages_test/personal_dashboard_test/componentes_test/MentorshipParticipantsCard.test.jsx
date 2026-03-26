@@ -2,6 +2,14 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import MentorshipParticipantsCard from "@/pages/PersonalDashboard/components/MentorshipParticipantsCard";
 
+const { mockUseFlags } = vi.hoisted(() => ({
+  mockUseFlags: vi.fn(),
+}));
+
+vi.mock("@/hooks/useFeatureFlags", () => ({
+  useFeatureFlags: mockUseFlags,
+}));
+
 vi.mock("@/pages/PersonalDashboard/components/MeetingSubmissionModal", () => ({
   default: ({ open, onSuccess, userTimezone }) =>
     open ? (
@@ -53,6 +61,7 @@ const baseProps = {
 describe("MentorshipParticipantsCard", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockUseFlags.mockReturnValue({ manualSubmitMeeting: true });
   });
 
   it("should show a loading message while data is loading", () => {
@@ -169,5 +178,30 @@ describe("MentorshipParticipantsCard", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "mock-success" }));
     expect(refreshMeetings).toHaveBeenCalled();
+  });
+
+  it("should NOT show submit button when flag is off", () => {
+    mockUseFlags.mockReturnValue({ manualSubmitMeeting: false });
+    render(<MentorshipParticipantsCard {...baseProps} />);
+
+    expect(
+      screen.queryByRole("button", { name: /Submit Meeting Info/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("should show submit button when flag is on", () => {
+    mockUseFlags.mockReturnValue({ manualSubmitMeeting: true });
+    render(<MentorshipParticipantsCard {...baseProps} />);
+
+    expect(
+      screen.getByRole("button", { name: /Submit Meeting Info/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("should not render meeting modal when user cannot submit", () => {
+    mockUseFlags.mockReturnValue({ manualSubmitMeeting: false });
+    render(<MentorshipParticipantsCard {...baseProps} />);
+
+    expect(screen.queryByTestId("meeting-modal")).not.toBeInTheDocument();
   });
 });

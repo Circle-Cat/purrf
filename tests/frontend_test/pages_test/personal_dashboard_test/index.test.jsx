@@ -3,6 +3,14 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import PersonalDashboard from "@/pages/PersonalDashboard";
 import { useMentorshipData } from "@/pages/PersonalDashboard/hooks/useMentorshipData";
 
+vi.mock("@/hooks/useFeatureFlags", () => ({
+  useFeatureFlags: vi.fn(() => ({ manualSubmitMeeting: true })),
+}));
+
+vi.mock("@/context/auth", () => ({
+  useAuth: vi.fn(() => ({ roles: [], loading: false })),
+}));
+
 vi.mock("@/pages/PersonalDashboard/components/MentorshipInfoBanner", () => ({
   default: vi.fn(({ registration, isRegistrationOpen }) => (
     <div data-testid="mock-banner">
