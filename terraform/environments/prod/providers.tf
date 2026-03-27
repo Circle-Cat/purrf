@@ -32,3 +32,5 @@ provider "helm" {
 provider "azurerm" {
   features {}
 }
+
+provider "launchdarkly" {}

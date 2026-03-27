@@ -40,6 +40,8 @@ resource "helm_release" "purrf_app" {
         { name = "MICROSOFT_SUBSCRIPTION_ID", value = google_pubsub_subscription.subscriptions["chat-microsoft-events"].name },
         { name = "GOOGLE_CHAT_SUBSCRIPTION_ID", value = google_pubsub_subscription.subscriptions["chat-google-events"].name },
         { name = "GERRIT_SUBSCRIPTION_ID", value = google_pubsub_subscription.subscriptions["gerrit-events"].name },
+        { name = "LAUNCHDARKLY_SDK_KEY", value = local.ld_sdk_key },
+        { name = "VITE_LAUNCHDARKLY_CLIENT_ID", value = local.ld_client_side_id },
       ]
 
       ingress = {

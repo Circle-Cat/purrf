@@ -9,6 +9,10 @@ provider "google" {
   region  = "us-west1"
 }
 
+provider "launchdarkly" {
+  access_token = var.launchdarkly_access_token
+}
+
 data "google_client_config" "provider" {
 }
 
