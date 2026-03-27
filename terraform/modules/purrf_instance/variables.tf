@@ -114,3 +114,15 @@ variable "azure_client_secert" {
 variable "azure_tenant_id" {
   type = string
 }
+
+variable "beta_enabled" {
+  description = "When true, feature flags target beta segment only. When false, flags are fully released to all users."
+  type        = bool
+  default     = false
+}
+
+variable "beta_segment_key" {
+  description = "LaunchDarkly segment key for beta users"
+  type        = string
+  default     = ""
+}

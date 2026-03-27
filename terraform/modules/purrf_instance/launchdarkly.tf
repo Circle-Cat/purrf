@@ -40,10 +40,22 @@ resource "launchdarkly_feature_flag_environment" "manual_submit_meeting" {
 
   on = true
 
-  fallthrough {
-    variation = 0
+  dynamic "rules" {
+    for_each = var.beta_enabled ? [1] : []
+    content {
+      clauses {
+        attribute = "context"
+        op        = "segmentMatch"
+        values    = [var.beta_segment_key]
+      }
+      variation = 0
+    }
   }
-  off_variation = 1
 
+  fallthrough {
+    variation = var.beta_enabled ? 1 : 0
+  }
+
+  off_variation = 1
 }
 

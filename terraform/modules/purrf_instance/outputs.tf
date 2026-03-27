@@ -39,3 +39,7 @@ output "neon_database_owner" {
 output "default_account" {
   value = data.google_compute_default_service_account.default.email
 }
+
+output "ld_project_key" {
+  value = launchdarkly_project.purrf.key
+}

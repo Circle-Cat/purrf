@@ -26,5 +26,23 @@ module "purrf_instance" {
   azure_client_id             = "8f3f85f2-be71-4ed5-95e8-3c777f4c6e13"
   azure_tenant_id             = "08502fd6-503a-4dfd-85b7-f13b141dc0c4"
   azure_client_secert         = var.azure_client_secert
+  beta_enabled                = true
+  beta_segment_key            = launchdarkly_segment.beta_users.key
+}
+
+resource "launchdarkly_segment" "beta_users" {
+  key         = "beta-users"
+  project_key = module.purrf_instance.ld_project_key
+  env_key     = "production"
+  name        = "Beta Users"
+  description = "Users with cc_internal role for beta feature access"
+
+  rules {
+    clauses {
+      attribute = "roles"
+      op        = "contains"
+      values    = ["cc_internal"]
+    }
+  }
 }
 
