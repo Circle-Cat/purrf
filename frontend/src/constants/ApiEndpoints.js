@@ -7,6 +7,7 @@ export const API_ENDPOINTS = {
   MENTORSHIP_PARTNERS: "/mentorship/partners/me",
   MENTORSHIP_ROUNDS: "/mentorship/rounds",
   MENTORSHIP_MEETINGS_ENDPOINT: "/mentorship/v1/meetings",
+  MY_INTERNAL_ACTIVITY_SUMMARY: "/summary/me",
 };
 
 /**

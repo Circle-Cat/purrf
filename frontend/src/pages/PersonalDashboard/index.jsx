@@ -1,6 +1,10 @@
 import MentorshipInfoBanner from "@/pages/PersonalDashboard/components/MentorshipInfoBanner";
+import { WorkActivityDataCard } from "@/pages/PersonalDashboard/components/WorkActivityDataCard";
 import MentorshipParticipantsCard from "@/pages/PersonalDashboard/components/MentorshipParticipantsCard";
 import { useMentorshipData } from "@/pages/PersonalDashboard/hooks/useMentorshipData";
+import { useWorkActivityData } from "@/pages/PersonalDashboard/hooks/useWorkActivityData";
+import { useAuth } from "@/context/auth";
+import { USER_ROLES } from "@/constants/UserRoles";
 
 /**
  * PersonalDashboard
@@ -39,6 +43,12 @@ const PersonalDashboard = () => {
     userTimezone, // Current user's IANA timezone string from their profile
   } = useMentorshipData();
 
+  const { roles } = useAuth();
+  const isInternal = roles?.includes(USER_ROLES.CC_INTERNAL);
+
+  const { summary, isPersonalSummaryLoading, fetchPersonalSummary } =
+    useWorkActivityData({ enabled: isInternal });
+
   return (
     <div className="personal-dashboard">
       {/* Welcome header */}
@@ -76,6 +86,17 @@ const PersonalDashboard = () => {
         participantDetails={participantDetails}
         refreshMeetings={refreshMeetings}
       />
+
+      {/* Work Activity Data Card */}
+      {isInternal && (
+        <WorkActivityDataCard
+          initialData={summary}
+          isLoading={isPersonalSummaryLoading}
+          onSearch={({ startDate, endDate }) =>
+            fetchPersonalSummary(startDate, endDate)
+          }
+        />
+      )}
     </div>
   );
 };

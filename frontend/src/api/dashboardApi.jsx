@@ -1,4 +1,5 @@
 import request from "@/utils/request";
+import { API_ENDPOINTS } from "@/constants/ApiEndpoints";
 
 /**
  * Sends a POST request to get a summary report.
@@ -34,4 +35,11 @@ export async function getLdapsAndDisplayNames({ status, groups }) {
 
   const url = `/microsoft/${status}/ldaps?${params.toString()}`;
   return await request.get(url);
+}
+
+export async function getMySummary({ startDate, endDate }) {
+  return await request.post(API_ENDPOINTS.MY_INTERNAL_ACTIVITY_SUMMARY, {
+    startDate,
+    endDate,
+  });
 }

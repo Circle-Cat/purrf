@@ -2,6 +2,9 @@ import { render, screen } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import PersonalDashboard from "@/pages/PersonalDashboard";
 import { useMentorshipData } from "@/pages/PersonalDashboard/hooks/useMentorshipData";
+import { useAuth } from "@/context/auth";
+import { useWorkActivityData } from "@/pages/PersonalDashboard/hooks/useWorkActivityData";
+import { USER_ROLES } from "@/constants/UserRoles";
 
 vi.mock("@/pages/PersonalDashboard/components/MentorshipInfoBanner", () => ({
   default: vi.fn(({ registration, isRegistrationOpen }) => (
@@ -13,6 +16,22 @@ vi.mock("@/pages/PersonalDashboard/components/MentorshipInfoBanner", () => ({
 
 vi.mock("@/pages/PersonalDashboard/hooks/useMentorshipData", () => ({
   useMentorshipData: vi.fn(),
+}));
+
+vi.mock("@/context/auth", () => ({
+  useAuth: vi.fn(),
+}));
+
+vi.mock("@/pages/PersonalDashboard/hooks/useWorkActivityData", () => ({
+  useWorkActivityData: vi.fn(),
+}));
+
+vi.mock("@/pages/PersonalDashboard/components/WorkActivityDataCard", () => ({
+  WorkActivityDataCard: (props) => (
+    <div data-testid="work-activity-card">
+      <button disabled={props.isLoading}>Mock Work Card</button>
+    </div>
+  ),
 }));
 
 describe("PersonalDashboard", () => {
@@ -27,9 +46,17 @@ describe("PersonalDashboard", () => {
     isLoading: false,
   };
 
+  const defaultWorkActivityMock = {
+    summary: {},
+    isPersonalSummaryLoading: false,
+    fetchPersonalSummary: vi.fn(),
+  };
+
   beforeEach(() => {
     vi.clearAllMocks();
     useMentorshipData.mockReturnValue(mockHookData);
+    useWorkActivityData.mockReturnValue(defaultWorkActivityMock);
+    useAuth.mockReturnValue({ roles: [] });
   });
 
   it("renders the welcome header", () => {
@@ -96,5 +123,55 @@ describe("PersonalDashboard", () => {
     expect(screen.getByText("Welcome")).toBeDefined();
     // The banner should still be rendered
     expect(screen.getByTestId("mock-banner")).toBeDefined();
+  });
+
+  it("shows work activity card for internal users", () => {
+    useAuth.mockReturnValue({
+      roles: [USER_ROLES.CC_INTERNAL],
+    });
+
+    useWorkActivityData.mockReturnValue({
+      summary: {},
+      isPersonalSummaryLoading: false,
+      fetchPersonalSummary: vi.fn(),
+    });
+
+    render(<PersonalDashboard />);
+
+    expect(screen.getByTestId("work-activity-card")).toBeInTheDocument();
+  });
+
+  it("does not show work activity card for non internal users", () => {
+    useAuth.mockReturnValue({
+      roles: [],
+    });
+
+    useWorkActivityData.mockReturnValue({
+      summary: {},
+      isPersonalSummaryLoading: false,
+      fetchPersonalSummary: vi.fn(),
+    });
+
+    render(<PersonalDashboard />);
+
+    expect(screen.queryByTestId("work-activity-card")).toBeNull();
+  });
+
+  it("disables work activity card search button while loading for internal users", () => {
+    useAuth.mockReturnValue({
+      roles: [USER_ROLES.CC_INTERNAL],
+    });
+
+    useWorkActivityData.mockReturnValue({
+      summary: {},
+      isPersonalSummaryLoading: true,
+      fetchPersonalSummary: vi.fn(),
+    });
+
+    render(<PersonalDashboard />);
+
+    const button = screen.getByRole("button");
+
+    expect(button).toBeDisabled();
   });
 });
