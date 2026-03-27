@@ -47,8 +47,3 @@ resource "launchdarkly_feature_flag_environment" "manual_submit_meeting" {
 
 }
 
-locals {
-  ld_environment    = launchdarkly_project.purrf.environments[0]
-  ld_sdk_key        = local.ld_environment.api_key
-  ld_client_side_id = local.ld_environment.client_side_id
-}
