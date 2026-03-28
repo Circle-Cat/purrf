@@ -92,6 +92,7 @@ class InternalActivityController:
         date_time_util,
         gerrit_analytics_service,
         summary_service,
+        launchdarkly_service,
     ):
         """
         Initialize the InternalActivityController with required dependencies.
@@ -104,6 +105,8 @@ class InternalActivityController:
             google_chat_analytics_service: GoogleChatAnalyticsService instance.
             date_time_util: DateTimeUtil instance.
             gerrit_analytics_service: GerritAnalyticsService instance.
+            summary_service: SummaryService instance.
+            launchdarkly_service: LaunchDarklyService instance.
         """
         self.ldap_service = ldap_service
         self.microsoft_chat_analytics_service = microsoft_chat_analytics_service
@@ -116,6 +119,7 @@ class InternalActivityController:
         self.date_time_util = date_time_util
         self.gerrit_analytics_service = gerrit_analytics_service
         self.summary_service = summary_service
+        self.launchdarkly_service = launchdarkly_service
 
         self.router = APIRouter(tags=["internal_activity"])
 
@@ -392,14 +396,33 @@ class InternalActivityController:
         current_user: UserContextDto,
         body: MySummaryRequest = Body(default_factory=MySummaryRequest),
     ):
-        summary_data = self.summary_service.get_my_summary(
-            user=current_user,
-            start_date=body.start_date,
-            end_date=body.end_date,
-        )
-        return api_response(
-            success=True,
-            message="My summary fetched successfully",
-            data=summary_data,
-            status_code=HTTPStatus.OK,
-        )
+        """
+        Return the activity summary for the authenticated user over a given date range.
+
+        Requires the view_personal_summary LaunchDarkly flag to be enabled for the
+        requesting user. Raises PermissionError when the flag is disabled.
+
+        Args:
+            current_user (UserContextDto): The context of the currently authenticated user.
+            body (MySummaryRequest): Optional date range (start_date/end_date) for the summary.
+
+        Returns:
+            JSONResponse: API response containing an ActivitySummaryDto on success.
+
+        Raises:
+            PermissionError: When the view_personal_summary LaunchDarkly flag is disabled for the user.
+        """
+        if self.launchdarkly_service.is_view_personal_summary_enabled(current_user):
+            summary_data = self.summary_service.get_my_summary(
+                user=current_user,
+                start_date=body.start_date,
+                end_date=body.end_date,
+            )
+            return api_response(
+                success=True,
+                message="My summary fetched successfully",
+                data=summary_data,
+                status_code=HTTPStatus.OK,
+            )
+
+        raise PermissionError("View personal summary feature is not yet available.")

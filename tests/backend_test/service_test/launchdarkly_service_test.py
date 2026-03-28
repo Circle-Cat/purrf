@@ -50,6 +50,16 @@ class TestLaunchDarklyService(TestCase):
             "create-google-meeting", self.user, False
         )
 
+    def test_is_view_personal_summary_enabled(self):
+        self.ld_client.variation.return_value = True
+
+        result = self.service.is_view_personal_summary_enabled(self.user)
+
+        self.assertTrue(result)
+        self.ld_client.variation.assert_called_once_with(
+            "view-personal-summary", self.user, False
+        )
+
 
 if __name__ == "__main__":
     main()

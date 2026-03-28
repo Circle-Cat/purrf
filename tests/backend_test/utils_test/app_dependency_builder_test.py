@@ -406,6 +406,10 @@ class TestAppDependencyBuilder(TestCase):
             jira_analytics_service=mock_jira_analytics_service_cls.return_value,
             date_time_util=mock_date_time_util_cls.return_value,
         )
+        mock_launchdarkly_service_cls.assert_called_once_with(
+            logger=mock_logger,
+            launchdarkly_client=mock_launchdarkly_client_cls.return_value,
+        )
 
         mock_authentication_service_cls.assert_called_once_with(logger=mock_logger)
         mock_authentication_controller_cls.assert_called_once()
@@ -531,6 +535,7 @@ class TestAppDependencyBuilder(TestCase):
             gerrit_analytics_service=mock_gerrit_analytics_service_cls.return_value,
             google_chat_analytics_service=mock_google_chat_analytics_service_cls.return_value,
             summary_service=mock_summary_service_cls.return_value,
+            launchdarkly_service=mock_launchdarkly_service_cls.return_value,
         )
         mock_users_repo_cls.assert_called_once()
         mock_experience_repo_cls.assert_called_once()

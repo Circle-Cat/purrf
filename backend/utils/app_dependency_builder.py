@@ -358,6 +358,7 @@ class AppDependencyBuilder:
             gerrit_analytics_service=self.gerrit_analytics_service,
             google_chat_analytics_service=self.google_chat_analytics_service,
             summary_service=self.summary_service,
+            launchdarkly_service=self.launchdarkly_service,
         )
         self.users_repository = UsersRepository()
         self.user_identity_service = UserIdentityService(

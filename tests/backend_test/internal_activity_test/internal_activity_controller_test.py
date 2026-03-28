@@ -41,6 +41,7 @@ class TestInternalActivityControllerIntegration(unittest.TestCase):
         self.date_time_util = MagicMock()
         self.gerrit_analytics_service = MagicMock()
         self.summary_service = MagicMock()
+        self.launchdarkly_service = MagicMock()
 
         self.controller = InternalActivityController(
             ldap_service=self.ldap_service,
@@ -52,6 +53,7 @@ class TestInternalActivityControllerIntegration(unittest.TestCase):
             date_time_util=self.date_time_util,
             gerrit_analytics_service=self.gerrit_analytics_service,
             summary_service=self.summary_service,
+            launchdarkly_service=self.launchdarkly_service,
         )
 
         self.app = FastAPI()
@@ -264,8 +266,9 @@ class TestInternalActivityControllerIntegration(unittest.TestCase):
         self.summary_service.get_summary.assert_called_once()
 
     def test_get_my_summary_success(self):
-        """Test MY_SUMMARY_ENDPOINT (POST) minimal assertions."""
+        """Test MY_SUMMARY_ENDPOINT (POST) returns 200 when LD flag is enabled."""
         self._set_auth([UserRole.CC_INTERNAL])
+        self.launchdarkly_service.is_view_personal_summary_enabled.return_value = True
         self.summary_service.get_my_summary.return_value = ActivitySummaryDto(
             ldap="test",
             chat_count=0,
@@ -285,6 +288,26 @@ class TestInternalActivityControllerIntegration(unittest.TestCase):
 
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.summary_service.get_my_summary.assert_called_once()
+
+    def test_get_my_summary_when_ld_flag_disabled(self):
+        """Test MY_SUMMARY_ENDPOINT (POST) is blocked when LD flag is disabled."""
+        self._set_auth([UserRole.CC_INTERNAL])
+        self.launchdarkly_service.is_view_personal_summary_enabled.return_value = False
+
+        payload = {"startDate": "2025-01-01", "endDate": "2026-01-31"}
+
+        with self.assertRaises(PermissionError) as exc_info:
+            self.client.post(
+                f"{MY_SUMMARY_ENDPOINT}?sub=test&primary_email=test@u.circlecat.org",
+                json=payload,
+                headers=self.headers,
+            )
+
+        self.assertEqual(
+            str(exc_info.exception),
+            "View personal summary feature is not yet available.",
+        )
+        self.summary_service.get_my_summary.assert_not_called()
 
     # Authorization enforcement tests
 

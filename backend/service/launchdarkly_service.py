@@ -15,6 +15,7 @@ class LaunchDarklyService:
     # Flag key constants
     FLAG_MANUAL_SUBMIT_MEETING = "manual-submit-meeting"
     FLAG_CREATE_GOOGLE_MEETING = "create-google-meeting"
+    FLAG_VIEW_PERSONAL_SUMMARY = "view-personal-summary"
 
     def __init__(self, logger: Logger, launchdarkly_client: LaunchDarklyClient) -> None:
         self.logger = logger
@@ -37,3 +38,9 @@ class LaunchDarklyService:
     ) -> bool:
         """Check if the create Google meeting feature is enabled."""
         return self._is_enabled(self.FLAG_CREATE_GOOGLE_MEETING, user_context_dto)
+
+    def is_view_personal_summary_enabled(
+        self, user_context_dto: UserContextDto
+    ) -> bool:
+        """Check if the view personal summary feature is enabled."""
+        return self._is_enabled(self.FLAG_VIEW_PERSONAL_SUMMARY, user_context_dto)
