@@ -313,3 +313,24 @@ class MentorshipPairsRepository:
         )
 
         return result.one_or_none()
+
+    async def get_active_pairs_by_round(
+        self, session: AsyncSession, round_id: int
+    ) -> list[MentorshipPairsEntity]:
+        """
+        Retrieve all active mentorship pairs for a given round.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            round_id (int): The mentorship round ID.
+
+        Returns:
+            list[MentorshipPairsEntity]: All active pairs in the round.
+        """
+        result = await session.execute(
+            select(MentorshipPairsEntity).where(
+                MentorshipPairsEntity.round_id == round_id,
+                MentorshipPairsEntity.status == PairStatus.ACTIVE,
+            )
+        )
+        return result.scalars().all()

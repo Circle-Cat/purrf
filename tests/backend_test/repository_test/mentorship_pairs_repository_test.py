@@ -106,7 +106,7 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
                 mentor_id=self.users[2].user_id,
                 mentee_id=self.users[0].user_id,
                 completed_count=3,
-                status=PairStatus.ACTIVE,
+                status=PairStatus.INACTIVE,
                 mentor_action_status=MentorActionStatus.PENDING,
                 mentee_action_status=MenteeActionStatus.CONFIRMED,
                 recommendation_reason="Confirmed partnership for next round",
@@ -405,6 +405,27 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
         )
 
         self.assertIsNone(result)
+
+    async def test_get_all_active_pairs_by_round(self):
+        """Test retrieving all active pairs by round."""
+        result = await self.repo.get_active_pairs_by_round(
+            session=self.session,
+            round_id=self.rounds[0].round_id,
+        )
+
+        self.assertEqual(len(result), 1)
+
+        self.assertTrue(all(p.status == PairStatus.ACTIVE for p in result))
+        self.assertTrue(all(p.round_id == self.rounds[0].round_id for p in result))
+
+    async def test_get_active_pairs_by_round_no_result(self):
+        """Test no pairs returned for non-existing round."""
+        result = await self.repo.get_active_pairs_by_round(
+            session=self.session,
+            round_id=999999,
+        )
+
+        self.assertEqual(result, [])
 
 
 if __name__ == "__main__":
