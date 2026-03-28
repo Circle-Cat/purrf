@@ -349,6 +349,63 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
         )
         self.assertFalse(result)
 
+    async def test_get_pair_with_partner_by_round_and_users_and_status_as_mentor(self):
+        """Test retrieving a active pair and partner when user is the mentor."""
+        pair = self.pairs[0]
+        result = await self.repo.get_pair_with_partner_by_round_and_users_and_status(
+            session=self.session,
+            round_id=pair.round_id,
+            user_id=pair.mentor_id,
+            partner_id=pair.mentee_id,
+            status=PairStatus.ACTIVE,
+        )
+
+        self.assertIsNotNone(result)
+        returned_pair, returned_partner = result
+        self.assertEqual(returned_pair.pair_id, pair.pair_id)
+        self.assertEqual(returned_partner.user_id, pair.mentee_id)
+
+    async def test_get_pair_with_partner_by_round_and_users_and_status_as_mentee(self):
+        """Test retrieving a active pair and partner when user is the mentee (reversed roles)."""
+        pair = self.pairs[0]
+        result = await self.repo.get_pair_with_partner_by_round_and_users_and_status(
+            session=self.session,
+            round_id=pair.round_id,
+            user_id=pair.mentee_id,
+            partner_id=pair.mentor_id,
+            status=PairStatus.ACTIVE,
+        )
+
+        self.assertIsNotNone(result)
+        returned_pair, returned_partner = result
+        self.assertEqual(returned_pair.pair_id, pair.pair_id)
+        self.assertEqual(returned_partner.user_id, pair.mentor_id)
+
+    async def test_get_pair_with_partner_by_round_and_users_and_status_no_match(self):
+        """Test that a non-existent pair returns None."""
+        result = await self.repo.get_pair_with_partner_by_round_and_users_and_status(
+            session=self.session,
+            round_id=9999,
+            user_id=9999,
+            partner_id=9998,
+            status=PairStatus.ACTIVE,
+        )
+
+        self.assertIsNone(result)
+
+    async def test_get_pair_by_round_and_users_with_wrong_status(self):
+        """Test retrieving a inactive pair and partner."""
+        pair = self.pairs[0]
+        result = await self.repo.get_pair_with_partner_by_round_and_users_and_status(
+            session=self.session,
+            round_id=pair.round_id,
+            user_id=pair.mentee_id,
+            partner_id=pair.mentor_id,
+            status=PairStatus.INACTIVE,
+        )
+
+        self.assertIsNone(result)
+
 
 if __name__ == "__main__":
     unittest.main()

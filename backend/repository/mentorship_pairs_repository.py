@@ -3,6 +3,7 @@ from backend.entity.users_entity import UsersEntity
 from sqlalchemy import select, or_, case, update, func, cast, type_coerce
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.dialects.postgresql import JSONB, array
+from backend.common.mentorship_enums import PairStatus
 
 
 class MentorshipPairsRepository:
@@ -226,13 +227,13 @@ class MentorshipPairsRepository:
                 )
             )
             .select_from(meeting_elements)
-            .where(cast(meeting_elements.c.value, JSONB)["meeting_id"].astext != meeting_id)
+            .where(
+                cast(meeting_elements.c.value, JSONB)["meeting_id"].astext != meeting_id
+            )
             .scalar_subquery()
         )
 
-        target_meeting_json = {
-            "google_meetings": [{"meeting_id": meeting_id}]
-        }
+        target_meeting_json = {"google_meetings": [{"meeting_id": meeting_id}]}
 
         stmt = (
             update(MentorshipPairsEntity)
@@ -241,9 +242,7 @@ class MentorshipPairsRepository:
                     MentorshipPairsEntity.mentor_id == user_id,
                     MentorshipPairsEntity.mentee_id == user_id,
                 ),
-                MentorshipPairsEntity.meeting_log.contains(
-                    target_meeting_json
-                ),
+                MentorshipPairsEntity.meeting_log.contains(target_meeting_json),
             )
             .values(
                 meeting_log=func.jsonb_set(
@@ -258,3 +257,59 @@ class MentorshipPairsRepository:
 
         result = await session.execute(stmt)
         return result.scalar_one_or_none() is not None
+
+    async def get_pair_with_partner_by_round_and_users_and_status(
+        self,
+        session: AsyncSession,
+        round_id: int,
+        user_id: int,
+        partner_id: int,
+        status: PairStatus,
+    ) -> tuple[MentorshipPairsEntity, UsersEntity] | None:
+        """
+        Retrieve a mentorship pair and the corresponding partner user
+        by round, user IDs, and status.
+
+        This method searches for a mentorship pair within a specific round
+        where the given two users are matched (regardless of mentor/mentee order)
+        and the pair has the specified status. If a match is found, it also
+        returns the partner user's entity.
+
+        Args:
+            session (AsyncSession): The active database session.
+            round_id (int): The round identifier to filter pairs.
+            user_id (int): The current user's ID.
+            partner_id (int): The partner user's ID.
+            status (PairStatus): The expected status of the mentorship pair.
+
+        Returns:
+            tuple[MentorshipPairsEntity, UsersEntity] | None:
+                A tuple containing:
+                    - MentorshipPairsEntity: The matched mentorship pair.
+                    - UsersEntity: The partner user's entity.
+                Returns None if no matching pair is found.
+        """
+        partner_join_condition = UsersEntity.user_id == case(
+            (
+                MentorshipPairsEntity.mentor_id == user_id,
+                MentorshipPairsEntity.mentee_id,
+            ),
+            else_=MentorshipPairsEntity.mentor_id,
+        )
+
+        result = await session.execute(
+            select(MentorshipPairsEntity, UsersEntity)
+            .join(UsersEntity, partner_join_condition)
+            .where(
+                MentorshipPairsEntity.round_id == round_id,
+                MentorshipPairsEntity.status == status,
+                or_(
+                    (MentorshipPairsEntity.mentor_id == user_id)
+                    & (MentorshipPairsEntity.mentee_id == partner_id),
+                    (MentorshipPairsEntity.mentor_id == partner_id)
+                    & (MentorshipPairsEntity.mentee_id == user_id),
+                ),
+            )
+        )
+
+        return result.one_or_none()
