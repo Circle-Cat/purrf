@@ -7,15 +7,15 @@ const ContactSection = ({ info }) => {
       {/* LinkedIn */}
       <div className="section">
         <h3>LinkedIn link</h3>
-        <p className="section-text">
+        <div className="section-text">
           {info.linkedin ? (
             <a href={info.linkedin} target="_blank" rel="noopener noreferrer">
               {info.linkedin}
             </a>
           ) : (
-            <span className="text-muted">Not provided</span>
+            <p className="section-text">Not provided</p>
           )}
-        </p>
+        </div>
       </div>
 
       {/* Emails */}
