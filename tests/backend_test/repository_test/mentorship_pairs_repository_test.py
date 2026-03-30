@@ -427,6 +427,86 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
 
         self.assertEqual(result, [])
 
+    async def test_clear_google_meetings_invalid_input(self):
+        """Test invalid input raises ValueError."""
+        with self.assertRaises(ValueError):
+            await self.repo.clear_google_meetings_by_user_pair_and_round(
+                self.session,
+                current_user_id=None,
+                partner_id=1,
+                round_id=1,
+            )
+
+    async def test_clear_google_meetings_by_user_pair_and_round_success(self):
+        """Test clearing google meetings for a matched user pair in a given round."""
+        pair = self.pairs[3]
+
+        result = await self.repo.clear_google_meetings_by_user_pair_and_round(
+            self.session,
+            current_user_id=pair.mentor_id,
+            partner_id=pair.mentee_id,
+            round_id=pair.round_id,
+        )
+        await self.session.commit()
+
+        self.assertTrue(result)
+
+        refreshed = await self.session.get(MentorshipPairsEntity, pair.pair_id)
+        await self.session.refresh(refreshed, ["meeting_log"])
+
+        self.assertEqual(refreshed.meeting_log["google_meetings"], [])
+
+    async def test_clear_google_meetings_by_user_pair_and_round_reverse_order(self):
+        """Test clearing google meetings works regardless of user order."""
+        pair = self.pairs[4]
+
+        result = await self.repo.clear_google_meetings_by_user_pair_and_round(
+            self.session,
+            current_user_id=pair.mentee_id,
+            partner_id=pair.mentor_id,
+            round_id=pair.round_id,
+        )
+        await self.session.commit()
+
+        self.assertTrue(result)
+
+        refreshed = await self.session.get(MentorshipPairsEntity, pair.pair_id)
+        await self.session.refresh(refreshed, ["meeting_log"])
+
+        self.assertEqual(refreshed.meeting_log["google_meetings"], [])
+
+    async def test_clear_google_meetings_by_user_pair_and_round_not_found(self):
+        """Test clearing google meetings returns False when no pair matches."""
+        pair = self.pairs[3]
+
+        result = await self.repo.clear_google_meetings_by_user_pair_and_round(
+            self.session,
+            current_user_id=pair.mentor_id,
+            partner_id=9999,
+            round_id=pair.round_id,
+        )
+
+        self.assertFalse(result)
+
+    async def test_clear_google_meetings_by_user_pair_and_round_null_log(self):
+        """Test clearing google meetings initializes google_meetings when meeting_log is None."""
+        pair = self.pairs[5]
+
+        result = await self.repo.clear_google_meetings_by_user_pair_and_round(
+            self.session,
+            current_user_id=pair.mentor_id,
+            partner_id=pair.mentee_id,
+            round_id=pair.round_id,
+        )
+        await self.session.commit()
+
+        self.assertTrue(result)
+
+        refreshed = await self.session.get(MentorshipPairsEntity, pair.pair_id)
+        await self.session.refresh(refreshed, ["meeting_log"])
+
+        self.assertEqual(refreshed.meeting_log, {"google_meetings": []})
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,6 +1,6 @@
 from backend.entity.mentorship_pairs_entity import MentorshipPairsEntity
 from backend.entity.users_entity import UsersEntity
-from sqlalchemy import select, or_, case, update, func, cast, type_coerce
+from sqlalchemy import select, or_, case, update, func, cast, type_coerce, literal
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.dialects.postgresql import JSONB, array
 from backend.common.mentorship_enums import PairStatus
@@ -334,3 +334,55 @@ class MentorshipPairsRepository:
             )
         )
         return result.scalars().all()
+
+    async def clear_google_meetings_by_user_pair_and_round(
+        self, session: AsyncSession, current_user_id: int, partner_id: int, round_id: int,
+    ) -> bool:
+        """
+        Clear the google_meetings list in meeting_log for a mentorship pair
+        identified by two users within a given round.
+
+        Note:
+            This method performs a direct database update. If callers need to access the
+            latest pair data afterward from an already-loaded ORM object, they should call
+            `session.refresh(...)` to ensure the entity reflects the updated state.
+
+        Args:
+            session (AsyncSession): Active async database session.
+            current_user_id (int): One user in the pair.
+            partner_id (int): The other user in the pair.
+            round_id (int): The mentorship round ID.
+
+        Returns:
+            bool: True if a pair was updated, otherwise False.
+        """
+        if not current_user_id or not partner_id or not round_id:
+            raise ValueError("Invalid input parameters")
+
+        stmt = (
+            update(MentorshipPairsEntity)
+            .where(
+                MentorshipPairsEntity.round_id == round_id,
+                MentorshipPairsEntity.mentor_id.in_([current_user_id, partner_id]),
+                MentorshipPairsEntity.mentee_id.in_([current_user_id, partner_id]),
+                MentorshipPairsEntity.mentor_id != MentorshipPairsEntity.mentee_id,
+            )
+            .values(
+                meeting_log=func.jsonb_set(
+                func.coalesce(
+                    func.nullif(
+                            MentorshipPairsEntity.meeting_log,
+                            cast(literal("null"), JSONB),
+                        ),
+                        type_coerce({}, JSONB),
+                    ),
+                    array(["google_meetings"]),
+                    type_coerce([], JSONB),
+                    True,
+                )
+            )
+            .returning(MentorshipPairsEntity.pair_id)
+        )
+
+        result = await session.execute(stmt)
+        return result.scalar_one_or_none() is not None
