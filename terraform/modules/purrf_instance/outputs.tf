@@ -43,3 +43,8 @@ output "default_account" {
 output "ld_project_key" {
   value = launchdarkly_project.purrf.key
 }
+
+output "launchdarkly_client_id" {
+  value = one([for env in launchdarkly_project.purrf.environments : env.client_side_id if env.key == "production"])
+  sensitive = true
+}

@@ -1,3 +1,6 @@
+**WARNING:**
+**Do not forcibly terminate (Ctrl+C) Terraform while it is running.**
+
 # Terraform Infrastructure Setup
 
 This directory manages the Terraform infrastructure for Purrf, organized by environment and reusable modules.
@@ -74,7 +77,3 @@ Generate the README:
 ```bash
 terraform-docs markdown table . > README.md
 ```
-
-
-**WARNING:**
-**Do not forcibly terminate (Ctrl+C) Terraform while it is running.**

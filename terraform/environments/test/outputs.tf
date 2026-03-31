@@ -40,3 +40,8 @@ output "neon_database_owner" {
 output "default_gsa_account" {
   value = module.purrf_instance.default_account
 }
+
+output "launchdarkly_client_id" {
+  value = module.purrf_instance.launchdarkly_client_id
+  sensitive = true
+}

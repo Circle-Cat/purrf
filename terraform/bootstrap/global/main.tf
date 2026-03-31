@@ -167,7 +167,8 @@ resource "cloudflare_pages_project" "purrf_production" {
       --action_env=VITE_API_BASE_URL=$VITE_API_BASE_URL \
       --action_env=VITE_AUTH0_CLIENT_ID=$VITE_AUTH0_CLIENT_ID \
       --action_env=VITE_AUTH0_DOMAIN=$VITE_AUTH0_DOMAIN \
-      --action_env=VITE_CF_ACCESS_TENANT_DOMAIN=$VITE_CF_ACCESS_TENANT_DOMAIN
+      --action_env=VITE_CF_ACCESS_TENANT_DOMAIN=$VITE_CF_ACCESS_TENANT_DOMAIN \
+      --action_env=VITE_LAUNCHDARKLY_CLIENT_ID=$VITE_LAUNCHDARKLY_CLIENT_ID
     EOF
 
     destination_dir = "bazel-bin/frontend/dist"
@@ -213,6 +214,10 @@ resource "cloudflare_pages_project" "purrf_production" {
           type  = "plain_text"
           value = "ccat-dev.cloudflareaccess.com"
         }
+        "VITE_LAUNCHDARKLY_CLIENT_ID" = {
+          type  = "plain_text"
+          value = data.terraform_remote_state.test_env.outputs.launchdarkly_client_id
+        }
         "SKIP_DEPENDENCY_INSTALL" = {
           type  = "plain_text"
           value = "true"
@@ -241,6 +246,10 @@ resource "cloudflare_pages_project" "purrf_production" {
         "VITE_CF_ACCESS_TENANT_DOMAIN" = {
           type  = "plain_text"
           value = "ccat-dev.cloudflareaccess.com"
+        }
+        "VITE_LAUNCHDARKLY_CLIENT_ID" = {
+          type  = "plain_text"
+          value = ""
         }
         "SKIP_DEPENDENCY_INSTALL" = {
           type  = "plain_text"
