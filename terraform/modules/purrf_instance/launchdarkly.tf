@@ -59,3 +59,25 @@ resource "launchdarkly_feature_flag_environment" "manual_submit_meeting" {
   off_variation = 1
 }
 
+resource "launchdarkly_feature_flag" "view_personal_summary" {
+  project_key    = launchdarkly_project.purrf.key
+  key            = "view-personal-summary"
+  name           = "View Personal Summary"
+  description    = "Enables the view personal summary feature"
+  variation_type = "boolean"
+
+  variations {
+    value = "true"
+  }
+
+  variations {
+    value = "false"
+  }
+
+  defaults {
+    on_variation  = 0
+    off_variation = 1
+  }
+
+  tags = ["managed-by-terraform"]
+}
