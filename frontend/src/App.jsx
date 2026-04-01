@@ -17,7 +17,6 @@ import { AuthProvider } from "@/context/auth";
 import { USER_ROLES } from "@/constants/UserRoles";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
 import { Toaster } from "@/components/ui/sonner";
-import { withLDProvider } from "launchdarkly-react-client-sdk";
 
 function App() {
   return (
@@ -84,8 +83,4 @@ function App() {
     </AuthProvider>
   );
 }
-const AppWithLDProvider = withLDProvider({
-  clientSideID: import.meta.env.VITE_LAUNCHDARKLY_CLIENT_ID,
-})(App);
-
-export default AppWithLDProvider;
+export default App;
