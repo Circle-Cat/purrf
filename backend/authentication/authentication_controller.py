@@ -30,19 +30,31 @@ class AuthenticationController:
 
     async def get_my_roles(self, current_user: UserContextDto):
         """
-        Get the current authenticated user's roles.
+        Retrieve the roles of the currently authenticated user.
 
         Args:
-            current_user: UserContextDto: The authenticated user context object
-                                        containing the user's unique ID (sub),
-                                        email, and assigned roles.
-        Example:
-            {
-                "success": True,
-                "message": "Successfully",
-                "data": {
-                    "roles": ["cc_internal", "mentorship"]
+            current_user (UserContextDto): The authenticated user context, including:
+                - sub (str): The unique user identifier.
+                - primary_email (str): The user's primary email address.
+                - roles (List[str]): The list of roles assigned to the user.
+
+        Returns:
+            dict: Standard API response containing user identity and roles, e.g.:
+                {
+                    "success": True,
+                    "message": "Successfully retrieved user roles",
+                    "data": {
+                        "sub": "user-id",
+                        "email": "user@example.com",
+                        "roles": ["cc_internal", "mentorship"]
+                    }
                 }
-            }
         """
-        return api_response(data={"roles": current_user.roles}, message="Successfully")
+        return api_response(
+            data={
+                "sub": current_user.sub,
+                "email": current_user.primary_email,
+                "roles": current_user.roles,
+            },
+            message="Successfully retrieved user roles",
+        )

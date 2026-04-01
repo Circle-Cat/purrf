@@ -41,7 +41,9 @@ class TestAuthenticationController(unittest.TestCase):
         """
         self.patcher.stop()
 
-    def _get_client_with_mock_user(self, roles):
+    def _get_client_with_mock_user(
+        self, roles, sub="test-sub", email="test@example.com"
+    ):
         """
         Helper method:
         Create a TestClient and inject a fake user into request.state before handling the request.
@@ -50,6 +52,8 @@ class TestAuthenticationController(unittest.TestCase):
         """
         mock_user = MagicMock()
         mock_user.roles = roles
+        mock_user.sub = sub
+        mock_user.primary_email = email
 
         @self.app.middleware("http")
         async def mock_auth_middleware(request: Request, call_next):
@@ -63,15 +67,24 @@ class TestAuthenticationController(unittest.TestCase):
         Test: successfully retrieving user roles.
         """
         expected_roles = ["admin", "cc_internal"]
+        expected_sub = "user-123"
+        expected_email = "user@test.com"
 
-        client = self._get_client_with_mock_user(roles=expected_roles)
+        client = self._get_client_with_mock_user(
+            roles=expected_roles,
+            sub=expected_sub,
+            email=expected_email,
+        )
+
         response = client.get(MY_ROLES)
 
         self.assertEqual(response.status_code, HTTPStatus.OK)
 
         json_resp = response.json()
-        self.assertEqual(json_resp["message"], "Successfully")
         self.assertEqual(json_resp["data"]["roles"], expected_roles)
+        self.assertEqual(json_resp["data"]["sub"], expected_sub)
+        self.assertEqual(json_resp["data"]["email"], expected_email)
+
         self.mock_api_response.assert_called_once()
 
     def test_get_my_roles_empty(self):
