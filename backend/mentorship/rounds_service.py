@@ -1,3 +1,5 @@
+from datetime import date, datetime, timezone
+
 from backend.mentorship.mentorship_mapper import MentorshipMapper
 from backend.repository.mentorship_round_repository import MentorshipRoundRepository
 from backend.entity.mentorship_round_entity import MentorshipRoundEntity
@@ -86,3 +88,38 @@ class RoundsService:
             required_meetings=round.required_meetings,
             timeline=data.timeline,
         )
+
+    async def is_current_round(self, session: AsyncSession, round_id: int) -> bool:
+        """
+        Checks if the specified mentorship round is currently active based on its timeline.
+
+        A round is considered active if the current date falls between its start
+        (match_notification_at, falling back to promotion_start_at) and
+        meetings_completion_deadline_at (inclusive).
+
+        Args:
+            session (AsyncSession): Active database async session.
+            round_id (int): The unique identifier of the mentorship round to check.
+
+        Returns:
+            bool: True if the round is currently active, False otherwise.
+
+        Raises:
+            ValueError: If the round is not found or the required timeline fields
+            are missing in the round's description.
+        """
+        round_entity = await self.mentorship_round_repository.get_by_round_id(
+            session, round_id
+        )
+        if not round_entity:
+            raise ValueError("Round with given ID does not exist.")
+
+        desc = round_entity.description or {}
+        start_raw = desc.get("match_notification_at") or desc.get("promotion_start_at")
+        end_raw = desc.get("meetings_completion_deadline_at")
+
+        if not start_raw or not end_raw:
+            raise ValueError("Can't determine round status due to incomplete timeline.")
+
+        today = datetime.now(timezone.utc).date()
+        return date.fromisoformat(start_raw) <= today <= date.fromisoformat(end_raw)

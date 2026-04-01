@@ -14,6 +14,7 @@ class MeetingInfoDto(BaseDto):
     partner_id: int
     participant_role: ParticipantRole
     meeting_time_list: list[MeetingTimeDto]
+    completed_meetings_count: int
 
 
 class MeetingDto(BaseDto):

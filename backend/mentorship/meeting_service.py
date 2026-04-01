@@ -14,11 +14,13 @@ class MeetingService:
         mentorship_pairs_repository,
         mentorship_mapper,
         user_identity_service,
+        rounds_service,
     ):
         self.logger = logger
         self.mentorship_pairs_repository = mentorship_pairs_repository
         self.mentorship_mapper = mentorship_mapper
         self.user_identity_service = user_identity_service
+        self.rounds_service = rounds_service
 
     async def get_meetings_by_user_and_round(
         self, session: AsyncSession, user_context: UserContextDto, round_id: int
@@ -59,10 +61,23 @@ class MeetingService:
                 round_id=round_id, user_timezone=current_user.timezone, meeting_info=[]
             )
 
-        grouped_pairs = [
-            (p, p.mentor_id if p.mentee_id == current_user.user_id else p.mentee_id)
-            for p in pair_entity
-        ]
+        is_current = await self.rounds_service.is_current_round(
+            session=session, round_id=round_id
+        )
+
+        grouped_pairs = []
+        for p in pair_entity:
+            partner_id = (
+                p.mentor_id if p.mentee_id == current_user.user_id else p.mentee_id
+            )
+            if is_current:
+                meeting_time_list = (p.meeting_log or {}).get("meeting_time_list") or []
+                completed_meetings_count = sum(
+                    1 for m in meeting_time_list if m.get("is_completed")
+                )
+            else:
+                completed_meetings_count = p.completed_count or 0
+            grouped_pairs.append((p, partner_id, completed_meetings_count))
 
         return self.mentorship_mapper.map_to_meeting_dto(
             round_id=round_id,
@@ -150,10 +165,19 @@ class MeetingService:
 
         await session.commit()
 
+        saved_meeting_time_list = (saved_pair.meeting_log or {}).get(
+            "meeting_time_list"
+        ) or []
+        completed_meetings_count = sum(
+            1 for m in saved_meeting_time_list if m.get("is_completed")
+        )
+
         return self.mentorship_mapper.map_to_meeting_dto(
             round_id=data.round_id,
             user_timezone=current_user.timezone,
-            grouped_pairs=[(saved_pair, saved_pair.mentor_id)],
+            grouped_pairs=[
+                (saved_pair, saved_pair.mentor_id, completed_meetings_count)
+            ],
         )
 
     def _has_time_conflict(
