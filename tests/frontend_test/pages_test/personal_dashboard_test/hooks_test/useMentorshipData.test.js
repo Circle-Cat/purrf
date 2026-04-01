@@ -339,6 +339,7 @@ describe("refreshMeetings", () => {
           {
             partnerId: 99,
             participantRole: "Mentee",
+            completedMeetingsCount: 1,
             meetingTimeList: [
               {
                 meetingId: "m1",
@@ -399,6 +400,7 @@ describe("refreshMeetings", () => {
           {
             partnerId: 5,
             participantRole: "Mentee",
+            completedMeetingsCount: 0,
             meetingTimeList: [],
           },
         ],

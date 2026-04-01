@@ -243,8 +243,7 @@ export const useMentorshipData = () => {
         const info = meetingLog?.meetingInfo?.find(
           (i) => i.partnerId.toString() === partner.id.toString(),
         );
-        const completedCount =
-          info?.meetingTimeList?.filter((m) => m.isCompleted).length ?? 0;
+        const completedCount = info?.completedMeetingsCount ?? 0;
         const completedRate =
           requiredMeetings > 0
             ? Math.round((completedCount / requiredMeetings) * 100)
