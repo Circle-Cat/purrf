@@ -507,6 +507,91 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
 
         self.assertEqual(refreshed.meeting_log, {"google_meetings": []})
 
+    async def test_append_google_meeting_to_existing_list(self):
+        """Appending to an existing list preserves old entries and adds the new one."""
+        pair = self.pairs[3]  # has google_meetings: [123, 456]
+        new_entry = {
+            "meeting_id": "789",
+            "meet_link": "https://meet.google.com/new",
+            "is_completed": False,
+        }
+
+        await self.repo.append_google_meeting(
+            session=self.session,
+            pair_id=pair.pair_id,
+            meeting_entry=new_entry,
+        )
+        await self.session.commit()
+
+        refreshed = await self.session.get(MentorshipPairsEntity, pair.pair_id)
+        await self.session.refresh(refreshed, ["meeting_log"])
+
+        meetings = refreshed.meeting_log["google_meetings"]
+        self.assertEqual(len(meetings), 3)
+        meeting_ids = [m["meeting_id"] for m in meetings]
+        self.assertIn("123", meeting_ids)
+        self.assertIn("456", meeting_ids)
+        self.assertIn("789", meeting_ids)
+
+    async def test_append_google_meeting_to_null_log(self):
+        """Appending when meeting_log is NULL creates the structure from scratch."""
+        pair = self.pairs[5]  # meeting_log=None
+        new_entry = {
+            "meeting_id": "first",
+            "meet_link": "https://meet.google.com/first",
+            "is_completed": False,
+        }
+
+        await self.repo.append_google_meeting(
+            session=self.session,
+            pair_id=pair.pair_id,
+            meeting_entry=new_entry,
+        )
+        await self.session.commit()
+
+        refreshed = await self.session.get(MentorshipPairsEntity, pair.pair_id)
+        await self.session.refresh(refreshed, ["meeting_log"])
+
+        self.assertIsNotNone(refreshed.meeting_log)
+        meetings = refreshed.meeting_log["google_meetings"]
+        self.assertEqual(len(meetings), 1)
+        self.assertEqual(meetings[0]["meeting_id"], "first")
+
+    async def test_append_google_meeting_preserves_other_log_keys(self):
+        """Appending when meeting_log has no google_meetings key creates it without losing other keys."""
+        pair = MentorshipPairsEntity(
+            round_id=self.rounds[0].round_id,
+            mentor_id=self.users[1].user_id,
+            mentee_id=self.users[2].user_id,
+            completed_count=0,
+            status=PairStatus.ACTIVE,
+            mentor_action_status=MentorActionStatus.CONFIRMED,
+            mentee_action_status=MenteeActionStatus.CONFIRMED,
+            recommendation_reason="",
+            meeting_log={"other_key": "value"},
+        )
+        created = await self.repo.upsert_pairs(self.session, pair)
+
+        new_entry = {
+            "meeting_id": "only",
+            "meet_link": "https://meet.google.com/only",
+            "is_completed": False,
+        }
+        await self.repo.append_google_meeting(
+            session=self.session,
+            pair_id=created.pair_id,
+            meeting_entry=new_entry,
+        )
+        await self.session.commit()
+
+        refreshed = await self.session.get(MentorshipPairsEntity, created.pair_id)
+        await self.session.refresh(refreshed, ["meeting_log"])
+
+        meetings = refreshed.meeting_log["google_meetings"]
+        self.assertEqual(len(meetings), 1)
+        self.assertEqual(meetings[0]["meeting_id"], "only")
+        self.assertEqual(refreshed.meeting_log["other_key"], "value")
+
 
 if __name__ == "__main__":
     unittest.main()

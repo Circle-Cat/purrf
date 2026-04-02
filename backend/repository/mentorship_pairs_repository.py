@@ -1,6 +1,6 @@
 from backend.entity.mentorship_pairs_entity import MentorshipPairsEntity
 from backend.entity.users_entity import UsersEntity
-from sqlalchemy import select, or_, case, update, func, cast, type_coerce, literal
+from sqlalchemy import select, or_, case, update, func, cast, type_coerce, literal, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.dialects.postgresql import JSONB, array
 from backend.common.mentorship_enums import PairStatus
@@ -336,7 +336,11 @@ class MentorshipPairsRepository:
         return result.scalars().all()
 
     async def clear_google_meetings_by_user_pair_and_round(
-        self, session: AsyncSession, current_user_id: int, partner_id: int, round_id: int,
+        self,
+        session: AsyncSession,
+        current_user_id: int,
+        partner_id: int,
+        round_id: int,
     ) -> bool:
         """
         Clear the google_meetings list in meeting_log for a mentorship pair
@@ -369,8 +373,8 @@ class MentorshipPairsRepository:
             )
             .values(
                 meeting_log=func.jsonb_set(
-                func.coalesce(
-                    func.nullif(
+                    func.coalesce(
+                        func.nullif(
                             MentorshipPairsEntity.meeting_log,
                             cast(literal("null"), JSONB),
                         ),
@@ -386,3 +390,67 @@ class MentorshipPairsRepository:
 
         result = await session.execute(stmt)
         return result.scalar_one_or_none() is not None
+
+    async def append_google_meeting(
+        self,
+        session: AsyncSession,
+        pair_id: int,
+        meeting_entry: dict,
+    ) -> None:
+        """
+        Append a Google Meet entry to the `meeting_log.google_meetings` array for a given pair.
+
+        This method performs an atomic in-database update using PostgreSQL `jsonb_set`
+        and concatenation (`||`) to safely append a new meeting record without triggering
+        read-modify-write race conditions.
+
+        If `meeting_log` or `google_meetings` does not exist, they will be initialized
+        automatically.
+
+        Args:
+            session (AsyncSession):
+                The SQLAlchemy async database session used to execute the update.
+
+            pair_id (int):
+                The unique identifier of the mentorship pair whose meeting log
+                should be updated.
+
+            meeting_entry (dict):
+                A JSON-serializable dictionary representing a Google Meet record.
+                This will be appended as a new element in the `google_meetings` array.
+
+        Returns:
+            None
+
+        Raises:
+            sqlalchemy.exc.SQLAlchemyError:
+                If the database operation fails.
+
+        Notes:
+            - This operation is fully atomic at the database level and safe under concurrency.
+            - Uses `jsonb_set` + `coalesce` to ensure missing fields are initialized.
+            - Avoids loading the existing JSON into application memory.
+        """
+        stmt = (
+            update(MentorshipPairsEntity)
+            .where(MentorshipPairsEntity.pair_id == pair_id)
+            .values(
+                meeting_log=func.jsonb_set(
+                    func.coalesce(
+                        func.nullif(
+                            MentorshipPairsEntity.meeting_log,
+                            text("'null'::jsonb"),
+                        ),
+                        type_coerce({}, JSONB),
+                    ),
+                    array(["google_meetings"]),
+                    func.coalesce(
+                        MentorshipPairsEntity.meeting_log["google_meetings"],
+                        type_coerce([], JSONB),
+                    ).op("||")(
+                        func.jsonb_build_array(type_coerce(meeting_entry, JSONB))
+                    ),
+                )
+            )
+        )
+        await session.execute(stmt)
