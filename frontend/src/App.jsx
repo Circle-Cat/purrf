@@ -14,73 +14,81 @@ import Profile from "@/pages/Profile";
 import AccessDenied from "@/pages/AccessDenied";
 import PersonalDashboard from "@/pages/PersonalDashboard";
 import { AuthProvider } from "@/context/auth";
+import { FlagsProvider, LDIdentifier } from "@/context/flags";
 import { USER_ROLES } from "@/constants/UserRoles";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
 import { Toaster } from "@/components/ui/sonner";
 
 function App() {
   return (
-    <AuthProvider>
-      <Router>
-        <div className="app-container legacy-styles">
-          <Header />
-          <div className="app-body">
-            <Sidebar />
-            <main className="main-content">
-              <Routes>
-                <Route
-                  path={ROUTE_PATHS.DASHBOARD}
-                  element={
-                    <ProtectedRoute
-                      requiredRoles={[USER_ROLES.ADMIN, USER_ROLES.CC_INTERNAL]}
-                    >
-                      <Dashboard />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path={ROUTE_PATHS.DATASEARCH}
-                  element={
-                    <ProtectedRoute requiredRoles={[USER_ROLES.ADMIN]}>
-                      <DataSearch />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path={ROUTE_PATHS.PROFILE}
-                  element={
-                    <ProtectedRoute requiredRoles={[USER_ROLES.MENTORSHIP]}>
-                      <Profile />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path={ROUTE_PATHS.PERSONAL_DASHBOARD}
-                  element={
-                    <ProtectedRoute requiredRoles={[USER_ROLES.MENTORSHIP]}>
-                      <PersonalDashboard />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path={ROUTE_PATHS.ACCESS_DENIED}
-                  element={<AccessDenied />}
-                />
-                <Route
-                  path={ROUTE_PATHS.ROOT}
-                  element={
-                    <ProtectedRoute requiredRoles={[USER_ROLES.MENTORSHIP]}>
-                      <Navigate to={ROUTE_PATHS.PERSONAL_DASHBOARD} replace />
-                    </ProtectedRoute>
-                  }
-                />
-              </Routes>
-            </main>
+    <FlagsProvider>
+      <AuthProvider>
+        <LDIdentifier />
+        <Router>
+          <div className="app-container legacy-styles">
+            <Header />
+            <div className="app-body">
+              <Sidebar />
+              <main className="main-content">
+                <Routes>
+                  <Route
+                    path={ROUTE_PATHS.DASHBOARD}
+                    element={
+                      <ProtectedRoute
+                        requiredRoles={[
+                          USER_ROLES.ADMIN,
+                          USER_ROLES.CC_INTERNAL,
+                        ]}
+                      >
+                        <Dashboard />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path={ROUTE_PATHS.DATASEARCH}
+                    element={
+                      <ProtectedRoute requiredRoles={[USER_ROLES.ADMIN]}>
+                        <DataSearch />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path={ROUTE_PATHS.PROFILE}
+                    element={
+                      <ProtectedRoute requiredRoles={[USER_ROLES.MENTORSHIP]}>
+                        <Profile />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path={ROUTE_PATHS.PERSONAL_DASHBOARD}
+                    element={
+                      <ProtectedRoute requiredRoles={[USER_ROLES.MENTORSHIP]}>
+                        <PersonalDashboard />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path={ROUTE_PATHS.ACCESS_DENIED}
+                    element={<AccessDenied />}
+                  />
+                  <Route
+                    path={ROUTE_PATHS.ROOT}
+                    element={
+                      <ProtectedRoute requiredRoles={[USER_ROLES.MENTORSHIP]}>
+                        <Navigate to={ROUTE_PATHS.PERSONAL_DASHBOARD} replace />
+                      </ProtectedRoute>
+                    }
+                  />
+                </Routes>
+              </main>
+            </div>
           </div>
-        </div>
-        <Toaster richColors position="top-center" closeButton />
-      </Router>
-    </AuthProvider>
+          <Toaster richColors position="top-center" closeButton />
+        </Router>
+      </AuthProvider>
+    </FlagsProvider>
   );
 }
+
 export default App;

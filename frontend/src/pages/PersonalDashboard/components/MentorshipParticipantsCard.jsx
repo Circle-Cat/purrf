@@ -2,6 +2,8 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useState } from "react";
+import { useFeatureFlags } from "@/hooks/useFeatureFlags";
+import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
 import { GraduationCap, User, Plus } from "lucide-react";
 import {
   Select,
@@ -47,13 +49,19 @@ export default function MentorshipParticipantsCard({
   const { roundInfo, partnerMeetingOverview, participantRole } =
     participantDetails || {};
   const [isMeetingModalOpen, setIsMeetingModalOpen] = useState(false);
+  const { [FEATURE_FLAGS.MANUAL_SUBMIT_MEETING]: manualSubmitMeeting } =
+    useFeatureFlags();
+  const isMentee =
+    participantRole?.toLowerCase() === MentorshipParticipantRoles.MENTEE;
+  const canSubmitMeeting = isMentee && manualSubmitMeeting;
 
   const hasParticipation =
     !isParticipantCardLoading &&
     partnerMeetingOverview?.length > 0 &&
     participantRole;
-  const getRoleIcon = (role) => {
-    return role?.toLowerCase() === MentorshipParticipantRoles.MENTOR ? (
+  const getRoleIcon = (participantRole) => {
+    return participantRole?.toLowerCase() ===
+      MentorshipParticipantRoles.MENTOR ? (
       <GraduationCap className="h-4 w-4" />
     ) : (
       <User className="h-4 w-4" />
@@ -66,8 +74,7 @@ export default function MentorshipParticipantsCard({
         <div className="flex items-center justify-between">
           <CardTitle>Mentorship Participation</CardTitle>
           <div className="flex items-center gap-2">
-            {participantRole?.toLowerCase() ===
-              MentorshipParticipantRoles.MENTEE && (
+            {canSubmitMeeting && (
               <Button
                 variant="outline"
                 size="sm"
@@ -180,16 +187,18 @@ export default function MentorshipParticipantsCard({
         )}
       </CardContent>
 
-      <MeetingSubmissionModal
-        open={isMeetingModalOpen}
-        onOpenChange={setIsMeetingModalOpen}
-        roundId={selectedRoundId}
-        userTimezone={userTimezone}
-        onSuccess={() => {
-          setIsMeetingModalOpen(false);
-          refreshMeetings();
-        }}
-      />
+      {canSubmitMeeting && (
+        <MeetingSubmissionModal
+          open={isMeetingModalOpen}
+          onOpenChange={setIsMeetingModalOpen}
+          roundId={selectedRoundId}
+          userTimezone={userTimezone}
+          onSuccess={() => {
+            setIsMeetingModalOpen(false);
+            refreshMeetings();
+          }}
+        />
+      )}
     </Card>
   );
 }

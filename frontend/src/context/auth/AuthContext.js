@@ -12,8 +12,9 @@ export const AuthContext = createContext(null);
  *
  * @returns {{
  *   roles: string[],
+ *   user: { sub: string, email: string } | null,
  *   loading: boolean
- * }} The current authentication state containing user roles and loading status.
+ * }} The current authentication state containing user identity, roles, and loading status.
  *
  * @example
  * const { roles, loading } = useAuth();

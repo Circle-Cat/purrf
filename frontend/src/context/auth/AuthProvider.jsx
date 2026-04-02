@@ -14,6 +14,7 @@ import { AuthContext } from "./AuthContext";
  */
 export const AuthProvider = ({ children }) => {
   const [roles, setRoles] = useState([]);
+  const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -25,6 +26,7 @@ export const AuthProvider = ({ children }) => {
       try {
         const { data } = await getUserRoles();
         setRoles(data.roles || []);
+        setUser({ sub: data.sub, email: data.email });
       } catch (error) {
         console.error("Auth initialization failed", error);
         setRoles([]);
@@ -38,9 +40,12 @@ export const AuthProvider = ({ children }) => {
 
   /**
    * Memoizes the context value to prevent unnecessary re-renders.
-   * The value is only recalculated when 'roles' or 'loading' state changes.
+   * The value is only recalculated when 'roles', 'user', or 'loading' state changes.
    */
-  const value = useMemo(() => ({ roles, loading }), [roles, loading]);
+  const value = useMemo(
+    () => ({ roles, user, loading }),
+    [roles, user, loading],
+  );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
