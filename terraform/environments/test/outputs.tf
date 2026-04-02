@@ -42,6 +42,6 @@ output "default_gsa_account" {
 }
 
 output "launchdarkly_client_id" {
-  value = module.purrf_instance.launchdarkly_client_id
+  value     = module.purrf_instance.launchdarkly_client_id
   sensitive = true
 }

@@ -45,6 +45,6 @@ output "ld_project_key" {
 }
 
 output "launchdarkly_client_id" {
-  value = one([for env in launchdarkly_project.purrf.environments : env.client_side_id if env.key == "production"])
+  value     = one([for env in launchdarkly_project.purrf.environments : env.client_side_id if env.key == "production"])
   sensitive = true
 }

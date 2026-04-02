@@ -8,6 +8,10 @@ resource "launchdarkly_project" "purrf" {
     color = "0b7a3e"
   }
 
+  default_client_side_availability {
+    using_environment_id = true
+    using_mobile_key     = true
+  }
   tags = ["managed-by-terraform"]
 }
 

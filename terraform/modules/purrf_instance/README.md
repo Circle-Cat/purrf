@@ -11,6 +11,7 @@ No requirements.
 | <a name="provider_azuread"></a> [azuread](#provider\_azuread) | n/a |
 | <a name="provider_google"></a> [google](#provider\_google) | n/a |
 | <a name="provider_helm"></a> [helm](#provider\_helm) | n/a |
+| <a name="provider_launchdarkly"></a> [launchdarkly](#provider\_launchdarkly) | n/a |
 | <a name="provider_neon"></a> [neon](#provider\_neon) | n/a |
 | <a name="provider_upstash"></a> [upstash](#provider\_upstash) | n/a |
 
@@ -30,7 +31,6 @@ No modules.
 | [auth0_custom_domain.purrf_custom_domain](https://registry.terraform.io/providers/auth0/auth0/latest/docs/resources/custom_domain) | resource |
 | [auth0_prompt.prompts](https://registry.terraform.io/providers/auth0/auth0/latest/docs/resources/prompt) | resource |
 | [auth0_prompt_custom_text.en_login_id](https://registry.terraform.io/providers/auth0/auth0/latest/docs/resources/prompt_custom_text) | resource |
-| [auth0_trigger_actions.post_login](https://registry.terraform.io/providers/auth0/auth0/latest/docs/resources/trigger_actions) | resource |
 | [azuread_application_federated_identity_credential.azure_wif](https://registry.terraform.io/providers/hashicorp/azuread/latest/docs/resources/application_federated_identity_credential) | resource |
 | [google_cloudfunctions_function.functions](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/cloudfunctions_function) | resource |
 | [google_cloudfunctions_function_iam_member.invoker](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/cloudfunctions_function_iam_member) | resource |
@@ -52,6 +52,10 @@ No modules.
 | [google_storage_bucket_iam_binding.purrf_internal](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/storage_bucket_iam_binding) | resource |
 | [google_storage_bucket_object.function_zips](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/storage_bucket_object) | resource |
 | [helm_release.purrf_app](https://registry.terraform.io/providers/hashicorp/helm/latest/docs/resources/release) | resource |
+| [launchdarkly_feature_flag.manual_submit_meeting](https://registry.terraform.io/providers/launchdarkly/launchdarkly/latest/docs/resources/feature_flag) | resource |
+| [launchdarkly_feature_flag.view_personal_summary](https://registry.terraform.io/providers/launchdarkly/launchdarkly/latest/docs/resources/feature_flag) | resource |
+| [launchdarkly_feature_flag_environment.manual_submit_meeting](https://registry.terraform.io/providers/launchdarkly/launchdarkly/latest/docs/resources/feature_flag_environment) | resource |
+| [launchdarkly_project.purrf](https://registry.terraform.io/providers/launchdarkly/launchdarkly/latest/docs/resources/project) | resource |
 | [neon_database.this](https://registry.terraform.io/providers/kislerdm/neon/latest/docs/resources/database) | resource |
 | [neon_project.this](https://registry.terraform.io/providers/kislerdm/neon/latest/docs/resources/project) | resource |
 | [neon_role.this](https://registry.terraform.io/providers/kislerdm/neon/latest/docs/resources/role) | resource |
@@ -67,7 +71,12 @@ No modules.
 |------|-------------|------|---------|:--------:|
 | <a name="input_auth0_callbacks"></a> [auth0\_callbacks](#input\_auth0\_callbacks) | Allowed callback URLs for Auth0 | `list(string)` | n/a | yes |
 | <a name="input_auth0_logout_urls"></a> [auth0\_logout\_urls](#input\_auth0\_logout\_urls) | Allowed logout URLs for Auth0 | `list(string)` | n/a | yes |
+| <a name="input_azure_client_id"></a> [azure\_client\_id](#input\_azure\_client\_id) | n/a | `string` | n/a | yes |
+| <a name="input_azure_client_secert"></a> [azure\_client\_secert](#input\_azure\_client\_secert) | n/a | `string` | n/a | yes |
+| <a name="input_azure_tenant_id"></a> [azure\_tenant\_id](#input\_azure\_tenant\_id) | n/a | `string` | n/a | yes |
 | <a name="input_base_domain"></a> [base\_domain](#input\_base\_domain) | Base domain name | `string` | `"purrf.io"` | no |
+| <a name="input_beta_enabled"></a> [beta\_enabled](#input\_beta\_enabled) | When true, feature flags target beta segment only. When false, flags are fully released to all users. | `bool` | `false` | no |
+| <a name="input_beta_segment_key"></a> [beta\_segment\_key](#input\_beta\_segment\_key) | LaunchDarkly segment key for beta users | `string` | `""` | no |
 | <a name="input_cf_aud_tag"></a> [cf\_aud\_tag](#input\_cf\_aud\_tag) | n/a | `string` | n/a | yes |
 | <a name="input_cloudflare_account_id"></a> [cloudflare\_account\_id](#input\_cloudflare\_account\_id) | Cloudflare Account ID | `string` | n/a | yes |
 | <a name="input_cloudflare_tunnel_id"></a> [cloudflare\_tunnel\_id](#input\_cloudflare\_tunnel\_id) | Cloudflare Tunnel ID | `string` | n/a | yes |
@@ -93,6 +102,8 @@ No modules.
 | <a name="output_auth0_client_id"></a> [auth0\_client\_id](#output\_auth0\_client\_id) | n/a |
 | <a name="output_computed_domains"></a> [computed\_domains](#output\_computed\_domains) | Computed domain names for this Purrf instance. |
 | <a name="output_default_account"></a> [default\_account](#output\_default\_account) | n/a |
+| <a name="output_launchdarkly_client_id"></a> [launchdarkly\_client\_id](#output\_launchdarkly\_client\_id) | n/a |
+| <a name="output_ld_project_key"></a> [ld\_project\_key](#output\_ld\_project\_key) | n/a |
 | <a name="output_neon_database_owner"></a> [neon\_database\_owner](#output\_neon\_database\_owner) | n/a |
 | <a name="output_neon_default_branch_id"></a> [neon\_default\_branch\_id](#output\_neon\_default\_branch\_id) | n/a |
 | <a name="output_neon_project_id"></a> [neon\_project\_id](#output\_neon\_project\_id) | n/a |
