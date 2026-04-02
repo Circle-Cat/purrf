@@ -26,7 +26,7 @@ import { MentorshipRoundStatus } from "@/constants/MentorshipRoundStatus";
  *   roundSelectionData: { sortedRounds: Array },
  *   selectedRoundId: string | number | null,
  *   onRoundChange: (id: string) => void,
- *   isMeetingsLoading: boolean,
+ *   isParticipantCardLoading: boolean,
  *   participantDetails: {
  *     roundInfo: Object | null,
  *     partnerMeetingOverview: Array,
@@ -39,7 +39,7 @@ export default function MentorshipParticipantsCard({
   roundSelectionData,
   selectedRoundId,
   onRoundChange,
-  isMeetingsLoading,
+  isParticipantCardLoading,
   participantDetails,
   refreshMeetings,
   userTimezone,
@@ -49,7 +49,9 @@ export default function MentorshipParticipantsCard({
   const [isMeetingModalOpen, setIsMeetingModalOpen] = useState(false);
 
   const hasParticipation =
-    !isMeetingsLoading && partnerMeetingOverview?.length > 0 && participantRole;
+    !isParticipantCardLoading &&
+    partnerMeetingOverview?.length > 0 &&
+    participantRole;
   const getRoleIcon = (role) => {
     return role?.toLowerCase() === MentorshipParticipantRoles.MENTOR ? (
       <GraduationCap className="h-4 w-4" />
@@ -106,7 +108,7 @@ export default function MentorshipParticipantsCard({
       </CardHeader>
 
       <CardContent>
-        {isMeetingsLoading ? (
+        {isParticipantCardLoading ? (
           <div className="py-10 text-center text-gray-500">
             Loading participation data...
           </div>

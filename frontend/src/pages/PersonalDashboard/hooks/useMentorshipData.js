@@ -148,6 +148,7 @@ export const useMentorshipData = () => {
 
         if (selectionData.activeRoundId) {
           setSelectedRoundId(selectionData.activeRoundId);
+          setIsMeetingsLoading(true);
         }
       } catch (err) {
         console.error("Failed to fetch mentorship data", err);
@@ -200,6 +201,7 @@ export const useMentorshipData = () => {
           partnerMeetingOverview: [],
           participantRole: null,
         });
+        setIsMeetingsLoading(true);
       }
       setSelectedRoundId(id);
     },
@@ -300,7 +302,7 @@ export const useMentorshipData = () => {
     refreshRegistration,
     // loading states
     isLoading,
-    isMeetingsLoading,
+    isParticipantCardLoading: isLoading || isMeetingsLoading,
     isPartnersLoading,
     // partner history
     loadPastPartners,

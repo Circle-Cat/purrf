@@ -447,7 +447,7 @@ describe("refreshMeetings", () => {
       act(() => result.current.handleRoundChange(roundId));
       await waitFor(() => {
         expect(result.current.selectedRoundId).toBe(roundId);
-        expect(result.current.isMeetingsLoading).toBe(false);
+        expect(result.current.isParticipantCardLoading).toBe(false);
       });
     };
 

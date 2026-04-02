@@ -23,7 +23,7 @@ const baseProps = {
   },
   selectedRoundId: "1",
   onRoundChange: vi.fn(),
-  isMeetingsLoading: false,
+  isParticipantCardLoading: false,
   participantDetails: {
     roundInfo: {
       name: "2026 Spring",
@@ -57,7 +57,10 @@ describe("MentorshipParticipantsCard", () => {
 
   it("should show a loading message while data is loading", () => {
     render(
-      <MentorshipParticipantsCard {...baseProps} isMeetingsLoading={true} />,
+      <MentorshipParticipantsCard
+        {...baseProps}
+        isParticipantCardLoading={true}
+      />,
     );
     expect(screen.getByText(/Loading participation data/)).toBeInTheDocument();
   });

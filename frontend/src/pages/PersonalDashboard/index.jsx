@@ -35,7 +35,7 @@ const PersonalDashboard = () => {
     handleRoundChange, // Callback to update the selected round
     participantDetails, // Round info, per-partner meeting overview, and user role
     refreshMeetings, // Trigger a refresh of meeting log data for the selected round
-    isMeetingsLoading, // Whether meeting log data is currently loading
+    isParticipantCardLoading, // Whether the participant card data is currently loading
     userTimezone, // Current user's IANA timezone string from their profile
   } = useMentorshipData();
 
@@ -72,7 +72,7 @@ const PersonalDashboard = () => {
         roundSelectionData={roundSelectionData}
         selectedRoundId={selectedRoundId}
         onRoundChange={handleRoundChange}
-        isMeetingsLoading={isMeetingsLoading}
+        isParticipantCardLoading={isParticipantCardLoading}
         participantDetails={participantDetails}
         refreshMeetings={refreshMeetings}
       />
