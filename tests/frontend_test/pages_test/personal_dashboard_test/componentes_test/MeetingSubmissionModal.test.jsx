@@ -21,18 +21,13 @@ vi.mock("@/components/ui/select", () => ({
   ),
 }));
 
-vi.mock("react-timezone-select", () => ({
-  default: ({ value, onChange }) => (
-    <select
-      data-testid="timezone-select"
-      value={typeof value === "string" ? value : value?.value}
-      onChange={(e) => onChange(e.target.value)}
-    >
-      <option value="Asia/Shanghai">Asia/Shanghai</option>
-      <option value="America/New_York">America/New_York</option>
-    </select>
-  ),
-}));
+// combobox[0] = timezone, combobox[1] = Start Time, combobox[2] = End Time
+function selectTimes(startTime, endTime) {
+  const comboboxes = screen.getAllByRole("combobox");
+  fireEvent.change(comboboxes[1], { target: { value: startTime } });
+  fireEvent.change(comboboxes[2], { target: { value: endTime } });
+  return comboboxes;
+}
 
 describe("MeetingSubmissionModal", () => {
   beforeEach(() => {
@@ -45,6 +40,7 @@ describe("MeetingSubmissionModal", () => {
         open={false}
         onOpenChange={vi.fn()}
         roundId="1"
+        userTimezone="Asia/Shanghai"
         onSuccess={vi.fn()}
       />,
     );
@@ -57,6 +53,7 @@ describe("MeetingSubmissionModal", () => {
         open={true}
         onOpenChange={vi.fn()}
         roundId="1"
+        userTimezone="Asia/Shanghai"
         onSuccess={vi.fn()}
       />,
     );
@@ -81,6 +78,8 @@ describe("MeetingSubmissionModal", () => {
       />,
     );
 
+    selectTimes("10:00", "11:00");
+
     fireEvent.click(screen.getByRole("button", { name: "Submit" }));
 
     await waitFor(() => {
@@ -97,19 +96,39 @@ describe("MeetingSubmissionModal", () => {
     expect(onSuccess).toHaveBeenCalled();
   });
 
+  it("should show an error when no time is selected", async () => {
+    render(
+      <MeetingSubmissionModal
+        open={true}
+        onOpenChange={vi.fn()}
+        roundId="1"
+        userTimezone="Asia/Shanghai"
+        onSuccess={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Submit" }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("Please select both start time and end time."),
+      ).toBeInTheDocument();
+    });
+    expect(postMyMentorshipMeetingLog).not.toHaveBeenCalled();
+  });
+
   it("should show an error when start and end time are the same", async () => {
     render(
       <MeetingSubmissionModal
         open={true}
         onOpenChange={vi.fn()}
         roundId="1"
+        userTimezone="Asia/Shanghai"
         onSuccess={vi.fn()}
       />,
     );
 
-    // combobox[0] = timezone, combobox[1] = Start Time, combobox[2] = End Time
-    const comboboxes = screen.getAllByRole("combobox");
-    fireEvent.change(comboboxes[2], { target: { value: "10:00" } });
+    selectTimes("10:00", "10:00");
 
     fireEvent.click(screen.getByRole("button", { name: "Submit" }));
 
@@ -132,9 +151,12 @@ describe("MeetingSubmissionModal", () => {
         open={true}
         onOpenChange={vi.fn()}
         roundId="1"
+        userTimezone="Asia/Shanghai"
         onSuccess={vi.fn()}
       />,
     );
+
+    selectTimes("10:00", "11:00");
 
     fireEvent.click(screen.getByRole("button", { name: "Submit" }));
 
@@ -154,15 +176,43 @@ describe("MeetingSubmissionModal", () => {
         open={true}
         onOpenChange={vi.fn()}
         roundId="1"
+        userTimezone="Asia/Shanghai"
         onSuccess={vi.fn()}
       />,
     );
+
+    selectTimes("10:00", "11:00");
 
     const submitBtn = screen.getByRole("button", { name: "Submit" });
     fireEvent.click(submitBtn);
 
     await waitFor(() => {
       expect(submitBtn).toBeDisabled();
+    });
+  });
+
+  it("should clear start and end time when timezone changes", async () => {
+    render(
+      <MeetingSubmissionModal
+        open={true}
+        onOpenChange={vi.fn()}
+        roundId="1"
+        userTimezone="Asia/Shanghai"
+        onSuccess={vi.fn()}
+      />,
+    );
+
+    const comboboxes = selectTimes("14:00", "15:00");
+
+    // Open the real react-select dropdown and pick a different timezone
+    fireEvent.keyDown(comboboxes[0], { key: "ArrowDown" });
+    const option = await screen.findByText(/Eastern Time/);
+    fireEvent.click(option);
+
+    fireEvent.click(screen.getByRole("button", { name: "Submit" }));
+
+    await waitFor(() => {
+      expect(postMyMentorshipMeetingLog).not.toHaveBeenCalled();
     });
   });
 });

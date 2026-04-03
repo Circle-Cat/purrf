@@ -1,7 +1,8 @@
 import { useState } from "react";
 import TimezoneSelect from "react-timezone-select";
 import { Calendar as CalendarIcon, Check } from "lucide-react";
-import { format, endOfToday } from "date-fns";
+import { format } from "date-fns";
+import { TZDate } from "@date-fns/tz";
 import {
   Dialog,
   DialogContent,
@@ -94,15 +95,21 @@ const formatTimezoneLabel = (option, { context, selectValue } = {}) => {
  *
  * Allows the user to select a timezone (defaults to the user's profile timezone),
  * and fills in a date, start time, and end time. On submit, the selected
- * datetime is converted to UTC and posted to the backend.
+ * datetime is converted to UTC via {@link https://github.com/date-fns/tz @date-fns/tz}
+ * and posted to the backend.
  *
- * @param {{
- *   open: boolean,
- *   onOpenChange: (open: boolean) => void,
- *   roundId: number | string,
- *   userTimezone: string | null,
- *   onSuccess: () => void
- * }} props
+ * Only future times are disabled in the time picker; past times remain selectable.
+ * When the timezone is changed, the selected date resets to today in the new timezone
+ * and both time fields are cleared.
+ *
+ * @param {object} props
+ * @param {boolean} props.open - Whether the modal is visible.
+ * @param {(open: boolean) => void} props.onOpenChange - Called when the modal open state should change.
+ * @param {number | string} props.roundId - The mentorship round to log the meeting under.
+ * @param {string} props.userTimezone - IANA timezone string from the user's profile (e.g. "Asia/Shanghai").
+ *   Must be non-null; the parent component is responsible for not mounting this modal until the timezone is loaded.
+ * @param {() => void} [props.onSuccess] - Called after the meeting is successfully submitted.
+ * @returns {JSX.Element}
  */
 export default function MeetingSubmissionModal({
   open,
@@ -111,79 +118,92 @@ export default function MeetingSubmissionModal({
   userTimezone,
   onSuccess,
 }) {
-  // Initialize timezone with the user's profile timezone, fallback to browser timezone
-  const [timezone, setTimezone] = useState(
-    userTimezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
-  );
+  // Initialize timezone with the user's profile timezone.
+  const [timezone, setTimezone] = useState(userTimezone);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const [selectedDate, setSelectedDate] = useState(new Date());
-  const [startTime, setStartTime] = useState("10:00");
-  const [endTime, setEndTime] = useState("11:00");
+  // Default to today in the user's profile timezone.
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const now = new TZDate(new Date(), userTimezone);
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  });
+  const [startTime, setStartTime] = useState("");
+  const [endTime, setEndTime] = useState("");
   const [slotError, setSlotError] = useState(null);
 
-  /**
-   * Constructs an ISO-8601 string containing an explicit timezone offset.
-   *
-   * Combines the selected calendar date, time string, and timezone offset
-   * into a formatted value such as "2026-03-13T10:00:00-05:00".
-   *
-   * @param {Date} dateObj - The calendar date picked by the user.
-   * @param {string} timeStr - The time string (e.g., "10:30").
-   * @param {object|string} tzState - The timezone object from react-timezone-select.
-   * @returns {string} - Formatted datetime string with timezone offset.
-   */
-  const formatOffset = (offsetHours) => {
-    const sign = offsetHours >= 0 ? "+" : "-";
-    const absHours = Math.floor(Math.abs(offsetHours));
-    const absMins = Math.round((Math.abs(offsetHours) % 1) * 60);
-    return `${sign}${String(absHours).padStart(2, "0")}:${String(absMins).padStart(2, "0")}`;
+  const tzIana = typeof timezone === "string" ? timezone : timezone.value;
+
+  const toUtcIso = (dateObj, timeStr, addDays = 0) => {
+    const [h, m] = timeStr.split(":").map(Number);
+    const d = new TZDate(
+      dateObj.getFullYear(),
+      dateObj.getMonth(),
+      dateObj.getDate() + addDays,
+      h,
+      m,
+      0,
+      tzIana,
+    );
+    return new Date(+d).toISOString().split(".")[0] + "Z";
   };
 
-  const formatTimezoneAwareISO = (dateObj, timeStr, tzState) => {
-    // Extract calendar date
-    const year = dateObj.getFullYear();
-    const month = String(dateObj.getMonth() + 1).padStart(2, "0");
-    const day = String(dateObj.getDate()).padStart(2, "0");
-
-    // Determine timezone offset in hours (defaults to browser local offset)
-    const offsetHours =
-      tzState?.offset ?? -(new Date().getTimezoneOffset() / 60);
-    const offsetStr = formatOffset(offsetHours);
-
-    return `${year}-${month}-${day}T${timeStr}:00${offsetStr}`;
-  };
-
-  const [startH, startM] = startTime.split(":").map(Number);
-  const [endH, endM] = endTime.split(":").map(Number);
+  const [startH, startM] = (startTime || "0:0").split(":").map(Number);
+  const [endH, endM] = (endTime || "0:0").split(":").map(Number);
 
   const validateTimesNotEqual = () => startH !== endH || startM !== endM;
 
+  // Current date/time in the selected timezone.
+  const nowInTz = new TZDate(new Date(), tzIana);
+
+  const isTodayInTz =
+    format(selectedDate, "yyyy-MM-dd") === format(nowInTz, "yyyy-MM-dd");
+
+  const currentMinutesInTz = nowInTz.getHours() * 60 + nowInTz.getMinutes();
+
+  const isFutureTime = (timeStr, bufferMinutes = 0) => {
+    if (!isTodayInTz) return false;
+    const [h, m] = timeStr.split(":").map(Number);
+    return h * 60 + m + bufferMinutes >= currentMinutesInTz;
+  };
+
+  const maxSelectableDate = new Date(
+    nowInTz.getFullYear(),
+    nowInTz.getMonth(),
+    nowInTz.getDate(),
+    23,
+    59,
+    59,
+  );
+
+  const handleTimezoneChange = (newTz) => {
+    setTimezone(newTz);
+    const newIana = typeof newTz === "string" ? newTz : newTz.value;
+    const now = new TZDate(new Date(), newIana);
+    setSelectedDate(new Date(now.getFullYear(), now.getMonth(), now.getDate()));
+    setStartTime("");
+    setEndTime("");
+  };
+
   const onSubmit = async () => {
-    setIsSubmitting(true);
     setSlotError(null);
 
-    if (!validateTimesNotEqual()) {
-      setSlotError("Start time and end time cannot be the same.");
-      setIsSubmitting(false);
+    if (!startTime || !endTime) {
+      setSlotError("Please select both start time and end time.");
       return;
     }
 
-    try {
-      const startObj = new Date(selectedDate);
-      const endObj = new Date(selectedDate);
-      if (endH < startH || (endH === startH && endM < startM)) {
-        endObj.setDate(endObj.getDate() + 1);
-      }
+    if (!validateTimesNotEqual()) {
+      setSlotError("Start time and end time cannot be the same.");
+      return;
+    }
 
+    setIsSubmitting(true);
+    const isOvernight = endH < startH || (endH === startH && endM < startM);
+    try {
       await postMyMentorshipMeetingLog({
         roundId: Number(roundId),
-        startDatetime: new Date(
-          formatTimezoneAwareISO(startObj, startTime, timezone),
-        ).toISOString(),
-        endDatetime: new Date(
-          formatTimezoneAwareISO(endObj, endTime, timezone),
-        ).toISOString(),
+        startDatetime: toUtcIso(selectedDate, startTime),
+        endDatetime: toUtcIso(selectedDate, endTime, isOvernight ? 1 : 0),
         isCompleted: true,
       });
       onSuccess?.();
@@ -222,7 +242,7 @@ export default function MeetingSubmissionModal({
             <Label>Timezone</Label>
             <TimezoneSelect
               value={timezone}
-              onChange={setTimezone}
+              onChange={handleTimezoneChange}
               timezones={meetingTimezones}
               currentDatetime={selectedDate}
               menuPortalTarget={
@@ -270,7 +290,7 @@ export default function MeetingSubmissionModal({
                       mode="single"
                       selected={selectedDate}
                       onSelect={setSelectedDate}
-                      disabled={{ after: endOfToday() }}
+                      disabled={{ after: maxSelectableDate }}
                       initialFocus
                     />
                   </PopoverContent>
@@ -282,11 +302,15 @@ export default function MeetingSubmissionModal({
                   <Label className="text-xs">Start Time</Label>
                   <Select value={startTime} onValueChange={setStartTime}>
                     <SelectTrigger className="w-full bg-gray-50 border-none">
-                      <SelectValue />
+                      <SelectValue placeholder="Pick a start time" />
                     </SelectTrigger>
                     <SelectContent className="z-[201]">
                       {timeOptions.map((t) => (
-                        <SelectItem key={t} value={t}>
+                        <SelectItem
+                          key={t}
+                          value={t}
+                          disabled={isFutureTime(t, 30)}
+                        >
                           {t}
                         </SelectItem>
                       ))}
@@ -298,11 +322,15 @@ export default function MeetingSubmissionModal({
                   <Label className="text-xs">End Time</Label>
                   <Select value={endTime} onValueChange={setEndTime}>
                     <SelectTrigger className="w-full bg-gray-50 border-none">
-                      <SelectValue />
+                      <SelectValue placeholder="Pick an end time" />
                     </SelectTrigger>
                     <SelectContent className="z-[201]">
                       {timeOptions.map((t) => (
-                        <SelectItem key={t} value={t}>
+                        <SelectItem
+                          key={t}
+                          value={t}
+                          disabled={isFutureTime(t)}
+                        >
                           {t}
                         </SelectItem>
                       ))}
