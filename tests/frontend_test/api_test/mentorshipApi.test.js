@@ -7,6 +7,8 @@ import {
   postMyMentorshipRegistration,
   getMyMentorshipMeetingLog,
   postMyMentorshipMeetingLog,
+  getMyMentorshipMeetingsV2,
+  postMyMentorshipMeetingV2,
 } from "@/api/mentorshipApi";
 import { API_ENDPOINTS } from "@/constants/ApiEndpoints";
 
@@ -62,6 +64,34 @@ describe("Mentorship Service API", () => {
     await postMyMentorshipRegistration(roundId, payload);
 
     expect(request.post).toHaveBeenCalledWith(expectedUrl, payload);
+  });
+
+  it("getMyMentorshipMeetingsV2 should call GET with roundId in params", async () => {
+    const roundId = "v2-round-123";
+    const includeDetails = false;
+
+    await getMyMentorshipMeetingsV2({ roundId, includeDetails });
+
+    expect(request.get).toHaveBeenCalledWith(
+      API_ENDPOINTS.MENTORSHIP_MEETINGS_V2,
+      {
+        params: {
+          round_id: roundId,
+          include_details: includeDetails,
+        },
+      },
+    );
+  });
+
+  it("postMyMentorshipMeetingV2 should send a POST request with data", async () => {
+    const payload = { topic: "Career Advice", startTime: "2026-05-01" };
+
+    await postMyMentorshipMeetingV2(payload);
+
+    expect(request.post).toHaveBeenCalledWith(
+      API_ENDPOINTS.MENTORSHIP_MEETINGS_V2,
+      payload,
+    );
   });
 
   it("should throw an error when the request fails (verify error propagation from the interceptor)", async () => {
