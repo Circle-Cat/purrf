@@ -8,6 +8,10 @@ class MeetingTimeDto(BaseDto):
     start_datetime: datetime
     end_datetime: datetime
     is_completed: bool
+    has_unknown_absent: bool | None = None
+    absent_user_id: int | None = None
+    has_unknown_late: bool | None = None
+    late_user_ids: list[int] | None = None
 
 
 class MeetingInfoDto(BaseDto):

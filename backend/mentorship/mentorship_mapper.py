@@ -3,6 +3,7 @@ from backend.dto.partner_dto import PartnerDto
 from backend.dto.preference_dto import SpecificIndustryDto, SkillsetsDto
 from backend.dto.registration_dto import GlobalPreferencesDto, RoundPreferencesDto
 from backend.dto.meeting_dto import MeetingDto, MeetingInfoDto, MeetingTimeDto
+
 from backend.entity.mentorship_pairs_entity import MentorshipPairsEntity
 from backend.entity.preference_entity import PreferenceEntity
 from backend.entity.mentorship_round_participants_entity import (
@@ -136,3 +137,68 @@ class MentorshipMapper:
                 for pair, partner_id, completed_meetings_count in grouped_pairs
             ],
         )
+
+    def map_to_meeting_v2_dto(
+        self,
+        round_id: int,
+        user_timezone: UserTimezone,
+        grouped_pairs: list[tuple[MentorshipPairsEntity, int, int]],
+        detail: bool = False,
+    ) -> MeetingDto:
+        """
+        Map (MentorshipPairsEntity, partner_id, completed_meetings_count) tuples to MeetingDto.
+        Map pair tuples to MeetingDto by merging both manual and Google meetings.
+        Compared with map_to_meeting_dto, this method:
+            - merges meetings from both `meeting_time_list` (manual) and `google_meetings`
+            - supports Google Meet-specific fields (e.g., absence/late information)
+            - conditionally includes additional fields when `detail=True`
+        """
+        return MeetingDto(
+            round_id=round_id,
+            user_timezone=user_timezone,
+            meeting_info=[
+                MeetingInfoDto(
+                    partner_id=partner_id,
+                    participant_role=ParticipantRole.MENTEE
+                    if partner_id == pair.mentor_id
+                    else ParticipantRole.MENTOR,
+                    meeting_time_list=self._build_meeting_time_list(pair, detail),
+                    completed_meetings_count=completed_meetings_count,
+                )
+                for pair, partner_id, completed_meetings_count in grouped_pairs
+            ],
+        )
+
+    def _build_meeting_time_list(
+        self,
+        pair: MentorshipPairsEntity,
+        detail: bool,
+    ) -> list[MeetingTimeDto]:
+        meeting_log = pair.meeting_log or {}
+
+        manual_meetings = meeting_log.get("meeting_time_list") or []
+        google_meetings = meeting_log.get("google_meetings") or []
+
+        manual_dtos = [
+            MeetingTimeDto(**meeting)
+            for meeting in manual_meetings
+        ]
+
+        google_dtos = []
+        for meeting in google_meetings:
+            dto = MeetingTimeDto(
+                meeting_id=meeting["meeting_id"],
+                start_datetime=meeting["start_datetime"],
+                end_datetime=meeting["end_datetime"],
+                is_completed=meeting["is_completed"],
+            )
+
+            if detail:
+                dto.has_unknown_absent = meeting.get("has_unknown_absent")
+                dto.absent_user_id = meeting.get("absent_user_id")
+                dto.has_unknown_late = meeting.get("has_unknown_late")
+                dto.late_user_ids = meeting.get("late_user_ids")
+
+            google_dtos.append(dto)
+
+        return manual_dtos + google_dtos

@@ -297,6 +297,199 @@ class TestMentorshipMapper(unittest.TestCase):
         info = dto.meeting_info[0]
         self.assertEqual(info.meeting_time_list, [])
 
+    def test_map_to_meeting_v2_dto_success(self):
+        """Test mapping manual and google meetings into MeetingDto correctly."""
+        pair_entity = self.pair_entities[0]
+        partner_id = pair_entity.mentor_id
+
+        pair_entity.meeting_log = {
+            "meeting_time_list": [
+                {
+                    "meeting_id": "manual-1",
+                    "start_datetime": datetime.fromisoformat("2025-09-01T22:30:00+00:00"),
+                    "end_datetime": datetime.fromisoformat("2025-09-01T23:00:00+00:00"),
+                    "is_completed": True,
+                },
+                {
+                    "meeting_id": "manual-2",
+                    "start_datetime": datetime.fromisoformat("2025-09-03T22:30:00+00:00"),
+                    "end_datetime": datetime.fromisoformat("2025-09-03T23:00:00+00:00"),
+                    "is_completed": False,
+                },
+            ],
+            "google_meetings": [
+                {
+                    "meeting_id": "google-1",
+                    "start_datetime": datetime.fromisoformat("2025-09-02T22:30:00+00:00"),
+                    "end_datetime": datetime.fromisoformat("2025-09-02T23:00:00+00:00"),
+                    "is_completed": True,
+                    "has_unknown_absent": True,
+                    "absent_user_id": 123,
+                    "has_unknown_late": False,
+                    "late_user_ids": None,
+                }
+            ],
+        }
+
+        dto = self.mapper.map_to_meeting_v2_dto(
+            round_id=1,
+            user_timezone=UserTimezone.ASIA_SHANGHAI,
+            grouped_pairs=[(pair_entity, partner_id, 2)],
+        )
+        info = dto.meeting_info[0]
+
+        self.assertIsInstance(dto, MeetingDto)
+        self.assertEqual(dto.round_id, 1)
+
+        self.assertEqual(info.partner_id, 456)
+        self.assertEqual(info.participant_role, ParticipantRole.MENTEE)
+        self.assertEqual(info.completed_meetings_count, 2)
+        self.assertEqual(len(info.meeting_time_list), 3)
+
+        self.assertEqual(info.meeting_time_list[0].meeting_id, "manual-1")
+        self.assertTrue(info.meeting_time_list[0].is_completed)
+
+        self.assertEqual(info.meeting_time_list[1].meeting_id, "manual-2")
+        self.assertFalse(info.meeting_time_list[1].is_completed)
+
+        self.assertEqual(info.meeting_time_list[2].meeting_id, "google-1")
+        self.assertTrue(info.meeting_time_list[2].is_completed)
+
+    def test_map_to_meeting_v2_dto_detail_false_excludes_google_extra_fields(self):
+        """Test google meeting extra fields are not populated when detail=False."""
+        pair_entity = self.pair_entities[0]
+        partner_id = pair_entity.mentor_id
+
+        pair_entity.meeting_log = {
+            "meeting_time_list": [],
+            "google_meetings": [
+                {
+                    "meeting_id": "google-1",
+                    "start_datetime": datetime.fromisoformat("2025-09-02T22:30:00+00:00"),
+                    "end_datetime": datetime.fromisoformat("2025-09-02T23:00:00+00:00"),
+                    "is_completed": True,
+                    "has_unknown_absent": True,
+                    "absent_user_id": 123,
+                    "has_unknown_late": True,
+                    "late_user_ids": [456],
+                }
+            ],
+        }
+
+        dto = self.mapper.map_to_meeting_v2_dto(
+            round_id=1,
+            user_timezone=UserTimezone.ASIA_SHANGHAI,
+            grouped_pairs=[(pair_entity, partner_id, 2)],
+            detail=False,
+        )
+        info = dto.meeting_info[0]
+        google_meeting = info.meeting_time_list[0]
+
+        self.assertEqual(len(info.meeting_time_list), 1)
+        self.assertEqual(info.completed_meetings_count, 2)
+        self.assertEqual(google_meeting.meeting_id, "google-1")
+        self.assertIsNone(google_meeting.has_unknown_absent)
+        self.assertIsNone(google_meeting.absent_user_id)
+        self.assertIsNone(google_meeting.has_unknown_late)
+        self.assertIsNone(google_meeting.late_user_ids)
+
+    def test_map_to_meeting_v2_dto_detail_true_includes_google_extra_fields(self):
+        """Test google meeting extra fields are populated when detail=True."""
+        pair_entity = self.pair_entities[0]
+        partner_id = pair_entity.mentor_id
+
+        pair_entity.meeting_log = {
+            "meeting_time_list": [],
+            "google_meetings": [
+                {
+                    "meeting_id": "google-1",
+                    "start_datetime": datetime.fromisoformat("2025-09-02T22:30:00+00:00"),
+                    "end_datetime": datetime.fromisoformat("2025-09-02T23:00:00+00:00"),
+                    "is_completed": True,
+                    "has_unknown_absent": True,
+                    "absent_user_id": 123,
+                    "has_unknown_late": True,
+                    "late_user_ids": [456],
+                }
+            ],
+        }
+
+        dto = self.mapper.map_to_meeting_v2_dto(
+            round_id=1,
+            user_timezone=UserTimezone.ASIA_SHANGHAI,
+            grouped_pairs=[(pair_entity, partner_id, 2)],
+            detail=True,
+        )
+        info = dto.meeting_info[0]
+        google_meeting = info.meeting_time_list[0]
+
+        self.assertEqual(len(info.meeting_time_list), 1)
+        self.assertEqual(info.completed_meetings_count, 2)
+        self.assertEqual(google_meeting.meeting_id, "google-1")
+        self.assertTrue(google_meeting.has_unknown_absent)
+        self.assertEqual(google_meeting.absent_user_id, 123)
+        self.assertTrue(google_meeting.has_unknown_late)
+        self.assertEqual(google_meeting.late_user_ids, [456])
+
+    def test_map_to_meeting_v2_dto_no_meeting_log(self):
+        """Test mapping pair entities with None meeting log returns empty meeting list."""
+        pair_entity = self.pair_entities[1]
+        partner_id = pair_entity.mentor_id
+
+        dto = self.mapper.map_to_meeting_v2_dto(
+            round_id=2,
+            user_timezone=UserTimezone.ASIA_SHANGHAI,
+            grouped_pairs=[(pair_entity, partner_id, 0)],
+        )
+
+        self.assertIsInstance(dto, MeetingDto)
+        self.assertEqual(len(dto.meeting_info), 1)
+
+        info = dto.meeting_info[0]
+        self.assertEqual(info.meeting_time_list, [])
+        self.assertEqual(info.completed_meetings_count, 0)
+
+    def test_map_to_meeting_v2_dto_missing_meeting_time_list_key(self):
+        """Test mapping works when meeting_time_list key does not exist."""
+        pair_entity = self.pair_entities[0]
+        partner_id = pair_entity.mentor_id
+
+        pair_entity.meeting_log = {
+            "google_meetings": [
+                {
+                    "meeting_id": "google-1",
+                    "start_datetime": datetime.fromisoformat("2025-09-02T22:30:00+00:00"),
+                    "end_datetime": datetime.fromisoformat("2025-09-02T23:00:00+00:00"),
+                    "is_completed": True,
+                    "has_unknown_absent": True,
+                    "absent_user_id": 123,
+                    "has_unknown_late": True,
+                    "late_user_ids": [456],
+                }
+            ]
+        }
+
+        dto = self.mapper.map_to_meeting_v2_dto(
+            round_id=1,
+            user_timezone=UserTimezone.ASIA_SHANGHAI,
+            grouped_pairs=[(pair_entity, partner_id, 2)],
+            detail=True,
+        )
+
+        self.assertIsInstance(dto, MeetingDto)
+        self.assertEqual(len(dto.meeting_info), 1)
+
+        info = dto.meeting_info[0]
+        self.assertEqual(len(info.meeting_time_list), 1)
+        self.assertEqual(info.completed_meetings_count, 2)
+
+        google_meeting = info.meeting_time_list[0]
+        self.assertEqual(google_meeting.meeting_id, "google-1")
+        self.assertTrue(google_meeting.has_unknown_absent)
+        self.assertEqual(google_meeting.absent_user_id, 123)
+        self.assertTrue(google_meeting.has_unknown_late)
+        self.assertEqual(google_meeting.late_user_ids, [456])
+
 
 if __name__ == "__main__":
     unittest.main()
