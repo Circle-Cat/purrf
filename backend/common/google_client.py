@@ -260,3 +260,19 @@ class GoogleClient:
         )
         self.logger.info("Created Meet SpacesService client successfully.")
         return client
+
+    def create_meet_conference_records_client(self):
+        """
+        Creates a Google Meet API v2 ConferenceRecordsService async client.
+
+        Returns:
+            meet_v2.ConferenceRecordsServiceAsyncClient
+        """
+        credentials = self.retry_utils.get_retry_on_transient(
+            lambda: self._get_impersonate_credentials()
+        )
+        if not credentials:
+            raise ValueError("Credentials are not available for creating the client.")
+        client = meet_v2.ConferenceRecordsServiceAsyncClient(credentials=credentials)
+        self.logger.info("Created Meet ConferenceRecordsService client successfully.")
+        return client

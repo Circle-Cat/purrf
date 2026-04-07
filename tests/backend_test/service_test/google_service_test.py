@@ -25,6 +25,7 @@ class TestGoogleService(TestCase):
             google_calendar_client=self.mock_google_calendar_client,
             retry_utils=self.mock_retry_utils,
             meet_spaces_client=self.mock_meet_spaces_client,
+            meet_conference_records_client=MagicMock(),
         )
 
     def test_get_chat_spaces_success_single_page(self):
@@ -542,6 +543,7 @@ class TestGoogleServiceMeet(unittest.IsolatedAsyncioTestCase):
             google_calendar_client=MagicMock(),
             retry_utils=self.retry_utils,
             meet_spaces_client=self.mock_meet_spaces_client,
+            meet_conference_records_client=MagicMock(),
         )
 
     async def test_get_meet_space_name_success(self):
@@ -595,6 +597,207 @@ class TestGoogleServiceMeet(unittest.IsolatedAsyncioTestCase):
 
         self.assertIn("spaces/INTERNALID123", str(cm.exception))
         self.mock_logger.error.assert_called_once()
+
+
+class TestGoogleServiceMeetConferenceRecords(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.mock_logger = MagicMock()
+        self.mock_meet_spaces_client = AsyncMock()
+        self.mock_meet_conference_records_client = AsyncMock()
+
+        self.service = GoogleService(
+            logger=self.mock_logger,
+            google_chat_client=MagicMock(),
+            google_people_client=MagicMock(),
+            google_workspaceevents_client=MagicMock(),
+            google_calendar_client=MagicMock(),
+            retry_utils=MagicMock(),
+            meet_spaces_client=self.mock_meet_spaces_client,
+            meet_conference_records_client=self.mock_meet_conference_records_client,
+        )
+
+    async def test_list_ended_conferences_returns_conference_list(self):
+        """Returns a list of dicts for each conference record yielded by the pager."""
+        mock_record = MagicMock()
+        mock_record.name = "conferenceRecords/abc123"
+        mock_record.space = "spaces/xyz"
+        mock_record.start_time.isoformat.return_value = "2024-01-01T10:00:00+00:00"
+        mock_record.end_time.isoformat.return_value = "2024-01-01T11:00:00+00:00"
+
+        async def _pager():
+            yield mock_record
+
+        self.mock_meet_conference_records_client.list_conference_records.return_value = _pager()
+
+        result = await self.service.list_ended_conferences(
+            end_time_after="2024-01-01T09:00:00Z",
+            end_time_before="2024-01-01T12:00:00Z",
+        )
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["name"], "conferenceRecords/abc123")
+        self.assertEqual(result[0]["space"], "spaces/xyz")
+        self.assertEqual(result[0]["start_time"], "2024-01-01T10:00:00+00:00")
+        self.assertEqual(result[0]["end_time"], "2024-01-01T11:00:00+00:00")
+
+    async def test_list_ended_conferences_empty_pager_returns_empty_list(self):
+        """Returns an empty list when there are no conference records in the window."""
+
+        async def _pager():
+            return
+            yield
+
+        self.mock_meet_conference_records_client.list_conference_records.return_value = _pager()
+
+        result = await self.service.list_ended_conferences(
+            end_time_after="2024-01-01T09:00:00Z",
+            end_time_before="2024-01-01T12:00:00Z",
+        )
+
+        self.assertEqual(result, [])
+
+    async def test_list_ended_conferences_null_times_fall_back_to_empty_string(self):
+        """start_time and end_time fall back to empty string when the field is falsy."""
+        mock_record = MagicMock()
+        mock_record.name = "conferenceRecords/no-times"
+        mock_record.space = "spaces/xyz"
+        mock_record.start_time = None
+        mock_record.end_time = None
+
+        async def _pager():
+            yield mock_record
+
+        self.mock_meet_conference_records_client.list_conference_records.return_value = _pager()
+
+        result = await self.service.list_ended_conferences(
+            end_time_after="2024-01-01T09:00:00Z",
+            end_time_before="2024-01-01T12:00:00Z",
+        )
+
+        self.assertEqual(result[0]["start_time"], "")
+        self.assertEqual(result[0]["end_time"], "")
+
+    async def test_get_meeting_code_for_space_returns_code(self):
+        """Returns the meeting code for the given space resource name."""
+        mock_space = MagicMock()
+        mock_space.meeting_code = "abc-defg-hij"
+        self.mock_meet_spaces_client.get_space.return_value = mock_space
+
+        result = await self.service.get_meeting_code_for_space("spaces/INTERNALID")
+
+        self.assertEqual(result, "abc-defg-hij")
+        self.mock_meet_spaces_client.get_space.assert_called_once()
+
+    async def test_get_meeting_code_for_space_api_error_propagates(self):
+        """Exceptions raised by the Meet Spaces API are propagated to the caller."""
+        self.mock_meet_spaces_client.get_space.side_effect = Exception(
+            "503 Service Unavailable"
+        )
+
+        with self.assertRaises(Exception):
+            await self.service.get_meeting_code_for_space("spaces/INTERNALID")
+
+    async def test_fetch_participants_signed_in_user(self):
+        """Returns signedin_user_id and display_name from a signed-in participant."""
+        mock_p = MagicMock()
+        mock_p.earliest_start_time.isoformat.return_value = "2024-01-01T10:00:00+00:00"
+        mock_p.latest_end_time.isoformat.return_value = "2024-01-01T11:00:00+00:00"
+        mock_p.signedin_user.user = "users/12345"
+        mock_p.signedin_user.display_name = "Alice"
+        mock_p.anonymous_user = None
+
+        async def _pager():
+            yield mock_p
+
+        self.mock_meet_conference_records_client.list_participants.return_value = (
+            _pager()
+        )
+
+        result = await self.service.fetch_participants_for_record(
+            "conferenceRecords/abc"
+        )
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["signedin_user_id"], "12345")
+        self.assertEqual(result[0]["display_name"], "Alice")
+        self.assertEqual(result[0]["start_time"], "2024-01-01T10:00:00+00:00")
+        self.assertEqual(result[0]["end_time"], "2024-01-01T11:00:00+00:00")
+
+    async def test_fetch_participants_anonymous_user(self):
+        """Returns display_name from an anonymous participant; no signedin_user_id key."""
+        mock_p = MagicMock()
+        mock_p.earliest_start_time = None
+        mock_p.latest_end_time = None
+        mock_p.signedin_user = None
+        mock_p.anonymous_user.display_name = "Anonymous Guest"
+
+        async def _pager():
+            yield mock_p
+
+        self.mock_meet_conference_records_client.list_participants.return_value = (
+            _pager()
+        )
+
+        result = await self.service.fetch_participants_for_record(
+            "conferenceRecords/abc"
+        )
+
+        self.assertEqual(len(result), 1)
+        self.assertNotIn("signedin_user_id", result[0])
+        self.assertEqual(result[0]["display_name"], "Anonymous Guest")
+        self.assertIsNone(result[0]["start_time"])
+        self.assertIsNone(result[0]["end_time"])
+
+    async def test_fetch_participants_empty_record(self):
+        """Returns empty list when the conference has no participants."""
+
+        async def _pager():
+            return
+            yield
+
+        self.mock_meet_conference_records_client.list_participants.return_value = (
+            _pager()
+        )
+
+        result = await self.service.fetch_participants_for_record(
+            "conferenceRecords/empty"
+        )
+
+        self.assertEqual(result, [])
+
+    async def test_fetch_participants_multiple(self):
+        """Returns all participants from a mixed signed-in and anonymous conference."""
+        mock_signed = MagicMock()
+        mock_signed.earliest_start_time.isoformat.return_value = (
+            "2024-01-01T10:00:00+00:00"
+        )
+        mock_signed.latest_end_time.isoformat.return_value = "2024-01-01T11:00:00+00:00"
+        mock_signed.signedin_user.user = "users/99"
+        mock_signed.signedin_user.display_name = "Bob"
+        mock_signed.anonymous_user = None
+
+        mock_anon = MagicMock()
+        mock_anon.earliest_start_time = None
+        mock_anon.latest_end_time = None
+        mock_anon.signedin_user = None
+        mock_anon.anonymous_user.display_name = "Unknown"
+
+        async def _pager():
+            yield mock_signed
+            yield mock_anon
+
+        self.mock_meet_conference_records_client.list_participants.return_value = (
+            _pager()
+        )
+
+        result = await self.service.fetch_participants_for_record(
+            "conferenceRecords/abc"
+        )
+
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0]["signedin_user_id"], "99")
+        self.assertNotIn("signedin_user_id", result[1])
+        self.assertEqual(result[1]["display_name"], "Unknown")
 
 
 if __name__ == "__main__":

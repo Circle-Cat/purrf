@@ -719,6 +719,56 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
         self.assertEqual(len(meetings), 1)
         self.assertEqual(meetings[0]["meeting_id"], "first")
 
+    async def test_upsert_pairs_batch_updates_multiple_pairs(self):
+        """Updates a field on multiple existing pairs in a single batch call."""
+        self.pairs[0].completed_count = 99
+        self.pairs[1].completed_count = 88
+
+        results = await self.repo.upsert_pairs_batch(
+            self.session, [self.pairs[0], self.pairs[1]]
+        )
+        await self.session.commit()
+
+        self.assertEqual(len(results), 2)
+
+        refreshed_0 = await self.session.get(
+            MentorshipPairsEntity, self.pairs[0].pair_id
+        )
+        await self.session.refresh(refreshed_0, ["completed_count"])
+        refreshed_1 = await self.session.get(
+            MentorshipPairsEntity, self.pairs[1].pair_id
+        )
+        await self.session.refresh(refreshed_1, ["completed_count"])
+
+        self.assertEqual(refreshed_0.completed_count, 99)
+        self.assertEqual(refreshed_1.completed_count, 88)
+
+    async def test_upsert_pairs_batch_single_entity(self):
+        """Updates a single entity when the batch contains only one element."""
+        self.pairs[2].completed_count = 77
+
+        results = await self.repo.upsert_pairs_batch(self.session, [self.pairs[2]])
+        await self.session.commit()
+
+        self.assertEqual(len(results), 1)
+
+        refreshed = await self.session.get(MentorshipPairsEntity, self.pairs[2].pair_id)
+        await self.session.refresh(refreshed, ["completed_count"])
+        self.assertEqual(refreshed.completed_count, 77)
+
+    async def test_upsert_pairs_batch_empty_list(self):
+        """Returns an empty list when called with an empty entity list."""
+        results = await self.repo.upsert_pairs_batch(self.session, [])
+        self.assertEqual(results, [])
+
+    async def test_upsert_pairs_batch_returns_list_of_entities(self):
+        """Return value contains MentorshipPairsEntity instances with correct pair IDs."""
+        results = await self.repo.upsert_pairs_batch(self.session, [self.pairs[0]])
+
+        self.assertIsInstance(results, list)
+        self.assertIsInstance(results[0], MentorshipPairsEntity)
+        self.assertEqual(results[0].pair_id, self.pairs[0].pair_id)
+
     async def test_append_google_meeting_preserves_other_log_keys(self):
         """Appending when meeting_log has no google_meetings key creates it without losing other keys."""
         pair = MentorshipPairsEntity(

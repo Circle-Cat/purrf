@@ -93,6 +93,7 @@ from backend.mentorship.rounds_service import RoundsService
 from backend.mentorship.participation_service import ParticipationService
 from backend.mentorship.registration_service import RegistrationService
 from backend.mentorship.meeting_service import MeetingService
+from backend.mentorship.meet_attendance_service import MeetAttendanceService
 from backend.profile.profile_query_service import ProfileQueryService
 from backend.profile.profile_command_service import ProfileCommandService
 from backend.profile.profile_mapper import ProfileMapper
@@ -160,6 +161,9 @@ class AppDependencyBuilder:
         self.google_calendar_client = self.google_client.create_calendar_client()
         self.google_reports_client = self.google_client.create_reports_client()
         self.meet_spaces_client = self.google_client.create_meet_spaces_client()
+        self.meet_conference_records_client = (
+            self.google_client.create_meet_conference_records_client()
+        )
 
         self.microsoft_service = MicrosoftService(
             logger=self.logger,
@@ -225,6 +229,7 @@ class AppDependencyBuilder:
             retry_utils=self.retry_utils,
             google_calendar_client=self.google_calendar_client,
             meet_spaces_client=self.meet_spaces_client,
+            meet_conference_records_client=self.meet_conference_records_client,
         )
         self.google_chat_processor_service = GoogleChatProcessorService(
             logger=self.logger,
@@ -405,6 +410,13 @@ class AppDependencyBuilder:
             user_identity_service=self.user_identity_service,
             google_service=self.google_service,
         )
+        self.meet_attendance_service = MeetAttendanceService(
+            logger=self.logger,
+            google_service=self.google_service,
+            mentorship_pairs_repository=self.mentorship_pairs_repository,
+            mentorship_round_repository=self.mentorship_round_repository,
+            users_repository=self.users_repository,
+        )
         self.mentorship_controller = MentorshipController(
             rounds_service=self.rounds_service,
             participation_service=self.participation_service,
@@ -412,6 +424,7 @@ class AppDependencyBuilder:
             meeting_service=self.meeting_service,
             launchdarkly_service=self.launchdarkly_service,
             database=self.database,
+            meet_attendance_sync_service=self.meet_attendance_service,
         )
         self.experience_repository = ExperienceRepository()
         self.training_repository = TrainingRepository()

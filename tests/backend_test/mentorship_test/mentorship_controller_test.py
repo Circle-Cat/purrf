@@ -31,6 +31,9 @@ class TestMentorshipController(unittest.IsolatedAsyncioTestCase):
         self.mock_meeting_service.upsert_meetings = AsyncMock()
         self.mock_meeting_service.create_google_meeting = AsyncMock()
 
+        self.mock_meet_attendance_sync_service = MagicMock()
+        self.mock_meet_attendance_sync_service.sync_attendance = AsyncMock()
+
         self.mock_launchdarkly_service = MagicMock()
         self.mock_launchdarkly_service.is_manual_submit_meeting_enabled = MagicMock(
             return_value=True
@@ -53,6 +56,7 @@ class TestMentorshipController(unittest.IsolatedAsyncioTestCase):
             meeting_service=self.mock_meeting_service,
             launchdarkly_service=self.mock_launchdarkly_service,
             database=self.mock_database,
+            meet_attendance_sync_service=self.mock_meet_attendance_sync_service,
         )
 
         self.patcher = patch("backend.mentorship.mentorship_controller.api_response")

@@ -1,5 +1,6 @@
 from backend.entity.mentorship_round_entity import MentorshipRoundEntity
-from sqlalchemy import select
+from datetime import datetime, timezone
+from sqlalchemy import Date, cast, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -51,6 +52,38 @@ class MentorshipRoundRepository:
         )
 
         return result.scalar_one_or_none()
+
+    async def get_running_round_id(self, session: AsyncSession) -> int | None:
+        """
+        Return the round_id of the round whose meeting window is currently open, or None.
+
+        The meeting window spans from match_notification_at through
+        meetings_completion_deadline_at (inclusive), stored as ISO date strings in
+        the description JSONB field.
+
+        Args:
+            session (AsyncSession): The active async database session.
+
+        Returns: The running round ID or None.
+        """
+        today = datetime.now(timezone.utc).date()
+        result = await session.execute(
+            select(MentorshipRoundEntity.round_id).where(
+                cast(
+                    MentorshipRoundEntity.description["match_notification_at"].astext,
+                    Date,
+                )
+                <= today,
+                cast(
+                    MentorshipRoundEntity.description[
+                        "meetings_completion_deadline_at"
+                    ].astext,
+                    Date,
+                )
+                >= today,
+            )
+        )
+        return result.scalars().first()
 
     async def upsert_round(
         self, session: AsyncSession, entity: MentorshipRoundEntity

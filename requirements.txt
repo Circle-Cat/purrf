@@ -62,6 +62,10 @@ python-dateutil==2.9.0.post0
 jsonschema==4.17.3
 pyrsistent==0.20.0
 
+# intervaltree
+intervaltree==3.1.0
+sortedcontainers==2.4.0
+
 #retry
 tenacity==9.1.2
 

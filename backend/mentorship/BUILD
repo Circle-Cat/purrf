@@ -16,6 +16,9 @@ py_library(
         "//backend/repository:repositories",
         "//backend/service:launchdarkly_service",
         "//backend/utils:permission_decorators",
+        "@pypi//intervaltree",
+        "@pypi//python_dateutil",
+        "@pypi//sortedcontainers",
         "@pypi//sqlalchemy",
     ],
 )

@@ -8,6 +8,7 @@ GOOGLE_USER_SCOPES_LIST = [
     "https://www.googleapis.com/auth/calendar.readonly",
     "https://www.googleapis.com/auth/calendar.events.owned",
     "https://www.googleapis.com/auth/meetings.space.settings",
+    "https://www.googleapis.com/auth/meetings.space.readonly",
 ]
 
 GOOGLE_ADMIN_SCOPES_LIST = [

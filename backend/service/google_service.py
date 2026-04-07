@@ -16,6 +16,7 @@ class GoogleService:
         retry_utils,
         google_calendar_client,
         meet_spaces_client,
+        meet_conference_records_client,
     ):
         """
         Initializes the GoogleService with necessary clients and logger.
@@ -28,6 +29,7 @@ class GoogleService:
             retry_utils: A RetryUtils for handling retries on transient errors.
             google_calendar_client: Authenticated Google Calendar client.
             meet_spaces_client: Authenticated Google Meet SpacesServiceAsyncClient.
+            meet_conference_records_client: Meet ConferenceRecordsService async client.
         """
         self.logger = logger
         self.google_chat_client = google_chat_client
@@ -36,6 +38,7 @@ class GoogleService:
         self.retry_utils = retry_utils
         self.google_calendar_client = google_calendar_client
         self.meet_spaces_client = meet_spaces_client
+        self.meet_conference_records_client = meet_conference_records_client
 
     def get_chat_spaces(self, space_type: str) -> dict:
         """Retrieves a dictionary of Google Chat spaces with their display names.
@@ -203,6 +206,14 @@ class GoogleService:
             if not page_token:
                 break
 
+    def _get_people_email_addresses(self, user_id: str) -> list[dict]:
+        """Fetch emailAddresses from the People API for user_id. Raises on failure."""
+        request = self.google_people_client.people().get(
+            resourceName=f"people/{user_id}", personFields="emailAddresses"
+        )
+        response = self.retry_utils.get_retry_on_transient(request.execute)
+        return response.get("emailAddresses", [])
+
     def get_ldap_by_id(self, user_id):
         """
         Retrieves the LDAP identifier (local part of the email) for a given person ID using the Google People API.
@@ -219,18 +230,14 @@ class GoogleService:
         Raises:
             RuntimeError: If an error occurs during the API call.
         """
-        request = self.google_people_client.people().get(
-            resourceName=f"people/{user_id}", personFields="emailAddresses"
-        )
         try:
-            response = self.retry_utils.get_retry_on_transient(request.execute)
+            email_addresses = self._get_people_email_addresses(user_id)
         except Exception as e:
             self.logger.error(f"Failed to fetch profile for user {user_id}: {e}")
             raise RuntimeError(
                 f"Unexpected error fetching profile for user {user_id}"
             ) from e
 
-        email_addresses = response.get("emailAddresses", [])
         if email_addresses:
             email = email_addresses[0].get("value", "")
             if email and "@" in email:
@@ -238,6 +245,25 @@ class GoogleService:
                 self.logger.info(f"Retrieved LDAP '{local_part}' for ID '{user_id}'.")
                 return local_part
         self.logger.warning(f"No email found for person ID: {user_id}.")
+        return None
+
+    def get_email_by_google_user_id(self, google_user_id: str) -> str | None:
+        """
+        Look up the primary email for a Google user by their numeric user ID.
+
+        Uses the People API with domain-wide delegation, so it works for any
+        user inside the organisation. Returns None for external Google accounts
+        or if the lookup fails for any reason.
+        """
+        try:
+            email_addresses = self._get_people_email_addresses(google_user_id)
+        except Exception as e:
+            self.logger.warning(
+                "Failed to fetch email for Google user %s: %s", google_user_id, e
+            )
+            return None
+        if email_addresses:
+            return email_addresses[0].get("value", "")
         return None
 
     def renew_subscription(self, subscription_name: str):
@@ -389,3 +415,120 @@ class GoogleService:
             raise RuntimeError(
                 f"Unable to update Meet space access type: {space_name}"
             ) from e
+
+    async def list_ended_conferences(
+        self, end_time_after: str, end_time_before: str
+    ) -> list[dict]:
+        """
+        Lists conference records that ended within the given time window.
+
+        Args:
+            end_time_after (str): ISO 8601 lower bound for the conference end time (inclusive).
+            end_time_before (str): ISO 8601 upper bound for the conference end time (inclusive).
+
+        Returns:
+            list[dict]: A list of conference records, each containing:
+                - name (str): Resource name (e.g., "conferenceRecords/xxx").
+                - start_time (str): Start time in ISO 8601 format, or "" if unavailable.
+                - end_time (str): End time in ISO 8601 format, or "" if unavailable.
+                - space (str): Meet space resource name (e.g., "spaces/abc-defg-hij").
+        """
+        self.logger.debug(
+            "[GoogleService] list_ended_conferences: after=%s, before=%s",
+            end_time_after,
+            end_time_before,
+        )
+        conferences = []
+        request = meet_v2.ListConferenceRecordsRequest(
+            filter=f'end_time>="{end_time_after}" AND end_time<="{end_time_before}"',
+        )
+        pager = await self.meet_conference_records_client.list_conference_records(
+            request=request
+        )
+        async for record in pager:
+            conferences.append({
+                "name": record.name,
+                "space": record.space,
+                "start_time": record.start_time.isoformat()
+                if record.start_time
+                else "",
+                "end_time": record.end_time.isoformat() if record.end_time else "",
+            })
+        self.logger.debug(
+            "[GoogleService] list_ended_conferences: fetched %d records",
+            len(conferences),
+        )
+        return conferences
+
+    async def get_meeting_code_for_space(self, space_name: str) -> str:
+        """
+        Fetches the canonical meeting code for a Meet space.
+
+        Args:
+            space_name (str): The Meet space resource name (e.g., "spaces/abc-defg-hij").
+
+        Returns:
+            str: The human-readable meeting code (e.g., "abc-defg-hij").
+        """
+        self.logger.debug(
+            "[GoogleService] get_meeting_code_for_space: space_name=%s", space_name
+        )
+        request = meet_v2.GetSpaceRequest(name=space_name)
+        space = await self.meet_spaces_client.get_space(request=request)
+        return space.meeting_code
+
+    async def fetch_participants_for_record(self, record_name: str) -> list[dict]:
+        """
+        Fetches all participant sessions for a single conference record.
+
+        Each entry captures the aggregated start/end time and identity
+        (signed-in user or anonymous display name) for one person in the call.
+
+        Args:
+            record_name (str): The conference record resource name (e.g., "conferenceRecords/xxx").
+
+        Returns:
+            list[dict]: A list of participant entries, each containing:
+                - start_time (str | None): Earliest join time in ISO 8601 format, or None.
+                - end_time (str | None): Latest leave time in ISO 8601 format, or None.
+                - signedin_user_id (str): Google user ID (present only for signed-in participants).
+                - display_name (str): Display name of the participant.
+        """
+        self.logger.debug(
+            "[GoogleService] fetch_participants_for_record: record_name=%s", record_name
+        )
+        result = []
+
+        request = meet_v2.ListParticipantsRequest(parent=record_name)
+        pager = await self.meet_conference_records_client.list_participants(
+            request=request
+        )
+
+        async for participant in pager:
+            item = {
+                "start_time": (
+                    participant.earliest_start_time.isoformat()
+                    if participant.earliest_start_time
+                    else None
+                ),
+                "end_time": (
+                    participant.latest_end_time.isoformat()
+                    if participant.latest_end_time
+                    else None
+                ),
+            }
+
+            if participant.signedin_user and participant.signedin_user.user:
+                item["signedin_user_id"] = participant.signedin_user.user.split("/")[-1]
+                item["display_name"] = participant.signedin_user.display_name
+
+            if participant.anonymous_user:
+                item["display_name"] = participant.anonymous_user.display_name
+
+            result.append(item)
+
+        self.logger.debug(
+            "[GoogleService] fetch_participants_for_record: fetched %d participants",
+            len(result),
+        )
+        return result

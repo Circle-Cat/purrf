@@ -1,4 +1,5 @@
 import unittest
+from datetime import datetime, timezone, timedelta
 from backend.entity.mentorship_round_entity import MentorshipRoundEntity
 from backend.repository.mentorship_round_repository import MentorshipRoundRepository
 from tests.backend_test.repository_test.base_repository_test_lib import (
@@ -153,6 +154,139 @@ class TestMentorShipRoundRepository(BaseRepositoryTestLib):
         self.assertEqual(updated_mentorship_round.name, "2025-spring-updated")
         self.assertEqual(updated_mentorship_round.mentee_average_score, 4.4)
         self.assertEqual(updated_mentorship_round.required_meetings, 7)
+
+    async def test_get_running_round_id_within_window(self):
+        """Test returns round_id when today falls within the meeting window."""
+        today = datetime.now(timezone.utc).date()
+        round_entity = MentorshipRoundEntity(
+            name="active-round",
+            description={
+                "match_notification_at": str(today - timedelta(days=7)),
+                "meetings_completion_deadline_at": str(today + timedelta(days=7)),
+            },
+            required_meetings=5,
+        )
+        await self.insert_entities([round_entity])
+
+        result = await self.repo.get_running_round_id(self.session)
+
+        self.assertEqual(result, round_entity.round_id)
+
+    async def test_get_running_round_id_on_start_boundary(self):
+        """Test returns round_id when today equals match_notification_at (inclusive)."""
+        today = datetime.now(timezone.utc).date()
+        round_entity = MentorshipRoundEntity(
+            name="start-boundary-round",
+            description={
+                "match_notification_at": str(today),
+                "meetings_completion_deadline_at": str(today + timedelta(days=7)),
+            },
+            required_meetings=5,
+        )
+        await self.insert_entities([round_entity])
+
+        result = await self.repo.get_running_round_id(self.session)
+
+        self.assertEqual(result, round_entity.round_id)
+
+    async def test_get_running_round_id_on_end_boundary(self):
+        """Test returns round_id when today equals meetings_completion_deadline_at (inclusive)."""
+        today = datetime.now(timezone.utc).date()
+        round_entity = MentorshipRoundEntity(
+            name="end-boundary-round",
+            description={
+                "match_notification_at": str(today - timedelta(days=7)),
+                "meetings_completion_deadline_at": str(today),
+            },
+            required_meetings=5,
+        )
+        await self.insert_entities([round_entity])
+
+        result = await self.repo.get_running_round_id(self.session)
+
+        self.assertEqual(result, round_entity.round_id)
+
+    async def test_get_running_round_id_before_window(self):
+        """Test returns None when today is before match_notification_at."""
+        today = datetime.now(timezone.utc).date()
+        round_entity = MentorshipRoundEntity(
+            name="future-round",
+            description={
+                "match_notification_at": str(today + timedelta(days=1)),
+                "meetings_completion_deadline_at": str(today + timedelta(days=7)),
+            },
+            required_meetings=5,
+        )
+        await self.insert_entities([round_entity])
+
+        result = await self.repo.get_running_round_id(self.session)
+
+        self.assertIsNone(result)
+
+    async def test_get_running_round_id_after_window(self):
+        """Test returns None when today is past meetings_completion_deadline_at."""
+        today = datetime.now(timezone.utc).date()
+        round_entity = MentorshipRoundEntity(
+            name="past-round",
+            description={
+                "match_notification_at": str(today - timedelta(days=7)),
+                "meetings_completion_deadline_at": str(today - timedelta(days=1)),
+            },
+            required_meetings=5,
+        )
+        await self.insert_entities([round_entity])
+
+        result = await self.repo.get_running_round_id(self.session)
+
+        self.assertIsNone(result)
+
+    async def test_get_running_round_id_no_rounds(self):
+        """Test returns None when no rounds exist."""
+        result = await self.repo.get_running_round_id(self.session)
+
+        self.assertIsNone(result)
+
+    async def test_get_running_round_id_missing_date_fields(self):
+        """Test returns None when description lacks the required date keys."""
+        round_entity = MentorshipRoundEntity(
+            name="no-dates-round",
+            description={"goal": "no dates here"},
+            required_meetings=5,
+        )
+        await self.insert_entities([round_entity])
+
+        result = await self.repo.get_running_round_id(self.session)
+
+        self.assertIsNone(result)
+
+    async def test_get_running_round_id_null_date_values(self):
+        """Test returns None when date keys exist but their values are JSON null."""
+        round_entity = MentorshipRoundEntity(
+            name="null-dates-round",
+            description={
+                "match_notification_at": None,
+                "meetings_completion_deadline_at": None,
+            },
+            required_meetings=5,
+        )
+        await self.insert_entities([round_entity])
+
+        result = await self.repo.get_running_round_id(self.session)
+
+        self.assertIsNone(result)
+
+    async def test_get_running_round_id_null_description(self):
+        """Test returns None when description is null."""
+        round_entity = MentorshipRoundEntity(
+            name="null-description-round",
+            description=None,
+            required_meetings=5,
+        )
+        await self.insert_entities([round_entity])
+
+        result = await self.repo.get_running_round_id(self.session)
+
+        self.assertIsNone(result)
 
 
 if __name__ == "__main__":

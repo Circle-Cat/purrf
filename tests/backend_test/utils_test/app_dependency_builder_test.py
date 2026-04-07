@@ -11,6 +11,7 @@ from backend.common.environment_constants import (
 @patch("backend.utils.app_dependency_builder.LaunchDarklyClient")
 @patch("backend.utils.app_dependency_builder.UserIdentityService")
 @patch("backend.utils.app_dependency_builder.MentorshipController")
+@patch("backend.utils.app_dependency_builder.MeetAttendanceService")
 @patch("backend.utils.app_dependency_builder.MeetingService")
 @patch("backend.utils.app_dependency_builder.RegistrationService")
 @patch("backend.utils.app_dependency_builder.ParticipationService")
@@ -140,6 +141,7 @@ class TestAppDependencyBuilder(TestCase):
         mock_participation_service_cls,
         mock_registration_service_cls,
         mock_meeting_service_cls,
+        mock_meet_attendance_service_cls,
         mock_mentorship_controller_cls,
         mock_user_identity_service_cls,
         mock_launchdarkly_client_cls,
@@ -184,6 +186,8 @@ class TestAppDependencyBuilder(TestCase):
         mock_google_client_instance.create_meet_spaces_client.return_value = (
             mock_meet_spaces_client
         )
+        mock_meet_conference_records_client = MagicMock()
+        mock_google_client_instance.create_meet_conference_records_client.return_value = mock_meet_conference_records_client
         mock_google_reports_client = MagicMock()
         mock_google_client_instance.create_reports_client.return_value = (
             mock_google_reports_client
@@ -235,6 +239,7 @@ class TestAppDependencyBuilder(TestCase):
         mock_google_client_instance.create_calendar_client.assert_called_once()
         mock_google_client_instance.create_reports_client.assert_called_once()
         mock_google_client_instance.create_meet_spaces_client.assert_called_once()
+        mock_google_client_instance.create_meet_conference_records_client.assert_called_once()
         mock_retry_utils_cls.assert_called_once()
         mock_gerrit_client_cls.assert_called_once()
         mock_jira_client_cls.assert_called_once()
@@ -448,6 +453,13 @@ class TestAppDependencyBuilder(TestCase):
             profile_service=mock_profile_service_cls.return_value,
             database=mock_database_cls.return_value,
         )
+        mock_meet_attendance_service_cls.assert_called_once_with(
+            logger=mock_logger,
+            google_service=mock_google_service.return_value,
+            mentorship_pairs_repository=mock_mentorship_pairs_repo_cls.return_value,
+            mentorship_round_repository=mock_mentorship_round_repository_cls.return_value,
+            users_repository=mock_users_repo_cls.return_value,
+        )
         mock_mentorship_controller_cls.assert_called_once_with(
             rounds_service=mock_rounds_service_cls.return_value,
             participation_service=mock_participation_service_cls.return_value,
@@ -455,6 +467,7 @@ class TestAppDependencyBuilder(TestCase):
             meeting_service=mock_meeting_service_cls.return_value,
             launchdarkly_service=mock_launchdarkly_service_cls.return_value,
             database=mock_database_cls.return_value,
+            meet_attendance_sync_service=mock_meet_attendance_service_cls.return_value,
         )
         mock_rounds_service_cls.assert_called_once_with(
             mentorship_round_repository=mock_mentorship_round_repository_cls.return_value,
@@ -515,6 +528,7 @@ class TestAppDependencyBuilder(TestCase):
             retry_utils=mock_retry_utils_instance,
             google_calendar_client=mock_google_calendar_client,
             meet_spaces_client=mock_meet_spaces_client,
+            meet_conference_records_client=mock_meet_conference_records_client,
         )
 
         mock_google_chat_processor_service.assert_called_once_with(

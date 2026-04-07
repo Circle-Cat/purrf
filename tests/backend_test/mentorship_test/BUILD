@@ -38,3 +38,9 @@ py_test(
     srcs = ["meeting_service_test.py"],
     deps = ["//backend/mentorship"],
 )
+
+py_test(
+    name = "meet_attendance_service_test",
+    srcs = ["meet_attendance_service_test.py"],
+    deps = ["//backend/mentorship"],
+)

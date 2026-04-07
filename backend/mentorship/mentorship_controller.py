@@ -16,6 +16,7 @@ from backend.common.api_endpoints import (
     MENTORSHIP_MATCH_RESULT_ENDPOINT,
     MENTORSHIP_MEETINGS_ENDPOINT,
     MENTORSHIP_MEETING_V2_ENDPOINT,
+    MEET_ATTENDANCE_SYNC_ENDPOINT,
 )
 from backend.common.user_role import UserRole
 from backend.dto.google_meeting_create_dto import GoogleMeetingCreateDto
@@ -30,6 +31,7 @@ class MentorshipController:
         meeting_service,
         launchdarkly_service,
         database,
+        meet_attendance_sync_service,
     ):
         """
         Initialize the MentorshipController with required dependencies and register routes.
@@ -41,6 +43,7 @@ class MentorshipController:
             meeting_service: MeetingService instance.
             launchdarkly_service: LaunchDarklyService instance.
             database (Database): Database access object providing async session management.
+            meet_attendance_sync_service: MeetAttendanceSyncService instance.
         """
 
         self.rounds_service = rounds_service
@@ -49,6 +52,7 @@ class MentorshipController:
         self.meeting_service = meeting_service
         self.launchdarkly_service = launchdarkly_service
         self.database = database
+        self.meet_attendance_sync_service = meet_attendance_sync_service
 
         self.router = APIRouter(tags=["mentorship"])
 
@@ -118,6 +122,39 @@ class MentorshipController:
             ),
             methods=["POST"],
             response_model=None,
+        )
+
+        self.router.add_api_route(
+            MEET_ATTENDANCE_SYNC_ENDPOINT,
+            endpoint=authenticate(roles=[UserRole.CRON_RUNNER, UserRole.ADMIN])(
+                self.sync_meet_attendance
+            ),
+            methods=["POST"],
+            response_model=None,
+        )
+
+    async def sync_meet_attendance(
+        self, current_user: UserContextDto, lookback_hours: int = 2
+    ):
+        """
+        CronJob endpoint to sync Google Meet attendance for completed meetings.
+
+        Args:
+            lookback_hours: Number of hours to look back when querying the
+                Meet API for ended conferences. Defaults to 2.
+        """
+        if self.launchdarkly_service.is_create_google_meeting_enabled(current_user):
+            async with self.database.session() as session:
+                result = await self.meet_attendance_sync_service.sync_attendance(
+                    session=session, lookback_hours=lookback_hours
+                )
+            return api_response(
+                success=True,
+                message="Attendance sync completed",
+                data=result,
+            )
+        raise PermissionError(
+            "Creating Google meetings is not yet supported. No need to sync attendance."
         )
 
     async def get_my_match_result(self, current_user: UserContextDto, round_id: int):

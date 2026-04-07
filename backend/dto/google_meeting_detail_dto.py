@@ -9,3 +9,8 @@ class GoogleMeetingDetailDto(BaseInternalDTO):
     is_completed: bool
     entry_points: list[dict]
     conference_id: str | None = None
+    has_unknown_absent: bool | None = None
+    absent_user_id: int | None = None
+    late_user_id: list[int] | None = None
+    has_unknown_late: bool | None = None
+    has_insufficient_duration: bool | None = None

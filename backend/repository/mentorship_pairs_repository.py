@@ -116,6 +116,23 @@ class MentorshipPairsRepository:
 
         return merged_entity
 
+    async def upsert_pairs_batch(
+        self, session: AsyncSession, entities: list[MentorshipPairsEntity]
+    ) -> list[MentorshipPairsEntity]:
+        """
+        Inserts or updates multiple MentorshipPairsEntity rows with a single flush.
+
+        Args:
+            session (AsyncSession): Active async database session.
+            entities (list[MentorshipPairsEntity]): Entities to upsert.
+
+        Returns:
+            list[MentorshipPairsEntity]: The merged entity instances.
+        """
+        merged = [await session.merge(entity) for entity in entities]
+        await session.flush()
+        return merged
+
     async def get_pairs_with_partner_info(
         self, session: AsyncSession, user_id: int, round_id: int
     ) -> list[tuple[MentorshipPairsEntity, UsersEntity]]:
