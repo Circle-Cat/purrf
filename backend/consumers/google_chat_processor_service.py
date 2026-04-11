@@ -53,6 +53,11 @@ class GoogleChatProcessorService:
         Raises:
             ValueError: If any required field (e.g., senderId, spaceName, message) is missing from the payload.
             googleapiclient.errors.HttpError: If an error occurs during the subscription renewal process
+
+        NOTE:
+            Originally implemented using Pub/Sub streaming pull for high-throughput, low-latency processing.
+            Switched to cron-based pull due to lower traffic and simpler operational needs.
+            Keep this for potential future scaling when traffic increases again.
         """
 
         self.logger.info(
@@ -96,9 +101,9 @@ class GoogleChatProcessorService:
                 - `attributes`: includes CloudEvent metadata (e.g. `ce-type`).
                 - `data`: JSON-encoded Workspace or Chat event payload.
 
-        Raises:
-            ValueError: If required fields (e.g., subscription name, message content) are missing
-                        or malformed within the event payload.
+        Failure handling: malformed JSON, unsupported events, and processing
+        errors all result in a `nack()` and an early return — exceptions are
+        not propagated to the streaming subscriber.
 
         Side Effects:
             - Calls external Google API to renew subscriptions.
@@ -108,35 +113,73 @@ class GoogleChatProcessorService:
         Returns:
             None
         """
-        self.logger.debug("Received message: %s", message)
-        attributes = message.attributes
-        message_type_full = attributes.get("ce-type")
+        self.logger.debug("[GoogleChatProcessorService] Received message: %s", message)
 
         try:
             data = json.loads(message.data.decode("utf-8"))
-            self.logger.debug("Decoded message data: %s", data)
+            self.logger.debug(
+                "[GoogleChatProcessorService] Decoded message data: %s", data
+            )
         except (UnicodeDecodeError, json.JSONDecodeError) as err:
-            self.logger.error("Failed to decode/parse message data: %s", err)
+            self.logger.error(
+                "[GoogleChatProcessorService] Failed to decode/parse message data: %s",
+                err,
+            )
             message.nack()
             return
+
+        # Pre-filter unsupported events here so process_event's ValueError path is
+        # only taken in the sync-pull flow. The streaming subscriber treats a
+        # raised callback exception as a worker fault, so we keep this branch quiet.
+        message_type_full = message.attributes.get("ce-type")
+        if (
+            EXPIRATION_REMINDER_EVENT != message_type_full
+            and message_type_full not in ALL_GOOGLE_CHAT_EVENT_TYPES
+        ):
+            message.nack()
+            self.logger.info(
+                "[GoogleChatProcessorService] Received unsupporited Google Chat event: %s",
+                message_type_full,
+            )
+            return
+
+        try:
+            self.process_event(data, message.attributes)
+        except ValueError as err:
+            self.logger.error(
+                "[GoogleChatProcessorService] Failed to process event: %s", err
+            )
+            message.nack()
+            return
+
+        message.ack()
+
+    def process_event(self, data: dict, attributes: dict):
+        """
+        Process a single Google Chat event (pure business logic, no ack/nack).
+
+        Args:
+            data: Decoded JSON payload from the Pub/Sub message.
+            attributes: Message attributes dict (contains CloudEvent metadata like `ce-type`).
+
+        Raises:
+            ValueError: If the event type is unsupported or required fields are missing.
+        """
+        message_type_full = attributes.get("ce-type")
 
         subscription_info = data.get("subscription")
         if EXPIRATION_REMINDER_EVENT == message_type_full:
             subscription_name = subscription_info.get("name")
             if not subscription_name:
-                self.logger.error(
-                    "No subscription_name provided in payload for expiration reminder event."
-                )
-                message.nack()
                 raise ValueError(
                     "No subscription_name provided in payload for expiration reminder event."
                 )
-
-            self.logger.info("Renewing subscription: %s", subscription_name)
-
+            self.logger.info(
+                "[GoogleChatProcessorService] Renewing subscription: %s",
+                subscription_name,
+            )
             self.google_service.renew_subscription(subscription_name)
-            message.ack()
-            self.logger.info("Subscription renewed and message acknowledged.")
+            self.logger.info("[GoogleChatProcessorService] Subscription renewed.")
             return
 
         if message_type_full in ALL_GOOGLE_CHAT_EVENT_TYPES:
@@ -163,10 +206,8 @@ class GoogleChatProcessorService:
             self.google_chat_messages_utils.store_messages(
                 ldaps_dict, messages_list, message_enum
             )
-            message.ack()
-            self.logger.info("Message processed and acknowledged.")
-        else:
-            message.nack()
             self.logger.info(
-                "Received unsupporited Google Chat event: %s", message_type_full
+                "[GoogleChatProcessorService] Google Chat message processed."
             )
+        else:
+            raise ValueError(f"Unsupported Google Chat event: {message_type_full}")

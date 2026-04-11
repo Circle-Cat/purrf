@@ -31,6 +31,7 @@ from backend.consumers.pubsub_puller_factory import PubSubPullerFactory
 from backend.consumers.pubsub_puller import PubSubPuller
 from backend.consumers.gerrit_processor_service import GerritProcessorService
 from backend.consumers.pubsub_pull_manager import PubSubPullManager
+from backend.consumers.pubsub_sync_pull_service import PubSubSyncPullService
 from backend.historical_data.historical_controller import HistoricalController
 from backend.historical_data.microsoft_member_sync_service import (
     MicrosoftMemberSyncService,
@@ -245,11 +246,16 @@ class AppDependencyBuilder:
             date_time_util=self.date_time_util,
             gerrit_client=self.gerrit_client,
         )
-        self.consumer_controller = ConsumerController(
-            microsoft_message_processor_service=self.microsoft_message_processor_service,
+        self.pubsub_sync_pull_service = PubSubSyncPullService(
+            logger=self.logger,
+            subscriber_client=self.subscriber_client,
+            microsoft_chat_message_util=self.microsoft_chat_message_util,
             google_chat_processor_service=self.google_chat_processor_service,
             gerrit_processor_service=self.gerrit_processor_service,
-            pubsub_pull_manager=self.pubsub_pull_manager,
+            asyncio_event_loop_manager=self.asyncio_event_loop_manager,
+        )
+        self.consumer_controller = ConsumerController(
+            pubsub_sync_pull_service=self.pubsub_sync_pull_service,
         )
 
         self.microsoft_member_sync_service = MicrosoftMemberSyncService(

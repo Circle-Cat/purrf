@@ -87,7 +87,7 @@ class GerritProcessorService:
         missing_fields = [field for field in required_fields if data.get(field) is None]
         if missing_fields:
             self.logger.warning(
-                "Skipping event due to missing essential fields: %s. Payload: %s",
+                "[GerritProcessorService] Skipping event due to missing essential fields: %s. Payload: %s",
                 ", ".join(missing_fields),
                 json.dumps(payload),
             )
@@ -109,7 +109,7 @@ class GerritProcessorService:
         pipeline.zrem(key_project, change_number)
         pipeline.zrem(key_global, change_number)
         self.logger.debug(
-            "Pipeline: zrem CL %s from project_key: %s, global_key: %s",
+            "[GerritProcessorService] Pipeline: zrem CL %s from project_key: %s, global_key: %s",
             change_number,
             key_project,
             key_global,
@@ -131,7 +131,7 @@ class GerritProcessorService:
         pipeline.zadd(key_project, {change_number: score})
         pipeline.zadd(key_global, {change_number: score})
         self.logger.debug(
-            "Pipeline: zadd CL %s to project_key: %s, global_key: %s with score %s",
+            "[GerritProcessorService] Pipeline: zadd CL %s to project_key: %s, global_key: %s with score %s",
             change_number,
             key_project,
             key_global,
@@ -166,7 +166,7 @@ class GerritProcessorService:
         has_reviewed = self.redis_client.sismember(dedupe_key, commenter)
         if has_reviewed:
             self.logger.info(
-                "Skipping duplicate count for CL %s, user %s has already reviewed it",
+                "[GerritProcessorService] Skipping duplicate count for CL %s, user %s has already reviewed it",
                 change_number,
                 commenter,
             )
@@ -194,7 +194,7 @@ class GerritProcessorService:
 
         self.retry_utils.get_retry_on_transient(pipeline.execute)
         self.logger.info(
-            "Updated review stats: user %s reviewed CL %s (project: %s), incremented '%s' in %s and %s",
+            "[GerritProcessorService] Updated review stats: user %s reviewed CL %s (project: %s), incremented '%s' in %s and %s",
             commenter,
             change_number,
             project,
@@ -241,7 +241,10 @@ class GerritProcessorService:
                 self.retry_utils.get_retry_on_transient(
                     lambda: self.redis_client.sadd(GERRIT_PROJECTS_KEY, project_name)
                 )
-                self.logger.info("Added new project to set: %s", project_name)
+                self.logger.info(
+                    "[GerritProcessorService] Added new project to set: %s",
+                    project_name,
+                )
 
         elif event_type == "patchset-created":
             self._handle_patchset_created(payload)
@@ -256,7 +259,9 @@ class GerritProcessorService:
         elif event_type in ["private-state-changed", "wip-state-changed"]:
             self._handle_private_and_wip_states_changed(payload)
         else:
-            self.logger.warning("Unsupported Gerrit event type: %s", event_type)
+            self.logger.warning(
+                "[GerritProcessorService] Unsupported Gerrit event type: %s", event_type
+            )
 
     def _handle_private_and_wip_states_changed(self, payload: dict) -> None:
         """
@@ -309,7 +314,7 @@ class GerritProcessorService:
                 cl_created_unix_timestamp,
             )
             self.logger.info(
-                "CL %s (project: %s) became public and not WIP at %s; tracked as NEW (score: %s).",
+                "[GerritProcessorService] CL %s (project: %s) became public and not WIP at %s; tracked as NEW (score: %s).",
                 change_number,
                 project,
                 event_unix_timestamp,
@@ -340,7 +345,7 @@ class GerritProcessorService:
         )
 
         self.retry_utils.get_retry_on_transient(pipeline.execute)
-        self.logger.info("Deleted CL: %s ", change_number)
+        self.logger.info("[GerritProcessorService] Deleted CL: %s ", change_number)
 
     def _handle_patchset_created(self, payload: dict) -> None:
         """
@@ -381,7 +386,7 @@ class GerritProcessorService:
 
         if patch_set_number != 1:
             self.logger.info(
-                "Skipped non-initial patchset for CL %s (patchset: %s) - only tracking new changes",
+                "[GerritProcessorService] Skipped non-initial patchset for CL %s (patchset: %s) - only tracking new changes",
                 change_number,
                 patch_set_number,
             )
@@ -399,7 +404,7 @@ class GerritProcessorService:
         )
         self.retry_utils.get_retry_on_transient(pipeline.execute)
         self.logger.info(
-            "Tracked new under-review CL: %s (project: %s) as NEW (score: %s).",
+            "[GerritProcessorService] Tracked new under-review CL: %s (project: %s) as NEW (score: %s).",
             change_number,
             project,
             cl_created_unix_timestamp,
@@ -479,7 +484,7 @@ class GerritProcessorService:
 
         self.retry_utils.get_retry_on_transient(pipeline.execute)
         self.logger.info(
-            "Merged CL %s: updated stats (LOC: +%d, merged count: +1) in %s and %s; removed from NEW status tracking sets",
+            "[GerritProcessorService] Merged CL %s: updated stats (LOC: +%d, merged count: +1) in %s and %s; removed from NEW status tracking sets",
             change_number,
             insertions,
             user_weekly_stats_key_project,
@@ -532,7 +537,7 @@ class GerritProcessorService:
         )
         self.retry_utils.get_retry_on_transient(pipeline.execute)
         self.logger.info(
-            "Abandoned CL %s (project: %s) at %s: moved from NEW to ABANDONED; cleared dedupe key.",
+            "[GerritProcessorService] Abandoned CL %s (project: %s) at %s: moved from NEW to ABANDONED; cleared dedupe key.",
             change_number,
             project,
             abandoned_unix_timestamp,
@@ -589,7 +594,7 @@ class GerritProcessorService:
 
         self.retry_utils.get_retry_on_transient(pipeline.execute)
         self.logger.info(
-            "Restored CL %s (project: %s) at %s: moved from ABANDONED to NEW (score: %s).",
+            "[GerritProcessorService] Restored CL %s (project: %s) at %s: moved from ABANDONED to NEW (score: %s).",
             change_number,
             project,
             restored_unix_timestamp,
@@ -617,7 +622,7 @@ class GerritProcessorService:
             message.ack()
         except Exception as err:
             self.logger.error(
-                "[pull_gerrit] failed to process message %s: %s",
+                "[GerritProcessorService] failed to process message %s: %s",
                 getattr(message, "message_id", "<no-id>"),
                 err,
                 exc_info=True,
@@ -635,6 +640,11 @@ class GerritProcessorService:
 
         Raises:
             ValueError: If either `project_id` or `subscription_id` is empty.
+
+        NOTE:
+            Originally implemented using Pub/Sub streaming pull for high-throughput, low-latency processing.
+            Switched to cron-based pull due to lower traffic and simpler operational needs.
+            Keep this for potential future scaling when traffic increases again.
         """
         if not project_id:
             raise ValueError("project_id must be a non-empty string")

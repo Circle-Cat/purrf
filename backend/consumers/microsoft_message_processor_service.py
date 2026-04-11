@@ -41,7 +41,10 @@ class MicrosoftMessageProcessorService:
             message.ack()
         except Exception as e:
             self.logger.error(
-                f"Error processing message {message.message_id}: {e}", exc_info=True
+                "[MicrosoftMessageProcessorService] Error processing message %s: %s",
+                message.message_id,
+                e,
+                exc_info=True,
             )
             message.nack()
 
@@ -49,11 +52,18 @@ class MicrosoftMessageProcessorService:
         """
         Start pulling Microsoft Pub/Sub messages for the given project and subscription,
         processing them using the synchronous wrapper.
+
         Args:
             project_id (str): Google Cloud project ID (non-empty).
             subscription_id (str): Pub/Sub subscription ID (non-empty).
+
         Raises:
             ValueError: If either `project_id` or `subscription_id` is empty.
+
+        NOTE:
+            Originally implemented using Pub/Sub streaming pull for high-throughput, low-latency processing.
+            Switched to cron-based pull due to lower traffic and simpler operational needs.
+            Keep this for potential future scaling when traffic increases again.
         """
         if not project_id:
             raise ValueError("project_id must be a non-empty string")

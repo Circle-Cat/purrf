@@ -301,10 +301,7 @@ class TestAppDependencyBuilder(TestCase):
         )
 
         mock_consumer_controller_cls.assert_called_once_with(
-            microsoft_message_processor_service=mock_microsoft_message_processor_service_cls.return_value,
-            google_chat_processor_service=mock_google_chat_processor_service.return_value,
-            gerrit_processor_service=mock_gerrit_processor_service_cls.return_value,
-            pubsub_pull_manager=mock_pubsub_pull_manager_cls.return_value,
+            pubsub_sync_pull_service=builder.pubsub_sync_pull_service,
         )
 
         mock_microsoft_member_sync_service_cls.assert_called_once_with(

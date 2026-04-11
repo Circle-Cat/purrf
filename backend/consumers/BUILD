@@ -71,3 +71,14 @@ py_library(
         "pubsub_puller_factory.py",
     ],
 )
+
+py_library(
+    name = "pubsub_sync_pull_service",
+    srcs = [
+        "pubsub_sync_pull_service.py",
+    ],
+    deps = [
+        "//backend/common:constants",
+        "//backend/common:environment_constants",
+    ],
+)

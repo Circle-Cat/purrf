@@ -88,8 +88,7 @@ class TestGoogleChatProcessorService(TestCase):
             attributes={"ce-type": EXPIRATION_REMINDER_EVENT},
         )
 
-        with self.assertRaises(ValueError):
-            self.service.callback(message)
+        self.service.callback(message)
 
         self.google_service.renew_subscription.assert_not_called()
         message.ack.assert_not_called()

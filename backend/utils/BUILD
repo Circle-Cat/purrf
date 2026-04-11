@@ -107,6 +107,7 @@ py_library(
         "//backend/consumers:pubsub_pull_manager",
         "//backend/consumers:pubsub_puller",
         "//backend/consumers:pubsub_puller_factory",
+        "//backend/consumers:pubsub_sync_pull_service",
         "//backend/historical_data:gerrit_sync_service",
         "//backend/historical_data:google_calendar_sync_service",
         "//backend/historical_data:google_chat_history_sync_service",

@@ -74,30 +74,35 @@ class AsyncioEventLoopManager:
                     self._loop.call_soon_threadsafe(self._loop.stop)
                     self._thread.join(timeout=5)
             except Exception as e:
-                logger.warning(f"Failed to stop event loop safely: {e}")
+                logger.warning(
+                    "[AsyncioEventLoopManager] Failed to stop event loop safely: %s", e
+                )
             finally:
                 try:
                     self._loop.close()
                 except Exception as close_err:
-                    logger.warning(f"Failed to close event loop: {close_err}")
+                    logger.warning(
+                        "[AsyncioEventLoopManager] Failed to close event loop: %s",
+                        close_err,
+                    )
                 self._loop = None
                 self._thread = None
 
-    def run_async_in_background_loop(self, coro):
+    def run_async_in_background_loop(self, coro, timeout=2):
         """
         Run an async coroutine in the background asyncio event loop from a synchronous context.
 
-        This method will block the calling thread for a maximum of 2 seconds waiting for the coroutine to complete.
-
         Args:
             coro (Coroutine): The async coroutine to run.
+            timeout (float | None): Seconds to wait for the coroutine to complete.
+                None means wait indefinitely.
 
         Returns:
             Any: The result returned by the coroutine.
 
         Raises:
             RuntimeError: If the background event loop is not available.
-            TimeoutError: If the coroutine does not complete within 2 seconds.
+            TimeoutError: If the coroutine does not complete within the timeout.
             Exception: Reraises exceptions raised during coroutine execution.
         """
         if not asyncio.iscoroutine(coro):
@@ -105,15 +110,19 @@ class AsyncioEventLoopManager:
 
         loop = self.get_loop()
         if not loop or not loop.is_running():
-            logger.error("Background event loop not available. Cannot run async task.")
+            logger.error(
+                "[AsyncioEventLoopManager] Background event loop not available. Cannot run async task."
+            )
             raise RuntimeError("Background event loop not available.")
 
         try:
             future = asyncio.run_coroutine_threadsafe(coro, loop)
-            result = future.result(timeout=2)
+            result = future.result(timeout=timeout)
             return result
         except Exception as e:
             logger.error(
-                f"Exception occurred in background async task: {e}", exc_info=True
+                "[AsyncioEventLoopManager] Exception occurred in background async task: %s",
+                e,
+                exc_info=True,
             )
             raise

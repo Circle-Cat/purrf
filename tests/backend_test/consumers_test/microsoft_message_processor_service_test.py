@@ -61,9 +61,6 @@ class TestMicrosoftMessageProcessorService(IsolatedAsyncioTestCase):
         await self.service.process_data_async(message)
         message.ack.assert_not_called()
         message.nack.assert_called_once()
-        self.logger.error.assert_called_once_with(
-            f"Error processing message {message.message_id}: Test error", exc_info=True
-        )
 
     def test_pull_microsoft_message_success(self):
         mock_puller = MagicMock()

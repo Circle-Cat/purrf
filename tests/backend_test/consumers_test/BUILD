@@ -60,3 +60,11 @@ py_test(
         "//backend/consumers:pubsub_puller_factory",
     ],
 )
+
+py_test(
+    name = "pubsub_sync_pull_service_test",
+    srcs = ["pubsub_sync_pull_service_test.py"],
+    deps = [
+        "//backend/consumers:pubsub_sync_pull_service",
+    ],
+)

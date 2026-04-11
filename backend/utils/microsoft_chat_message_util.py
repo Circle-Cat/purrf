@@ -100,7 +100,10 @@ class MicrosoftChatMessageUtil:
                                 attachment was found. Otherwise, None.
         """
         if not attachments:
-            self.logger.warning("No attachments found for message %s", message_id)
+            self.logger.warning(
+                "[MicrosoftChatMessageUtil] No attachments found for message %s",
+                message_id,
+            )
             return [], None
 
         processed_attachment = []
@@ -117,7 +120,9 @@ class MicrosoftChatMessageUtil:
             else:
                 attachment_id = attachment.id
                 self.logger.warning(
-                    f"Skipped attachment. message_id={message_id}, attachment_id={attachment_id}"
+                    "[MicrosoftChatMessageUtil] Skipped attachment. message_id=%s, attachment_id=%s",
+                    message_id,
+                    attachment_id,
                 )
         return processed_attachment, reply_to_message_id
 
@@ -142,16 +147,24 @@ class MicrosoftChatMessageUtil:
                         None or empty/invalid.
         """
         if not message_id:
-            self.logger.error("Input validation failed: message_id is None.")
+            self.logger.error(
+                "[MicrosoftChatMessageUtil] Input validation failed: message_id is None."
+            )
             raise ValueError("message_id is required.")
         if not sender_ldap:
-            self.logger.error("Input validation failed: sender_ldap is empty.")
+            self.logger.error(
+                "[MicrosoftChatMessageUtil] Input validation failed: sender_ldap is empty."
+            )
             raise ValueError("sender_ldap is required.")
         if not score:
-            self.logger.error("Input validation failed: score is empty.")
+            self.logger.error(
+                "[MicrosoftChatMessageUtil] Input validation failed: score is empty."
+            )
             raise ValueError("Sorted Set score is required.")
         if not pipeline:
-            self.logger.error("Input validation failed: pipeline object is None.")
+            self.logger.error(
+                "[MicrosoftChatMessageUtil] Input validation failed: pipeline object is None."
+            )
             raise ValueError("Redis pipeline object is required.")
 
         created_index_redis_key = MICROSOFT_CHAT_MESSAGES_INDEX_KEY.format(
@@ -165,12 +178,17 @@ class MicrosoftChatMessageUtil:
 
         pipeline.zrem(created_index_redis_key, message_id)
         self.logger.debug(
-            f"Added ZREM command for {message_id} from {created_index_redis_key} to pipeline."
+            "[MicrosoftChatMessageUtil] Added ZREM command for %s from %s to pipeline.",
+            message_id,
+            created_index_redis_key,
         )
 
         pipeline.zadd(deleted_index_redis_key, {message_id: score})
         self.logger.debug(
-            f"Added ZADD command for {message_id} to {deleted_index_redis_key} to pipeline with score {score}."
+            "[MicrosoftChatMessageUtil] Added ZADD command for %s to %s to pipeline with score %s.",
+            message_id,
+            deleted_index_redis_key,
+            score,
         )
 
     def _handle_created_messages(
@@ -194,13 +212,19 @@ class MicrosoftChatMessageUtil:
             ValueError: If `created_date_time` is not a valid datetime or formatting fails.
         """
         if not message:
-            self.logger.error("Input validation failed: message object is None.")
+            self.logger.error(
+                "[MicrosoftChatMessageUtil] Input validation failed: message object is None."
+            )
             raise ValueError("message object is required.")
         if not sender_ldap:
-            self.logger.error("Input validation failed: sender_ldap is empty.")
+            self.logger.error(
+                "[MicrosoftChatMessageUtil] Input validation failed: sender_ldap is empty."
+            )
             raise ValueError("sender_ldap is required.")
         if not pipeline:
-            self.logger.error("Input validation failed: pipeline object is None.")
+            self.logger.error(
+                "[MicrosoftChatMessageUtil] Input validation failed: pipeline object is None."
+            )
             raise ValueError("Redis pipeline object is required.")
 
         message_id = message.id
@@ -232,11 +256,18 @@ class MicrosoftChatMessageUtil:
 
         pipeline.zadd(index_redis_key, {message_id: index_score})
         self.logger.debug(
-            f"Added message {message_id} to {index_redis_key} with score {index_score}"
+            "[MicrosoftChatMessageUtil] Added message %s to %s with score %s",
+            message_id,
+            index_redis_key,
+            index_score,
         )
 
         pipeline.set(detail_key, json.dumps(message_detail.to_dict()))
-        self.logger.debug(f"Saved message details for {message_id} to {detail_key}")
+        self.logger.debug(
+            "[MicrosoftChatMessageUtil] Saved message details for %s to %s",
+            message_id,
+            detail_key,
+        )
 
     def _handle_update_message(self, message: str, sender_ldap: str, pipeline) -> None:
         """
@@ -254,13 +285,19 @@ class MicrosoftChatMessageUtil:
             ValueError: If input parameters are invalid or if data inconsistencies are found.
         """
         if not message:
-            self.logger.error("Input validation failed: message object is None.")
+            self.logger.error(
+                "[MicrosoftChatMessageUtil] Input validation failed: message object is None."
+            )
             raise ValueError("message object is required.")
         if not sender_ldap:
-            self.logger.error("Input validation failed: sender_ldap is empty.")
+            self.logger.error(
+                "[MicrosoftChatMessageUtil] Input validation failed: sender_ldap is empty."
+            )
             raise ValueError("sender_ldap is required.")
         if not pipeline:
-            self.logger.error("Input validation failed: pipeline object is None.")
+            self.logger.error(
+                "[MicrosoftChatMessageUtil] Input validation failed: pipeline object is None."
+            )
             raise ValueError("Redis pipeline object is required.")
 
         message_id = message.id
@@ -278,21 +315,29 @@ class MicrosoftChatMessageUtil:
             score = self.redis_client.zscore(deleted_index_redis_key, message_id)
             if not score:
                 self.logger.error(
-                    f"Message {message_id} not found in either CREATED or DELETED index for sender {sender_ldap}."
+                    "[MicrosoftChatMessageUtil] Message %s not found in either CREATED or DELETED index for sender %s.",
+                    message_id,
+                    sender_ldap,
                 )
                 raise ValueError("Redis data inconsistent: Message not found in index.")
             self.logger.info(
-                f"Undoing deletion for message {message_id}. Moving from DELETED to CREATED index."
+                "[MicrosoftChatMessageUtil] Undoing deletion for message %s. Moving from DELETED to CREATED index.",
+                message_id,
             )
 
             pipeline.zrem(deleted_index_redis_key, message_id)
             self.logger.debug(
-                f"Added ZREM command for {message_id} from {deleted_index_redis_key} to pipeline."
+                "[MicrosoftChatMessageUtil] Added ZREM command for %s from %s to pipeline.",
+                message_id,
+                deleted_index_redis_key,
             )
 
             pipeline.zadd(created_index_redis_key, {message_id: score})
             self.logger.debug(
-                f"Added ZADD command for {message_id} to {created_index_redis_key} to pipeline with score {score}."
+                "[MicrosoftChatMessageUtil] Added ZADD command for %s to %s to pipeline with score %s.",
+                message_id,
+                created_index_redis_key,
+                score,
             )
         else:
             message_detail_key = MICROSOFT_CHAT_MESSAGES_DETAILS_KEY.format(
@@ -340,7 +385,10 @@ class MicrosoftChatMessageUtil:
 
             if is_updated:
                 pipeline.set(message_detail_key, json.dumps(saved_message.to_dict()))
-                self.logger.debug(f"Updated message details for {message_id} in Redis.")
+                self.logger.debug(
+                    "[MicrosoftChatMessageUtil] Updated message details for %s in Redis.",
+                    message_id,
+                )
 
     async def sync_near_real_time_message_to_redis(
         self, change_type: MicrosoftChatMessagesChangeType, resource: str
@@ -383,15 +431,25 @@ class MicrosoftChatMessageUtil:
             raise ValueError("Invalid Microsoft notifiction format.")
         message = await self.microsoft_service.get_message_by_id(chat_id, message_id)
         if MicrosoftChatMessageType.Message != message.message_type:
-            self.logger.info(f"Skipping message {message_id}: Sent by system.")
+            self.logger.info(
+                "[MicrosoftChatMessageUtil] Skipping message %s: Sent by system.",
+                message_id,
+            )
             return
         pipeline = self.redis_client.pipeline()
         sender_info = message.from_.user if message.from_ else None
         sender_id = sender_info.id if sender_info else None
+        if not sender_id:
+            self.logger.warning(
+                "[MicrosoftChatMessageUtil] Skipping message %s: Sent by bot.",
+                message_id,
+            )
+            return
         sender_ldap = await self.microsoft_service.get_ldap_by_id(sender_id)
         if not sender_ldap:
             self.logger.warning(
-                f"Skipping message {message_id}: Sent by external account."
+                "[MicrosoftChatMessageUtil] Skipping message %s: Sent by external account.",
+                message_id,
             )
             return
         if MicrosoftChatMessagesChangeType.DELETED.value == change_type:
@@ -404,7 +462,8 @@ class MicrosoftChatMessageUtil:
                 self._handle_deleted_message(message_id, sender_ldap, score, pipeline)
             else:
                 self.logger.warning(
-                    f"Message ID {message_id} not found in created index, cannot properly mark as deleted."
+                    "[MicrosoftChatMessageUtil] Message ID %s not found in created index, cannot properly mark as deleted.",
+                    message_id,
                 )
                 raise ValueError("Redis datat inconsistency.")
 
@@ -418,7 +477,9 @@ class MicrosoftChatMessageUtil:
             self.retry_utils.get_retry_on_transient(pipeline.execute)
         except Exception as e:
             self.logger.error(
-                f"Failed to execute Redis pipeline for near real-time sync message_id={message_id}: {e}",
+                "[MicrosoftChatMessageUtil] Failed to execute Redis pipeline for near real-time sync message_id=%s: %s",
+                message_id,
+                e,
                 exc_info=True,
             )
             raise RuntimeError(
@@ -455,10 +516,14 @@ class MicrosoftChatMessageUtil:
                         a Redis client cannot be created.
         """
         if not messages:
-            self.logger.debug("No Microsoft chat messages list provided.")
+            self.logger.debug(
+                "[MicrosoftChatMessageUtil] No Microsoft chat messages list provided."
+            )
             raise ValueError("No Microsoft chat messages list provided.")
         if not all_ldaps:
-            self.logger.debug("No display name LDAP mapping provided.")
+            self.logger.debug(
+                "[MicrosoftChatMessageUtil] No display name LDAP mapping provided."
+            )
             raise ValueError("No display name LDAP mapping provided.")
 
         pipe = self.redis_client.pipeline()
@@ -468,12 +533,16 @@ class MicrosoftChatMessageUtil:
             message_id = message.id
             if MicrosoftChatMessageType.Message != message.message_type:
                 total_skipped += 1
-                self.logger.debug(f"Skipping message {message_id}: Sent by system.")
+                self.logger.debug(
+                    "[MicrosoftChatMessageUtil] Skipping message %s: Sent by system.",
+                    message_id,
+                )
                 continue
             if message.deleted_date_time:
                 total_skipped += 1
                 self.logger.debug(
-                    f"Message ID {message.id}: Deleted message, skipping."
+                    "[MicrosoftChatMessageUtil] Message ID %s: Deleted message, skipping.",
+                    message.id,
                 )
                 continue
             sender_info = message.from_.user if message.from_ else None
@@ -482,7 +551,9 @@ class MicrosoftChatMessageUtil:
             if not sender_ldap:
                 total_skipped += 1
                 self.logger.debug(
-                    f"Message ID {message.id}: Sender ID {sender_id} not found in LDAP mapping, sender is not currently in the organization."
+                    "[MicrosoftChatMessageUtil] Message ID %s: Sender ID %s not found in LDAP mapping, sender is not currently in the organization.",
+                    message.id,
+                    sender_id,
                 )
                 continue
 
@@ -492,7 +563,9 @@ class MicrosoftChatMessageUtil:
         self.retry_utils.get_retry_on_transient(pipe.execute)
 
         self.logger.debug(
-            f"Total {total_processed} Microsoft chat messages processed, {total_skipped} messages skipped."
+            "[MicrosoftChatMessageUtil] Total %d Microsoft chat messages processed, %d messages skipped.",
+            total_processed,
+            total_skipped,
         )
 
         return total_processed, total_skipped
