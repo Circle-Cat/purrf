@@ -6,7 +6,9 @@ from redis import Redis
 import functions_framework
 from http import HTTPStatus
 from msgraph import GraphServiceClient
-from azure.identity import DefaultAzureCredential
+from azure.identity import ClientAssertionCredential
+import google.auth.transport.requests
+import google.oauth2.id_token
 from msgraph.generated.models.subscription import Subscription
 from datetime import datetime, timezone, timedelta
 from jsonschema import validate, ValidationError
@@ -27,6 +29,8 @@ class MicrosoftLifecycleNotificationType(str, Enum):
 REDIS_HOST = os.environ.get("REDIS_HOST")
 REDIS_PORT = int(os.environ.get("REDIS_PORT", 6379))
 REDIS_PASSWORD = os.environ.get("REDIS_PASSWORD")
+AZURE_CLIENT_ID = os.environ.get("AZURE_CLIENT_ID")
+AZURE_TENANT_ID = os.environ.get("AZURE_TENANT_ID")
 MICROSOFT_TEAMS_CHAT_SUBSCRIPTION_MAX_LIFETIME = 4320
 MICROSOFT_SCOPES_LIST = ["https://graph.microsoft.com/.default"]
 MICROSOFT_SUBSCRIPTION_CLIENT_STATE_SECRET_KEY = (
@@ -92,10 +96,17 @@ def _init_redis_client():
             logger.debug("Redis client initialized and connected successfully.")
         except Exception as e:
             logger.critical(
-                f"Failed to initialize or connect to Redis client: {e}",
+                "Failed to initialize or connect to Redis client: %s",
+                e,
                 exc_info=True,
             )
             raise
+
+
+def _get_gcp_oidc_token():
+    """Fetches a GCP OIDC token from the metadata server to exchange for an Azure token."""
+    request = google.auth.transport.requests.Request()
+    return google.oauth2.id_token.fetch_id_token(request, "api://AzureADTokenExchange")
 
 
 def _init_graph_client():
@@ -103,12 +114,16 @@ def _init_graph_client():
     global graph_client
     if not graph_client:
         try:
-            graph_client = GraphServiceClient(
-                DefaultAzureCredential(), MICROSOFT_SCOPES_LIST
+            credential = ClientAssertionCredential(
+                tenant_id=AZURE_TENANT_ID,
+                client_id=AZURE_CLIENT_ID,
+                func=_get_gcp_oidc_token,
             )
+            graph_client = GraphServiceClient(credential, MICROSOFT_SCOPES_LIST)
         except Exception as e:
             logger.critical(
-                f"Failed to initialize or connect to Redis client: {e}",
+                "Failed to initialize Microsoft Graph client: %s",
+                e,
                 exc_info=True,
             )
             raise
@@ -120,7 +135,7 @@ def _validate_payload(payload_value: list) -> bool:
         validate(instance=payload_value, schema=EVENT_SCHEMA)
         return True
     except ValidationError as e:
-        logger.error(f"Payload validation failed: {e.message}")
+        logger.error("Payload validation failed: %s", e.message)
         return False
 
 
@@ -147,7 +162,8 @@ def _validate_identity(payload_value: list):
     for idx, provided_client_state in enumerate(provided):
         if provided_client_state != expected_client_state_list[idx]:
             logger.error(
-                f"Client state mismatch for subscription {payload_value[idx]['subscriptionId']}"
+                "Client state mismatch for subscription %s",
+                payload_value[idx]["subscriptionId"],
             )
             return False
     return True
@@ -167,10 +183,10 @@ async def _renew_and_reauthorize_subscription(subscription_id: str):
         result = await graph_client.subscriptions.by_subscription_id(
             subscription_id
         ).patch(updated_subscription)
-        logger.info(f"Subscription {subscription_id} renewed successfully.")
+        logger.info("Subscription %s renewed successfully.", subscription_id)
         return result
     except Exception as e:
-        logger.error(f"Failed to renew subscription {subscription_id}: {e}")
+        logger.error("Failed to renew subscription %s: %s", subscription_id, e)
         raise
 
 
@@ -181,10 +197,10 @@ async def _process_lifecycle_event(notification_list):
         subscription_id = notification.get("subscriptionId")
 
         if lifecycle_event == MicrosoftLifecycleNotificationType.SUBSCRIPTION_REMOVED:
-            logger.warning(f"Subscription {subscription_id} was removed.")
+            logger.warning("Subscription %s was removed.", subscription_id)
 
         elif lifecycle_event == MicrosoftLifecycleNotificationType.MISSED:
-            logger.warning(f"Missed notifications for subscription {subscription_id}.")
+            logger.warning("Missed notifications for subscription %s.", subscription_id)
 
         elif (
             lifecycle_event
@@ -192,7 +208,7 @@ async def _process_lifecycle_event(notification_list):
         ):
             await _renew_and_reauthorize_subscription(subscription_id)
         else:
-            logger.warning(f"Unknown lifecycle event: {lifecycle_event}")
+            logger.warning("Unknown lifecycle event: %s", lifecycle_event)
 
     return True
 
@@ -220,7 +236,8 @@ async def _handle_lifecycle_notification_webhook(request):
         events = request_body.get("value", [])
         if not isinstance(events, list) or not events:
             logger.error(
-                f"Bad Request: No events found in payload 'value' array. Received body: {request_body}"
+                "Bad Request: No events found in payload 'value' array. Received body: %s",
+                request_body,
             )
             return "", HTTPStatus.BAD_REQUEST
 
@@ -240,7 +257,8 @@ async def _handle_lifecycle_notification_webhook(request):
 
     except Exception as e:
         logger.error(
-            f"Unhandled Internal Server Error in notification_webhook: {e}",
+            "Unhandled Internal Server Error in notification_webhook: %s",
+            e,
             exc_info=True,
         )
         return "", HTTPStatus.INTERNAL_SERVER_ERROR
@@ -268,7 +286,8 @@ def lifecycle_notification_webhook_sync_wrapper(request):
         return result
     except Exception as e:
         logger.error(
-            f"Unhandled Internal Server Error in sync wrapper: {e}",
+            "Unhandled Internal Server Error in sync wrapper: %s",
+            e,
             exc_info=True,
         )
         return "", HTTPStatus.INTERNAL_SERVER_ERROR

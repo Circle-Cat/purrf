@@ -2,3 +2,5 @@ functions-framework==3.8.2
 msgraph-sdk == 1.35.0
 redis==5.2.1
 jsonschema==4.17.3
+google-auth==2.38.0
+azure-identity==1.21.0

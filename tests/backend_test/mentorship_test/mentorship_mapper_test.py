@@ -306,13 +306,17 @@ class TestMentorshipMapper(unittest.TestCase):
             "meeting_time_list": [
                 {
                     "meeting_id": "manual-1",
-                    "start_datetime": datetime.fromisoformat("2025-09-01T22:30:00+00:00"),
+                    "start_datetime": datetime.fromisoformat(
+                        "2025-09-01T22:30:00+00:00"
+                    ),
                     "end_datetime": datetime.fromisoformat("2025-09-01T23:00:00+00:00"),
                     "is_completed": True,
                 },
                 {
                     "meeting_id": "manual-2",
-                    "start_datetime": datetime.fromisoformat("2025-09-03T22:30:00+00:00"),
+                    "start_datetime": datetime.fromisoformat(
+                        "2025-09-03T22:30:00+00:00"
+                    ),
                     "end_datetime": datetime.fromisoformat("2025-09-03T23:00:00+00:00"),
                     "is_completed": False,
                 },
@@ -320,7 +324,9 @@ class TestMentorshipMapper(unittest.TestCase):
             "google_meetings": [
                 {
                     "meeting_id": "google-1",
-                    "start_datetime": datetime.fromisoformat("2025-09-02T22:30:00+00:00"),
+                    "start_datetime": datetime.fromisoformat(
+                        "2025-09-02T22:30:00+00:00"
+                    ),
                     "end_datetime": datetime.fromisoformat("2025-09-02T23:00:00+00:00"),
                     "is_completed": True,
                     "has_unknown_absent": True,
@@ -365,7 +371,9 @@ class TestMentorshipMapper(unittest.TestCase):
             "google_meetings": [
                 {
                     "meeting_id": "google-1",
-                    "start_datetime": datetime.fromisoformat("2025-09-02T22:30:00+00:00"),
+                    "start_datetime": datetime.fromisoformat(
+                        "2025-09-02T22:30:00+00:00"
+                    ),
                     "end_datetime": datetime.fromisoformat("2025-09-02T23:00:00+00:00"),
                     "is_completed": True,
                     "has_unknown_absent": True,
@@ -403,7 +411,9 @@ class TestMentorshipMapper(unittest.TestCase):
             "google_meetings": [
                 {
                     "meeting_id": "google-1",
-                    "start_datetime": datetime.fromisoformat("2025-09-02T22:30:00+00:00"),
+                    "start_datetime": datetime.fromisoformat(
+                        "2025-09-02T22:30:00+00:00"
+                    ),
                     "end_datetime": datetime.fromisoformat("2025-09-02T23:00:00+00:00"),
                     "is_completed": True,
                     "has_unknown_absent": True,
@@ -458,7 +468,9 @@ class TestMentorshipMapper(unittest.TestCase):
             "google_meetings": [
                 {
                     "meeting_id": "google-1",
-                    "start_datetime": datetime.fromisoformat("2025-09-02T22:30:00+00:00"),
+                    "start_datetime": datetime.fromisoformat(
+                        "2025-09-02T22:30:00+00:00"
+                    ),
                     "end_datetime": datetime.fromisoformat("2025-09-02T23:00:00+00:00"),
                     "is_completed": True,
                     "has_unknown_absent": True,

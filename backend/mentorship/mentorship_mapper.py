@@ -179,10 +179,7 @@ class MentorshipMapper:
         manual_meetings = meeting_log.get("meeting_time_list") or []
         google_meetings = meeting_log.get("google_meetings") or []
 
-        manual_dtos = [
-            MeetingTimeDto(**meeting)
-            for meeting in manual_meetings
-        ]
+        manual_dtos = [MeetingTimeDto(**meeting) for meeting in manual_meetings]
 
         google_dtos = []
         for meeting in google_meetings:

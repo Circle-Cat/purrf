@@ -33,6 +33,7 @@ py_library(
     deps = [
         "@pypi//azure_identity",
         "@pypi//functions_framework",
+        "@pypi//google_auth",
         "@pypi//jsonschema",
         "@pypi//msgraph_sdk",
         "@pypi//redis",

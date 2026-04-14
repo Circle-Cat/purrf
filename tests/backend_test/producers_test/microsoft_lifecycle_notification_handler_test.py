@@ -74,30 +74,30 @@ class TestMicrosoftLifecycleNotificationHandler(IsolatedAsyncioTestCase):
         "backend.producers.microsoft_lifecycle_notification_handler.main.GraphServiceClient"
     )
     @patch(
-        "backend.producers.microsoft_lifecycle_notification_handler.main.DefaultAzureCredential"
+        "backend.producers.microsoft_lifecycle_notification_handler.main.ClientAssertionCredential"
     )
     def test_init_graph_client_success(
-        self, mock_deafult_credential, mock_graph_service
+        self, mock_client_assertion_credential, mock_graph_service
     ):
-        mock_deafult_credential.return_value = MagicMock()
+        mock_client_assertion_credential.return_value = MagicMock()
         mock_graph_service.return_value = MagicMock()
 
         _init_graph_client()
         _init_graph_client()
 
-        mock_deafult_credential.assert_called_once()
+        mock_client_assertion_credential.assert_called_once()
         mock_graph_service.assert_called_once()
 
     @patch(
         "backend.producers.microsoft_lifecycle_notification_handler.main.GraphServiceClient"
     )
     @patch(
-        "backend.producers.microsoft_lifecycle_notification_handler.main.DefaultAzureCredential"
+        "backend.producers.microsoft_lifecycle_notification_handler.main.ClientAssertionCredential"
     )
     def test_init_graph_client_failure(
-        self, mock_deafult_credential, mock_graph_service
+        self, mock_client_assertion_credential, mock_graph_service
     ):
-        mock_deafult_credential.return_value = MagicMock()
+        mock_client_assertion_credential.return_value = MagicMock()
         mock_graph_service.side_effect = Exception()
 
         with self.assertRaises(Exception):
