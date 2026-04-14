@@ -40,6 +40,22 @@ output "default_account" {
   value = data.google_compute_default_service_account.default.email
 }
 
+output "gcp_project_id" {
+  value = var.gcp_project_id
+}
+
+output "chat_google_events_topic_id" {
+  value = google_pubsub_topic.topics["chat-google-events"].name
+}
+
+output "microsoft_chat_notification_url" {
+  value = "https://${local.domains.cf}/${local.name_prefix}-microsoft-chat"
+}
+
+output "microsoft_chat_lifecycle_notification_url" {
+  value = "https://${local.domains.cf}/${local.name_prefix}-microsoft-chat-lifecycle"
+}
+
 output "ld_project_key" {
   value = launchdarkly_project.purrf.key
 }

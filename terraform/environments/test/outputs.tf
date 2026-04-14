@@ -45,3 +45,19 @@ output "launchdarkly_client_id" {
   value     = module.purrf_instance.launchdarkly_client_id
   sensitive = true
 }
+
+output "gcp_project_id" {
+  value = module.purrf_instance.gcp_project_id
+}
+
+output "chat_google_events_topic_id" {
+  value = module.purrf_instance.chat_google_events_topic_id
+}
+
+output "microsoft_chat_notification_url" {
+  value = module.purrf_instance.microsoft_chat_notification_url
+}
+
+output "microsoft_chat_lifecycle_notification_url" {
+  value = module.purrf_instance.microsoft_chat_lifecycle_notification_url
+}
