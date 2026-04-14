@@ -482,7 +482,6 @@ class TestAppDependencyBuilder(TestCase):
             mentorship_pairs_repository=mock_mentorship_pairs_repo_cls.return_value,
             mentorship_mapper=mock_mentorship_mapper_cls.return_value,
             user_identity_service=mock_user_identity_service_cls.return_value,
-            rounds_service=mock_rounds_service_cls.return_value,
             google_service=mock_google_service.return_value,
         )
 

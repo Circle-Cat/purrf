@@ -262,7 +262,7 @@ class TestMentorshipMapper(unittest.TestCase):
         dto = self.mapper.map_to_meeting_dto(
             round_id=1,
             user_timezone=UserTimezone.ASIA_SHANGHAI,
-            grouped_pairs=[(pair_entity, partner_id, 2)],
+            grouped_pairs=[(pair_entity, partner_id)],
         )
         info = dto.meeting_info[0]
 
@@ -278,7 +278,7 @@ class TestMentorshipMapper(unittest.TestCase):
             info.meeting_time_list[0].start_datetime.strftime("%Y-%m-%dT%H:%M:%SZ"),
             "2025-09-01T22:30:00Z",
         )
-        self.assertEqual(info.completed_meetings_count, 2)
+        self.assertEqual(info.completed_meetings_count, 1)
 
     def test_meeting_dto_no_meeting_log(self):
         """Test mapping pair entities with None meeting log returns empty meeting list."""
@@ -288,7 +288,7 @@ class TestMentorshipMapper(unittest.TestCase):
         dto = self.mapper.map_to_meeting_dto(
             round_id=2,
             user_timezone=UserTimezone.ASIA_SHANGHAI,
-            grouped_pairs=[(pair_entity, partner_id, 0)],
+            grouped_pairs=[(pair_entity, partner_id)],
         )
 
         self.assertIsInstance(dto, MeetingDto)

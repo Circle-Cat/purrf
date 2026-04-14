@@ -25,8 +25,6 @@ class TestMeetingServiceV1(unittest.IsolatedAsyncioTestCase):
         self.mock_mapper = MagicMock()
         self.mock_identity_service = MagicMock()
         self.mock_identity_service.get_user = AsyncMock()
-        self.mock_rounds_service = MagicMock()
-        self.mock_rounds_service.is_current_round = AsyncMock(return_value=True)
         self.mock_session = AsyncMock()
 
         self.mock_google_service = MagicMock()
@@ -36,7 +34,6 @@ class TestMeetingServiceV1(unittest.IsolatedAsyncioTestCase):
             mentorship_pairs_repository=self.mock_pairs_repo,
             mentorship_mapper=self.mock_mapper,
             user_identity_service=self.mock_identity_service,
-            rounds_service=self.mock_rounds_service,
             google_service=self.mock_google_service,
         )
 
@@ -87,7 +84,7 @@ class TestMeetingServiceV1(unittest.IsolatedAsyncioTestCase):
         self.mock_mapper.map_to_meeting_dto.assert_called_once_with(
             round_id=self.round_id,
             user_timezone=self.mock_current_user.timezone,
-            grouped_pairs=[(self.mock_pair_entity, self.partner_id, 1)],
+            grouped_pairs=[(self.mock_pair_entity, self.partner_id)],
         )
 
     async def test_get_meetings_by_user_and_round_no_pair_found(self):
@@ -104,44 +101,6 @@ class TestMeetingServiceV1(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(result.meeting_info), 0)
 
         self.mock_mapper.map_to_meeting_dto.assert_not_called()
-
-    async def test_get_meetings_current_round_uses_meeting_log_count(self):
-        """For current round, completed_meetings_count comes from is_completed entries in meeting_log."""
-        self.mock_rounds_service.is_current_round.return_value = True
-        self.mock_pairs_repo.get_pairs_by_user_and_round.return_value = [
-            self.mock_pair_entity
-        ]
-        stub_dto = MagicMock(spec=MeetingDto)
-        self.mock_mapper.map_to_meeting_dto.return_value = stub_dto
-
-        await self.meeting_service.get_meetings_by_user_and_round(
-            self.mock_session, self.user_context, self.round_id
-        )
-
-        self.mock_mapper.map_to_meeting_dto.assert_called_once_with(
-            round_id=self.round_id,
-            user_timezone=self.mock_current_user.timezone,
-            grouped_pairs=[(self.mock_pair_entity, self.partner_id, 1)],
-        )
-
-    async def test_get_meetings_past_round_uses_pair_completed_count(self):
-        """For past round, completed_meetings_count comes from pair entity's completed_count field."""
-        self.mock_rounds_service.is_current_round.return_value = False
-        self.mock_pairs_repo.get_pairs_by_user_and_round.return_value = [
-            self.mock_pair_entity
-        ]
-        stub_dto = MagicMock(spec=MeetingDto)
-        self.mock_mapper.map_to_meeting_dto.return_value = stub_dto
-
-        await self.meeting_service.get_meetings_by_user_and_round(
-            self.mock_session, self.user_context, self.round_id
-        )
-
-        self.mock_mapper.map_to_meeting_dto.assert_called_once_with(
-            round_id=self.round_id,
-            user_timezone=self.mock_current_user.timezone,
-            grouped_pairs=[(self.mock_pair_entity, self.partner_id, 3)],
-        )
 
     async def test_upsert_meetings_success(self):
         """Test new meeting slots are successfully validated and persisted."""
@@ -164,6 +123,7 @@ class TestMeetingServiceV1(unittest.IsolatedAsyncioTestCase):
         self.mock_pairs_repo.upsert_pairs.assert_awaited_once()
         self.mock_session.commit.assert_awaited_once()
         self.assertEqual(len(self.mock_pair_entity.meeting_log["meeting_time_list"]), 2)
+        self.assertEqual(self.mock_pair_entity.completed_count, 2)
 
     async def test_upsert_meetings_conflict(self):
         """Test overlapping meeting times trigger a validation error."""
@@ -197,14 +157,12 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
         self.mock_mentorship_pairs_repository.append_google_meeting = AsyncMock()
 
         self.mock_session = AsyncMock()
-        self.mock_rounds_service = MagicMock()
 
         self.service = MeetingService(
             logger=self.mock_logger,
             mentorship_pairs_repository=self.mock_mentorship_pairs_repository,
             mentorship_mapper=MagicMock(),
             user_identity_service=self.mock_user_identity_service,
-            rounds_service=self.mock_rounds_service,
             google_service=self.mock_google_service,
         )
 

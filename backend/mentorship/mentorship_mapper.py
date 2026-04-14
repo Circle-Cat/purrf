@@ -116,9 +116,9 @@ class MentorshipMapper:
         self,
         round_id: int,
         user_timezone: UserTimezone,
-        grouped_pairs: list[tuple[MentorshipPairsEntity, int, int]],
+        grouped_pairs: list[tuple[MentorshipPairsEntity, int]],
     ) -> MeetingDto:
-        """Map (MentorshipPairsEntity, partner_id, completed_meetings_count) tuples to MeetingDto."""
+        """Map (MentorshipPairsEntity, partner_id) tuples to MeetingDto."""
         return MeetingDto(
             round_id=round_id,
             user_timezone=user_timezone,
@@ -132,9 +132,9 @@ class MentorshipMapper:
                         MeetingTimeDto(**m)
                         for m in (pair.meeting_log or {}).get("meeting_time_list") or []
                     ],
-                    completed_meetings_count=completed_meetings_count,
+                    completed_meetings_count=pair.completed_count or 0,
                 )
-                for pair, partner_id, completed_meetings_count in grouped_pairs
+                for pair, partner_id in grouped_pairs
             ],
         )
 

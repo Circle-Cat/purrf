@@ -1,6 +1,6 @@
 import unittest
 from datetime import date
-from unittest.mock import MagicMock, AsyncMock, patch
+from unittest.mock import MagicMock, AsyncMock
 from backend.mentorship.rounds_service import RoundsService
 from backend.dto.rounds_dto import RoundsDto
 from backend.dto.rounds_create_dto import TimelineCreateDto
@@ -179,53 +179,6 @@ class TestRoundsService(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaises(ValueError, msg="Round with given ID does not exist."):
             await self.service.upsert_rounds(self.mock_session, not_found_round)
-
-    async def test_is_current_round_returns_true_within_range(self):
-        """Returns True when today falls within the round's active window."""
-        desc = self._timeline_to_dict(self.timeline_data)
-        mock_entity = MentorshipRoundEntity(
-            round_id=1, name="Test Round", description=desc
-        )
-        self.mock_repo.get_by_round_id.return_value = mock_entity
-
-        with patch("backend.mentorship.rounds_service.datetime") as mock_datetime:
-            mock_datetime.now.return_value.date.return_value = date(2026, 3, 1)
-            result = await self.service.is_current_round(self.mock_session, 1)
-
-        self.assertTrue(result)
-
-    async def test_is_current_round_returns_false_outside_range(self):
-        """Returns False when today is outside the round's active window."""
-        desc = self._timeline_to_dict(self.timeline_data)
-        mock_entity = MentorshipRoundEntity(
-            round_id=1, name="Test Round", description=desc
-        )
-        self.mock_repo.get_by_round_id.return_value = mock_entity
-
-        with patch("backend.mentorship.rounds_service.datetime") as mock_datetime:
-            mock_datetime.now.return_value.date.return_value = date(2026, 5, 26)
-            result = await self.service.is_current_round(self.mock_session, 1)
-
-        self.assertFalse(result)
-
-    async def test_is_current_round_raises_when_round_not_found(self):
-        """Raises ValueError when round does not exist."""
-        self.mock_repo.get_by_round_id.return_value = None
-
-        with self.assertRaisesRegex(ValueError, "Round with given ID does not exist."):
-            await self.service.is_current_round(self.mock_session, 999)
-
-    async def test_is_current_round_raises_when_timeline_incomplete(self):
-        """Raises ValueError when required timeline fields are missing."""
-        mock_entity = MentorshipRoundEntity(
-            round_id=1, name="Test Round", description={}
-        )
-        self.mock_repo.get_by_round_id.return_value = mock_entity
-
-        with self.assertRaisesRegex(
-            ValueError, "Can't determine round status due to incomplete timeline."
-        ):
-            await self.service.is_current_round(self.mock_session, 1)
 
 
 if __name__ == "__main__":

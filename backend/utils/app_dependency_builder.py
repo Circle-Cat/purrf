@@ -403,7 +403,6 @@ class AppDependencyBuilder:
             mentorship_pairs_repository=self.mentorship_pairs_repository,
             mentorship_mapper=self.mentorship_mapper,
             user_identity_service=self.user_identity_service,
-            rounds_service=self.rounds_service,
             google_service=self.google_service,
         )
         self.mentorship_controller = MentorshipController(
