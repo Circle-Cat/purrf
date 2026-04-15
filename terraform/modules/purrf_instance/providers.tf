@@ -15,5 +15,8 @@ terraform {
     launchdarkly = {
       source = "launchdarkly/launchdarkly"
     }
+    kubernetes = {
+      source = "hashicorp/kubernetes"
+    }
   }
 }

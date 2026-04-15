@@ -67,8 +67,8 @@ locals {
       memory_mb   = 256
       need_redis  = true
       env_vars = {
-        AZURE_CLIENT_ID     = var.azure_client_id
-        AZURE_TENANT_ID     = var.azure_tenant_id
+        AZURE_CLIENT_ID = var.azure_client_id
+        AZURE_TENANT_ID = var.azure_tenant_id
       }
     },
     "gerrit-events" = {

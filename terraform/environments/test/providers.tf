@@ -33,6 +33,15 @@ provider "helm" {
   }
 }
 
+provider "kubernetes" {
+  host  = "https://${data.google_container_cluster.cluster.endpoint}"
+  token = data.google_client_config.provider.access_token
+  exec {
+    api_version = "client.authentication.k8s.io/v1beta1"
+    command     = "gke-gcloud-auth-plugin"
+  }
+}
+
 provider "azurerm" {
   features {}
 }

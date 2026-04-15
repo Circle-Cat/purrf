@@ -1,3 +1,44 @@
+resource "kubernetes_namespace" "purrf_app" {
+  metadata {
+    name = local.name_prefix
+  }
+}
+
+resource "kubernetes_secret" "purrf_app" {
+  metadata {
+    name      = local.name_prefix
+    namespace = kubernetes_namespace.purrf_app.metadata[0].name
+  }
+
+  data = {
+    AZURE_CLIENT_ID             = var.azure_client_id
+    AZURE_TENANT_ID             = var.azure_tenant_id
+    USER_EMAIL                  = "purrf@circlecat.org"
+    ADMIN_EMAIL                 = "admin@circlecat.org"
+    SERVICE_ACCOUNT_EMAIL       = "purrf-service@purrf-452300.iam.gserviceaccount.com"
+    REDIS_HOST                  = upstash_redis_database.redis.endpoint
+    REDIS_PORT                  = tostring(upstash_redis_database.redis.port)
+    REDIS_PASSWORD              = upstash_redis_database.redis.password
+    MICROSOFT_USER_LDAP         = "purrf"
+    MICROSOFT_ADMIN_LDAP        = "catflirter"
+    JIRA_SERVER                 = "http://jira-prod.tailcce60.ts.net"
+    JIRA_USER                   = "purrf"
+    JIRA_PASSWORD               = var.jira_password
+    GERRIT_URL                  = "http://gerrit-prod.tailcce60.ts.net"
+    GERRIT_USER                 = "wuyu"
+    GERRIT_HTTP_PASS            = var.gerrit_http_pass
+    DATABASE_URL                = local.app_sqlalchemy_async_url
+    CF_TEAM_DOMAIN              = "ccat-dev.cloudflareaccess.com"
+    CF_AUD_TAG                  = var.cf_aud_tag
+    GOOGLE_AUDIENCE             = "purrf"
+    PUBSUB_PROJECT_ID           = var.gcp_project_id
+    MICROSOFT_SUBSCRIPTION_ID   = google_pubsub_subscription.subscriptions["chat-microsoft-events"].name
+    GOOGLE_CHAT_SUBSCRIPTION_ID = google_pubsub_subscription.subscriptions["chat-google-events"].name
+    GERRIT_SUBSCRIPTION_ID      = google_pubsub_subscription.subscriptions["gerrit-events"].name
+    LAUNCHDARKLY_SDK_KEY        = local.ld_sdk_key
+  }
+}
+
 resource "helm_release" "purrf_app" {
   name             = local.name_prefix
   chart            = "${path.module}/../../../helm/purrf"
@@ -6,6 +47,7 @@ resource "helm_release" "purrf_app" {
   atomic           = true
   cleanup_on_fail  = true
   timeout          = 300
+  depends_on       = [kubernetes_secret.purrf_app]
   values = [
     yamlencode({
 
@@ -15,32 +57,10 @@ resource "helm_release" "purrf_app" {
         repository = "us-docker.pkg.dev/k8s-dev-437501/purrf/purrf"
         tag        = var.image_tag
       }
-      env = [
-        { name = "AZURE_CLIENT_ID", value = "8f3f85f2-be71-4ed5-95e8-3c777f4c6e13" },
-        { name = "AZURE_TENANT_ID", value = "08502fd6-503a-4dfd-85b7-f13b141dc0c4" },
-        { name = "USER_EMAIL", value = "purrf@circlecat.org" },
-        { name = "ADMIN_EMAIL", value = "admin@circlecat.org" },
-        { name = "SERVICE_ACCOUNT_EMAIL", value = "purrf-service@purrf-452300.iam.gserviceaccount.com" },
-        { name = "REDIS_HOST", value = upstash_redis_database.redis.endpoint },
-        { name = "REDIS_PORT", value = tostring(upstash_redis_database.redis.port) },
-        { name = "REDIS_PASSWORD", value = upstash_redis_database.redis.password },
-        { name = "MICROSOFT_USER_LDAP", value = "purrf" },
-        { name = "MICROSOFT_ADMIN_LDAP", value = "catflirter" },
-        { name = "JIRA_SERVER", value = "http://jira-prod.tailcce60.ts.net" },
-        { name = "JIRA_USER", value = "purrf" },
-        { name = "JIRA_PASSWORD", value = var.jira_password },
-        { name = "GERRIT_URL", value = "http://gerrit-prod.tailcce60.ts.net" },
-        { name = "GERRIT_USER", value = "wuyu" },
-        { name = "GERRIT_HTTP_PASS", value = var.gerrit_http_pass },
-        { name = "DATABASE_URL", value = local.app_sqlalchemy_async_url },
-        { name = "CF_TEAM_DOMAIN", value = "ccat-dev.cloudflareaccess.com" },
-        { name = "CF_AUD_TAG", value = var.cf_aud_tag },
-        { name = "GOOGLE_AUDIENCE", value = "purrf" },
-        { name = "PUBSUB_PROJECT_ID", value = var.gcp_project_id },
-        { name = "MICROSOFT_SUBSCRIPTION_ID", value = google_pubsub_subscription.subscriptions["chat-microsoft-events"].name },
-        { name = "GOOGLE_CHAT_SUBSCRIPTION_ID", value = google_pubsub_subscription.subscriptions["chat-google-events"].name },
-        { name = "GERRIT_SUBSCRIPTION_ID", value = google_pubsub_subscription.subscriptions["gerrit-events"].name },
-        { name = "LAUNCHDARKLY_SDK_KEY", value = local.ld_sdk_key },
+      envFrom = [
+        {
+          secretRef = { name = local.name_prefix }
+        }
       ]
 
       ingress = {
