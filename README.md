@@ -52,9 +52,8 @@ gcloud config set project {google_project_id}
 See: backend/common/environment_constants.py
 
 ### Init PostgreSQL Database
-**Warning**: The init_db command will **drop all existing data** and recreate an empty database with only the table structure. Using the same database for tests will erase your development data.
 
-Note: The init_db script always reads DATABASE_URL to determine which database to initialize. Be careful to avoid running tests on production or important development data, as it may be cleared.
+> **Warning**: `init_db` will **drop all existing data** and recreate an empty database. Only use this for first-time setup or to reset a development environment. For schema changes on an existing database, use [migrations](#database-migrations) instead.
 
 Create and initialize the database:
 ```bash
@@ -65,10 +64,41 @@ bazel run //tools:init_db
 **Important Notes:**
 
 * Both development and test code use the same database.
+* `init_db` should be run before starting the backend or running unit tests to ensure a clean environment.
+* Any existing data will be deleted when running `init_db`.
 
-* init_db should be run before starting the backend or running unit tests to ensure a clean environment.
+### Database Migrations
 
-* Any existing data will be deleted when running init_db.
+Use Alembic migrations to apply schema changes to an existing database **without dropping data**. Migration scripts live in `alembic_setup/versions/` and must be committed alongside the model changes that require them.
+
+#### Workflow
+
+**1. Modify your SQLAlchemy model**, then generate a migration:
+```bash
+bazel run //tools/migrate_db:make_migration -- "describe your change"
+```
+This connects to the database, compares the current schema against your models, and writes a new migration script to `alembic_setup/versions/`.
+
+**2. Review the generated file** in `alembic_setup/versions/`. Pay attention to:
+- `NOT NULL` columns added to tables with existing data — add `server_default` manually if needed.
+- `DROP COLUMN` / `DROP TABLE` statements — confirm they are intentional.
+
+**3. Apply the migration:**
+```bash
+bazel run //tools/migrate_db:migrate_db
+```
+
+#### Enum value changes (PostgreSQL)
+
+`alembic-postgresql-enum` is configured to auto-detect enum changes. Adding a value is detected automatically. Removing a value generates a multi-step migration (rename → recreate → update columns → drop old type) — always test on a non-production database first.
+
+#### Summary
+
+| Scenario | Command |
+|---|---|
+| First-time setup / reset dev database | `bazel run //tools:init_db` |
+| Schema changed, generate migration | `bazel run //tools/migrate_db:make_migration -- "description"` |
+| Deploy schema changes (no data loss) | `bazel run //tools/migrate_db:migrate_db` |
 
 ####  Running the backend project for development
 

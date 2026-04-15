@@ -131,6 +131,7 @@ asyncpg==0.30.0
 
 # Alembic
 alembic==1.17.2
+alembic-postgresql-enum==1.3.0
 mako==1.3.10
 
 # Pandas

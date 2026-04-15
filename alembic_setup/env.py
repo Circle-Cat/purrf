@@ -1,4 +1,6 @@
 import asyncio
+import importlib
+import pkgutil
 from logging.config import fileConfig
 
 from sqlalchemy import pool
@@ -7,8 +9,21 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
 
+import backend.entity
+import alembic_postgresql_enum  # noqa: F401
 from backend.common.base import Base
 from backend.common.environment_constants import DATABASE_URL
+
+
+def load_all_entities():
+    """Import all modules under backend.entity so their SQLAlchemy models are
+    registered in Base.metadata before autogenerate compares the schema."""
+    package = backend.entity
+    for _, name, _ in pkgutil.iter_modules(package.__path__, package.__name__ + "."):
+        importlib.import_module(name)
+
+
+load_all_entities()
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -55,7 +70,16 @@ def run_migrations_offline() -> None:
 
 
 def do_run_migrations(connection: Connection) -> None:
-    context.configure(connection=connection, target_metadata=target_metadata)
+    """Configure the Alembic migration context and run pending migrations.
+
+    compare_type=True enables detection of column type changes (including
+    PostgreSQL enum modifications handled by alembic-postgresql-enum).
+    """
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        compare_type=True,
+    )
 
     with context.begin_transaction():
         context.run_migrations()
