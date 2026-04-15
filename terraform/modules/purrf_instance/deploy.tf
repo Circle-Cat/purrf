@@ -64,7 +64,8 @@ resource "helm_release" "purrf_app" {
       ]
 
       ingress = {
-        enabled = true
+        enabled   = true
+        className = var.ingress_class_name
         hosts = [
           {
             host = local.domains.api

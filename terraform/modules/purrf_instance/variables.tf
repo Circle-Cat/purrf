@@ -44,11 +44,6 @@ variable "cloudflare_zone_id" {
   type        = string
 }
 
-variable "cloudflare_tunnel_id" {
-  description = "Cloudflare Tunnel ID"
-  type        = string
-}
-
 variable "microsoft_chat_code_dir" {
   type        = string
   description = "The relative path to the Microsoft Chat producer source code directory."
@@ -87,6 +82,12 @@ variable "auth0_callbacks" {
 variable "auth0_logout_urls" {
   type        = list(string)
   description = "Allowed logout URLs for Auth0"
+}
+
+variable "ingress_class_name" {
+  type        = string
+  description = "Kubernetes ingress class name for the app ingress"
+  default     = "cloudflare-tunnel"
 }
 
 variable "image_tag" {
