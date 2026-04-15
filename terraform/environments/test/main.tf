@@ -4,6 +4,7 @@ module "purrf_instance" {
 
   env_name              = "test"
   gcp_project_id        = "purrf-452300"
+  k8s_project_id        = "circlecat"
   auth0_callbacks       = ["https://ccat-dev.cloudflareaccess.com/cdn-cgi/access/callback"]
   auth0_logout_urls     = ["https://ccat-dev.cloudflareaccess.com/cdn-cgi/access/logout"]
   neon_org_id           = "org-restless-scene-93869523"

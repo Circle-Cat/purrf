@@ -65,5 +65,5 @@ resource "google_service_account_iam_member" "purrf_service_wi" {
   service_account_id = "projects/purrf-452300/serviceAccounts/purrf-service@purrf-452300.iam.gserviceaccount.com"
   role               = "roles/iam.workloadIdentityUser"
 
-  member = "serviceAccount:circlecat.svc.id.goog[${local.name_prefix}/${local.name_prefix}]"
+  member = "serviceAccount:${var.k8s_project_id}.svc.id.goog[${local.name_prefix}/${local.name_prefix}]"
 }

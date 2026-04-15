@@ -7,6 +7,12 @@ variable "env_name" {
   }
 }
 
+variable "k8s_project_id" {
+  description = "GCP project ID that hosts the GKE cluster (used for Workload Identity pool binding)"
+  type        = string
+  default     = "circlecat"
+}
+
 variable "base_domain" {
   description = "Base domain name"
   type        = string
