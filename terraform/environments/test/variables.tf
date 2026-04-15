@@ -8,11 +8,6 @@ variable "gerrit_http_pass" {
   sensitive = true
 }
 
-variable "azure_client_secert" {
-  type      = string
-  sensitive = true
-}
-
 variable "launchdarkly_access_token" {
   type      = string
   sensitive = true

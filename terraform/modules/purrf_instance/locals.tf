@@ -68,7 +68,6 @@ locals {
       need_redis  = true
       env_vars = {
         AZURE_CLIENT_ID     = var.azure_client_id
-        AZURE_CLIENT_SECRET = var.azure_client_secert // TODO: https://jira.circlecat.org/browse/PUR-383?filter=-1 Implement Workload Identity Federation for GCP Cloud Functions to access Azure
         AZURE_TENANT_ID     = var.azure_tenant_id
       }
     },

@@ -6,3 +6,11 @@ resource "azuread_application_federated_identity_credential" "azure_wif" {
   issuer         = "https://container.googleapis.com/v1/projects/circlecat/locations/us-west1/clusters/dev"
   subject        = "system:serviceaccount:${local.name_prefix}:${local.name_prefix}"
 }
+
+resource "azuread_application_federated_identity_credential" "azure_wif_cf" {
+  application_id = "/applications/39092dd4-3b42-4b40-9d46-ed7ca4854e17"
+  display_name   = "${local.name_prefix}-cf"
+  audiences      = ["api://AzureADTokenExchange"]
+  issuer         = "https://accounts.google.com"
+  subject        = google_service_account.function_sa.unique_id
+}

@@ -106,11 +106,6 @@ variable "azure_client_id" {
   type = string
 }
 
-variable "azure_client_secert" {
-  type      = string
-  sensitive = true
-}
-
 variable "azure_tenant_id" {
   type = string
 }
