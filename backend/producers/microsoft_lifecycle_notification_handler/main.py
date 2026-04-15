@@ -1,4 +1,5 @@
 import os
+import json
 import asyncio
 import logging
 from enum import Enum
@@ -14,7 +15,18 @@ from datetime import datetime, timezone, timedelta
 from jsonschema import validate, ValidationError
 
 
-logging.basicConfig(level=logging.INFO)
+class _StructuredFormatter(logging.Formatter):
+    def format(self, record):
+        message = record.getMessage()
+        if record.exc_info:
+            message += "\n" + self.formatException(record.exc_info)
+        return json.dumps({"severity": record.levelname, "message": message})
+
+
+_handler = logging.StreamHandler()
+_handler.setFormatter(_StructuredFormatter())
+logging.root.setLevel(logging.INFO)
+logging.root.handlers = [_handler]
 logger = logging.getLogger(__name__)
 
 

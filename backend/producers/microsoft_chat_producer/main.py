@@ -8,7 +8,19 @@ from http import HTTPStatus
 import logging
 from redis import Redis
 
-logging.basicConfig(level=logging.INFO)
+
+class _StructuredFormatter(logging.Formatter):
+    def format(self, record):
+        message = record.getMessage()
+        if record.exc_info:
+            message += "\n" + self.formatException(record.exc_info)
+        return json.dumps({"severity": record.levelname, "message": message})
+
+
+_handler = logging.StreamHandler()
+_handler.setFormatter(_StructuredFormatter())
+logging.root.setLevel(logging.INFO)
+logging.root.handlers = [_handler]
 logger = logging.getLogger(__name__)
 
 
@@ -39,11 +51,11 @@ def _validate_payload(payload: dict) -> bool:
     required_fields = ["subscriptionId", "clientState", "resourceData"]
     for field in required_fields:
         if field not in payload:
-            logger.error(f"Missing required field: {field}")
+            logger.error("Missing required field: %s", field)
             return False
 
         if not payload.get(field):
-            logger.error(f"Field '{field}' must not be empty or None.")
+            logger.error("Field '%s' must not be empty or None.", field)
             return False
     return True
 
@@ -124,7 +136,8 @@ def notification_webhook(request):
         events = request_body.get("value", [])
         if not isinstance(events, list) or not events:
             logger.error(
-                f"Bad Request: No events found in payload 'value' array. Received body: {request_body}"
+                "Bad Request: No events found in payload 'value' array. Received body: %s",
+                request_body,
             )
             return "", HTTPStatus.BAD_REQUEST
 
@@ -148,7 +161,8 @@ def notification_webhook(request):
                 logger.debug("Redis client initialized and connected successfully.")
             except Exception as e:
                 logger.critical(
-                    f"Failed to initialize or connect to Redis client: {e}",
+                    "Failed to initialize or connect to Redis client: %s",
+                    e,
                     exc_info=True,
                 )
                 return "", HTTPStatus.INTERNAL_SERVER_ERROR
@@ -168,11 +182,12 @@ def notification_webhook(request):
                 microsoft_subscription_id=microsoft_subscription_id
             )
             pipeline.get(redis_key)
-            logger.debug(f"Queued Redis GET for key: {redis_key}")
+            logger.debug("Queued Redis GET for key: %s", redis_key)
 
         expected_client_state_list = pipeline.execute()
         logger.debug(
-            f"Fetched {len(expected_client_state_list)} expected client states from Redis."
+            "Fetched %s expected client states from Redis.",
+            len(expected_client_state_list),
         )
 
         global publisher_client
@@ -184,7 +199,7 @@ def notification_webhook(request):
                 return "", HTTPStatus.INTERNAL_SERVER_ERROR
 
         topic_path = publisher_client.topic_path(PROJECT_ID, TOPIC_ID)
-        logger.info(f"Pub/Sub topic path: {topic_path}")
+        logger.info("Pub/Sub topic path: %s", topic_path)
 
         for i, (event, expected_client_state_from_redis) in enumerate(
             zip(events, expected_client_state_list)
@@ -194,13 +209,16 @@ def notification_webhook(request):
 
             if not expected_client_state_from_redis:
                 logger.error(
-                    f"Forbidden: Expected client state not found in Redis for subscriptionId: {subscription_id}."
+                    "Forbidden: Expected client state not found in Redis for subscriptionId: %s.",
+                    subscription_id,
                 )
                 return "", HTTPStatus.FORBIDDEN
 
             if client_state != expected_client_state_from_redis:
                 logger.error(
-                    f"Forbidden: clientState mismatch for subscriptionId: {subscription_id}.Received: '{client_state}'"
+                    "Forbidden: clientState mismatch for subscriptionId: %s. Received: '%s'",
+                    subscription_id,
+                    client_state,
                 )
                 return "", HTTPStatus.FORBIDDEN
 
@@ -209,11 +227,14 @@ def notification_webhook(request):
                 future = publisher_client.publish(topic_path, message_data)
                 futures.append(future)
                 logger.info(
-                    f"Successfully queued Pub/Sub message for subscriptionId: {subscription_id}."
+                    "Successfully queued Pub/Sub message for subscriptionId: %s.",
+                    subscription_id,
                 )
             except Exception as e:
                 logger.error(
-                    f"Failed to queue Pub/Sub message for subscriptionId {subscription_id}: {e}",
+                    "Failed to queue Pub/Sub message for subscriptionId %s: %s",
+                    subscription_id,
+                    e,
                     exc_info=True,
                 )
                 return "", HTTPStatus.INTERNAL_SERVER_ERROR
@@ -224,28 +245,39 @@ def notification_webhook(request):
                 message_id = future.result(timeout=3)
                 last_message_id = message_id
                 logger.info(
-                    f"Successfully published message {i + 1} to Pub/Sub. Message ID: {message_id}"
+                    "Successfully published message %s to Pub/Sub. Message ID: %s",
+                    i + 1,
+                    message_id,
                 )
             except TimeoutError:
                 logger.error(
-                    f"Publishing message {i + 1} timed out after 3 seconds for subscriptionId: {events[i].get('subscriptionId', 'N/A')}."
+                    "Publishing message %s timed out after 3 seconds for subscriptionId: %s.",
+                    i + 1,
+                    events[i].get("subscriptionId", "N/A"),
                 )
                 return "", HTTPStatus.INTERNAL_SERVER_ERROR
             except Exception as e:
                 logger.error(
-                    f"Error getting publish result for message {i + 1} (subscriptionId: {events[i].get('subscriptionId', 'N/A')}): {e}",
+                    "Error getting publish result for message %s (subscriptionId: %s): %s",
+                    i + 1,
+                    events[i].get("subscriptionId", "N/A"),
+                    e,
                     exc_info=True,
                 )
                 return "", HTTPStatus.INTERNAL_SERVER_ERROR
 
         logger.info(
-            f"Successfully processed and published {len(events)} messages to {topic_path}. Last message ID: {last_message_id if last_message_id else 'N/A'}"
+            "Successfully processed and published %s messages to %s. Last message ID: %s",
+            len(events),
+            topic_path,
+            last_message_id if last_message_id else "N/A",
         )
         return "", HTTPStatus.ACCEPTED
 
     except Exception as e:
         logger.critical(
-            f"Unhandled Internal Server Error in notification_webhook: {e}",
+            "Unhandled Internal Server Error in notification_webhook: %s",
+            e,
             exc_info=True,
         )
         return "", HTTPStatus.INTERNAL_SERVER_ERROR

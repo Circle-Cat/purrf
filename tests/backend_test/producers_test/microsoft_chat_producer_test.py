@@ -258,7 +258,7 @@ class TestValidatePayload(unittest.TestCase):
                 "name": "payload is not a dict",
                 "payload": "invalid_string",
                 "expected_is_valid": False,
-                "expected_log_message": "Payload must be a JSON object.",
+                "expected_log_message": ("Payload must be a JSON object.",),
             },
             {
                 "name": "missing subscriptionId field",
@@ -267,7 +267,10 @@ class TestValidatePayload(unittest.TestCase):
                     "resourceData": {"id": "data789"},
                 },
                 "expected_is_valid": False,
-                "expected_log_message": "Missing required field: subscriptionId",
+                "expected_log_message": (
+                    "Missing required field: %s",
+                    "subscriptionId",
+                ),
             },
             {
                 "name": "missing clientState field",
@@ -276,13 +279,13 @@ class TestValidatePayload(unittest.TestCase):
                     "resourceData": {"id": "data789"},
                 },
                 "expected_is_valid": False,
-                "expected_log_message": "Missing required field: clientState",
+                "expected_log_message": ("Missing required field: %s", "clientState"),
             },
             {
                 "name": "missing resourceData field",
                 "payload": {"subscriptionId": "sub123", "clientState": "state456"},
                 "expected_is_valid": False,
-                "expected_log_message": "Missing required field: resourceData",
+                "expected_log_message": ("Missing required field: %s", "resourceData"),
             },
             {
                 "name": "empty string for subscriptionId",
@@ -292,7 +295,10 @@ class TestValidatePayload(unittest.TestCase):
                     "resourceData": {"id": "data789"},
                 },
                 "expected_is_valid": False,
-                "expected_log_message": "Field 'subscriptionId' must not be empty or None.",
+                "expected_log_message": (
+                    "Field '%s' must not be empty or None.",
+                    "subscriptionId",
+                ),
             },
             {
                 "name": "None for clientState",
@@ -302,7 +308,10 @@ class TestValidatePayload(unittest.TestCase):
                     "resourceData": {"id": "data789"},
                 },
                 "expected_is_valid": False,
-                "expected_log_message": "Field 'clientState' must not be empty or None.",
+                "expected_log_message": (
+                    "Field '%s' must not be empty or None.",
+                    "clientState",
+                ),
             },
             {
                 "name": "empty dict for resourceData",
@@ -312,7 +321,10 @@ class TestValidatePayload(unittest.TestCase):
                     "resourceData": {},
                 },
                 "expected_is_valid": False,
-                "expected_log_message": "Field 'resourceData' must not be empty or None.",
+                "expected_log_message": (
+                    "Field '%s' must not be empty or None.",
+                    "resourceData",
+                ),
             },
             {
                 "name": "None for resourceData",
@@ -322,7 +334,10 @@ class TestValidatePayload(unittest.TestCase):
                     "resourceData": None,
                 },
                 "expected_is_valid": False,
-                "expected_log_message": "Field 'resourceData' must not be empty or None.",
+                "expected_log_message": (
+                    "Field '%s' must not be empty or None.",
+                    "resourceData",
+                ),
             },
         ]
 
@@ -339,7 +354,7 @@ class TestValidatePayload(unittest.TestCase):
 
                 if case["expected_log_message"]:
                     self.mock_logger_error.assert_called_once_with(
-                        case["expected_log_message"]
+                        *case["expected_log_message"]
                     )
                 else:
                     self.mock_logger_error.assert_not_called()
