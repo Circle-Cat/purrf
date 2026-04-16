@@ -150,6 +150,52 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
 
         await self.insert_entities(self.pairs)
 
+        self.user_mentor = UsersEntity(
+            first_name="M",
+            last_name="Mentor",
+            timezone=UserTimezone.ASIA_SHANGHAI,
+            timezone_updated_at=self.now,
+            communication_channel=CommunicationMethod.EMAIL,
+            primary_email="mentor@example.com",
+            is_active=True,
+            updated_timestamp=self.now,
+            subject_identifier="mentor-subject",
+        )
+        self.user_partner = UsersEntity(
+            first_name="P",
+            last_name="Partner",
+            timezone=UserTimezone.AMERICA_NEW_YORK,
+            timezone_updated_at=self.now,
+            communication_channel=CommunicationMethod.EMAIL,
+            primary_email="partner@example.com",
+            is_active=True,
+            updated_timestamp=self.now,
+            subject_identifier="partner-subject",
+        )
+
+        self.round = MentorshipRoundEntity(
+            name="test-round",
+            required_meetings=5,
+        )
+
+        await self.insert_entities([self.user_mentor, self.user_partner, self.round])
+
+    async def _create_pair(self, meeting_log=None) -> MentorshipPairsEntity:
+        """Helper to create a standard mentorship pair with custom meeting logs."""
+        pair = MentorshipPairsEntity(
+            round_id=self.round.round_id,
+            mentor_id=self.user_mentor.user_id,
+            mentee_id=self.user_partner.user_id,
+            completed_count=0,
+            status=PairStatus.ACTIVE,
+            mentor_action_status=MentorActionStatus.CONFIRMED,
+            mentee_action_status=MenteeActionStatus.CONFIRMED,
+            recommendation_reason="",
+            meeting_log=meeting_log,
+        )
+        await self.insert_entities([pair])
+        return pair
+
     async def test_get_pairs_by_user_id_existing(self):
         """Test passing a valid user ID returns unique partner IDs."""
         result = await self.repo.get_all_partner_ids(
@@ -707,6 +753,181 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
         self.assertEqual(len(meetings), 1)
         self.assertEqual(meetings[0]["meeting_id"], "only")
         self.assertEqual(refreshed.meeting_log["other_key"], "value")
+
+    async def test_success_remove_some_meetings(self):
+        """Should successfully remove specific meeting_ids while retaining others."""
+        log = {
+            "google_meetings": [
+                {"meeting_id": "m1"},
+                {"meeting_id": "m2"},
+                {"meeting_id": "m3"},
+            ]
+        }
+        pair = await self._create_pair(meeting_log=log)
+
+        result = await self.repo.remove_meetings_from_log(
+            session=self.session,
+            user_id=self.user_mentor.user_id,
+            round_id=self.round.round_id,
+            partner_id=self.user_partner.user_id,
+            meeting_ids=["m1", "m3"],
+        )
+
+        self.assertTrue(result)
+        updated = await self.session.get(MentorshipPairsEntity, pair.pair_id)
+        await self.session.refresh(updated, ["meeting_log"])
+        self.assertIsInstance(updated.meeting_log, dict)
+        self.assertIn("google_meetings", updated.meeting_log)
+        self.assertIsInstance(updated.meeting_log["google_meetings"], list)
+        self.assertEqual(
+            [m["meeting_id"] for m in updated.meeting_log["google_meetings"]], ["m2"]
+        )
+
+    async def test_success_role_reversal_remove(self):
+        """Should successfully remove meetings even when caller roles are reversed."""
+        pair = await self._create_pair(
+            meeting_log={"google_meetings": [{"meeting_id": "x"}]}
+        )
+
+        result = await self.repo.remove_meetings_from_log(
+            session=self.session,
+            user_id=self.user_partner.user_id,
+            round_id=self.round.round_id,
+            partner_id=self.user_mentor.user_id,
+            meeting_ids=["x"],
+        )
+
+        self.assertTrue(result)
+        updated = await self.session.get(MentorshipPairsEntity, pair.pair_id)
+        await self.session.refresh(updated, ["meeting_log"])
+        self.assertIsInstance(updated.meeting_log, dict)
+        self.assertIn("google_meetings", updated.meeting_log)
+        self.assertEqual(updated.meeting_log["google_meetings"], [])
+
+    async def test_meeting_id_not_exist_returns_true(self):
+        """Should return True if pair is found, even if meeting_ids don't exist in log."""
+        pair = await self._create_pair(
+            meeting_log={"google_meetings": [{"meeting_id": "real"}]}
+        )
+
+        result = await self.repo.remove_meetings_from_log(
+            self.session,
+            self.user_mentor.user_id,
+            self.round.round_id,
+            self.user_partner.user_id,
+            ["not_exist"],
+        )
+
+        self.assertTrue(result)
+        updated = await self.session.get(MentorshipPairsEntity, pair.pair_id)
+        await self.session.refresh(updated, ["meeting_log"])
+
+        self.assertIsInstance(updated.meeting_log, dict)
+        self.assertIn("google_meetings", updated.meeting_log)
+        self.assertIsInstance(updated.meeting_log["google_meetings"], list)
+        self.assertEqual(len(updated.meeting_log["google_meetings"]), 1)
+        self.assertEqual(
+            updated.meeting_log["google_meetings"][0]["meeting_id"], "real"
+        )
+
+    async def test_pair_not_found_returns_false(self):
+        """Should return False if the user/partner/round combination does not exist."""
+        await self._create_pair()
+
+        result = await self.repo.remove_meetings_from_log(
+            self.session,
+            user_id=999,
+            round_id=self.round.round_id,
+            partner_id=self.user_partner.user_id,
+            meeting_ids=["m1"],
+        )
+        self.assertFalse(result)
+
+    async def test_null_meeting_log_handled_gracefully(self):
+        """Should return True and initialize meeting_log structure if original field is None."""
+        pair = await self._create_pair(meeting_log=None)
+
+        result = await self.repo.remove_meetings_from_log(
+            self.session,
+            self.user_mentor.user_id,
+            self.round.round_id,
+            self.user_partner.user_id,
+            ["any"],
+        )
+        self.assertTrue(result)
+
+        updated = await self.session.get(MentorshipPairsEntity, pair.pair_id)
+        await self.session.refresh(updated, ["meeting_log"])
+
+        self.assertIsInstance(updated.meeting_log, dict)
+        self.assertIn("google_meetings", updated.meeting_log)
+        self.assertEqual(updated.meeting_log["google_meetings"], [])
+
+    async def test_missing_google_meetings_key_handled_gracefully(self):
+        """Should return True and ensure 'google_meetings' key exists even if other keys are present."""
+        pair = await self._create_pair(meeting_log={"other": "data"})
+
+        result = await self.repo.remove_meetings_from_log(
+            self.session,
+            self.user_mentor.user_id,
+            self.round.round_id,
+            self.user_partner.user_id,
+            ["any"],
+        )
+        self.assertTrue(result)
+
+        updated = await self.session.get(MentorshipPairsEntity, pair.pair_id)
+        await self.session.refresh(updated, ["meeting_log"])
+
+        self.assertIsInstance(updated.meeting_log, dict)
+        self.assertIn("google_meetings", updated.meeting_log)
+        self.assertEqual(updated.meeting_log["google_meetings"], [])
+
+    async def test_input_cleaning_logic(self):
+        """Should clean duplicate or empty meeting_ids before processing."""
+        log = {"google_meetings": [{"meeting_id": "1"}, {"meeting_id": "2"}]}
+        pair = await self._create_pair(meeting_log=log)
+
+        await self.repo.remove_meetings_from_log(
+            self.session,
+            self.user_mentor.user_id,
+            self.round.round_id,
+            self.user_partner.user_id,
+            ["1", "1", "", None],
+        )
+
+        updated = await self.session.get(MentorshipPairsEntity, pair.pair_id)
+        await self.session.refresh(updated, ["meeting_log"])
+        self.assertIsInstance(updated.meeting_log, dict)
+        self.assertEqual(updated.meeting_log["google_meetings"], [{"meeting_id": "2"}])
+
+    async def test_invalid_user_round_partner_returns_false(self):
+        """Should return False if any of user_id, round_id, or partner_id are falsy."""
+        pair = MentorshipPairsEntity(
+            round_id=self.round.round_id,
+            mentor_id=self.user_mentor.user_id,
+            mentee_id=self.user_partner.user_id,
+            completed_count=0,
+            status=PairStatus.ACTIVE,
+            mentor_action_status=MentorActionStatus.CONFIRMED,
+            mentee_action_status=MenteeActionStatus.CONFIRMED,
+            recommendation_reason="",
+            meeting_log={"google_meetings": [{"meeting_id": "m1"}]},
+        )
+        await self.insert_entities([pair])
+
+        result = await self.repo.remove_meetings_from_log(
+            session=self.session,
+            user_id=0,
+            round_id=self.round.round_id,
+            partner_id=self.user_partner.user_id,
+            meeting_ids=["m1"],
+        )
+        self.assertFalse(result)
+
+        updated = await self.session.get(MentorshipPairsEntity, pair.pair_id)
+        await self.session.refresh(updated, ["meeting_log"])
+        self.assertEqual(updated.meeting_log["google_meetings"], [{"meeting_id": "m1"}])
 
 
 if __name__ == "__main__":
