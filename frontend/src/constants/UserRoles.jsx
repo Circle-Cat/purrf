@@ -1,6 +1,8 @@
 export const USER_ROLES = {
-  ADMIN: "admin",
-  CC_INTERNAL: "cc_internal",
+  INFRA_ADMIN: "infraAdmin",
+  MANAGER: "manager",
+  MENTORSHIP_ADMIN: "mentorshipAdmin",
+  CC_INTERNAL: "ccInternal",
   MENTORSHIP: "mentorship",
   CONTACT_GOOGLE_CHAT: "contactGoogleChat",
 };

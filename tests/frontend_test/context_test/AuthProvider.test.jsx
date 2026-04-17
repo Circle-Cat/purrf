@@ -24,8 +24,8 @@ describe("AuthProvider", () => {
     expect(result.current.roles).toEqual([]);
   });
 
-  it("should provide admin and cc_internal role when API call is successful", async () => {
-    const mockRolesData = [USER_ROLES.ADMIN, USER_ROLES.CC_INTERNAL];
+  it("should provide manager and ccInternal role when API call is successful", async () => {
+    const mockRolesData = [USER_ROLES.MANAGER, USER_ROLES.CC_INTERNAL];
     getUserRoles.mockResolvedValue({ data: { roles: mockRolesData } });
 
     const { result } = renderHook(() => useAuth(), {
@@ -34,7 +34,7 @@ describe("AuthProvider", () => {
 
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.roles).toEqual(mockRolesData);
-    expect(result.current.roles).toContain(USER_ROLES.ADMIN);
+    expect(result.current.roles).toContain(USER_ROLES.MANAGER);
   });
 
   it("should provide mentorship role when API call is successful", async () => {

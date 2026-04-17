@@ -77,11 +77,11 @@ describe("ProtectedRoute Component", () => {
     expect(screen.getByText("Access Denied Page")).toBeInTheDocument();
   });
 
-  test("datasearch page allows admin user access", () => {
+  test("datasearch page allows manager user access", () => {
     renderWithRouter({
       ui: <div>Datasearch Page</div>,
-      userRoles: [USER_ROLES.ADMIN],
-      requiredRoles: [USER_ROLES.ADMIN],
+      userRoles: [USER_ROLES.MANAGER],
+      requiredRoles: [USER_ROLES.MANAGER],
     });
 
     expect(screen.getByText("Datasearch Page")).toBeInTheDocument();
@@ -91,18 +91,18 @@ describe("ProtectedRoute Component", () => {
     renderWithRouter({
       ui: <div>Datasearch Page</div>,
       userRoles: [USER_ROLES.MENTORSHIP, USER_ROLES.CC_INTERNAL],
-      requiredRoles: [USER_ROLES.ADMIN],
+      requiredRoles: [USER_ROLES.MANAGER],
     });
 
     expect(screen.getByText("Access Denied Page")).toBeInTheDocument();
     expect(screen.queryByText("Datasearch Page")).not.toBeInTheDocument();
   });
 
-  test("dashboard page allows admin user access", () => {
+  test("dashboard page allows manager user access", () => {
     renderWithRouter({
       ui: <div>Dashboard Page</div>,
-      userRoles: [USER_ROLES.ADMIN],
-      requiredRoles: [USER_ROLES.ADMIN, USER_ROLES.CC_INTERNAL],
+      userRoles: [USER_ROLES.MANAGER],
+      requiredRoles: [USER_ROLES.MANAGER, USER_ROLES.CC_INTERNAL],
     });
 
     expect(screen.getByText("Dashboard Page")).toBeInTheDocument();
@@ -113,7 +113,7 @@ describe("ProtectedRoute Component", () => {
     renderWithRouter({
       ui: <div>Dashboard Page</div>,
       userRoles: [USER_ROLES.CC_INTERNAL],
-      requiredRoles: [USER_ROLES.ADMIN, USER_ROLES.CC_INTERNAL],
+      requiredRoles: [USER_ROLES.MANAGER, USER_ROLES.CC_INTERNAL],
     });
 
     expect(screen.getByText("Dashboard Page")).toBeInTheDocument();

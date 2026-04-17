@@ -25,12 +25,12 @@ const Sidebar = () => {
     {
       label: "Dashboard",
       to: ROUTE_PATHS.DASHBOARD,
-      roles: [USER_ROLES.ADMIN, USER_ROLES.CC_INTERNAL],
+      roles: [USER_ROLES.MANAGER, USER_ROLES.CC_INTERNAL],
     },
     {
       label: "DataSearch",
       to: ROUTE_PATHS.DATASEARCH,
-      roles: [USER_ROLES.ADMIN],
+      roles: [USER_ROLES.MANAGER],
     },
   ];
 

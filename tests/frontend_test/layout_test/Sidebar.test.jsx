@@ -41,8 +41,8 @@ describe("Sidebar Component", () => {
     expect(screen.queryByText("Personal Dashboard")).not.toBeInTheDocument();
   });
 
-  test("renders all links for admin user", () => {
-    renderSidebar([USER_ROLES.ADMIN, USER_ROLES.MENTORSHIP]);
+  test("renders all links for manager user", () => {
+    renderSidebar([USER_ROLES.MANAGER, USER_ROLES.MENTORSHIP]);
 
     expect(screen.getByText("Dashboard")).toBeInTheDocument();
     expect(screen.getByText("DataSearch")).toBeInTheDocument();

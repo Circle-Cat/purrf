@@ -36,7 +36,7 @@ function App() {
                     element={
                       <ProtectedRoute
                         requiredRoles={[
-                          USER_ROLES.ADMIN,
+                          USER_ROLES.MANAGER,
                           USER_ROLES.CC_INTERNAL,
                         ]}
                       >
@@ -47,7 +47,7 @@ function App() {
                   <Route
                     path={ROUTE_PATHS.DATASEARCH}
                     element={
-                      <ProtectedRoute requiredRoles={[USER_ROLES.ADMIN]}>
+                      <ProtectedRoute requiredRoles={[USER_ROLES.MANAGER]}>
                         <DataSearch />
                       </ProtectedRoute>
                     }
