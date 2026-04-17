@@ -48,7 +48,7 @@ class NotificationController:
 
         self.router.add_api_route(
             MICROSOFT_CHAT_SUBSCRIBE_ENDPOINT,
-            endpoint=authenticate(roles=[UserRole.ADMIN])(
+            endpoint=authenticate(roles=[UserRole.INFRA_ADMIN])(
                 self.subscribe_microsoft_chat_messages
             ),
             methods=["POST"],
@@ -56,7 +56,7 @@ class NotificationController:
         )
         self.router.add_api_route(
             GOOGLE_CHAT_SUBSCRIBE_ENDPOINT,
-            endpoint=authenticate(roles=[UserRole.ADMIN])(
+            endpoint=authenticate(roles=[UserRole.INFRA_ADMIN])(
                 self.subscribe_google_chat_space
             ),
             methods=["POST"],

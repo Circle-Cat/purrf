@@ -12,7 +12,7 @@ from backend.common.environment_constants import (
     GOOGLE_AUDIENCE,
 )
 from backend.dto.user_context_dto import UserContextDto
-from backend.common.user_role import UserRole
+from backend.common.user_role import UserRole, SUPER_ADMIN_ROLES
 
 
 class AuthenticationService:
@@ -179,10 +179,28 @@ class AuthenticationService:
             email = custom_claims.get("email", "")
             raw_sub = custom_claims.get("sub", "")
             upn = custom_claims.get("upn", "")
-            role_claim = custom_claims.get("extn.purrf_role", [])
+            raw_role_claim = custom_claims.get("extn.purrf_role", [])
+            role_claim = raw_role_claim
+            # Azure directory extensions only support string values, so roles are stored as a
+            # JSON-encoded string (e.g. '["admin","manager"]'). Cloudflare wraps it in an array,
+            # resulting in ['["admin","manager"]']. Parse the inner string back into a list.
+            if len(raw_role_claim) == 1 and isinstance(raw_role_claim[0], str):
+                try:
+                    parsed = json.loads(raw_role_claim[0])
+                    if isinstance(parsed, list):
+                        role_claim = parsed
+                except json.JSONDecodeError:
+                    pass
 
-            if "admin" in role_claim:
-                roles.append(UserRole.ADMIN)
+            if "superAdmin" in role_claim:
+                roles.extend(SUPER_ADMIN_ROLES)
+            else:
+                if "infraAdmin" in role_claim:
+                    roles.append(UserRole.INFRA_ADMIN)
+                if "manager" in role_claim:
+                    roles.append(UserRole.MANAGER)
+                if "mentorshipAdmin" in role_claim:
+                    roles.append(UserRole.MENTORSHIP_ADMIN)
 
             if upn.endswith("@u.circlecat.org"):
                 roles.append(UserRole.CC_INTERNAL)
@@ -196,4 +214,6 @@ class AuthenticationService:
 
             roles.append(UserRole.MENTORSHIP)
 
-        return UserContextDto(sub=sub, primary_email=email, roles=roles)
+        return UserContextDto(
+            sub=sub, primary_email=email, roles=list(dict.fromkeys(roles))
+        )

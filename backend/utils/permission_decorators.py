@@ -41,7 +41,7 @@ def authenticate(roles: list = None):
 
     Examples:
         1. Role-based check with user_sub injection:
-           @authenticate(roles=["admin", "cc_internal"])
+           @authenticate(roles=["manager", "ccInternal"])
            async def delete_item(item_id: str, user_sub: str):
                # user_sub is automatically injected from request.state.user.sub
                print(f"User {user_sub} is deleting {item_id}")

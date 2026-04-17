@@ -46,7 +46,7 @@ class AuthenticationController:
                     "data": {
                         "sub": "user-id",
                         "email": "user@example.com",
-                        "roles": ["cc_internal", "mentorship"]
+                        "roles": ["ccInternal", "mentorship"]
                     }
                 }
         """

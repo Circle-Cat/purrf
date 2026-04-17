@@ -29,7 +29,9 @@ class DevAuthenticationService(AuthenticationService):
             sub="dev_superuser",
             primary_email="admin@dev.local",
             roles=[
-                UserRole.ADMIN,
+                UserRole.INFRA_ADMIN,
+                UserRole.MANAGER,
+                UserRole.MENTORSHIP_ADMIN,
                 UserRole.CC_INTERNAL,
                 UserRole.MENTORSHIP,
                 UserRole.CONTACT_GOOGLE_CHAT,

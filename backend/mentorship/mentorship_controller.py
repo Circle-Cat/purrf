@@ -86,7 +86,9 @@ class MentorshipController:
 
         self.router.add_api_route(
             MENTORSHIP_ROUNDS_ENDPOINT,
-            endpoint=authenticate(roles=[UserRole.ADMIN])(self.upsert_rounds),
+            endpoint=authenticate(roles=[UserRole.MENTORSHIP_ADMIN])(
+                self.upsert_rounds
+            ),
             methods=["POST"],
             response_model=None,
         )

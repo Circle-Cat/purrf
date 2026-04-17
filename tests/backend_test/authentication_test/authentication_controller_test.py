@@ -66,7 +66,7 @@ class TestAuthenticationController(unittest.TestCase):
         """
         Test: successfully retrieving user roles.
         """
-        expected_roles = ["admin", "cc_internal"]
+        expected_roles = ["manager", "ccInternal"]
         expected_sub = "user-123"
         expected_email = "user@test.com"
 

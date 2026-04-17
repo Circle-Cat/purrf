@@ -132,65 +132,67 @@ class InternalActivityController:
         )
         self.router.add_api_route(
             MICROSOFT_CHAT_COUNT_ENDPOINT,
-            endpoint=authenticate(roles=[UserRole.ADMIN])(
+            endpoint=authenticate(roles=[UserRole.MANAGER])(
                 self.count_microsoft_chat_messages
             ),
             methods=["POST"],
         )
         self.router.add_api_route(
             MICROSOFT_CHAT_TOPICS_ENDPOINT,
-            endpoint=authenticate(roles=[UserRole.ADMIN])(
+            endpoint=authenticate(roles=[UserRole.MANAGER])(
                 self.all_microsoft_chat_topics
             ),
             methods=["GET"],
         )
         self.router.add_api_route(
             JIRA_PROJECTS_ENDPOINT,
-            endpoint=authenticate(roles=[UserRole.ADMIN])(
+            endpoint=authenticate(roles=[UserRole.MANAGER])(
                 self.get_all_jira_projects_api
             ),
             methods=["GET"],
         )
         self.router.add_api_route(
             GOOGLE_CALENDAR_LIST_ENDPOINT,
-            endpoint=authenticate(roles=[UserRole.ADMIN])(self.get_all_calendars_api),
+            endpoint=authenticate(roles=[UserRole.MANAGER])(self.get_all_calendars_api),
             methods=["GET"],
         )
         self.router.add_api_route(
             GOOGLE_CALENDAR_EVENTS_ENDPOINT,
-            endpoint=authenticate(roles=[UserRole.ADMIN])(self.get_all_events_api),
+            endpoint=authenticate(roles=[UserRole.MANAGER])(self.get_all_events_api),
             methods=["POST"],
         )
         self.router.add_api_route(
             JIRA_BRIEF_ENDPOINT,
-            endpoint=authenticate(roles=[UserRole.ADMIN])(self.get_jira_brief),
+            endpoint=authenticate(roles=[UserRole.MANAGER])(self.get_jira_brief),
             methods=["POST"],
         )
         self.router.add_api_route(
             JIRA_DETAIL_BATCH_ENDPOINT,
-            endpoint=authenticate(roles=[UserRole.ADMIN])(self.get_issue_detail_batch),
+            endpoint=authenticate(roles=[UserRole.MANAGER])(
+                self.get_issue_detail_batch
+            ),
             methods=["POST"],
         )
         self.router.add_api_route(
             GERRIT_STATS_ENDPOINT,
-            endpoint=authenticate(roles=[UserRole.ADMIN])(self.get_gerrit_stats),
+            endpoint=authenticate(roles=[UserRole.MANAGER])(self.get_gerrit_stats),
             methods=["POST"],
         )
         self.router.add_api_route(
             GERRIT_PROJECTS_ENDPOINT,
-            endpoint=authenticate(roles=[UserRole.ADMIN])(self.get_gerrit_projects),
+            endpoint=authenticate(roles=[UserRole.MANAGER])(self.get_gerrit_projects),
             methods=["GET"],
         )
         self.router.add_api_route(
             GOOGLE_CHAT_COUNT_ENDPOINT,
-            endpoint=authenticate(roles=[UserRole.ADMIN])(
+            endpoint=authenticate(roles=[UserRole.MANAGER])(
                 self.get_google_chat_messages_count
             ),
             methods=["POST"],
         )
         self.router.add_api_route(
             GOOGLE_CHAT_SPACES_ENDPOINT,
-            endpoint=authenticate(roles=[UserRole.ADMIN])(self.get_chat_spaces_route),
+            endpoint=authenticate(roles=[UserRole.MANAGER])(self.get_chat_spaces_route),
             methods=["GET"],
         )
         self.router.add_api_route(

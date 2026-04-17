@@ -49,7 +49,7 @@ class TestConsumerIntegration(unittest.TestCase):
     def _set_authenticated_user(self, roles=None, sub="test_user_123"):
         """Helper method to configure mock_auth_service to return a user with given roles."""
         if roles is None:
-            roles = [UserRole.ADMIN]
+            roles = [UserRole.INFRA_ADMIN]
         mock_user = MagicMock()
         mock_user.sub = sub
         mock_user.roles = roles
@@ -63,8 +63,8 @@ class TestConsumerIntegration(unittest.TestCase):
         )
 
     def test_start_google_chat_pulling_success(self):
-        """Test Google Chat pull endpoint with ADMIN role."""
-        self._set_authenticated_user(roles=[UserRole.ADMIN])
+        """Test Google Chat pull endpoint with INFRA_ADMIN role."""
+        self._set_authenticated_user(roles=[UserRole.INFRA_ADMIN])
 
         url = self._get_url(GOOGLE_CHAT_PULL_ENDPOINT)
         response = self.client.post(
@@ -78,8 +78,8 @@ class TestConsumerIntegration(unittest.TestCase):
         )
 
     def test_start_microsoft_pulling_success(self):
-        """Test Microsoft pull endpoint with ADMIN role."""
-        self._set_authenticated_user(roles=[UserRole.ADMIN])
+        """Test Microsoft pull endpoint with INFRA_ADMIN role."""
+        self._set_authenticated_user(roles=[UserRole.INFRA_ADMIN])
 
         url = self._get_url(MICROSOFT_PULL_ENDPOINT)
         response = self.client.post(
@@ -93,8 +93,8 @@ class TestConsumerIntegration(unittest.TestCase):
         )
 
     def test_check_pulling_status_success(self):
-        """Test check pulling status endpoint with ADMIN role."""
-        self._set_authenticated_user(roles=[UserRole.ADMIN])
+        """Test check pulling status endpoint with INFRA_ADMIN role."""
+        self._set_authenticated_user(roles=[UserRole.INFRA_ADMIN])
 
         self.mock_pull_manager.check_pulling_status.return_value = {"status": "running"}
 
@@ -107,7 +107,7 @@ class TestConsumerIntegration(unittest.TestCase):
 
     def test_stop_pulling_success(self):
         """Test stop pulling endpoint using DELETE method."""
-        self._set_authenticated_user(roles=[UserRole.ADMIN])
+        self._set_authenticated_user(roles=[UserRole.INFRA_ADMIN])
 
         self.mock_pull_manager.stop_pulling_process.return_value = {"stopped": True}
 
@@ -121,8 +121,8 @@ class TestConsumerIntegration(unittest.TestCase):
         self.mock_pull_manager.stop_pulling_process.assert_called_once()
 
     def test_forbidden_access_for_normal_user(self):
-        """Test forbidden access: normal user tries to access ADMIN endpoint."""
-        # Simulate a normal user without ADMIN role
+        """Test forbidden access: normal user tries to access INFRA_ADMIN endpoint."""
+        # Simulate a normal user without INFRA_ADMIN role
         self._set_authenticated_user(roles=[UserRole.MENTORSHIP])
 
         url = self._get_url(PUBSUB_STOP_ENDPOINT)

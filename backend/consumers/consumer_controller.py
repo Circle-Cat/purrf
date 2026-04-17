@@ -38,14 +38,16 @@ class ConsumerController:
 
         self.router.add_api_route(
             MICROSOFT_PULL_ENDPOINT,
-            endpoint=authenticate(roles=[UserRole.ADMIN])(self.start_microsoft_pulling),
+            endpoint=authenticate(roles=[UserRole.INFRA_ADMIN])(
+                self.start_microsoft_pulling
+            ),
             methods=["POST"],
             response_model=dict,
         )
 
         self.router.add_api_route(
             GOOGLE_CHAT_PULL_ENDPOINT,
-            endpoint=authenticate(roles=[UserRole.ADMIN])(
+            endpoint=authenticate(roles=[UserRole.INFRA_ADMIN])(
                 self.start_google_chat_pulling
             ),
             methods=["POST"],
@@ -54,21 +56,25 @@ class ConsumerController:
 
         self.router.add_api_route(
             GERRIT_PULL_ENDPOINT,
-            endpoint=authenticate(roles=[UserRole.ADMIN])(self.start_gerrit_pulling),
+            endpoint=authenticate(roles=[UserRole.INFRA_ADMIN])(
+                self.start_gerrit_pulling
+            ),
             methods=["POST"],
             response_model=dict,
         )
 
         self.router.add_api_route(
             PUBSUB_STATUS_ENDPOINT,
-            endpoint=authenticate(roles=[UserRole.ADMIN])(self.check_pulling_messages),
+            endpoint=authenticate(roles=[UserRole.INFRA_ADMIN])(
+                self.check_pulling_messages
+            ),
             methods=["GET"],
             response_model=dict,
         )
 
         self.router.add_api_route(
             PUBSUB_STOP_ENDPOINT,
-            endpoint=authenticate(roles=[UserRole.ADMIN])(self.stop_pulling),
+            endpoint=authenticate(roles=[UserRole.INFRA_ADMIN])(self.stop_pulling),
             methods=["DELETE"],
             response_model=dict,
         )

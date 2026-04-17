@@ -87,7 +87,7 @@ class TestInternalActivityControllerIntegration(unittest.TestCase):
 
     def test_count_microsoft_chat_messages(self):
         """Test MICROSOFT_CHAT_COUNT_ENDPOINT (POST)."""
-        self._set_auth([UserRole.ADMIN])
+        self._set_auth([UserRole.MANAGER])
         payload = {"ldaps": ["a"], "startDate": "2023-01-01"}
         response = self.client.post(
             MICROSOFT_CHAT_COUNT_ENDPOINT,
@@ -100,7 +100,7 @@ class TestInternalActivityControllerIntegration(unittest.TestCase):
 
     def test_all_microsoft_chat_topics(self):
         """Test MICROSOFT_CHAT_TOPICS_ENDPOINT (GET)."""
-        self._set_auth([UserRole.ADMIN])
+        self._set_auth([UserRole.MANAGER])
         self.microsoft_meeting_chat_topic_cache_service.get_microsoft_chat_topics.return_value = []
         response = self.client.get(MICROSOFT_CHAT_TOPICS_ENDPOINT, headers=self.headers)
 
@@ -111,7 +111,7 @@ class TestInternalActivityControllerIntegration(unittest.TestCase):
 
     def test_get_all_jira_projects_api(self):
         """Test JIRA_PROJECTS_ENDPOINT (GET)."""
-        self._set_auth([UserRole.ADMIN])
+        self._set_auth([UserRole.MANAGER])
         response = self.client.get(JIRA_PROJECTS_ENDPOINT, headers=self.headers)
 
         self.assertEqual(response.status_code, HTTPStatus.OK)
@@ -119,7 +119,7 @@ class TestInternalActivityControllerIntegration(unittest.TestCase):
 
     def test_get_jira_brief(self):
         """Test JIRA_BRIEF_ENDPOINT (POST)."""
-        self._set_auth([UserRole.ADMIN])
+        self._set_auth([UserRole.MANAGER])
         payload = {"statusList": ["done"], "startDate": "2023-01-01"}
         response = self.client.post(
             JIRA_BRIEF_ENDPOINT,
@@ -132,7 +132,7 @@ class TestInternalActivityControllerIntegration(unittest.TestCase):
 
     def test_get_issue_detail_batch(self):
         """Test JIRA_DETAIL_BATCH_ENDPOINT (POST)."""
-        self._set_auth([UserRole.ADMIN])
+        self._set_auth([UserRole.MANAGER])
         payload = {"issueIds": ["ISSUE-1"]}
         response = self.client.post(
             JIRA_DETAIL_BATCH_ENDPOINT,
@@ -147,7 +147,7 @@ class TestInternalActivityControllerIntegration(unittest.TestCase):
 
     def test_get_all_calendars_api(self):
         """Test GOOGLE_CALENDAR_LIST_ENDPOINT (GET)."""
-        self._set_auth([UserRole.ADMIN])
+        self._set_auth([UserRole.MANAGER])
         response = self.client.get(GOOGLE_CALENDAR_LIST_ENDPOINT, headers=self.headers)
 
         self.assertEqual(response.status_code, HTTPStatus.OK)
@@ -155,7 +155,7 @@ class TestInternalActivityControllerIntegration(unittest.TestCase):
 
     def test_get_all_events_api(self):
         """Test GOOGLE_CALENDAR_EVENTS_ENDPOINT (POST)."""
-        self._set_auth([UserRole.ADMIN])
+        self._set_auth([UserRole.MANAGER])
         self.date_time_util.get_start_end_timestamps.return_value = (None, None)
         payload = {
             "calendarIds": ["cal1"],
@@ -173,7 +173,7 @@ class TestInternalActivityControllerIntegration(unittest.TestCase):
 
     def test_get_all_events_api_without_ldaps(self):
         """Test GOOGLE_CALENDAR_EVENTS_ENDPOINT (POST) without ldaps."""
-        self._set_auth([UserRole.ADMIN])
+        self._set_auth([UserRole.MANAGER])
         self.date_time_util.get_start_end_timestamps.return_value = (None, None)
 
         payload = {
@@ -199,7 +199,7 @@ class TestInternalActivityControllerIntegration(unittest.TestCase):
 
     def test_get_gerrit_stats(self):
         """Test GERRIT_STATS_ENDPOINT (POST)."""
-        self._set_auth([UserRole.ADMIN])
+        self._set_auth([UserRole.MANAGER])
         payload = {"ldaps": ["user1"]}
         response = self.client.post(
             GERRIT_STATS_ENDPOINT,
@@ -212,7 +212,7 @@ class TestInternalActivityControllerIntegration(unittest.TestCase):
 
     def test_get_gerrit_projects(self):
         """Test GERRIT_PROJECTS_ENDPOINT (GET)."""
-        self._set_auth([UserRole.ADMIN])
+        self._set_auth([UserRole.MANAGER])
         response = self.client.get(GERRIT_PROJECTS_ENDPOINT, headers=self.headers)
 
         self.assertEqual(response.status_code, HTTPStatus.OK)
@@ -222,7 +222,7 @@ class TestInternalActivityControllerIntegration(unittest.TestCase):
 
     def test_get_google_chat_messages_count(self):
         """Test GOOGLE_CHAT_COUNT_ENDPOINT (POST)."""
-        self._set_auth([UserRole.ADMIN])
+        self._set_auth([UserRole.MANAGER])
         payload = {"spaceIds": ["s1"]}
         response = self.client.post(
             GOOGLE_CHAT_COUNT_ENDPOINT,
@@ -235,7 +235,7 @@ class TestInternalActivityControllerIntegration(unittest.TestCase):
 
     def test_get_chat_spaces_route(self):
         """Test GOOGLE_CHAT_SPACES_ENDPOINT (GET)."""
-        self._set_auth([UserRole.ADMIN])
+        self._set_auth([UserRole.MANAGER])
         response = self.client.get(
             f"{GOOGLE_CHAT_SPACES_ENDPOINT}?spaceType=SPACE",
             headers=self.headers,

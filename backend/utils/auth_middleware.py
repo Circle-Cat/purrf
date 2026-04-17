@@ -35,7 +35,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         @app.get("/dashboard")
         async def dashboard(request: Request):
             user = request.state.user
-            if "cc_internal" not in user.roles and "admin" not in user.roles:
+            if "ccInternal" not in user.roles and "manager" not in user.roles:
                 return api_response(
                     message="Forbidden",
                     status_code=HTTPStatus.FORBIDDEN

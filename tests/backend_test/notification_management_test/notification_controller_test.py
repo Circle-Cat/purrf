@@ -44,7 +44,7 @@ class TestNotificationIntegration(unittest.TestCase):
     def _set_authenticated_user(self, roles=None, sub="test_user_123"):
         """Helper method: configure mock_auth_service to return a user with given roles"""
         if roles is None:
-            roles = [UserRole.ADMIN]
+            roles = [UserRole.INFRA_ADMIN]
 
         mock_user = MagicMock()
         mock_user.sub = sub
@@ -58,7 +58,7 @@ class TestNotificationIntegration(unittest.TestCase):
         """Verify the full flow from auth to Microsoft subscription"""
 
         # Configure auth service: simulate an Admin user
-        self._set_authenticated_user(roles=[UserRole.ADMIN])
+        self._set_authenticated_user(roles=[UserRole.INFRA_ADMIN])
 
         # Configure business service return value
         self.microsoft_service.subscribe_chat_messages.return_value = (

@@ -202,12 +202,12 @@ class TestAuthenticationService(unittest.TestCase):
             "custom": {
                 "upn": "dev@u.circlecat.org",
                 "sub": "abc",
-                "extn.purrf_role": ["admin"],
+                "extn.purrf_role": ["manager"],
             }
         }
         context = self.auth_service._build_context(payload, "cloudflare")
         self.assertIn(UserRole.CC_INTERNAL, context.roles)
-        self.assertIn(UserRole.ADMIN, context.roles)
+        self.assertIn(UserRole.MANAGER, context.roles)
         self.assertEqual(context.sub, "azure|abc")
         self.assertEqual(context.primary_email, "dev@u.circlecat.org")
 
@@ -216,6 +216,19 @@ class TestAuthenticationService(unittest.TestCase):
         context = self.auth_service._build_context(payload, "cloudflare")
         self.assertIn(UserRole.CONTACT_GOOGLE_CHAT, context.roles)
         self.assertEqual(context.sub, "auth0|google-oauth2|123")
+
+        # Case 3: Azure directory extension — roles stored as a JSON-encoded string because
+        # Azure extension fields only support strings; Cloudflare wraps it in an outer array.
+        payload = {
+            "custom": {
+                "upn": "dev@u.circlecat.org",
+                "sub": "abc",
+                "extn.purrf_role": ['["mentorshipAdmin","manager"]'],
+            }
+        }
+        context = self.auth_service._build_context(payload, "cloudflare")
+        self.assertIn(UserRole.MANAGER, context.roles)
+        self.assertIn(UserRole.MENTORSHIP_ADMIN, context.roles)
 
 
 if __name__ == "__main__":

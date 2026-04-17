@@ -54,7 +54,7 @@ class TestHistoricalController(unittest.TestCase):
     def _set_authenticated_user(self, roles=None):
         """Helper method to configure mock_auth_service to return a user with given roles."""
         if roles is None:
-            roles = [UserRole.ADMIN]
+            roles = [UserRole.INFRA_ADMIN]
 
         mock_user = MagicMock()
         mock_user.sub = "test_user_123"
@@ -64,8 +64,8 @@ class TestHistoricalController(unittest.TestCase):
         self.mock_auth_service.authenticate_request.return_value = mock_user
 
     def test_backfill_microsoft_ldaps_success(self):
-        """Test Microsoft LDAPS backfill endpoint (ADMIN role)."""
-        self._set_authenticated_user(roles=[UserRole.ADMIN])
+        """Test Microsoft LDAPS backfill endpoint (INFRA_ADMIN role)."""
+        self._set_authenticated_user(roles=[UserRole.INFRA_ADMIN])
         self.mock_ms_member_service.sync_microsoft_members_to_redis.return_value = None
 
         response = self.client.post(
@@ -77,7 +77,7 @@ class TestHistoricalController(unittest.TestCase):
 
     def test_backfill_microsoft_chat_messages_success(self):
         """Test Microsoft chat messages backfill endpoint with path parameter."""
-        self._set_authenticated_user(roles=[UserRole.ADMIN])
+        self._set_authenticated_user(roles=[UserRole.INFRA_ADMIN])
         chat_id = "test_chat_123"
         url = MICROSOFT_BACKFILL_CHAT_MESSAGES_ENDPOINT.format(chatId=chat_id)
 
@@ -103,7 +103,7 @@ class TestHistoricalController(unittest.TestCase):
 
     def test_update_jira_issues_invalid_param(self):
         """Test Jira update endpoint with missing or invalid parameter (should return 400)."""
-        self._set_authenticated_user(roles=[UserRole.ADMIN])
+        self._set_authenticated_user(roles=[UserRole.INFRA_ADMIN])
 
         response = self.client.post(JIRA_UPDATE_ISSUES_ENDPOINT, headers=self.headers)
 
@@ -112,7 +112,7 @@ class TestHistoricalController(unittest.TestCase):
 
     def test_pull_calendar_history_with_body(self):
         """Test Google Calendar pull history endpoint with JSON body."""
-        self._set_authenticated_user(roles=[UserRole.ADMIN])
+        self._set_authenticated_user(roles=[UserRole.INFRA_ADMIN])
         self.mock_datetime_utils.resolve_start_end_timestamps.return_value = (
             "ts1",
             "ts2",
@@ -130,7 +130,7 @@ class TestHistoricalController(unittest.TestCase):
 
     def test_backfill_gerrit_changes_with_list_body(self):
         """Test Gerrit backfill endpoint with list parameter in request body."""
-        self._set_authenticated_user(roles=[UserRole.ADMIN])
+        self._set_authenticated_user(roles=[UserRole.INFRA_ADMIN])
         payload = {"statuses": ["MERGED"]}
 
         response = self.client.post(
@@ -144,7 +144,7 @@ class TestHistoricalController(unittest.TestCase):
 
     def test_unauthorized_access(self):
         """Test access without required roles (should return 403 Forbidden)."""
-        # Simulate a normal user without ADMIN or CRON_RUNNER role
+        # Simulate a normal user without INFRA_ADMIN or CRON_RUNNER role
         self._set_authenticated_user(roles=[UserRole.MENTORSHIP])
 
         response = self.client.post(

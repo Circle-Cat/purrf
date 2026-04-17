@@ -41,7 +41,7 @@ class TestAuthMiddleware(unittest.TestCase):
         expected_user_context = {
             "sub": "user_123",
             "primary_email": "test@example.com",
-            "roles": ["admin"],
+            "roles": ["manager"],
         }
         self.mock_auth_service.authenticate_request.return_value = expected_user_context
 
