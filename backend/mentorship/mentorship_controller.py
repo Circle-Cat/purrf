@@ -128,7 +128,7 @@ class MentorshipController:
 
         self.router.add_api_route(
             MEET_ATTENDANCE_SYNC_ENDPOINT,
-            endpoint=authenticate(roles=[UserRole.CRON_RUNNER, UserRole.ADMIN])(
+            endpoint=authenticate(roles=[UserRole.CRON_RUNNER, UserRole.INFRA_ADMIN])(
                 self.sync_meet_attendance
             ),
             methods=["POST"],
