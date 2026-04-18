@@ -12,6 +12,7 @@ from backend.dto.google_meeting_response_detail_dto import (
 from backend.entity.users_entity import UsersEntity
 from backend.entity.mentorship_pairs_entity import MentorshipPairsEntity
 from backend.common.mentorship_enums import UserTimezone, PairStatus
+from backend.common.user_role import UserRole
 
 
 class TestMeetingServiceV1(unittest.IsolatedAsyncioTestCase):
@@ -212,6 +213,50 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
         self.user_context = MagicMock(spec=UserContextDto)
         self.start_dt = datetime(2026, 3, 20, 10, 0, tzinfo=timezone.utc)
         self.end_dt = datetime(2026, 3, 20, 11, 0, tzinfo=timezone.utc)
+
+        self.mock_pairs_repo = self.mock_mentorship_pairs_repository
+        self.mock_pairs_repo.get_pairs_by_user_and_round = AsyncMock()
+
+        self.mock_mapper = MagicMock()
+
+        self.meeting_service = MeetingService(
+            logger=self.mock_logger,
+            mentorship_pairs_repository=self.mock_pairs_repo,
+            mentorship_mapper=self.mock_mapper,
+            user_identity_service=self.mock_user_identity_service,
+            google_service=self.mock_google_service,
+        )
+
+        self.user_id = 1
+        self.round_id = 10
+        self.partner_id = 100
+
+        self.mock_current_user.timezone = UserTimezone.AMERICA_NEW_YORK
+
+        self.user_context.roles = [UserRole.MENTORSHIP]
+
+        self.mock_pair_entity = MagicMock(
+            spec=MentorshipPairsEntity,
+            mentor_id=self.partner_id,
+            mentee_id=self.user_id,
+            completed_count=3,
+            meeting_log={
+                "meeting_time_list": [
+                    {
+                        "meeting_id": "m-1",
+                        "start_datetime": "2025-10-01T10:00:00Z",
+                        "end_datetime": "2025-10-01T11:00:00Z",
+                        "is_completed": True,
+                    }
+                ],
+                "google_meetings": [],
+            },
+        )
+
+        self.mock_user_identity_service.get_user.return_value = (
+            self.mock_current_user,
+            False,
+        )
 
     @patch("backend.mentorship.meeting_service.uuid")
     async def test_create_google_meeting_success(self, mock_uuid):
@@ -421,6 +466,79 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             call_kwargs["summary"],
             "Circlecat Mentorship - AliceFirst / BobFirst",
+        )
+
+    async def test_get_meetings_by_user_and_round_v2_success(self):
+        """Test retrieved and mapped meeting logs for a matched user correctly in v2."""
+        self.mock_pairs_repo.get_pairs_by_user_and_round.return_value = [
+            self.mock_pair_entity
+        ]
+
+        self.user_context.roles = [UserRole.MENTORSHIP_ADMIN]
+        stub_dto = MagicMock(spec=MeetingDto)
+        self.mock_mapper.map_to_meeting_v2_dto.return_value = stub_dto
+
+        result = await self.meeting_service.get_meetings_by_user_and_round_v2(
+            self.mock_session,
+            self.user_context,
+            self.round_id,
+            include_details=True,
+        )
+
+        self.assertEqual(result, stub_dto)
+        self.mock_pairs_repo.get_pairs_by_user_and_round.assert_awaited_once_with(
+            session=self.mock_session,
+            user_id=self.user_id,
+            round_id=self.round_id,
+        )
+        self.mock_mapper.map_to_meeting_v2_dto.assert_called_once_with(
+            round_id=self.round_id,
+            user_timezone=self.mock_current_user.timezone,
+            grouped_pairs=[(self.mock_pair_entity, self.partner_id)],
+            include_details=True,
+        )
+
+    async def test_get_meetings_by_user_and_round_v2_no_pair_found(self):
+        """Verify that an empty MeetingDto is returned when no mentorship pairs exist in v2."""
+        self.user_context.roles = [UserRole.MENTORSHIP]
+        self.mock_pairs_repo.get_pairs_by_user_and_round.return_value = []
+
+        result = await self.meeting_service.get_meetings_by_user_and_round_v2(
+            self.mock_session,
+            self.user_context,
+            self.round_id,
+            include_details=False,
+        )
+
+        self.assertIsInstance(result, MeetingDto)
+        self.assertEqual(result.round_id, self.round_id)
+        self.assertEqual(result.user_timezone, UserTimezone.AMERICA_NEW_YORK)
+        self.assertEqual(len(result.meeting_info), 0)
+
+        self.mock_mapper.map_to_meeting_v2_dto.assert_not_called()
+
+    async def test_get_meetings_by_user_and_round_v2_non_admin_detail_not_allowed(self):
+        """Verify detail fields are not allowed for non-admin users even when include_details=True."""
+        self.mock_pairs_repo.get_pairs_by_user_and_round.return_value = [
+            self.mock_pair_entity
+        ]
+        self.user_context.roles = [UserRole.MENTORSHIP]
+
+        stub_dto = MagicMock(spec=MeetingDto)
+        self.mock_mapper.map_to_meeting_v2_dto.return_value = stub_dto
+
+        await self.meeting_service.get_meetings_by_user_and_round_v2(
+            self.mock_session,
+            self.user_context,
+            self.round_id,
+            include_details=True,
+        )
+
+        self.mock_mapper.map_to_meeting_v2_dto.assert_called_once_with(
+            round_id=self.round_id,
+            user_timezone=self.mock_current_user.timezone,
+            grouped_pairs=[(self.mock_pair_entity, self.partner_id)],
+            include_details=False,
         )
 
 

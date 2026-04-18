@@ -28,6 +28,7 @@ class TestMentorshipController(unittest.IsolatedAsyncioTestCase):
 
         self.mock_meeting_service = MagicMock()
         self.mock_meeting_service.get_meetings_by_user_and_round = AsyncMock()
+        self.mock_meeting_service.get_meetings_by_user_and_round_v2 = AsyncMock()
         self.mock_meeting_service.upsert_meetings = AsyncMock()
         self.mock_meeting_service.create_google_meeting = AsyncMock()
 
@@ -416,6 +417,33 @@ class TestMentorshipController(unittest.IsolatedAsyncioTestCase):
             )
 
         self.mock_meeting_service.create_google_meeting.assert_not_awaited()
+
+    async def test_get_meetings_for_user_v2(self):
+        """Test retrieve mentorship meeting logs for current user in v2."""
+        self.mock_launchdarkly_service.is_create_google_meeting_enabled.return_value = True
+
+        mock_user = MagicMock(spec=UserContextDto, sub="valid-sub")
+        mock_round_id = 1
+        mock_details = True
+        mock_meeting_data = MagicMock()
+
+        self.mock_meeting_service.get_meetings_by_user_and_round_v2.return_value = (
+            mock_meeting_data
+        )
+
+        response = await self.controller.get_meetings_for_user_v2(
+            current_user=mock_user, round_id=mock_round_id, include_details=mock_details
+        )
+
+        self.mock_meeting_service.get_meetings_by_user_and_round_v2.assert_awaited_once_with(
+            session=self.mock_session, user_context=mock_user, round_id=mock_round_id, include_details=mock_details
+        )
+
+        self.mock_api_response.assert_called_once_with(
+            message="Successfully fetched mentorship meeting logs.",
+            data=mock_meeting_data,
+        )
+        self.assertEqual(response["data"], mock_meeting_data)
 
 
 if __name__ == "__main__":

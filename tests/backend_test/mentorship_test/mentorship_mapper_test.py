@@ -301,6 +301,7 @@ class TestMentorshipMapper(unittest.TestCase):
         """Test mapping manual and google meetings into MeetingDto correctly."""
         pair_entity = self.pair_entities[0]
         partner_id = pair_entity.mentor_id
+        pair_entity.completed_count = 2
 
         pair_entity.meeting_log = {
             "meeting_time_list": [
@@ -340,7 +341,7 @@ class TestMentorshipMapper(unittest.TestCase):
         dto = self.mapper.map_to_meeting_v2_dto(
             round_id=1,
             user_timezone=UserTimezone.ASIA_SHANGHAI,
-            grouped_pairs=[(pair_entity, partner_id, 2)],
+            grouped_pairs=[(pair_entity, partner_id)],
         )
         info = dto.meeting_info[0]
 
@@ -362,9 +363,10 @@ class TestMentorshipMapper(unittest.TestCase):
         self.assertTrue(info.meeting_time_list[2].is_completed)
 
     def test_map_to_meeting_v2_dto_detail_false_excludes_google_extra_fields(self):
-        """Test google meeting extra fields are not populated when detail=False."""
+        """Test google meeting extra fields are not populated when include_details=False."""
         pair_entity = self.pair_entities[0]
         partner_id = pair_entity.mentor_id
+        pair_entity.completed_count = 1
 
         pair_entity.meeting_log = {
             "meeting_time_list": [],
@@ -387,14 +389,14 @@ class TestMentorshipMapper(unittest.TestCase):
         dto = self.mapper.map_to_meeting_v2_dto(
             round_id=1,
             user_timezone=UserTimezone.ASIA_SHANGHAI,
-            grouped_pairs=[(pair_entity, partner_id, 2)],
-            detail=False,
+            grouped_pairs=[(pair_entity, partner_id)],
+            include_details=False,
         )
         info = dto.meeting_info[0]
         google_meeting = info.meeting_time_list[0]
 
         self.assertEqual(len(info.meeting_time_list), 1)
-        self.assertEqual(info.completed_meetings_count, 2)
+        self.assertEqual(info.completed_meetings_count, 1)
         self.assertEqual(google_meeting.meeting_id, "google-1")
         self.assertIsNone(google_meeting.has_unknown_absent)
         self.assertIsNone(google_meeting.absent_user_id)
@@ -402,9 +404,10 @@ class TestMentorshipMapper(unittest.TestCase):
         self.assertIsNone(google_meeting.late_user_ids)
 
     def test_map_to_meeting_v2_dto_detail_true_includes_google_extra_fields(self):
-        """Test google meeting extra fields are populated when detail=True."""
+        """Test google meeting extra fields are populated when include_details=True."""
         pair_entity = self.pair_entities[0]
         partner_id = pair_entity.mentor_id
+        pair_entity.completed_count = 1
 
         pair_entity.meeting_log = {
             "meeting_time_list": [],
@@ -427,14 +430,14 @@ class TestMentorshipMapper(unittest.TestCase):
         dto = self.mapper.map_to_meeting_v2_dto(
             round_id=1,
             user_timezone=UserTimezone.ASIA_SHANGHAI,
-            grouped_pairs=[(pair_entity, partner_id, 2)],
-            detail=True,
+            grouped_pairs=[(pair_entity, partner_id)],
+            include_details=True,
         )
         info = dto.meeting_info[0]
         google_meeting = info.meeting_time_list[0]
 
         self.assertEqual(len(info.meeting_time_list), 1)
-        self.assertEqual(info.completed_meetings_count, 2)
+        self.assertEqual(info.completed_meetings_count, 1)
         self.assertEqual(google_meeting.meeting_id, "google-1")
         self.assertTrue(google_meeting.has_unknown_absent)
         self.assertEqual(google_meeting.absent_user_id, 123)
@@ -445,11 +448,12 @@ class TestMentorshipMapper(unittest.TestCase):
         """Test mapping pair entities with None meeting log returns empty meeting list."""
         pair_entity = self.pair_entities[1]
         partner_id = pair_entity.mentor_id
+        pair_entity.completed_count = 0
 
         dto = self.mapper.map_to_meeting_v2_dto(
             round_id=2,
             user_timezone=UserTimezone.ASIA_SHANGHAI,
-            grouped_pairs=[(pair_entity, partner_id, 0)],
+            grouped_pairs=[(pair_entity, partner_id)],
         )
 
         self.assertIsInstance(dto, MeetingDto)
@@ -463,6 +467,7 @@ class TestMentorshipMapper(unittest.TestCase):
         """Test mapping works when meeting_time_list key does not exist."""
         pair_entity = self.pair_entities[0]
         partner_id = pair_entity.mentor_id
+        pair_entity.completed_count = 1
 
         pair_entity.meeting_log = {
             "google_meetings": [
@@ -484,8 +489,8 @@ class TestMentorshipMapper(unittest.TestCase):
         dto = self.mapper.map_to_meeting_v2_dto(
             round_id=1,
             user_timezone=UserTimezone.ASIA_SHANGHAI,
-            grouped_pairs=[(pair_entity, partner_id, 2)],
-            detail=True,
+            grouped_pairs=[(pair_entity, partner_id)],
+            include_details=True,
         )
 
         self.assertIsInstance(dto, MeetingDto)
@@ -493,7 +498,7 @@ class TestMentorshipMapper(unittest.TestCase):
 
         info = dto.meeting_info[0]
         self.assertEqual(len(info.meeting_time_list), 1)
-        self.assertEqual(info.completed_meetings_count, 2)
+        self.assertEqual(info.completed_meetings_count, 1)
 
         google_meeting = info.meeting_time_list[0]
         self.assertEqual(google_meeting.meeting_id, "google-1")

@@ -13,6 +13,7 @@ from backend.dto.google_meeting_response_detail_dto import (
     GoogleMeetingResponseDetailDto,
 )
 from backend.dto.user_context_dto import UserContextDto
+from backend.common.user_role import UserRole
 
 
 class MeetingService:
@@ -335,4 +336,59 @@ class MeetingService:
         return any(
             new_start < e["end_datetime"] and new_end > e["start_datetime"]
             for e in existing_slots
+        )
+
+    async def get_meetings_by_user_and_round_v2(
+        self, session: AsyncSession, user_context: UserContextDto, round_id: int,
+        include_details: bool,
+    ) -> MeetingDto:
+        """
+        Retrieve the mentorship meeting logs for the current user in a specific round (v2).
+
+        This method resolves the current user, determines whether detailed output is allowed,
+        fetches the user's mentorship pairs for the given round, and maps the result into a
+        MeetingDto.
+        """
+        (current_user, should_commit) = await self.user_identity_service.get_user(
+            session=session, user_info=user_context
+        )
+
+        if should_commit:
+            await session.commit()
+
+        is_admin = UserRole.MENTORSHIP_ADMIN in (user_context.roles or [])
+        is_detail_allowed = include_details and is_admin
+
+        pair_entity = (
+            await self.mentorship_pairs_repository.get_pairs_by_user_and_round(
+                session=session,
+                user_id=current_user.user_id,
+                round_id=round_id,
+            )
+        )
+
+        if not pair_entity:
+            self.logger.warning(
+                "[MeetingService] Fetch pairs failed: no pair record found for user %s in round %s",
+                current_user.user_id,
+                round_id,
+            )
+            return MeetingDto(
+                round_id=round_id,
+                user_timezone=current_user.timezone,
+                meeting_info=[],
+            )
+
+        grouped_pairs = []
+        for p in pair_entity:
+            partner_id = (
+                p.mentor_id if p.mentee_id == current_user.user_id else p.mentee_id
+            )
+            grouped_pairs.append((p, partner_id))
+
+        return self.mentorship_mapper.map_to_meeting_v2_dto(
+            round_id=round_id,
+            user_timezone=current_user.timezone,
+            grouped_pairs=grouped_pairs,
+            include_details=is_detail_allowed,
         )

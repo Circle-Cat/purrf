@@ -142,16 +142,16 @@ class MentorshipMapper:
         self,
         round_id: int,
         user_timezone: UserTimezone,
-        grouped_pairs: list[tuple[MentorshipPairsEntity, int, int]],
-        detail: bool = False,
+        grouped_pairs: list[tuple[MentorshipPairsEntity, int]],
+        include_details: bool = False,
     ) -> MeetingDto:
         """
-        Map (MentorshipPairsEntity, partner_id, completed_meetings_count) tuples to MeetingDto.
+        Map (MentorshipPairsEntity, partner_id) tuples to MeetingDto.
         Map pair tuples to MeetingDto by merging both manual and Google meetings.
         Compared with map_to_meeting_dto, this method:
             - merges meetings from both `meeting_time_list` (manual) and `google_meetings`
             - supports Google Meet-specific fields (e.g., absence/late information)
-            - conditionally includes additional fields when `detail=True`
+            - conditionally includes additional fields when ` include_details=True`
         """
         return MeetingDto(
             round_id=round_id,
@@ -162,17 +162,17 @@ class MentorshipMapper:
                     participant_role=ParticipantRole.MENTEE
                     if partner_id == pair.mentor_id
                     else ParticipantRole.MENTOR,
-                    meeting_time_list=self._build_meeting_time_list(pair, detail),
-                    completed_meetings_count=completed_meetings_count,
+                    meeting_time_list=self._build_meeting_time_list(pair, include_details),
+                    completed_meetings_count=pair.completed_count or 0,
                 )
-                for pair, partner_id, completed_meetings_count in grouped_pairs
+                for pair, partner_id in grouped_pairs
             ],
         )
 
     def _build_meeting_time_list(
         self,
         pair: MentorshipPairsEntity,
-        detail: bool,
+        include_details: bool,
     ) -> list[MeetingTimeDto]:
         meeting_log = pair.meeting_log or {}
 
@@ -190,7 +190,7 @@ class MentorshipMapper:
                 is_completed=meeting["is_completed"],
             )
 
-            if detail:
+            if include_details:
                 dto.has_unknown_absent = meeting.get("has_unknown_absent")
                 dto.absent_user_id = meeting.get("absent_user_id")
                 dto.has_unknown_late = meeting.get("has_unknown_late")

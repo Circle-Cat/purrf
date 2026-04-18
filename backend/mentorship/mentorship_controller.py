@@ -355,3 +355,31 @@ class MentorshipController:
                 data=result,
             )
         raise PermissionError("Create Google meeting feature is not yet available.")
+
+    async def get_meetings_for_user_v2(self, current_user: UserContextDto, round_id: int, include_details: bool):
+        """
+        Retrieve mentorship meeting logs for the current user in a specific round (v2).
+
+        Args:
+            current_user (UserContextDto): The authenticated user context.
+            round_id (int): The mentorship round ID.
+            include_details (bool): Whether detailed meeting fields are requested.
+
+        Returns:
+            API response containing the mentorship meeting logs.
+        """
+        if self.launchdarkly_service.is_create_google_meeting_enabled(current_user):
+            async with self.database.session() as session:
+                meetings: MeetingDto = (
+                    await self.meeting_service.get_meetings_by_user_and_round_v2(
+                        session=session,
+                        user_context=current_user,
+                        round_id=round_id,
+                        include_details=include_details,
+                    )
+                )
+            return api_response(
+                message="Successfully fetched mentorship meeting logs.",
+                data=meetings,
+            )
+        raise PermissionError("Google meeting feature is not yet available.")
