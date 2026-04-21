@@ -1,15 +1,15 @@
 import unittest
-from unittest.mock import MagicMock, patch
-from fastapi import FastAPI
+from unittest.mock import MagicMock, patch, AsyncMock
+from fastapi import FastAPI, APIRouter
 from backend.utils.fast_app_factory import FastAppFactory
 
 
 class TestFastAppFactory(unittest.TestCase):
     def setUp(self):
         self.mock_controller = MagicMock()
-        self.mock_controller.router = MagicMock()
+        self.mock_controller.router = APIRouter()
         self.mock_profile_controller = MagicMock()
-        self.mock_profile_controller.router = MagicMock()
+        self.mock_profile_controller.router = APIRouter()
         self.mock_service = MagicMock()
 
         self.factory = FastAppFactory(
@@ -22,6 +22,7 @@ class TestFastAppFactory(unittest.TestCase):
             profile_controller=self.mock_profile_controller,
             mentorship_controller=self.mock_controller,
             launchdarkly_client=MagicMock(),
+            database=MagicMock(),
         )
 
     def test_factory_initialization(self):
@@ -65,6 +66,41 @@ class TestFastAppFactory(unittest.TestCase):
         from backend.utils.auth_middleware import AuthMiddleware
 
         self.assertIn(AuthMiddleware, middleware_classes)
+
+
+class TestFastAppFactoryLifespan(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.mock_controller = MagicMock()
+        self.mock_controller.router = APIRouter()
+        self.mock_profile_controller = MagicMock()
+        self.mock_profile_controller.router = APIRouter()
+        self.mock_service = MagicMock()
+        self.mock_launchdarkly_client = MagicMock()
+
+        self.mock_database = MagicMock()
+        self.mock_database.close = AsyncMock()
+
+        self.factory = FastAppFactory(
+            authentication_controller=self.mock_controller,
+            authentication_service=self.mock_service,
+            notification_controller=self.mock_controller,
+            historical_controller=self.mock_controller,
+            consumer_controller=self.mock_controller,
+            internal_activity_controller=self.mock_controller,
+            profile_controller=self.mock_profile_controller,
+            mentorship_controller=self.mock_controller,
+            launchdarkly_client=self.mock_launchdarkly_client,
+            database=self.mock_database,
+        )
+
+    async def test_lifespan_closes_database_on_shutdown(self):
+        """Test that database.close is awaited during FastAPI lifespan shutdown."""
+        app = self.factory.create_app()
+
+        async with app.router.lifespan_context(app):
+            pass
+
+        self.mock_database.close.assert_awaited_once()
 
 
 if __name__ == "__main__":

@@ -509,6 +509,7 @@ class TestAppDependencyBuilder(TestCase):
             profile_controller=mock_profile_controller_cls.return_value,
             mentorship_controller=mock_mentorship_controller_cls.return_value,
             launchdarkly_client=mock_launchdarkly_client_cls.return_value,
+            database=mock_database_cls.return_value,
         )
 
         # Assert that the builder's internal attributes are the created mock instances

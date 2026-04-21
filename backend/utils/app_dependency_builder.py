@@ -460,4 +460,5 @@ class AppDependencyBuilder:
             profile_controller=self.profile_controller,
             mentorship_controller=self.mentorship_controller,
             launchdarkly_client=self.launchdarkly_client,
+            database=self.database,
         )

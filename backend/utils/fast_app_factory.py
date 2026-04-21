@@ -23,6 +23,7 @@ class FastAppFactory:
         profile_controller,
         mentorship_controller,
         launchdarkly_client,
+        database,
     ):
         """
         Initialize the factory.
@@ -37,6 +38,7 @@ class FastAppFactory:
             profile_controller: Optional ProfileController instance to register profile routes.
             mentorship_controller: An instance of MentorshipController that manages API routes for mentorship services.
             launchdarkly_client: LaunchDarklyClient instance for feature flag lifecycle management.
+            database: Database instance for application lifecycle cleanup.
         """
         self.authentication_controller = authentication_controller
         self.authentication_service = authentication_service
@@ -47,6 +49,7 @@ class FastAppFactory:
         self.profile_controller = profile_controller
         self.mentorship_controller = mentorship_controller
         self.launchdarkly_client = launchdarkly_client
+        self.database = database
 
     def create_app(self, is_prod: bool = False) -> FastAPI:
         """
@@ -82,6 +85,7 @@ class FastAppFactory:
         async def lifespan(app):
             self.launchdarkly_client.initialize()
             yield
+            await self.database.close()
             self.launchdarkly_client.close()
 
         # Initialize the FastAPI app
