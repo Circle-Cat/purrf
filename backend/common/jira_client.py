@@ -2,6 +2,7 @@ import os
 from jira import JIRA
 from backend.common.environment_constants import (
     JIRA_PASSWORD,
+    TAILSCALE_PROXY,
 )
 
 
@@ -43,10 +44,10 @@ class JiraClient:
 
         try:
             jira_client = self.retry_utils.get_retry_on_transient(self._connect_to_jira)
-            self.logger.info("Created Jira client successfully.")
+            self.logger.info("[JiraClient] Created Jira client successfully.")
             self._jira_client = jira_client
         except Exception as e:
-            self.logger.error(f"Failed to create Jira client: {e}")
+            self.logger.error("[JiraClient] Failed to create Jira client: %s", e)
             raise
 
     def _connect_to_jira(self) -> JIRA:
@@ -59,12 +60,16 @@ class JiraClient:
                 f"Jira password not found in environment variable: {JIRA_PASSWORD}"
             )
 
+        proxy = os.getenv(TAILSCALE_PROXY)
         client = JIRA(
             server=self._jira_server,
             basic_auth=(self._jira_user, jira_password),
+            proxies={"http": proxy, "https": proxy}
+            if proxy
+            else {"http": "", "https": ""},
         )
         client.server_info()
-        self.logger.debug("Jira connection verified successfully.")
+        self.logger.debug("[JiraClient] Jira connection verified successfully.")
         return client
 
     def get_jira_client(self) -> JIRA:

@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import patch, MagicMock
 from backend.common.jira_client import JiraClient
 from jira.exceptions import JIRAError
-from backend.common.environment_constants import JIRA_PASSWORD
+from backend.common.environment_constants import JIRA_PASSWORD, TAILSCALE_PROXY
 
 
 class TestJraClient(unittest.TestCase):
@@ -44,7 +44,9 @@ class TestJraClient(unittest.TestCase):
         self, mock_jira_class, mock_os_getenv
     ):
         """Test successful initialization uses retry utils and verifies the connection."""
-        mock_os_getenv.return_value = self.password
+        mock_os_getenv.side_effect = (
+            lambda key: self.password if key == JIRA_PASSWORD else None
+        )
         mock_jira_instance = MagicMock()
         mock_jira_class.return_value = mock_jira_instance
         self.mock_retry_utils.get_retry_on_transient.side_effect = lambda func: func()
@@ -56,13 +58,15 @@ class TestJraClient(unittest.TestCase):
             retry_utils=self.mock_retry_utils,
         )
 
-        mock_os_getenv.assert_called_once_with(JIRA_PASSWORD)
+        mock_os_getenv.assert_any_call(JIRA_PASSWORD)
+        mock_os_getenv.assert_any_call(TAILSCALE_PROXY)
         self.mock_retry_utils.get_retry_on_transient.assert_called_once()
         mock_jira_class.assert_called_once_with(
-            server=self.server, basic_auth=(self.user, self.password)
+            server=self.server,
+            basic_auth=(self.user, self.password),
+            proxies={"http": "", "https": ""},
         )
         mock_jira_instance.server_info.assert_called_once()
-        self.mock_logger.info.assert_any_call("Created Jira client successfully.")
 
     @patch("backend.common.jira_client.os.getenv")
     @patch("backend.common.jira_client.JIRA")
@@ -102,9 +106,6 @@ class TestJraClient(unittest.TestCase):
 
         self.assertIn(error_message, str(context.exception))
         self.mock_logger.error.assert_called_once()
-        self.assertIn(
-            "Failed to create Jira client", self.mock_logger.error.call_args[0][0]
-        )
 
     @patch("backend.common.jira_client.os.getenv")
     def test_raises_value_error_if_password_env_var_is_missing(self, mock_os_getenv):

@@ -159,6 +159,26 @@ class TestQueryChanges(TestCase):
         with self.assertRaises(json.JSONDecodeError):
             self.client.get_change_by_change_id("12345")
 
+    @patch("backend.common.gerrit_client.requests.Session")
+    def test_session_proxies_empty_when_tailscale_proxy_not_set(
+        self, mock_session_class
+    ):
+        """Tests that session proxies are empty strings when TAILSCALE_PROXY is absent."""
+        mock_session = MagicMock()
+        mock_session_class.return_value = mock_session
+        GerritClient()
+        self.assertEqual(mock_session.proxies, {"http": "", "https": ""})
+
+    @patch("backend.common.gerrit_client.requests.Session")
+    @patch.dict(os.environ, {"TAILSCALE_PROXY": "http://tailscale-proxy:8080"})
+    def test_session_proxies_set_when_tailscale_proxy_present(self, mock_session_class):
+        """Tests that session proxies are configured when TAILSCALE_PROXY is set."""
+        proxy_url = "http://tailscale-proxy:8080"
+        mock_session = MagicMock()
+        mock_session_class.return_value = mock_session
+        GerritClient()
+        self.assertEqual(mock_session.proxies, {"http": proxy_url, "https": proxy_url})
+
 
 if __name__ == "__main__":
     main()

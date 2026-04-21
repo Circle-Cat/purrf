@@ -5,6 +5,7 @@ from backend.common.environment_constants import (
     GERRIT_URL,
     GERRIT_USER,
     GERRIT_HTTP_PASS,
+    TAILSCALE_PROXY,
 )
 
 
@@ -30,6 +31,10 @@ class GerritClient:
 
         self.session = requests.Session()
         self.session.auth = (self._username, self._http_password)
+        proxy = os.environ.get(TAILSCALE_PROXY)
+        self.session.proxies = (
+            {"http": proxy, "https": proxy} if proxy else {"http": "", "https": ""}
+        )
 
     def query_changes(
         self,
