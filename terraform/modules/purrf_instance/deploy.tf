@@ -36,6 +36,7 @@ resource "kubernetes_secret" "purrf_app" {
     GOOGLE_CHAT_SUBSCRIPTION_ID = google_pubsub_subscription.subscriptions["chat-google-events"].name
     GERRIT_SUBSCRIPTION_ID      = google_pubsub_subscription.subscriptions["gerrit-events"].name
     LAUNCHDARKLY_SDK_KEY        = local.ld_sdk_key
+    TAILSCALE_PROXY             = var.tailscale_proxy
   }
 }
 

@@ -3,7 +3,7 @@ resource "azuread_application_federated_identity_credential" "azure_wif" {
   audiences      = ["api://AzureADTokenExchange"]
   description    = null
   display_name   = local.name_prefix
-  issuer         = "https://container.googleapis.com/v1/projects/circlecat/locations/us-west1/clusters/dev"
+  issuer         = "https://container.googleapis.com/v1/projects/${var.k8s_project_id}/locations/${var.k8s_cluster_location}/clusters/${var.k8s_cluster_name}"
   subject        = "system:serviceaccount:${local.name_prefix}:${local.name_prefix}"
 }
 

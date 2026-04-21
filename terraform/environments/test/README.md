@@ -6,6 +6,7 @@
 | <a name="requirement_azurerm"></a> [azurerm](#requirement\_azurerm) | =4.1.0 |
 | <a name="requirement_google"></a> [google](#requirement\_google) | ~> 5.0 |
 | <a name="requirement_helm"></a> [helm](#requirement\_helm) | ~> 3.1 |
+| <a name="requirement_kubernetes"></a> [kubernetes](#requirement\_kubernetes) | ~> 2.0 |
 | <a name="requirement_launchdarkly"></a> [launchdarkly](#requirement\_launchdarkly) | ~> 2.0 |
 | <a name="requirement_neon"></a> [neon](#requirement\_neon) | >= 0.2.2 |
 | <a name="requirement_upstash"></a> [upstash](#requirement\_upstash) | 1.5.3 |
@@ -35,7 +36,6 @@
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|:--------:|
-| <a name="input_azure_client_secert"></a> [azure\_client\_secert](#input\_azure\_client\_secert) | n/a | `string` | n/a | yes |
 | <a name="input_gerrit_http_pass"></a> [gerrit\_http\_pass](#input\_gerrit\_http\_pass) | n/a | `string` | n/a | yes |
 | <a name="input_jira_password"></a> [jira\_password](#input\_jira\_password) | n/a | `string` | n/a | yes |
 | <a name="input_launchdarkly_access_token"></a> [launchdarkly\_access\_token](#input\_launchdarkly\_access\_token) | n/a | `string` | n/a | yes |
@@ -45,8 +45,12 @@
 | Name | Description |
 |------|-------------|
 | <a name="output_auth0_client_id"></a> [auth0\_client\_id](#output\_auth0\_client\_id) | n/a |
+| <a name="output_chat_google_events_topic_id"></a> [chat\_google\_events\_topic\_id](#output\_chat\_google\_events\_topic\_id) | n/a |
 | <a name="output_default_gsa_account"></a> [default\_gsa\_account](#output\_default\_gsa\_account) | n/a |
+| <a name="output_gcp_project_id"></a> [gcp\_project\_id](#output\_gcp\_project\_id) | n/a |
 | <a name="output_launchdarkly_client_id"></a> [launchdarkly\_client\_id](#output\_launchdarkly\_client\_id) | n/a |
+| <a name="output_microsoft_chat_lifecycle_notification_url"></a> [microsoft\_chat\_lifecycle\_notification\_url](#output\_microsoft\_chat\_lifecycle\_notification\_url) | n/a |
+| <a name="output_microsoft_chat_notification_url"></a> [microsoft\_chat\_notification\_url](#output\_microsoft\_chat\_notification\_url) | n/a |
 | <a name="output_neon_database_owner"></a> [neon\_database\_owner](#output\_neon\_database\_owner) | n/a |
 | <a name="output_neon_default_branch_id"></a> [neon\_default\_branch\_id](#output\_neon\_default\_branch\_id) | n/a |
 | <a name="output_neon_project_id"></a> [neon\_project\_id](#output\_neon\_project\_id) | n/a |

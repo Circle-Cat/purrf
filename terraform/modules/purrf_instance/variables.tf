@@ -13,6 +13,18 @@ variable "k8s_project_id" {
   default     = "circlecat"
 }
 
+variable "k8s_cluster_name" {
+  description = "GKE cluster name (used for Azure Workload Identity Federation issuer URL)"
+  type        = string
+  default     = "dev"
+}
+
+variable "k8s_cluster_location" {
+  description = "GKE cluster region or zone (used for Azure Workload Identity Federation issuer URL)"
+  type        = string
+  default     = "us-west1"
+}
+
 variable "base_domain" {
   description = "Base domain name"
   type        = string
@@ -125,6 +137,12 @@ variable "beta_enabled" {
 
 variable "beta_segment_key" {
   description = "LaunchDarkly segment key for beta users"
+  type        = string
+  default     = ""
+}
+
+variable "tailscale_proxy" {
+  description = "Tailscale outbound proxy URL. If empty, TAILSCALE_PROXY is not set."
   type        = string
   default     = ""
 }

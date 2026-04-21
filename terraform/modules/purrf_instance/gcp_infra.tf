@@ -72,8 +72,9 @@ resource "google_project_service" "access_context_manager" {
 
 # Create a storage bucket to hold the packaged function code
 resource "google_storage_bucket" "function_bucket" {
-  name     = "${local.name_prefix}-function-bucket"
-  location = var.gcp_region
+  name          = "${local.name_prefix}-function-bucket"
+  location      = var.gcp_region
+  force_destroy = true
 }
 
 # Grants public read access to the Cloud Functions code bucket
@@ -139,6 +140,7 @@ resource "google_storage_bucket_object" "function_zips" {
 resource "google_cloudfunctions_function" "functions" {
   for_each              = local.functions_config
   name                  = "${local.name_prefix}-${each.key}"
+  region                = var.gcp_region
   runtime               = "python311"
   entry_point           = each.value.entry_point
   trigger_http          = true
