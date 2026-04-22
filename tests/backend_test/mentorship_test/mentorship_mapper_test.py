@@ -1,6 +1,6 @@
 import unittest
 import uuid
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 
 from backend.dto.preference_dto import SpecificIndustryDto, SkillsetsDto
 from backend.dto.registration_dto import GlobalPreferencesDto, RoundPreferencesDto
@@ -32,15 +32,15 @@ class TestMentorshipMapper(unittest.TestCase):
         self.mapper = MentorshipMapper()
 
         self.test_dates = {
-            "promotion_start_at": date(2025, 7, 1),
-            "application_deadline_at": date(2025, 7, 15),
-            "review_start_at": date(2025, 7, 16),
-            "acceptance_notification_at": date(2025, 7, 30),
-            "matching_completed_at": date(2025, 8, 5),
-            "match_notification_at": date(2025, 8, 6),
-            "first_meeting_deadline_at": date(2025, 8, 20),
-            "meetings_completion_deadline_at": date(2025, 11, 20),
-            "feedback_deadline_at": date(2025, 11, 22),
+            "promotion_start_at": "2025-07-02T06:59:59Z",
+            "application_deadline_at": "2025-07-16T06:59:59Z",
+            "review_start_at": "2025-07-17T06:59:59Z",
+            "acceptance_notification_at": "2025-07-31T06:59:59Z",
+            "matching_completed_at": "2025-08-06T06:59:59Z",
+            "match_notification_at": "2025-08-07T06:59:59Z",
+            "first_meeting_deadline_at": "2025-08-21T06:59:59Z",
+            "meetings_completion_deadline_at": "2025-11-21T07:59:59Z",
+            "feedback_deadline_at": "2025-11-23T07:59:59Z",
         }
 
         self.mentorship_round_entities = [

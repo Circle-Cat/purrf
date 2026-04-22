@@ -156,13 +156,13 @@ class TestMentorShipRoundRepository(BaseRepositoryTestLib):
         self.assertEqual(updated_mentorship_round.required_meetings, 7)
 
     async def test_get_running_round_id_within_window(self):
-        """Test returns round_id when today falls within the meeting window."""
-        today = datetime.now(timezone.utc).date()
+        """Test returns round_id when now falls within the meeting window."""
+        now = datetime.now(timezone.utc)
         round_entity = MentorshipRoundEntity(
             name="active-round",
             description={
-                "match_notification_at": str(today - timedelta(days=7)),
-                "meetings_completion_deadline_at": str(today + timedelta(days=7)),
+                "match_notification_at": (now - timedelta(days=7)).isoformat(),
+                "meetings_completion_deadline_at": (now + timedelta(days=7)).isoformat(),
             },
             required_meetings=5,
         )
@@ -173,13 +173,13 @@ class TestMentorShipRoundRepository(BaseRepositoryTestLib):
         self.assertEqual(result, round_entity.round_id)
 
     async def test_get_running_round_id_on_start_boundary(self):
-        """Test returns round_id when today equals match_notification_at (inclusive)."""
-        today = datetime.now(timezone.utc).date()
+        """Test returns round_id when match_notification_at is just before now (inclusive)."""
+        now = datetime.now(timezone.utc)
         round_entity = MentorshipRoundEntity(
             name="start-boundary-round",
             description={
-                "match_notification_at": str(today),
-                "meetings_completion_deadline_at": str(today + timedelta(days=7)),
+                "match_notification_at": (now - timedelta(seconds=1)).isoformat(),
+                "meetings_completion_deadline_at": (now + timedelta(days=7)).isoformat(),
             },
             required_meetings=5,
         )
@@ -190,13 +190,13 @@ class TestMentorShipRoundRepository(BaseRepositoryTestLib):
         self.assertEqual(result, round_entity.round_id)
 
     async def test_get_running_round_id_on_end_boundary(self):
-        """Test returns round_id when today equals meetings_completion_deadline_at (inclusive)."""
-        today = datetime.now(timezone.utc).date()
+        """Test returns round_id when meetings_completion_deadline_at is just after now (inclusive)."""
+        now = datetime.now(timezone.utc)
         round_entity = MentorshipRoundEntity(
             name="end-boundary-round",
             description={
-                "match_notification_at": str(today - timedelta(days=7)),
-                "meetings_completion_deadline_at": str(today),
+                "match_notification_at": (now - timedelta(days=7)).isoformat(),
+                "meetings_completion_deadline_at": (now + timedelta(seconds=1)).isoformat(),
             },
             required_meetings=5,
         )
@@ -207,13 +207,13 @@ class TestMentorShipRoundRepository(BaseRepositoryTestLib):
         self.assertEqual(result, round_entity.round_id)
 
     async def test_get_running_round_id_before_window(self):
-        """Test returns None when today is before match_notification_at."""
-        today = datetime.now(timezone.utc).date()
+        """Test returns None when now is before match_notification_at."""
+        now = datetime.now(timezone.utc)
         round_entity = MentorshipRoundEntity(
             name="future-round",
             description={
-                "match_notification_at": str(today + timedelta(days=1)),
-                "meetings_completion_deadline_at": str(today + timedelta(days=7)),
+                "match_notification_at": (now + timedelta(days=1)).isoformat(),
+                "meetings_completion_deadline_at": (now + timedelta(days=7)).isoformat(),
             },
             required_meetings=5,
         )
@@ -224,13 +224,13 @@ class TestMentorShipRoundRepository(BaseRepositoryTestLib):
         self.assertIsNone(result)
 
     async def test_get_running_round_id_after_window(self):
-        """Test returns None when today is past meetings_completion_deadline_at."""
-        today = datetime.now(timezone.utc).date()
+        """Test returns None when now is past meetings_completion_deadline_at."""
+        now = datetime.now(timezone.utc)
         round_entity = MentorshipRoundEntity(
             name="past-round",
             description={
-                "match_notification_at": str(today - timedelta(days=7)),
-                "meetings_completion_deadline_at": str(today - timedelta(days=1)),
+                "match_notification_at": (now - timedelta(days=7)).isoformat(),
+                "meetings_completion_deadline_at": (now - timedelta(days=1)).isoformat(),
             },
             required_meetings=5,
         )

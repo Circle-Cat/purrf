@@ -1,5 +1,5 @@
 import unittest
-from datetime import date
+from datetime import datetime, timezone
 from unittest.mock import MagicMock, AsyncMock
 from backend.mentorship.rounds_service import RoundsService
 from backend.dto.rounds_dto import RoundsDto
@@ -24,30 +24,20 @@ class TestRoundsService(unittest.IsolatedAsyncioTestCase):
         )
 
         self.timeline_data = TimelineCreateDto(
-            promotion_start_at=date(2025, 12, 1),
-            application_deadline_at=date(2026, 1, 15),
-            review_start_at=date(2026, 1, 16),
-            acceptance_notification_at=date(2026, 1, 25),
-            matching_completed_at=date(2026, 1, 31),
-            match_notification_at=date(2026, 2, 2),
-            first_meeting_deadline_at=date(2026, 2, 25),
-            meetings_completion_deadline_at=date(2026, 5, 25),
-            feedback_deadline_at=date(2026, 6, 10),
+            promotion_start_at=datetime(2025, 12, 2, 7, 59, 59, tzinfo=timezone.utc),
+            application_deadline_at=datetime(2026, 1, 16, 7, 59, 59, tzinfo=timezone.utc),
+            review_start_at=datetime(2026, 1, 17, 7, 59, 59, tzinfo=timezone.utc),
+            acceptance_notification_at=datetime(2026, 1, 26, 7, 59, 59, tzinfo=timezone.utc),
+            matching_completed_at=datetime(2026, 2, 1, 7, 59, 59, tzinfo=timezone.utc),
+            match_notification_at=datetime(2026, 2, 3, 7, 59, 59, tzinfo=timezone.utc),
+            first_meeting_deadline_at=datetime(2026, 2, 26, 7, 59, 59, tzinfo=timezone.utc),
+            meetings_completion_deadline_at=datetime(2026, 5, 26, 6, 59, 59, tzinfo=timezone.utc),
+            feedback_deadline_at=datetime(2026, 6, 11, 6, 59, 59, tzinfo=timezone.utc),
         )
 
     def _timeline_to_dict(self, timeline: TimelineCreateDto) -> dict:
         """Help to convert timeline to dict format."""
-        return {
-            "promotion_start_at": timeline.promotion_start_at.isoformat(),
-            "application_deadline_at": timeline.application_deadline_at.isoformat(),
-            "review_start_at": timeline.review_start_at.isoformat(),
-            "acceptance_notification_at": timeline.acceptance_notification_at.isoformat(),
-            "matching_completed_at": timeline.matching_completed_at.isoformat(),
-            "match_notification_at": timeline.match_notification_at.isoformat(),
-            "first_meeting_deadline_at": timeline.first_meeting_deadline_at.isoformat(),
-            "meetings_completion_deadline_at": timeline.meetings_completion_deadline_at.isoformat(),
-            "feedback_deadline_at": timeline.feedback_deadline_at.isoformat(),
-        }
+        return timeline.model_dump(mode="json", by_alias=False)
 
     async def test_get_all_rounds(self):
         """Test retrieving and mapping of all mentorship rounds."""

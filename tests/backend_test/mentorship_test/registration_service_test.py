@@ -220,7 +220,7 @@ class TestRegistrationService(unittest.IsolatedAsyncioTestCase):
     async def test_update_registration_info_success(self):
         """Test: Post registration info, containing updated global and round preferences."""
         mock_round = MagicMock()
-        mock_round.description = {"application_deadline_at": "2099-01-01"}
+        mock_round.description = {"application_deadline_at": "2099-01-02T07:59:59Z"}
         mock_round.name = "test round"
         self.mock_round_repo.get_by_round_id.return_value = mock_round
 
@@ -299,7 +299,7 @@ class TestRegistrationService(unittest.IsolatedAsyncioTestCase):
     async def test_update_registration_info_expired(self):
         """Test: When the registration period has ended, stop registration."""
         mock_round = MagicMock()
-        mock_round.description = {"application_deadline_at": "2024-01-01"}
+        mock_round.description = {"application_deadline_at": "2024-01-02T07:59:59Z"}
         self.mock_round_repo.get_by_round_id.return_value = mock_round
 
         with self.assertRaisesRegex(ValueError, "has ended"):
@@ -313,7 +313,7 @@ class TestRegistrationService(unittest.IsolatedAsyncioTestCase):
     async def test_update_registration_info_role_override(self):
         """Test: Overrides user-provided role with fallback logic regardless of frontend input."""
         mock_round = MagicMock()
-        mock_round.description = {"application_deadline_at": "2099-01-01"}
+        mock_round.description = {"application_deadline_at": "2099-01-02T07:59:59Z"}
         mock_round.name = "test round"
         self.mock_round_repo.get_by_round_id.return_value = mock_round
         self.mock_user_identity_service.get_user.return_value = (self.mock_user, False)

@@ -1,17 +1,17 @@
-from datetime import date
+from datetime import datetime
 from backend.dto.base_request_dto import BaseRequestDto
 
 
 class TimelineCreateDto(BaseRequestDto):
-    promotion_start_at: date
-    application_deadline_at: date
-    review_start_at: date
-    acceptance_notification_at: date
-    matching_completed_at: date
-    match_notification_at: date
-    first_meeting_deadline_at: date
-    meetings_completion_deadline_at: date
-    feedback_deadline_at: date
+    promotion_start_at: datetime
+    application_deadline_at: datetime
+    review_start_at: datetime
+    acceptance_notification_at: datetime
+    matching_completed_at: datetime
+    match_notification_at: datetime
+    first_meeting_deadline_at: datetime
+    meetings_completion_deadline_at: datetime
+    feedback_deadline_at: datetime
 
 
 class RoundsCreateDto(BaseRequestDto):

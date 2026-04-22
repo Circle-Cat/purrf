@@ -94,8 +94,8 @@ class RegistrationService:
             )
             raise ValueError(f"Round {round_id} missing application deadline.")
 
-        application_deadline = datetime.fromisoformat(raw_deadline).date()
-        register_time = datetime.now(timezone.utc).date()
+        application_deadline = datetime.fromisoformat(raw_deadline)
+        register_time = datetime.now(timezone.utc)
 
         if register_time > application_deadline:
             self.logger.error(

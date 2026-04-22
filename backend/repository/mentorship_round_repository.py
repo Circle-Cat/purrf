@@ -1,6 +1,6 @@
 from backend.entity.mentorship_round_entity import MentorshipRoundEntity
 from datetime import datetime, timezone
-from sqlalchemy import Date, cast, select
+from sqlalchemy import TIMESTAMP, cast, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -66,21 +66,21 @@ class MentorshipRoundRepository:
 
         Returns: The running round ID or None.
         """
-        today = datetime.now(timezone.utc).date()
+        now_utc = datetime.now(timezone.utc)
         result = await session.execute(
             select(MentorshipRoundEntity.round_id).where(
                 cast(
                     MentorshipRoundEntity.description["match_notification_at"].astext,
-                    Date,
+                    TIMESTAMP(timezone=True),
                 )
-                <= today,
+                <= now_utc,
                 cast(
                     MentorshipRoundEntity.description[
                         "meetings_completion_deadline_at"
                     ].astext,
-                    Date,
+                    TIMESTAMP(timezone=True),
                 )
-                >= today,
+                >= now_utc,
             )
         )
         return result.scalars().first()
