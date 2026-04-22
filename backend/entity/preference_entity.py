@@ -22,3 +22,4 @@ class PreferenceEntity(Base):
     networking: Mapped[bool | None] = mapped_column(Boolean)
     project_management: Mapped[bool | None] = mapped_column(Boolean)
     specific_industry: Mapped[dict | None] = mapped_column(JSONB)
+    profile_survey: Mapped[dict | None] = mapped_column(JSONB)

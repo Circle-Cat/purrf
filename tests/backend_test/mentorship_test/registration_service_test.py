@@ -5,6 +5,7 @@ from backend.dto.registration_create_dto import (
     RegistrationCreateDto,
     GlobalPreferencesDto,
     RoundPreferencesDto,
+    ProfileSurveyCreateDto,
 )
 from backend.dto.registration_dto import (
     RegistrationDto,
@@ -12,7 +13,10 @@ from backend.dto.registration_dto import (
     RoundPreferencesDto as RoundPreferencesResponseDto,
 )
 from backend.dto.user_context_dto import UserContextDto
-from backend.dto.preference_dto import SpecificIndustryDto, SkillsetsDto
+from backend.dto.preference_dto import (
+    SpecificIndustryDto,
+    SkillsetsDto,
+)
 from backend.entity.preference_entity import PreferenceEntity
 from backend.entity.mentorship_round_participants_entity import (
     MentorshipRoundParticipantsEntity,
@@ -366,6 +370,98 @@ class TestRegistrationService(unittest.IsolatedAsyncioTestCase):
                 )
 
                 self.mock_session.commit.assert_awaited_once()
+
+    async def test_update_preferences_saves_profile_survey(self):
+        """When profile_survey is provided, it should be serialized with exclude_none and saved."""
+        self.sample_dto.global_preferences.profile_survey = ProfileSurveyCreateDto(
+            career_transition="tech",
+            region="us_west",
+        )
+        existing_entity = PreferenceEntity(user_id=self.user_id)
+        self.mock_preference_repo.get_preferences_by_user_id.return_value = (
+            existing_entity
+        )
+
+        await self.service._update_skill_and_industry_preferences(
+            session=self.mock_session, user_id=self.user_id, data=self.sample_dto
+        )
+
+        self.assertEqual(
+            existing_entity.profile_survey,
+            {"career_transition": "tech", "region": "us_west"},
+        )
+
+    async def test_update_preferences_clears_profile_survey_if_none(self):
+        """When profile_survey is None, the entity field should be set to None."""
+        self.sample_dto.global_preferences.profile_survey = None
+        existing_entity = PreferenceEntity(
+            user_id=self.user_id,
+            profile_survey={"career_transition": "old_value"},
+        )
+        self.mock_preference_repo.get_preferences_by_user_id.return_value = (
+            existing_entity
+        )
+
+        await self.service._update_skill_and_industry_preferences(
+            session=self.mock_session, user_id=self.user_id, data=self.sample_dto
+        )
+
+        self.assertIsNone(existing_entity.profile_survey)
+
+    async def test_update_user_round_preferences_saves_current_stage_and_time_urgency(
+        self,
+    ):
+        """current_stage and time_urgency from round preferences should be saved to entity."""
+        existing_entity = MentorshipRoundParticipantsEntity(
+            user_id=self.user_id,
+            round_id=self.mock_round_id,
+            participant_role=ParticipantRole.MENTOR,
+        )
+        self.mock_participants_repo.get_by_user_id_and_round_id.return_value = (
+            existing_entity
+        )
+
+        self.sample_dto.round_preferences.participant_role = ParticipantRole.MENTOR
+        self.sample_dto.round_preferences.current_stage = "exploring"
+        self.sample_dto.round_preferences.time_urgency = "high"
+
+        await self.service._update_user_round_preferences(
+            session=self.mock_session,
+            user_id=self.user_id,
+            round_id=self.mock_round_id,
+            data=self.sample_dto,
+        )
+
+        self.assertEqual(existing_entity.current_stage, "exploring")
+        self.assertEqual(existing_entity.time_urgency, "high")
+
+    async def test_update_user_round_preferences_none_current_stage_and_time_urgency(
+        self,
+    ):
+        """When current_stage and time_urgency are None, entity fields should be None."""
+        existing_entity = MentorshipRoundParticipantsEntity(
+            user_id=self.user_id,
+            round_id=self.mock_round_id,
+            participant_role=ParticipantRole.MENTOR,
+            current_stage="old_stage",
+            time_urgency="old_urgency",
+        )
+        self.mock_participants_repo.get_by_user_id_and_round_id.return_value = (
+            existing_entity
+        )
+
+        self.sample_dto.round_preferences.current_stage = None
+        self.sample_dto.round_preferences.time_urgency = None
+
+        await self.service._update_user_round_preferences(
+            session=self.mock_session,
+            user_id=self.user_id,
+            round_id=self.mock_round_id,
+            data=self.sample_dto,
+        )
+
+        self.assertIsNone(existing_entity.current_stage)
+        self.assertIsNone(existing_entity.time_urgency)
 
 
 if __name__ == "__main__":

@@ -2,7 +2,11 @@ import unittest
 import uuid
 from datetime import datetime, timezone
 
-from backend.dto.preference_dto import SpecificIndustryDto, SkillsetsDto
+from backend.dto.preference_dto import (
+    SpecificIndustryDto,
+    SkillsetsDto,
+    ProfileSurveyDto,
+)
 from backend.dto.registration_dto import GlobalPreferencesDto, RoundPreferencesDto
 from backend.dto.rounds_dto import RoundsDto, TimelineDto
 from backend.dto.partner_dto import PartnerDto
@@ -467,6 +471,51 @@ class TestMentorshipMapper(unittest.TestCase):
         info = dto.meeting_info[0]
         self.assertEqual(info.meeting_time_list, [])
         self.assertEqual(info.completed_meetings_count, 0)
+
+    def test_map_to_global_preferences_dto_with_profile_survey(self):
+        """Profile survey data in entity should be mapped to ProfileSurveyDto."""
+        entity = PreferenceEntity(
+            preferences_id=3,
+            user_id=1,
+            profile_survey={"career_transition": "tech", "region": "us_west"},
+        )
+        dto = self.mapper.map_to_global_preferences_dto(entity)
+
+        self.assertIsNotNone(dto.profile_survey)
+        self.assertIsInstance(dto.profile_survey, ProfileSurveyDto)
+        self.assertEqual(dto.profile_survey.career_transition, "tech")
+        self.assertEqual(dto.profile_survey.region, "us_west")
+        self.assertIsNone(dto.profile_survey.region_other)
+
+    def test_map_to_global_preferences_dto_profile_survey_none(self):
+        """When profile_survey is None on entity, dto should have None."""
+        dto = self.mapper.map_to_global_preferences_dto(self.preference_entity[1])
+        self.assertIsNone(dto.profile_survey)
+
+    def test_map_to_round_preference_dto_with_current_stage_and_time_urgency(self):
+        """current_stage and time_urgency should be mapped from entity to dto."""
+        entity = MentorshipRoundParticipantsEntity(
+            participant_id=uuid.uuid4(),
+            user_id=1,
+            round_id=1,
+            participant_role=ParticipantRole.MENTEE,
+            expected_partner_user_id=[],
+            unexpected_partner_user_id=[],
+            max_partners=1,
+            goal="test goal",
+            current_stage="exploring",
+            time_urgency="high",
+        )
+        dto = self.mapper.map_to_round_preference_dto(entity)
+
+        self.assertEqual(dto.current_stage, "exploring")
+        self.assertEqual(dto.time_urgency, "high")
+
+    def test_map_to_round_preference_dto_current_stage_time_urgency_none(self):
+        """When current_stage and time_urgency are absent, they should be None in dto."""
+        dto = self.mapper.map_to_round_preference_dto(self.participants_entity[1])
+        self.assertIsNone(dto.current_stage)
+        self.assertIsNone(dto.time_urgency)
 
     def test_map_to_meeting_v2_dto_missing_meeting_time_list_key(self):
         """Test mapping works when meeting_time_list key does not exist."""

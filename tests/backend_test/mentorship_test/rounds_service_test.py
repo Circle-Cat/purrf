@@ -25,13 +25,21 @@ class TestRoundsService(unittest.IsolatedAsyncioTestCase):
 
         self.timeline_data = TimelineCreateDto(
             promotion_start_at=datetime(2025, 12, 2, 7, 59, 59, tzinfo=timezone.utc),
-            application_deadline_at=datetime(2026, 1, 16, 7, 59, 59, tzinfo=timezone.utc),
+            application_deadline_at=datetime(
+                2026, 1, 16, 7, 59, 59, tzinfo=timezone.utc
+            ),
             review_start_at=datetime(2026, 1, 17, 7, 59, 59, tzinfo=timezone.utc),
-            acceptance_notification_at=datetime(2026, 1, 26, 7, 59, 59, tzinfo=timezone.utc),
+            acceptance_notification_at=datetime(
+                2026, 1, 26, 7, 59, 59, tzinfo=timezone.utc
+            ),
             matching_completed_at=datetime(2026, 2, 1, 7, 59, 59, tzinfo=timezone.utc),
             match_notification_at=datetime(2026, 2, 3, 7, 59, 59, tzinfo=timezone.utc),
-            first_meeting_deadline_at=datetime(2026, 2, 26, 7, 59, 59, tzinfo=timezone.utc),
-            meetings_completion_deadline_at=datetime(2026, 5, 26, 6, 59, 59, tzinfo=timezone.utc),
+            first_meeting_deadline_at=datetime(
+                2026, 2, 26, 7, 59, 59, tzinfo=timezone.utc
+            ),
+            meetings_completion_deadline_at=datetime(
+                2026, 5, 26, 6, 59, 59, tzinfo=timezone.utc
+            ),
             feedback_deadline_at=datetime(2026, 6, 11, 6, 59, 59, tzinfo=timezone.utc),
         )
 

@@ -1,6 +1,10 @@
 from backend.dto.rounds_dto import RoundsDto, TimelineDto
 from backend.dto.partner_dto import PartnerDto
-from backend.dto.preference_dto import SpecificIndustryDto, SkillsetsDto
+from backend.dto.preference_dto import (
+    SpecificIndustryDto,
+    SkillsetsDto,
+    ProfileSurveyDto,
+)
 from backend.dto.registration_dto import GlobalPreferencesDto, RoundPreferencesDto
 from backend.dto.meeting_dto import MeetingDto, MeetingInfoDto, MeetingTimeDto
 
@@ -75,6 +79,12 @@ class MentorshipMapper:
         """Maps a PreferencesEntity to a GlobalPreferencesDto."""
         industry_data = preference_entity.specific_industry or {}
 
+        profile_survey = (
+            ProfileSurveyDto.model_validate(preference_entity.profile_survey)
+            if preference_entity.profile_survey
+            else None
+        )
+
         return GlobalPreferencesDto(
             specific_industry=SpecificIndustryDto(
                 swe=industry_data.get("swe", False),
@@ -92,6 +102,7 @@ class MentorshipMapper:
                 networking=preference_entity.networking or False,
                 project_management=preference_entity.project_management or False,
             ),
+            profile_survey=profile_survey,
         )
 
     def map_to_round_preference_dto(
@@ -110,6 +121,8 @@ class MentorshipMapper:
             if participants_entity.max_partners is not None
             else 1,
             goal=participants_entity.goal or "",
+            current_stage=participants_entity.current_stage,
+            time_urgency=participants_entity.time_urgency,
         )
 
     def map_to_meeting_dto(

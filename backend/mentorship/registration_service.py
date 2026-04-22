@@ -202,6 +202,12 @@ class RegistrationService:
             )
             preferences_entity.specific_industry = None
 
+        preferences_entity.profile_survey = (
+            global_pref.profile_survey.model_dump(exclude_none=True)
+            if global_pref.profile_survey
+            else None
+        )
+
         result = await self.preferences_repo.upsert_preference(
             session=session, entity=preferences_entity
         )
@@ -252,6 +258,8 @@ class RegistrationService:
         entity.expected_partner_user_id = round_pref.expected_partner_ids or []
         entity.unexpected_partner_user_id = round_pref.unexpected_partner_ids or []
         entity.goal = round_pref.goal or ""
+        entity.current_stage = round_pref.current_stage
+        entity.time_urgency = round_pref.time_urgency
 
         result = await self.participants_repo.upsert_participant(
             session=session, entity=entity

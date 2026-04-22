@@ -162,7 +162,9 @@ class TestMentorShipRoundRepository(BaseRepositoryTestLib):
             name="active-round",
             description={
                 "match_notification_at": (now - timedelta(days=7)).isoformat(),
-                "meetings_completion_deadline_at": (now + timedelta(days=7)).isoformat(),
+                "meetings_completion_deadline_at": (
+                    now + timedelta(days=7)
+                ).isoformat(),
             },
             required_meetings=5,
         )
@@ -179,7 +181,9 @@ class TestMentorShipRoundRepository(BaseRepositoryTestLib):
             name="start-boundary-round",
             description={
                 "match_notification_at": (now - timedelta(seconds=1)).isoformat(),
-                "meetings_completion_deadline_at": (now + timedelta(days=7)).isoformat(),
+                "meetings_completion_deadline_at": (
+                    now + timedelta(days=7)
+                ).isoformat(),
             },
             required_meetings=5,
         )
@@ -196,7 +200,9 @@ class TestMentorShipRoundRepository(BaseRepositoryTestLib):
             name="end-boundary-round",
             description={
                 "match_notification_at": (now - timedelta(days=7)).isoformat(),
-                "meetings_completion_deadline_at": (now + timedelta(seconds=1)).isoformat(),
+                "meetings_completion_deadline_at": (
+                    now + timedelta(seconds=1)
+                ).isoformat(),
             },
             required_meetings=5,
         )
@@ -213,7 +219,9 @@ class TestMentorShipRoundRepository(BaseRepositoryTestLib):
             name="future-round",
             description={
                 "match_notification_at": (now + timedelta(days=1)).isoformat(),
-                "meetings_completion_deadline_at": (now + timedelta(days=7)).isoformat(),
+                "meetings_completion_deadline_at": (
+                    now + timedelta(days=7)
+                ).isoformat(),
             },
             required_meetings=5,
         )
@@ -230,7 +238,9 @@ class TestMentorShipRoundRepository(BaseRepositoryTestLib):
             name="past-round",
             description={
                 "match_notification_at": (now - timedelta(days=7)).isoformat(),
-                "meetings_completion_deadline_at": (now - timedelta(days=1)).isoformat(),
+                "meetings_completion_deadline_at": (
+                    now - timedelta(days=1)
+                ).isoformat(),
             },
             required_meetings=5,
         )
