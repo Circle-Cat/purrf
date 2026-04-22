@@ -391,6 +391,7 @@ class AppDependencyBuilder:
             users_repository=self.users_repository,
             mentorship_pairs_repository=self.mentorship_pairs_repository,
             mentorship_round_participants_repo=self.mentorship_round_participants_repo,
+            mentorship_round_repository=self.mentorship_round_repository,
             mentorship_mapper=self.mentorship_mapper,
             user_identity_service=self.user_identity_service,
         )

@@ -7,6 +7,8 @@ from backend.dto.meeting_create_dto import MeetingCreateDto
 from backend.dto.user_context_dto import UserContextDto
 from backend.dto.registration_dto import RegistrationDto
 from backend.dto.registration_create_dto import RegistrationCreateDto
+from backend.dto.feedback_create_dto import FeedbackCreateDto
+from backend.dto.feedback_dto import FeedbackDto
 from backend.common.fast_api_response_wrapper import api_response
 from backend.utils.permission_decorators import authenticate
 from backend.common.api_endpoints import (
@@ -17,6 +19,7 @@ from backend.common.api_endpoints import (
     MENTORSHIP_MEETINGS_ENDPOINT,
     MENTORSHIP_MEETING_V2_ENDPOINT,
     MEET_ATTENDANCE_SYNC_ENDPOINT,
+    MENTORSHIP_ROUNDS_FEEDBACK_ENDPOINT,
 )
 from backend.common.user_role import UserRole
 from backend.dto.google_meeting_create_dto import GoogleMeetingCreateDto
@@ -137,6 +140,24 @@ class MentorshipController:
             MEET_ATTENDANCE_SYNC_ENDPOINT,
             endpoint=authenticate(roles=[UserRole.CRON_RUNNER, UserRole.INFRA_ADMIN])(
                 self.sync_meet_attendance
+            ),
+            methods=["POST"],
+            response_model=None,
+        )
+
+        self.router.add_api_route(
+            MENTORSHIP_ROUNDS_FEEDBACK_ENDPOINT,
+            endpoint=authenticate(roles=[UserRole.MENTORSHIP])(
+                self.get_program_feedback
+            ),
+            methods=["GET"],
+            response_model=None,
+        )
+
+        self.router.add_api_route(
+            MENTORSHIP_ROUNDS_FEEDBACK_ENDPOINT,
+            endpoint=authenticate(roles=[UserRole.MENTORSHIP])(
+                self.upsert_program_feedback
             ),
             methods=["POST"],
             response_model=None,
@@ -363,7 +384,9 @@ class MentorshipController:
             )
         raise PermissionError("Create Google meeting feature is not yet available.")
 
-    async def get_meetings_for_user_v2(self, current_user: UserContextDto, round_id: int, include_details: bool):
+    async def get_meetings_for_user_v2(
+        self, current_user: UserContextDto, round_id: int, include_details: bool
+    ):
         """
         Retrieve mentorship meeting logs for the current user in a specific round (v2).
 
@@ -390,3 +413,50 @@ class MentorshipController:
                 data=meetings,
             )
         raise PermissionError("Google meeting feature is not yet available.")
+
+    async def get_program_feedback(self, current_user: UserContextDto, round_id: int):
+        """
+        Retrieve the current user's program feedback for a specific mentorship round.
+
+        Args:
+            current_user (UserContextDto): The authenticated user context.
+            round_id (int): The mentorship round ID.
+        """
+        async with self.database.session() as session:
+            result: FeedbackDto = await self.participation_service.get_program_feedback(
+                session=session, user_context=current_user, round_id=round_id
+            )
+
+        return api_response(
+            message="Successfully fetched program feedback.",
+            data=result,
+        )
+
+    async def upsert_program_feedback(
+        self,
+        current_user: UserContextDto,
+        round_id: int,
+        feedback_data: FeedbackCreateDto,
+    ):
+        """
+        Save or overwrite the current user's program feedback for a specific mentorship round.
+
+        Args:
+            current_user (UserContextDto): The authenticated user context.
+            round_id (int): The mentorship round ID.
+            feedback_data (FeedbackCreateDto): The feedback payload.
+        """
+        async with self.database.session() as session:
+            result: FeedbackDto = (
+                await self.participation_service.upsert_program_feedback(
+                    session=session,
+                    user_context=current_user,
+                    round_id=round_id,
+                    feedback_data=feedback_data,
+                )
+            )
+
+        return api_response(
+            message="Successfully saved program feedback.",
+            data=result,
+        )

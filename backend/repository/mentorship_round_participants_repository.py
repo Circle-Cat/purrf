@@ -1,7 +1,8 @@
 from backend.entity.mentorship_round_participants_entity import (
     MentorshipRoundParticipantsEntity,
 )
-from sqlalchemy import select, and_
+from backend.common.mentorship_enums import ParticipantRole
+from sqlalchemy import Float, cast, func, select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -57,6 +58,45 @@ class MentorshipRoundParticipantsRepository:
         )
 
         return result.scalars().one_or_none()
+
+    async def get_average_program_rating_by_round_and_role(
+        self,
+        session: AsyncSession,
+        round_id: int,
+        role: ParticipantRole,
+    ) -> float:
+        """
+        Compute the average program_rating for all participants in a round with a specific role.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            round_id (int): Mentorship round id.
+            role (ParticipantRole): The participant role to filter by.
+
+        Returns:
+            float: The average program_rating.
+        """
+        result = await session.execute(
+            select(
+                func.avg(
+                    cast(
+                        MentorshipRoundParticipantsEntity.program_feedback[
+                            "program_rating"
+                        ].astext,
+                        Float,
+                    )
+                )
+            ).where(
+                and_(
+                    MentorshipRoundParticipantsEntity.round_id == round_id,
+                    MentorshipRoundParticipantsEntity.participant_role == role,
+                    MentorshipRoundParticipantsEntity.program_feedback[
+                        "program_rating"
+                    ].astext.isnot(None),
+                )
+            )
+        )
+        return result.scalar_one_or_none()
 
     async def upsert_participant(
         self, session: AsyncSession, entity: MentorshipRoundParticipantsEntity

@@ -1,6 +1,6 @@
 from backend.entity.mentorship_round_entity import MentorshipRoundEntity
 from datetime import datetime, timezone
-from sqlalchemy import TIMESTAMP, cast, select
+from sqlalchemy import TIMESTAMP, cast, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -84,6 +84,42 @@ class MentorshipRoundRepository:
             )
         )
         return result.scalars().first()
+
+    async def update_mentee_average_score(
+        self, session: AsyncSession, round_id: int, value: float | None
+    ) -> None:
+        """
+        Update the mentee_average_score for a mentorship round.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            round_id (int): The ID of the mentorship round to update.
+            value (float | None): The new average score, or None to clear it.
+        """
+        await session.execute(
+            update(MentorshipRoundEntity)
+            .where(MentorshipRoundEntity.round_id == round_id)
+            .values(mentee_average_score=value)
+        )
+        await session.flush()
+
+    async def update_mentor_average_score(
+        self, session: AsyncSession, round_id: int, value: float | None
+    ) -> None:
+        """
+        Update the mentor_average_score for a mentorship round.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            round_id (int): The ID of the mentorship round to update.
+            value (float | None): The new average score, or None to clear it.
+        """
+        await session.execute(
+            update(MentorshipRoundEntity)
+            .where(MentorshipRoundEntity.round_id == round_id)
+            .values(mentor_average_score=value)
+        )
+        await session.flush()
 
     async def upsert_round(
         self, session: AsyncSession, entity: MentorshipRoundEntity

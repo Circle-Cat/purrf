@@ -339,7 +339,10 @@ class MeetingService:
         )
 
     async def get_meetings_by_user_and_round_v2(
-        self, session: AsyncSession, user_context: UserContextDto, round_id: int,
+        self,
+        session: AsyncSession,
+        user_context: UserContextDto,
+        round_id: int,
         include_details: bool,
     ) -> MeetingDto:
         """

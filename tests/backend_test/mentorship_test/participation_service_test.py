@@ -6,6 +6,8 @@ from backend.mentorship.participation_service import ParticipationService
 from backend.dto.partner_dto import PartnerDto
 from backend.dto.user_context_dto import UserContextDto
 from backend.dto.registration_dto import RoundPreferencesDto
+from backend.dto.feedback_create_dto import FeedbackCreateDto
+from backend.dto.feedback_dto import FeedbackDto
 from backend.common.user_role import UserRole
 from backend.entity.mentorship_round_participants_entity import (
     MentorshipRoundParticipantsEntity,
@@ -33,6 +35,14 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
             AsyncMock()
         )
         self.mock_round_participants_repo.get_by_user_id_and_round_id = AsyncMock()
+        self.mock_round_participants_repo.upsert_participant = AsyncMock()
+        self.mock_round_participants_repo.get_average_program_rating_by_round_and_role = AsyncMock(
+            return_value=4.0
+        )
+
+        self.mock_round_repo = MagicMock()
+        self.mock_round_repo.update_mentee_average_score = AsyncMock()
+        self.mock_round_repo.update_mentor_average_score = AsyncMock()
 
         self.mock_session = AsyncMock()
         self.mock_mapper = MagicMock()
@@ -46,6 +56,7 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
             users_repository=self.mock_users_repo,
             mentorship_pairs_repository=self.mock_pairs_repo,
             mentorship_round_participants_repo=self.mock_round_participants_repo,
+            mentorship_round_repository=self.mock_round_repo,
             mentorship_mapper=self.mock_mapper,
             user_identity_service=self.mock_identity_service,
         )
@@ -468,6 +479,225 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
         )
 
         self.mock_session.commit.assert_awaited_once()
+
+    async def test_get_program_feedback_with_existing_submission(self):
+        """Returns has_submitted=True and populates fields when feedback dict exists."""
+        mock_round_id = 1
+        self.mock_identity_service.get_user.return_value = (
+            self.mock_current_user,
+            False,
+        )
+
+        mock_participant = MagicMock(spec=MentorshipRoundParticipantsEntity)
+        mock_participant.participant_role = ParticipantRole.MENTEE
+        mock_participant.program_feedback = {
+            "sessions_completed": 3,
+            "most_valuable_aspects": "networking",
+            "challenges": None,
+            "program_rating": 5,
+        }
+        self.mock_round_participants_repo.get_by_user_id_and_round_id.return_value = (
+            mock_participant
+        )
+
+        result = await self.participation_service.get_program_feedback(
+            session=self.mock_session,
+            user_context=self.user_context,
+            round_id=mock_round_id,
+        )
+
+        self.assertIsInstance(result, FeedbackDto)
+        self.assertTrue(result.has_submitted)
+        self.assertEqual(result.sessions_completed, 3)
+        self.assertEqual(result.most_valuable_aspects, "networking")
+        self.assertEqual(result.program_rating, 5)
+        self.assertEqual(result.participant_role, ParticipantRole.MENTEE)
+        self.logger.debug.assert_called()
+
+    async def test_get_program_feedback_without_submission(self):
+        """Returns has_submitted=False and None fields when program_feedback is not a dict."""
+        mock_round_id = 1
+        self.mock_identity_service.get_user.return_value = (
+            self.mock_current_user,
+            False,
+        )
+
+        mock_participant = MagicMock(spec=MentorshipRoundParticipantsEntity)
+        mock_participant.participant_role = ParticipantRole.MENTOR
+        mock_participant.program_feedback = None
+        self.mock_round_participants_repo.get_by_user_id_and_round_id.return_value = (
+            mock_participant
+        )
+
+        result = await self.participation_service.get_program_feedback(
+            session=self.mock_session,
+            user_context=self.user_context,
+            round_id=mock_round_id,
+        )
+
+        self.assertFalse(result.has_submitted)
+        self.assertIsNone(result.sessions_completed)
+        self.assertIsNone(result.program_rating)
+
+    async def test_get_program_feedback_raises_when_no_participant(self):
+        """Raises ValueError and logs error when participant record does not exist."""
+        mock_round_id = 1
+        self.mock_identity_service.get_user.return_value = (
+            self.mock_current_user,
+            False,
+        )
+        self.mock_round_participants_repo.get_by_user_id_and_round_id.return_value = (
+            None
+        )
+
+        with self.assertRaises(ValueError):
+            await self.participation_service.get_program_feedback(
+                session=self.mock_session,
+                user_context=self.user_context,
+                round_id=mock_round_id,
+            )
+
+        self.logger.error.assert_called_once_with(
+            "[ParticipationService] no participant record for user_id=%s, round_id=%s",
+            self.mock_current_user.user_id,
+            mock_round_id,
+        )
+
+    async def test_get_program_feedback_commits_when_indicated(self):
+        """Commits session when user_identity_service signals should_commit."""
+        mock_round_id = 1
+        self.mock_identity_service.get_user.return_value = (
+            self.mock_current_user,
+            True,
+        )
+
+        mock_participant = MagicMock(spec=MentorshipRoundParticipantsEntity)
+        mock_participant.participant_role = ParticipantRole.MENTEE
+        mock_participant.program_feedback = None
+        self.mock_round_participants_repo.get_by_user_id_and_round_id.return_value = (
+            mock_participant
+        )
+
+        await self.participation_service.get_program_feedback(
+            session=self.mock_session,
+            user_context=self.user_context,
+            round_id=mock_round_id,
+        )
+
+        self.mock_session.commit.assert_awaited_once()
+
+    async def test_upsert_program_feedback_saves_and_returns_dto(self):
+        """Persists feedback and returns FeedbackDto with has_submitted=True."""
+        mock_round_id = 1
+        self.mock_identity_service.get_user.return_value = (
+            self.mock_current_user,
+            False,
+        )
+
+        mock_participant = MagicMock(spec=MentorshipRoundParticipantsEntity)
+        mock_participant.participant_role = ParticipantRole.MENTEE
+        self.mock_round_participants_repo.get_by_user_id_and_round_id.return_value = (
+            mock_participant
+        )
+
+        feedback_data = FeedbackCreateDto(
+            sessions_completed=4,
+            most_valuable_aspects="guidance",
+            challenges="time zones",
+            program_rating=4,
+        )
+
+        result = await self.participation_service.upsert_program_feedback(
+            session=self.mock_session,
+            user_context=self.user_context,
+            round_id=mock_round_id,
+            feedback_data=feedback_data,
+        )
+
+        self.assertIsInstance(result, FeedbackDto)
+        self.assertTrue(result.has_submitted)
+        self.assertEqual(result.sessions_completed, 4)
+        self.assertEqual(result.most_valuable_aspects, "guidance")
+        self.assertEqual(result.program_rating, 4)
+        self.mock_round_participants_repo.upsert_participant.assert_awaited_once_with(
+            session=self.mock_session, entity=mock_participant
+        )
+        self.mock_round_participants_repo.get_average_program_rating_by_round_and_role.assert_awaited_once_with(
+            session=self.mock_session,
+            round_id=mock_round_id,
+            role=ParticipantRole.MENTEE,
+        )
+        self.mock_round_repo.update_mentee_average_score.assert_awaited_once_with(
+            session=self.mock_session, round_id=mock_round_id, value=4.0
+        )
+        self.mock_round_repo.update_mentor_average_score.assert_not_awaited()
+        self.mock_session.commit.assert_awaited_once()
+        self.logger.info.assert_called_once_with(
+            "[ParticipationService] program_feedback saved for user_id=%s, round_id=%s",
+            self.mock_current_user.user_id,
+            mock_round_id,
+        )
+
+    async def test_upsert_program_feedback_raises_when_no_participant(self):
+        """Raises ValueError and logs error when participant record does not exist."""
+        mock_round_id = 1
+        self.mock_identity_service.get_user.return_value = (
+            self.mock_current_user,
+            False,
+        )
+        self.mock_round_participants_repo.get_by_user_id_and_round_id.return_value = (
+            None
+        )
+
+        feedback_data = FeedbackCreateDto()
+
+        with self.assertRaises(ValueError):
+            await self.participation_service.upsert_program_feedback(
+                session=self.mock_session,
+                user_context=self.user_context,
+                round_id=mock_round_id,
+                feedback_data=feedback_data,
+            )
+
+        self.mock_round_participants_repo.upsert_participant.assert_not_awaited()
+        self.mock_session.commit.assert_not_awaited()
+        self.logger.error.assert_called_once_with(
+            "[ParticipationService] no participant record for user_id=%s, round_id=%s",
+            self.mock_current_user.user_id,
+            mock_round_id,
+        )
+
+    async def test_upsert_program_feedback_updates_mentor_average_score(self):
+        """Calls update_mentor_average_score when participant role is MENTOR."""
+        mock_round_id = 1
+        self.mock_identity_service.get_user.return_value = (
+            self.mock_current_user,
+            False,
+        )
+
+        mock_participant = MagicMock(spec=MentorshipRoundParticipantsEntity)
+        mock_participant.participant_role = ParticipantRole.MENTOR
+        self.mock_round_participants_repo.get_by_user_id_and_round_id.return_value = (
+            mock_participant
+        )
+        self.mock_round_participants_repo.get_average_program_rating_by_round_and_role.return_value = 3.5
+
+        await self.participation_service.upsert_program_feedback(
+            session=self.mock_session,
+            user_context=self.user_context,
+            round_id=mock_round_id,
+            feedback_data=FeedbackCreateDto(program_rating=3),
+        )
+
+        self.mock_round_participants_repo.get_average_program_rating_by_round_and_role.assert_awaited_once_with(
+            session=self.mock_session,
+            round_id=mock_round_id,
+            role=ParticipantRole.MENTOR,
+        )
+        self.mock_round_repo.update_mentor_average_score.assert_awaited_once_with(
+            session=self.mock_session, round_id=mock_round_id, value=3.5
+        )
+        self.mock_round_repo.update_mentee_average_score.assert_not_awaited()
 
 
 if __name__ == "__main__":

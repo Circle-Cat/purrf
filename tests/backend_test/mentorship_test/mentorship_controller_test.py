@@ -10,6 +10,8 @@ from backend.dto.user_context_dto import UserContextDto
 from backend.dto.registration_dto import RegistrationDto
 from backend.dto.registration_create_dto import RegistrationCreateDto
 from backend.dto.google_meeting_create_dto import GoogleMeetingCreateDto
+from backend.dto.feedback_create_dto import FeedbackCreateDto
+from backend.dto.feedback_dto import FeedbackDto
 from backend.mentorship.mentorship_controller import MentorshipController
 
 
@@ -21,6 +23,8 @@ class TestMentorshipController(unittest.IsolatedAsyncioTestCase):
 
         self.mock_participation_service = MagicMock()
         self.mock_participation_service.get_partners_for_user = AsyncMock()
+        self.mock_participation_service.get_program_feedback = AsyncMock()
+        self.mock_participation_service.upsert_program_feedback = AsyncMock()
 
         self.mock_registration_service = MagicMock()
         self.mock_registration_service.get_registration_info = AsyncMock()
@@ -420,7 +424,9 @@ class TestMentorshipController(unittest.IsolatedAsyncioTestCase):
 
     async def test_get_meetings_for_user_v2(self):
         """Test retrieve mentorship meeting logs for current user in v2."""
-        self.mock_launchdarkly_service.is_create_google_meeting_enabled.return_value = True
+        self.mock_launchdarkly_service.is_create_google_meeting_enabled.return_value = (
+            True
+        )
 
         mock_user = MagicMock(spec=UserContextDto, sub="valid-sub")
         mock_round_id = 1
@@ -436,7 +442,10 @@ class TestMentorshipController(unittest.IsolatedAsyncioTestCase):
         )
 
         self.mock_meeting_service.get_meetings_by_user_and_round_v2.assert_awaited_once_with(
-            session=self.mock_session, user_context=mock_user, round_id=mock_round_id, include_details=mock_details
+            session=self.mock_session,
+            user_context=mock_user,
+            round_id=mock_round_id,
+            include_details=mock_details,
         )
 
         self.mock_api_response.assert_called_once_with(
@@ -444,6 +453,89 @@ class TestMentorshipController(unittest.IsolatedAsyncioTestCase):
             data=mock_meeting_data,
         )
         self.assertEqual(response["data"], mock_meeting_data)
+
+    async def test_get_program_feedback(self):
+        """Test retrieve current user's program feedback for a round."""
+        mock_user = MagicMock(spec=UserContextDto)
+        mock_round_id = 1
+        mock_result = MagicMock(spec=FeedbackDto)
+        self.mock_participation_service.get_program_feedback.return_value = mock_result
+
+        response = await self.controller.get_program_feedback(
+            current_user=mock_user,
+            round_id=mock_round_id,
+        )
+
+        self.mock_participation_service.get_program_feedback.assert_awaited_once_with(
+            session=self.mock_session,
+            user_context=mock_user,
+            round_id=mock_round_id,
+        )
+        self.mock_api_response.assert_called_once_with(
+            message="Successfully fetched program feedback.",
+            data=mock_result,
+        )
+        self.assertEqual(response["data"], mock_result)
+
+    async def test_get_program_feedback_service_error(self):
+        """Test that ValueError from service propagates through the controller."""
+        mock_user = MagicMock(spec=UserContextDto)
+        self.mock_participation_service.get_program_feedback.side_effect = ValueError(
+            "No participant record found."
+        )
+
+        with self.assertRaises(ValueError):
+            await self.controller.get_program_feedback(
+                current_user=mock_user,
+                round_id=1,
+            )
+
+        self.mock_api_response.assert_not_called()
+
+    async def test_upsert_program_feedback(self):
+        """Test save program feedback for a round."""
+        mock_user = MagicMock(spec=UserContextDto)
+        mock_round_id = 1
+        mock_payload = FeedbackCreateDto()
+        mock_result = MagicMock(spec=FeedbackDto)
+        self.mock_participation_service.upsert_program_feedback.return_value = (
+            mock_result
+        )
+
+        response = await self.controller.upsert_program_feedback(
+            current_user=mock_user,
+            round_id=mock_round_id,
+            feedback_data=mock_payload,
+        )
+
+        self.mock_participation_service.upsert_program_feedback.assert_awaited_once_with(
+            session=self.mock_session,
+            user_context=mock_user,
+            round_id=mock_round_id,
+            feedback_data=mock_payload,
+        )
+        self.mock_api_response.assert_called_once_with(
+            message="Successfully saved program feedback.",
+            data=mock_result,
+        )
+        self.assertEqual(response["data"], mock_result)
+
+    async def test_upsert_program_feedback_service_error(self):
+        """Test that ValueError from service propagates through the controller."""
+        mock_user = MagicMock(spec=UserContextDto)
+        mock_payload = FeedbackCreateDto()
+        self.mock_participation_service.upsert_program_feedback.side_effect = (
+            ValueError("No participant record found.")
+        )
+
+        with self.assertRaises(ValueError):
+            await self.controller.upsert_program_feedback(
+                current_user=mock_user,
+                round_id=1,
+                feedback_data=mock_payload,
+            )
+
+        self.mock_api_response.assert_not_called()
 
 
 if __name__ == "__main__":

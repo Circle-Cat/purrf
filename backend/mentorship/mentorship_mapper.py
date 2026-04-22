@@ -162,7 +162,9 @@ class MentorshipMapper:
                     participant_role=ParticipantRole.MENTEE
                     if partner_id == pair.mentor_id
                     else ParticipantRole.MENTOR,
-                    meeting_time_list=self._build_meeting_time_list(pair, include_details),
+                    meeting_time_list=self._build_meeting_time_list(
+                        pair, include_details
+                    ),
                     completed_meetings_count=pair.completed_count or 0,
                 )
                 for pair, partner_id in grouped_pairs

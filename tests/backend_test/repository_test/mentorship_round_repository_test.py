@@ -275,6 +275,45 @@ class TestMentorShipRoundRepository(BaseRepositoryTestLib):
 
         self.assertIsNone(result)
 
+    async def test_update_mentee_average_score(self):
+        """Updates mentee_average_score while leaving mentor_average_score unchanged."""
+        await self.insert_entities([self.rounds[0]])
+
+        await self.repo.update_mentee_average_score(
+            self.session, round_id=self.rounds[0].round_id, value=3.7
+        )
+
+        result = await self.repo.get_by_round_id(self.session, self.rounds[0].round_id)
+        self.assertAlmostEqual(result.mentee_average_score, 3.7)
+        self.assertAlmostEqual(
+            result.mentor_average_score, self.rounds[0].mentor_average_score
+        )
+
+    async def test_update_mentor_average_score(self):
+        """Updates mentor_average_score while leaving mentee_average_score unchanged."""
+        await self.insert_entities([self.rounds[0]])
+
+        await self.repo.update_mentor_average_score(
+            self.session, round_id=self.rounds[0].round_id, value=2.5
+        )
+
+        result = await self.repo.get_by_round_id(self.session, self.rounds[0].round_id)
+        self.assertAlmostEqual(result.mentor_average_score, 2.5)
+        self.assertAlmostEqual(
+            result.mentee_average_score, self.rounds[0].mentee_average_score
+        )
+
+    async def test_update_mentee_average_score_to_none(self):
+        """Clears mentee_average_score by setting it to None."""
+        await self.insert_entities([self.rounds[0]])
+
+        await self.repo.update_mentee_average_score(
+            self.session, round_id=self.rounds[0].round_id, value=None
+        )
+
+        result = await self.repo.get_by_round_id(self.session, self.rounds[0].round_id)
+        self.assertIsNone(result.mentee_average_score)
+
     async def test_get_running_round_id_null_description(self):
         """Test returns None when description is null."""
         round_entity = MentorshipRoundEntity(

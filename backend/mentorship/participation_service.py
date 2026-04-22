@@ -2,6 +2,8 @@ from backend.dto.partner_dto import PartnerDto
 from backend.dto.matches_dto import MatchesDto
 from backend.dto.user_context_dto import UserContextDto
 from backend.dto.registration_dto import RoundPreferencesDto
+from backend.dto.feedback_create_dto import FeedbackCreateDto
+from backend.dto.feedback_dto import FeedbackDto
 from backend.common.mentorship_enums import ParticipantRole
 from backend.common.user_role import UserRole
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,6 +22,7 @@ class ParticipationService:
         users_repository,
         mentorship_pairs_repository,
         mentorship_round_participants_repo,
+        mentorship_round_repository,
         mentorship_mapper,
         user_identity_service,
     ):
@@ -34,6 +37,8 @@ class ParticipationService:
                 The repository for accessing pairs entity data.
             mentorship_round_participants_repo (MentorshipRoundParticipantsRepository):
                 The repository for accessing participants entity data.
+            mentorship_round_repository (MentorshipRoundRepository):
+                The repository for accessing mentorship round entity data.
             mentorship_mapper (MentorshipMapper):
                 The mapper for converting mentorship rounds and entities to DTOs.
             user_identity_service (UserIdentityService):
@@ -43,6 +48,7 @@ class ParticipationService:
         self.users_repository = users_repository
         self.mentorship_pairs_repository = mentorship_pairs_repository
         self.mentorship_round_participants_repo = mentorship_round_participants_repo
+        self.mentorship_round_repository = mentorship_round_repository
         self.mentorship_mapper = mentorship_mapper
         self.user_identity_service = user_identity_service
 
@@ -299,4 +305,175 @@ class ParticipationService:
 
         return MatchesDto(
             round_id=round_id, current_status=current_status, partners=partners
+        )
+
+    async def get_program_feedback(
+        self, session: AsyncSession, user_context: UserContextDto, round_id: int
+    ) -> FeedbackDto:
+        """
+        Retrieve the current user's program feedback for a specific round.
+
+        Args:
+            session (AsyncSession): Active async database session.
+            user_context (UserContextDto): Authenticated user context.
+            round_id (int): The mentorship round ID.
+
+        Returns:
+            FeedbackDto: DTO containing participant role, submission state, and feedback data.
+
+        Raises:
+            ValueError: If the user has no participant record for this round.
+        """
+        current_user, should_commit = await self.user_identity_service.get_user(
+            session=session, user_info=user_context
+        )
+        if should_commit:
+            await session.commit()
+
+        self.logger.debug(
+            "[ParticipationService] fetching program_feedback for user_id=%s, round_id=%s",
+            current_user.user_id,
+            round_id,
+        )
+        participant = (
+            await self.mentorship_round_participants_repo.get_by_user_id_and_round_id(
+                session=session, user_id=current_user.user_id, round_id=round_id
+            )
+        )
+        if not participant:
+            self.logger.error(
+                "[ParticipationService] no participant record for user_id=%s, round_id=%s",
+                current_user.user_id,
+                round_id,
+            )
+            raise ValueError(
+                f"No participant record found for current user, round_id={round_id}."
+            )
+
+        role = (
+            participant.participant_role.value if participant.participant_role else None
+        )
+        raw = participant.program_feedback
+        existing = raw if isinstance(raw, dict) else {}
+        has_submitted = isinstance(raw, dict)
+        self.logger.debug(
+            "[ParticipationService] program_feedback retrieved for user_id=%s, round_id=%s, has_submitted=%s",
+            current_user.user_id,
+            round_id,
+            has_submitted,
+        )
+
+        return FeedbackDto(
+            participant_role=role,
+            has_submitted=has_submitted,
+            sessions_completed=existing.get("sessions_completed"),
+            most_valuable_aspects=existing.get("most_valuable_aspects"),
+            challenges=existing.get("challenges"),
+            program_rating=existing.get("program_rating"),
+        )
+
+    async def upsert_program_feedback(
+        self,
+        session: AsyncSession,
+        user_context: UserContextDto,
+        round_id: int,
+        feedback_data: FeedbackCreateDto,
+    ) -> FeedbackDto:
+        """
+        Save or overwrite the current user's program feedback for a specific round,
+        then recompute the round's average score for the participant's role.
+
+        Args:
+            session (AsyncSession): Active async database session.
+            user_context (UserContextDto): Authenticated user context.
+            round_id (int): The mentorship round ID.
+            feedback_data (FeedbackCreateDto): The feedback payload to persist.
+
+        Returns:
+            FeedbackDto: The saved feedback DTO.
+
+        Raises:
+            ValueError: If the user has no participant record for this round.
+        """
+        current_user, _ = await self.user_identity_service.get_user(
+            session=session, user_info=user_context
+        )
+
+        self.logger.debug(
+            "[ParticipationService] upserting program_feedback for user_id=%s, round_id=%s",
+            current_user.user_id,
+            round_id,
+        )
+        participant = (
+            await self.mentorship_round_participants_repo.get_by_user_id_and_round_id(
+                session=session, user_id=current_user.user_id, round_id=round_id
+            )
+        )
+        if not participant:
+            self.logger.error(
+                "[ParticipationService] no participant record for user_id=%s, round_id=%s",
+                current_user.user_id,
+                round_id,
+            )
+            raise ValueError(
+                f"No participant record found for user_id={current_user.user_id}, round_id={round_id}."
+            )
+
+        participant.program_feedback = feedback_data.model_dump(
+            mode="json", by_alias=False, exclude_unset=False
+        )
+        await self.mentorship_round_participants_repo.upsert_participant(
+            session=session, entity=participant
+        )
+
+        await self._update_round_average_score(
+            session=session, round_id=round_id, role=participant.participant_role
+        )
+
+        await session.commit()
+        self.logger.info(
+            "[ParticipationService] program_feedback saved for user_id=%s, round_id=%s",
+            current_user.user_id,
+            round_id,
+        )
+
+        role = (
+            participant.participant_role.value if participant.participant_role else None
+        )
+        return FeedbackDto(
+            participant_role=role,
+            has_submitted=True,
+            **feedback_data.model_dump(by_alias=False),
+        )
+
+    async def _update_round_average_score(
+        self,
+        session: AsyncSession,
+        round_id: int,
+        role: ParticipantRole,
+    ) -> None:
+        """
+        Recompute and persist the average program_rating for all participants of a given role in a round.
+
+        Args:
+            session (AsyncSession): Active async database session.
+            round_id (int): The mentorship round ID.
+            role (ParticipantRole): Determines which average score column to update.
+        """
+        avg = await self.mentorship_round_participants_repo.get_average_program_rating_by_round_and_role(
+            session=session, round_id=round_id, role=role
+        )
+        if role == ParticipantRole.MENTEE:
+            await self.mentorship_round_repository.update_mentee_average_score(
+                session=session, round_id=round_id, value=avg
+            )
+        else:
+            await self.mentorship_round_repository.update_mentor_average_score(
+                session=session, round_id=round_id, value=avg
+            )
+        self.logger.debug(
+            "[ParticipationService] updated %s_average_score=%.2f for round_id=%s",
+            role.value,
+            avg if avg is not None else 0,
+            round_id,
         )

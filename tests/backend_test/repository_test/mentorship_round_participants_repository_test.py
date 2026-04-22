@@ -10,7 +10,11 @@ from backend.entity.mentorship_round_entity import MentorshipRoundEntity
 from backend.repository.mentorship_round_participants_repository import (
     MentorshipRoundParticipantsRepository,
 )
-from backend.common.mentorship_enums import UserTimezone, CommunicationMethod
+from backend.common.mentorship_enums import (
+    UserTimezone,
+    CommunicationMethod,
+    ParticipantRole,
+)
 from tests.backend_test.repository_test.base_repository_test_lib import (
     BaseRepositoryTestLib,
 )
@@ -144,6 +148,133 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
         self.assertIsNotNone(result.participant_id)
         self.assertEqual(result.user_id, self.user.user_id)
         self.assertEqual(result.round_id, self.rounds[1].round_id)
+
+    async def test_get_average_program_rating_by_round_and_role(self):
+        """Returns the average program_rating across all matching participants."""
+        user2 = UsersEntity(
+            first_name="Bob",
+            last_name="Builder",
+            timezone=UserTimezone.ASIA_SHANGHAI,
+            timezone_updated_at=datetime.now(timezone.utc),
+            communication_channel=CommunicationMethod.EMAIL,
+            primary_email="bob@example.com",
+            is_active=True,
+            updated_timestamp=datetime.now(timezone.utc),
+            subject_identifier=str(uuid.uuid4()),
+        )
+        await self.insert_entities([user2])
+
+        participants = [
+            MentorshipRoundParticipantsEntity(
+                user_id=self.user.user_id,
+                round_id=self.rounds[0].round_id,
+                participant_role=ParticipantRole.MENTEE,
+                program_feedback={"program_rating": 4},
+            ),
+            MentorshipRoundParticipantsEntity(
+                user_id=user2.user_id,
+                round_id=self.rounds[0].round_id,
+                participant_role=ParticipantRole.MENTEE,
+                program_feedback={"program_rating": 2},
+            ),
+        ]
+        await self.insert_entities(participants)
+
+        result = await self.repo.get_average_program_rating_by_round_and_role(
+            self.session,
+            round_id=self.rounds[0].round_id,
+            role=ParticipantRole.MENTEE,
+        )
+
+        self.assertAlmostEqual(result, 3.0)
+
+    async def test_get_average_program_rating_excludes_other_role(self):
+        """Does not include participants with a different role in the average."""
+        user2 = UsersEntity(
+            first_name="Carol",
+            last_name="Coach",
+            timezone=UserTimezone.ASIA_SHANGHAI,
+            timezone_updated_at=datetime.now(timezone.utc),
+            communication_channel=CommunicationMethod.EMAIL,
+            primary_email="carol@example.com",
+            is_active=True,
+            updated_timestamp=datetime.now(timezone.utc),
+            subject_identifier=str(uuid.uuid4()),
+        )
+        await self.insert_entities([user2])
+
+        participants = [
+            MentorshipRoundParticipantsEntity(
+                user_id=self.user.user_id,
+                round_id=self.rounds[0].round_id,
+                participant_role=ParticipantRole.MENTEE,
+                program_feedback={"program_rating": 5},
+            ),
+            MentorshipRoundParticipantsEntity(
+                user_id=user2.user_id,
+                round_id=self.rounds[0].round_id,
+                participant_role=ParticipantRole.MENTOR,
+                program_feedback={"program_rating": 1},
+            ),
+        ]
+        await self.insert_entities(participants)
+
+        result = await self.repo.get_average_program_rating_by_round_and_role(
+            self.session,
+            round_id=self.rounds[0].round_id,
+            role=ParticipantRole.MENTEE,
+        )
+
+        self.assertAlmostEqual(result, 5.0)
+
+    async def test_get_average_program_rating_excludes_null_ratings(self):
+        """Skips participants whose program_feedback has no program_rating key."""
+        user2 = UsersEntity(
+            first_name="Dave",
+            last_name="Doe",
+            timezone=UserTimezone.ASIA_SHANGHAI,
+            timezone_updated_at=datetime.now(timezone.utc),
+            communication_channel=CommunicationMethod.EMAIL,
+            primary_email="dave@example.com",
+            is_active=True,
+            updated_timestamp=datetime.now(timezone.utc),
+            subject_identifier=str(uuid.uuid4()),
+        )
+        await self.insert_entities([user2])
+
+        participants = [
+            MentorshipRoundParticipantsEntity(
+                user_id=self.user.user_id,
+                round_id=self.rounds[0].round_id,
+                participant_role=ParticipantRole.MENTEE,
+                program_feedback={"program_rating": 4},
+            ),
+            MentorshipRoundParticipantsEntity(
+                user_id=user2.user_id,
+                round_id=self.rounds[0].round_id,
+                participant_role=ParticipantRole.MENTEE,
+                program_feedback={"most_valuable_aspects": "networking"},
+            ),
+        ]
+        await self.insert_entities(participants)
+
+        result = await self.repo.get_average_program_rating_by_round_and_role(
+            self.session,
+            round_id=self.rounds[0].round_id,
+            role=ParticipantRole.MENTEE,
+        )
+
+        self.assertAlmostEqual(result, 4.0)
+
+    async def test_get_average_program_rating_returns_none_when_no_ratings(self):
+        """Returns None when no participants in the round/role have submitted a rating."""
+        result = await self.repo.get_average_program_rating_by_round_and_role(
+            self.session,
+            round_id=self.rounds[0].round_id,
+            role=ParticipantRole.MENTEE,
+        )
+
+        self.assertIsNone(result)
 
     async def test_upsert_participant_update(self):
         """Test update an existing participant entity correctly."""

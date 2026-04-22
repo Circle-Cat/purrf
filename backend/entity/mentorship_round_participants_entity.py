@@ -41,7 +41,7 @@ class MentorshipRoundParticipantsEntity(Base):
         )
     )
     pair_feedback: Mapped[dict | None] = mapped_column(JSONB)
-    program_feedback: Mapped[str | None] = mapped_column(String)
+    program_feedback: Mapped[dict | None] = mapped_column(JSONB)
     expected_partner_user_id: Mapped[list[int] | None] = mapped_column(ARRAY(Integer))
     unexpected_partner_user_id: Mapped[list[int] | None] = mapped_column(ARRAY(Integer))
     goal: Mapped[str | None] = mapped_column(String(300))
