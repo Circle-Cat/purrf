@@ -12,6 +12,7 @@ class MeetingTimeDto(BaseDto):
     absent_user_id: int | None = None
     has_unknown_late: bool | None = None
     late_user_ids: list[int] | None = None
+    has_insufficient_duration: bool | None = None
 
 
 class MeetingInfoDto(BaseDto):

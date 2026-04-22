@@ -195,6 +195,7 @@ class MentorshipMapper:
                 dto.absent_user_id = meeting.get("absent_user_id")
                 dto.has_unknown_late = meeting.get("has_unknown_late")
                 dto.late_user_ids = meeting.get("late_user_ids")
+                dto.has_insufficient_duration = meeting.get("has_insufficient_duration")
 
             google_dtos.append(dto)
 

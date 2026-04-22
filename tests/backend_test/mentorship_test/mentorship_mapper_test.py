@@ -334,6 +334,7 @@ class TestMentorshipMapper(unittest.TestCase):
                     "absent_user_id": 123,
                     "has_unknown_late": False,
                     "late_user_ids": None,
+                    "has_insufficient_duration": True,
                 }
             ],
         }
@@ -382,6 +383,7 @@ class TestMentorshipMapper(unittest.TestCase):
                     "absent_user_id": 123,
                     "has_unknown_late": True,
                     "late_user_ids": [456],
+                    "has_insufficient_duration": True,
                 }
             ],
         }
@@ -402,6 +404,7 @@ class TestMentorshipMapper(unittest.TestCase):
         self.assertIsNone(google_meeting.absent_user_id)
         self.assertIsNone(google_meeting.has_unknown_late)
         self.assertIsNone(google_meeting.late_user_ids)
+        self.assertIsNone(google_meeting.has_insufficient_duration)
 
     def test_map_to_meeting_v2_dto_detail_true_includes_google_extra_fields(self):
         """Test google meeting extra fields are populated when include_details=True."""
@@ -423,6 +426,7 @@ class TestMentorshipMapper(unittest.TestCase):
                     "absent_user_id": 123,
                     "has_unknown_late": True,
                     "late_user_ids": [456],
+                    "has_insufficient_duration": True,
                 }
             ],
         }
@@ -443,6 +447,7 @@ class TestMentorshipMapper(unittest.TestCase):
         self.assertEqual(google_meeting.absent_user_id, 123)
         self.assertTrue(google_meeting.has_unknown_late)
         self.assertEqual(google_meeting.late_user_ids, [456])
+        self.assertTrue(google_meeting.has_insufficient_duration)
 
     def test_map_to_meeting_v2_dto_no_meeting_log(self):
         """Test mapping pair entities with None meeting log returns empty meeting list."""
@@ -482,6 +487,7 @@ class TestMentorshipMapper(unittest.TestCase):
                     "absent_user_id": 123,
                     "has_unknown_late": True,
                     "late_user_ids": [456],
+                    "has_insufficient_duration": True,
                 }
             ]
         }
@@ -506,6 +512,7 @@ class TestMentorshipMapper(unittest.TestCase):
         self.assertEqual(google_meeting.absent_user_id, 123)
         self.assertTrue(google_meeting.has_unknown_late)
         self.assertEqual(google_meeting.late_user_ids, [456])
+        self.assertTrue(google_meeting.has_insufficient_duration)
 
 
 if __name__ == "__main__":
