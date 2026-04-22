@@ -14,9 +14,17 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import MultipleSelector from "@/components/common/MultipleSelector";
 import { Info } from "lucide-react";
 import { MentorshipParticipantRoles } from "@/constants/MentorshipParticipantRoles";
+import SurveyRadioQuestion from "@/pages/PersonalDashboard/components/SurveyRadioQuestion";
 import {
   INDUSTRY_CONFIG,
   SKILLSET_CONFIG,
+  CAREER_TRANSITION_OPTIONS,
+  REGION_OPTIONS,
+  EXTERNAL_MENTORING_OPTIONS,
+  CURRENT_BACKGROUND_OPTIONS,
+  CURRENT_STAGE_OPTIONS,
+  TIME_URGENCY_OPTIONS,
+  TARGET_REGION_OPTIONS,
   mapRegistrationToForm,
   mapFormToApi,
 } from "@/pages/PersonalDashboard/utils/mentorshipRegistration";
@@ -52,10 +60,33 @@ export default function MentorshipRegistrationDialog({
   const [goal, setGoal] = useState("");
   const [selectedPartners, setSelectedPartners] = useState([]);
   const [excludedPartners, setExcludedPartners] = useState([]);
+  // Mentor survey
+  const [careerTransition, setCareerTransition] = useState("");
+  const [careerTransitionOther, setCareerTransitionOther] = useState("");
+  const [region, setRegion] = useState("");
+  const [regionOther, setRegionOther] = useState("");
+  const [externalMentoringExp, setExternalMentoringExp] = useState("");
+  // Mentee survey
+  const [currentBackground, setCurrentBackground] = useState("");
+  const [currentBackgroundOther, setCurrentBackgroundOther] = useState("");
+  const [targetRegion, setTargetRegion] = useState("");
+  const [targetRegionOther, setTargetRegionOther] = useState("");
+  const [currentStage, setCurrentStage] = useState("");
+  const [timeUrgency, setTimeUrgency] = useState("");
+  const [errors, setErrors] = useState({});
+
+  const clearError = (field) =>
+    setErrors((prev) => {
+      if (!prev[field]) return prev;
+      const rest = { ...prev };
+      delete rest[field];
+      return rest;
+    });
 
   // Initialize form state when dialog opens
   useEffect(() => {
     if (!isOpen || !currentRegistration) return;
+    setErrors({});
 
     const formData = mapRegistrationToForm(
       currentRegistration,
@@ -68,6 +99,19 @@ export default function MentorshipRegistrationDialog({
     setGoal(formData.goal);
     setSelectedPartners(formData.selectedPartners);
     setExcludedPartners(formData.excludedPartners);
+    // Mentor survey
+    setCareerTransition(formData.careerTransition);
+    setCareerTransitionOther(formData.careerTransitionOther);
+    setRegion(formData.region);
+    setRegionOther(formData.regionOther);
+    setExternalMentoringExp(formData.externalMentoringExp);
+    // Mentee survey
+    setCurrentBackground(formData.currentBackground);
+    setCurrentBackgroundOther(formData.currentBackgroundOther);
+    setTargetRegion(formData.targetRegion);
+    setTargetRegionOther(formData.targetRegionOther);
+    setCurrentStage(formData.currentStage);
+    setTimeUrgency(formData.timeUrgency);
   }, [currentRegistration, allPastPartners, isOpen]);
 
   /**
@@ -82,10 +126,44 @@ export default function MentorshipRegistrationDialog({
     }
   };
 
+  const validate = () => {
+    const newErrors = {};
+    if (!isMentor && selectedIndustries.length === 0)
+      newErrors.selectedIndustries = "Please select an industry.";
+    if (selectedSkillsets.length === 0)
+      newErrors.selectedSkillsets = "Please select at least one skillset.";
+    if (isMentor) {
+      if (!careerTransition)
+        newErrors.careerTransition = "This field is required.";
+      if (careerTransition === "other" && !careerTransitionOther.trim())
+        newErrors.careerTransitionOther =
+          "Please describe your career transition background.";
+      if (!region) newErrors.region = "This field is required.";
+      if (region === "other" && !regionOther.trim())
+        newErrors.regionOther = "Please specify your region.";
+      if (!externalMentoringExp)
+        newErrors.externalMentoringExp = "This field is required.";
+    } else {
+      if (!currentBackground)
+        newErrors.currentBackground = "This field is required.";
+      if (currentBackground === "other" && !currentBackgroundOther.trim())
+        newErrors.currentBackgroundOther =
+          "Please describe your current background.";
+      if (!currentStage) newErrors.currentStage = "This field is required.";
+      if (!timeUrgency) newErrors.timeUrgency = "This field is required.";
+      if (!targetRegion) newErrors.targetRegion = "This field is required.";
+      if (targetRegion === "other" && !targetRegionOther.trim())
+        newErrors.targetRegionOther = "Please specify your target job market.";
+    }
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
   /**
    * Build API payload from form state and submit it.
    */
   const handleSave = async () => {
+    if (!validate()) return;
     const payload = mapFormToApi(
       {
         industries: selectedIndustries,
@@ -94,6 +172,17 @@ export default function MentorshipRegistrationDialog({
         goal,
         selectedPartners,
         excludedPartners,
+        careerTransition,
+        careerTransitionOther,
+        region,
+        regionOther,
+        externalMentoringExp,
+        currentBackground,
+        currentBackgroundOther,
+        targetRegion,
+        targetRegionOther,
+        currentStage,
+        timeUrgency,
       },
       currentRegistration,
     );
@@ -165,17 +254,26 @@ export default function MentorshipRegistrationDialog({
           {!isMentor && (
             <div className="space-y-3">
               <Label className="text-sm font-semibold">
-                Which industry are you interested in?
+                Which industry are you interested in?{" "}
+                <span className="text-destructive">*</span>
               </Label>
               <MultipleSelector
                 className="w-full"
                 options={INDUSTRY_CONFIG}
                 value={selectedIndustries}
-                onChange={setSelectedIndustries}
+                onChange={(val) => {
+                  setSelectedIndustries(val);
+                  clearError("selectedIndustries");
+                }}
                 maxSelected={1}
                 placeholder="Select industries..."
                 disabled={isLocked}
               />
+              {errors.selectedIndustries && (
+                <span className="text-destructive text-xs">
+                  {errors.selectedIndustries}
+                </span>
+              )}
             </div>
           )}
 
@@ -184,17 +282,26 @@ export default function MentorshipRegistrationDialog({
             <Label className="text-sm font-semibold">
               {isMentor
                 ? "Which skills can you provide guidance on?"
-                : "Which skills do you hope to gain guidance on?"}
+                : "Which skills do you hope to gain guidance on?"}{" "}
+              <span className="text-destructive">*</span>
             </Label>
             <MultipleSelector
               className="w-full"
               options={SKILLSET_CONFIG}
               value={selectedSkillsets}
-              onChange={setSelectedSkillsets}
+              onChange={(val) => {
+                setSelectedSkillsets(val);
+                clearError("selectedSkillsets");
+              }}
               maxSelected={3}
               placeholder="Search and select up to 3 skills..."
               disabled={isLocked}
             />
+            {errors.selectedSkillsets && (
+              <span className="text-destructive text-xs">
+                {errors.selectedSkillsets}
+              </span>
+            )}
             <p className="text-[11px] text-muted-foreground italic">
               * Select up to 3 key skillsets.
             </p>
@@ -204,7 +311,8 @@ export default function MentorshipRegistrationDialog({
           {isMentor && (
             <div className="space-y-3">
               <Label className="text-sm font-semibold">
-                How much time do you want to invest in this round?
+                How much time do you want to invest in this round?{" "}
+                <span className="text-destructive">*</span>
               </Label>
               <RadioGroup
                 disabled={isLocked}
@@ -226,6 +334,145 @@ export default function MentorshipRegistrationDialog({
                 ))}
               </RadioGroup>
             </div>
+          )}
+
+          {/* Mentor survey questions */}
+          {isMentor && (
+            <>
+              <SurveyRadioQuestion
+                label="Do you have experience transitioning into CS / tech from another field?"
+                required
+                options={CAREER_TRANSITION_OPTIONS}
+                value={careerTransition}
+                onValueChange={(val) => {
+                  setCareerTransition(val);
+                  if (val !== "other") setCareerTransitionOther("");
+                  clearError("careerTransition");
+                }}
+                idPrefix="ct"
+                disabled={isLocked}
+                error={errors.careerTransition}
+                otherValue={careerTransitionOther}
+                onOtherChange={(val) => {
+                  setCareerTransitionOther(val);
+                  clearError("careerTransitionOther");
+                }}
+                otherError={errors.careerTransitionOther}
+                otherMaxLength={200}
+                otherPlaceholder="Please briefly describe..."
+              />
+
+              <SurveyRadioQuestion
+                label="Which region are you currently primarily based in for career development?"
+                required
+                options={REGION_OPTIONS}
+                value={region}
+                onValueChange={(val) => {
+                  setRegion(val);
+                  if (val !== "other") setRegionOther("");
+                  clearError("region");
+                }}
+                idPrefix="r"
+                disabled={isLocked}
+                error={errors.region}
+                otherValue={regionOther}
+                onOtherChange={(val) => {
+                  setRegionOther(val);
+                  clearError("regionOther");
+                }}
+                otherError={errors.regionOther}
+              />
+
+              <SurveyRadioQuestion
+                label="Do you have experience mentoring others outside of the CircleCat Mentorship Program?"
+                required
+                options={EXTERNAL_MENTORING_OPTIONS}
+                value={externalMentoringExp}
+                onValueChange={(val) => {
+                  setExternalMentoringExp(val);
+                  clearError("externalMentoringExp");
+                }}
+                idPrefix="em"
+                disabled={isLocked}
+                error={errors.externalMentoringExp}
+              />
+            </>
+          )}
+
+          {/* Mentee survey questions */}
+          {!isMentor && (
+            <>
+              <SurveyRadioQuestion
+                label="Which of the following best describes your current situation?"
+                required
+                options={CURRENT_BACKGROUND_OPTIONS}
+                value={currentBackground}
+                onValueChange={(val) => {
+                  setCurrentBackground(val);
+                  if (val !== "other") setCurrentBackgroundOther("");
+                  clearError("currentBackground");
+                }}
+                idPrefix="cb"
+                disabled={isLocked}
+                error={errors.currentBackground}
+                otherValue={currentBackgroundOther}
+                onOtherChange={(val) => {
+                  setCurrentBackgroundOther(val);
+                  clearError("currentBackgroundOther");
+                }}
+                otherError={errors.currentBackgroundOther}
+                otherPlaceholder="Please briefly describe..."
+              />
+
+              <SurveyRadioQuestion
+                label="Which stage are you currently in?"
+                required
+                options={CURRENT_STAGE_OPTIONS}
+                value={currentStage}
+                onValueChange={(val) => {
+                  setCurrentStage(val);
+                  clearError("currentStage");
+                }}
+                idPrefix="cs"
+                disabled={isLocked}
+                error={errors.currentStage}
+              />
+
+              <SurveyRadioQuestion
+                label="How urgent is your timeline?"
+                required
+                options={TIME_URGENCY_OPTIONS}
+                value={timeUrgency}
+                onValueChange={(val) => {
+                  setTimeUrgency(val);
+                  clearError("timeUrgency");
+                }}
+                idPrefix="tu"
+                disabled={isLocked}
+                error={errors.timeUrgency}
+              />
+
+              <SurveyRadioQuestion
+                label="Which job market region are you targeting?"
+                required
+                options={TARGET_REGION_OPTIONS}
+                value={targetRegion}
+                onValueChange={(val) => {
+                  setTargetRegion(val);
+                  if (val !== "other") setTargetRegionOther("");
+                  clearError("targetRegion");
+                }}
+                idPrefix="tr"
+                disabled={isLocked}
+                error={errors.targetRegion}
+                otherValue={targetRegionOther}
+                onOtherChange={(val) => {
+                  setTargetRegionOther(val);
+                  clearError("targetRegionOther");
+                }}
+                otherError={errors.targetRegionOther}
+              />
+            </>
           )}
 
           {/* Goal input */}
