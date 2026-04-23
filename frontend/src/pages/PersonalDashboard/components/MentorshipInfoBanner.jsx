@@ -1,13 +1,15 @@
 import { Card, CardContent, CardTitle, CardHeader } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Target, ExternalLink } from "lucide-react";
+import { Target } from "lucide-react";
 import MentorshipRegistrationDialog from "@/pages/PersonalDashboard/components/MentorshipRegistrationDialog";
 import MatchingResultDialog from "@/pages/PersonalDashboard/components/MatchingResultDialog";
+import MentorshipFeedbackDialog from "@/pages/PersonalDashboard/components/MentorshipFeedbackDialog";
 
 export default function MentorshipInfoBanner({
   registration,
   isRegistrationOpen,
   isFeedbackEnabled,
+  feedbackRoundId,
+  feedbackRoundName,
   onSaveRegistration,
   pastPartners,
   isPartnersLoading,
@@ -73,29 +75,13 @@ export default function MentorshipInfoBanner({
                 />
               </>
             )}
-            {/* Feedback button */}
-            <Button
-              variant="outline"
-              className="border-[#6035F3] text-[#6035F3] hover:bg-purple-50 disabled:opacity-50"
-              disabled={!isFeedbackEnabled}
-              asChild={isFeedbackEnabled}
-            >
-              {isFeedbackEnabled ? (
-                <a
-                  href="https://forms.google.com/mentorship-feedback"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <ExternalLink className="h-4 w-4 mr-2" />
-                  Submit Mentorship Feedback
-                </a>
-              ) : (
-                <span className="flex items-center">
-                  <ExternalLink className="h-4 w-4 mr-2" />
-                  Submit Mentorship Feedback
-                </span>
-              )}
-            </Button>
+
+            {/* Feedback dialog button */}
+            <MentorshipFeedbackDialog
+              roundId={feedbackRoundId}
+              roundName={feedbackRoundName}
+              isFeedbackEnabled={isFeedbackEnabled}
+            />
           </div>
         </div>
       </CardContent>

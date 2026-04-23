@@ -21,6 +21,7 @@ describe("calculateMentorshipSlots", () => {
     const result = calculateMentorshipSlots([]);
     expect(result).toEqual({
       feedbackRoundId: null,
+      feedbackRoundName: "",
       isFeedbackEnabled: false,
       regRoundId: null,
       isRegistrationOpen: false,

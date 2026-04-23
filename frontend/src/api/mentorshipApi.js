@@ -51,3 +51,18 @@ export const getMyMentorshipMeetingLog = (roundId) =>
  */
 export const postMyMentorshipMeetingLog = (data) =>
   request.post(API_ENDPOINTS.MENTORSHIP_MEETINGS_ENDPOINT, data);
+
+/**
+ * Fetch the current user's program feedback for a specific round.
+ * @param {string} roundId - The ID of the mentorship round.
+ */
+export const getMyMentorshipFeedback = (roundId) =>
+  request.get(API_ENDPOINTS.MENTORSHIP_FEEDBACK(roundId));
+
+/**
+ * Submit or overwrite program feedback for a specific round.
+ * @param {string} roundId - The ID of the mentorship round.
+ * @param {object} data - The feedback payload.
+ */
+export const postMyMentorshipFeedback = (roundId, data) =>
+  request.post(API_ENDPOINTS.MENTORSHIP_FEEDBACK(roundId), data);

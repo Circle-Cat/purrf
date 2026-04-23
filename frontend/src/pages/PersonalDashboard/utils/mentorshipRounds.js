@@ -82,6 +82,7 @@ export const calculateMentorshipSlots = (allRounds) => {
   return {
     // Controls the "Feedback" button
     feedbackRoundId: feedbackRound?.id || null,
+    feedbackRoundName: feedbackRound?.name || "",
     isFeedbackEnabled: Boolean(feedbackRound),
 
     // Controls the "Register" / "View" button

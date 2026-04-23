@@ -26,6 +26,8 @@ const PersonalDashboard = () => {
     registration, // Registration data for the current or most recent round
     isRegistrationOpen, // Whether the registration period is currently open
     isFeedbackEnabled, // Whether the feedback phase is currently active
+    feedbackRoundId, // Round ID for which feedback is currently open
+    feedbackRoundName, // Display name of the feedback round
     saveRegistration, // Function to submit or update registration data
     pastPartners, // List of past mentorship partners
     isPartnersLoading, // Whether partner data is currently loading
@@ -66,6 +68,8 @@ const PersonalDashboard = () => {
         registration={registration}
         isRegistrationOpen={isRegistrationOpen}
         isFeedbackEnabled={isFeedbackEnabled}
+        feedbackRoundId={feedbackRoundId}
+        feedbackRoundName={feedbackRoundName}
         onSaveRegistration={saveRegistration}
         pastPartners={pastPartners}
         isPartnersLoading={isPartnersLoading}

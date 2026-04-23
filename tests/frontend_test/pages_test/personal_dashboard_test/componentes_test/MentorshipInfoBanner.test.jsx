@@ -22,6 +22,17 @@ vi.mock("@/pages/PersonalDashboard/components/MatchingResultDialog", () => ({
   )),
 }));
 
+vi.mock(
+  "@/pages/PersonalDashboard/components/MentorshipFeedbackDialog",
+  () => ({
+    default: vi.fn((props) => (
+      <div data-testid="mock-feedback-dialog">
+        Feedback Enabled: {props.isFeedbackEnabled ? "Yes" : "No"}
+      </div>
+    )),
+  }),
+);
+
 describe("MentorshipInfoBanner", () => {
   const defaultProps = {
     registration: null,
@@ -139,35 +150,19 @@ describe("MentorshipInfoBanner", () => {
     expect(screen.getByText("Dialog Locked: Yes")).toBeInTheDocument();
   });
 
-  it("disables the feedback button and does not render it as a link when feedback is disabled", () => {
+  it("passes isFeedbackEnabled=false to MentorshipFeedbackDialog when feedback is disabled", () => {
     render(
       <MentorshipInfoBanner {...defaultProps} isFeedbackEnabled={false} />,
     );
 
-    const button = screen.getByRole("button", {
-      name: /submit mentorship feedback/i,
-    });
-    expect(button).toBeDisabled();
-
-    // Ensure no <a> element is rendered
-    expect(screen.queryByRole("link")).not.toBeInTheDocument();
+    const dialog = screen.getByTestId("mock-feedback-dialog");
+    expect(dialog).toHaveTextContent("Feedback Enabled: No");
   });
 
-  it("renders a valid external link when feedback is enabled", () => {
+  it("passes isFeedbackEnabled=true to MentorshipFeedbackDialog when feedback is enabled", () => {
     render(<MentorshipInfoBanner {...defaultProps} isFeedbackEnabled={true} />);
 
-    const link = screen.getByRole("link", {
-      name: /submit mentorship feedback/i,
-    });
-    expect(link).toBeInTheDocument();
-    expect(link).toHaveAttribute(
-      "href",
-      "https://forms.google.com/mentorship-feedback",
-    );
-    expect(link).toHaveAttribute("target", "_blank");
-    expect(link).toHaveAttribute("rel", "noopener noreferrer");
-
-    // The button should not be disabled in this case
-    expect(link.closest("button") || link).not.toHaveAttribute("disabled");
+    const dialog = screen.getByTestId("mock-feedback-dialog");
+    expect(dialog).toHaveTextContent("Feedback Enabled: Yes");
   });
 });
