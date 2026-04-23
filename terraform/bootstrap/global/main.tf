@@ -64,6 +64,11 @@ data "google_project" "circlecat_project_data" {
   project_id = var.circlecat_project_id
 }
 
+# Get circlecat-prod-iad project details
+data "google_project" "circlecat_prod_iad_project_data" {
+  project_id = var.circlecat_prod_iad_project_id
+}
+
 
 # Define an Access Context Manager policy for VPC Service Controls perimeter
 resource "google_access_context_manager_access_policy" "purrf_internal" {
@@ -121,6 +126,24 @@ resource "google_access_context_manager_service_perimeter" "purrf_primary_perime
       }
     }
 
+    # Ingress policy: allow traffic from circlecat-prod-iad's main VPC network (staging cloudflare2-tunnel)
+    ingress_policies {
+      ingress_from {
+        identities    = []
+        identity_type = "ANY_IDENTITY"
+        sources {
+          access_level = null
+          resource     = "//compute.googleapis.com/${data.google_project.circlecat_prod_iad_project_data.id}/global/networks/main"
+        }
+      }
+      ingress_to {
+        resources = ["*"]
+        operations {
+          service_name = "*"
+        }
+      }
+    }
+
     # Ingress policy: allow traffic from a specific user
     ingress_policies {
       ingress_from {
@@ -154,6 +177,14 @@ data "terraform_remote_state" "prod_env" {
   config = {
     bucket = "purrf-terraform-state"
     prefix = "prod"
+  }
+}
+
+data "terraform_remote_state" "staging_env" {
+  backend = "gcs"
+  config = {
+    bucket = "purrf-terraform-state"
+    prefix = "staging"
   }
 }
 
@@ -273,6 +304,12 @@ resource "cloudflare_pages_domain" "purrf_io_test" {
   name         = "test.purrf.io"
 }
 
+resource "cloudflare_pages_domain" "purrf_io_staging" {
+  account_id   = local.cloudflare_account_id
+  project_name = "purrf"
+  name         = "staging.purrf.io"
+}
+
 resource "cloudflare_dns_record" "api_prod" {
   zone_id = local.zone_id
   name    = "api"
@@ -333,7 +370,7 @@ resource "cloudflare_dns_record" "login_test" {
   zone_id = local.zone_id
   name    = "test-login"
   type    = "CNAME"
-  content = "dev-6mz4iysn6gfkcudu-cd-hu0gldgw5s3o5lwv.edge.tenants.us.auth0.com"
+  content = data.terraform_remote_state.test_env.outputs.auth0_custom_domain_cname
   proxied = false
   ttl     = 1
   lifecycle {
@@ -385,6 +422,43 @@ resource "cloudflare_dns_record" "root_test" {
   }
 }
 
+# CF-function route for staging reuses the existing tunnel (CF functions remain in purrf-452300).
+resource "cloudflare_dns_record" "cf_staging" {
+  zone_id = local.zone_id
+  name    = "staging-cf"
+  type    = "CNAME"
+  content = "dd604706-9340-414a-8afb-2bf673049bbd.cfargotunnel.com"
+  proxied = true
+  ttl     = 1
+  lifecycle {
+    ignore_changes = [comment]
+  }
+}
+
+resource "cloudflare_dns_record" "root_staging" {
+  zone_id = local.zone_id
+  name    = "staging"
+  type    = "CNAME"
+  content = "purrf.pages.dev"
+  proxied = true
+  ttl     = 1
+  lifecycle {
+    ignore_changes = [comment]
+  }
+}
+
+resource "cloudflare_dns_record" "login_staging" {
+  zone_id = local.zone_id
+  name    = "staging-login"
+  type    = "CNAME"
+  content = data.terraform_remote_state.staging_env.outputs.auth0_custom_domain_cname
+  proxied = false
+  ttl     = 1
+  lifecycle {
+    ignore_changes = [comment]
+  }
+}
+
 resource "cloudflare_zero_trust_tunnel_cloudflared_config" "gcp_tunnel_config" {
   account_id = local.cloudflare_account_id
   tunnel_id  = local.cloudflare_tunnel_id
@@ -396,9 +470,9 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_config" "gcp_tunnel_config" {
           for func_name in local.google_cloud_function_names : {
             hostname = env_cfg.cf_host
             path     = "/purrf-${env_cfg.name}-${func_name}"
-            service  = "https://us-west1-purrf-452300.cloudfunctions.net"
+            service  = "https://${env_cfg.gcp_region}-purrf-452300.cloudfunctions.net"
             origin_request = {
-              http_host_header = "us-west1-purrf-452300.cloudfunctions.net"
+              http_host_header = "${env_cfg.gcp_region}-purrf-452300.cloudfunctions.net"
             }
           }
         ]
@@ -484,7 +558,36 @@ resource "cloudflare_zero_trust_access_identity_provider" "mentorship_login_test
     token_url     = "https://test-login.purrf.io/oauth/token"
     certs_url     = "https://test-login.purrf.io/.well-known/jwks.json"
     client_id     = data.terraform_remote_state.test_env.outputs.auth0_client_id
-    client_secret = var.auth0_test_client_secret
+    client_secret = data.terraform_remote_state.test_env.outputs.auth0_client_secret
+
+    scopes = [
+      "openid",
+      "email",
+      "profile",
+    ]
+
+    claims = [
+      "email",
+      "phone_number",
+      "sub",
+    ]
+
+    email_claim_name = "aud"
+    pkce_enabled     = true
+  }
+}
+
+resource "cloudflare_zero_trust_access_identity_provider" "mentorship_login_staging" {
+  account_id = local.cloudflare_account_id
+  name       = "Staging Mentorship Login"
+  type       = "oidc"
+
+  config = {
+    auth_url      = "https://staging-login.purrf.io/authorize"
+    token_url     = "https://staging-login.purrf.io/oauth/token"
+    certs_url     = "https://staging-login.purrf.io/.well-known/jwks.json"
+    client_id     = data.terraform_remote_state.staging_env.outputs.auth0_client_id
+    client_secret = data.terraform_remote_state.staging_env.outputs.auth0_client_secret
 
     scopes = [
       "openid",
@@ -510,6 +613,17 @@ resource "cloudflare_zero_trust_access_policy" "purrf_auth0_test" {
   include = [{
     login_method = {
       id = cloudflare_zero_trust_access_identity_provider.mentorship_login_test.id
+    }
+  }]
+}
+
+resource "cloudflare_zero_trust_access_policy" "purrf_auth0_staging" {
+  account_id = local.cloudflare_account_id
+  name       = "Staging Auth0 Login Policy"
+  decision   = "allow"
+  include = [{
+    login_method = {
+      id = cloudflare_zero_trust_access_identity_provider.mentorship_login_staging.id
     }
   }]
 }
@@ -549,6 +663,44 @@ resource "cloudflare_zero_trust_access_application" "purrf_app_test" {
     },
     { # Auth0
       id         = cloudflare_zero_trust_access_policy.purrf_auth0_test.id
+      precedence = 2
+    },
+  ]
+}
+
+resource "cloudflare_zero_trust_access_application" "purrf_app_staging" {
+  account_id = local.cloudflare_account_id
+  name       = "purrf_staging"
+  domain     = local.environments.staging.origin_web
+  type       = "self_hosted"
+  destinations = [
+    { type = "public", uri = local.environments.staging.origin_web },
+    { type = "public", uri = local.environments.staging.api_host },
+  ]
+  allowed_idps = [
+    "762bbddc-6753-4c4b-898e-89e18ecc410c",
+    cloudflare_zero_trust_access_identity_provider.mentorship_login_staging.id,
+  ]
+  session_duration     = "24h"
+  app_launcher_visible = true
+
+  auto_redirect_to_identity = false
+  cors_headers = {
+    allow_all_methods = true
+    allow_credentials = true
+    allowed_headers   = ["content-type"]
+    allowed_origins   = ["https://${local.environments.staging.origin_web}"]
+  }
+  enable_binding_cookie      = false
+  http_only_cookie_attribute = false
+  options_preflight_bypass   = false
+  policies = [
+    {
+      id         = "db15487b-4f79-4f3a-a267-1a7be4fe19f8"
+      precedence = 1
+    },
+    {
+      id         = cloudflare_zero_trust_access_policy.purrf_auth0_staging.id
       precedence = 2
     },
   ]

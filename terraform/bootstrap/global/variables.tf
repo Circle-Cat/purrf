@@ -8,12 +8,21 @@ locals {
       api_host   = "api.purrf.io"
       origin_web = "purrf.io"
       cf_host    = "cf.purrf.io"
+      gcp_region = "us-west1"
     }
     test = {
       name       = "test"
       api_host   = "test-api.purrf.io"
       origin_web = "test.purrf.io"
       cf_host    = "test-cf.purrf.io"
+      gcp_region = "us-west1"
+    }
+    staging = {
+      name       = "staging"
+      api_host   = "staging-api.purrf.io"
+      origin_web = "staging.purrf.io"
+      cf_host    = "staging-cf.purrf.io"
+      gcp_region = "us-east4"
     }
   }
 
@@ -56,14 +65,17 @@ variable "circlecat_project_id" {
   default = "circlecat"
 }
 
+variable "circlecat_prod_iad_project_id" {
+  type    = string
+  default = "circlecat-prod-iad"
+}
+
 variable "main_gcp_region" {
   description = "GCP region"
   type        = string
   default     = "us-west1"
 }
 
-variable "auth0_test_client_secret" {
-  description = "Auth0 test client secret"
-  type        = string
-  default     = "us-west1"
-}
+
+
+

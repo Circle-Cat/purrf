@@ -25,6 +25,11 @@ output "auth0_client_id" {
   value = auth0_client.purrf_auth0.client_id
 }
 
+output "auth0_client_secret" {
+  value     = auth0_client_credentials.purrf_auth0.client_secret
+  sensitive = true
+}
+
 output "neon_project_id" {
   value = neon_project.this.id
 }
@@ -63,4 +68,8 @@ output "ld_project_key" {
 output "launchdarkly_client_id" {
   value     = one([for env in launchdarkly_project.purrf.environments : env.client_side_id if env.key == "production"])
   sensitive = true
+}
+
+output "auth0_custom_domain_cname" {
+  value = auth0_custom_domain.purrf_custom_domain.verification[0].methods[0].record
 }

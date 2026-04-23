@@ -63,6 +63,11 @@ resource "auth0_client" "purrf_auth0" {
   }
 }
 
+resource "auth0_client_credentials" "purrf_auth0" {
+  client_id             = auth0_client.purrf_auth0.client_id
+  authentication_method = "client_secret_post"
+}
+
 resource "auth0_custom_domain" "purrf_custom_domain" {
   domain     = local.domains.login
   type       = "auth0_managed_certs"
