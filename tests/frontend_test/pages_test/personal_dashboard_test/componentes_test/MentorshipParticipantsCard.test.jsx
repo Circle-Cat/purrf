@@ -1,6 +1,7 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import MentorshipParticipantsCard from "@/pages/PersonalDashboard/components/MentorshipParticipantsCard";
+import { MentorshipRoundStatus } from "@/constants/MentorshipRoundStatus";
 
 const { mockUseFlags } = vi.hoisted(() => ({
   mockUseFlags: vi.fn(),
@@ -37,8 +38,8 @@ const baseProps = {
       name: "2026 Spring",
       status: "active",
       timeline: {
-        matchNotificationAt: "2026-02-10",
-        meetingsCompletionDeadlineAt: "2026-04-30",
+        matchNotificationAt: "2026-02-10T07:59:59Z",
+        meetingsCompletionDeadlineAt: "2026-04-30T06:59:59Z",
       },
     },
     partnerMeetingOverview: [
@@ -206,5 +207,73 @@ describe("MentorshipParticipantsCard", () => {
     render(<MentorshipParticipantsCard {...baseProps} />);
 
     expect(screen.queryByTestId("meeting-modal")).not.toBeInTheDocument();
+  });
+
+  it("should display duration as date only", () => {
+    render(<MentorshipParticipantsCard {...baseProps} />);
+    const durationEl = screen
+      .getByText("Duration:", { selector: "span" })
+      .closest("p");
+    expect(durationEl).toHaveTextContent(
+      /\d{4}-\d{2}-\d{2} to \d{4}-\d{2}-\d{2}/,
+    );
+  });
+
+  it("should keep submit enabled when deadline is in the future", () => {
+    render(
+      <MentorshipParticipantsCard
+        {...baseProps}
+        participantDetails={{
+          ...baseProps.participantDetails,
+          roundInfo: {
+            ...baseProps.participantDetails.roundInfo,
+            status: MentorshipRoundStatus.ACTIVE,
+            timeline: { meetingsCompletionDeadlineAt: "2099-12-31T00:00:00Z" },
+          },
+        }}
+      />,
+    );
+    expect(
+      screen.getByRole("button", { name: /Submit Meeting Info/ }),
+    ).not.toBeDisabled();
+  });
+
+  it("should disable submit when deadline is well in the past", () => {
+    render(
+      <MentorshipParticipantsCard
+        {...baseProps}
+        participantDetails={{
+          ...baseProps.participantDetails,
+          roundInfo: {
+            ...baseProps.participantDetails.roundInfo,
+            status: MentorshipRoundStatus.ACTIVE,
+            timeline: { meetingsCompletionDeadlineAt: "2020-01-01T00:00:00Z" },
+          },
+        }}
+      />,
+    );
+    expect(
+      screen.getByRole("button", { name: /Submit Meeting Info/ }),
+    ).toBeDisabled();
+  });
+
+  it("should disable submit when round is completed without deadline", () => {
+    render(
+      <MentorshipParticipantsCard
+        {...baseProps}
+        participantDetails={{
+          ...baseProps.participantDetails,
+          roundInfo: {
+            ...baseProps.participantDetails.roundInfo,
+            status: MentorshipRoundStatus.COMPLETED,
+            timeline: { meetingsCompletionDeadlineAt: undefined },
+          },
+        }}
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: /Submit Meeting Info/ }),
+    ).toBeDisabled();
   });
 });

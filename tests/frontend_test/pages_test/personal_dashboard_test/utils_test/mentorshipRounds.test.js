@@ -5,8 +5,8 @@ import {
 } from "@/pages/PersonalDashboard/utils/mentorshipRounds";
 
 describe("calculateMentorshipSlots", () => {
-  // Mock current date: 2023-10-15
-  const MOCK_TODAY = "2023-10-15";
+  // Mock current time: 2023-10-15T00:00:00Z
+  const MOCK_TODAY = "2023-10-15T00:00:00Z";
 
   beforeEach(() => {
     vi.useFakeTimers();
@@ -36,9 +36,9 @@ describe("calculateMentorshipSlots", () => {
         id: "round-active",
         name: "Spring 2024",
         timeline: {
-          promotionStartAt: "2023-09-01",
-          matchNotificationAt: "2023-10-10", // 10-15 is after this
-          feedbackDeadlineAt: "2023-10-20", // 10-15 is before this
+          promotionStartAt: "2023-09-01T07:59:59Z",
+          matchNotificationAt: "2023-10-10T07:59:59Z", // 10-15 is after this
+          feedbackDeadlineAt: "2023-10-20T07:59:59Z", // 10-15 is before this
         },
       },
     ];
@@ -54,9 +54,9 @@ describe("calculateMentorshipSlots", () => {
         id: "round-future",
         name: "Autumn 2024",
         timeline: {
-          promotionStartAt: "2023-10-01",
-          matchNotificationAt: "2023-11-01", // 10-15 is before this
-          feedbackDeadlineAt: "2023-11-15",
+          promotionStartAt: "2023-10-01T07:59:59Z",
+          matchNotificationAt: "2023-11-01T07:59:59Z", // 10-15 is before this
+          feedbackDeadlineAt: "2023-11-15T07:59:59Z",
         },
       },
     ];
@@ -72,8 +72,8 @@ describe("calculateMentorshipSlots", () => {
       {
         id: "round-1",
         timeline: {
-          promotionStartAt: "2023-10-01",
-          applicationDeadlineAt: "2023-10-20", // Today (10-15) is within this range
+          promotionStartAt: "2023-10-01T07:59:59Z",
+          applicationDeadlineAt: "2023-10-20T07:59:59Z", // Today (10-15) is within this range
         },
       },
     ];
@@ -88,9 +88,9 @@ describe("calculateMentorshipSlots", () => {
       {
         id: "round-old",
         timeline: {
-          promotionStartAt: "2023-08-01",
-          meetingsCompletionDeadlineAt: "2023-10-10", // Meetings already completed
-          feedbackDeadlineAt: "2023-10-20", // Before feedback deadline
+          promotionStartAt: "2023-08-01T07:59:59Z",
+          meetingsCompletionDeadlineAt: "2023-10-10T07:59:59Z", // Meetings already completed
+          feedbackDeadlineAt: "2023-10-20T07:59:59Z", // Before feedback deadline
         },
       },
     ];
@@ -105,8 +105,8 @@ describe("calculateMentorshipSlots", () => {
       {
         id: "round-closed",
         timeline: {
-          promotionStartAt: "2023-09-01",
-          applicationDeadlineAt: "2023-10-01", // Today (10-15) is past the deadline
+          promotionStartAt: "2023-09-01T07:59:59Z",
+          applicationDeadlineAt: "2023-10-01T07:59:59Z", // Today (10-15) is past the deadline
         },
       },
     ];
@@ -121,15 +121,15 @@ describe("calculateMentorshipSlots", () => {
       {
         id: "round-older",
         timeline: {
-          promotionStartAt: "2023-01-01",
-          applicationDeadlineAt: "2023-01-10",
+          promotionStartAt: "2023-01-01T07:59:59Z",
+          applicationDeadlineAt: "2023-01-10T07:59:59Z",
         },
       },
       {
         id: "round-newer",
         timeline: {
-          promotionStartAt: "2023-09-01",
-          applicationDeadlineAt: "2023-09-10",
+          promotionStartAt: "2023-09-01T07:59:59Z",
+          applicationDeadlineAt: "2023-09-10T07:59:59Z",
         },
       },
     ];
@@ -146,8 +146,8 @@ describe("calculateMentorshipSlots", () => {
       {
         id: "valid",
         timeline: {
-          promotionStartAt: "2023-10-01",
-          applicationDeadlineAt: "2023-10-20",
+          promotionStartAt: "2023-10-01T07:59:59Z",
+          applicationDeadlineAt: "2023-10-20T07:59:59Z",
         },
       },
     ];
@@ -161,16 +161,16 @@ describe("calculateMentorshipSlots", () => {
       {
         id: "active-reg",
         timeline: {
-          promotionStartAt: "2023-10-10",
-          applicationDeadlineAt: "2023-10-25",
+          promotionStartAt: "2023-10-10T07:59:59Z",
+          applicationDeadlineAt: "2023-10-25T07:59:59Z",
         },
       },
       {
         id: "in-feedback",
         timeline: {
-          promotionStartAt: "2023-08-01",
-          meetingsCompletionDeadlineAt: "2023-10-01",
-          feedbackDeadlineAt: "2023-10-30",
+          promotionStartAt: "2023-08-01T07:59:59Z",
+          meetingsCompletionDeadlineAt: "2023-10-01T07:59:59Z",
+          feedbackDeadlineAt: "2023-10-30T07:59:59Z",
         },
       },
     ];
@@ -206,8 +206,8 @@ describe("calculateRoundStatus", () => {
       {
         id: "round-active",
         timeline: {
-          matchNotificationAt: "2026-01-01",
-          meetingsCompletionDeadlineAt: "2026-12-31",
+          matchNotificationAt: "2026-01-01T07:59:59Z",
+          meetingsCompletionDeadlineAt: "2026-12-31T07:59:59Z",
         },
       },
     ];
@@ -221,8 +221,8 @@ describe("calculateRoundStatus", () => {
       {
         id: "round-future",
         timeline: {
-          promotionStartAt: "2027-01-01",
-          meetingsCompletionDeadlineAt: "2027-12-31",
+          promotionStartAt: "2027-01-01T07:59:59Z",
+          meetingsCompletionDeadlineAt: "2027-12-31T07:59:59Z",
         },
       },
     ];
@@ -236,8 +236,8 @@ describe("calculateRoundStatus", () => {
       {
         id: "round-done",
         timeline: {
-          promotionStartAt: "2025-01-01",
-          meetingsCompletionDeadlineAt: "2025-12-31",
+          promotionStartAt: "2025-01-01T07:59:59Z",
+          meetingsCompletionDeadlineAt: "2025-12-31T07:59:59Z",
         },
       },
     ];
@@ -251,15 +251,15 @@ describe("calculateRoundStatus", () => {
       {
         id: "round-upcoming",
         timeline: {
-          promotionStartAt: "2027-01-01",
-          meetingsCompletionDeadlineAt: "2027-12-31",
+          promotionStartAt: "2027-01-01T07:59:59Z",
+          meetingsCompletionDeadlineAt: "2027-12-31T07:59:59Z",
         },
       },
       {
         id: "round-active",
         timeline: {
-          matchNotificationAt: "2026-01-01",
-          meetingsCompletionDeadlineAt: "2026-12-31",
+          matchNotificationAt: "2026-01-01T07:59:59Z",
+          meetingsCompletionDeadlineAt: "2026-12-31T07:59:59Z",
         },
       },
     ];
@@ -272,15 +272,15 @@ describe("calculateRoundStatus", () => {
       {
         id: "round-earlier",
         timeline: {
-          promotionStartAt: "2025-01-01",
-          meetingsCompletionDeadlineAt: "2025-06-30",
+          promotionStartAt: "2025-01-01T07:59:59Z",
+          meetingsCompletionDeadlineAt: "2025-06-30T06:59:59Z",
         },
       },
       {
         id: "round-later",
         timeline: {
-          promotionStartAt: "2025-07-01",
-          meetingsCompletionDeadlineAt: "2025-12-31",
+          promotionStartAt: "2025-07-01T07:59:59Z",
+          meetingsCompletionDeadlineAt: "2025-12-31T07:59:59Z",
         },
       },
     ];
@@ -294,8 +294,8 @@ describe("calculateRoundStatus", () => {
       {
         id: "round-promo",
         timeline: {
-          promotionStartAt: "2026-01-01",
-          meetingsCompletionDeadlineAt: "2026-12-31",
+          promotionStartAt: "2026-01-01T07:59:59Z",
+          meetingsCompletionDeadlineAt: "2026-12-31T07:59:59Z",
         },
       },
     ];

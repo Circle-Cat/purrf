@@ -2,6 +2,8 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useState } from "react";
+import { format, addDays, isAfter } from "date-fns";
+import { TZDate } from "@date-fns/tz";
 import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
 import { GraduationCap, User, Plus } from "lucide-react";
@@ -55,10 +57,23 @@ export default function MentorshipParticipantsCard({
     participantRole?.toLowerCase() === MentorshipParticipantRoles.MENTEE;
   const canSubmitMeeting = isMentee && manualSubmitMeeting;
 
+  const formatDt = (utcStr) =>
+    utcStr && userTimezone
+      ? format(new TZDate(utcStr, userTimezone), "yyyy-MM-dd")
+      : null;
+
   const hasParticipation =
     !isParticipantCardLoading &&
     partnerMeetingOverview?.length > 0 &&
     participantRole;
+
+  const deadline = roundInfo?.timeline?.meetingsCompletionDeadlineAt;
+  const isSubmitDisabled =
+    !hasParticipation ||
+    (deadline
+      ? isAfter(new Date(), addDays(new Date(deadline), 1))
+      : roundInfo?.status === MentorshipRoundStatus.COMPLETED);
+
   const getRoleIcon = (participantRole) => {
     return participantRole?.toLowerCase() ===
       MentorshipParticipantRoles.MENTOR ? (
@@ -79,10 +94,7 @@ export default function MentorshipParticipantsCard({
                 variant="outline"
                 size="sm"
                 onClick={() => setIsMeetingModalOpen(true)}
-                disabled={
-                  !hasParticipation ||
-                  roundInfo?.status === MentorshipRoundStatus.COMPLETED
-                }
+                disabled={isSubmitDisabled}
               >
                 <Plus className="h-4 w-4 mr-2" />
                 Submit Meeting Info
@@ -144,9 +156,14 @@ export default function MentorshipParticipantsCard({
                   </p>
                   <p>
                     <span className="font-medium">Duration:</span>{" "}
-                    {roundInfo?.timeline?.matchNotificationAt ||
-                      roundInfo?.timeline?.promotionStartAt}{" "}
-                    to {roundInfo?.timeline?.meetingsCompletionDeadlineAt}
+                    {formatDt(
+                      roundInfo?.timeline?.matchNotificationAt ??
+                        roundInfo?.timeline?.promotionStartAt,
+                    )}{" "}
+                    to{" "}
+                    {formatDt(
+                      roundInfo?.timeline?.meetingsCompletionDeadlineAt,
+                    )}
                   </p>
                 </div>
               </div>

@@ -7,7 +7,7 @@
  *
  * Business rules:
  * 1. Feedback slot:
- *    - A round is considered in the feedback phase if today is between
+ *    - A round is considered in the feedback phase if now is between
  *      `meetingsCompletionDeadlineAt` and `feedbackDeadlineAt` (inclusive).
  *
  * 2. Registration / view slot:
@@ -25,8 +25,7 @@
  * }}
  */
 export const calculateMentorshipSlots = (allRounds) => {
-  // Get today's date in YYYY-MM-DD format
-  const today = new Date().toISOString().split("T")[0];
+  const now = new Date().toISOString();
 
   // Sort rounds by promotionStartAt in descending order (latest first)
   // and filter out invalid rounds without promotionStartAt
@@ -38,13 +37,13 @@ export const calculateMentorshipSlots = (allRounds) => {
 
   /**
    * 1. Find the feedback slot:
-   * A round is in the feedback phase if today is after meetings are completed
+   * A round is in the feedback phase if now is after meetings are completed
    * and before the feedback deadline.
    */
   const feedbackRound = sorted.find(
     (r) =>
-      today >= r.timeline.meetingsCompletionDeadlineAt &&
-      today <= r.timeline.feedbackDeadlineAt,
+      now >= r.timeline.meetingsCompletionDeadlineAt &&
+      now <= r.timeline.feedbackDeadlineAt,
   );
 
   /**
@@ -59,12 +58,12 @@ export const calculateMentorshipSlots = (allRounds) => {
    */
   const currentRegRound = sorted.find(
     (r) =>
-      today >= r.timeline.promotionStartAt &&
-      today < r.timeline.applicationDeadlineAt,
+      now >= r.timeline.promotionStartAt &&
+      now < r.timeline.applicationDeadlineAt,
   );
 
   const lastStartedRound = sorted.find(
-    (r) => today >= r.timeline.promotionStartAt,
+    (r) => now >= r.timeline.promotionStartAt,
   );
 
   /**
@@ -76,8 +75,8 @@ export const calculateMentorshipSlots = (allRounds) => {
   const activeMatchRound = sorted.find(
     (r) =>
       r.timeline.matchNotificationAt &&
-      today >= r.timeline.matchNotificationAt &&
-      today <= r.timeline.feedbackDeadlineAt,
+      now >= r.timeline.matchNotificationAt &&
+      now <= r.timeline.feedbackDeadlineAt,
   );
   return {
     // Controls the "Feedback" button
@@ -101,7 +100,7 @@ export const calculateMentorshipSlots = (allRounds) => {
  * the default round to show in the participant card.
  *
  * Status rules for each round:
- * - "active": today is between roundStart (matchNotificationAt or promotionStartAt)
+ * - "active": now is between roundStart (matchNotificationAt or promotionStartAt)
  *    and meetingsCompletionDeadlineAt (inclusive).
  * - "upcoming": roundStart is in the future.
  * - "completed": meetingsCompletionDeadlineAt is in the past.
@@ -115,25 +114,20 @@ export const calculateMentorshipSlots = (allRounds) => {
  * }}
  */
 export const calculateRoundStatus = (allRounds) => {
-  const today = new Date();
+  const now = new Date().toISOString();
   const sortedRounds = [...allRounds]
     .map((round) => {
       const timeline = round.timeline || {};
-      const roundStart = timeline.matchNotificationAt
-        ? new Date(timeline.matchNotificationAt)
-        : timeline.promotionStartAt
-          ? new Date(timeline.promotionStartAt)
-          : null;
-      const roundEnd = timeline.meetingsCompletionDeadlineAt
-        ? new Date(timeline.meetingsCompletionDeadlineAt)
-        : null;
+      const roundStart =
+        timeline.matchNotificationAt ?? timeline.promotionStartAt ?? null;
+      const roundEnd = timeline.meetingsCompletionDeadlineAt ?? null;
 
       const status =
-        roundStart && roundEnd && today >= roundStart && today <= roundEnd
+        roundStart && roundEnd && now >= roundStart && now <= roundEnd
           ? "active"
-          : roundStart && today < roundStart
+          : roundStart && now < roundStart
             ? "upcoming"
-            : roundEnd && today > roundEnd
+            : roundEnd && now > roundEnd
               ? "completed"
               : null;
 
@@ -143,7 +137,7 @@ export const calculateRoundStatus = (allRounds) => {
         _parsedEnd: roundEnd,
       };
     })
-    .sort((a, b) => b._parsedEnd - a._parsedEnd);
+    .sort((a, b) => (b._parsedEnd ?? "").localeCompare(a._parsedEnd ?? ""));
 
   const activeRound =
     sortedRounds.find((r) => r.status === "active") ||
