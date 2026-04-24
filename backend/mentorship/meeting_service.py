@@ -153,6 +153,7 @@ class MeetingService:
                     "start_datetime": new_start,
                     "end_datetime": new_end,
                     "is_completed": data.is_completed,
+                    "created_datetime": datetime.utcnow().strftime(DATETIME_UTC_FORMAT),
                 }
             ]
         }

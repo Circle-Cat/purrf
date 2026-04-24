@@ -203,6 +203,7 @@ class MentorshipMapper:
                 start_datetime=meeting["start_datetime"],
                 end_datetime=meeting["end_datetime"],
                 is_completed=meeting["is_completed"],
+                created_datetime=meeting["created_datetime"]
             )
 
             if include_details:

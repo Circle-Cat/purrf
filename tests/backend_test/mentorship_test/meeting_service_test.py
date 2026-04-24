@@ -61,6 +61,7 @@ class TestMeetingServiceV1(unittest.IsolatedAsyncioTestCase):
                         "start_datetime": "2025-10-01T10:00:00Z",
                         "end_datetime": "2025-10-01T11:00:00Z",
                         "is_completed": True,
+                        "created_datetime": "2025-09-30T09:00:00Z",
                     }
                 ],
             },
@@ -123,7 +124,17 @@ class TestMeetingServiceV1(unittest.IsolatedAsyncioTestCase):
 
         self.mock_pairs_repo.upsert_pairs.assert_awaited_once()
         self.mock_session.commit.assert_awaited_once()
-        self.assertEqual(len(self.mock_pair_entity.meeting_log["meeting_time_list"]), 2)
+
+        meeting_list = self.mock_pair_entity.meeting_log["meeting_time_list"]
+        self.assertEqual(len(meeting_list), 2)
+
+        new_meeting = meeting_list[-1]
+
+        self.assertIn("created_datetime", new_meeting)
+        self.assertIsInstance(new_meeting["created_datetime"], str)
+        self.assertTrue(new_meeting["created_datetime"].endswith("Z"))
+        self.assertTrue(len(new_meeting["created_datetime"]) > 0)
+
         self.assertEqual(self.mock_pair_entity.completed_count, 2)
 
     async def test_upsert_meetings_conflict(self):
