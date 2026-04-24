@@ -194,13 +194,24 @@ resource "cloudflare_pages_project" "purrf_production" {
   production_branch = "prod"
   build_config = {
     build_command = <<EOF
-    go run github.com/bazelbuild/bazelisk@latest build //frontend:dist \
-      --action_env=VITE_API_BASE_URL=$VITE_API_BASE_URL \
-      --action_env=VITE_AUTH0_CLIENT_ID=$VITE_AUTH0_CLIENT_ID \
-      --action_env=VITE_AUTH0_DOMAIN=$VITE_AUTH0_DOMAIN \
-      --action_env=VITE_CF_ACCESS_TENANT_DOMAIN=$VITE_CF_ACCESS_TENANT_DOMAIN \
-      --action_env=VITE_LAUNCHDARKLY_CLIENT_ID=$VITE_LAUNCHDARKLY_CLIENT_ID
-    EOF
+if [ "$CF_PAGES_BRANCH" = "staging" ]; then
+  API_URL=$STAGING_API_BASE_URL
+  AUTH0_CLIENT=$STAGING_AUTH0_CLIENT_ID
+  AUTH0_DOMAIN=$STAGING_AUTH0_DOMAIN
+  LD_CLIENT=$STAGING_LAUNCHDARKLY_CLIENT_ID
+else
+  API_URL=$TEST_API_BASE_URL
+  AUTH0_CLIENT=$TEST_AUTH0_CLIENT_ID
+  AUTH0_DOMAIN=$TEST_AUTH0_DOMAIN
+  LD_CLIENT=$TEST_LAUNCHDARKLY_CLIENT_ID
+fi
+go run github.com/bazelbuild/bazelisk@latest build //frontend:dist \
+  --action_env=VITE_API_BASE_URL=$API_URL \
+  --action_env=VITE_AUTH0_CLIENT_ID=$AUTH0_CLIENT \
+  --action_env=VITE_AUTH0_DOMAIN=$AUTH0_DOMAIN \
+  --action_env=VITE_CF_ACCESS_TENANT_DOMAIN=$VITE_CF_ACCESS_TENANT_DOMAIN \
+  --action_env=VITE_LAUNCHDARKLY_CLIENT_ID=$LD_CLIENT
+EOF
 
     destination_dir = "bazel-bin/frontend/dist"
     root_dir        = ""
@@ -216,6 +227,7 @@ resource "cloudflare_pages_project" "purrf_production" {
       preview_deployment_setting     = "custom"
       preview_branch_includes = [
         "main",
+        "staging",
       ]
       path_includes = [
         "frontend/*",
@@ -228,26 +240,41 @@ resource "cloudflare_pages_project" "purrf_production" {
       build_image_major_version            = 3
       compatibility_date                   = "2025-09-18"
       env_vars = {
-        "VITE_API_BASE_URL" = {
+        "TEST_API_BASE_URL" = {
           type  = "plain_text"
           value = "https://${local.environments.test.api_host}"
-
         }
-        "VITE_AUTH0_CLIENT_ID" = {
+        "STAGING_API_BASE_URL" = {
+          type  = "plain_text"
+          value = "https://${local.environments.staging.api_host}"
+        }
+        "TEST_AUTH0_CLIENT_ID" = {
           type  = "plain_text"
           value = data.terraform_remote_state.test_env.outputs.auth0_client_id
         }
-        "VITE_AUTH0_DOMAIN" = {
+        "STAGING_AUTH0_CLIENT_ID" = {
+          type  = "plain_text"
+          value = data.terraform_remote_state.staging_env.outputs.auth0_client_id
+        }
+        "TEST_AUTH0_DOMAIN" = {
           type  = "plain_text"
           value = "test-login.purrf.io"
+        }
+        "STAGING_AUTH0_DOMAIN" = {
+          type  = "plain_text"
+          value = "staging-login.purrf.io"
+        }
+        "TEST_LAUNCHDARKLY_CLIENT_ID" = {
+          type  = "plain_text"
+          value = data.terraform_remote_state.test_env.outputs.launchdarkly_client_id
+        }
+        "STAGING_LAUNCHDARKLY_CLIENT_ID" = {
+          type  = "plain_text"
+          value = data.terraform_remote_state.staging_env.outputs.launchdarkly_client_id
         }
         "VITE_CF_ACCESS_TENANT_DOMAIN" = {
           type  = "plain_text"
           value = "ccat-dev.cloudflareaccess.com"
-        }
-        "VITE_LAUNCHDARKLY_CLIENT_ID" = {
-          type  = "plain_text"
-          value = data.terraform_remote_state.test_env.outputs.launchdarkly_client_id
         }
         "SKIP_DEPENDENCY_INSTALL" = {
           type  = "plain_text"
@@ -309,6 +336,7 @@ resource "cloudflare_pages_domain" "purrf_io_staging" {
   project_name = "purrf"
   name         = "staging.purrf.io"
 }
+
 
 resource "cloudflare_dns_record" "api_prod" {
   zone_id = local.zone_id
@@ -394,6 +422,20 @@ resource "cloudflare_dns_record" "api_test" {
   }
 }
 
+resource "cloudflare_dns_record" "api_staging" {
+  zone_id = local.zone_id
+  name    = "staging-api"
+  type    = "CNAME"
+  content = "c65a2ea6-84c7-4dec-b860-035393e1c402.cfargotunnel.com"
+  proxied = true
+  ttl     = 1
+  lifecycle {
+    ignore_changes = [
+      comment,
+    ]
+  }
+}
+
 resource "cloudflare_dns_record" "cf_test" {
   zone_id = local.zone_id
   name    = "test-cf"
@@ -439,7 +481,7 @@ resource "cloudflare_dns_record" "root_staging" {
   zone_id = local.zone_id
   name    = "staging"
   type    = "CNAME"
-  content = "purrf.pages.dev"
+  content = "staging.purrf.pages.dev"
   proxied = true
   ttl     = 1
   lifecycle {
