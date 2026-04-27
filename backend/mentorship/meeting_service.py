@@ -14,6 +14,7 @@ from backend.dto.google_meeting_response_detail_dto import (
 )
 from backend.dto.user_context_dto import UserContextDto
 from backend.common.user_role import UserRole
+from backend.dto.google_meeting_delete_response_dto import GoogleMeetingDeleteResponseDto
 
 
 class MeetingService:
@@ -320,6 +321,76 @@ class MeetingService:
         )
 
         return response_detail
+
+    async def delete_google_meetings(
+        self,
+        session: AsyncSession,
+        user_context: UserContextDto,
+        deletions: list[dict],
+    ) -> GoogleMeetingDeleteResponseDto:
+        """
+        Delete Google Calendar meetings across one or more mentorship pairs.
+
+        Returns:
+            GoogleMeetingDeleteResponseDto: IDs that were successfully deleted and failed.
+
+        Raises:
+            ValueError:
+                - If deletions is empty.
+                - If any meeting_ids do not exist in the mentorship pair log.
+        """
+        if not deletions:
+            raise ValueError("deletions must not be empty.")
+
+        current_user, _ = await self.user_identity_service.get_user(
+            session=session,
+            user_info=user_context,
+        )
+
+        all_meeting_ids: list[str] = []
+
+        for deletion in deletions:
+            all_exist = await self.mentorship_pairs_repository.do_google_meetings_exist_in_log(
+                session=session,
+                user_id=current_user.user_id,
+                round_id=deletion["round_id"],
+                partner_id=deletion["partner_id"],
+                meeting_ids=deletion["meeting_ids"],
+            )
+
+            if not all_exist:
+                raise ValueError(
+                    f"Some meetings were not found for round_id={deletion['round_id']}, "
+                    f"partner_id={deletion['partner_id']}."
+                )
+
+            all_meeting_ids.extend(deletion["meeting_ids"])
+
+        succeeded_event_ids, failed_event_ids = await asyncio.to_thread(
+            self.google_service.batch_delete_google_meetings,
+            event_ids=all_meeting_ids,
+        )
+
+        if succeeded_event_ids:
+            await self.mentorship_pairs_repository.remove_meetings_from_log(
+                session=session,
+                user_id=current_user.user_id,
+                meeting_ids=list(dict.fromkeys(succeeded_event_ids)),
+            )
+
+            await session.commit()
+
+        self.logger.info(
+            "[MeetingService] Deleted Google meetings for user_id=%s. succeeded=%s, failed=%s",
+            current_user.user_id,
+            succeeded_event_ids,
+            failed_event_ids,
+        )
+
+        return GoogleMeetingDeleteResponseDto(
+            succeeded_meeting_ids=succeeded_event_ids,
+            failed_meeting_ids=failed_event_ids,
+        )
 
     def _has_time_conflict(
         self, existing_slots: list, new_start: str, new_end: str

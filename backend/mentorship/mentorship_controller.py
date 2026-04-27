@@ -18,11 +18,14 @@ from backend.common.api_endpoints import (
     MENTORSHIP_MATCH_RESULT_ENDPOINT,
     MENTORSHIP_MEETINGS_ENDPOINT,
     MENTORSHIP_MEETING_V2_ENDPOINT,
+    MENTORSHIP_MEETING_V2_SINGLE_ENDPOINT,
+    MENTORSHIP_MEETING_V2_BATCH_DELETE_ENDPOINT,
     MEET_ATTENDANCE_SYNC_ENDPOINT,
     MENTORSHIP_ROUNDS_FEEDBACK_ENDPOINT,
 )
 from backend.common.user_role import UserRole
 from backend.dto.google_meeting_create_dto import GoogleMeetingCreateDto
+from backend.dto.google_meeting_delete_dto import GoogleMeetingDeleteDto
 
 
 class MentorshipController:
@@ -134,6 +137,22 @@ class MentorshipController:
                 self.get_meetings_for_user_v2
             ),
             methods=["GET"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            MENTORSHIP_MEETING_V2_BATCH_DELETE_ENDPOINT,
+            endpoint=authenticate(roles=[UserRole.MENTORSHIP])(
+                self.batch_delete_google_meetings
+            ),
+            methods=["POST"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            MENTORSHIP_MEETING_V2_SINGLE_ENDPOINT,
+            endpoint=authenticate(roles=[UserRole.MENTORSHIP])(
+                self.delete_single_google_meeting
+            ),
+            methods=["DELETE"],
             response_model=None,
         )
         self.router.add_api_route(
@@ -383,6 +402,76 @@ class MentorshipController:
                 data=result,
             )
         raise PermissionError("Create Google meeting feature is not yet available.")
+
+    async def delete_single_google_meeting(
+        self, current_user: UserContextDto, meeting_id: str, round_id: int, partner_id: int,
+    ):
+        """
+        Delete a single Google Calendar meeting for a mentorship pair.
+
+        This endpoint removes the specified meeting from the local meeting_log
+        and deletes the corresponding event from Google Calendar.
+
+        Args:
+            current_user (UserContextDto): The currently authenticated user.
+            meeting_id (str): The Google Calendar event ID to delete.
+            round_id (int): The mentorship round ID.
+            partner_id (int): The partner user ID in the mentorship pair.
+
+        Returns:
+            ApiResponse: A standardized API response confirming deletion.
+        """
+        if self.launchdarkly_service.is_create_google_meeting_enabled(current_user):
+            async with self.database.session() as session:
+                result = await self.meeting_service.delete_google_meetings(
+                    session=session,
+                    user_context=current_user,
+                    deletions=[
+                        {
+                            "round_id": round_id,
+                            "partner_id": partner_id,
+                            "meeting_ids": [meeting_id],
+                        }
+                    ],
+                )
+            return api_response(
+                message="Meeting deletion processed.",
+                data=result,
+            )
+        raise PermissionError("Google meeting feature is not yet available.")
+
+    async def batch_delete_google_meetings(
+        self, current_user: UserContextDto, payload: GoogleMeetingDeleteDto,
+    ):
+        """
+        Delete one or more Google Calendar meetings selected by the user.
+
+        This endpoint processes a batch deletion request, removing meetings from
+        the local meeting_log and deleting corresponding events from Google Calendar.
+
+        Args:
+            current_user (UserContextDto): The context of the currently authenticated user.
+            payload (GoogleMeetingDeleteDto): Request body containing the list of
+                meeting deletions. Each entry includes round_id, partner_id, and meeting_ids.
+
+        Returns:
+            ApiResponse: A standardized API response confirming deletion.
+
+        Raises:
+            PermissionError: If the Google meeting feature is not enabled.
+        """
+        if self.launchdarkly_service.is_create_google_meeting_enabled(current_user):
+            async with self.database.session() as session:
+                result = await self.meeting_service.delete_google_meetings(
+                    session=session,
+                    user_context=current_user,
+                    deletions=[d.model_dump() for d in payload.deletions],
+                )
+            return api_response(
+                message="Meetings deletion processed.",
+                data=result,
+            )
+        raise PermissionError("Google meeting feature is not yet available.")
 
     async def get_meetings_for_user_v2(
         self, current_user: UserContextDto, round_id: int, include_details: bool

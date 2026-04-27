@@ -528,6 +528,49 @@ class TestGoogleService(TestCase):
         )
         self.mock_logger.error.assert_called_once()
 
+    def test_batch_delete_google_meetings_success(self):
+        """Test batch deletion returns succeeded event IDs when all requests succeed."""
+        mock_batch = MagicMock()
+        self.mock_google_calendar_client.new_batch_http_request.return_value = mock_batch
+
+        result = self.service.batch_delete_google_meetings(["event-1", "event-2"])
+
+        self.mock_retry_utils.get_retry_on_transient.assert_called_once_with(
+            mock_batch.execute
+        )
+        self.assertEqual(result, (["event-1", "event-2"], []))
+
+    def test_batch_delete_google_meetings_execute_error(self):
+        """Test batch deletion returns all event IDs as failed when the batch request fails."""
+        mock_batch = MagicMock()
+        self.mock_google_calendar_client.new_batch_http_request.return_value = mock_batch
+        self.mock_retry_utils.get_retry_on_transient.side_effect = Exception("fail")
+
+        result = self.service.batch_delete_google_meetings(["event-1"])
+
+        self.assertEqual(result, ([], ["event-1"]))
+
+    def test_batch_delete_google_meetings_partial_failure(self):
+        """Test batch deletion returns failed event IDs without raising."""
+        mock_batch = MagicMock()
+
+        def add(request, request_id):
+            if request_id == "event-2":
+                callback = self.mock_google_calendar_client.new_batch_http_request.call_args.kwargs[
+                    "callback"
+                ]
+                callback(request_id, None, Exception("fail"))
+
+        self.mock_google_calendar_client.new_batch_http_request.return_value = mock_batch
+        mock_batch.add.side_effect = add
+
+        result = self.service.batch_delete_google_meetings(["event-1", "event-2"])
+
+        self.mock_retry_utils.get_retry_on_transient.assert_called_once_with(
+            mock_batch.execute
+        )
+        self.assertEqual(result, (["event-1"], ["event-2"]))
+
 
 class TestGoogleServiceMeet(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):

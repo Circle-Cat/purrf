@@ -3,6 +3,8 @@ from datetime import datetime
 from google.apps import meet_v2
 from google.protobuf import field_mask_pb2
 
+BATCH_DELETE_SIZE = 500
+
 
 class GoogleService:
     """Service class for interacting with Google APIs."""
@@ -532,3 +534,62 @@ class GoogleService:
             len(result),
         )
         return result
+
+    def batch_delete_google_meetings(
+        self, event_ids: list[str],
+    ) -> tuple[list[str], list[str]]:
+        """
+        Delete one or more Google Calendar events in a single batch HTTP request.
+
+        Args:
+            event_ids (list[str]): Google Calendar event IDs to delete.
+
+        Returns:
+            tuple[list[str], list[str]]: Succeeded event IDs and failed event IDs.
+        """
+        if not event_ids:
+            return [], []
+
+        failed_event_ids: list[str] = []
+
+        def handle_response(request_id, response, exception):
+            if exception is not None:
+                self.logger.error(
+                    "[GoogleService] Batch delete failed for event_id=%s: %s",
+                    request_id,
+                    exception,
+                )
+                failed_event_ids.append(request_id)
+
+        for start in range(0, len(event_ids), BATCH_DELETE_SIZE):
+            chunk = event_ids[start : start + BATCH_DELETE_SIZE]
+
+            batch = self.google_calendar_client.new_batch_http_request(
+                callback=handle_response
+            )
+            for event_id in chunk:
+                batch.add(
+                    self.google_calendar_client.events().delete(
+                        calendarId="primary",
+                        eventId=event_id,
+                        sendUpdates="all",
+                    ),
+                    request_id=event_id,
+                )
+
+            try:
+                self.retry_utils.get_retry_on_transient(batch.execute)
+            except Exception as e:
+                self.logger.error(
+                    "[GoogleService] Batch delete request failed for chunk=%s: %s",
+                    chunk,
+                    e,
+                    exc_info=True,
+                )
+                failed_event_ids.extend(chunk)
+                continue
+
+        failed_set = set(failed_event_ids)
+        succeeded_event_ids = [event_id for event_id in event_ids if event_id not in failed_set]
+
+        return succeeded_event_ids, failed_event_ids
