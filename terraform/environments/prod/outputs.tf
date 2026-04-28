@@ -25,6 +25,11 @@ output "auth0_client_id" {
   value = module.purrf_instance.auth0_client_id
 }
 
+output "auth0_client_secret" {
+  value     = module.purrf_instance.auth0_client_secret
+  sensitive = true
+}
+
 output "neon_project_id" {
   value = module.purrf_instance.neon_project_id
 }
@@ -41,6 +46,11 @@ output "default_gsa_account" {
   value = module.purrf_instance.default_account
 }
 
+output "launchdarkly_client_id" {
+  value     = data.terraform_remote_state.ld.outputs.client_side_ids["staging"]
+  sensitive = true
+}
+
 output "gcp_project_id" {
   value = module.purrf_instance.gcp_project_id
 }
@@ -55,4 +65,8 @@ output "microsoft_chat_notification_url" {
 
 output "microsoft_chat_lifecycle_notification_url" {
   value = module.purrf_instance.microsoft_chat_lifecycle_notification_url
+}
+
+output "auth0_custom_domain_cname" {
+  value = module.purrf_instance.auth0_custom_domain_cname
 }

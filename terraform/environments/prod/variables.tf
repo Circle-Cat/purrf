@@ -7,3 +7,4 @@ variable "gerrit_http_pass" {
   type      = string
   sensitive = true
 }
+

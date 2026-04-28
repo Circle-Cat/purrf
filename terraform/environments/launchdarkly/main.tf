@@ -22,21 +22,21 @@ locals {
       key         = "manual-submit-meeting"
       name        = "Manual Submit Meeting"
       description = "Enables the manual meeting submit flow"
-      off_in      = []
+      off_in      = ["production"]
       public_in   = []
     }
     view_personal_summary = {
       key         = "view-personal-summary"
       name        = "View Personal Summary"
       description = "Enables the view personal summary feature"
-      off_in      = []
-      public_in   = ["staging", "production"]
+      off_in      = ["production"]
+      public_in   = ["staging"]
     }
     create_google_meeting = {
       key         = "create-google-meeting"
       name        = "Create Google Meeting"
       description = "Enables the Google Meeting related feature"
-      off_in      = ["staging", "production"]
+      off_in      = ["production"]
       public_in   = []
     }
   }
