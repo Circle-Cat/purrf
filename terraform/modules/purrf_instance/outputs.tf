@@ -61,15 +61,6 @@ output "microsoft_chat_lifecycle_notification_url" {
   value = "https://${local.domains.cf}/${local.name_prefix}-microsoft-chat-lifecycle"
 }
 
-output "ld_project_key" {
-  value = launchdarkly_project.purrf.key
-}
-
-output "launchdarkly_client_id" {
-  value     = one([for env in launchdarkly_project.purrf.environments : env.client_side_id if env.key == "production"])
-  sensitive = true
-}
-
 output "auth0_custom_domain_cname" {
   value = auth0_custom_domain.purrf_custom_domain.verification[0].methods[0].record
 }

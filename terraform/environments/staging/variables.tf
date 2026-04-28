@@ -8,8 +8,3 @@ variable "gerrit_http_pass" {
   sensitive = true
 }
 
-variable "launchdarkly_access_token" {
-  type      = string
-  sensitive = true
-}
-
