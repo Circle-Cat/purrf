@@ -37,7 +37,3 @@ provider "kubernetes" {
     command     = "gke-gcloud-auth-plugin"
   }
 }
-
-provider "azurerm" {
-  features {}
-}

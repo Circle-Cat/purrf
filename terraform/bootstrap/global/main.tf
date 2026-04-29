@@ -342,7 +342,7 @@ resource "cloudflare_dns_record" "api_prod" {
   zone_id = local.zone_id
   name    = "api"
   type    = "CNAME"
-  content = "0a108bed-55ea-4c18-88b3-fd9bb68105ae.cfargotunnel.com"
+  content = "c65a2ea6-84c7-4dec-b860-035393e1c402.cfargotunnel.com"
   proxied = true
   ttl     = 1
   lifecycle {
@@ -718,6 +718,7 @@ resource "cloudflare_zero_trust_access_application" "purrf_app_staging" {
   destinations = [
     { type = "public", uri = local.environments.staging.origin_web },
     { type = "public", uri = local.environments.staging.api_host },
+    { type = "public", uri = "staging.purrf.pages.dev" },
   ]
   allowed_idps = [
     "762bbddc-6753-4c4b-898e-89e18ecc410c",
@@ -731,7 +732,10 @@ resource "cloudflare_zero_trust_access_application" "purrf_app_staging" {
     allow_all_methods = true
     allow_credentials = true
     allowed_headers   = ["content-type"]
-    allowed_origins   = ["https://${local.environments.staging.origin_web}"]
+    allowed_origins = [
+      "https://${local.environments.staging.origin_web}",
+      "https://staging.purrf.pages.dev",
+    ]
   }
   enable_binding_cookie      = false
   http_only_cookie_attribute = false

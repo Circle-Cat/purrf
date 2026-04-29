@@ -74,6 +74,18 @@ resource "auth0_custom_domain" "purrf_custom_domain" {
   tls_policy = "recommended"
 }
 
+# Auth0 only registers the custom hostname with its Cloudflare-for-SaaS edge
+# after verification succeeds. Without this, the CNAME exists in DNS but
+# requests to the login domain hit Cloudflare with no tenant mapping and
+# fail with Error 1000.
+resource "auth0_custom_domain_verification" "purrf_custom_domain" {
+  custom_domain_id = auth0_custom_domain.purrf_custom_domain.id
+
+  timeouts {
+    create = "15m"
+  }
+}
+
 
 resource "auth0_connection" "db" {
   name     = "Username-Password-Authentication"

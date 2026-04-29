@@ -20,14 +20,6 @@ terraform {
       source  = "hashicorp/helm"
       version = "~> 3.1"
     }
-    azurerm = {
-      source  = "hashicorp/azurerm"
-      version = "=4.1.0"
-    }
-    launchdarkly = {
-      source  = "launchdarkly/launchdarkly"
-      version = "~> 2.0"
-    }
     kubernetes = {
       source  = "hashicorp/kubernetes"
       version = "~> 2.0"

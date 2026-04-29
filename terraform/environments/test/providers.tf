@@ -9,10 +9,6 @@ provider "google" {
   region  = "us-west1"
 }
 
-provider "launchdarkly" {
-  access_token = var.launchdarkly_access_token
-}
-
 data "google_client_config" "provider" {
 }
 
@@ -40,8 +36,4 @@ provider "kubernetes" {
     api_version = "client.authentication.k8s.io/v1beta1"
     command     = "gke-gcloud-auth-plugin"
   }
-}
-
-provider "azurerm" {
-  features {}
 }
