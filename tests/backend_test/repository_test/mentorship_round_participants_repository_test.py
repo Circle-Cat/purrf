@@ -45,7 +45,10 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
                 mentee_average_score=4.3,
                 mentor_average_score=4.5,
                 expectations="improving mentee's ability",
-                description={"goal": "basic skills"},
+                description={
+                    "goal": "basic skills",
+                    "meetings_completion_deadline_at": "2025-06-30T00:00:00+00:00",
+                },
                 required_meetings=5,
             ),
             MentorshipRoundEntity(
@@ -53,7 +56,10 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
                 mentee_average_score=4.8,
                 mentor_average_score=4.6,
                 expectations="guiding career development paths",
-                description={"goal": "career planning"},
+                description={
+                    "goal": "career planning",
+                    "meetings_completion_deadline_at": "2025-12-31T00:00:00+00:00",
+                },
                 required_meetings=5,
             ),
         ]
@@ -105,7 +111,7 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
         self.assertIsNone(result)
 
     async def test_get_recent_participant_by_user_id(self):
-        """Ensure the most recent participant is returned."""
+        """Ensure the participant in the round with the latest meetings_completion_deadline_at is returned."""
         participants = [
             MentorshipRoundParticipantsEntity(
                 user_id=self.user.user_id,
@@ -123,10 +129,7 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
         )
 
         self.assertIsNotNone(result)
-        self.assertEqual(
-            result.round_id,
-            max(self.rounds[0].round_id, self.rounds[1].round_id),
-        )
+        self.assertEqual(result.round_id, self.rounds[1].round_id)
 
     async def test_get_recent_participant_by_user_id_empty(self):
         """Should return None if the user has no participant records."""

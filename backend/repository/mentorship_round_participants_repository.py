@@ -1,8 +1,9 @@
+from backend.entity.mentorship_round_entity import MentorshipRoundEntity
 from backend.entity.mentorship_round_participants_entity import (
     MentorshipRoundParticipantsEntity,
 )
 from backend.common.mentorship_enums import ParticipantRole
-from sqlalchemy import Float, cast, func, select, and_
+from sqlalchemy import TIMESTAMP, Float, cast, func, select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -41,7 +42,10 @@ class MentorshipRoundParticipantsRepository:
     ) -> MentorshipRoundParticipantsEntity | None:
         """
         Retrieve the most recent mentorship round participant for a user,
-        ordered by round_id descending.
+        ordered by the round's meetings_completion_deadline_at descending.
+
+        Rounds without meetings_completion_deadline_at are skipped because
+        their timeline is not finalized.
 
         Args:
             session (AsyncSession): The active async database session.
@@ -52,8 +56,25 @@ class MentorshipRoundParticipantsRepository:
         """
         result = await session.execute(
             select(MentorshipRoundParticipantsEntity)
-            .where(MentorshipRoundParticipantsEntity.user_id == user_id)
-            .order_by(MentorshipRoundParticipantsEntity.round_id.desc())
+            .join(
+                MentorshipRoundEntity,
+                MentorshipRoundEntity.round_id
+                == MentorshipRoundParticipantsEntity.round_id,
+            )
+            .where(
+                MentorshipRoundParticipantsEntity.user_id == user_id,
+                MentorshipRoundEntity.description[
+                    "meetings_completion_deadline_at"
+                ].astext.isnot(None),
+            )
+            .order_by(
+                cast(
+                    MentorshipRoundEntity.description[
+                        "meetings_completion_deadline_at"
+                    ].astext,
+                    TIMESTAMP(timezone=True),
+                ).desc()
+            )
             .limit(1)
         )
 
