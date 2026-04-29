@@ -29,6 +29,7 @@ from backend.common.logger import get_logger
 logger = get_logger()
 
 DEFAULT_DATETIME_UTC = datetime(1970, 1, 1, tzinfo=timezone.utc)
+BULK_UPDATE_EXECUTED_AT = datetime(2026, 1, 31, 8, 10, 59, 482412, tzinfo=timezone.utc)
 PST = timezone(timedelta(hours=-8))
 PDT = timezone(timedelta(hours=-7))
 
@@ -147,6 +148,14 @@ def _parse_industries_to_fixed_dict(industry_str: str) -> dict:
     return result
 
 
+async def _find_user_by_alternative_email(
+    session: AsyncSession, email: str
+) -> UsersEntity | None:
+    stmt = select(UsersEntity).where(UsersEntity.alternative_emails.any(email))
+    result = await session.execute(stmt)
+    return result.scalar_one_or_none()
+
+
 async def upsert_preference(
     session: AsyncSession, pref_repo, user_id: int, skillset_raw: str, industry_raw: str
 ):
@@ -225,14 +234,22 @@ async def upsert_experience(
 
 async def upsert_user(
     session: AsyncSession, users_repo, email: str, data: dict
-) -> UsersEntity:
-    email = email.strip().lower()
+) -> UsersEntity | None:
     user = await users_repo.get_user_by_primary_email(session, email)
 
     if not user:
-        user = UsersEntity(primary_email=email)
+        user = await _find_user_by_alternative_email(session, email)
+
+    if user:
+        if user.updated_timestamp > BULK_UPDATE_EXECUTED_AT:
+            logger.info("Skipping %s, updated after bulk update cutoff", email)
+            return None
+    else:
+        user = UsersEntity()
         user.subject_identifier = f"manual|{email}"
 
+    user.primary_email = email
+    user.alternative_emails = data.get("alt_emails") or []
     user.first_name = data.get("first_name")
     user.last_name = data.get("last_name")
     user.preferred_name = data.get("preferred_name")
@@ -241,8 +258,6 @@ async def upsert_user(
     user.timezone = _parse_timezone(data.get("timezone"))
     user.communication_channel = CommunicationMethod.EMAIL
     user.timezone_updated_at = DEFAULT_DATETIME_UTC
-    if data.get("alt_emails"):
-        user.alternative_emails = data["alt_emails"]
 
     return await users_repo.upsert_users(session, user)
 
@@ -334,6 +349,7 @@ async def main():
                 if not email_raw or pd.isna(email_raw):
                     logger.warning("Row %s missing primary_email, skipping", index)
                     continue
+                email = str(email_raw).strip().lower()
 
                 try:
                     alt_emails_raw = row.get("alternative_emails")
@@ -350,9 +366,10 @@ async def main():
                         else [],
                         "is_active": row.get("eligible"),
                     }
-                    user = await upsert_user(
-                        session, users_repo, str(email_raw), user_data
-                    )
+                    user = await upsert_user(session, users_repo, email, user_data)
+                    if user is None:
+                        continue
+
                     await upsert_experience(session, exp_repo, user.user_id, row)
                     await upsert_preference(
                         session,
@@ -362,9 +379,9 @@ async def main():
                         row.get(INDUSTRY_COL),
                     )
                     await upsert_training(session, user.user_id, row)
-
                 except Exception as e:
                     logger.error("Error at row %s (%s): %s", index, email_raw, e)
+                    raise
 
             await session.commit()
             logger.info("Import successful!")
