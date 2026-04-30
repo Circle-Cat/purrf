@@ -37,3 +37,18 @@ provider "kubernetes" {
     command     = "gke-gcloud-auth-plugin"
   }
 }
+
+# Connect to Neon as the owner role to manage roles/grants declaratively.
+# Uses the direct (non-pooler) host because pgbouncer rejects role/DDL ops.
+# superuser=false is required on Neon — the provider otherwise tries RESET ROLE
+# after each statement, which only superusers can do.
+provider "postgresql" {
+  scheme    = "postgres"
+  host      = module.purrf_instance.neon_direct_host
+  port      = 5432
+  database  = module.purrf_instance.neon_db_name
+  username  = module.purrf_instance.neon_owner_role_name
+  password  = module.purrf_instance.neon_owner_password
+  sslmode   = "require"
+  superuser = false
+}

@@ -70,3 +70,11 @@ output "microsoft_chat_lifecycle_notification_url" {
 output "auth0_custom_domain_cname" {
   value = module.purrf_instance.auth0_custom_domain_cname
 }
+
+# Connection URI for the readonly_daisyisadaisy role, via Neon's pooled
+# endpoint (suitable for ad-hoc human queries).
+# Retrieve with: terraform output -raw readonly_daisy_connection_uri
+output "readonly_daisy_connection_uri" {
+  value     = "postgresql://${postgresql_role.daisy.name}:${urlencode(random_password.daisy.result)}@${module.purrf_instance.neon_pooler_host}/${module.purrf_instance.neon_db_name}?sslmode=require"
+  sensitive = true
+}

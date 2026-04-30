@@ -41,6 +41,27 @@ output "neon_database_owner" {
   value = neon_project.this.database_user
 }
 
+output "neon_direct_host" {
+  value = local.raw_host
+}
+
+output "neon_pooler_host" {
+  value = local.pooler_host
+}
+
+output "neon_db_name" {
+  value = neon_database.this.name
+}
+
+output "neon_owner_role_name" {
+  value = neon_role.this.name
+}
+
+output "neon_owner_password" {
+  value     = neon_role.this.password
+  sensitive = true
+}
+
 output "default_account" {
   value = data.google_compute_default_service_account.default.email
 }
