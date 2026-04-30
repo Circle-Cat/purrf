@@ -481,7 +481,12 @@ class MentorshipPairsRepository:
         await session.execute(stmt)
 
     async def do_google_meetings_exist_in_log(
-        self, session: AsyncSession, user_id: int, round_id: int, partner_id: int, meeting_ids: list[str],
+        self,
+        session: AsyncSession,
+        user_id: int,
+        round_id: int,
+        partner_id: int,
+        meeting_ids: list[str],
     ) -> bool:
         """
         Check whether all given Google meeting IDs exist in meeting_log for the

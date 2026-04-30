@@ -905,13 +905,13 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
         updated = await self.session.get(MentorshipPairsEntity, pair.pair_id)
         await self.session.refresh(updated, ["meeting_log"])
 
-        self.assertEqual(updated.meeting_log["google_meetings"], [{"meeting_id": "real"}])
+        self.assertEqual(
+            updated.meeting_log["google_meetings"], [{"meeting_id": "real"}]
+        )
 
     async def test_remove_meetings_user_not_match(self):
         """Does not update any pair if the user is not part of the pair."""
-        await self._create_pair(
-            meeting_log={"google_meetings": [{"meeting_id": "m1"}]}
-        )
+        await self._create_pair(meeting_log={"google_meetings": [{"meeting_id": "m1"}]})
 
         result = await self.repo.remove_meetings_from_log(
             session=self.session,
