@@ -47,7 +47,7 @@ output "default_gsa_account" {
 }
 
 output "launchdarkly_client_id" {
-  value     = data.terraform_remote_state.ld.outputs.client_side_ids["staging"]
+  value     = data.terraform_remote_state.ld.outputs.client_side_ids["production"]
   sensitive = true
 }
 

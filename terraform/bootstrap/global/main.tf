@@ -194,7 +194,12 @@ resource "cloudflare_pages_project" "purrf_production" {
   production_branch = "prod"
   build_config = {
     build_command = <<EOF
-if [ "$CF_PAGES_BRANCH" = "staging" ]; then
+if [ "$CF_PAGES_BRANCH" = "prod" ]; then
+  API_URL=$VITE_API_BASE_URL
+  AUTH0_CLIENT=$VITE_AUTH0_CLIENT_ID
+  AUTH0_DOMAIN=$VITE_AUTH0_DOMAIN
+  LD_CLIENT=$PROD_LAUNCHDARKLY_CLIENT_ID
+elif [ "$CF_PAGES_BRANCH" = "staging" ]; then
   API_URL=$STAGING_API_BASE_URL
   AUTH0_CLIENT=$STAGING_AUTH0_CLIENT_ID
   AUTH0_DOMAIN=$STAGING_AUTH0_DOMAIN
@@ -305,9 +310,9 @@ EOF
           type  = "plain_text"
           value = "ccat-dev.cloudflareaccess.com"
         }
-        "VITE_LAUNCHDARKLY_CLIENT_ID" = {
+        "PROD_LAUNCHDARKLY_CLIENT_ID" = {
           type  = "plain_text"
-          value = ""
+          value = data.terraform_remote_state.prod_env.outputs.launchdarkly_client_id
         }
         "SKIP_DEPENDENCY_INSTALL" = {
           type  = "plain_text"
