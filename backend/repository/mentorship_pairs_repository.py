@@ -480,33 +480,24 @@ class MentorshipPairsRepository:
         )
         await session.execute(stmt)
 
-    async def remove_meetings_from_log(
-        self,
-        session: AsyncSession,
-        user_id: int,
-        round_id: int,
-        partner_id: int,
-        meeting_ids: list[str],
+    async def do_google_meetings_exist_in_log(
+        self, session: AsyncSession, user_id: int, round_id: int, partner_id: int, meeting_ids: list[str],
     ) -> bool:
         """
-        Remove multiple meeting entries from the meeting_log JSONB field for a mentorship pair.
-
-        This method performs an atomic in-database update by expanding the JSONB array,
-        filtering out specified meeting IDs, and rebuilding the array.
+        Check whether all given Google meeting IDs exist in meeting_log for the
+        specified mentorship pair.
 
         Args:
             session (AsyncSession): Active async database session.
             user_id (int): Current user ID.
             round_id (int): The mentorship round ID.
             partner_id (int): The partner user's ID.
-            meeting_ids (list[str]): List of meeting IDs to remove.
+            meeting_ids (list[str]): Google Calendar event IDs to check.
 
         Returns:
-            bool: True if the matching pair was found and updated, otherwise False.
+            bool: True if all meeting IDs exist for the pair, otherwise False.
         """
-        if not user_id or not round_id or not partner_id:
-            return False
-        if not meeting_ids:
+        if not user_id or not round_id or not partner_id or not meeting_ids:
             return False
 
         cleaned_meeting_ids = sorted({str(mid) for mid in meeting_ids if mid})
@@ -524,6 +515,78 @@ class MentorshipPairsRepository:
             .alias("meeting_elements")
         )
 
+        stmt = (
+            select(
+                func.count(
+                    func.distinct(
+                        cast(meeting_elements.c.value, JSONB)["meeting_id"].astext
+                    )
+                )
+            )
+            .select_from(MentorshipPairsEntity)
+            .select_from(meeting_elements)
+            .where(
+                MentorshipPairsEntity.round_id == round_id,
+                or_(
+                    (MentorshipPairsEntity.mentor_id == user_id)
+                    & (MentorshipPairsEntity.mentee_id == partner_id),
+                    (MentorshipPairsEntity.mentor_id == partner_id)
+                    & (MentorshipPairsEntity.mentee_id == user_id),
+                ),
+                cast(meeting_elements.c.value, JSONB)["meeting_id"].astext.in_(
+                    cleaned_meeting_ids
+                ),
+            )
+        )
+
+        result = await session.execute(stmt)
+        found_count = result.scalar_one()
+
+        return found_count == len(cleaned_meeting_ids)
+
+    async def remove_meetings_from_log(
+        self,
+        session: AsyncSession,
+        user_id: int,
+        meeting_ids: list[str],
+    ) -> list[int]:
+        """
+        Remove Google meeting entries from meeting_log JSONB for pairs associated
+        with the current user.
+
+        Returns:
+            list[int]: Affected pair IDs.
+        """
+        if not user_id or not meeting_ids:
+            return []
+
+        cleaned_meeting_ids = sorted({str(mid) for mid in meeting_ids if mid})
+        if not cleaned_meeting_ids:
+            return []
+
+        meeting_elements = (
+            func.jsonb_array_elements(
+                func.coalesce(
+                    MentorshipPairsEntity.meeting_log["google_meetings"],
+                    type_coerce([], JSONB),
+                )
+            )
+            .table_valued("value")
+            .alias("meeting_elements")
+        )
+
+        exists_condition = (
+            select(1)
+            .select_from(meeting_elements)
+            .where(
+                cast(meeting_elements.c.value, JSONB)["meeting_id"].astext.in_(
+                    cleaned_meeting_ids
+                )
+            )
+            .correlate(MentorshipPairsEntity)
+            .exists()
+        )
+
         filtered_meeting_list = func.coalesce(
             select(func.jsonb_agg(meeting_elements.c.value))
             .select_from(meeting_elements)
@@ -539,13 +602,11 @@ class MentorshipPairsRepository:
         stmt = (
             update(MentorshipPairsEntity)
             .where(
-                MentorshipPairsEntity.round_id == round_id,
                 or_(
-                    (MentorshipPairsEntity.mentor_id == user_id)
-                    & (MentorshipPairsEntity.mentee_id == partner_id),
-                    (MentorshipPairsEntity.mentor_id == partner_id)
-                    & (MentorshipPairsEntity.mentee_id == user_id),
+                    MentorshipPairsEntity.mentor_id == user_id,
+                    MentorshipPairsEntity.mentee_id == user_id,
                 ),
+                exists_condition,
             )
             .values(
                 meeting_log=func.jsonb_set(
@@ -565,4 +626,4 @@ class MentorshipPairsRepository:
         )
 
         result = await session.execute(stmt)
-        return result.scalar_one_or_none() is not None
+        return [row[0] for row in result.fetchall()]
