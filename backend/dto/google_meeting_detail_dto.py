@@ -6,6 +6,7 @@ class GoogleMeetingDetailDto(BaseInternalDTO):
     meet_link: str
     start_datetime: str
     end_datetime: str
+    created_datetime: str
     is_completed: bool
     entry_points: list[dict]
     conference_id: str | None = None

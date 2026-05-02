@@ -337,8 +337,10 @@ class TestMentorshipMapper(unittest.TestCase):
                         "2025-09-02T22:30:00+00:00"
                     ),
                     "end_datetime": datetime.fromisoformat("2025-09-02T23:00:00+00:00"),
+                    "created_datetime": datetime.fromisoformat(
+                        "2025-08-31T10:00:00+00:00"
+                    ),
                     "is_completed": True,
-                    "created_datetime": "2025-08-30T07:42:00Z",
                     "has_unknown_absent": True,
                     "absent_user_id": 123,
                     "has_unknown_late": False,
@@ -365,12 +367,20 @@ class TestMentorshipMapper(unittest.TestCase):
 
         self.assertEqual(info.meeting_time_list[0].meeting_id, "manual-1")
         self.assertTrue(info.meeting_time_list[0].is_completed)
+        self.assertEqual(
+            info.meeting_time_list[0].created_datetime.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "2025-08-30T07:42:00Z",
+        )
 
         self.assertEqual(info.meeting_time_list[1].meeting_id, "manual-2")
         self.assertFalse(info.meeting_time_list[1].is_completed)
 
         self.assertEqual(info.meeting_time_list[2].meeting_id, "google-1")
         self.assertTrue(info.meeting_time_list[2].is_completed)
+        self.assertEqual(
+            info.meeting_time_list[2].created_datetime.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "2025-08-31T10:00:00Z",
+        )
 
     def test_map_to_meeting_v2_dto_detail_false_excludes_google_extra_fields(self):
         """Test google meeting extra fields are not populated when include_details=False."""
@@ -387,8 +397,10 @@ class TestMentorshipMapper(unittest.TestCase):
                         "2025-09-02T22:30:00+00:00"
                     ),
                     "end_datetime": datetime.fromisoformat("2025-09-02T23:00:00+00:00"),
+                    "created_datetime": datetime.fromisoformat(
+                        "2025-08-31T10:00:00+00:00"
+                    ),
                     "is_completed": True,
-                    "created_datetime": "2025-08-30T07:42:00Z",
                     "has_unknown_absent": True,
                     "absent_user_id": 123,
                     "has_unknown_late": True,
@@ -410,6 +422,10 @@ class TestMentorshipMapper(unittest.TestCase):
         self.assertEqual(len(info.meeting_time_list), 1)
         self.assertEqual(info.completed_meetings_count, 1)
         self.assertEqual(google_meeting.meeting_id, "google-1")
+        self.assertEqual(
+            google_meeting.created_datetime.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "2025-08-31T10:00:00Z",
+        )
         self.assertIsNone(google_meeting.has_unknown_absent)
         self.assertIsNone(google_meeting.absent_user_id)
         self.assertIsNone(google_meeting.has_unknown_late)
@@ -431,8 +447,10 @@ class TestMentorshipMapper(unittest.TestCase):
                         "2025-09-02T22:30:00+00:00"
                     ),
                     "end_datetime": datetime.fromisoformat("2025-09-02T23:00:00+00:00"),
+                    "created_datetime": datetime.fromisoformat(
+                        "2025-08-31T10:00:00+00:00"
+                    ),
                     "is_completed": True,
-                    "created_datetime": "2025-08-30T07:42:00Z",
                     "has_unknown_absent": True,
                     "absent_user_id": 123,
                     "has_unknown_late": True,
@@ -454,6 +472,10 @@ class TestMentorshipMapper(unittest.TestCase):
         self.assertEqual(len(info.meeting_time_list), 1)
         self.assertEqual(info.completed_meetings_count, 1)
         self.assertEqual(google_meeting.meeting_id, "google-1")
+        self.assertEqual(
+            google_meeting.created_datetime.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "2025-08-31T10:00:00Z",
+        )
         self.assertTrue(google_meeting.has_unknown_absent)
         self.assertEqual(google_meeting.absent_user_id, 123)
         self.assertTrue(google_meeting.has_unknown_late)
@@ -538,8 +560,10 @@ class TestMentorshipMapper(unittest.TestCase):
                         "2025-09-02T22:30:00+00:00"
                     ),
                     "end_datetime": datetime.fromisoformat("2025-09-02T23:00:00+00:00"),
+                    "created_datetime": datetime.fromisoformat(
+                        "2025-08-31T10:00:00+00:00"
+                    ),
                     "is_completed": True,
-                    "created_datetime": "2025-08-30T07:42:00Z",
                     "has_unknown_absent": True,
                     "absent_user_id": 123,
                     "has_unknown_late": True,
@@ -565,6 +589,10 @@ class TestMentorshipMapper(unittest.TestCase):
 
         google_meeting = info.meeting_time_list[0]
         self.assertEqual(google_meeting.meeting_id, "google-1")
+        self.assertEqual(
+            google_meeting.created_datetime.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "2025-08-31T10:00:00Z",
+        )
         self.assertTrue(google_meeting.has_unknown_absent)
         self.assertEqual(google_meeting.absent_user_id, 123)
         self.assertTrue(google_meeting.has_unknown_late)

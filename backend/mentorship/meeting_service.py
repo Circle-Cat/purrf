@@ -280,6 +280,7 @@ class MeetingService:
             is_completed=False,
             entry_points=conference_data.get("entryPoints", []),
             conference_id=conference_data.get("conferenceId"),
+            created_datetime=google_result.get("created", ""),
         )
 
         # Persist meeting log

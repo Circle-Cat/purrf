@@ -9,12 +9,14 @@ def _make_gm(
     start_datetime="2026-04-07T10:00:00+00:00",
     end_datetime="2026-04-07T11:00:00+00:00",
     is_completed=False,
+    created_datetime="2026-04-01T10:00:00+00:00",
 ):
     return {
         "meeting_id": "meeting-1",
         "meet_link": "https://meet.google.com/abc-xxxx-xyz",
         "start_datetime": start_datetime,
         "end_datetime": end_datetime,
+        "created_datetime": created_datetime,
         "is_completed": is_completed,
         "entry_points": [],
         "conference_id": conference_id,
