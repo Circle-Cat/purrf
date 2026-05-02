@@ -159,6 +159,19 @@ while IFS= read -r report; do
 done <<<"$valid_reports"
 echo ""
 echo "--- Summary: ${passed} passed, ${failed} failed, ${total} total ---"
+
+# Run formatters too: ruff/eslint aspects above only catch lint issues, not
+# prettier/buildifier/ruff-format formatting drift. Without this, a CL that
+# skipped `bazel run //:format` could still pass `lint.sh`.
+echo ""
+if [ -n "$fix" ]; then
+	echo "Applying formatters..."
+	bazel --max_idle_secs=10 run //:format || has_failure=1
+else
+	echo "Checking formatting..."
+	bazel --max_idle_secs=10 run //tools/format:format.check || has_failure=1
+fi
+
 if [ -n "$fix" ]; then
 	valid_patches=$("$JQ_CMD" --arg ext .patch --raw-output "$filter" "$buildevents" | tr -d '\r')
 	while IFS= read -r patch; do
