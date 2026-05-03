@@ -5,6 +5,7 @@ import {
   postMyMentorshipRegistration,
   getMyMentorshipMatchResult,
   getMyMentorshipMeetingLog,
+  getMyMentorshipMeetingsV2,
 } from "@/api/mentorshipApi";
 
 import {
@@ -12,6 +13,8 @@ import {
   calculateRoundStatus,
 } from "@/pages/PersonalDashboard/utils/mentorshipRounds";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useFeatureFlags } from "@/hooks/useFeatureFlags";
+import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
 
 /**
  * React hook for loading and managing mentorship-related data
@@ -42,6 +45,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
  * }}
  */
 export const useMentorshipData = () => {
+  const flags = useFeatureFlags();
+  const useV2Meetings = !!flags[FEATURE_FLAGS.CREATE_GOOGLE_MEETING];
+
   const [roundStatus, setRoundStatus] = useState({
     regRoundId: null,
     feedbackRoundId: null,
@@ -214,7 +220,12 @@ export const useMentorshipData = () => {
 
     try {
       const [{ data: meetingLog }, { data: partnersInfo }] = await Promise.all([
-        getMyMentorshipMeetingLog(selectedRoundId),
+        useV2Meetings
+          ? getMyMentorshipMeetingsV2({
+              roundId: selectedRoundId,
+              includeDetails: false,
+            })
+          : getMyMentorshipMeetingLog(selectedRoundId),
         partnersCacheRef.current[selectedRoundId]
           ? Promise.resolve({ data: partnersCacheRef.current[selectedRoundId] })
           : getMyMentorshipPartners(selectedRoundId),

@@ -1,4 +1,6 @@
+import React from "react";
 import { renderHook, waitFor, act } from "@testing-library/react";
+import { FlagsProvider } from "@/context/flags";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { useMentorshipData } from "@/pages/PersonalDashboard/hooks/useMentorshipData";
 import {
@@ -8,11 +10,13 @@ import {
   postMyMentorshipRegistration,
   getMyMentorshipMatchResult,
   getMyMentorshipMeetingLog,
+  getMyMentorshipMeetingsV2,
 } from "@/api/mentorshipApi";
 import {
   calculateMentorshipSlots,
   calculateRoundStatus,
 } from "@/pages/PersonalDashboard/utils/mentorshipRounds";
+import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 
 vi.mock("@/api/mentorshipApi", () => ({
   getAllMentorshipRounds: vi.fn(),
@@ -21,6 +25,7 @@ vi.mock("@/api/mentorshipApi", () => ({
   postMyMentorshipRegistration: vi.fn(),
   getMyMentorshipMatchResult: vi.fn(),
   getMyMentorshipMeetingLog: vi.fn(),
+  getMyMentorshipMeetingsV2: vi.fn(),
 }));
 
 vi.mock("@/pages/PersonalDashboard/utils/mentorshipRounds", () => ({
@@ -28,9 +33,14 @@ vi.mock("@/pages/PersonalDashboard/utils/mentorshipRounds", () => ({
   calculateRoundStatus: vi.fn(),
 }));
 
+vi.mock("@/hooks/useFeatureFlags", () => ({
+  useFeatureFlags: vi.fn(),
+}));
+
 describe("useMentorshipData Hook", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    useFeatureFlags.mockReturnValue({ "create-google-meeting": false });
     calculateRoundStatus.mockReturnValue({
       sortedRounds: [],
       activeRoundId: null,
@@ -297,6 +307,7 @@ describe("useMentorshipData Hook", () => {
     getMyMentorshipRegistration.mockResolvedValueOnce({ data: {} }); // Initial load success
 
     const { result } = renderHook(() => useMentorshipData());
+
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
     // Simulate refresh failure
@@ -323,6 +334,7 @@ describe("refreshMeetings", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    useFeatureFlags.mockReturnValue({ "create-google-meeting": false });
     getAllMentorshipRounds.mockResolvedValue({ data: [mockRound] });
     calculateMentorshipSlots.mockReturnValue({ regRoundId: null });
     calculateRoundStatus.mockReturnValue({
@@ -482,6 +494,25 @@ describe("refreshMeetings", () => {
     );
     consoleSpy.mockRestore();
   });
+
+  it("should call V2 API when create-google-meeting flag is on", async () => {
+    useFeatureFlags.mockReturnValue({ "create-google-meeting": true });
+    getMyMentorshipMeetingsV2.mockResolvedValue({ data: { meetingInfo: [] } });
+    getMyMentorshipPartners.mockResolvedValue({ data: [] });
+
+    const { result } = renderHook(() => useMentorshipData());
+
+    await waitFor(() =>
+      expect(result.current.participantDetails.roundInfo).not.toBeNull(),
+    );
+
+    expect(getMyMentorshipMeetingsV2).toHaveBeenCalledTimes(1);
+    expect(getMyMentorshipMeetingsV2).toHaveBeenCalledWith({
+      roundId: "round-1",
+      includeDetails: false,
+    });
+    expect(getMyMentorshipMeetingLog).not.toHaveBeenCalled();
+  });
 });
 
 describe("handleRoundChange", () => {
@@ -489,6 +520,7 @@ describe("handleRoundChange", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    useFeatureFlags.mockReturnValue({ "create-google-meeting": false });
     getAllMentorshipRounds.mockResolvedValue({ data: [mockRound] });
     calculateMentorshipSlots.mockReturnValue({ regRoundId: null });
     calculateRoundStatus.mockReturnValue({
