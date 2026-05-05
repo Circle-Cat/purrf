@@ -3,17 +3,32 @@ locals {
     test = {
       display_name = "Test"
       color        = "f9a825"
-      beta_gated   = false
+      beta_gated   = true
+      beta_user_rule = {
+        attribute = "email"
+        op        = "in"
+        values    = ["yuji@u.circlecat.org", "yhuang@u.circlecat.org"]
+      }
     }
     staging = {
       display_name = "Staging"
       color        = "1e88e5"
       beta_gated   = true
+      beta_user_rule = {
+        attribute = "email"
+        op        = "in"
+        values    = ["yuji@u.circlecat.org", "yhuang@u.circlecat.org"]
+      }
     }
     production = {
       display_name = "Production"
       color        = "0b7a3e"
       beta_gated   = true
+      beta_user_rule = {
+        attribute = "roles"
+        op        = "contains"
+        values    = ["ccInternal"]
+      }
     }
   }
 
@@ -22,7 +37,7 @@ locals {
       key         = "manual-submit-meeting"
       name        = "Manual Submit Meeting"
       description = "Enables the manual meeting submit flow"
-      off_in      = ["production","staging", "test"]
+      off_in      = ["production", "staging"]
       public_in   = []
     }
     view_personal_summary = {
@@ -30,7 +45,7 @@ locals {
       name        = "View Personal Summary"
       description = "Enables the view personal summary feature"
       off_in      = []
-      public_in   = ["staging", "production"]
+      public_in   = ["production"]
     }
     create_google_meeting = {
       key         = "create-google-meeting"
@@ -91,13 +106,13 @@ resource "launchdarkly_segment" "beta_users" {
   project_key = launchdarkly_project.purrf.key
   env_key     = each.key
   name        = "Beta Users"
-  description = "Users with ccInternal role for beta feature access"
+  description = "Users granted beta feature access"
 
   rules {
     clauses {
-      attribute = "roles"
-      op        = "contains"
-      values    = ["ccInternal"]
+      attribute = each.value.beta_user_rule.attribute
+      op        = each.value.beta_user_rule.op
+      values    = each.value.beta_user_rule.values
     }
   }
 }
