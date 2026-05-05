@@ -122,3 +122,6 @@ cronjobs:
     schedule: "50 10 * * *"   # 10:50 UTC
     url: "/api/google/calendar/history/pull"
     body: {}
+  - name: pubsub-sync-hourly
+    schedule: "0 * * * *"   # every hour at minute 00
+    url: "/api/pubsub/sync"
