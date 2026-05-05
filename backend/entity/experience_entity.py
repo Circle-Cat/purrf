@@ -19,3 +19,6 @@ class ExperienceEntity(Base):
     updated_timestamp: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=func.now(), onupdate=func.now()
     )
+    created_datetime: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )

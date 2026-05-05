@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 from sqlalchemy import (
     Boolean,
     Integer,
@@ -7,6 +8,8 @@ from sqlalchemy import (
     Enum,
     UniqueConstraint,
     ForeignKey,
+    DateTime,
+    func,
 )
 from sqlalchemy.dialects.postgresql import JSONB, ARRAY
 from sqlalchemy.orm import Mapped, mapped_column
@@ -47,5 +50,8 @@ class MentorshipRoundParticipantsEntity(Base):
     goal: Mapped[str | None] = mapped_column(String(300))
     current_stage: Mapped[str | None] = mapped_column(String(100))
     time_urgency: Mapped[str | None] = mapped_column(String(100))
+    created_datetime: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
     __table_args__ = (UniqueConstraint("round_id", "user_id"),)

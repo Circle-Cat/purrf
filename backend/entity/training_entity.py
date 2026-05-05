@@ -1,6 +1,6 @@
 from datetime import datetime
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy import String, Enum, DateTime, ForeignKey
+from sqlalchemy import String, Enum, DateTime, ForeignKey, func
 from backend.common.mentorship_enums import TrainingStatus, TrainingCategory
 from backend.common.base import Base
 
@@ -35,3 +35,7 @@ class TrainingEntity(Base):
     deadline: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     link: Mapped[str | None] = mapped_column(String)
+
+    created_datetime: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )

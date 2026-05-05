@@ -1,3 +1,4 @@
+from datetime import datetime
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy import (
     Integer,
@@ -6,6 +7,8 @@ from sqlalchemy import (
     CheckConstraint,
     UniqueConstraint,
     String,
+    DateTime,
+    func,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 from backend.common.base import Base
@@ -47,6 +50,10 @@ class MentorshipPairsEntity(Base):
     )
     recommendation_reason: Mapped[str] = mapped_column(String(300))
     meeting_log: Mapped[dict | None] = mapped_column(JSONB)
+
+    created_datetime: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
     __table_args__ = (
         CheckConstraint("mentor_id <> mentee_id", name="check_different_ids"),

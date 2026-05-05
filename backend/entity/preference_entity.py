@@ -1,4 +1,5 @@
-from sqlalchemy import Boolean, Integer, ForeignKey
+from datetime import datetime
+from sqlalchemy import Boolean, Integer, ForeignKey, DateTime, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from backend.common.base import Base
@@ -23,3 +24,6 @@ class PreferenceEntity(Base):
     project_management: Mapped[bool | None] = mapped_column(Boolean)
     specific_industry: Mapped[dict | None] = mapped_column(JSONB)
     profile_survey: Mapped[dict | None] = mapped_column(JSONB)
+    created_datetime: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
