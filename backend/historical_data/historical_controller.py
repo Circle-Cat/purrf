@@ -1,4 +1,6 @@
+import asyncio
 from http import HTTPStatus
+
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
@@ -126,7 +128,9 @@ class HistoricalController:
 
     async def sync_google_chat_history_messages(self):
         """API endpoint to trigger the fetching of messages for all SPACE type Google chat spaces."""
-        result = self.google_chat_history_sync_service.sync_history_messages()
+        result = await asyncio.to_thread(
+            self.google_chat_history_sync_service.sync_history_messages
+        )
         return api_response(
             success=True,
             message="Google Chat messages saved successfully.",
@@ -147,7 +151,9 @@ class HistoricalController:
                 status_code=HTTPStatus.BAD_REQUEST,
             )
 
-        result = self.jira_history_sync_service.process_update_jira_issues(hours)
+        result = await asyncio.to_thread(
+            self.jira_history_sync_service.process_update_jira_issues, hours
+        )
         return api_response(
             success=True,
             message=f"Incremental Jira issues updated successfully for for the past {hours} hour(s).",
@@ -157,7 +163,9 @@ class HistoricalController:
 
     async def backfill_jira_issues(self):
         """Backfill all Jira issues into Redis."""
-        result = self.jira_history_sync_service.backfill_all_jira_issues()
+        result = await asyncio.to_thread(
+            self.jira_history_sync_service.backfill_all_jira_issues
+        )
         return api_response(
             success=True,
             message="Full Jira issues backfill completed successfully.",
@@ -189,7 +197,9 @@ class HistoricalController:
 
     async def sync_jira_projects(self):
         """Import all Jira project IDs and their display names into Redis."""
-        result = self.jira_history_sync_service.sync_jira_projects_id_and_name_mapping()
+        result = await asyncio.to_thread(
+            self.jira_history_sync_service.sync_jira_projects_id_and_name_mapping
+        )
         return api_response(
             success=True,
             message="Jira projects imported successfully.",
@@ -209,7 +219,9 @@ class HistoricalController:
             request_body.start_date, request_body.end_date
         )
 
-        self.google_calendar_sync_service.pull_calendar_history(time_min, time_max)
+        await asyncio.to_thread(
+            self.google_calendar_sync_service.pull_calendar_history, time_min, time_max
+        )
 
         return api_response(
             success=True,
@@ -220,7 +232,10 @@ class HistoricalController:
 
     async def backfill_gerrit_changes(self, request_body: GerritBackfillRequest):
         """API endpoint to backfill Gerrit changes into Redis."""
-        self.gerrit_sync_service.fetch_and_store_changes(statuses=request_body.statuses)
+        await asyncio.to_thread(
+            self.gerrit_sync_service.fetch_and_store_changes,
+            statuses=request_body.statuses,
+        )
 
         return api_response(
             success=True,
@@ -231,7 +246,7 @@ class HistoricalController:
 
     async def backfill_gerrit_projects(self):
         """API endpoint to backfill Gerrit projects into Redis."""
-        count = self.gerrit_sync_service.sync_gerrit_projects()
+        count = await asyncio.to_thread(self.gerrit_sync_service.sync_gerrit_projects)
 
         return api_response(
             success=True,

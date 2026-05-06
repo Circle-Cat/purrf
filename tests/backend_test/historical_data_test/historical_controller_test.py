@@ -1,5 +1,6 @@
+import asyncio
 import unittest
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import MagicMock, AsyncMock, patch
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from http import HTTPStatus
@@ -8,10 +9,13 @@ from backend.historical_data.historical_controller import HistoricalController
 from backend.common.api_endpoints import (
     MICROSOFT_BACKFILL_LDAPS_ENDPOINT,
     MICROSOFT_BACKFILL_CHAT_MESSAGES_ENDPOINT,
+    JIRA_SYNC_PROJECTS_ENDPOINT,
+    JIRA_BACKFILL_ISSUES_ENDPOINT,
     JIRA_UPDATE_ISSUES_ENDPOINT,
     GOOGLE_CALENDAR_PULL_HISTORY_ENDPOINT,
     GERRIT_BACKFILL_CHANGES_ENDPOINT,
     GERRIT_BACKFILL_PROJECTS_ENDPOINT,
+    GOOGLE_CHAT_SYNC_HISTORY_MESSAGES_ENDPOINT,
 )
 from backend.common.user_role import UserRole
 from backend.utils.auth_middleware import AuthMiddleware
@@ -140,6 +144,143 @@ class TestHistoricalController(unittest.TestCase):
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.mock_gerrit_service.fetch_and_store_changes.assert_called_once_with(
             statuses=["MERGED"]
+        )
+
+    def _assert_offloaded_once(self, spy_to_thread, target_callable):
+        """Assert asyncio.to_thread was invoked exactly once for `target_callable`."""
+        matching = [
+            c
+            for c in spy_to_thread.call_args_list
+            if c.args and c.args[0] is target_callable
+        ]
+        self.assertEqual(len(matching), 1)
+
+    def test_sync_google_chat_history_messages_offloads_to_thread(self):
+        """sync_history_messages is a sync HTTP-heavy call; must run on a worker thread."""
+        self._set_authenticated_user(roles=[UserRole.INFRA_ADMIN])
+
+        with patch(
+            "backend.historical_data.historical_controller.asyncio.to_thread",
+            wraps=asyncio.to_thread,
+        ) as spy_to_thread:
+            response = self.client.post(
+                GOOGLE_CHAT_SYNC_HISTORY_MESSAGES_ENDPOINT, headers=self.headers
+            )
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self._assert_offloaded_once(
+            spy_to_thread, self.mock_google_chat_service.sync_history_messages
+        )
+
+    def test_update_jira_issues_offloads_to_thread(self):
+        """process_update_jira_issues is a sync JIRA HTTP call; must run on a worker thread."""
+        self._set_authenticated_user(roles=[UserRole.CRON_RUNNER])
+
+        with patch(
+            "backend.historical_data.historical_controller.asyncio.to_thread",
+            wraps=asyncio.to_thread,
+        ) as spy_to_thread:
+            response = self.client.post(
+                f"{JIRA_UPDATE_ISSUES_ENDPOINT}?hours=5", headers=self.headers
+            )
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self._assert_offloaded_once(
+            spy_to_thread, self.mock_jira_service.process_update_jira_issues
+        )
+
+    def test_backfill_jira_issues_offloads_to_thread(self):
+        """backfill_all_jira_issues is a sync JIRA HTTP call; must run on a worker thread."""
+        self._set_authenticated_user(roles=[UserRole.INFRA_ADMIN])
+
+        with patch(
+            "backend.historical_data.historical_controller.asyncio.to_thread",
+            wraps=asyncio.to_thread,
+        ) as spy_to_thread:
+            response = self.client.post(
+                JIRA_BACKFILL_ISSUES_ENDPOINT, headers=self.headers
+            )
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self._assert_offloaded_once(
+            spy_to_thread, self.mock_jira_service.backfill_all_jira_issues
+        )
+
+    def test_sync_jira_projects_offloads_to_thread(self):
+        """sync_jira_projects_id_and_name_mapping is a sync JIRA HTTP call; must run on a worker thread."""
+        self._set_authenticated_user(roles=[UserRole.INFRA_ADMIN])
+
+        with patch(
+            "backend.historical_data.historical_controller.asyncio.to_thread",
+            wraps=asyncio.to_thread,
+        ) as spy_to_thread:
+            response = self.client.post(
+                JIRA_SYNC_PROJECTS_ENDPOINT, headers=self.headers
+            )
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self._assert_offloaded_once(
+            spy_to_thread,
+            self.mock_jira_service.sync_jira_projects_id_and_name_mapping,
+        )
+
+    def test_pull_calendar_history_offloads_to_thread(self):
+        """pull_calendar_history wraps Google Discovery .execute() and time.sleep; must offload."""
+        self._set_authenticated_user(roles=[UserRole.INFRA_ADMIN])
+        self.mock_datetime_utils.resolve_start_end_timestamps.return_value = (
+            "ts1",
+            "ts2",
+        )
+
+        with patch(
+            "backend.historical_data.historical_controller.asyncio.to_thread",
+            wraps=asyncio.to_thread,
+        ) as spy_to_thread:
+            response = self.client.post(
+                GOOGLE_CALENDAR_PULL_HISTORY_ENDPOINT,
+                json={"start_date": "2023-01-01", "end_date": "2023-01-02"},
+                headers=self.headers,
+            )
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self._assert_offloaded_once(
+            spy_to_thread, self.mock_google_calendar_service.pull_calendar_history
+        )
+
+    def test_backfill_gerrit_changes_offloads_to_thread(self):
+        """fetch_and_store_changes is a sync Gerrit HTTP call; must run on a worker thread."""
+        self._set_authenticated_user(roles=[UserRole.INFRA_ADMIN])
+
+        with patch(
+            "backend.historical_data.historical_controller.asyncio.to_thread",
+            wraps=asyncio.to_thread,
+        ) as spy_to_thread:
+            response = self.client.post(
+                GERRIT_BACKFILL_CHANGES_ENDPOINT,
+                json={"statuses": ["MERGED"]},
+                headers=self.headers,
+            )
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self._assert_offloaded_once(
+            spy_to_thread, self.mock_gerrit_service.fetch_and_store_changes
+        )
+
+    def test_backfill_gerrit_projects_offloads_to_thread(self):
+        """sync_gerrit_projects is a sync Gerrit HTTP call; must run on a worker thread."""
+        self._set_authenticated_user(roles=[UserRole.INFRA_ADMIN])
+
+        with patch(
+            "backend.historical_data.historical_controller.asyncio.to_thread",
+            wraps=asyncio.to_thread,
+        ) as spy_to_thread:
+            response = self.client.post(
+                GERRIT_BACKFILL_PROJECTS_ENDPOINT, headers=self.headers
+            )
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self._assert_offloaded_once(
+            spy_to_thread, self.mock_gerrit_service.sync_gerrit_projects
         )
 
     def test_unauthorized_access(self):
