@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import "@/pages/Profile/Profile.css";
 
 import { useProfileData } from "@/pages/Profile/hooks/useProfileData";
+import { useProfileCompletenessReminder } from "@/pages/Profile/hooks/useProfileCompletenessReminder";
 
 import ProfileHeader from "@/pages/Profile/components/ProfileHeader";
 import ContactSection from "@/pages/Profile/components/ContactSection";
@@ -31,6 +32,13 @@ const Profile = () => {
     nextEditableDate,
     handleUpdateProfile,
   } = useProfileData();
+
+  useProfileCompletenessReminder({
+    isLoading,
+    personalInfo,
+    experienceList,
+    educationList,
+  });
 
   /**
    * Modal visibility state for personal, experience, and education edit sections.

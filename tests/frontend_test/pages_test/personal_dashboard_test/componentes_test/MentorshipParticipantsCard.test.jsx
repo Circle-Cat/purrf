@@ -1,5 +1,5 @@
 import { render, screen, fireEvent } from "@testing-library/react";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import MentorshipParticipantsCard from "@/pages/PersonalDashboard/components/MentorshipParticipantsCard";
 import { MentorshipRoundStatus } from "@/constants/MentorshipRoundStatus";
 
@@ -62,7 +62,16 @@ const baseProps = {
 describe("MentorshipParticipantsCard", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Pin "now" inside the round window so the submit modal stays
+    // available; otherwise the real system clock can drift past
+    // meetingsCompletionDeadlineAt and hide the meeting modal.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-01T00:00:00Z"));
     mockUseFlags.mockReturnValue({ "manual-submit-meeting": true });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("should show a loading message while data is loading", () => {

@@ -76,7 +76,7 @@ function App() {
                     path={ROUTE_PATHS.ROOT}
                     element={
                       <ProtectedRoute requiredRoles={[USER_ROLES.MENTORSHIP]}>
-                        <Navigate to={ROUTE_PATHS.PERSONAL_DASHBOARD} replace />
+                        <Navigate to={ROUTE_PATHS.PROFILE} replace />
                       </ProtectedRoute>
                     }
                   />
