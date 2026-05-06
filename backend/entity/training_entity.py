@@ -22,7 +22,9 @@ class TrainingEntity(Base):
         )
     )
 
-    completed_timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    completed_timestamp: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
 
     status: Mapped[TrainingStatus] = mapped_column(
         Enum(
@@ -32,7 +34,7 @@ class TrainingEntity(Base):
         )
     )
 
-    deadline: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    deadline: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
     link: Mapped[str | None] = mapped_column(String)
 
