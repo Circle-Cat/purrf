@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import TimezoneSelector from "@/components/common/TimezoneSelector";
 import { Calendar as CalendarIcon } from "lucide-react";
 import { format } from "date-fns";
@@ -78,6 +78,20 @@ export default function MeetingSubmissionModal({
   const [startTime, setStartTime] = useState("");
   const [endTime, setEndTime] = useState("");
   const [slotError, setSlotError] = useState(null);
+
+  const resetForm = () => {
+    setTimezone(userTimezone);
+    setSelectedDate(todayInTz(userTimezone));
+    setStartTime("");
+    setEndTime("");
+    setSlotError(null);
+    setIsSubmitting(false);
+  };
+
+  // Reset form to defaults each time the modal opens.
+  useEffect(() => {
+    if (open) resetForm();
+  }, [open]);
 
   const tzIana = typeof timezone === "string" ? timezone : timezone.value;
 
