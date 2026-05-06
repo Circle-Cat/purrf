@@ -1,3 +1,4 @@
+import asyncio
 import unittest
 from unittest.mock import MagicMock, patch
 from starlette.applications import Starlette
@@ -88,6 +89,42 @@ class TestAuthMiddleware(unittest.TestCase):
             status_code=HTTPStatus.BAD_REQUEST,
             data=None,
         )
+
+    @patch("backend.utils.auth_middleware.api_response")
+    def test_dispatch_offloads_authenticate_to_thread(self, mock_api_response):
+        """
+        The middleware must run authenticate_request through asyncio.to_thread
+        so that any sync work inside (e.g. requests.get for JWKS refresh) does
+        not block the event loop. We assert it via a wrapping spy on
+        asyncio.to_thread; this locks the contract so a future regression to
+        a direct sync call is caught in CI.
+        """
+        expected_user_context = {
+            "sub": "user_123",
+            "primary_email": "test@example.com",
+            "roles": ["manager"],
+        }
+        self.mock_auth_service.authenticate_request.return_value = expected_user_context
+        self.app.add_middleware(AuthMiddleware, auth_service=self.mock_auth_service)
+        client = TestClient(self.app)
+
+        with patch(
+            "backend.utils.auth_middleware.asyncio.to_thread",
+            wraps=asyncio.to_thread,
+        ) as spy_to_thread:
+            response = client.get(
+                "/protected", headers={"Authorization": "Bearer valid_token"}
+            )
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        # Filter to calls that hand off our authenticate_request — this
+        # tolerates other to_thread usage that could appear in the future.
+        matching = [
+            c
+            for c in spy_to_thread.call_args_list
+            if c.args and c.args[0] is self.mock_auth_service.authenticate_request
+        ]
+        self.assertEqual(len(matching), 1)
 
     @patch("backend.utils.auth_middleware.api_response")
     def test_authentication_general_exception(self, mock_api_response):

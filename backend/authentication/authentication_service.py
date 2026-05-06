@@ -1,7 +1,9 @@
+import json
+import threading
+from typing import Any
+
 import jwt
 import requests
-import json
-from typing import Any
 from starlette.datastructures import Headers
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
@@ -37,6 +39,11 @@ class AuthenticationService:
         self.cf_jwks_url = f"https://{CF_TEAM_DOMAIN}/cdn-cgi/access/certs"
         self.google_request = google_requests.Request()
         self._CF_JWKS_CACHE = {}
+        # Serializes _refresh_cf_keys across threads so concurrent cache
+        # misses (multiple requests after key rotation) don't all hit the
+        # JWKS endpoint. authenticate_request runs inside asyncio.to_thread,
+        # so the lock must be threading-level, not asyncio-level.
+        self._jwks_refresh_lock = threading.Lock()
 
     def authenticate_request(self, headers: Headers) -> UserContextDto:
         """
@@ -133,7 +140,11 @@ class AuthenticationService:
             raise ValueError("Missing kid")
 
         if kid not in self._CF_JWKS_CACHE:
-            self._refresh_cf_keys()
+            with self._jwks_refresh_lock:
+                # Re-check inside the lock: another thread may have
+                # already refreshed while we were waiting.
+                if kid not in self._CF_JWKS_CACHE:
+                    self._refresh_cf_keys()
             if kid not in self._CF_JWKS_CACHE:
                 raise ValueError("Key not found")
 

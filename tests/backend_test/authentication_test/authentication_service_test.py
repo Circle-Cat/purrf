@@ -1,4 +1,7 @@
+import threading
+import time
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import MagicMock, patch
 from starlette.datastructures import Headers
 from backend.authentication.authentication_service import (
@@ -192,6 +195,50 @@ class TestAuthenticationService(unittest.TestCase):
         mock_verify.assert_called_with(
             token, self.auth_service.google_request, audience="valid_google_aud"
         )
+
+    @patch("jwt.get_unverified_header")
+    @patch("jwt.algorithms.RSAAlgorithm.from_jwk")
+    @patch("backend.authentication.authentication_service.requests.get")
+    def test_concurrent_cache_miss_only_fetches_jwks_once(
+        self, mock_requests_get, mock_from_jwk, mock_get_header
+    ):
+        """
+        N threads simultaneously hit a cache miss for the same kid.
+        With double-checked locking + threading.Lock, only one network
+        call should happen; the rest should pick up the populated cache
+        after acquiring the lock.
+        """
+        kid = "shared_kid"
+        n_threads = 10
+        fake_key = "rsa_key_for_shared"
+        mock_get_header.return_value = {"kid": kid}
+        mock_from_jwk.return_value = fake_key
+
+        # Slow the JWKS fetch so all threads queue at the lock before the
+        # first one finishes — otherwise the test could pass for the wrong
+        # reason (serial execution rather than locked execution).
+        def slow_jwks_get(*_args, **_kwargs):
+            time.sleep(0.05)
+            resp = MagicMock()
+            resp.json.return_value = {"keys": [{"kid": kid, "n": "x", "e": "y"}]}
+            resp.raise_for_status = MagicMock()
+            return resp
+
+        mock_requests_get.side_effect = slow_jwks_get
+        barrier = threading.Barrier(n_threads)
+
+        def worker():
+            barrier.wait()
+            return self.auth_service._get_cf_signing_key("token-for-test")
+
+        with ThreadPoolExecutor(max_workers=n_threads) as ex:
+            results = [
+                f.result() for f in [ex.submit(worker) for _ in range(n_threads)]
+            ]
+
+        self.assertEqual(mock_requests_get.call_count, 1)
+        for r in results:
+            self.assertEqual(r, fake_key)
 
     def test_build_context_cf_roles(self):
         """

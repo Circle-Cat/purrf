@@ -1,7 +1,10 @@
+import asyncio
+from http import HTTPStatus
+
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
+
 from backend.common.fast_api_response_wrapper import api_response
-from http import HTTPStatus
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
@@ -71,8 +74,12 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     if authentication fails.
         """
         try:
-            # Validate token and get user context
-            user_context = self.auth_service.authenticate_request(request.headers)
+            # authenticate_request is synchronous and may issue a blocking
+            # JWKS HTTP fetch on cache miss. Offload to a worker thread so
+            # the event loop stays free for other requests.
+            user_context = await asyncio.to_thread(
+                self.auth_service.authenticate_request, request.headers
+            )
             request.state.user = user_context
 
         except ValueError as e:
