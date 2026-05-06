@@ -1,9 +1,12 @@
+import asyncio
 from http import HTTPStatus
+
 from fastapi import APIRouter
+
+from backend.common.api_endpoints import PUBSUB_SYNC_PULL_ENDPOINT
 from backend.common.fast_api_response_wrapper import api_response
 from backend.common.user_role import UserRole
 from backend.utils.permission_decorators import authenticate
-from backend.common.api_endpoints import PUBSUB_SYNC_PULL_ENDPOINT
 
 
 class ConsumerController:
@@ -33,7 +36,10 @@ class ConsumerController:
         Pulls pending messages, processes them, acks, and returns.
         Designed to be called periodically by a CronJob.
         """
-        results = self.pubsub_sync_pull_service.sync_pull_all()
+        # The pull loop is synchronous and bounded by a 50-minute deadline.
+        # Run it on a worker thread so the event loop is free to serve
+        # other requests while a backlog is being drained.
+        results = await asyncio.to_thread(self.pubsub_sync_pull_service.sync_pull_all)
         return api_response(
             success=True,
             message="Sync pull completed.",
