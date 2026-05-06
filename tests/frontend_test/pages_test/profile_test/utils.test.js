@@ -11,6 +11,7 @@ import {
   getDateScore,
   sortExperienceOrEducationList,
   formatTimezoneLabel,
+  TrainingCategoryLabel,
 } from "@/pages/Profile/utils";
 
 describe("Profile Utils", () => {
@@ -41,6 +42,23 @@ describe("Profile Utils", () => {
       expect(years).toHaveLength(50);
       expect(years[0]).toBe(currentYear);
       expect(years[49]).toBe(currentYear - 49);
+    });
+  });
+
+  describe("TrainingCategoryLabel", () => {
+    it("maps every backend TrainingCategory enum value to a friendly label", () => {
+      expect(TrainingCategoryLabel.mentorship_mentor_onboarding).toBe(
+        "Mentorship Mentor Onboarding",
+      );
+      expect(TrainingCategoryLabel.mentorship_mentee_onboarding).toBe(
+        "Mentorship Mentee Onboarding",
+      );
+      expect(TrainingCategoryLabel.residency_program_onboarding).toBe(
+        "Residency Program Onboarding",
+      );
+      expect(TrainingCategoryLabel.corporate_culture_course).toBe(
+        "Corporate Culture Course",
+      );
     });
   });
 

@@ -51,36 +51,20 @@
   text-decoration: underline;
 }
 
-/* Training tag for table */
-.training-table .training-tag {
-  font-size: 0.75rem;
-  padding: 4px 10px;
-  height: auto;
+.training-status-completed {
+  background-color: var(--teriary-color);
+  color: var(--primary-color);
 }
 
-.training-tag {
-  display: inline-flex;
-  align-items: center;
-  padding: 4px 12px;
-  border-radius: 20px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  white-space: nowrap;
-  height: 28px;
-  transition: all 0.2s ease;
+.training-status-not-completed {
+  background-color: var(--primary-color);
+  color: var(--text-color-white);
 }
 
-.training-tag.done {
-  background-color: #D1FAE5;
-  color: #065F46;
+.training-table tbody tr.training-row-required {
+  background-color: var(--teriary-color);
 }
 
-.training-tag.in-progress {
-  background-color: #DBEAFE;
-  color: #1E40AF;
-}
-
-.training-tag.todo {
-  background-color: #FEF3C7;
-  color: #92400E;
+.training-table tbody tr.training-row-required:hover {
+  background-color: #D6CCFB;
 }

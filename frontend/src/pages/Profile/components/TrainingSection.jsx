@@ -1,15 +1,35 @@
 import React from "react";
 import "@/pages/Profile/components/TrainingSection.css";
 
-import { formatDateFromParts } from "@/pages/Profile/utils";
+import { Badge } from "@/components/ui/badge";
+import {
+  isIncompleteOnboarding,
+  TrainingCategoryLabel,
+} from "@/pages/Profile/utils";
 
-const TrainingSection = ({ list }) => {
-  const formatDisplay = (m, y) => {
-    const dateStr = formatDateFromParts(m, y);
-    if (!dateStr) return "-";
-    return `${m.substring(0, 3)} ${y}`;
-  };
+/**
+ * Format an API timestamp (ISO 8601) as a calendar date in en-US,
+ * interpreted in the viewer's profile timezone (an IANA string like
+ * "Asia/Shanghai"). Falls back to UTC so the displayed date still
+ * matches the stored value when the user has not picked a timezone.
+ *
+ * Returns "-" for null/empty/invalid inputs and for the 1970 sentinel
+ * the backend stores when a training row hasn't been completed yet.
+ */
+const formatTrainingDate = (iso, timezone) => {
+  if (!iso) return "-";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "-";
+  if (date.getUTCFullYear() < 2000) return "-";
+  return date.toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    timeZone: timezone || "UTC",
+  });
+};
 
+const TrainingSection = ({ list, timezone }) => {
   return (
     <div className="section">
       <div className="section-header">
@@ -28,38 +48,53 @@ const TrainingSection = ({ list }) => {
             </tr>
           </thead>
           <tbody>
-            {list.map((training) => (
-              <tr key={training.id}>
-                <td>{training.name}</td>
-                <td>
-                  <span
-                    className={`training-tag ${training.status.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
-                  >
-                    {training.status === "done" ? "Completed" : "Not Completed"}
-                  </span>
-                </td>
-                <td>
-                  {formatDisplay(
-                    training.completionMonth,
-                    training.completionYear,
-                  )}
-                </td>
-                <td>{formatDisplay(training.dueMonth, training.dueYear)}</td>
-                <td>
-                  {training.link ? (
-                    <a
-                      href={training.link}
-                      target="_blank"
-                      rel="noopener noreferrer"
+            {list.map((training) => {
+              const required = isIncompleteOnboarding(training);
+              return (
+                <tr
+                  key={training.id}
+                  className={required ? "training-row-required" : undefined}
+                  data-testid={
+                    required ? "training-row-required" : "training-row"
+                  }
+                >
+                  <td>
+                    {TrainingCategoryLabel[training.category] ??
+                      training.category}
+                  </td>
+                  <td>
+                    <Badge
+                      className={
+                        training.status === "done"
+                          ? "training-status-completed"
+                          : "training-status-not-completed"
+                      }
                     >
-                      View Link
-                    </a>
-                  ) : (
-                    "-"
-                  )}
-                </td>
-              </tr>
-            ))}
+                      {training.status === "done"
+                        ? "Completed"
+                        : "Not Completed"}
+                    </Badge>
+                  </td>
+                  <td>
+                    {formatTrainingDate(training.completedTimestamp, timezone)}
+                  </td>
+                  <td>{formatTrainingDate(training.deadline, timezone)}</td>
+                  <td>
+                    {training.link ? (
+                      <a
+                        href={training.link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        View Link
+                      </a>
+                    ) : (
+                      "-"
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       ) : (

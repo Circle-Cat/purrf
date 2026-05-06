@@ -83,21 +83,17 @@ export const useProfileData = () => {
       emails: emailList,
       title: currentJob.title || "",
       company: currentJob.companyOrOrganization || "",
-      completedTraining: training.map((t) => {
-        const compParts = parseDateParts(t.completedTimestamp);
-        const dueParts = parseDateParts(t.deadline);
-
-        return {
-          id: t.id,
-          name: t.name,
-          status: t.status,
-          completionMonth: compParts.month,
-          completionYear: compParts.year,
-          dueMonth: dueParts.month,
-          dueYear: dueParts.year,
-          link: t.link,
-        };
-      }),
+      completedTraining: training.map((t) => ({
+        id: t.id,
+        category: t.category,
+        status: t.status,
+        // Pass the API timestamps through unchanged. TrainingSection wants
+        // the actual day, not the bare month/year that parseDateParts
+        // returned.
+        completedTimestamp: t.completedTimestamp,
+        deadline: t.deadline,
+        link: t.link,
+      })),
     }));
 
     /**

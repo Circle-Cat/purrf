@@ -103,7 +103,10 @@ const Profile = () => {
         {/* Training Card */}
         <Card>
           <CardContent>
-            <TrainingSection list={personalInfo.completedTraining} />
+            <TrainingSection
+              list={personalInfo.completedTraining}
+              timezone={personalInfo.timezone}
+            />
           </CardContent>
         </Card>
       </div>

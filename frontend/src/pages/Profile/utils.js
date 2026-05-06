@@ -34,6 +34,40 @@ export const TimezoneEnum = {
 };
 
 /**
+ * Friendly display labels for the backend `TrainingCategory` enum
+ * (see backend/common/mentorship_enums.py). Keys are the raw enum
+ * string values returned by the API; values are the strings to render.
+ *
+ * Callers should fall back to the raw key when a category is missing
+ * from this map, so newly-added enum values do not blank out the UI
+ * before the frontend ships an updated label.
+ */
+export const TrainingCategoryLabel = {
+  mentorship_mentor_onboarding: "Mentorship Mentor Onboarding",
+  mentorship_mentee_onboarding: "Mentorship Mentee Onboarding",
+  residency_program_onboarding: "Residency Program Onboarding",
+  corporate_culture_course: "Corporate Culture Course",
+};
+
+/**
+ * Training categories whose completion is a hard prerequisite for
+ * mentorship matching. Surfaced to the user via the profile-completeness
+ * reminder and the highlighted row in TrainingSection.
+ */
+export const ONBOARDING_TRAINING_CATEGORIES = [
+  "mentorship_mentor_onboarding",
+  "mentorship_mentee_onboarding",
+];
+
+/**
+ * Returns true if `training` is one of the mentorship onboarding rows
+ * AND has not been completed yet (status !== "done").
+ */
+export const isIncompleteOnboarding = (training) =>
+  ONBOARDING_TRAINING_CATEGORIES.includes(training.category) &&
+  training.status !== "done";
+
+/**
  * Formats a timezone string into a human-readable label.
  *
  * Converts a timezone like "America/Los_Angeles" into
@@ -77,6 +111,7 @@ export const years60Range = Array.from(
  * that may cause the parsed date to move backward by one day.
  *
  * @param {string} dateStr - Date string such as "2023-09-01".
+
  * @returns {{ month: string, year: string }} Parsed date parts.
  */
 export const parseDateParts = (dateStr) => {

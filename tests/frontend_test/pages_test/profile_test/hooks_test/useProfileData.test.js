@@ -164,6 +164,43 @@ describe("useProfileData Hook", () => {
     expect(sortExperienceOrEducationList).toHaveBeenCalled();
   });
 
+  it("should map training records keyed on category (not name)", async () => {
+    const profileWithTraining = {
+      profile: {
+        ...mockProfileResponse.profile,
+        training: [
+          {
+            id: 32,
+            category: "mentorship_mentee_onboarding",
+            completedTimestamp: "1970-01-01T00:00:00Z",
+            status: "to_do",
+            deadline: "2026-05-18T06:59:00Z",
+            link: null,
+          },
+        ],
+      },
+    };
+    getMyProfile.mockResolvedValue({ data: profileWithTraining });
+
+    const { result } = renderHook(() => useProfileData());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    const [training] = result.current.personalInfo.completedTraining;
+    expect(training.id).toBe(32);
+    expect(training.category).toBe("mentorship_mentee_onboarding");
+    expect(training.status).toBe("to_do");
+    expect(training.link).toBeNull();
+    // The pre-fix mapping read t.name (which the API never returns), so the
+    // mapped object had `name: undefined`. Lock the rename in.
+    expect(training).not.toHaveProperty("name");
+    // Raw API timestamps pass through unchanged so TrainingSection can
+    // format the actual day, not just month/year.
+    expect(training.completedTimestamp).toBe("1970-01-01T00:00:00Z");
+    expect(training.deadline).toBe("2026-05-18T06:59:00Z");
+    expect(training).not.toHaveProperty("completionMonth");
+    expect(training).not.toHaveProperty("dueMonth");
+  });
+
   it("should handle API errors gracefully", async () => {
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
