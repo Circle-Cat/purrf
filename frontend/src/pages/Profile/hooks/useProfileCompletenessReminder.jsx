@@ -1,7 +1,6 @@
 import { useEffect } from "react";
-import { toast } from "sonner";
 
-import ReminderToastBody from "@/pages/Profile/components/ReminderToastBody";
+import { showReminderToast } from "@/components/common/showReminderToast";
 import { isIncompleteOnboarding } from "@/pages/Profile/utils";
 
 const PROFILE_SESSION_KEY = "profile-completeness-toast-shown";
@@ -53,17 +52,10 @@ export const useProfileCompletenessReminder = ({
       const onboardingIncomplete = trainings.some(isIncompleteOnboarding);
 
       if (personalInfoComplete && onboardingIncomplete) {
-        toast.info(TRAINING_TOAST_TITLE, {
+        showReminderToast({
           id: TRAINING_TOAST_ID,
-          className: "items-start!",
-          description: (
-            <ReminderToastBody
-              toastId={TRAINING_TOAST_ID}
-              message={TRAINING_TOAST_BODY}
-            />
-          ),
-          duration: Infinity,
-          closeButton: false,
+          title: TRAINING_TOAST_TITLE,
+          message: TRAINING_TOAST_BODY,
         });
         sessionStorage.setItem(TRAINING_SESSION_KEY, "1");
       }
@@ -78,20 +70,10 @@ export const useProfileCompletenessReminder = ({
       if (educationList.length === 0) profileMissing.push("Education");
 
       if (profileMissing.length > 0) {
-        toast.info(PROFILE_TOAST_TITLE, {
+        showReminderToast({
           id: PROFILE_TOAST_ID,
-          // Override sonner's default `align-items: center` so the icon
-          // sits at the top-left next to the title rather than floating
-          // vertically centered against a multi-line description.
-          className: "items-start!",
-          description: (
-            <ReminderToastBody
-              toastId={PROFILE_TOAST_ID}
-              message={`${PROFILE_TOAST_PREFIX}${profileMissing.join(", ")}.`}
-            />
-          ),
-          duration: Infinity,
-          closeButton: false,
+          title: PROFILE_TOAST_TITLE,
+          message: `${PROFILE_TOAST_PREFIX}${profileMissing.join(", ")}.`,
         });
         sessionStorage.setItem(PROFILE_SESSION_KEY, "1");
       }

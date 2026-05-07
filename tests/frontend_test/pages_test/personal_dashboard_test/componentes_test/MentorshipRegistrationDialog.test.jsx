@@ -6,6 +6,11 @@ import {
   mapRegistrationToForm,
   mapFormToApi,
 } from "@/pages/PersonalDashboard/utils/mentorshipRegistration";
+import { showReminderToast } from "@/components/common/showReminderToast";
+
+vi.mock("@/components/common/showReminderToast", () => ({
+  showReminderToast: vi.fn(),
+}));
 
 /**
  * Mock Dialog components.
@@ -268,6 +273,264 @@ describe("MentorshipRegistrationDialog Component", () => {
 
     expect(mapFormToApi).toHaveBeenCalled();
     expect(defaultProps.onSave).toHaveBeenCalledWith(mockPayload);
+  });
+
+  describe("post-registration training reminder", () => {
+    const validMenteeForm = {
+      industries: [{ label: "Tech", value: "tech" }],
+      skillsets: [{ label: "React", value: "react" }],
+      partnerCapacity: 1,
+      goal: "",
+      selectedPartners: [],
+      excludedPartners: [],
+      careerTransition: "",
+      careerTransitionOther: "",
+      region: "",
+      regionOther: "",
+      externalMentoringExp: "",
+      currentBackground: "cs_grad",
+      currentBackgroundOther: "",
+      targetRegion: "us",
+      targetRegionOther: "",
+      currentStage: "job_searching",
+      timeUrgency: "within_3_months",
+    };
+
+    const validMentorForm = {
+      industries: [],
+      skillsets: [{ label: "React", value: "react" }],
+      partnerCapacity: 1,
+      goal: "",
+      selectedPartners: [],
+      excludedPartners: [],
+      careerTransition: "none",
+      careerTransitionOther: "",
+      region: "us",
+      regionOther: "",
+      externalMentoringExp: "none",
+      currentBackground: "",
+      currentBackgroundOther: "",
+      targetRegion: "",
+      targetRegionOther: "",
+      currentStage: "",
+      timeUrgency: "",
+    };
+
+    /**
+     * Build an onSave mock that resolves to the shape of a POST
+     * /registration response. We gate the reminder on this payload
+     * — `currentRegistration` (a GET-fetched view) is intentionally
+     * not consulted. `participantRole` defaults to mentee since the
+     * default props' currentRegistration is mentee; mentor tests pass
+     * "mentor" explicitly.
+     */
+    const onSaveResolving = (
+      isOnboardingTrainingCompleted,
+      participantRole = "mentee",
+    ) =>
+      vi.fn().mockResolvedValue({
+        data: {
+          isOnboardingTrainingCompleted,
+          roundPreferences: { participantRole },
+        },
+      });
+
+    /** Look up the showReminderToast call carrying the given toast id. */
+    const callWithId = (id) =>
+      showReminderToast.mock.calls.find(([args]) => args.id === id)?.[0];
+
+    it("fires the must-complete-or-no-match message for a mentee when the POST response says training is not completed", async () => {
+      mapFormToApi.mockReturnValue({ api: "data" });
+      mapRegistrationToForm.mockReturnValue(validMenteeForm);
+      const onSave = onSaveResolving(false);
+
+      render(
+        <MentorshipRegistrationDialog {...defaultProps} onSave={onSave} />,
+      );
+      await user.click(screen.getByText("Toggle Dialog"));
+      await user.click(screen.getByText("Register"));
+
+      const reminder = callWithId("post-registration-training-toast");
+      expect(reminder).toBeDefined();
+      expect(reminder.title).toBe("Complete onboarding training");
+      expect(reminder.message).toMatch(
+        /must complete the onboarding training/i,
+      );
+      expect(reminder.message).toMatch(/eligible for mentor matching/i);
+    });
+
+    it("fires the soft mentoring-quality message for a mentor when the POST response says training is not completed", async () => {
+      mapFormToApi.mockReturnValue({ api: "data" });
+      mapRegistrationToForm.mockReturnValue(validMentorForm);
+      const onSave = onSaveResolving(false, "mentor");
+
+      render(
+        <MentorshipRegistrationDialog
+          {...defaultProps}
+          onSave={onSave}
+          currentRegistration={{
+            roundPreferences: { participantRole: "mentor" },
+          }}
+        />,
+      );
+      await user.click(screen.getByText("Toggle Dialog"));
+      await user.click(screen.getByText("Register"));
+
+      const reminder = callWithId("post-registration-training-toast");
+      expect(reminder).toBeDefined();
+      expect(reminder.message).toMatch(/get started as a mentor/i);
+      expect(reminder.message).not.toMatch(/eligible for mentor matching/i);
+    });
+
+    it("fires the success toast first so the training reminder lands on top of the sonner stack", async () => {
+      mapFormToApi.mockReturnValue({ api: "data" });
+      mapRegistrationToForm.mockReturnValue(validMenteeForm);
+      const onSave = onSaveResolving(false);
+
+      render(
+        <MentorshipRegistrationDialog {...defaultProps} onSave={onSave} />,
+      );
+      await user.click(screen.getByText("Toggle Dialog"));
+      await user.click(screen.getByText("Register"));
+
+      expect(showReminderToast).toHaveBeenCalledTimes(2);
+      // First call is the registration confirmation; second is the
+      // training reminder. Sonner stacks newest on top, so the
+      // training reminder ends up at the top in `top-center`.
+      expect(showReminderToast.mock.calls[0][0].id).toBe(
+        "registration-success-toast",
+      );
+      expect(showReminderToast.mock.calls[1][0].id).toBe(
+        "post-registration-training-toast",
+      );
+    });
+
+    it("uses the success type and the right title for fresh registration", async () => {
+      mapFormToApi.mockReturnValue({ api: "data" });
+      mapRegistrationToForm.mockReturnValue(validMenteeForm);
+      const onSave = onSaveResolving(true);
+
+      render(
+        <MentorshipRegistrationDialog {...defaultProps} onSave={onSave} />,
+      );
+      await user.click(screen.getByText("Toggle Dialog"));
+      await user.click(screen.getByText("Register"));
+
+      const success = callWithId("registration-success-toast");
+      expect(success).toBeDefined();
+      expect(success.type).toBe("success");
+      expect(success.title).toBe("Registration Completed");
+      expect(success.message).toMatch(/submitted successfully/i);
+    });
+
+    it("uses the updated title for an existing registration", async () => {
+      mapFormToApi.mockReturnValue({ api: "data" });
+      mapRegistrationToForm.mockReturnValue(validMenteeForm);
+      const onSave = onSaveResolving(true);
+
+      render(
+        <MentorshipRegistrationDialog
+          {...defaultProps}
+          onSave={onSave}
+          currentRegistration={{
+            roundPreferences: { participantRole: "mentee" },
+            isRegistered: true,
+          }}
+        />,
+      );
+      await user.click(screen.getByText("Toggle Dialog"));
+      await user.click(screen.getByText("Update Registration"));
+
+      const success = callWithId("registration-success-toast");
+      expect(success).toBeDefined();
+      expect(success.title).toBe("Registration Updated");
+      expect(success.message).toMatch(/updated successfully/i);
+    });
+
+    it("does not fire the training reminder when the POST response reports training already completed", async () => {
+      mapFormToApi.mockReturnValue({ api: "data" });
+      mapRegistrationToForm.mockReturnValue(validMenteeForm);
+      const onSave = onSaveResolving(true);
+
+      render(
+        <MentorshipRegistrationDialog {...defaultProps} onSave={onSave} />,
+      );
+      await user.click(screen.getByText("Toggle Dialog"));
+      await user.click(screen.getByText("Register"));
+
+      expect(onSave).toHaveBeenCalled();
+      // Success toast still fires; only the training reminder is gated.
+      expect(callWithId("registration-success-toast")).toBeDefined();
+      expect(callWithId("post-registration-training-toast")).toBeUndefined();
+    });
+
+    it("does not fire the training reminder when isOnboardingTrainingCompleted is missing from the POST response", async () => {
+      // Backend logic for the field isn't wired up yet — strict
+      // equality with `false` keeps the toast off until we get an
+      // explicit signal.
+      mapFormToApi.mockReturnValue({ api: "data" });
+      mapRegistrationToForm.mockReturnValue(validMenteeForm);
+      const onSave = vi.fn().mockResolvedValue({ data: {} });
+
+      render(
+        <MentorshipRegistrationDialog {...defaultProps} onSave={onSave} />,
+      );
+      await user.click(screen.getByText("Toggle Dialog"));
+      await user.click(screen.getByText("Register"));
+
+      expect(onSave).toHaveBeenCalled();
+      expect(callWithId("registration-success-toast")).toBeDefined();
+      expect(callWithId("post-registration-training-toast")).toBeUndefined();
+    });
+
+    it("does not fire any toast when the user only opens the dialog to view existing registration (no save)", async () => {
+      mapRegistrationToForm.mockReturnValue(validMenteeForm);
+
+      render(
+        <MentorshipRegistrationDialog
+          {...defaultProps}
+          currentRegistration={{
+            roundPreferences: { participantRole: "mentee" },
+            isOnboardingTrainingCompleted: false,
+          }}
+        />,
+      );
+      await user.click(screen.getByText("Toggle Dialog"));
+
+      expect(defaultProps.onSave).not.toHaveBeenCalled();
+      expect(showReminderToast).not.toHaveBeenCalled();
+    });
+
+    it("does not fire when validation blocks the save", async () => {
+      // Empty mentee form: missing required selections triggers validate()
+      // failures so onSave never runs and the reminder must not fire.
+      mapRegistrationToForm.mockReturnValue({
+        industries: [],
+        skillsets: [],
+        partnerCapacity: 1,
+        goal: "",
+        selectedPartners: [],
+        excludedPartners: [],
+        careerTransition: "",
+        careerTransitionOther: "",
+        region: "",
+        regionOther: "",
+        externalMentoringExp: "",
+        currentBackground: "",
+        currentBackgroundOther: "",
+        targetRegion: "",
+        targetRegionOther: "",
+        currentStage: "",
+        timeUrgency: "",
+      });
+
+      render(<MentorshipRegistrationDialog {...defaultProps} />);
+      await user.click(screen.getByText("Toggle Dialog"));
+      await user.click(screen.getByText("Register"));
+
+      expect(defaultProps.onSave).not.toHaveBeenCalled();
+      expect(showReminderToast).not.toHaveBeenCalled();
+    });
   });
 
   it("should disable inputs when isLocked is true", async () => {

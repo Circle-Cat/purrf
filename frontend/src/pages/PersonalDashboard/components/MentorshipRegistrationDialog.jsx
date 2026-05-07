@@ -9,9 +9,9 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { toast } from "sonner";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import MultipleSelector from "@/components/common/MultipleSelector";
+import { showReminderToast } from "@/components/common/showReminderToast";
 import { Info } from "lucide-react";
 import { MentorshipParticipantRoles } from "@/constants/MentorshipParticipantRoles";
 import SurveyRadioQuestion from "@/pages/PersonalDashboard/components/SurveyRadioQuestion";
@@ -28,6 +28,18 @@ import {
   mapRegistrationToForm,
   mapFormToApi,
 } from "@/pages/PersonalDashboard/utils/mentorshipRegistration";
+
+const REGISTRATION_SUCCESS_TOAST_ID = "registration-success-toast";
+const POST_REGISTRATION_TOAST_ID = "post-registration-training-toast";
+const POST_REGISTRATION_TOAST_TITLE = "Complete onboarding training";
+// Mentors can still meet with their mentee while they finish training,
+// so the message is a soft nudge framed around quality of mentorship.
+const POST_REGISTRATION_MENTOR_MESSAGE =
+  "Complete the onboarding training in your Profile page to help you get started as a mentor.";
+// Mentees are gated by training: matching skips them if they haven't
+// completed it, so the message is explicit about the consequence.
+const POST_REGISTRATION_MENTEE_MESSAGE =
+  "You must complete the onboarding training in your Profile page to be eligible for mentor matching this round.";
 
 /**
  * MentorshipRegistrationDialog
@@ -187,16 +199,36 @@ export default function MentorshipRegistrationDialog({
       currentRegistration,
     );
 
-    await onSave(payload);
+    const response = await onSave(payload);
     setIsOpen(false);
 
-    toast.success(
-      isUpdating ? "Registration Updated" : "Registration Completed",
-      {
-        description: `Your preferences for ${currentRegistration?.roundName || "this round"} have been ${isUpdating ? "updated" : "submitted"} successfully.`,
-        duration: 4000,
-      },
-    );
+    // Fire the success toast first so the training reminder, fired
+    // afterwards, ends up on top of sonner's stack (newest renders
+    // closest to the screen edge in `top-center`).
+    showReminderToast({
+      id: REGISTRATION_SUCCESS_TOAST_ID,
+      type: "success",
+      title: isUpdating ? "Registration Updated" : "Registration Completed",
+      message: `Your preferences for ${currentRegistration?.roundName || "this round"} have been ${isUpdating ? "updated" : "submitted"} successfully.`,
+    });
+
+    // Gate on the POST response (the freshly-saved RegistrationDto)
+    // rather than `currentRegistration`, so the reminder only fires
+    // after a successful register/update — opening the dialog to
+    // view existing registration never triggers it. Strict equality
+    // with `false` keeps the toast off until the backend explicitly
+    // reports training as not-yet-completed.
+    if (response?.data?.isOnboardingTrainingCompleted === false) {
+      showReminderToast({
+        id: POST_REGISTRATION_TOAST_ID,
+        title: POST_REGISTRATION_TOAST_TITLE,
+        message:
+          response?.data?.roundPreferences?.participantRole ===
+          MentorshipParticipantRoles.MENTOR
+            ? POST_REGISTRATION_MENTOR_MESSAGE
+            : POST_REGISTRATION_MENTEE_MESSAGE,
+      });
+    }
   };
 
   // Cross-filtered partner options
