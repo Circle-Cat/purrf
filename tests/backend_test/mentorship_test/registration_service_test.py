@@ -22,7 +22,12 @@ from backend.entity.mentorship_round_participants_entity import (
     MentorshipRoundParticipantsEntity,
 )
 from backend.common.user_role import UserRole
-from backend.common.mentorship_enums import ParticipantRole
+from backend.common.mentorship_enums import (
+    ParticipantRole,
+    TrainingStatus,
+    TrainingCategory,
+)
+from backend.entity.training_entity import TrainingEntity
 
 
 class TestRegistrationService(unittest.IsolatedAsyncioTestCase):
@@ -52,6 +57,12 @@ class TestRegistrationService(unittest.IsolatedAsyncioTestCase):
 
         self.mock_mapper = MagicMock()
 
+        self.mock_training_repo = MagicMock()
+        self.mock_training_repo.get_training_by_user_id_and_category = AsyncMock(
+            return_value=None
+        )
+        self.mock_training_repo.upsert_training = AsyncMock()
+
         self.service = RegistrationService(
             logger=self.mock_logger,
             preferences_repository=self.mock_preference_repo,
@@ -60,6 +71,7 @@ class TestRegistrationService(unittest.IsolatedAsyncioTestCase):
             participation_service=self.mock_participation_service,
             user_identity_service=self.mock_user_identity_service,
             mentorship_mapper=self.mock_mapper,
+            training_repository=self.mock_training_repo,
         )
 
         self.sample_dto = RegistrationCreateDto(
@@ -276,6 +288,60 @@ class TestRegistrationService(unittest.IsolatedAsyncioTestCase):
                 )
 
                 self.assertIsInstance(result, RegistrationDto)
+                self.mock_training_repo.upsert_training.assert_awaited_once()
+                self.assertFalse(result.is_onboarding_training_completed)
+
+    async def test_update_registration_info_training_already_completed(self):
+        """Test: When the user already has a completed training, do not create a new one."""
+        mock_round = MagicMock()
+        mock_round.description = {"application_deadline_at": "2099-01-02T07:59:59Z"}
+        mock_round.name = "test round"
+        self.mock_round_repo.get_by_round_id.return_value = mock_round
+
+        self.mock_user_identity_service.get_user.return_value = (self.mock_user, False)
+        self.mock_participation_service.resolve_participant_role_with_fallback.return_value = ParticipantRole.MENTOR
+
+        self.mock_mapper.map_to_global_preferences_dto.return_value = (
+            self.sample_registration_dto.global_preferences
+        )
+        self.mock_mapper.map_to_round_preference_dto.return_value = (
+            self.sample_registration_dto.round_preferences
+        )
+
+        completed_training = TrainingEntity(
+            user_id=self.user_id,
+            category=TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING,
+            status=TrainingStatus.DONE,
+        )
+        self.mock_training_repo.get_training_by_user_id_and_category.return_value = (
+            completed_training
+        )
+
+        global_entity = PreferenceEntity(user_id=self.user_id)
+        participant_entity = MentorshipRoundParticipantsEntity(
+            user_id=self.user_id, round_id=self.mock_round_id
+        )
+
+        with patch.object(
+            self.service,
+            "_update_skill_and_industry_preferences",
+            new_callable=AsyncMock,
+        ) as mock_global_update:
+            with patch.object(
+                self.service, "_update_user_round_preferences", new_callable=AsyncMock
+            ) as mock_round_update:
+                mock_global_update.return_value = global_entity
+                mock_round_update.return_value = participant_entity
+
+                result = await self.service.update_registration_info(
+                    session=self.mock_session,
+                    user_context=self.user_context,
+                    round_id=self.mock_round_id,
+                    preferences_data=self.sample_dto,
+                )
+
+                self.mock_training_repo.upsert_training.assert_not_awaited()
+                self.assertTrue(result.is_onboarding_training_completed)
 
     async def test_update_registration_info_missing_deadline(self):
         """Test: When the restration round missing deadline, stop registration."""

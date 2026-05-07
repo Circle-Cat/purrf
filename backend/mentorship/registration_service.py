@@ -1,4 +1,5 @@
-from datetime import datetime, timezone
+import os
+from datetime import datetime, timezone, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.dto.user_context_dto import UserContextDto
@@ -6,10 +7,20 @@ from backend.dto.registration_create_dto import RegistrationCreateDto
 from backend.dto.preference_dto import SpecificIndustryDto, SkillsetsDto
 from backend.dto.registration_dto import GlobalPreferencesDto, RegistrationDto
 from backend.entity.preference_entity import PreferenceEntity
+from backend.entity.training_entity import TrainingEntity
 from backend.entity.mentorship_round_participants_entity import (
     MentorshipRoundParticipantsEntity,
 )
-from backend.common.mentorship_enums import ApprovalStatus
+from backend.common.mentorship_enums import (
+    ApprovalStatus,
+    ParticipantRole,
+    TrainingCategory,
+    TrainingStatus,
+)
+from backend.common.environment_constants import (
+    MENTORSHIP_MENTOR_ONBOARDING_LINK,
+    MENTORSHIP_MENTEE_ONBOARDING_LINK,
+)
 
 
 class RegistrationService:
@@ -17,7 +28,8 @@ class RegistrationService:
     Service to handle user preferences related to skills and industry.
 
     This service is responsible for fetching, updating, and creating user preferences
-    for skills, specific industries, and related information.
+    for skills, specific industries, and related information. It also automatically
+    assigns onboarding training records when a user registers for a round.
     """
 
     def __init__(
@@ -29,6 +41,7 @@ class RegistrationService:
         participation_service,
         user_identity_service,
         mentorship_mapper,
+        training_repository,
     ):
         """
         Initialize the RegistrationService with its dependencies.
@@ -43,6 +56,7 @@ class RegistrationService:
             user_identity_service: Service responsible for retrieving user identity information.
             mentorship_mapper (MentorshipMapper):
                 The mapper for converting mentorship rounds and entities to DTOs.
+            training_repository: The repository responsible for handling training data.
         """
         self.logger = logger
         self.preferences_repo = preferences_repository
@@ -51,6 +65,7 @@ class RegistrationService:
         self.participation_service = participation_service
         self.user_identity_service = user_identity_service
         self.mentorship_mapper = mentorship_mapper
+        self.training_repo = training_repository
 
     async def update_registration_info(
         self,
@@ -129,6 +144,34 @@ class RegistrationService:
             data=preferences_data,
         )
 
+        category = (
+            TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING
+            if participant_role == ParticipantRole.MENTOR
+            else TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING
+        )
+        onboarding_training = (
+            await self.training_repo.get_training_by_user_id_and_category(
+                session=session, user_id=current_user.user_id, category=category
+            )
+        )
+        if not onboarding_training:
+            link = (
+                os.getenv(MENTORSHIP_MENTOR_ONBOARDING_LINK)
+                if category == TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING
+                else os.getenv(MENTORSHIP_MENTEE_ONBOARDING_LINK)
+            )
+            onboarding_training = await self.training_repo.upsert_training(
+                session=session,
+                entity=TrainingEntity(
+                    user_id=current_user.user_id,
+                    category=category,
+                    status=TrainingStatus.TO_DO,
+                    completed_timestamp=None,
+                    deadline=application_deadline + timedelta(days=2),
+                    link=link,
+                ),
+            )
+
         await session.commit()
 
         return RegistrationDto(
@@ -140,6 +183,8 @@ class RegistrationService:
             ),
             round_name=round_entity.name,
             is_registered=True,
+            is_onboarding_training_completed=onboarding_training.status
+            == TrainingStatus.DONE,
         )
 
     async def _update_skill_and_industry_preferences(

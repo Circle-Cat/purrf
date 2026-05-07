@@ -28,3 +28,4 @@ class RegistrationDto(BaseDto):
     round_name: str
     global_preferences: GlobalPreferencesDto
     round_preferences: RoundPreferencesDto
+    is_onboarding_training_completed: bool | None = None

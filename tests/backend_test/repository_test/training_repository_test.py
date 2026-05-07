@@ -21,30 +21,30 @@ class TestTrainingRepository(BaseRepositoryTestLib):
         await super().asyncSetUp()
         self.repo = TrainingRepository()
 
-        now = datetime.now(timezone.utc)
+        self.now = datetime.now(timezone.utc)
 
         dummy_users = [
             UsersEntity(
                 first_name="Alice",
                 last_name="Admin",
                 timezone=UserTimezone.ASIA_SHANGHAI,
-                timezone_updated_at=now,
+                timezone_updated_at=self.now,
                 communication_channel=CommunicationMethod.EMAIL,
                 primary_email="alice@example.com",
                 is_active=True,
-                updated_timestamp=(now),
+                updated_timestamp=self.now,
                 subject_identifier=str(uuid.uuid4()),
             ),
             UsersEntity(
                 first_name="Bob",
                 last_name="MultiRole",
                 timezone=UserTimezone.AMERICA_LOS_ANGELES,
-                timezone_updated_at=now,
+                timezone_updated_at=self.now,
                 communication_channel=CommunicationMethod.EMAIL,
                 primary_email="bob@example.com",
                 alternative_emails=["b1@example.com", "b2@example.com"],
                 is_active=True,
-                updated_timestamp=now,
+                updated_timestamp=self.now,
                 subject_identifier=str(uuid.uuid4()),
             ),
         ]
@@ -57,25 +57,25 @@ class TestTrainingRepository(BaseRepositoryTestLib):
             TrainingEntity(
                 user_id=self.user1.user_id,
                 category=TrainingCategory.CORPORATE_CULTURE_COURSE,
-                completed_timestamp=now,
+                completed_timestamp=self.now,
                 status=TrainingStatus.TO_DO,
-                deadline=now + timedelta(days=7),
+                deadline=self.now + timedelta(days=7),
                 link="http://example.com/1",
             ),
             TrainingEntity(
                 user_id=self.user1.user_id,
                 category=TrainingCategory.RESIDENCY_PROGRAM_ONBOARDING,
-                completed_timestamp=now,
+                completed_timestamp=self.now,
                 status=TrainingStatus.DONE,
-                deadline=now + timedelta(days=10),
+                deadline=self.now + timedelta(days=10),
                 link="http://example.com/2",
             ),
             TrainingEntity(
                 user_id=self.user2.user_id,
                 category=TrainingCategory.CORPORATE_CULTURE_COURSE,
-                completed_timestamp=now,
+                completed_timestamp=self.now,
                 status=TrainingStatus.TO_DO,
-                deadline=now + timedelta(days=7),
+                deadline=self.now + timedelta(days=7),
                 link="http://example.com/3",
             ),
         ]
@@ -92,6 +92,64 @@ class TestTrainingRepository(BaseRepositoryTestLib):
     async def test_get_training_by_user_id_non_existent(self):
         result = await self.repo.get_training_by_user_id(self.session, 9999)
         self.assertEqual(result, [])
+
+    async def test_get_training_by_user_id_and_category_existing(self):
+        result = await self.repo.get_training_by_user_id_and_category(
+            self.session, self.user1.user_id, TrainingCategory.CORPORATE_CULTURE_COURSE
+        )
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result.user_id, self.user1.user_id)
+        self.assertEqual(result.category, TrainingCategory.CORPORATE_CULTURE_COURSE)
+
+    async def test_get_training_by_user_id_and_category_non_existent(self):
+        result = await self.repo.get_training_by_user_id_and_category(
+            self.session,
+            self.user1.user_id,
+            TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING,
+        )
+
+        self.assertIsNone(result)
+
+    async def test_upsert_training_insert(self):
+        """Test inserting a new TrainingEntity with completed_timestamp=NULL and a link."""
+        training = TrainingEntity(
+            user_id=self.user1.user_id,
+            category=TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING,
+            completed_timestamp=None,
+            status=TrainingStatus.TO_DO,
+            deadline=datetime.now(timezone.utc) + timedelta(days=2),
+            link="https://learning.example.com/courses/mentor-onboarding",
+        )
+
+        saved = await self.repo.upsert_training(self.session, training)
+
+        self.assertIsNotNone(saved.training_id)
+        self.assertIsNone(saved.completed_timestamp)
+        self.assertEqual(saved.status, TrainingStatus.TO_DO)
+        self.assertEqual(
+            saved.link, "https://learning.example.com/courses/mentor-onboarding"
+        )
+
+    async def test_upsert_training_update(self):
+        """Test updating an existing TrainingEntity."""
+        existing = await self.repo.get_training_by_user_id(
+            self.session, self.user1.user_id
+        )
+        updated_entity = TrainingEntity(
+            training_id=existing[0].training_id,
+            user_id=self.user1.user_id,
+            category=existing[0].category,
+            completed_timestamp=self.now + timedelta(days=1),
+            status=TrainingStatus.DONE,
+            deadline=existing[0].deadline,
+            link=existing[0].link,
+        )
+
+        updated = await self.repo.upsert_training(self.session, updated_entity)
+
+        self.assertEqual(updated.status, TrainingStatus.DONE)
+        self.assertIsNotNone(updated.completed_timestamp)
 
 
 if __name__ == "__main__":

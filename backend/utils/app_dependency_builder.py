@@ -375,6 +375,7 @@ class AppDependencyBuilder:
             launchdarkly_service=self.launchdarkly_service,
         )
         self.users_repository = UsersRepository()
+        self.training_repository = TrainingRepository()
         self.user_identity_service = UserIdentityService(
             logger=self.logger, users_repository=self.users_repository
         )
@@ -409,6 +410,7 @@ class AppDependencyBuilder:
             participation_service=self.participation_service,
             user_identity_service=self.user_identity_service,
             mentorship_mapper=self.mentorship_mapper,
+            training_repository=self.training_repository,
         )
         self.meeting_service = MeetingService(
             logger=self.logger,
@@ -434,7 +436,6 @@ class AppDependencyBuilder:
             meet_attendance_sync_service=self.meet_attendance_service,
         )
         self.experience_repository = ExperienceRepository()
-        self.training_repository = TrainingRepository()
         self.profile_mapper = ProfileMapper()
         self.profile_query_service = ProfileQueryService(
             user_identity_service=self.user_identity_service,
