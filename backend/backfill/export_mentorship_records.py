@@ -2,7 +2,8 @@ import pandas as pd
 import asyncio
 import json
 import os
-from sqlalchemy import select
+from datetime import timedelta
+from sqlalchemy import false, select, update, or_
 from backend.entity.users_entity import UsersEntity
 from backend.entity.experience_entity import ExperienceEntity
 from backend.entity.preference_entity import PreferenceEntity
@@ -10,8 +11,15 @@ from backend.entity.mentorship_round_participants_entity import (
     MentorshipRoundParticipantsEntity,
 )
 from backend.entity.mentorship_round_entity import MentorshipRoundEntity
+from backend.entity.training_entity import TrainingEntity
+from backend.entity.mentorship_pairs_entity import MentorshipPairsEntity
 from backend.common.database import Database
-from backend.common.mentorship_enums import ParticipantRole
+from backend.common.mentorship_enums import (
+    ApprovalStatus,
+    ParticipantRole,
+    TrainingCategory,
+    TrainingStatus,
+)
 from backend.common.logger import get_logger
 
 logger = get_logger()
@@ -145,6 +153,114 @@ MENTEE_COLUMNS = [
 ]
 
 
+async def compute_ineligible_mentee_ids(
+    session,
+    round_id: int,
+    prev_round: MentorshipRoundEntity | None,
+    exemption_user_ids: set[int],
+) -> list[int]:
+    """
+    Returns user_ids of mentees in the round who fail one of two eligibility checks:
+
+    1. Did not complete mentee onboarding training by training.deadline + 1 day.
+    2. Participated in the previous round with completed_count < prev_round.required_meetings
+       (unless the user_id appears in exemption_user_ids).
+
+    Already-rejected participants are excluded from evaluation.
+    """
+    stmt = (
+        select(
+            MentorshipRoundParticipantsEntity.user_id,
+            TrainingEntity,
+            MentorshipPairsEntity,
+        )
+        .outerjoin(
+            TrainingEntity,
+            (TrainingEntity.user_id == MentorshipRoundParticipantsEntity.user_id)
+            & (
+                TrainingEntity.category == TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING
+            ),
+        )
+        .outerjoin(
+            MentorshipPairsEntity,
+            (
+                (
+                    MentorshipPairsEntity.mentee_id
+                    == MentorshipRoundParticipantsEntity.user_id
+                )
+                & (MentorshipPairsEntity.round_id == prev_round.round_id)
+            )
+            if prev_round
+            else false(),
+        )
+        .where(
+            MentorshipRoundParticipantsEntity.round_id == round_id,
+            MentorshipRoundParticipantsEntity.participant_role
+            == ParticipantRole.MENTEE,
+            or_(
+                MentorshipRoundParticipantsEntity.approval_status
+                != ApprovalStatus.REJECTED,
+                MentorshipRoundParticipantsEntity.approval_status.is_(None),
+            ),
+        )
+    )
+
+    ineligible: list[int] = []
+    for user_id, training, prev_pair in (await session.execute(stmt)).all():
+        # Rule 1: training must be completed by application deadline + 3 days.
+        # (training.deadline is set to application_deadline + 2, so allow +1 grace day.)
+        is_trained = (
+            training is not None
+            and training.status == TrainingStatus.DONE
+            and training.completed_timestamp is not None
+            and training.completed_timestamp <= training.deadline + timedelta(days=1)
+        )
+        if not is_trained:
+            logger.info(
+                "Ineligible mentee user_id=%s: incomplete or late training", user_id
+            )
+            ineligible.append(user_id)
+            continue
+
+        # Rule 2: if in the previous round, completed_count must meet the minimum required completed meetings.
+        if (
+            prev_round is not None
+            and prev_pair is not None
+            and user_id not in exemption_user_ids
+            and prev_pair.completed_count < prev_round.required_meetings
+        ):
+            logger.info(
+                "Ineligible mentee user_id=%s: prev-round completed_count=%d < %d",
+                user_id,
+                prev_pair.completed_count,
+                prev_round.required_meetings,
+            )
+            ineligible.append(user_id)
+
+    return ineligible
+
+
+async def reject_mentee_participants(
+    session,
+    round_id: int,
+    user_ids: list[int],
+) -> None:
+    """Sets approval_status=REJECTED for the given mentees in this round."""
+    if not user_ids:
+        return
+    await session.execute(
+        update(MentorshipRoundParticipantsEntity)
+        .where(
+            MentorshipRoundParticipantsEntity.round_id == round_id,
+            MentorshipRoundParticipantsEntity.user_id.in_(user_ids),
+            MentorshipRoundParticipantsEntity.participant_role
+            == ParticipantRole.MENTEE,
+        )
+        .values(approval_status=ApprovalStatus.REJECTED)
+    )
+    logger.info("Set approval_status=REJECTED for %d mentee(s).", len(user_ids))
+
+
 def _bool_to_tf(value) -> str:
     return "t" if value else "f"
 
@@ -246,7 +362,16 @@ async def fetch_participants_data(
         )
         .outerjoin(ExperienceEntity, UsersEntity.user_id == ExperienceEntity.user_id)
         .outerjoin(PreferenceEntity, UsersEntity.user_id == PreferenceEntity.user_id)
-        .where(UsersEntity.is_active.is_(True))
+        .where(
+            UsersEntity.is_active.is_(True),
+            or_(
+                MentorshipRoundParticipantsEntity.participant_role
+                == ParticipantRole.MENTOR,
+                MentorshipRoundParticipantsEntity.approval_status
+                != ApprovalStatus.REJECTED,
+                MentorshipRoundParticipantsEntity.approval_status.is_(None),
+            ),
+        )
     )
 
     rows = (await session.execute(stmt)).all()
@@ -346,6 +471,48 @@ async def list_rounds(session) -> list[MentorshipRoundEntity]:
     return list((await session.execute(stmt)).scalars())
 
 
+def find_most_recent_prev_round(
+    rounds: list[MentorshipRoundEntity],
+    current_round_id: int,
+) -> MentorshipRoundEntity | None:
+    """Returns the most recent round that ended before the selected export round, or None."""
+    current_deadline = next(
+        r.description["meetings_completion_deadline_at"]
+        for r in rounds
+        if r.round_id == current_round_id
+    )
+    return max(
+        (
+            r
+            for r in rounds
+            if r.round_id != current_round_id
+            and r.description["meetings_completion_deadline_at"] < current_deadline
+        ),
+        key=lambda r: r.description["meetings_completion_deadline_at"],
+        default=None,
+    )
+
+
+def prompt_exemption_ids() -> set[int]:
+    """Prompts for a comma-separated list of mentee user_ids to exempt from Rule 2.
+    Returns an empty set if the user just hits Enter."""
+    raw = input(
+        "\nEnter mentee user_ids to exempt from prev-round check (comma-separated, or Enter to skip): "
+    ).strip()
+    if not raw:
+        return set()
+    ids = set()
+    for token in raw.split(","):
+        token = token.strip()
+        if token.isdigit():
+            ids.add(int(token))
+        elif token:
+            print(f"{'':2}Ignoring non-numeric token: {token!r}")
+    if ids:
+        print(f"{'':2}Exempting user_ids: {sorted(ids)}")
+    return ids
+
+
 def prompt_round_selection(rounds: list[MentorshipRoundEntity]) -> int | None:
     """Prints available rounds and prompts the user to pick one by index.
     Returns the round_id of the chosen row, or None if the user aborts."""
@@ -394,6 +561,16 @@ async def main():
             logger.info("No round selected, aborting export.")
             return
 
+        exemption_ids = prompt_exemption_ids()
+
+        prev_round = find_most_recent_prev_round(rounds, round_id)
+        if prev_round:
+            logger.info(
+                "Prev round for eligibility check: %s (round_id=%s)",
+                prev_round.name,
+                prev_round.round_id,
+            )
+
         logger.info("Exporting round_id=%s", round_id)
         mentor_path = os.path.join(
             base_dir, f"backend/backfill/Mentor_export_round_{round_id}.csv"
@@ -403,9 +580,23 @@ async def main():
         )
 
         async with db.session() as session:
-            df_mentor, df_mentee = await fetch_participants_data(
-                session, round_id=round_id
+            ineligible_ids = await compute_ineligible_mentee_ids(
+                session, round_id, prev_round, exemption_ids
             )
+
+        if ineligible_ids:
+            logger.info("Ineligible mentees to reject: %s", sorted(ineligible_ids))
+            confirm = input(
+                f"\nWill reject {len(ineligible_ids)} mentee(s). Proceed? (y/n): "
+            ).strip()
+            if confirm.lower() != "y":
+                logger.info("Aborted. No changes written.")
+                return
+
+        async with db.session() as session:
+            await reject_mentee_participants(session, round_id, ineligible_ids)
+            await session.commit()
+            df_mentor, df_mentee = await fetch_participants_data(session, round_id)
 
         # Always write both files with the full template header, even when a
         # role has zero participants in the round, so consumers can rely on
