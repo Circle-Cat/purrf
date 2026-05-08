@@ -536,7 +536,8 @@ class GoogleService:
         return result
 
     def batch_delete_google_meetings(
-        self, event_ids: list[str],
+        self,
+        event_ids: list[str],
     ) -> tuple[list[str], list[str]]:
         """
         Delete one or more Google Calendar events in a single batch HTTP request.
@@ -590,6 +591,8 @@ class GoogleService:
                 continue
 
         failed_set = set(failed_event_ids)
-        succeeded_event_ids = [event_id for event_id in event_ids if event_id not in failed_set]
+        succeeded_event_ids = [
+            event_id for event_id in event_ids if event_id not in failed_set
+        ]
 
         return succeeded_event_ids, failed_event_ids

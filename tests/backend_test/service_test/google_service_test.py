@@ -531,7 +531,9 @@ class TestGoogleService(TestCase):
     def test_batch_delete_google_meetings_success(self):
         """Test batch deletion returns succeeded event IDs when all requests succeed."""
         mock_batch = MagicMock()
-        self.mock_google_calendar_client.new_batch_http_request.return_value = mock_batch
+        self.mock_google_calendar_client.new_batch_http_request.return_value = (
+            mock_batch
+        )
 
         result = self.service.batch_delete_google_meetings(["event-1", "event-2"])
 
@@ -543,7 +545,9 @@ class TestGoogleService(TestCase):
     def test_batch_delete_google_meetings_execute_error(self):
         """Test batch deletion returns all event IDs as failed when the batch request fails."""
         mock_batch = MagicMock()
-        self.mock_google_calendar_client.new_batch_http_request.return_value = mock_batch
+        self.mock_google_calendar_client.new_batch_http_request.return_value = (
+            mock_batch
+        )
         self.mock_retry_utils.get_retry_on_transient.side_effect = Exception("fail")
 
         result = self.service.batch_delete_google_meetings(["event-1"])
@@ -561,7 +565,9 @@ class TestGoogleService(TestCase):
                 ]
                 callback(request_id, None, Exception("fail"))
 
-        self.mock_google_calendar_client.new_batch_http_request.return_value = mock_batch
+        self.mock_google_calendar_client.new_batch_http_request.return_value = (
+            mock_batch
+        )
         mock_batch.add.side_effect = add
 
         result = self.service.batch_delete_google_meetings(["event-1", "event-2"])

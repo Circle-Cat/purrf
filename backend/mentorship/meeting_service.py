@@ -14,7 +14,9 @@ from backend.dto.google_meeting_response_detail_dto import (
 )
 from backend.dto.user_context_dto import UserContextDto
 from backend.common.user_role import UserRole
-from backend.dto.google_meeting_delete_response_dto import GoogleMeetingDeleteResponseDto
+from backend.dto.google_meeting_delete_response_dto import (
+    GoogleMeetingDeleteResponseDto,
+)
 
 
 class MeetingService:
@@ -350,12 +352,14 @@ class MeetingService:
         all_meeting_ids: list[str] = []
 
         for deletion in deletions:
-            all_exist = await self.mentorship_pairs_repository.do_google_meetings_exist_in_log(
-                session=session,
-                user_id=current_user.user_id,
-                round_id=deletion["round_id"],
-                partner_id=deletion["partner_id"],
-                meeting_ids=deletion["meeting_ids"],
+            all_exist = (
+                await self.mentorship_pairs_repository.do_google_meetings_exist_in_log(
+                    session=session,
+                    user_id=current_user.user_id,
+                    round_id=deletion["round_id"],
+                    partner_id=deletion["partner_id"],
+                    meeting_ids=deletion["meeting_ids"],
+                )
             )
 
             if not all_exist:

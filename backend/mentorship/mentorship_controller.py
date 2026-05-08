@@ -404,7 +404,11 @@ class MentorshipController:
         raise PermissionError("Create Google meeting feature is not yet available.")
 
     async def delete_single_google_meeting(
-        self, current_user: UserContextDto, meeting_id: str, round_id: int, partner_id: int,
+        self,
+        current_user: UserContextDto,
+        meeting_id: str,
+        round_id: int,
+        partner_id: int,
     ):
         """
         Delete a single Google Calendar meeting for a mentorship pair.
@@ -441,7 +445,9 @@ class MentorshipController:
         raise PermissionError("Google meeting feature is not yet available.")
 
     async def batch_delete_google_meetings(
-        self, current_user: UserContextDto, payload: GoogleMeetingDeleteDto,
+        self,
+        current_user: UserContextDto,
+        payload: GoogleMeetingDeleteDto,
     ):
         """
         Delete one or more Google Calendar meetings selected by the user.

@@ -540,7 +540,9 @@ class TestMentorshipController(unittest.IsolatedAsyncioTestCase):
 
     async def test_delete_single_google_meeting_success(self):
         """Verify single meeting deletion calls service layer when feature flag is enabled."""
-        self.mock_launchdarkly_service.is_create_google_meeting_enabled.return_value = True
+        self.mock_launchdarkly_service.is_create_google_meeting_enabled.return_value = (
+            True
+        )
         mock_user = MagicMock(spec=UserContextDto)
 
         await self.controller.delete_single_google_meeting(
@@ -554,11 +556,21 @@ class TestMentorshipController(unittest.IsolatedAsyncioTestCase):
 
     async def test_batch_delete_google_meetings_success(self):
         """Verify batch meeting deletion calls service layer with parsed payload when feature flag is enabled."""
-        self.mock_launchdarkly_service.is_create_google_meeting_enabled.return_value = True
+        self.mock_launchdarkly_service.is_create_google_meeting_enabled.return_value = (
+            True
+        )
         mock_user = MagicMock(spec=UserContextDto)
 
         payload = MagicMock()
-        payload.deletions = [MagicMock(model_dump=lambda: {"round_id": 1, "partner_id": 2, "meeting_ids": ["abc"]})]
+        payload.deletions = [
+            MagicMock(
+                model_dump=lambda: {
+                    "round_id": 1,
+                    "partner_id": 2,
+                    "meeting_ids": ["abc"],
+                }
+            )
+        ]
 
         await self.controller.batch_delete_google_meetings(
             current_user=mock_user,
@@ -569,7 +581,9 @@ class TestMentorshipController(unittest.IsolatedAsyncioTestCase):
 
     async def test_delete_google_meeting_feature_disabled(self):
         """Verify deletion is blocked and raises PermissionError when feature flag is disabled."""
-        self.mock_launchdarkly_service.is_create_google_meeting_enabled.return_value = False
+        self.mock_launchdarkly_service.is_create_google_meeting_enabled.return_value = (
+            False
+        )
         mock_user = MagicMock(spec=UserContextDto)
 
         with self.assertRaises(PermissionError):
@@ -582,16 +596,20 @@ class TestMentorshipController(unittest.IsolatedAsyncioTestCase):
 
     async def test_batch_delete_google_meetings_feature_disabled(self):
         """Verify batch deletion is blocked and raises PermissionError when feature flag is disabled."""
-        self.mock_launchdarkly_service.is_create_google_meeting_enabled.return_value = False
+        self.mock_launchdarkly_service.is_create_google_meeting_enabled.return_value = (
+            False
+        )
         mock_user = MagicMock(spec=UserContextDto)
 
         payload = MagicMock()
         payload.deletions = [
-            MagicMock(model_dump=lambda: {
-                "round_id": 1,
-                "partner_id": 2,
-                "meeting_ids": ["event-1"],
-            })
+            MagicMock(
+                model_dump=lambda: {
+                    "round_id": 1,
+                    "partner_id": 2,
+                    "meeting_ids": ["event-1"],
+                }
+            )
         ]
 
         with self.assertRaises(PermissionError):

@@ -554,13 +554,16 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
 
     async def test_delete_google_meetings_success(self):
         """Verify successful deletion removes Google-deleted meetings from DB and commits."""
-        self.mock_mentorship_pairs_repository.do_google_meetings_exist_in_log = AsyncMock(
-            return_value=True
+        self.mock_mentorship_pairs_repository.do_google_meetings_exist_in_log = (
+            AsyncMock(return_value=True)
         )
         self.mock_mentorship_pairs_repository.remove_meetings_from_log = AsyncMock(
             return_value=[1]
         )
-        self.mock_google_service.batch_delete_google_meetings.return_value = (["abc"], [])
+        self.mock_google_service.batch_delete_google_meetings.return_value = (
+            ["abc"],
+            [],
+        )
 
         result = await self.service.delete_google_meetings(
             session=self.mock_session,
@@ -600,8 +603,8 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
     async def test_delete_google_meetings_not_found(self):
         """Raises ValueError when meetings do not exist in log."""
 
-        self.mock_mentorship_pairs_repository.do_google_meetings_exist_in_log = AsyncMock(
-            return_value=False
+        self.mock_mentorship_pairs_repository.do_google_meetings_exist_in_log = (
+            AsyncMock(return_value=False)
         )
 
         with self.assertRaises(ValueError):
