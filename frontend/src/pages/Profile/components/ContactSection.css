@@ -7,18 +7,6 @@
   padding: 8px 0;
 }
 
-.email-tag {
-  display: inline-flex;
-  align-items: center;
-  padding: 4px 12px;
-  border-radius: 20px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  white-space: nowrap;
-  height: 28px;
-  transition: all 0.2s ease;
-}
-
 .email-tag.primary {
   background-color: var(--primary-color);
   color: var(--text-color-white);

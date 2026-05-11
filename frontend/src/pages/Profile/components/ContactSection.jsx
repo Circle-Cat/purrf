@@ -1,3 +1,4 @@
+import { Badge } from "@/components/ui/badge";
 import React from "react";
 import "@/pages/Profile/components/ContactSection.css";
 
@@ -26,10 +27,12 @@ const ContactSection = ({ info }) => {
             <p key={emailItem.id} className="email-display-row section-text">
               {emailItem.email}
               {emailItem.isPrimary && (
-                <span className="email-tag primary">Primary Email</span>
+                <Badge className="email-tag primary">Primary Email</Badge>
               )}
               {!emailItem.isPrimary && (
-                <span className="email-tag alternative">Alternative Email</span>
+                <Badge className="email-tag alternative">
+                  Alternative Email
+                </Badge>
               )}
             </p>
           ))}

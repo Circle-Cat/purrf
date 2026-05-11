@@ -9,6 +9,7 @@ import {
 import { useAuth } from "@/context/auth/AuthContext";
 import { USER_ROLES } from "@/constants/UserRoles";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 
 /**
  * EmailFormItem renders a single email input with label, error handling, and delete option.
@@ -39,9 +40,9 @@ const EmailFormItem = ({ item, errors, onChange, onDelete }) => {
 
         <div className="email-type-label">
           {item.isPrimary ? (
-            <span className="email-tag primary">Primary</span>
+            <Badge className="email-tag primary">Primary</Badge>
           ) : (
-            <span className="email-tag alternative">Alternative</span>
+            <Badge className="email-tag alternative">Alternative</Badge>
           )}
         </div>
 
