@@ -62,6 +62,24 @@ py_binary(
 )
 
 py_binary(
+    name = "backfill_external_mentee",
+    srcs = ["backfill_external_mentee.py"],
+    data = [
+        "External_mentee_education.csv",
+        "External_mentee_user_info_preferences.csv",
+        "External_mentee_work_history.csv",
+    ],
+    deps = [
+        "//backend/common:database",
+        "//backend/common:logger",
+        "//backend/common:mentorship_enums",
+        "//backend/entity:entities",
+        "@pypi//asyncpg",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_binary(
     name = "export_mentorship_records",
     srcs = [
         "export_mentorship_records.py",
