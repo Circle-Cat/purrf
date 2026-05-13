@@ -13,7 +13,7 @@ from backend.dto.user_context_dto import UserContextDto
 from backend.dto.profile_dto import ProfileDto
 from backend.dto.users_dto import UsersDto
 from backend.dto.profile_create_dto import ProfileCreateDto
-from backend.common.mentorship_enums import UserTimezone, CommunicationMethod
+from backend.common.mentorship_enums import CommunicationMethod
 from backend.common.constants import ProfileField
 
 
@@ -72,7 +72,7 @@ class TestProfileController(unittest.TestCase):
             id=1,
             first_name="Alice",
             last_name="Smith",
-            timezone=UserTimezone.AMERICA_LOS_ANGELES,
+            timezone="America/Los_Angeles",
             communication_method=CommunicationMethod.EMAIL,
             timezone_updated_at=datetime.now(),
             updated_timestamp=datetime.now(),

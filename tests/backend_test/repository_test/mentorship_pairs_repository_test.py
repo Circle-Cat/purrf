@@ -10,7 +10,6 @@ from tests.backend_test.repository_test.base_repository_test_lib import (
 )
 from backend.common.mentorship_enums import (
     PairStatus,
-    UserTimezone,
     CommunicationMethod,
     MentorActionStatus,
     MenteeActionStatus,
@@ -29,7 +28,7 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
             UsersEntity(
                 first_name="Alice",
                 last_name="Admin",
-                timezone=UserTimezone.ASIA_SHANGHAI,
+                timezone="Asia/Shanghai",
                 timezone_updated_at=self.now,
                 communication_channel=CommunicationMethod.EMAIL,
                 primary_email="alice@example.com",
@@ -40,7 +39,7 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
             UsersEntity(
                 first_name="Bob",
                 last_name="Smith",
-                timezone=UserTimezone.AMERICA_NEW_YORK,
+                timezone="America/New_York",
                 timezone_updated_at=self.now,
                 communication_channel=CommunicationMethod.EMAIL,
                 primary_email="bob@example.com",
@@ -51,7 +50,7 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
             UsersEntity(
                 first_name="Charlie",
                 last_name="Inactive",
-                timezone=UserTimezone.ASIA_SHANGHAI,
+                timezone="Asia/Shanghai",
                 timezone_updated_at=self.now,
                 communication_channel=CommunicationMethod.EMAIL,
                 primary_email="charlie@example.com",
@@ -153,7 +152,7 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
         self.user_mentor = UsersEntity(
             first_name="M",
             last_name="Mentor",
-            timezone=UserTimezone.ASIA_SHANGHAI,
+            timezone="Asia/Shanghai",
             timezone_updated_at=self.now,
             communication_channel=CommunicationMethod.EMAIL,
             primary_email="mentor@example.com",
@@ -164,7 +163,7 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
         self.user_partner = UsersEntity(
             first_name="P",
             last_name="Partner",
-            timezone=UserTimezone.AMERICA_NEW_YORK,
+            timezone="America/New_York",
             timezone_updated_at=self.now,
             communication_channel=CommunicationMethod.EMAIL,
             primary_email="partner@example.com",

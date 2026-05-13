@@ -11,7 +11,7 @@ from backend.dto.google_meeting_response_detail_dto import (
 )
 from backend.entity.users_entity import UsersEntity
 from backend.entity.mentorship_pairs_entity import MentorshipPairsEntity
-from backend.common.mentorship_enums import UserTimezone, PairStatus
+from backend.common.mentorship_enums import PairStatus
 from backend.common.user_role import UserRole
 
 
@@ -43,7 +43,7 @@ class TestMeetingServiceV1(unittest.IsolatedAsyncioTestCase):
         self.partner_id = 100
         self.user_context = MagicMock(spec=UserContextDto, sub="sub-123")
         self.mock_current_user = MagicMock(spec=UsersEntity, user_id=self.user_id)
-        self.mock_current_user.timezone = UserTimezone.AMERICA_NEW_YORK
+        self.mock_current_user.timezone = "America/New_York"
         self.mock_identity_service.get_user.return_value = (
             self.mock_current_user,
             False,
@@ -99,7 +99,7 @@ class TestMeetingServiceV1(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsInstance(result, MeetingDto)
         self.assertEqual(result.round_id, self.round_id)
-        self.assertEqual(result.user_timezone, UserTimezone.AMERICA_NEW_YORK)
+        self.assertEqual(result.user_timezone, "America/New_York")
         self.assertEqual(len(result.meeting_info), 0)
 
         self.mock_mapper.map_to_meeting_dto.assert_not_called()
@@ -242,7 +242,7 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
         self.round_id = 10
         self.partner_id = 100
 
-        self.mock_current_user.timezone = UserTimezone.AMERICA_NEW_YORK
+        self.mock_current_user.timezone = "America/New_York"
 
         self.user_context.roles = [UserRole.MENTORSHIP]
 
@@ -523,7 +523,7 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsInstance(result, MeetingDto)
         self.assertEqual(result.round_id, self.round_id)
-        self.assertEqual(result.user_timezone, UserTimezone.AMERICA_NEW_YORK)
+        self.assertEqual(result.user_timezone, "America/New_York")
         self.assertEqual(len(result.meeting_info), 0)
 
         self.mock_mapper.map_to_meeting_v2_dto.assert_not_called()

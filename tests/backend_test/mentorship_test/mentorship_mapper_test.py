@@ -20,7 +20,6 @@ from backend.entity.mentorship_round_participants_entity import (
 from backend.entity.mentorship_round_entity import MentorshipRoundEntity
 from backend.mentorship.mentorship_mapper import MentorshipMapper
 from backend.common.mentorship_enums import (
-    UserTimezone,
     CommunicationMethod,
     ParticipantRole,
     PairStatus,
@@ -161,7 +160,7 @@ class TestMentorshipMapper(unittest.TestCase):
                 user_id=1,
                 first_name="Alice",
                 last_name="Admin",
-                timezone=UserTimezone.ASIA_SHANGHAI,
+                timezone="Asia/Shanghai",
                 timezone_updated_at=datetime.now(timezone.utc),
                 communication_channel=CommunicationMethod.EMAIL,
                 primary_email="alice@example.com",
@@ -267,7 +266,7 @@ class TestMentorshipMapper(unittest.TestCase):
 
         dto = self.mapper.map_to_meeting_dto(
             round_id=1,
-            user_timezone=UserTimezone.ASIA_SHANGHAI,
+            user_timezone="Asia/Shanghai",
             grouped_pairs=[(pair_entity, partner_id)],
         )
         info = dto.meeting_info[0]
@@ -293,7 +292,7 @@ class TestMentorshipMapper(unittest.TestCase):
 
         dto = self.mapper.map_to_meeting_dto(
             round_id=2,
-            user_timezone=UserTimezone.ASIA_SHANGHAI,
+            user_timezone="Asia/Shanghai",
             grouped_pairs=[(pair_entity, partner_id)],
         )
 
@@ -352,7 +351,7 @@ class TestMentorshipMapper(unittest.TestCase):
 
         dto = self.mapper.map_to_meeting_v2_dto(
             round_id=1,
-            user_timezone=UserTimezone.ASIA_SHANGHAI,
+            user_timezone="Asia/Shanghai",
             grouped_pairs=[(pair_entity, partner_id)],
         )
         info = dto.meeting_info[0]
@@ -412,7 +411,7 @@ class TestMentorshipMapper(unittest.TestCase):
 
         dto = self.mapper.map_to_meeting_v2_dto(
             round_id=1,
-            user_timezone=UserTimezone.ASIA_SHANGHAI,
+            user_timezone="Asia/Shanghai",
             grouped_pairs=[(pair_entity, partner_id)],
             include_details=False,
         )
@@ -462,7 +461,7 @@ class TestMentorshipMapper(unittest.TestCase):
 
         dto = self.mapper.map_to_meeting_v2_dto(
             round_id=1,
-            user_timezone=UserTimezone.ASIA_SHANGHAI,
+            user_timezone="Asia/Shanghai",
             grouped_pairs=[(pair_entity, partner_id)],
             include_details=True,
         )
@@ -490,7 +489,7 @@ class TestMentorshipMapper(unittest.TestCase):
 
         dto = self.mapper.map_to_meeting_v2_dto(
             round_id=2,
-            user_timezone=UserTimezone.ASIA_SHANGHAI,
+            user_timezone="Asia/Shanghai",
             grouped_pairs=[(pair_entity, partner_id)],
         )
 
@@ -575,7 +574,7 @@ class TestMentorshipMapper(unittest.TestCase):
 
         dto = self.mapper.map_to_meeting_v2_dto(
             round_id=1,
-            user_timezone=UserTimezone.ASIA_SHANGHAI,
+            user_timezone="Asia/Shanghai",
             grouped_pairs=[(pair_entity, partner_id)],
             include_details=True,
         )

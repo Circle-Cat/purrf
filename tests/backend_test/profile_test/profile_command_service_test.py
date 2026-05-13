@@ -11,7 +11,7 @@ from backend.dto.profile_create_dto import (
     EducationRequestDto,
     WorkHistoryRequestDto,
 )
-from backend.common.mentorship_enums import CommunicationMethod, UserTimezone
+from backend.common.mentorship_enums import CommunicationMethod
 from backend.entity.experience_entity import ExperienceEntity
 from backend.common.mentorship_enums import Degree
 
@@ -33,7 +33,7 @@ class TestProfileCommandService(unittest.IsolatedAsyncioTestCase):
     def _create_profile_dto(
         self,
         first_name="Alice",
-        timezone=UserTimezone.AMERICA_LOS_ANGELES,
+        timezone="America/Los_Angeles",
         communication_method=CommunicationMethod.EMAIL,
         education=None,
         work_history=None,
@@ -58,12 +58,12 @@ class TestProfileCommandService(unittest.IsolatedAsyncioTestCase):
         existing_user = UsersEntity(
             user_id=1,
             first_name="Old",
-            timezone=UserTimezone.AMERICA_LOS_ANGELES,
+            timezone="America/Los_Angeles",
             timezone_updated_at=now - timedelta(days=10),
         )
 
         profile_dto = self._create_profile_dto(
-            first_name="NewName", timezone=UserTimezone.AMERICA_LOS_ANGELES
+            first_name="NewName", timezone="America/Los_Angeles"
         )
 
         self.users_repository.upsert_users.side_effect = lambda s, u: u
@@ -73,7 +73,7 @@ class TestProfileCommandService(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(result.first_name, "NewName")
-        self.assertEqual(result.timezone, UserTimezone.AMERICA_LOS_ANGELES)
+        self.assertEqual(result.timezone, "America/Los_Angeles")
         self.users_repository.upsert_users.assert_awaited_once()
 
     async def test_update_users_timezone_success_after_30_days(self):
@@ -81,11 +81,11 @@ class TestProfileCommandService(unittest.IsolatedAsyncioTestCase):
         last_update = datetime.now(timezone.utc) - timedelta(days=31)
         existing_user = UsersEntity(
             user_id=1,
-            timezone=UserTimezone.AMERICA_LOS_ANGELES,
+            timezone="America/Los_Angeles",
             timezone_updated_at=last_update,
         )
 
-        profile_dto = self._create_profile_dto(timezone=UserTimezone.ASIA_SHANGHAI)
+        profile_dto = self._create_profile_dto(timezone="Asia/Shanghai")
 
         self.users_repository.upsert_users.side_effect = lambda s, u: u
 
@@ -93,7 +93,7 @@ class TestProfileCommandService(unittest.IsolatedAsyncioTestCase):
             self.session, profile_dto, existing_user
         )
 
-        self.assertEqual(result.timezone, UserTimezone.ASIA_SHANGHAI)
+        self.assertEqual(result.timezone, "Asia/Shanghai")
         self.assertGreater(result.timezone_updated_at, last_update)
 
     async def test_update_users_timezone_restriction_error(self):
@@ -101,11 +101,11 @@ class TestProfileCommandService(unittest.IsolatedAsyncioTestCase):
         last_update = datetime.now(timezone.utc) - timedelta(days=5)
         existing_user = UsersEntity(
             user_id=1,
-            timezone=UserTimezone.AMERICA_LOS_ANGELES,
+            timezone="America/Los_Angeles",
             timezone_updated_at=last_update,
         )
 
-        profile_dto = self._create_profile_dto(timezone=UserTimezone.AMERICA_NEW_YORK)
+        profile_dto = self._create_profile_dto(timezone="America/New_York")
 
         with self.assertRaises(ValueError):
             await self.service.update_users(self.session, profile_dto, existing_user)
@@ -116,13 +116,11 @@ class TestProfileCommandService(unittest.IsolatedAsyncioTestCase):
         """Database error occurs during save; error should be logged and re-raised."""
         existing_user = UsersEntity(
             user_id=1,
-            timezone=UserTimezone.AMERICA_LOS_ANGELES,
+            timezone="America/Los_Angeles",
             timezone_updated_at=datetime.now(timezone.utc),
         )
 
-        profile_dto = self._create_profile_dto(
-            timezone=UserTimezone.AMERICA_LOS_ANGELES
-        )
+        profile_dto = self._create_profile_dto(timezone="America/Los_Angeles")
 
         self.users_repository.upsert_users.side_effect = Exception("Connection Timeout")
 

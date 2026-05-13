@@ -3,7 +3,7 @@ from sqlalchemy import Boolean, String, DateTime, func, Enum as SAEnum
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column
 from backend.common.base import Base
-from backend.common.mentorship_enums import CommunicationMethod, UserTimezone
+from backend.common.mentorship_enums import CommunicationMethod
 
 
 class UsersEntity(Base):
@@ -15,13 +15,7 @@ class UsersEntity(Base):
     last_name: Mapped[str] = mapped_column(String)
     preferred_name: Mapped[str | None] = mapped_column(String)
 
-    timezone: Mapped[UserTimezone] = mapped_column(
-        SAEnum(
-            UserTimezone,
-            name="user_timezone",
-            values_callable=lambda obj: [e.value for e in obj],
-        )
-    )
+    timezone: Mapped[str] = mapped_column(String)
 
     timezone_updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 

@@ -1,17 +1,27 @@
-from pydantic import Field
+from pydantic import Field, field_validator
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from backend.dto.base_request_dto import BaseRequestDto
 from datetime import date
-from backend.common.mentorship_enums import CommunicationMethod, UserTimezone, Degree
+from backend.common.mentorship_enums import CommunicationMethod, Degree
 
 
 class UsersRequestDto(BaseRequestDto):
     first_name: str
     last_name: str
-    timezone: UserTimezone
+    timezone: str
     communication_method: CommunicationMethod
     preferred_name: str | None = None
     alternative_emails: list[str] = Field(default_factory=list)
     linkedin_link: str | None = None
+
+    @field_validator("timezone")
+    @classmethod
+    def validate_timezone(cls, v: str) -> str:
+        try:
+            ZoneInfo(v)
+        except (ZoneInfoNotFoundError, KeyError):
+            raise ValueError(f"Invalid IANA timezone: {v!r}")
+        return v
 
 
 class WorkHistoryRequestDto(BaseRequestDto):

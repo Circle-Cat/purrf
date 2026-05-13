@@ -11,7 +11,6 @@ from backend.repository.mentorship_round_participants_repository import (
     MentorshipRoundParticipantsRepository,
 )
 from backend.common.mentorship_enums import (
-    UserTimezone,
     CommunicationMethod,
     ParticipantRole,
 )
@@ -28,7 +27,7 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
         self.user = UsersEntity(
             first_name="Alice",
             last_name="Admin",
-            timezone=UserTimezone.ASIA_SHANGHAI,
+            timezone="Asia/Shanghai",
             timezone_updated_at=datetime.now(timezone.utc),
             communication_channel=CommunicationMethod.EMAIL,
             primary_email="alice@example.com",
@@ -157,7 +156,7 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
         user2 = UsersEntity(
             first_name="Bob",
             last_name="Builder",
-            timezone=UserTimezone.ASIA_SHANGHAI,
+            timezone="Asia/Shanghai",
             timezone_updated_at=datetime.now(timezone.utc),
             communication_channel=CommunicationMethod.EMAIL,
             primary_email="bob@example.com",
@@ -196,7 +195,7 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
         user2 = UsersEntity(
             first_name="Carol",
             last_name="Coach",
-            timezone=UserTimezone.ASIA_SHANGHAI,
+            timezone="Asia/Shanghai",
             timezone_updated_at=datetime.now(timezone.utc),
             communication_channel=CommunicationMethod.EMAIL,
             primary_email="carol@example.com",
@@ -235,7 +234,7 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
         user2 = UsersEntity(
             first_name="Dave",
             last_name="Doe",
-            timezone=UserTimezone.ASIA_SHANGHAI,
+            timezone="Asia/Shanghai",
             timezone_updated_at=datetime.now(timezone.utc),
             communication_channel=CommunicationMethod.EMAIL,
             primary_email="dave@example.com",

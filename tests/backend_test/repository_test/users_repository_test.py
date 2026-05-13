@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from backend.repository.users_repository import UsersRepository
 from backend.entity.users_entity import UsersEntity
 from backend.entity.experience_entity import ExperienceEntity
-from backend.common.mentorship_enums import UserTimezone, CommunicationMethod
+from backend.common.mentorship_enums import CommunicationMethod
 from tests.backend_test.repository_test.base_repository_test_lib import (
     BaseRepositoryTestLib,
 )
@@ -23,7 +23,7 @@ class TestUsersRepository(BaseRepositoryTestLib):
             UsersEntity(
                 first_name="Alice",
                 last_name="Admin",
-                timezone=UserTimezone.ASIA_SHANGHAI,
+                timezone="Asia/Shanghai",
                 timezone_updated_at=datetime.now(timezone.utc),
                 communication_channel=CommunicationMethod.EMAIL,
                 primary_email="alice@example.com",
@@ -34,7 +34,7 @@ class TestUsersRepository(BaseRepositoryTestLib):
             UsersEntity(
                 first_name="Bob",
                 last_name="Smith",
-                timezone=UserTimezone.AMERICA_NEW_YORK,
+                timezone="America/New_York",
                 timezone_updated_at=datetime.now(timezone.utc),
                 communication_channel=CommunicationMethod.EMAIL,
                 primary_email="bob@example.com",
@@ -46,7 +46,7 @@ class TestUsersRepository(BaseRepositoryTestLib):
             UsersEntity(
                 first_name="Charlie",
                 last_name="Inactive",
-                timezone=UserTimezone.ASIA_SHANGHAI,
+                timezone="Asia/Shanghai",
                 timezone_updated_at=datetime.now(timezone.utc),
                 communication_channel=CommunicationMethod.EMAIL,
                 primary_email="charlie@example.com",
@@ -178,7 +178,7 @@ class TestUsersRepository(BaseRepositoryTestLib):
         new_user = UsersEntity(
             first_name="Dave",
             last_name="New",
-            timezone=UserTimezone.ASIA_SHANGHAI,
+            timezone="Asia/Shanghai",
             timezone_updated_at=datetime.now(timezone.utc),
             communication_channel="email",
             primary_email="dave@example.com",

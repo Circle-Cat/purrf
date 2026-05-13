@@ -32,13 +32,6 @@ class Degree(str, Enum):
     PROFESSIONAL = "Professional"
 
 
-class UserTimezone(Enum):
-    AMERICA_LOS_ANGELES = "America/Los_Angeles"
-    AMERICA_NEW_YORK = "America/New_York"
-    ASIA_SHANGHAI = "Asia/Shanghai"
-    AMERICA_DENVER = "America/Denver"
-
-
 class PairStatus(Enum):
     ACTIVE = "active"
     INACTIVE = "inactive"

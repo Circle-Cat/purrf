@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from backend.entity.users_entity import UsersEntity
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.dto.user_context_dto import UserContextDto
-from backend.common.mentorship_enums import UserTimezone, CommunicationMethod
+from backend.common.mentorship_enums import CommunicationMethod
 from backend.common.constants import (
     INTERNAL_MICROSOFT_ACCOUNT_DOMAIN,
     INTERNAL_GOOGLE_ACCOUNT_DOMAIN,
@@ -101,7 +101,7 @@ class UserIdentityService:
             first_name="",
             last_name="",
             preferred_name=None,
-            timezone=UserTimezone.AMERICA_LOS_ANGELES,
+            timezone="America/Los_Angeles",
             timezone_updated_at=datetime(1970, 1, 1, tzinfo=timezone.utc),
             communication_channel=CommunicationMethod.EMAIL,
             alternative_emails=[],

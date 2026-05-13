@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from backend.repository.preferences_repository import PreferencesRepository
 from backend.entity.preference_entity import PreferenceEntity
 from backend.entity.users_entity import UsersEntity
-from backend.common.mentorship_enums import CommunicationMethod, UserTimezone
+from backend.common.mentorship_enums import CommunicationMethod
 from tests.backend_test.repository_test.base_repository_test_lib import (
     BaseRepositoryTestLib,
 )
@@ -22,7 +22,7 @@ class TestPreferencesRepository(BaseRepositoryTestLib):
             UsersEntity(
                 first_name="Alice",
                 last_name="Admin",
-                timezone=UserTimezone.ASIA_SHANGHAI,
+                timezone="Asia/Shanghai",
                 timezone_updated_at=self.now,
                 communication_channel=CommunicationMethod.EMAIL,
                 primary_email="alice@example.com",
@@ -33,7 +33,7 @@ class TestPreferencesRepository(BaseRepositoryTestLib):
             UsersEntity(
                 first_name="Bob",
                 last_name="Smith",
-                timezone=UserTimezone.AMERICA_NEW_YORK,
+                timezone="America/New_York",
                 timezone_updated_at=self.now,
                 communication_channel=CommunicationMethod.EMAIL,
                 primary_email="bob@example.com",

@@ -1,6 +1,6 @@
 from datetime import datetime
 from backend.dto.base_dto import BaseDto
-from backend.common.mentorship_enums import ParticipantRole, UserTimezone
+from backend.common.mentorship_enums import ParticipantRole
 
 
 class MeetingTimeDto(BaseDto):
@@ -25,5 +25,5 @@ class MeetingInfoDto(BaseDto):
 
 class MeetingDto(BaseDto):
     round_id: int
-    user_timezone: UserTimezone
+    user_timezone: str
     meeting_info: list[MeetingInfoDto]

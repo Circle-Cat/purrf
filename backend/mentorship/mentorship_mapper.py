@@ -15,7 +15,7 @@ from backend.entity.mentorship_round_participants_entity import (
 )
 from backend.entity.users_entity import UsersEntity
 from backend.entity.mentorship_round_entity import MentorshipRoundEntity
-from backend.common.mentorship_enums import ParticipantRole, UserTimezone
+from backend.common.mentorship_enums import ParticipantRole
 
 
 class MentorshipMapper:
@@ -128,7 +128,7 @@ class MentorshipMapper:
     def map_to_meeting_dto(
         self,
         round_id: int,
-        user_timezone: UserTimezone,
+        user_timezone: str,
         grouped_pairs: list[tuple[MentorshipPairsEntity, int]],
     ) -> MeetingDto:
         """Map (MentorshipPairsEntity, partner_id) tuples to MeetingDto."""
@@ -154,7 +154,7 @@ class MentorshipMapper:
     def map_to_meeting_v2_dto(
         self,
         round_id: int,
-        user_timezone: UserTimezone,
+        user_timezone: str,
         grouped_pairs: list[tuple[MentorshipPairsEntity, int]],
         include_details: bool = False,
     ) -> MeetingDto:

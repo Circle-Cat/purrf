@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock
 from datetime import datetime
 
 from backend.common.constants import ProfileField
-from backend.common.mentorship_enums import CommunicationMethod, UserTimezone
+from backend.common.mentorship_enums import CommunicationMethod
 from backend.dto.profile_dto import ProfileDto
 from backend.dto.users_dto import UsersDto
 from backend.dto.user_context_dto import UserContextDto
@@ -38,7 +38,7 @@ class TestProfileService(unittest.IsolatedAsyncioTestCase):
             first_name="Alice",
             last_name="Smith",
             preferred_name="Ally",
-            timezone=UserTimezone.AMERICA_LOS_ANGELES,
+            timezone="America/Los_Angeles",
             communication_method=CommunicationMethod.EMAIL,
             timezone_updated_at=datetime.now(),
             updated_timestamp=datetime.now(),
@@ -105,7 +105,7 @@ class TestProfileService(unittest.IsolatedAsyncioTestCase):
             user=UsersRequestDto(
                 first_name="New",
                 last_name="Name",
-                timezone=UserTimezone.AMERICA_LOS_ANGELES,
+                timezone="America/Los_Angeles",
                 communication_method=CommunicationMethod.EMAIL,
             ),
             education=[MagicMock(spec=EducationRequestDto)],
@@ -162,7 +162,7 @@ class TestProfileService(unittest.IsolatedAsyncioTestCase):
             user=UsersRequestDto(
                 first_name="Only",
                 last_name="User",
-                timezone=UserTimezone.AMERICA_LOS_ANGELES,
+                timezone="America/Los_Angeles",
                 communication_method=CommunicationMethod.EMAIL,
             )
         )

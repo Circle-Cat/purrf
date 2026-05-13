@@ -6,7 +6,7 @@ from backend.user_identity.user_identity_service import UserIdentityService
 from backend.entity.users_entity import UsersEntity
 from backend.dto.user_context_dto import UserContextDto
 from backend.common.user_role import UserRole
-from backend.common.mentorship_enums import UserTimezone, CommunicationMethod
+from backend.common.mentorship_enums import CommunicationMethod
 from backend.common.constants import (
     INTERNAL_MICROSOFT_ACCOUNT_DOMAIN,
     INTERNAL_GOOGLE_ACCOUNT_DOMAIN,
@@ -26,7 +26,7 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
         self.users_entity = UsersEntity(
             first_name="Alice",
             last_name="Admin",
-            timezone=UserTimezone.ASIA_SHANGHAI,
+            timezone="Asia/Shanghai",
             timezone_updated_at=datetime.now(timezone.utc),
             communication_channel=CommunicationMethod.EMAIL,
             primary_email="alice@example.com",

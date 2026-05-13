@@ -6,7 +6,6 @@ from backend.entity.users_entity import UsersEntity
 from backend.entity.experience_entity import ExperienceEntity
 from backend.entity.training_entity import TrainingEntity
 from backend.common.mentorship_enums import (
-    UserTimezone,
     Degree,
     TrainingStatus,
     TrainingCategory,
@@ -32,7 +31,7 @@ class TestProfileMapper(unittest.TestCase):
             user_id=1,
             first_name="Alice",
             last_name="Admin",
-            timezone=UserTimezone.ASIA_SHANGHAI,
+            timezone="Asia/Shanghai",
             timezone_updated_at=self.now - timedelta(hours=2),
             communication_channel=CommunicationMethod.EMAIL,
             primary_email="alice@example.com",
@@ -97,7 +96,7 @@ class TestProfileMapper(unittest.TestCase):
             dto.communication_method, self.users_entity.communication_channel
         )
         self.assertEqual(dto.alternative_emails, ["bob@example.com"])
-        self.assertEqual(dto.timezone, UserTimezone.ASIA_SHANGHAI)
+        self.assertEqual(dto.timezone, "Asia/Shanghai")
 
     def test_map_experience_to_work_history_dto(self):
         """Test mapping of work history using _map_work_history."""
