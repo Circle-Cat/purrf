@@ -4,7 +4,8 @@ from backend.dto.base_request_dto import BaseRequestDto
 
 class TimelineCreateDto(BaseRequestDto):
     promotion_start_at: datetime
-    application_deadline_at: datetime
+    mentor_application_deadline_at: datetime
+    mentee_application_deadline_at: datetime
     review_start_at: datetime
     acceptance_notification_at: datetime
     matching_completed_at: datetime

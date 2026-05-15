@@ -102,12 +102,32 @@ class RegistrationService:
             )
             raise ValueError(f"Mentorship round {round_id} not found.")
 
-        raw_deadline = (round_entity.description or {}).get("application_deadline_at")
+        current_user, _ = await self.user_identity_service.get_user(
+            session=session, user_info=user_context
+        )
+
+        participant_role = (
+            await self.participation_service.resolve_participant_role_with_fallback(
+                session=session, user_context=user_context, user_id=current_user.user_id
+            )
+        )
+        preferences_data.round_preferences.participant_role = participant_role
+
+        description = round_entity.description or {}
+        if participant_role == ParticipantRole.MENTOR:
+            raw_deadline = description.get("mentor_application_deadline_at")
+        else:
+            raw_deadline = description.get("mentee_application_deadline_at")
+
         if not raw_deadline:
             self.logger.error(
-                "[RegistrationService] round %s missing application deadline.", round_id
+                "[RegistrationService] round %s missing application deadline for role %s.",
+                round_id,
+                participant_role,
             )
-            raise ValueError(f"Round {round_id} missing application deadline.")
+            raise ValueError(
+                f"Round {round_id} missing application deadline for role {participant_role}."
+            )
 
         application_deadline = datetime.fromisoformat(raw_deadline)
         register_time = datetime.now(timezone.utc)
@@ -122,17 +142,6 @@ class RegistrationService:
             raise ValueError(
                 f"Registration period has ended at {application_deadline}."
             )
-
-        current_user, _ = await self.user_identity_service.get_user(
-            session=session, user_info=user_context
-        )
-
-        participant_role = (
-            await self.participation_service.resolve_participant_role_with_fallback(
-                session=session, user_context=user_context, user_id=current_user.user_id
-            )
-        )
-        preferences_data.round_preferences.participant_role = participant_role
 
         global_pref = await self._update_skill_and_industry_preferences(
             session=session, user_id=current_user.user_id, data=preferences_data

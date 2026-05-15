@@ -50,7 +50,8 @@ class MentorshipMapper:
         """
         return TimelineDto(
             promotion_start_at=d.get("promotion_start_at"),
-            application_deadline_at=d.get("application_deadline_at"),
+            mentor_application_deadline_at=d.get("mentor_application_deadline_at"),
+            mentee_application_deadline_at=d.get("mentee_application_deadline_at"),
             review_start_at=d.get("review_start_at"),
             acceptance_notification_at=d.get("acceptance_notification_at"),
             matching_completed_at=d.get("matching_completed_at"),
