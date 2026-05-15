@@ -77,7 +77,8 @@ class TestMentorshipController(unittest.IsolatedAsyncioTestCase):
 
         self.timeline_data = TimelineCreateDto(
             promotion_start_at=date(2025, 12, 1),
-            application_deadline_at=date(2026, 1, 15),
+            mentor_application_deadline_at=date(2026, 1, 15),
+            mentee_application_deadline_at=date(2026, 1, 15),
             review_start_at=date(2026, 1, 16),
             acceptance_notification_at=date(2026, 1, 25),
             matching_completed_at=date(2026, 1, 31),

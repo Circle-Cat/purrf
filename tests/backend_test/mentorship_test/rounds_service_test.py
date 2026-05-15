@@ -25,7 +25,10 @@ class TestRoundsService(unittest.IsolatedAsyncioTestCase):
 
         self.timeline_data = TimelineCreateDto(
             promotion_start_at=datetime(2025, 12, 2, 7, 59, 59, tzinfo=timezone.utc),
-            application_deadline_at=datetime(
+            mentor_application_deadline_at=datetime(
+                2026, 1, 16, 7, 59, 59, tzinfo=timezone.utc
+            ),
+            mentee_application_deadline_at=datetime(
                 2026, 1, 16, 7, 59, 59, tzinfo=timezone.utc
             ),
             review_start_at=datetime(2026, 1, 17, 7, 59, 59, tzinfo=timezone.utc),
