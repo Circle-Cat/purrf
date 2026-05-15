@@ -1,4 +1,4 @@
-const meetingTimezones = {
+const timezones = {
   // North America
   "America/New_York": "Eastern Time (US & Canada)",
   "America/Chicago": "Central Time (US & Canada)",
@@ -37,4 +37,4 @@ const meetingTimezones = {
   "Pacific/Auckland": "Auckland",
 };
 
-export default meetingTimezones;
+export default timezones;

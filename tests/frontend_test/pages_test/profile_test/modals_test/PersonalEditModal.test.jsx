@@ -11,16 +11,23 @@ vi.mock("@/context/auth/AuthContext", () => ({
 }));
 
 vi.mock("@/pages/Profile/utils", () => ({
-  TimezoneEnum: {
-    UTC: "UTC",
-    EST: "EST",
-  },
-  formatTimezoneLabel: (tz) => `Formatted ${tz}`,
   CommunicationMethodEnum: {
     Email: "Email",
     GoogleChat: "GoogleChat",
   },
   isValidEmail: (email) => email.includes("@"),
+}));
+
+vi.mock("@/components/common/TimezoneSelector", () => ({
+  default: ({ value, onChange, isDisabled }) => (
+    <select
+      value={value}
+      onChange={(e) => onChange({ value: e.target.value })}
+      disabled={isDisabled}
+    >
+      <option value="America/New_York">Eastern Time (US & Canada)</option>
+    </select>
+  ),
 }));
 
 vi.mock("@/pages/Profile/modals/Modal.css", () => ({}));
@@ -33,7 +40,7 @@ describe("PersonalEditModal Component", () => {
     firstName: "John",
     lastName: "Doe",
     preferredName: "Johnny",
-    timezone: "UTC",
+    timezone: "America/New_York",
     linkedin: "linkedin.com/in/johndoe",
     communicationMethod: "Email",
     emails: [
@@ -81,7 +88,9 @@ describe("PersonalEditModal Component", () => {
       screen.getByDisplayValue("linkedin.com/in/johndoe"),
     ).toBeInTheDocument();
 
-    expect(screen.getByDisplayValue("Formatted UTC")).toBeInTheDocument();
+    expect(
+      screen.getByDisplayValue("Eastern Time (US & Canada)"),
+    ).toBeInTheDocument();
 
     const primaryInput = screen.getByDisplayValue("primary@example.com");
     expect(primaryInput).toBeDisabled();
@@ -196,7 +205,9 @@ describe("PersonalEditModal Component", () => {
       />,
     );
 
-    const timezoneSelect = screen.getByDisplayValue("Formatted UTC");
+    const timezoneSelect = screen.getByDisplayValue(
+      "Eastern Time (US & Canada)",
+    );
     expect(timezoneSelect).toBeDisabled();
     expect(
       screen.getByText(/Next editable date: 2025-01-01/),

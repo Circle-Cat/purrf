@@ -1,11 +1,7 @@
 import React, { useState, useEffect } from "react";
 import "@/pages/Profile/modals/Modal.css";
-import {
-  TimezoneEnum,
-  formatTimezoneLabel,
-  CommunicationMethodEnum,
-  isValidEmail,
-} from "@/pages/Profile/utils";
+import { CommunicationMethodEnum, isValidEmail } from "@/pages/Profile/utils";
+import TimezoneSelector from "@/components/common/TimezoneSelector";
 import { useAuth } from "@/context/auth/AuthContext";
 import { USER_ROLES } from "@/constants/UserRoles";
 import { Button } from "@/components/ui/button";
@@ -257,19 +253,11 @@ const PersonalEditModal = ({
             <label>
               Current Timezone <span className="required">*</span>
             </label>
-            <select
-              className={errors.timezone ? "input-error" : ""}
+            <TimezoneSelector
               value={formData.timezone || ""}
-              onChange={(e) => handleChange("timezone", e.target.value)}
-              disabled={!canEditTimezone}
-            >
-              <option value="">Select a timezone</option>
-              {Object.values(TimezoneEnum).map((tz) => (
-                <option key={tz} value={tz}>
-                  {formatTimezoneLabel(tz)}
-                </option>
-              ))}
-            </select>
+              onChange={(opt) => handleChange("timezone", opt.value)}
+              isDisabled={!canEditTimezone}
+            />
             {errors.timezone && (
               <span className="error-text">{errors.timezone}</span>
             )}

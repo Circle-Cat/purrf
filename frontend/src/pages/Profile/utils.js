@@ -26,13 +26,6 @@ export const CommunicationMethodEnum = {
   GoogleChat: "google_chat",
 };
 
-export const TimezoneEnum = {
-  AmericaLosAngeles: "America/Los_Angeles",
-  AmericaNewYork: "America/New_York",
-  AsiaShanghai: "Asia/Shanghai",
-  AmericaDenver: "America/Denver",
-};
-
 /**
  * Friendly display labels for the backend `TrainingCategory` enum
  * (see backend/common/mentorship_enums.py). Keys are the raw enum

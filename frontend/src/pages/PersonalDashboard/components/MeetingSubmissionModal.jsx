@@ -1,6 +1,6 @@
 import { useState } from "react";
-import TimezoneSelect from "react-timezone-select";
-import { Calendar as CalendarIcon, Check } from "lucide-react";
+import TimezoneSelector from "@/components/common/TimezoneSelector";
+import { Calendar as CalendarIcon } from "lucide-react";
 import { format } from "date-fns";
 import { TZDate } from "@date-fns/tz";
 import {
@@ -29,7 +29,6 @@ import {
 import { cn } from "@/lib/utils";
 
 import { postMyMentorshipMeetingLog } from "@/api/mentorshipApi";
-import meetingTimezones from "@/constants/MeetingTimezones";
 
 // Generate time options in 30-minute increments (e.g., "00:00", "00:30", ..., "23:30")
 const timeOptions = Array.from({ length: 48 }, (_, i) => {
@@ -40,56 +39,6 @@ const timeOptions = Array.from({ length: 48 }, (_, i) => {
   return `${hour}:${minute}`;
 });
 
-const tzSelectStyles = {
-  menuPortal: (base) => ({ ...base, zIndex: 202, pointerEvents: "auto" }),
-  menu: (base) => ({
-    ...base,
-    zIndex: 202,
-    backgroundColor: "var(--popover)",
-    borderRadius: "var(--radius)",
-    border: "1px solid var(--border)",
-    padding: "0.25rem",
-    overflow: "hidden",
-  }),
-  menuList: (base) => ({ ...base, padding: 0 }),
-  control: (base) => ({
-    ...base,
-    border: "none",
-    backgroundColor: "var(--color-gray-50)",
-    borderRadius: "0.5rem",
-    boxShadow: "none",
-    cursor: "pointer",
-  }),
-  indicatorSeparator: () => ({ display: "none" }),
-  dropdownIndicator: (base) => ({
-    ...base,
-    padding: "0 8px",
-    color: "var(--muted-foreground)",
-  }),
-  option: (base, state) => ({
-    ...base,
-    fontSize: "0.875rem",
-    backgroundColor: state.isFocused ? "var(--accent)" : "transparent",
-    color: state.isFocused ? "var(--accent-foreground)" : "inherit",
-    borderRadius: "calc(var(--radius) - 2px)",
-    padding: "0.25rem 0.375rem",
-    cursor: "default",
-  }),
-};
-
-const formatTimezoneLabel = (option, { context, selectValue } = {}) => {
-  if (typeof option === "string") return option;
-  if (context === "value") return option.label;
-  const isSelected = selectValue?.some((v) => v.value === option.value);
-  return (
-    <div className="flex w-full items-center justify-between gap-2">
-      <span>{option.label}</span>
-      <span className="flex size-4 shrink-0 items-center justify-center">
-        {isSelected && <Check className="size-4 pointer-events-none" />}
-      </span>
-    </div>
-  );
-};
 /**
  * Modal for submitting a single mentorship meeting log entry.
  *
@@ -240,21 +189,14 @@ export default function MeetingSubmissionModal({
 
           <div className="space-y-2" onWheel={(e) => e.stopPropagation()}>
             <Label>Timezone</Label>
-            <TimezoneSelect
+            <TimezoneSelector
               value={timezone}
               onChange={handleTimezoneChange}
-              timezones={meetingTimezones}
               currentDatetime={selectedDate}
               menuPortalTarget={
                 typeof window !== "undefined" ? document.body : null
               }
               captureMenuScroll={true}
-              formatOptionLabel={formatTimezoneLabel}
-              styles={tzSelectStyles}
-              theme={(theme) => ({
-                ...theme,
-                colors: { ...theme.colors, primary50: "var(--accent)" },
-              })}
             />
           </div>
 

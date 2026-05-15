@@ -6,7 +6,6 @@ import {
   getDaysSince,
   sortExperienceOrEducationList,
   DegreeEnum,
-  TimezoneEnum,
 } from "@/pages/Profile/utils";
 import { ProfileFields } from "@/constants/ApiEndpoints";
 
@@ -74,9 +73,7 @@ export const useProfileData = () => {
       firstName: user.firstName || "",
       lastName: user.lastName || "",
       preferredName: user.preferredName || "",
-      timezone: Object.values(TimezoneEnum).includes(user.timezone)
-        ? user.timezone
-        : "",
+      timezone: user.timezone || "",
       linkedin: user.linkedinLink || "",
       communicationMethod: user.communicationMethod,
       timezoneUpdatedAt: user.timezoneUpdatedAt,
