@@ -60,31 +60,6 @@ export const isIncompleteOnboarding = (training) =>
   ONBOARDING_TRAINING_CATEGORIES.includes(training.category) &&
   training.status !== "done";
 
-/**
- * Formats a timezone string into a human-readable label.
- *
- * Converts a timezone like "America/Los_Angeles" into
- * "Los Angeles (UTC-8)" or similar, based on the current offset.
- *
- * @param {string} tz - The IANA timezone identifier (e.g., "America/Los_Angeles")
- * @returns {string} Formatted label including city and UTC offset
- */
-export function formatTimezoneLabel(tz) {
-  const city = tz.split("/")[1].replace(/_/g, " ");
-
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: tz,
-    timeZoneName: "shortOffset", // e.g. GMT-8 / GMT-7
-  }).formatToParts(new Date());
-
-  const offset =
-    parts
-      .find((p) => p.type === "timeZoneName")
-      ?.value?.replace("GMT", "UTC") ?? "";
-
-  return `${city} (${offset})`;
-}
-
 export const currentYear = new Date().getFullYear();
 
 // Generate an array of 50 years counting backward from the current year
@@ -173,26 +148,6 @@ export const formatTimeDuration = (
     return `${start} - ${end}`;
   }
   return start || end || "";
-};
-
-/**
- * Calculate how many days have passed since the provided date.
- * Used to enforce a "30-day edit restriction".
- *
- * If no date is provided, a large fallback number (999) is returned,
- * indicating the entry is allowed to be edited.
- *
- * @param {string} dateString - The stored "last updated" timestamp.
- * @returns {number} Number of days since the given date.
- */
-export const getDaysSince = (dateString) => {
-  if (!dateString) return 999;
-
-  const date = new Date(dateString);
-  const now = new Date();
-
-  const diffTime = Math.abs(now - date);
-  return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 };
 
 /**

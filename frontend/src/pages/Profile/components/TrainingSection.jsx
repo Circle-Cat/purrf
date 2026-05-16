@@ -6,6 +6,7 @@ import {
   isIncompleteOnboarding,
   TrainingCategoryLabel,
 } from "@/pages/Profile/utils";
+import { formatInTz } from "@/utils/dateTime";
 
 /**
  * Format an API timestamp (ISO 8601) as a calendar date in en-US,
@@ -21,12 +22,7 @@ const formatTrainingDate = (iso, timezone) => {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "-";
   if (date.getUTCFullYear() < 2000) return "-";
-  return date.toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    timeZone: timezone || "UTC",
-  });
+  return formatInTz(iso, timezone || "UTC", "MMM d, yyyy");
 };
 
 const TrainingSection = ({ list, timezone }) => {

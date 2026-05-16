@@ -1,5 +1,5 @@
 import "@/pages/Profile/components/ProfileHeader.css";
-import { formatTimezoneLabel } from "@/pages/Profile/utils";
+import { formatTimezoneLabel } from "@/utils/dateTime";
 import { Button } from "@/components/ui/button";
 
 const ProfileHeader = ({ info, onEditClick }) => {

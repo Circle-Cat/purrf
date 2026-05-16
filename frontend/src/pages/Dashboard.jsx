@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
+import { formatLocalYmd } from "@/utils/dateTime";
 import "@/pages/Dashboard.css";
 import { Group } from "@/constants/Groups";
 import { LdapStatus } from "@/constants/LdapStatus";
@@ -50,7 +51,7 @@ import { Card, CardHeader, CardContent, CardTitle } from "@/components/ui/card";
  * - `tableData` (TableMemberData[]): The detailed member data for the table.
  *
  * Default Behavior:
- * - Date range defaults from the first day of the current month to today (in UTC, ignoring local timezone).
+ * - Date range defaults from the first day of the current month to today (in browser local time).
  * - Initial group selection defaults to `[Group.Interns]`.
  * - Initial `includeTerminated` state is set to `false`.
  * - `summaryData` is initialized with all-zero values.
@@ -66,7 +67,7 @@ import { Card, CardHeader, CardContent, CardTitle } from "@/components/ui/card";
  *
  * Notes:
  * - The `getSummary` API is asynchronous and updates `summaryData` and `tableData` on success.
- * - Date values are managed in UTC to avoid timezone inconsistencies.
+ * - Date values are managed in browser local time to avoid UTC/local date boundary inconsistencies.
  *
  *
  * @component
@@ -74,15 +75,14 @@ import { Card, CardHeader, CardContent, CardTitle } from "@/components/ui/card";
  */
 const Dashboard = () => {
   const today = new Date();
-  const todayUTC = new Date(
-    Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()),
-  );
-  const firstDayOfThisMonthUTC = new Date(
-    Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1),
+  const firstDayOfThisMonth = new Date(
+    today.getFullYear(),
+    today.getMonth(),
+    1,
   );
 
-  const defaultStart = firstDayOfThisMonthUTC.toISOString().split("T")[0];
-  const defaultEnd = todayUTC.toISOString().split("T")[0];
+  const defaultStart = formatLocalYmd(firstDayOfThisMonth);
+  const defaultEnd = formatLocalYmd(today);
 
   const [selectedStartDate, setSelectedStartDate] = useState(defaultStart);
   const [selectedEndDate, setSelectedEndDate] = useState(defaultEnd);

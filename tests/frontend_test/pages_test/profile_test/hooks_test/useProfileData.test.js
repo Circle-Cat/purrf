@@ -4,10 +4,10 @@ import { useProfileData } from "@/pages/Profile/hooks/useProfileData";
 import { getMyProfile, updateMyProfile } from "@/api/profileApi";
 import {
   parseDateParts,
-  getDaysSince,
   sortExperienceOrEducationList,
   DegreeEnum,
 } from "@/pages/Profile/utils";
+import { getDaysSince, formatLocalYmd } from "@/utils/dateTime";
 
 vi.mock("@/api/profileApi", () => ({
   getMyProfile: vi.fn(),
@@ -19,8 +19,15 @@ vi.mock("@/pages/Profile/utils", async (importOriginal) => {
   return {
     ...actual,
     parseDateParts: vi.fn(),
-    getDaysSince: vi.fn(),
     sortExperienceOrEducationList: vi.fn(),
+  };
+});
+
+vi.mock("@/utils/dateTime", async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    getDaysSince: vi.fn(),
   };
 });
 
@@ -310,7 +317,7 @@ describe("useProfileData Hook", () => {
       expectedDate.setDate(expectedDate.getDate() + 30);
 
       expect(result.current.nextEditableDate).toBe(
-        expectedDate.toLocaleDateString(),
+        formatLocalYmd(expectedDate),
       );
     });
   });
