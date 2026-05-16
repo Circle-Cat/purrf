@@ -51,7 +51,7 @@ describe("AuthProvider", () => {
   });
 
   it("should return empty roles when user has no permissions)", async () => {
-    getUserRoles.mockResolvedValue({ roles: [] });
+    getUserRoles.mockResolvedValue({ data: { roles: [] } });
 
     const { result } = renderHook(() => useAuth(), {
       wrapper: AuthProvider,

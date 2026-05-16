@@ -1,4 +1,5 @@
 import { Calendar } from "lucide-react";
+import { formatInTz } from "@/utils/dateTime";
 
 /**
  * Format a UTC datetime range into a human-readable date and time range
@@ -11,23 +12,11 @@ import { Calendar } from "lucide-react";
  * @returns {{ date: string, timeRange: string }}
  */
 function formatMeetingTime(startUtc, endUtc, timezone) {
-  const options = timezone ? { timeZone: timezone } : {};
-
-  const date = new Date(startUtc).toLocaleDateString("en-CA", options);
-  const startTime = new Date(startUtc).toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-    ...options,
-  });
-  const endTime = new Date(endUtc).toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-    ...options,
-  });
-
-  return { date, timeRange: `${startTime} - ${endTime}` };
+  const tz = timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
+  return {
+    date: formatInTz(startUtc, tz, "yyyy-MM-dd"),
+    timeRange: `${formatInTz(startUtc, tz, "HH:mm")} - ${formatInTz(endUtc, tz, "HH:mm")}`,
+  };
 }
 
 /**

@@ -1,34 +1,18 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import {
   parseDateParts,
   formatDateFromParts,
   formatTimeDuration,
-  getDaysSince,
   isValidEmail,
   months,
   years,
   currentYear,
   getDateScore,
   sortExperienceOrEducationList,
-  formatTimezoneLabel,
   TrainingCategoryLabel,
 } from "@/pages/Profile/utils";
 
 describe("Profile Utils", () => {
-  describe("formatTimezoneLabel", () => {
-    it("should correctly format a timezone label", () => {
-      const result = formatTimezoneLabel("America/Los_Angeles");
-      expect(result).toMatch(/Los Angeles \(UTC[-+]?\d+\)/);
-
-      vi.useRealTimers();
-    });
-
-    it("should handle city names with underscores", () => {
-      const result = formatTimezoneLabel("America/New_York");
-      expect(result).toContain("New York");
-    });
-  });
-
   describe("Constants", () => {
     it("months should have 12 valid month names", () => {
       // Verify months array contains all 12 months in order
@@ -153,43 +137,6 @@ describe("Profile Utils", () => {
             isCurrent,
           ),
         ).toBe(expected);
-      },
-    );
-  });
-
-  describe("getDaysSince", () => {
-    /**
-     * Use a fixed mock date (2025-01-10) to test day differences.
-     * Test cases include:
-     * - Same day
-     * - Past days
-     * - Future days
-     * - Empty/null input
-     */
-    const MOCK_NOW = new Date("2025-01-10T00:00:00Z");
-
-    beforeEach(() => {
-      vi.useFakeTimers();
-      vi.setSystemTime(MOCK_NOW);
-    });
-
-    afterEach(() => {
-      vi.useRealTimers();
-    });
-
-    const testCases = [
-      { date: "2025-01-10", expected: 0 },
-      { date: "2025-01-09", expected: 1 },
-      { date: "2024-12-11", expected: 30 },
-      { date: "2025-01-11", expected: 1 },
-      { date: null, expected: 999 },
-      { date: "", expected: 999 },
-    ];
-
-    it.each(testCases)(
-      'should return $expected days for date "$date" relative to 2025-01-10',
-      ({ date, expected }) => {
-        expect(getDaysSince(date)).toBe(expected);
       },
     );
   });

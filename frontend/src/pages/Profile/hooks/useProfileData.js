@@ -3,10 +3,10 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { getMyProfile, updateMyProfile } from "@/api/profileApi";
 import {
   parseDateParts,
-  getDaysSince,
   sortExperienceOrEducationList,
   DegreeEnum,
 } from "@/pages/Profile/utils";
+import { getDaysSince, formatLocalYmd } from "@/utils/dateTime";
 import { ProfileFields } from "@/constants/ApiEndpoints";
 
 export const useProfileData = () => {
@@ -207,7 +207,7 @@ export const useProfileData = () => {
     const date = new Date(personalInfo.timezoneUpdatedAt);
     date.setDate(date.getDate() + 30);
 
-    return date.toLocaleDateString();
+    return formatLocalYmd(date);
   }, [personalInfo.timezoneUpdatedAt]);
 
   /**

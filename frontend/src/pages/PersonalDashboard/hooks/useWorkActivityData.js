@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { getMySummary } from "@/api/dashboardApi";
+import { formatLocalYmd } from "@/utils/dateTime";
 
 /**
  * Fetches and manages the current user's work activity summary for a given date range.
@@ -28,15 +29,12 @@ import { getMySummary } from "@/api/dashboardApi";
  */
 export const useWorkActivityData = ({ enabled = true } = {}) => {
   const [summary, setSummary] = useState(() => {
-    const toLocalDateString = (d) =>
-      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-
     const today = new Date();
     const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
 
     return {
-      startDate: toLocalDateString(firstOfMonth),
-      endDate: toLocalDateString(today),
+      startDate: formatLocalYmd(firstOfMonth),
+      endDate: formatLocalYmd(today),
       summary: {
         jiraTickets: 0,
         mergedCLs: 0,
