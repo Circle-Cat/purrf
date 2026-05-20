@@ -21,7 +21,6 @@
  *   feedbackRoundId: string | null,
  *   isFeedbackEnabled: boolean,
  *   regRoundId: string | null,
- *   isRegistrationOpen: boolean
  * }}
  */
 export const calculateMentorshipSlots = (allRounds) => {
@@ -59,7 +58,8 @@ export const calculateMentorshipSlots = (allRounds) => {
   const currentRegRound = sorted.find(
     (r) =>
       now >= r.timeline.promotionStartAt &&
-      now < r.timeline.applicationDeadlineAt,
+      (now < r.timeline.mentorApplicationDeadlineAt ||
+        now < r.timeline.menteeApplicationDeadlineAt),
   );
 
   const lastStartedRound = sorted.find(
@@ -86,7 +86,6 @@ export const calculateMentorshipSlots = (allRounds) => {
 
     // Controls the "Register" / "View" button
     regRoundId: currentRegRound?.id || lastStartedRound?.id || null,
-    isRegistrationOpen: Boolean(currentRegRound), // true = "Register", false = "View"
     matchResultRoundName:
       activeMatchRound?.name || lastStartedRound?.name || "",
 

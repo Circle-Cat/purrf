@@ -1,7 +1,7 @@
 import React from "react";
 import { renderHook, waitFor, act } from "@testing-library/react";
 import { FlagsProvider } from "@/context/flags";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { useMentorshipData } from "@/pages/PersonalDashboard/hooks/useMentorshipData";
 import {
   getAllMentorshipRounds,
@@ -136,7 +136,6 @@ describe("useMentorshipData Hook", () => {
     const mockStatus = {
       regRoundId: "round-1",
       feedbackRoundId: null,
-      isRegistrationOpen: true,
       isFeedbackEnabled: false,
     };
     calculateMentorshipSlots.mockReturnValue(mockStatus);
@@ -162,7 +161,6 @@ describe("useMentorshipData Hook", () => {
     getAllMentorshipRounds.mockResolvedValue({ data: [] });
     calculateMentorshipSlots.mockReturnValue({
       regRoundId: null,
-      isRegistrationOpen: false,
     });
 
     const { result } = renderHook(() => useMentorshipData());
@@ -191,45 +189,6 @@ describe("useMentorshipData Hook", () => {
     expect(getMyMentorshipPartners).toHaveBeenCalledTimes(1);
   });
 
-  it("should return early and not trigger API when saveRegistration is called while registration is closed", async () => {
-    getAllMentorshipRounds.mockResolvedValue({ data: [] });
-    calculateMentorshipSlots.mockReturnValue({
-      regRoundId: "round-1",
-      isRegistrationOpen: false, // registration closed
-    });
-
-    const { result } = renderHook(() => useMentorshipData());
-    await waitFor(() => expect(result.current.isLoading).toBe(false));
-
-    await act(async () => {
-      await result.current.saveRegistration({ some: "data" });
-    });
-
-    expect(postMyMentorshipRegistration).not.toHaveBeenCalled();
-  });
-
-  it("should call postMyMentorshipRegistration when saveRegistration is called while registration is open", async () => {
-    getAllMentorshipRounds.mockResolvedValue({ data: [] });
-    calculateMentorshipSlots.mockReturnValue({
-      regRoundId: "round-1",
-      isRegistrationOpen: true,
-    });
-    postMyMentorshipRegistration.mockResolvedValue({ success: true });
-
-    const { result } = renderHook(() => useMentorshipData());
-    await waitFor(() => expect(result.current.isLoading).toBe(false));
-
-    const testData = { name: "New Reg" };
-    await act(async () => {
-      await result.current.saveRegistration(testData);
-    });
-
-    expect(postMyMentorshipRegistration).toHaveBeenCalledWith(
-      "round-1",
-      testData,
-    );
-  });
-
   it("should stop loading and log an error when the API request fails", async () => {
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     getAllMentorshipRounds.mockRejectedValue(new Error("Network Error"));
@@ -248,7 +207,6 @@ describe("useMentorshipData Hook", () => {
     // Initialize data: simulate an active registration round
     const mockStatus = {
       regRoundId: "round-999",
-      isRegistrationOpen: true,
     };
     getAllMentorshipRounds.mockResolvedValue({ data: [{ id: "round-999" }] });
     calculateMentorshipSlots.mockReturnValue(mockStatus);
@@ -326,6 +284,84 @@ describe("useMentorshipData Hook", () => {
     );
 
     consoleSpy.mockRestore();
+  });
+});
+
+describe("saveRegistration", () => {
+  const MOCK_TODAY = "2026-01-15T00:00:00Z";
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useFeatureFlags.mockReturnValue({ "create-google-meeting": false });
+    calculateRoundStatus.mockReturnValue({
+      sortedRounds: [],
+      activeRoundId: null,
+    });
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(MOCK_TODAY));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("should return early and not trigger API when saveRegistration is called while registration is closed", async () => {
+    getAllMentorshipRounds.mockResolvedValue({
+      data: [
+        {
+          id: "round-1",
+          timeline: {
+            mentorApplicationDeadlineAt: "2026-01-01T00:00:00Z", // before MOCK_TODAY
+            menteeApplicationDeadlineAt: "2026-01-01T00:00:00Z", // before MOCK_TODAY
+          },
+        },
+      ],
+    });
+    calculateMentorshipSlots.mockReturnValue({ regRoundId: "round-1" });
+    getMyMentorshipRegistration.mockResolvedValue({
+      data: { roundPreferences: { participantRole: "MENTEE" } },
+    });
+
+    const { result } = renderHook(() => useMentorshipData());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    await act(async () => {
+      await result.current.saveRegistration({ some: "data" });
+    });
+
+    expect(postMyMentorshipRegistration).not.toHaveBeenCalled();
+  });
+
+  it("should call postMyMentorshipRegistration when saveRegistration is called while registration is open", async () => {
+    getAllMentorshipRounds.mockResolvedValue({
+      data: [
+        {
+          id: "round-1",
+          timeline: {
+            mentorApplicationDeadlineAt: "2026-02-01T00:00:00Z", // after MOCK_TODAY
+            menteeApplicationDeadlineAt: "2026-02-01T00:00:00Z", // after MOCK_TODAY
+          },
+        },
+      ],
+    });
+    calculateMentorshipSlots.mockReturnValue({ regRoundId: "round-1" });
+    getMyMentorshipRegistration.mockResolvedValue({
+      data: { roundPreferences: { participantRole: "MENTEE" } },
+    });
+    postMyMentorshipRegistration.mockResolvedValue({ success: true });
+
+    const { result } = renderHook(() => useMentorshipData());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    const testData = { name: "New Reg" };
+    await act(async () => {
+      await result.current.saveRegistration(testData);
+    });
+
+    expect(postMyMentorshipRegistration).toHaveBeenCalledWith(
+      "round-1",
+      testData,
+    );
   });
 });
 
