@@ -24,7 +24,6 @@ describe("calculateMentorshipSlots", () => {
       feedbackRoundName: "",
       isFeedbackEnabled: false,
       regRoundId: null,
-      isRegistrationOpen: false,
       matchResultRoundName: "",
       canViewMatch: false,
     });
@@ -73,14 +72,14 @@ describe("calculateMentorshipSlots", () => {
         id: "round-1",
         timeline: {
           promotionStartAt: "2023-10-01T07:59:59Z",
-          applicationDeadlineAt: "2023-10-20T07:59:59Z", // Today (10-15) is within this range
+          mentorApplicationDeadlineAt: "2023-10-20T07:59:59Z", // Today (10-15) is within this range
+          menteeApplicationDeadlineAt: "2023-10-20T07:59:59Z",
         },
       },
     ];
 
     const result = calculateMentorshipSlots(rounds);
     expect(result.regRoundId).toBe("round-1");
-    expect(result.isRegistrationOpen).toBe(true);
   });
 
   it("should correctly identify a round in the feedback phase", () => {
@@ -100,20 +99,20 @@ describe("calculateMentorshipSlots", () => {
     expect(result.isFeedbackEnabled).toBe(true);
   });
 
-  it("should return regRoundId but set isRegistrationOpen to false when registration is closed but the round has started", () => {
+  it("should use lastStartedRound as regRoundId fallback when both application deadlines have passed", () => {
     const rounds = [
       {
         id: "round-closed",
         timeline: {
           promotionStartAt: "2023-09-01T07:59:59Z",
-          applicationDeadlineAt: "2023-10-01T07:59:59Z", // Today (10-15) is past the deadline
+          mentorApplicationDeadlineAt: "2023-10-01T07:59:59Z", // Today (10-15) is past the deadline
+          menteeApplicationDeadlineAt: "2023-10-01T07:59:59Z",
         },
       },
     ];
 
     const result = calculateMentorshipSlots(rounds);
     expect(result.regRoundId).toBe("round-closed");
-    expect(result.isRegistrationOpen).toBe(false); // Viewable only, not open for registration
   });
 
   it("should sort rounds by promotionStartAt in descending order and pick the latest one", () => {
@@ -122,14 +121,16 @@ describe("calculateMentorshipSlots", () => {
         id: "round-older",
         timeline: {
           promotionStartAt: "2023-01-01T07:59:59Z",
-          applicationDeadlineAt: "2023-01-10T07:59:59Z",
+          mentorApplicationDeadlineAt: "2023-01-10T07:59:59Z",
+          menteeApplicationDeadlineAt: "2023-01-10T07:59:59Z",
         },
       },
       {
         id: "round-newer",
         timeline: {
           promotionStartAt: "2023-09-01T07:59:59Z",
-          applicationDeadlineAt: "2023-09-10T07:59:59Z",
+          mentorApplicationDeadlineAt: "2023-09-10T07:59:59Z",
+          menteeApplicationDeadlineAt: "2023-09-10T07:59:59Z",
         },
       },
     ];
@@ -137,7 +138,6 @@ describe("calculateMentorshipSlots", () => {
     const result = calculateMentorshipSlots(rounds);
     // Both rounds are finished, but the newer one should be selected as the viewable slot
     expect(result.regRoundId).toBe("round-newer");
-    expect(result.isRegistrationOpen).toBe(false);
   });
 
   it("should filter out invalid rounds that are missing promotionStartAt", () => {
@@ -147,7 +147,8 @@ describe("calculateMentorshipSlots", () => {
         id: "valid",
         timeline: {
           promotionStartAt: "2023-10-01T07:59:59Z",
-          applicationDeadlineAt: "2023-10-20T07:59:59Z",
+          mentorApplicationDeadlineAt: "2023-10-20T07:59:59Z",
+          menteeApplicationDeadlineAt: "2023-10-20T07:59:59Z",
         },
       },
     ];
@@ -162,7 +163,8 @@ describe("calculateMentorshipSlots", () => {
         id: "active-reg",
         timeline: {
           promotionStartAt: "2023-10-10T07:59:59Z",
-          applicationDeadlineAt: "2023-10-25T07:59:59Z",
+          mentorApplicationDeadlineAt: "2023-10-25T07:59:59Z",
+          menteeApplicationDeadlineAt: "2023-10-25T07:59:59Z",
         },
       },
       {
@@ -179,7 +181,6 @@ describe("calculateMentorshipSlots", () => {
     expect(result.feedbackRoundId).toBe("in-feedback");
     expect(result.isFeedbackEnabled).toBe(true);
     expect(result.regRoundId).toBe("active-reg");
-    expect(result.isRegistrationOpen).toBe(true);
   });
 });
 
