@@ -6,6 +6,8 @@ import {
 } from "react-router-dom";
 import "@/App.css";
 import Header from "@/components/layout/Header";
+import EnvironmentBanner from "@/components/layout/EnvironmentBanner";
+import { isBannerEnv } from "@/utils/deployEnv";
 import Sidebar from "@/components/layout/Sidebar";
 import ProtectedRoute from "@/components/common/ProtectedRoute";
 import Dashboard from "@/pages/Dashboard";
@@ -20,13 +22,20 @@ import { ROUTE_PATHS } from "@/constants/RoutePaths";
 import { Toaster } from "@/components/ui/sonner";
 
 function App() {
+  const deployEnv = import.meta.env.VITE_DEPLOY_ENV;
+
+  const showEnvBanner = isBannerEnv(deployEnv);
+  const containerClassName = `app-container legacy-styles${
+    showEnvBanner ? " has-env-banner" : ""
+  }`;
   return (
     <FlagsProvider>
       <AuthProvider>
         <LDIdentifier />
         <Router>
-          <div className="app-container legacy-styles">
+          <div className={containerClassName}>
             <Header />
+            {showEnvBanner && <EnvironmentBanner env={deployEnv} />}
             <div className="app-body">
               <Sidebar />
               <main className="main-content">
