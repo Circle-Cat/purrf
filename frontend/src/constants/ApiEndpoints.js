@@ -10,6 +10,9 @@ export const API_ENDPOINTS = {
   MENTORSHIP_MEETINGS_ENDPOINT: "/mentorship/v1/meetings",
   MY_INTERNAL_ACTIVITY_SUMMARY: "/summary/me",
   MENTORSHIP_MEETINGS_V2: "/mentorship/v2/meetings",
+  MENTORSHIP_MEETING_V2_SINGLE: (meetingId) =>
+    `/mentorship/v2/meetings/${meetingId}`,
+  MENTORSHIP_MEETING_V2_BATCH_DELETE: "/mentorship/v2/meetings/batch-delete",
 };
 
 /**
