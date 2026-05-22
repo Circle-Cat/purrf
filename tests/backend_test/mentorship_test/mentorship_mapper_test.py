@@ -38,12 +38,16 @@ class TestMentorshipMapper(unittest.TestCase):
             "promotion_start_at": "2025-07-02T06:59:59Z",
             "mentor_application_deadline_at": "2025-07-16T06:59:59Z",
             "mentee_application_deadline_at": "2025-07-14T06:59:59Z",
+            "training_notification_at": "2025-07-18T06:59:59Z",
+            "training_deadline_at": "2025-07-25T06:59:59Z",
             "review_start_at": "2025-07-17T06:59:59Z",
             "acceptance_notification_at": "2025-07-31T06:59:59Z",
             "matching_completed_at": "2025-08-06T06:59:59Z",
             "match_notification_at": "2025-08-07T06:59:59Z",
             "first_meeting_deadline_at": "2025-08-21T06:59:59Z",
+            "meeting_log_reminder_at": "2025-09-01T06:59:59Z",
             "meetings_completion_deadline_at": "2025-11-21T07:59:59Z",
+            "feedback_start_at": "2025-11-22T07:59:59Z",
             "feedback_deadline_at": "2025-11-23T07:59:59Z",
         }
 
@@ -172,8 +176,15 @@ class TestMentorshipMapper(unittest.TestCase):
         ]
 
     def test_map_to_rounds_dto_with_full_data(self):
-        """Test mapping a mentorship round entity with complete timeline data."""
-        dtos = self.mapper.map_to_rounds_dto(self.mentorship_round_entities)
+        """Test mapping mentorship round entities with complete timeline and count data."""
+        participants_counts = {1: 12, 2: 8}
+        completed_meetings_per_round = {1: 10, 2: 6}
+
+        dtos = self.mapper.map_to_rounds_dto(
+            self.mentorship_round_entities,
+            participants_counts=participants_counts,
+            completed_meetings_per_round=completed_meetings_per_round,
+        )
         dto = dtos[0]
 
         self.assertIsInstance(dto, RoundsDto)
@@ -184,6 +195,13 @@ class TestMentorshipMapper(unittest.TestCase):
         expected_timeline = TimelineDto(**self.test_dates)
         self.assertIsNotNone(dto.timeline)
         self.assertEqual(dto.timeline, expected_timeline)
+
+        self.assertEqual(dtos[0].participants_count, 12)
+        self.assertEqual(dtos[0].total_completed_meetings, 10)
+        self.assertEqual(dtos[1].participants_count, 8)
+        self.assertEqual(dtos[1].total_completed_meetings, 6)
+        self.assertIsNone(dtos[2].participants_count)
+        self.assertIsNone(dtos[2].total_completed_meetings)
 
     def test_map_to_partner_dto_with_full_data(self):
         """Test mapping users entity has preferred_name to partner dto."""

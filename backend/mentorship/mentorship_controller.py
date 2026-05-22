@@ -228,15 +228,22 @@ class MentorshipController:
             data=result,
         )
 
-    async def get_all_rounds(self):
+    async def get_all_rounds(self, need_details: bool = False):
         """
         Retrieve all mentorship rounds.
+
+        Args:
+            need_details (bool): If True, returns participant and completed
+                meeting counts per round. Reserved for MENTORSHIP_ADMIN users
+                on the mentorship admin dashboard page.
 
         Return:
             API response containing a list of rounds DTOs.
         """
         async with self.database.session() as session:
-            rounds: list[RoundsDto] = await self.rounds_service.get_all_rounds(session)
+            rounds: list[RoundsDto] = await self.rounds_service.get_all_rounds(
+                session, include_details=need_details
+            )
 
         return api_response(
             message="Successfully fetched all mentorship rounds.",

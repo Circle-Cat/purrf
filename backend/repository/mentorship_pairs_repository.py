@@ -11,6 +11,25 @@ class MentorshipPairsRepository:
     Repository for handling database operations related to MentorshipPairsEntity.
     """
 
+    async def get_completed_meetings_per_round(
+        self, session: AsyncSession
+    ) -> dict[int, int]:
+        """
+        Retrieve the total completed meeting count for every round.
+
+        Returns:
+            dict[int, int]: Mapping of round_id to total completed_count.
+        """
+        result = await session.execute(
+            select(
+                MentorshipPairsEntity.round_id,
+                func.sum(MentorshipPairsEntity.completed_count).label(
+                    "completed_meetings"
+                ),
+            ).group_by(MentorshipPairsEntity.round_id)
+        )
+        return {row.round_id: row.completed_meetings for row in result}
+
     async def get_all_partner_ids(
         self, session: AsyncSession, user_id: int
     ) -> list[int]:

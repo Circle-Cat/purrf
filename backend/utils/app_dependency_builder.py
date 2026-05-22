@@ -392,6 +392,8 @@ class AppDependencyBuilder:
         self.rounds_service = RoundsService(
             mentorship_round_repository=self.mentorship_round_repository,
             mentorship_mapper=self.mentorship_mapper,
+            mentorship_round_participants_repository=self.mentorship_round_participants_repo,
+            mentorship_pairs_repository=self.mentorship_pairs_repository,
         )
         self.participation_service = ParticipationService(
             logger=self.logger,
