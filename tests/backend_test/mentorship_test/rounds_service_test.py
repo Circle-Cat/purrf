@@ -15,12 +15,20 @@ class TestRoundsService(unittest.IsolatedAsyncioTestCase):
         self.mock_repo.get_by_round_id = AsyncMock()
         self.mock_repo.upsert_round = AsyncMock()
 
+        self.mock_participants_repo = MagicMock()
+        self.mock_participants_repo.get_participants_count_per_round = AsyncMock()
+
+        self.mock_pairs_repo = MagicMock()
+        self.mock_pairs_repo.get_completed_meetings_per_round = AsyncMock()
+
         self.mock_mapper = MagicMock()
         self.mock_session = AsyncMock()
 
         self.service = RoundsService(
             mentorship_round_repository=self.mock_repo,
             mentorship_mapper=self.mock_mapper,
+            mentorship_round_participants_repository=self.mock_participants_repo,
+            mentorship_pairs_repository=self.mock_pairs_repo,
         )
 
         self.timeline_data = TimelineCreateDto(
@@ -48,21 +56,33 @@ class TestRoundsService(unittest.IsolatedAsyncioTestCase):
 
     def _timeline_to_dict(self, timeline: TimelineCreateDto) -> dict:
         """Help to convert timeline to dict format."""
-        return timeline.model_dump(mode="json", by_alias=False)
+        return timeline.model_dump(mode="json", by_alias=False, exclude_none=True)
 
-    async def test_get_all_rounds(self):
-        """Test retrieving and mapping of all mentorship rounds."""
+    async def test_get_all_rounds_with_details(self):
+        """Test get all rounds with participant and meeting counts."""
         mock_mentorship_round_entities = [MagicMock(spec=MentorshipRoundEntity)]
         mock_rounds_dtos = [MagicMock(spec=RoundsDto)]
+        mock_participants_counts = {1: 10, 2: 5}
+        mock_completed_meetings = {1: 8, 2: 3}
 
         self.mock_repo.get_all_rounds.return_value = mock_mentorship_round_entities
+        self.mock_participants_repo.get_participants_count_per_round.return_value = (
+            mock_participants_counts
+        )
+        self.mock_pairs_repo.get_completed_meetings_per_round.return_value = (
+            mock_completed_meetings
+        )
         self.mock_mapper.map_to_rounds_dto.return_value = mock_rounds_dtos
 
-        result = await self.service.get_all_rounds(self.mock_session)
+        result = await self.service.get_all_rounds(
+            self.mock_session, include_details=True
+        )
 
         self.mock_repo.get_all_rounds.assert_awaited_once_with(self.mock_session)
         self.mock_mapper.map_to_rounds_dto.assert_called_once_with(
-            mock_mentorship_round_entities
+            mock_mentorship_round_entities,
+            mock_participants_counts,
+            mock_completed_meetings,
         )
 
         self.assertEqual(result, mock_rounds_dtos)
@@ -77,6 +97,17 @@ class TestRoundsService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, [])
         self.mock_repo.get_all_rounds.assert_awaited_once_with(self.mock_session)
         self.mock_mapper.map_to_rounds_dto.assert_called_once_with([])
+
+    async def test_get_all_rounds_skips_detail_queries(self):
+        """Test participant and meeting counts are not fetched when include_details is False."""
+        mock_entities = [MagicMock(spec=MentorshipRoundEntity)]
+        self.mock_repo.get_all_rounds.return_value = mock_entities
+        self.mock_mapper.map_to_rounds_dto.return_value = []
+
+        await self.service.get_all_rounds(self.mock_session, include_details=False)
+
+        self.mock_participants_repo.get_participants_count_per_round.assert_not_awaited()
+        self.mock_pairs_repo.get_completed_meetings_per_round.assert_not_awaited()
 
     async def test_upsert_rounds_create(self):
         """Test creating a new mentorship round."""

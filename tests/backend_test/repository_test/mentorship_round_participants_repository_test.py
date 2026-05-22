@@ -278,6 +278,50 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
 
         self.assertIsNone(result)
 
+    async def test_get_participants_count_per_round(self):
+        """Returns a dict mapping round_id to total participant count."""
+        user2 = UsersEntity(
+            first_name="Bob",
+            last_name="Builder",
+            timezone="Asia/Shanghai",
+            timezone_updated_at=datetime.now(timezone.utc),
+            communication_channel=CommunicationMethod.EMAIL,
+            primary_email="bob2@example.com",
+            is_active=True,
+            updated_timestamp=datetime.now(timezone.utc),
+            subject_identifier=str(uuid.uuid4()),
+        )
+        await self.insert_entities([user2])
+
+        participants = [
+            MentorshipRoundParticipantsEntity(
+                user_id=self.user.user_id,
+                round_id=self.rounds[0].round_id,
+            ),
+            MentorshipRoundParticipantsEntity(
+                user_id=user2.user_id,
+                round_id=self.rounds[0].round_id,
+            ),
+            MentorshipRoundParticipantsEntity(
+                user_id=self.user.user_id,
+                round_id=self.rounds[1].round_id,
+            ),
+        ]
+        await self.insert_entities(participants)
+
+        result = await self.repo.get_participants_count_per_round(self.session)
+
+        self.assertIsInstance(result, dict)
+        self.assertEqual(result[self.rounds[0].round_id], 2)
+        self.assertEqual(result[self.rounds[1].round_id], 1)
+
+    async def test_get_participants_count_per_round_empty(self):
+        """Rounds with no participants should not appear in the result."""
+        result = await self.repo.get_participants_count_per_round(self.session)
+
+        for round_entity in self.rounds:
+            self.assertNotIn(round_entity.round_id, result)
+
     async def test_upsert_participant_update(self):
         """Test update an existing participant entity correctly."""
         old_participant = MentorshipRoundParticipantsEntity(

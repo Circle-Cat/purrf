@@ -23,12 +23,21 @@ class MentorshipMapper:
     Mapper for converting mentorship-related database entities to DTOs.
     """
 
-    def map_to_rounds_dto(self, rounds: list[MentorshipRoundEntity]) -> list[RoundsDto]:
+    def map_to_rounds_dto(
+        self,
+        rounds: list[MentorshipRoundEntity],
+        participants_counts: dict[int, int] | None = None,
+        completed_meetings_per_round: dict[int, int] | None = None,
+    ) -> list[RoundsDto]:
         """Maps a list of MentorshipRoundEntity objects to a list of RoundsDto objects."""
+        participants_counts = participants_counts or {}
+        completed_meetings_per_round = completed_meetings_per_round or {}
         return [
             RoundsDto(
                 id=r.round_id,
                 name=r.name,
+                participants_count=participants_counts.get(r.round_id),
+                total_completed_meetings=completed_meetings_per_round.get(r.round_id),
                 mentee_average_score=r.mentee_average_score,
                 mentor_average_score=r.mentor_average_score,
                 expectations=r.expectations,
@@ -54,10 +63,14 @@ class MentorshipMapper:
             mentee_application_deadline_at=d.get("mentee_application_deadline_at"),
             review_start_at=d.get("review_start_at"),
             acceptance_notification_at=d.get("acceptance_notification_at"),
+            training_notification_at=d.get("training_notification_at"),
+            training_deadline_at=d.get("training_deadline_at"),
             matching_completed_at=d.get("matching_completed_at"),
             match_notification_at=d.get("match_notification_at"),
             first_meeting_deadline_at=d.get("first_meeting_deadline_at"),
+            meeting_log_reminder_at=d.get("meeting_log_reminder_at"),
             meetings_completion_deadline_at=d.get("meetings_completion_deadline_at"),
+            feedback_start_at=d.get("feedback_start_at"),
             feedback_deadline_at=d.get("feedback_deadline_at"),
         )
 

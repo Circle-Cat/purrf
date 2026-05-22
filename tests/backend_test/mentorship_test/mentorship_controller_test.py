@@ -127,7 +127,7 @@ class TestMentorshipController(unittest.IsolatedAsyncioTestCase):
         response = await self.controller.get_all_rounds()
 
         self.mock_rounds_service.get_all_rounds.assert_awaited_once_with(
-            self.mock_session
+            self.mock_session, include_details=False
         )
         self.mock_api_response.assert_called_once_with(
             message="Successfully fetched all mentorship rounds.", data=mock_data
@@ -142,7 +142,7 @@ class TestMentorshipController(unittest.IsolatedAsyncioTestCase):
         response = await self.controller.get_all_rounds()
 
         self.mock_rounds_service.get_all_rounds.assert_awaited_once_with(
-            self.mock_session
+            self.mock_session, include_details=False
         )
         self.mock_api_response.assert_called_once_with(
             message="Successfully fetched all mentorship rounds.", data=[]
