@@ -15,7 +15,16 @@ resource "auth0_client" "purrf_auth0" {
   custom_login_page_on                                 = true
   encryption_key                                       = null
   form_template                                        = null
-  grant_types                                          = ["authorization_code", "implicit", "refresh_token", "client_credentials"]
+  grant_types = [
+    "authorization_code",
+    "implicit",
+    "refresh_token",
+    "client_credentials",
+    # Required by /api/auth/emails/verify (and /emails/delete) — backend trades
+    # a passwordless OTP for an id_token via Auth0's passwordless OTP grant
+    # type.
+    "http://auth0.com/oauth/grant-type/passwordless/otp",
+  ]
   initiate_login_uri                                   = null
   is_first_party                                       = true
   is_token_endpoint_ip_header_trusted                  = false
@@ -115,7 +124,7 @@ resource "auth0_connection" "email" {
   options {
     api_enable_users       = false
     brute_force_protection = true
-    disable_signup         = true
+    disable_signup         = false
     from                   = "{{ application.name }} <root@auth0.com>"
     subject                = "Welcome to {{ application.name }}"
     name                   = "email"
@@ -143,23 +152,52 @@ resource "auth0_prompt_custom_text" "en_login_id" {
   language = "en"
   body = jsonencode({
     "login-id" : {
-      "description" : "Log in as an external mentee using your email address used in the application.",
-      "federatedConnectionButtonText" : "Log in as a Googler mentor"
+      "description" : "Log in to Purrf to continue your application.",
     }
   })
 }
 
-/*
-resource "auth0_trigger_actions" "post_login" {
-  trigger = "post-login"
-  actions {
-    display_name = "googlers"
-    id           = "a6b7a44e-ad92-43d9-a93f-6177e66fa504"
+# Google social connection backed by our own Google OAuth client (not the
+# Auth0 dev-keys shared client). Domain allowlist is enforced by a post-login
+# Action attached manually on the Auth0 dashboard — Actions API isn't exposed
+# on the Free plan.
+resource "auth0_connection" "google" {
+  name         = "google-oauth2"
+  display_name = "Google"
+  strategy     = "google-oauth2"
+  options {
+    client_id     = var.auth0_google_client_id
+    client_secret = var.auth0_google_client_secret
   }
 }
-*/
 
-# Auth0 Free plan includes a built-in `google-oauth2` social connection.
-# We use this default connection, but to restrict allowed user domains,
-# we manually add a post-login Action and attach it to the Login trigger
-# (start -> action -> completed). This must be done manually on the Free plan.
+resource "auth0_connection_clients" "google" {
+  connection_id   = auth0_connection.google.id
+  enabled_clients = [auth0_client.purrf_auth0.id]
+}
+
+# Used to construct the Management API audience URL (always the default
+# *.auth0.com tenant domain, not the Cloudflare-fronted custom domain).
+data "auth0_tenant" "current" {}
+
+# M2M client used by the "Link Accounts with Same Verified Email" post-login
+# Action to call the Management API (find users by email, link identities).
+# Action code lives in the Auth0 Dashboard; only credentials are managed here.
+resource "auth0_client" "link_action_m2m" {
+  name        = "Link Action M2M (${var.env_name})"
+  description = "Managed by Terraform. Backs the post-login account-linking Action."
+  app_type    = "non_interactive"
+  grant_types = ["client_credentials"]
+}
+
+resource "auth0_client_credentials" "link_action_m2m" {
+  client_id             = auth0_client.link_action_m2m.id
+  authentication_method = "client_secret_post"
+}
+
+resource "auth0_client_grant" "link_action_m2m" {
+  client_id = auth0_client.link_action_m2m.id
+  audience  = "https://${data.auth0_tenant.current.domain}/api/v2/"
+  scopes    = ["read:users", "update:users"]
+}
+

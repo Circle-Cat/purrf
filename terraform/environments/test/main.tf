@@ -35,5 +35,8 @@ module "purrf_instance" {
   azure_client_id             = "8f3f85f2-be71-4ed5-95e8-3c777f4c6e13"
   azure_tenant_id             = "08502fd6-503a-4dfd-85b7-f13b141dc0c4"
   ld_sdk_key                  = data.terraform_remote_state.ld.outputs.api_keys["test"]
+
+  auth0_google_client_id     = var.auth0_google_client_id
+  auth0_google_client_secret = var.auth0_google_client_secret
 }
 
