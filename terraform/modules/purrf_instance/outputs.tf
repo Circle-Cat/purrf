@@ -85,3 +85,19 @@ output "microsoft_chat_lifecycle_notification_url" {
 output "auth0_custom_domain_cname" {
   value = auth0_custom_domain.purrf_custom_domain.verification[0].methods[0].record
 }
+
+# Default Auth0 tenant domain (e.g. purrf-test-cd-xxx.us.auth0.com). Use this
+# value as the MGMT_DOMAIN secret on the post-login Action, NOT the
+# Cloudflare-fronted custom domain.
+output "auth0_management_domain" {
+  value = data.auth0_tenant.current.domain
+}
+
+output "auth0_link_action_m2m_client_id" {
+  value = auth0_client.link_action_m2m.client_id
+}
+
+output "auth0_link_action_m2m_client_secret" {
+  value     = auth0_client_credentials.link_action_m2m.client_secret
+  sensitive = true
+}

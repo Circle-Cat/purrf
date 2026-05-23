@@ -15,5 +15,8 @@ terraform {
     kubernetes = {
       source = "hashicorp/kubernetes"
     }
+    azuread = {
+      source = "hashicorp/azuread"
+    }
   }
 }
