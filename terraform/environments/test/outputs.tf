@@ -70,3 +70,16 @@ output "microsoft_chat_lifecycle_notification_url" {
 output "auth0_custom_domain_cname" {
   value = module.purrf_instance.auth0_custom_domain_cname
 }
+
+output "auth0_management_domain" {
+  value = module.purrf_instance.auth0_management_domain
+}
+
+output "auth0_link_action_m2m_client_id" {
+  value = module.purrf_instance.auth0_link_action_m2m_client_id
+}
+
+output "auth0_link_action_m2m_client_secret" {
+  value     = module.purrf_instance.auth0_link_action_m2m_client_secret
+  sensitive = true
+}
