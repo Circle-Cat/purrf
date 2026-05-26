@@ -177,13 +177,22 @@ class TestMentorshipMapper(unittest.TestCase):
 
     def test_map_to_rounds_dto_with_full_data(self):
         """Test mapping mentorship round entities with complete timeline and count data."""
-        participants_counts = {1: 12, 2: 8}
-        completed_meetings_per_round = {1: 10, 2: 6}
+        pair_stats = {
+            1: {
+                "active_pairs": 5,
+                "matched_participants": 10,
+                "total_completed_meetings": 10,
+            },
+            2: {
+                "active_pairs": 4,
+                "matched_participants": 7,
+                "total_completed_meetings": 6,
+            },
+        }
 
         dtos = self.mapper.map_to_rounds_dto(
             self.mentorship_round_entities,
-            participants_counts=participants_counts,
-            completed_meetings_per_round=completed_meetings_per_round,
+            pair_stats=pair_stats,
         )
         dto = dtos[0]
 
@@ -196,11 +205,14 @@ class TestMentorshipMapper(unittest.TestCase):
         self.assertIsNotNone(dto.timeline)
         self.assertEqual(dto.timeline, expected_timeline)
 
-        self.assertEqual(dtos[0].participants_count, 12)
+        self.assertEqual(dtos[0].active_pairs, 5)
+        self.assertEqual(dtos[0].matched_participants, 10)
         self.assertEqual(dtos[0].total_completed_meetings, 10)
-        self.assertEqual(dtos[1].participants_count, 8)
+        self.assertEqual(dtos[1].active_pairs, 4)
+        self.assertEqual(dtos[1].matched_participants, 7)
         self.assertEqual(dtos[1].total_completed_meetings, 6)
-        self.assertIsNone(dtos[2].participants_count)
+        self.assertIsNone(dtos[2].active_pairs)
+        self.assertIsNone(dtos[2].matched_participants)
         self.assertIsNone(dtos[2].total_completed_meetings)
 
     def test_map_to_partner_dto_with_full_data(self):

@@ -119,23 +119,6 @@ class MentorshipRoundParticipantsRepository:
         )
         return result.scalar_one_or_none()
 
-    async def get_participants_count_per_round(
-        self, session: AsyncSession
-    ) -> dict[int, int]:
-        """
-        Return the total participant count (mentors and mentees) for every round.
-
-        Returns:
-            dict[int, int]: Mapping of round_id to participant count.
-        """
-        result = await session.execute(
-            select(
-                MentorshipRoundParticipantsEntity.round_id,
-                func.count().label("participants"),
-            ).group_by(MentorshipRoundParticipantsEntity.round_id)
-        )
-        return {row.round_id: row.participants for row in result}
-
     async def upsert_participant(
         self, session: AsyncSession, entity: MentorshipRoundParticipantsEntity
     ) -> MentorshipRoundParticipantsEntity:

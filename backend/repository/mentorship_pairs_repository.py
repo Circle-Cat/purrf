@@ -11,24 +11,38 @@ class MentorshipPairsRepository:
     Repository for handling database operations related to MentorshipPairsEntity.
     """
 
-    async def get_completed_meetings_per_round(
-        self, session: AsyncSession
-    ) -> dict[int, int]:
+    async def get_pair_stats(self, session: AsyncSession) -> dict[int, dict]:
         """
-        Retrieve the total completed meeting count for every round.
+        Retrieve matched participant count and completed meeting count per round,
+        considering only active pairs.
 
         Returns:
-            dict[int, int]: Mapping of round_id to total completed_count.
+            dict[int, dict]: Mapping of round_id to
+                {"active_pairs": int, "matched_participants": int, "total_completed_meetings": int}.
         """
         result = await session.execute(
             select(
                 MentorshipPairsEntity.round_id,
+                func.count().label("active_pairs"),
+                (
+                    func.count(func.distinct(MentorshipPairsEntity.mentor_id))
+                    + func.count(func.distinct(MentorshipPairsEntity.mentee_id))
+                ).label("matched_participants"),
                 func.sum(MentorshipPairsEntity.completed_count).label(
-                    "completed_meetings"
+                    "total_completed_meetings"
                 ),
-            ).group_by(MentorshipPairsEntity.round_id)
+            )
+            .where(MentorshipPairsEntity.status == PairStatus.ACTIVE)
+            .group_by(MentorshipPairsEntity.round_id)
         )
-        return {row.round_id: row.completed_meetings for row in result}
+        return {
+            row.round_id: {
+                "active_pairs": row.active_pairs,
+                "matched_participants": row.matched_participants,
+                "total_completed_meetings": row.total_completed_meetings or 0,
+            }
+            for row in result.all()
+        }
 
     async def get_all_partner_ids(
         self, session: AsyncSession, user_id: int
