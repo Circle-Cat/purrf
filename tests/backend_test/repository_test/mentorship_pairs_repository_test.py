@@ -920,27 +920,29 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
 
         self.assertEqual(result, [])
 
-    async def test_get_completed_meetings_per_round(self):
-        """Returns a dict mapping round_id to summed completed_count."""
-        # rounds[0]: pairs[0].completed_count=5, pairs[2].completed_count=3  → 8
-        # rounds[1]: pairs[1].completed_count=2                              → 2
-        # rounds[2]: pairs[3]+pairs[4]+pairs[5].completed_count=0            → 0
-        result = await self.repo.get_completed_meetings_per_round(self.session)
+    async def test_get_pair_stats(self):
+        """Should only include active pairs and deduplicate matched_participants across pairs in the same round."""
+        result = await self.repo.get_pair_stats(self.session)
 
         self.assertIsInstance(result, dict)
-        self.assertEqual(result[self.rounds[0].round_id], 8)
-        self.assertEqual(result[self.rounds[1].round_id], 2)
-        self.assertEqual(result[self.rounds[2].round_id], 0)
 
-    async def test_get_completed_meetings_per_round_empty(self):
-        """Returns an empty dict when there are no pairs."""
-        # Use a fresh round with no pairs
+        # rounds[0]: pairs[2] is INACTIVE and excluded; only pairs[0] counts
+        self.assertEqual(result[self.rounds[0].round_id]["active_pairs"], 1)
+        self.assertEqual(result[self.rounds[0].round_id]["matched_participants"], 2)
+        self.assertEqual(result[self.rounds[0].round_id]["total_completed_meetings"], 5)
+
+        # rounds[2]: users[0] appears as mentor in pairs[3] and pairs[4] → deduped to 1
+        self.assertEqual(result[self.rounds[2].round_id]["active_pairs"], 3)
+        self.assertEqual(result[self.rounds[2].round_id]["matched_participants"], 4)
+        self.assertEqual(result[self.rounds[2].round_id]["total_completed_meetings"], 0)
+
+    async def test_get_pair_stats_empty(self):
+        """Returns an empty dict when there are no active pairs for a round."""
         empty_round = MentorshipRoundEntity(name="empty-round", required_meetings=5)
         await self.insert_entities([empty_round])
 
-        result = await self.repo.get_completed_meetings_per_round(self.session)
+        result = await self.repo.get_pair_stats(self.session)
 
-        # empty_round has no pairs so it must not appear in the result
         self.assertNotIn(empty_round.round_id, result)
 
 

@@ -26,18 +26,21 @@ class MentorshipMapper:
     def map_to_rounds_dto(
         self,
         rounds: list[MentorshipRoundEntity],
-        participants_counts: dict[int, int] | None = None,
-        completed_meetings_per_round: dict[int, int] | None = None,
+        pair_stats: dict[int, dict] | None = None,
     ) -> list[RoundsDto]:
         """Maps a list of MentorshipRoundEntity objects to a list of RoundsDto objects."""
-        participants_counts = participants_counts or {}
-        completed_meetings_per_round = completed_meetings_per_round or {}
+        pair_stats = pair_stats or {}
         return [
             RoundsDto(
                 id=r.round_id,
                 name=r.name,
-                participants_count=participants_counts.get(r.round_id),
-                total_completed_meetings=completed_meetings_per_round.get(r.round_id),
+                active_pairs=pair_stats.get(r.round_id, {}).get("active_pairs"),
+                matched_participants=pair_stats.get(r.round_id, {}).get(
+                    "matched_participants"
+                ),
+                total_completed_meetings=pair_stats.get(r.round_id, {}).get(
+                    "total_completed_meetings"
+                ),
                 mentee_average_score=r.mentee_average_score,
                 mentor_average_score=r.mentor_average_score,
                 expectations=r.expectations,

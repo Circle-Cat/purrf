@@ -469,7 +469,6 @@ class TestAppDependencyBuilder(TestCase):
         mock_rounds_service_cls.assert_called_once_with(
             mentorship_round_repository=mock_mentorship_round_repository_cls.return_value,
             mentorship_mapper=mock_mentorship_mapper_cls.return_value,
-            mentorship_round_participants_repository=mock_mentorship_round_participants_repo_cls.return_value,
             mentorship_pairs_repository=mock_mentorship_pairs_repo_cls.return_value,
         )
         mock_participation_service_cls.assert_called_once_with(

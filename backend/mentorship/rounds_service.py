@@ -1,8 +1,5 @@
 from backend.mentorship.mentorship_mapper import MentorshipMapper
 from backend.repository.mentorship_round_repository import MentorshipRoundRepository
-from backend.repository.mentorship_round_participants_repository import (
-    MentorshipRoundParticipantsRepository,
-)
 from backend.repository.mentorship_pairs_repository import MentorshipPairsRepository
 from backend.entity.mentorship_round_entity import MentorshipRoundEntity
 from backend.dto.rounds_dto import RoundsDto
@@ -18,7 +15,6 @@ class RoundsService:
         self,
         mentorship_round_repository: MentorshipRoundRepository,
         mentorship_mapper: MentorshipMapper,
-        mentorship_round_participants_repository: MentorshipRoundParticipantsRepository,
         mentorship_pairs_repository: MentorshipPairsRepository,
     ):
         """
@@ -29,16 +25,11 @@ class RoundsService:
                 The repository for accessing mentorship round data.
             mentorship_mapper (MentorshipMapper):
                 The mapper for converting database entities to DTOs.
-            mentorship_round_participants_repository (MentorshipRoundParticipantsRepository):
-                The repository for participant count queries.
             mentorship_pairs_repository (MentorshipPairsRepository):
-                The repository for completed meeting count queries.
+                The repository for round stats queries.
         """
         self.mentorship_round_repository = mentorship_round_repository
         self.mentorship_mapper = mentorship_mapper
-        self.mentorship_round_participants_repository = (
-            mentorship_round_participants_repository
-        )
         self.mentorship_pairs_repository = mentorship_pairs_repository
 
     async def get_all_rounds(
@@ -49,8 +40,8 @@ class RoundsService:
 
         Args:
             session (AsyncSession): Active database async session.
-            include_details (bool): If True, fetches participant and completed
-                meeting counts per round.
+            include_details (bool): If True, populates matched_participants and
+                total_completed_meetings (for active pairs only) in each RoundsDto.
 
         Returns:
             list[RoundsDto]: A list of RoundsDto objects representing the mentorship rounds.
@@ -62,18 +53,9 @@ class RoundsService:
         if not include_details:
             return self.mentorship_mapper.map_to_rounds_dto(all_round_entities)
 
-        participants_counts = await self.mentorship_round_participants_repository.get_participants_count_per_round(
-            session
-        )
-        completed_meetings_per_round = (
-            await self.mentorship_pairs_repository.get_completed_meetings_per_round(
-                session
-            )
-        )
+        pair_stats = await self.mentorship_pairs_repository.get_pair_stats(session)
 
-        return self.mentorship_mapper.map_to_rounds_dto(
-            all_round_entities, participants_counts, completed_meetings_per_round
-        )
+        return self.mentorship_mapper.map_to_rounds_dto(all_round_entities, pair_stats)
 
     async def upsert_rounds(
         self, session: AsyncSession, data: RoundsCreateDto
