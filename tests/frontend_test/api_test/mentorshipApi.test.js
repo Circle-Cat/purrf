@@ -24,13 +24,35 @@ describe("Mentorship Service API", () => {
     vi.clearAllMocks();
   });
 
-  it("getAllMentorshipRounds should call the correct GET endpoint", async () => {
+  it("getAllMentorshipRounds should call the correct GET endpoint with need_details=false by default", async () => {
     const mockData = [{ id: 1, name: "Round 1" }];
     request.get.mockResolvedValue(mockData);
 
     const result = await getAllMentorshipRounds();
 
-    expect(request.get).toHaveBeenCalledWith(API_ENDPOINTS.MENTORSHIP_ROUNDS);
+    expect(request.get).toHaveBeenCalledWith(API_ENDPOINTS.MENTORSHIP_ROUNDS, {
+      params: { need_details: false },
+    });
+    expect(result).toEqual(mockData);
+  });
+
+  it("getAllMentorshipRounds should call the correct GET endpoint with need_details=true", async () => {
+    const mockData = [
+      {
+        id: 1,
+        name: "Round 1",
+        matchedParticipants: 10,
+        activePairs: 5,
+        totalCompletedMeetings: 18,
+      },
+    ];
+    request.get.mockResolvedValue(mockData);
+
+    const result = await getAllMentorshipRounds(true);
+
+    expect(request.get).toHaveBeenCalledWith(API_ENDPOINTS.MENTORSHIP_ROUNDS, {
+      params: { need_details: true },
+    });
     expect(result).toEqual(mockData);
   });
 

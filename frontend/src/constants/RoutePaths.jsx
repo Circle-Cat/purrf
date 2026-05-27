@@ -5,4 +5,5 @@ export const ROUTE_PATHS = {
   PROFILE: "/profile",
   PERSONAL_DASHBOARD: "/dashboard/me",
   ACCESS_DENIED: "/access-denied",
+  MENTORSHIP_MANAGEMENT: "/mentorship-management",
 };

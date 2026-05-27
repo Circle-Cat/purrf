@@ -65,6 +65,21 @@ describe("Sidebar Component", () => {
     expect(screen.getByText("Personal Dashboard")).toBeInTheDocument();
   });
 
+  test("renders mentorship management link for mentorship admin user", () => {
+    renderSidebar([USER_ROLES.MENTORSHIP_ADMIN, USER_ROLES.MENTORSHIP]);
+
+    expect(screen.getByText("Mentorship Management")).toBeInTheDocument();
+    expect(screen.getByText("Personal Dashboard")).toBeInTheDocument();
+    expect(screen.queryByText("Dashboard")).not.toBeInTheDocument();
+    expect(screen.queryByText("DataSearch")).not.toBeInTheDocument();
+  });
+
+  test("does not render Mentorship Management link for users without MENTORSHIP_ADMIN role", () => {
+    renderSidebar([USER_ROLES.MENTORSHIP, USER_ROLES.MANAGER]);
+
+    expect(screen.queryByText("Mentorship Management")).not.toBeInTheDocument();
+  });
+
   test("applies active class to the current route link", () => {
     renderSidebar(
       [USER_ROLES.CC_INTERNAL, USER_ROLES.MENTORSHIP],

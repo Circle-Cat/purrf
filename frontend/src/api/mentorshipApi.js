@@ -3,9 +3,12 @@ import { API_ENDPOINTS } from "@/constants/ApiEndpoints";
 
 /**
  * Fetch all mentorship rounds.
+ * @param {boolean} needDetails - Optional: include additional round details for mentorship admins.
  */
-export const getAllMentorshipRounds = () =>
-  request.get(API_ENDPOINTS.MENTORSHIP_ROUNDS);
+export const getAllMentorshipRounds = (needDetails = false) =>
+  request.get(API_ENDPOINTS.MENTORSHIP_ROUNDS, {
+    params: { need_details: needDetails },
+  });
 
 /**
  * Fetch the mentorship partners for a specific round.
