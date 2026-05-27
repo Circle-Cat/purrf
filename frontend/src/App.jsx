@@ -16,6 +16,7 @@ import DataSearch from "@/pages/DataSearch";
 import Profile from "@/pages/Profile";
 import AccessDenied from "@/pages/AccessDenied";
 import PersonalDashboard from "@/pages/PersonalDashboard";
+import MentorshipManagement from "@/pages/MentorshipManagement";
 import { AuthProvider } from "@/context/auth";
 import { FlagsProvider, LDIdentifier } from "@/context/flags";
 import { USER_ROLES } from "@/constants/UserRoles";
@@ -80,6 +81,16 @@ function App() {
                     element={
                       <ProtectedRoute requiredRoles={[USER_ROLES.MENTORSHIP]}>
                         <PersonalDashboard />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path={ROUTE_PATHS.MENTORSHIP_MANAGEMENT}
+                    element={
+                      <ProtectedRoute
+                        requiredRoles={[USER_ROLES.MENTORSHIP_ADMIN]}
+                      >
+                        <MentorshipManagement />
                       </ProtectedRoute>
                     }
                   />

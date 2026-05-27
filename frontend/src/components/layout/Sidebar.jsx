@@ -32,6 +32,11 @@ const Sidebar = () => {
       to: ROUTE_PATHS.DATASEARCH,
       roles: [USER_ROLES.MANAGER],
     },
+    {
+      label: "Mentorship Management",
+      to: ROUTE_PATHS.MENTORSHIP_MANAGEMENT,
+      roles: [USER_ROLES.MENTORSHIP_ADMIN],
+    },
   ];
 
   return (
