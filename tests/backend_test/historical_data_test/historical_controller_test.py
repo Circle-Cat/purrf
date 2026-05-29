@@ -46,10 +46,32 @@ class TestHistoricalController(unittest.TestCase):
             google_chat_history_sync_service=self.mock_google_chat_service,
         )
 
+        # Mock async DB session + user identity service for middleware bootstrap
+        mock_session = MagicMock()
+        session_cm = MagicMock()
+        session_cm.__aenter__ = AsyncMock(return_value=mock_session)
+        session_cm.__aexit__ = AsyncMock(return_value=False)
+        begin_cm = MagicMock()
+        begin_cm.__aenter__ = AsyncMock(return_value=MagicMock())
+        begin_cm.__aexit__ = AsyncMock(return_value=False)
+        mock_session.begin = MagicMock(return_value=begin_cm)
+        self.mock_database = MagicMock()
+        self.mock_database.session = MagicMock(return_value=session_cm)
+        self.mock_user_identity_service = MagicMock()
+        self.mock_user_identity_service.find_user_by_sub = AsyncMock(
+            return_value=MagicMock(user_id=1)
+        )
+
         # Assemble FastAPI app
         self.app = FastAPI()
         # Add authentication middleware, otherwise requests will return 401
-        self.app.add_middleware(AuthMiddleware, auth_service=self.mock_auth_service)
+        self.app.add_middleware(
+            AuthMiddleware,
+            auth_service=self.mock_auth_service,
+            database=self.mock_database,
+            user_identity_service=self.mock_user_identity_service,
+            logger=MagicMock(),
+        )
         self.app.include_router(self.controller.router)
 
         self.client = TestClient(self.app)

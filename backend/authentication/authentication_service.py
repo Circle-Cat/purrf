@@ -14,7 +14,7 @@ from backend.common.environment_constants import (
     GOOGLE_AUDIENCE,
 )
 from backend.dto.user_context_dto import UserContextDto
-from backend.common.user_role import UserRole, SUPER_ADMIN_ROLES
+from backend.common.user_role import UserRole, SUPER_ADMIN_ROLES, IdentityType
 
 
 class AuthenticationService:
@@ -177,19 +177,31 @@ class AuthenticationService:
         roles = []
         email = ""
         sub = ""
+        last_login_at = None
+        first_name = ""
+        last_name = ""
+        identity_type = IdentityType.EXTERNAL
+        email_verified = False
 
         if "google" == source:
             # Google CronJob / Service Account
             roles.append(UserRole.CRON_RUNNER)
             email = payload.get("email")
             sub = payload.get("sub")
+            last_login_at = payload.get("iat")
+            identity_type = IdentityType.CRONJOB
 
         elif "cloudflare" == source:
             # Cloudflare User
             custom_claims = payload.get("custom", {})
             email = custom_claims.get("email", "")
-            raw_sub = custom_claims.get("sub", "")
+            sub = custom_claims.get("sub", "")
             upn = custom_claims.get("upn", "")
+            last_login_at = custom_claims.get("iat")
+            first_name = custom_claims.get("given_name", "")
+            last_name = custom_claims.get("family_name", "")
+            email_verified = custom_claims.get("email_verified", False)
+
             raw_role_claim = custom_claims.get("extn.purrf_role", [])
             role_claim = raw_role_claim
             # Azure directory extensions only support string values, so roles are stored as a
@@ -215,16 +227,19 @@ class AuthenticationService:
 
             if upn.endswith("@u.circlecat.org"):
                 roles.append(UserRole.CC_INTERNAL)
-                sub = f"azure|{raw_sub}"
                 email = upn
-            elif raw_sub.startswith("google-oauth2|") and email.endswith("@google.com"):
+            elif sub.startswith("google-oauth2|") and email.endswith("@google.com"):
                 roles.append(UserRole.CONTACT_GOOGLE_CHAT)
-                sub = f"auth0|{raw_sub}"
-            else:
-                sub = f"auth0|{raw_sub}"
 
             roles.append(UserRole.MENTORSHIP)
 
         return UserContextDto(
-            sub=sub, primary_email=email, roles=list(dict.fromkeys(roles))
+            sub=sub,
+            primary_email=email,
+            identity_type=identity_type,
+            last_login_at=last_login_at,
+            first_name=first_name,
+            last_name=last_name,
+            email_verified=email_verified,
+            roles=list(dict.fromkeys(roles)),
         )

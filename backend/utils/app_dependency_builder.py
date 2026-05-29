@@ -80,6 +80,8 @@ from backend.utils.fast_app_factory import FastAppFactory
 from backend.authentication.authentication_controller import AuthenticationController
 from backend.authentication.authentication_service import AuthenticationService
 from backend.repository.users_repository import UsersRepository
+from backend.repository.user_identities_repository import UserIdentitiesRepository
+from backend.repository.user_emails_repository import UserEmailsRepository
 from backend.repository.experience_repository import ExperienceRepository
 from backend.repository.training_repository import TrainingRepository
 from backend.repository.mentorship_round_repository import MentorshipRoundRepository
@@ -375,9 +377,14 @@ class AppDependencyBuilder:
             launchdarkly_service=self.launchdarkly_service,
         )
         self.users_repository = UsersRepository()
+        self.user_identities_repository = UserIdentitiesRepository()
+        self.user_emails_repository = UserEmailsRepository()
         self.training_repository = TrainingRepository()
         self.user_identity_service = UserIdentityService(
-            logger=self.logger, users_repository=self.users_repository
+            logger=self.logger,
+            users_repository=self.users_repository,
+            user_identities_repository=self.user_identities_repository,
+            user_emails_repository=self.user_emails_repository,
         )
         self.authentication_service = AuthenticationService(logger=self.logger)
         self.authentication_controller = AuthenticationController()
@@ -401,7 +408,6 @@ class AppDependencyBuilder:
             mentorship_round_participants_repo=self.mentorship_round_participants_repo,
             mentorship_round_repository=self.mentorship_round_repository,
             mentorship_mapper=self.mentorship_mapper,
-            user_identity_service=self.user_identity_service,
         )
         self.registration_service = RegistrationService(
             logger=self.logger,
@@ -409,7 +415,6 @@ class AppDependencyBuilder:
             mentorship_round_repository=self.mentorship_round_repository,
             mentorship_round_participants_repository=self.mentorship_round_participants_repo,
             participation_service=self.participation_service,
-            user_identity_service=self.user_identity_service,
             mentorship_mapper=self.mentorship_mapper,
             training_repository=self.training_repository,
         )
@@ -417,7 +422,7 @@ class AppDependencyBuilder:
             logger=self.logger,
             mentorship_pairs_repository=self.mentorship_pairs_repository,
             mentorship_mapper=self.mentorship_mapper,
-            user_identity_service=self.user_identity_service,
+            users_repository=self.users_repository,
             google_service=self.google_service,
         )
         self.meet_attendance_service = MeetAttendanceService(
@@ -439,7 +444,7 @@ class AppDependencyBuilder:
         self.experience_repository = ExperienceRepository()
         self.profile_mapper = ProfileMapper()
         self.profile_query_service = ProfileQueryService(
-            user_identity_service=self.user_identity_service,
+            users_repository=self.users_repository,
             experience_repository=self.experience_repository,
             training_repository=self.training_repository,
             profile_mapper=self.profile_mapper,
@@ -452,7 +457,7 @@ class AppDependencyBuilder:
         self.profile_service = ProfileService(
             query_service=self.profile_query_service,
             command_service=self.profile_command_service,
-            user_identity_service=self.user_identity_service,
+            users_repository=self.users_repository,
         )
         self.profile_controller = ProfileController(
             profile_service=self.profile_service,
@@ -461,6 +466,7 @@ class AppDependencyBuilder:
         self.fast_app_factory = FastAppFactory(
             authentication_controller=self.authentication_controller,
             authentication_service=self.authentication_service,
+            user_identity_service=self.user_identity_service,
             notification_controller=self.notification_controller,
             historical_controller=self.historical_controller,
             consumer_controller=self.consumer_controller,
@@ -469,4 +475,5 @@ class AppDependencyBuilder:
             mentorship_controller=self.mentorship_controller,
             launchdarkly_client=self.launchdarkly_client,
             database=self.database,
+            logger=self.logger,
         )

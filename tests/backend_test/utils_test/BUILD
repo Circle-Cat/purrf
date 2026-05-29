@@ -56,8 +56,11 @@ py_test(
     name = "auth_middleware_test",
     srcs = ["auth_middleware_test.py"],
     deps = [
+        "//backend/common:user_role",
         "//backend/utils:auth_middleware",
         "@pypi//httpx",
+        "@pypi//sqlalchemy",
+        "@pypi//starlette",
     ],
 )
 

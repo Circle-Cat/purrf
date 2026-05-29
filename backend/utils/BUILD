@@ -50,7 +50,9 @@ py_library(
     ],
     deps = [
         "//backend/common:fast_api_response_wrapper",
+        "//backend/common:user_role",
         "@pypi//fastapi",
+        "@pypi//sqlalchemy",
     ],
 )
 

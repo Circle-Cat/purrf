@@ -24,7 +24,6 @@ class ParticipationService:
         mentorship_round_participants_repo,
         mentorship_round_repository,
         mentorship_mapper,
-        user_identity_service,
     ):
         """
         Initializes the ParticipationService with required dependencies.
@@ -41,8 +40,6 @@ class ParticipationService:
                 The repository for accessing mentorship round entity data.
             mentorship_mapper (MentorshipMapper):
                 The mapper for converting mentorship rounds and entities to DTOs.
-            user_identity_service (UserIdentityService):
-                The service for resolving the user ID from the subject identifier.
         """
         self.logger = logger
         self.users_repository = users_repository
@@ -50,7 +47,6 @@ class ParticipationService:
         self.mentorship_round_participants_repo = mentorship_round_participants_repo
         self.mentorship_round_repository = mentorship_round_repository
         self.mentorship_mapper = mentorship_mapper
-        self.user_identity_service = user_identity_service
 
     async def _get_partners_info(
         self, session: AsyncSession, partners_id_list: list[int]
@@ -139,14 +135,7 @@ class ParticipationService:
             list[PartnerDto]: A list of PartnerDto objects representing the matched users,
                             or an empty list if no users are found.
         """
-        (current_user, should_commit) = await self.user_identity_service.get_user(
-            session=session, user_info=user_context
-        )
-
-        if should_commit:
-            await session.commit()
-
-        current_user_id = current_user.user_id
+        current_user_id = user_context.user_id
 
         if round_id:
             partner_ids = await self.mentorship_pairs_repository.get_partner_ids_by_user_and_round(
@@ -252,12 +241,7 @@ class ParticipationService:
                 - current_status: The user's match status for the round.
                 - partners: A list of PartnerDto objects representing matched partners.
         """
-        current_user, should_commit = await self.user_identity_service.get_user(
-            session=session, user_info=user_context
-        )
-        if should_commit:
-            await session.commit()
-        uid = current_user.user_id
+        uid = user_context.user_id
 
         participant = (
             await self.mentorship_round_participants_repo.get_by_user_id_and_round_id(
@@ -324,26 +308,21 @@ class ParticipationService:
         Raises:
             ValueError: If the user has no participant record for this round.
         """
-        current_user, should_commit = await self.user_identity_service.get_user(
-            session=session, user_info=user_context
-        )
-        if should_commit:
-            await session.commit()
 
         self.logger.debug(
             "[ParticipationService] fetching program_feedback for user_id=%s, round_id=%s",
-            current_user.user_id,
+            user_context.user_id,
             round_id,
         )
         participant = (
             await self.mentorship_round_participants_repo.get_by_user_id_and_round_id(
-                session=session, user_id=current_user.user_id, round_id=round_id
+                session=session, user_id=user_context.user_id, round_id=round_id
             )
         )
         if not participant:
             self.logger.error(
                 "[ParticipationService] no participant record for user_id=%s, round_id=%s",
-                current_user.user_id,
+                user_context.user_id,
                 round_id,
             )
             raise ValueError(
@@ -358,7 +337,7 @@ class ParticipationService:
         has_submitted = isinstance(raw, dict)
         self.logger.debug(
             "[ParticipationService] program_feedback retrieved for user_id=%s, round_id=%s, has_submitted=%s",
-            current_user.user_id,
+            user_context.user_id,
             round_id,
             has_submitted,
         )
@@ -395,28 +374,25 @@ class ParticipationService:
         Raises:
             ValueError: If the user has no participant record for this round.
         """
-        current_user, _ = await self.user_identity_service.get_user(
-            session=session, user_info=user_context
-        )
 
         self.logger.debug(
             "[ParticipationService] upserting program_feedback for user_id=%s, round_id=%s",
-            current_user.user_id,
+            user_context.user_id,
             round_id,
         )
         participant = (
             await self.mentorship_round_participants_repo.get_by_user_id_and_round_id(
-                session=session, user_id=current_user.user_id, round_id=round_id
+                session=session, user_id=user_context.user_id, round_id=round_id
             )
         )
         if not participant:
             self.logger.error(
                 "[ParticipationService] no participant record for user_id=%s, round_id=%s",
-                current_user.user_id,
+                user_context.user_id,
                 round_id,
             )
             raise ValueError(
-                f"No participant record found for user_id={current_user.user_id}, round_id={round_id}."
+                f"No participant record found for user_id={user_context.user_id}, round_id={round_id}."
             )
 
         participant.program_feedback = feedback_data.model_dump(
@@ -433,7 +409,7 @@ class ParticipationService:
         await session.commit()
         self.logger.info(
             "[ParticipationService] program_feedback saved for user_id=%s, round_id=%s",
-            current_user.user_id,
+            user_context.user_id,
             round_id,
         )
 

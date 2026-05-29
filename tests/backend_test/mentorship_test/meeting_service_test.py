@@ -24,8 +24,8 @@ class TestMeetingServiceV1(unittest.IsolatedAsyncioTestCase):
         self.mock_pairs_repo.upsert_pairs = AsyncMock()
 
         self.mock_mapper = MagicMock()
-        self.mock_identity_service = MagicMock()
-        self.mock_identity_service.get_user = AsyncMock()
+        self.mock_users_repo = MagicMock()
+        self.mock_users_repo.get_user_by_user_id = AsyncMock()
         self.mock_session = AsyncMock()
 
         self.mock_google_service = MagicMock()
@@ -34,20 +34,22 @@ class TestMeetingServiceV1(unittest.IsolatedAsyncioTestCase):
             logger=self.mock_logger,
             mentorship_pairs_repository=self.mock_pairs_repo,
             mentorship_mapper=self.mock_mapper,
-            user_identity_service=self.mock_identity_service,
+            users_repository=self.mock_users_repo,
             google_service=self.mock_google_service,
         )
 
         self.user_id = 1
         self.round_id = 10
         self.partner_id = 100
-        self.user_context = MagicMock(spec=UserContextDto, sub="sub-123")
+        self.user_context = MagicMock(
+            spec=UserContextDto,
+            sub="sub-123",
+            user_id=self.user_id,
+            identity_type="external",
+        )
         self.mock_current_user = MagicMock(spec=UsersEntity, user_id=self.user_id)
         self.mock_current_user.timezone = "America/New_York"
-        self.mock_identity_service.get_user.return_value = (
-            self.mock_current_user,
-            False,
-        )
+        self.mock_users_repo.get_user_by_user_id.return_value = self.mock_current_user
 
         self.mock_pair_entity = MagicMock(
             spec=MentorshipPairsEntity,
@@ -161,8 +163,8 @@ class TestMeetingServiceV1(unittest.IsolatedAsyncioTestCase):
 class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.mock_logger = MagicMock()
-        self.mock_user_identity_service = MagicMock()
-        self.mock_user_identity_service.get_user = AsyncMock()
+        self.mock_users_repository = MagicMock()
+        self.mock_users_repository.get_user_by_user_id = AsyncMock()
         self.mock_google_service = MagicMock()
         self.mock_mentorship_pairs_repository = MagicMock()
         self.mock_mentorship_pairs_repository.get_pair_with_partner_by_round_and_users_and_status = AsyncMock()
@@ -174,7 +176,7 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
             logger=self.mock_logger,
             mentorship_pairs_repository=self.mock_mentorship_pairs_repository,
             mentorship_mapper=MagicMock(),
-            user_identity_service=self.mock_user_identity_service,
+            users_repository=self.mock_users_repository,
             google_service=self.mock_google_service,
         )
 
@@ -190,9 +192,8 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
         self.mock_partner.first_name = "Bob"
         self.mock_partner.primary_email = "bob@example.com"
 
-        self.mock_user_identity_service.get_user.return_value = (
-            self.mock_current_user,
-            None,
+        self.mock_users_repository.get_user_by_user_id.return_value = (
+            self.mock_current_user
         )
 
         self.google_result = {
@@ -221,7 +222,11 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
             self.mock_partner,
         )
 
-        self.user_context = MagicMock(spec=UserContextDto)
+        self.user_context = MagicMock(
+            spec=UserContextDto,
+            user_id=1,
+            identity_type="external",
+        )
         self.start_dt = datetime(2026, 3, 20, 10, 0, tzinfo=timezone.utc)
         self.end_dt = datetime(2026, 3, 20, 11, 0, tzinfo=timezone.utc)
 
@@ -234,7 +239,7 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
             logger=self.mock_logger,
             mentorship_pairs_repository=self.mock_pairs_repo,
             mentorship_mapper=self.mock_mapper,
-            user_identity_service=self.mock_user_identity_service,
+            users_repository=self.mock_users_repository,
             google_service=self.mock_google_service,
         )
 
@@ -264,9 +269,8 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
             },
         )
 
-        self.mock_user_identity_service.get_user.return_value = (
-            self.mock_current_user,
-            False,
+        self.mock_users_repository.get_user_by_user_id.return_value = (
+            self.mock_current_user
         )
 
     @patch("backend.mentorship.meeting_service.uuid")

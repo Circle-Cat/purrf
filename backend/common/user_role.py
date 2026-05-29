@@ -40,3 +40,20 @@ SUPER_ADMIN_ROLES: list["UserRole"] = [
     UserRole.CONTACT_GOOGLE_CHAT,
     UserRole.CRON_RUNNER,
 ]
+
+
+class IdentityType(str, Enum):
+    """
+    Identity source bucket on UserContextDto / user_identities.identity_type,
+    set by the auth layer alongside roles.
+
+    EXTERNAL  - default for Cloudflare-authenticated users
+    CRONJOB   - Google service accounts; the middleware skips first-login
+                bootstrap for these
+    INTERNAL  - reserved for the internal/external policy split;
+                not populated yet
+    """
+
+    EXTERNAL = "external"
+    CRONJOB = "cronjob"
+    INTERNAL = "internal"

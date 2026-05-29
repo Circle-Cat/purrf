@@ -20,7 +20,7 @@ class ProfileService:
         self,
         query_service,
         command_service,
-        user_identity_service,
+        users_repository,
     ):
         """
         Initialize the ProfileService with its dependencies.
@@ -28,11 +28,11 @@ class ProfileService:
         Args:
             query_service (ProfileQueryService): Service responsible for reading profile data from the database.
             command_service (ProfileCommandService): Service responsible for writing/updating profile data in the database.
-            user_identity_service (UserIdentityService): Service responsible for retrieving user identity information.
+            users_repository (UsersRepository): Repository handling UsersEntity.
         """
         self.query_service = query_service
         self.command_service = command_service
-        self.user_identity_service = user_identity_service
+        self.users_repository = users_repository
 
     async def get_profile(
         self,
@@ -60,16 +60,11 @@ class ProfileService:
             "include_education": ProfileField.EDUCATION in fields,
         }
 
-        profile, should_commit = await self.query_service.get_profile(
+        return await self.query_service.get_profile(
             session=session,
-            user_info=user_context,
+            user_context=user_context,
             **includes,
         )
-
-        if should_commit:
-            await session.commit()
-
-        return profile
 
     async def update_profile(
         self,
@@ -102,11 +97,8 @@ class ProfileService:
         Returns:
             ProfileDto: The updated user profile after all changes have been persisted.
         """
-        (
-            users_entity,
-            _,
-        ) = await self.user_identity_service.get_user(
-            session=session, user_info=user_context
+        users_entity = await self.users_repository.get_user_by_user_id(
+            session=session, user_id=user_context.user_id
         )
 
         if profile.user:
@@ -124,9 +116,9 @@ class ProfileService:
                 session=session, latest_profile=profile, user_id=users_entity.user_id
             )
 
-        updated_profile, _ = await self.query_service.get_profile(
+        updated_profile = await self.query_service.get_profile(
             session=session,
-            user_info=user_context,
+            user_context=user_context,
             include_training=True,
             include_work_history=True,
             include_education=True,

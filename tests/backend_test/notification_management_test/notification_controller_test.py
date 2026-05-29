@@ -30,11 +30,33 @@ class TestNotificationIntegration(unittest.TestCase):
             google_chat_subscription_service=self.google_service,
         )
 
+        # Mock async DB session + user identity service for middleware bootstrap
+        mock_session = MagicMock()
+        session_cm = MagicMock()
+        session_cm.__aenter__ = AsyncMock(return_value=mock_session)
+        session_cm.__aexit__ = AsyncMock(return_value=False)
+        begin_cm = MagicMock()
+        begin_cm.__aenter__ = AsyncMock(return_value=MagicMock())
+        begin_cm.__aexit__ = AsyncMock(return_value=False)
+        mock_session.begin = MagicMock(return_value=begin_cm)
+        self.mock_database = MagicMock()
+        self.mock_database.session = MagicMock(return_value=session_cm)
+        self.mock_user_identity_service = MagicMock()
+        self.mock_user_identity_service.find_user_by_sub = AsyncMock(
+            return_value=MagicMock(user_id=1)
+        )
+
         # Assemble the FastAPI app
         self.app = FastAPI()
 
         # Add the real authentication middleware
-        self.app.add_middleware(AuthMiddleware, auth_service=self.mock_auth_service)
+        self.app.add_middleware(
+            AuthMiddleware,
+            auth_service=self.mock_auth_service,
+            database=self.mock_database,
+            user_identity_service=self.mock_user_identity_service,
+            logger=MagicMock(),
+        )
 
         # Include routes from the controller
         self.app.include_router(self.controller.router)
