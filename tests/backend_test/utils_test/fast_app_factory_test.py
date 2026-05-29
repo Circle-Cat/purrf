@@ -15,6 +15,7 @@ class TestFastAppFactory(unittest.TestCase):
         self.factory = FastAppFactory(
             authentication_controller=self.mock_controller,
             authentication_service=self.mock_service,
+            user_identity_service=MagicMock(),
             notification_controller=self.mock_controller,
             historical_controller=self.mock_controller,
             consumer_controller=self.mock_controller,
@@ -23,6 +24,7 @@ class TestFastAppFactory(unittest.TestCase):
             mentorship_controller=self.mock_controller,
             launchdarkly_client=MagicMock(),
             database=MagicMock(),
+            logger=MagicMock(),
         )
 
     def test_factory_initialization(self):
@@ -83,6 +85,7 @@ class TestFastAppFactoryLifespan(unittest.IsolatedAsyncioTestCase):
         self.factory = FastAppFactory(
             authentication_controller=self.mock_controller,
             authentication_service=self.mock_service,
+            user_identity_service=MagicMock(),
             notification_controller=self.mock_controller,
             historical_controller=self.mock_controller,
             consumer_controller=self.mock_controller,
@@ -91,6 +94,7 @@ class TestFastAppFactoryLifespan(unittest.IsolatedAsyncioTestCase):
             mentorship_controller=self.mock_controller,
             launchdarkly_client=self.mock_launchdarkly_client,
             database=self.mock_database,
+            logger=MagicMock(),
         )
 
     async def test_lifespan_closes_database_on_shutdown(self):

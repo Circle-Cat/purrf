@@ -48,9 +48,6 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
         self.mock_mapper = MagicMock()
         self.logger = MagicMock()
 
-        self.mock_identity_service = MagicMock()
-        self.mock_identity_service.get_user = AsyncMock()
-
         self.participation_service = ParticipationService(
             logger=self.logger,
             users_repository=self.mock_users_repo,
@@ -58,7 +55,6 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
             mentorship_round_participants_repo=self.mock_round_participants_repo,
             mentorship_round_repository=self.mock_round_repo,
             mentorship_mapper=self.mock_mapper,
-            user_identity_service=self.mock_identity_service,
         )
 
         self.mock_users_entities = [
@@ -76,20 +72,16 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
         ]
         self.mock_specific_partner_dto = [MagicMock(spec=PartnerDto, id=456)]
 
-        self.user_context = MagicMock(spec=UserContextDto, sub=str(uuid.uuid4()))
-
-        self.mock_current_user = MagicMock(
-            spec=UsersEntity, user_id=123, subject_identifier=self.user_context.sub
+        self.user_context = MagicMock(
+            spec=UserContextDto,
+            sub=str(uuid.uuid4()),
+            identity_type="internal",
+            user_id=123,
         )
 
     async def test_get_partners_for_user_full(self):
         """Test retrieve and map partners for a user with user context and round id."""
         mock_round_id = 1
-
-        self.mock_identity_service.get_user.return_value = (
-            self.mock_current_user,
-            False,
-        )
 
         self.mock_pairs_repo.get_partner_ids_by_user_and_round.return_value = (
             self.mock_specific_round_partner_ids
@@ -110,7 +102,7 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, self.mock_specific_partner_dto)
         self.mock_pairs_repo.get_partner_ids_by_user_and_round.assert_awaited_once_with(
             session=self.mock_session,
-            user_id=self.mock_current_user.user_id,
+            user_id=self.user_context.user_id,
             round_id=mock_round_id,
         )
 
@@ -122,11 +114,6 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
 
     async def test_get_partners_for_user_without_round_id(self):
         """Test retrieve and map partners for a user without round id."""
-        self.mock_identity_service.get_user.return_value = (
-            self.mock_current_user,
-            False,
-        )
-
         self.mock_pairs_repo.get_all_partner_ids.return_value = (
             self.mock_all_round_partner_ids
         )
@@ -141,7 +128,7 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, self.mock_partner_dtos)
 
         self.mock_pairs_repo.get_all_partner_ids.assert_awaited_once_with(
-            session=self.mock_session, user_id=self.mock_current_user.user_id
+            session=self.mock_session, user_id=self.user_context.user_id
         )
         self.mock_pairs_repo.get_partner_ids_by_user_and_round.assert_not_awaited()
 
@@ -153,10 +140,6 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
 
     async def test_get_partners_for_user_no_partners_found(self):
         """Test returns empty list when user exists but has no partners."""
-        self.mock_identity_service.get_user.return_value = (
-            self.mock_current_user,
-            False,
-        )
         self.mock_pairs_repo.get_all_partner_ids.return_value = []
 
         result = await self.participation_service.get_partners_for_user(
@@ -167,31 +150,8 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
         self.mock_session.commit.assert_not_awaited()
         self.mock_users_repo.get_all_by_ids.assert_not_awaited()
 
-    async def test_get_partners_for_user_commit_transaction_when_indicated(self):
-        """Test when user identity service indicates a commit is needed (should_commit is True)."""
-        self.mock_identity_service.get_user.return_value = (
-            self.mock_current_user,
-            True,
-        )
-
-        self.mock_pairs_repo.get_all_partner_ids.return_value = []
-
-        await self.participation_service.get_partners_for_user(
-            session=self.mock_session, user_context=self.user_context
-        )
-
-        self.mock_session.commit.assert_awaited_once()
-        self.mock_pairs_repo.get_all_partner_ids.assert_awaited_once_with(
-            session=self.mock_session, user_id=self.mock_current_user.user_id
-        )
-
     async def test_resolve_role_from_most_recent_participation(self):
         """Uses the role from the most recent participant when the user has prior participation."""
-        self.mock_identity_service.get_user.return_value = (
-            self.mock_current_user,
-            False,
-        )
-
         mock_recent = MagicMock(
             spec=MentorshipRoundParticipantsEntity,
             participant_role=ParticipantRole.MENTOR,
@@ -201,12 +161,12 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
         role = await self.participation_service.resolve_participant_role_with_fallback(
             session=self.mock_session,
             user_context=self.user_context,
-            user_id=self.mock_current_user.user_id,
+            user_id=self.user_context.user_id,
         )
 
         self.assertEqual(role, ParticipantRole.MENTOR)
         self.mock_round_participants_repo.get_recent_participant_by_user_id.assert_awaited_once_with(
-            session=self.mock_session, user_id=self.mock_current_user.user_id
+            session=self.mock_session, user_id=self.user_context.user_id
         )
 
     async def test_infers_mentor_role_from_user_permissions(self):
@@ -219,17 +179,13 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
         role = await self.participation_service.resolve_participant_role_with_fallback(
             session=self.mock_session,
             user_context=self.user_context,
-            user_id=self.mock_current_user.user_id,
+            user_id=self.user_context.user_id,
         )
 
         self.assertEqual(role, ParticipantRole.MENTOR)
 
     async def test_infers_mentee_role_from_user_permissions(self):
         """Uses mentee role if user has neither participation history nor mentor permission."""
-        self.mock_identity_service.get_user.return_value = (
-            self.mock_current_user,
-            False,
-        )
         self.mock_round_participants_repo.get_recent_participant_by_user_id.return_value = None
         self.user_context.has_role.side_effect = (
             lambda role: role == UserRole.MENTORSHIP
@@ -238,7 +194,7 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
         role = await self.participation_service.resolve_participant_role_with_fallback(
             session=self.mock_session,
             user_context=self.user_context,
-            user_id=self.mock_current_user.user_id,
+            user_id=self.user_context.user_id,
         )
 
         self.assertEqual(role, ParticipantRole.MENTEE)
@@ -267,7 +223,7 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
         ) = await self.participation_service.get_user_round_preferences(
             session=self.mock_session,
             user_context=self.user_context,
-            user_id=self.mock_current_user.user_id,
+            user_id=self.user_context.user_id,
             round_id=mock_round_id,
         )
 
@@ -277,7 +233,7 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
 
         self.mock_round_participants_repo.get_by_user_id_and_round_id.assert_awaited_once_with(
             session=self.mock_session,
-            user_id=self.mock_current_user.user_id,
+            user_id=self.user_context.user_id,
             round_id=mock_round_id,
         )
         self.mock_mapper.map_to_round_preference_dto.assert_called_once_with(
@@ -308,7 +264,7 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
         ) = await self.participation_service.get_user_round_preferences(
             session=self.mock_session,
             user_context=self.user_context,
-            user_id=self.mock_current_user.user_id,
+            user_id=self.user_context.user_id,
             round_id=mock_round_id,
         )
 
@@ -336,7 +292,7 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
         ) = await self.participation_service.get_user_round_preferences(
             session=self.mock_session,
             user_context=self.user_context,
-            user_id=self.mock_current_user.user_id,
+            user_id=self.user_context.user_id,
             round_id=mock_round_id,
         )
 
@@ -350,10 +306,6 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
     async def test_get_my_match_result_unregistered(self):
         """Test result when user has not registered for the round."""
         mock_round_id = 1
-        self.mock_identity_service.get_user.return_value = (
-            self.mock_current_user,
-            False,
-        )
         # Mock participant as None
         self.mock_round_participants_repo.get_by_user_id_and_round_id.return_value = (
             None
@@ -372,10 +324,6 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
     async def test_get_my_match_result_not_matched_status(self):
         """Test result when user is registered but status is not MATCHED (e.g., REJECTED)."""
         mock_round_id = 1
-        self.mock_identity_service.get_user.return_value = (
-            self.mock_current_user,
-            False,
-        )
 
         # Mock participant with REJECTED status
         mock_participant = MagicMock(spec=MentorshipRoundParticipantsEntity)
@@ -398,10 +346,6 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
     async def test_get_my_match_result_success(self):
         """Test successful match result including partner DTO construction."""
         mock_round_id = 1
-        self.mock_identity_service.get_user.return_value = (
-            self.mock_current_user,
-            False,
-        )
 
         # Mock participant status as MATCHED
         mock_participant = MagicMock(spec=MentorshipRoundParticipantsEntity)
@@ -461,32 +405,9 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(partner_b.participant_role, ParticipantRole.MENTOR)
         self.assertEqual(partner_b.recommendation_reason, "Guidance")
 
-    async def test_get_my_match_result_commit_on_identity_change(self):
-        """Test that session commits if user_identity_service indicates should_commit."""
-        mock_round_id = 1
-        self.mock_identity_service.get_user.return_value = (
-            self.mock_current_user,
-            True,
-        )
-        self.mock_round_participants_repo.get_by_user_id_and_round_id.return_value = (
-            None
-        )
-
-        await self.participation_service.get_my_match_result_by_round_id(
-            session=self.mock_session,
-            user_context=self.user_context,
-            round_id=mock_round_id,
-        )
-
-        self.mock_session.commit.assert_awaited_once()
-
     async def test_get_program_feedback_with_existing_submission(self):
         """Returns has_submitted=True and populates fields when feedback dict exists."""
         mock_round_id = 1
-        self.mock_identity_service.get_user.return_value = (
-            self.mock_current_user,
-            False,
-        )
 
         mock_participant = MagicMock(spec=MentorshipRoundParticipantsEntity)
         mock_participant.participant_role = ParticipantRole.MENTEE
@@ -517,10 +438,6 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
     async def test_get_program_feedback_without_submission(self):
         """Returns has_submitted=False and None fields when program_feedback is not a dict."""
         mock_round_id = 1
-        self.mock_identity_service.get_user.return_value = (
-            self.mock_current_user,
-            False,
-        )
 
         mock_participant = MagicMock(spec=MentorshipRoundParticipantsEntity)
         mock_participant.participant_role = ParticipantRole.MENTOR
@@ -542,10 +459,6 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
     async def test_get_program_feedback_raises_when_no_participant(self):
         """Raises ValueError and logs error when participant record does not exist."""
         mock_round_id = 1
-        self.mock_identity_service.get_user.return_value = (
-            self.mock_current_user,
-            False,
-        )
         self.mock_round_participants_repo.get_by_user_id_and_round_id.return_value = (
             None
         )
@@ -559,40 +472,13 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
 
         self.logger.error.assert_called_once_with(
             "[ParticipationService] no participant record for user_id=%s, round_id=%s",
-            self.mock_current_user.user_id,
+            self.user_context.user_id,
             mock_round_id,
         )
-
-    async def test_get_program_feedback_commits_when_indicated(self):
-        """Commits session when user_identity_service signals should_commit."""
-        mock_round_id = 1
-        self.mock_identity_service.get_user.return_value = (
-            self.mock_current_user,
-            True,
-        )
-
-        mock_participant = MagicMock(spec=MentorshipRoundParticipantsEntity)
-        mock_participant.participant_role = ParticipantRole.MENTEE
-        mock_participant.program_feedback = None
-        self.mock_round_participants_repo.get_by_user_id_and_round_id.return_value = (
-            mock_participant
-        )
-
-        await self.participation_service.get_program_feedback(
-            session=self.mock_session,
-            user_context=self.user_context,
-            round_id=mock_round_id,
-        )
-
-        self.mock_session.commit.assert_awaited_once()
 
     async def test_upsert_program_feedback_saves_and_returns_dto(self):
         """Persists feedback and returns FeedbackDto with has_submitted=True."""
         mock_round_id = 1
-        self.mock_identity_service.get_user.return_value = (
-            self.mock_current_user,
-            False,
-        )
 
         mock_participant = MagicMock(spec=MentorshipRoundParticipantsEntity)
         mock_participant.participant_role = ParticipantRole.MENTEE
@@ -634,17 +520,13 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
         self.mock_session.commit.assert_awaited_once()
         self.logger.info.assert_called_once_with(
             "[ParticipationService] program_feedback saved for user_id=%s, round_id=%s",
-            self.mock_current_user.user_id,
+            self.user_context.user_id,
             mock_round_id,
         )
 
     async def test_upsert_program_feedback_raises_when_no_participant(self):
         """Raises ValueError and logs error when participant record does not exist."""
         mock_round_id = 1
-        self.mock_identity_service.get_user.return_value = (
-            self.mock_current_user,
-            False,
-        )
         self.mock_round_participants_repo.get_by_user_id_and_round_id.return_value = (
             None
         )
@@ -663,17 +545,13 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
         self.mock_session.commit.assert_not_awaited()
         self.logger.error.assert_called_once_with(
             "[ParticipationService] no participant record for user_id=%s, round_id=%s",
-            self.mock_current_user.user_id,
+            self.user_context.user_id,
             mock_round_id,
         )
 
     async def test_upsert_program_feedback_updates_mentor_average_score(self):
         """Calls update_mentor_average_score when participant role is MENTOR."""
         mock_round_id = 1
-        self.mock_identity_service.get_user.return_value = (
-            self.mock_current_user,
-            False,
-        )
 
         mock_participant = MagicMock(spec=MentorshipRoundParticipantsEntity)
         mock_participant.participant_role = ParticipantRole.MENTOR

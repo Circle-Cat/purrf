@@ -151,7 +151,7 @@ class TestAuthenticationService(unittest.TestCase):
         Cloudflare should always take priority.
         """
         headers = Headers({"Cf-Access-Jwt-Assertion": "cf_token"})
-        expected = UserContextDto("sub", "mail", [])
+        expected = UserContextDto("sub", "mail", "external", roles=[])
         mock_verify_cf.return_value = expected
 
         result = self.auth_service.authenticate_request(headers)
@@ -167,7 +167,7 @@ class TestAuthenticationService(unittest.TestCase):
         Test: When Cloudflare token is absent, fallback to Google verification.
         """
         headers = Headers({"Authorization": "Bearer google_token"})
-        expected = UserContextDto("sub", "mail", [])
+        expected = UserContextDto("sub", "mail", "external", roles=[])
         mock_verify_google.return_value = expected
 
         result = self.auth_service.authenticate_request(headers)
@@ -244,38 +244,80 @@ class TestAuthenticationService(unittest.TestCase):
         """
         Test: Cloudflare role-building logic.
         """
-        # Case 1: Internal User
+        # Case 1: CC-internal upn user. identity_type defaults to "external"
+        # for all Cloudflare users (internal/external policy deferred).
         payload = {
             "custom": {
                 "upn": "dev@u.circlecat.org",
-                "sub": "abc",
+                "sub": "azure|abc",
+                "hd": "circlecat.org",
+                "iat": 1700000000,
                 "extn.purrf_role": ["manager"],
             }
         }
         context = self.auth_service._build_context(payload, "cloudflare")
         self.assertIn(UserRole.CC_INTERNAL, context.roles)
         self.assertIn(UserRole.MANAGER, context.roles)
+        self.assertIn(UserRole.MENTORSHIP, context.roles)
+        # Raw Auth0 sub is used directly; no source prefix is added.
         self.assertEqual(context.sub, "azure|abc")
         self.assertEqual(context.primary_email, "dev@u.circlecat.org")
+        self.assertEqual(context.identity_type, "external")
+        self.assertEqual(context.last_login_at, 1700000000)
 
-        # Case 2: External user
-        payload = {"custom": {"sub": "google-oauth2|123", "email": "hi@google.com"}}
+        # Case 2: External user (no hd claim) with Google Chat contact
+        payload = {
+            "custom": {
+                "sub": "google-oauth2|123",
+                "email": "hi@google.com",
+                "iat": 1700000001,
+            }
+        }
         context = self.auth_service._build_context(payload, "cloudflare")
         self.assertIn(UserRole.CONTACT_GOOGLE_CHAT, context.roles)
-        self.assertEqual(context.sub, "auth0|google-oauth2|123")
+        self.assertIn(UserRole.MENTORSHIP, context.roles)
+        self.assertEqual(context.sub, "google-oauth2|123")
+        self.assertEqual(context.identity_type, "external")
+        self.assertEqual(context.last_login_at, 1700000001)
 
         # Case 3: Azure directory extension — roles stored as a JSON-encoded string because
         # Azure extension fields only support strings; Cloudflare wraps it in an outer array.
         payload = {
             "custom": {
                 "upn": "dev@u.circlecat.org",
-                "sub": "abc",
+                "sub": "azure|abc",
                 "extn.purrf_role": ['["mentorshipAdmin","manager"]'],
             }
         }
         context = self.auth_service._build_context(payload, "cloudflare")
         self.assertIn(UserRole.MANAGER, context.roles)
         self.assertIn(UserRole.MENTORSHIP_ADMIN, context.roles)
+
+        # Case 4: custom.iat absent -> last_login_at is None
+        payload = {"custom": {"sub": "email|xyz", "email": "user@example.com"}}
+        context = self.auth_service._build_context(payload, "cloudflare")
+        self.assertIsNone(context.last_login_at)
+        self.assertEqual(context.identity_type, "external")
+        self.assertEqual(context.sub, "email|xyz")
+
+    def test_build_context_google_cron(self):
+        """
+        Test: Google cron / service account context-building.
+
+        Ensures identity_type is "cronjob", last_login_at comes from the
+        top-level payload iat, and the CRON_RUNNER role is assigned.
+        """
+        payload = {
+            "email": "cron@test.com",
+            "sub": "service-account|999",
+            "iat": 1700000002,
+        }
+        context = self.auth_service._build_context(payload, "google")
+        self.assertIn(UserRole.CRON_RUNNER, context.roles)
+        self.assertEqual(context.sub, "service-account|999")
+        self.assertEqual(context.primary_email, "cron@test.com")
+        self.assertEqual(context.identity_type, "cronjob")
+        self.assertEqual(context.last_login_at, 1700000002)
 
 
 if __name__ == "__main__":

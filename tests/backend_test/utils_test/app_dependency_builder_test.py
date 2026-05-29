@@ -29,6 +29,8 @@ from backend.common.environment_constants import (
 @patch("backend.utils.app_dependency_builder.ProfileMapper")
 @patch("backend.utils.app_dependency_builder.TrainingRepository")
 @patch("backend.utils.app_dependency_builder.ExperienceRepository")
+@patch("backend.utils.app_dependency_builder.UserEmailsRepository")
+@patch("backend.utils.app_dependency_builder.UserIdentitiesRepository")
 @patch("backend.utils.app_dependency_builder.UsersRepository")
 @patch("backend.utils.app_dependency_builder.AuthenticationController")
 @patch("backend.utils.app_dependency_builder.AuthenticationService")
@@ -124,6 +126,8 @@ class TestAppDependencyBuilder(TestCase):
         mock_authentication_service_cls,
         mock_authentication_controller_cls,
         mock_users_repo_cls,
+        mock_user_identities_repo_cls,
+        mock_user_emails_repo_cls,
         mock_experience_repo_cls,
         mock_training_repo_cls,
         mock_profile_mapper_cls,
@@ -428,7 +432,7 @@ class TestAppDependencyBuilder(TestCase):
         mock_mentorship_mapper_cls.assert_called_once()
         mock_database_cls.assert_called_once()
         mock_profile_query_service_cls.assert_called_once_with(
-            user_identity_service=mock_user_identity_service_cls.return_value,
+            users_repository=mock_users_repo_cls.return_value,
             experience_repository=mock_experience_repo_cls.return_value,
             training_repository=mock_training_repo_cls.return_value,
             profile_mapper=mock_profile_mapper_cls.return_value,
@@ -439,12 +443,15 @@ class TestAppDependencyBuilder(TestCase):
             logger=mock_logger,
         )
         mock_user_identity_service_cls.assert_called_once_with(
-            logger=mock_logger, users_repository=mock_users_repo_cls.return_value
+            logger=mock_logger,
+            users_repository=mock_users_repo_cls.return_value,
+            user_identities_repository=mock_user_identities_repo_cls.return_value,
+            user_emails_repository=mock_user_emails_repo_cls.return_value,
         )
         mock_profile_service_cls.assert_called_once_with(
             query_service=mock_profile_query_service_cls.return_value,
             command_service=mock_profile_command_service_cls.return_value,
-            user_identity_service=mock_user_identity_service_cls.return_value,
+            users_repository=mock_users_repo_cls.return_value,
         )
         mock_profile_controller_cls.assert_called_once_with(
             profile_service=mock_profile_service_cls.return_value,
@@ -478,7 +485,6 @@ class TestAppDependencyBuilder(TestCase):
             mentorship_round_participants_repo=mock_mentorship_round_participants_repo_cls.return_value,
             mentorship_round_repository=mock_mentorship_round_repository_cls.return_value,
             mentorship_mapper=mock_mentorship_mapper_cls.return_value,
-            user_identity_service=mock_user_identity_service_cls.return_value,
         )
         mock_registration_service_cls.assert_called_once_with(
             logger=mock_logger,
@@ -486,7 +492,6 @@ class TestAppDependencyBuilder(TestCase):
             mentorship_round_repository=mock_mentorship_round_repository_cls.return_value,
             mentorship_round_participants_repository=mock_mentorship_round_participants_repo_cls.return_value,
             participation_service=mock_participation_service_cls.return_value,
-            user_identity_service=mock_user_identity_service_cls.return_value,
             mentorship_mapper=mock_mentorship_mapper_cls.return_value,
             training_repository=mock_training_repo_cls.return_value,
         )
@@ -494,13 +499,14 @@ class TestAppDependencyBuilder(TestCase):
             logger=mock_logger,
             mentorship_pairs_repository=mock_mentorship_pairs_repo_cls.return_value,
             mentorship_mapper=mock_mentorship_mapper_cls.return_value,
-            user_identity_service=mock_user_identity_service_cls.return_value,
+            users_repository=mock_users_repo_cls.return_value,
             google_service=mock_google_service.return_value,
         )
 
         mock_fast_app_factory_cls.assert_called_once_with(
             authentication_controller=mock_authentication_controller_cls.return_value,
             authentication_service=mock_authentication_service_cls.return_value,
+            user_identity_service=mock_user_identity_service_cls.return_value,
             notification_controller=mock_notification_controller.return_value,
             historical_controller=mock_historical_controller_cls.return_value,
             consumer_controller=mock_consumer_controller_cls.return_value,
@@ -509,6 +515,7 @@ class TestAppDependencyBuilder(TestCase):
             mentorship_controller=mock_mentorship_controller_cls.return_value,
             launchdarkly_client=mock_launchdarkly_client_cls.return_value,
             database=mock_database_cls.return_value,
+            logger=mock_logger,
         )
 
         # Assert that the builder's internal attributes are the created mock instances
@@ -566,7 +573,7 @@ class TestAppDependencyBuilder(TestCase):
         mock_profile_mapper_cls.assert_called_once()
 
         mock_profile_query_service_cls.assert_called_once_with(
-            user_identity_service=mock_user_identity_service_cls.return_value,
+            users_repository=mock_users_repo_cls.return_value,
             experience_repository=mock_experience_repo_cls.return_value,
             training_repository=mock_training_repo_cls.return_value,
             profile_mapper=mock_profile_mapper_cls.return_value,

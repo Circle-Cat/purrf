@@ -16,6 +16,7 @@ class FastAppFactory:
         self,
         authentication_controller,
         authentication_service,
+        user_identity_service,
         notification_controller,
         historical_controller,
         consumer_controller,
@@ -24,6 +25,7 @@ class FastAppFactory:
         mentorship_controller,
         launchdarkly_client,
         database,
+        logger,
     ):
         """
         Initialize the factory.
@@ -31,6 +33,7 @@ class FastAppFactory:
         Args:
             authentication_controller: Controller instance responsible for authentication routes.
             authentication_service: AuthenticationService instance used by middleware to validate requests.
+            user_identity_service: UserIdentityService used by middleware to bootstrap the internal user on first login.
             notification_controller: An instance of NotificationController that manages API routes for subscribe_microsoft_chat_messages and subscribe_google_chat_space.
             historical_controller: An instance of HistoricalController that manages API routes for sync historical data.
             consumer_controller: An instance of ConsumerController that manages API routes to trigger, check, or stop subscribers.
@@ -42,6 +45,7 @@ class FastAppFactory:
         """
         self.authentication_controller = authentication_controller
         self.authentication_service = authentication_service
+        self.user_identity_service = user_identity_service
         self.notification_controller = notification_controller
         self.historical_controller = historical_controller
         self.consumer_controller = consumer_controller
@@ -50,6 +54,7 @@ class FastAppFactory:
         self.mentorship_controller = mentorship_controller
         self.launchdarkly_client = launchdarkly_client
         self.database = database
+        self.logger = logger
 
     def create_app(self, is_prod: bool = False) -> FastAPI:
         """
@@ -100,7 +105,13 @@ class FastAppFactory:
         register_exception_handlers(app)
 
         # Add authentication middleware
-        app.add_middleware(AuthMiddleware, auth_service=self.authentication_service)
+        app.add_middleware(
+            AuthMiddleware,
+            auth_service=self.authentication_service,
+            database=self.database,
+            user_identity_service=self.user_identity_service,
+            logger=self.logger,
+        )
 
         # Include authentication routes
         app.include_router(self.authentication_controller.router, prefix="/api")
