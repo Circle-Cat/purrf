@@ -28,6 +28,7 @@ py_test(
     name = "fast_api_error_handler_test",
     srcs = ["fast_api_error_handler_test.py"],
     deps = [
+        "//backend/common:exceptions",
         "//backend/common:fast_api_error_handler",
         "@pypi//fastapi",
         "@pypi//httpx",

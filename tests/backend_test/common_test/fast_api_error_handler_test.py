@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
 
+from backend.common.exceptions import ConflictError, RateLimitedError
 from backend.common.fast_api_error_handler import register_exception_handlers
 
 # Constant definitions
@@ -12,6 +13,8 @@ VALUE_ERROR_MSG = "Invalid input"
 PERMISSION_ERROR_MSG = (
     "This feature is not yet available. Only internal users can access this feature."
 )
+CONFLICT_ERROR_MSG = "Email already verified by another account"
+RATE_LIMITED_ERROR_MSG = "Too many OTP attempts; try again later"
 RUNTIME_ERROR_MSG = "Service unavailable"
 UNEXPECTED_ERROR_MSG = "Unexpected fatal error"
 GENERIC_SERVER_ERROR_MSG = "Internal Server Error. Please contact support."
@@ -97,6 +100,36 @@ class TestFastAPIExceptionHandler(TestCase):
 
         self.assertEqual(response.status_code, HTTPStatus.FORBIDDEN)
         self.assertEqual(response.json().get(ERROR_KEY), PERMISSION_ERROR_MSG)
+        self.mock_logger.warning.assert_called_once()
+        self.mock_logger.error.assert_not_called()
+
+    def test_handle_conflict_error(self):
+        """409 Conflict: the raw error message should be shown and logged as warning."""
+        route = "/api/auth/conflict"
+
+        @self.app.get(route)
+        def trigger_error():
+            raise ConflictError(CONFLICT_ERROR_MSG)
+
+        response = self.client.get(route)
+
+        self.assertEqual(response.status_code, HTTPStatus.CONFLICT)
+        self.assertEqual(response.json().get(ERROR_KEY), CONFLICT_ERROR_MSG)
+        self.mock_logger.warning.assert_called_once()
+        self.mock_logger.error.assert_not_called()
+
+    def test_handle_rate_limited_error(self):
+        """429 Too Many Requests: the raw error message should be shown and logged as warning."""
+        route = "/api/auth/rate_limited"
+
+        @self.app.get(route)
+        def trigger_error():
+            raise RateLimitedError(RATE_LIMITED_ERROR_MSG)
+
+        response = self.client.get(route)
+
+        self.assertEqual(response.status_code, HTTPStatus.TOO_MANY_REQUESTS)
+        self.assertEqual(response.json().get(ERROR_KEY), RATE_LIMITED_ERROR_MSG)
         self.mock_logger.warning.assert_called_once()
         self.mock_logger.error.assert_not_called()
 

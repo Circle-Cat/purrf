@@ -1,4 +1,5 @@
 from http import HTTPStatus
+from backend.common.exceptions import ConflictError, RateLimitedError
 from backend.common.fast_api_response_wrapper import api_response
 from backend.common.logger import get_logger
 from fastapi import Request, FastAPI
@@ -18,6 +19,8 @@ async def global_exception_handler(request: Request, exc: Exception):
     # Exception-to-status mapping:
     #   ValueError / RequestValidationError → 400 Bad Request
     #   PermissionError                     → 403 Forbidden
+    #   ConflictError                       → 409 Conflict
+    #   RateLimitedError                    → 429 Too Many Requests
     #   RuntimeError                        → 503 Service Unavailable
     #   Everything else                     → 500 Internal Server Error
     match exc:
@@ -25,6 +28,10 @@ async def global_exception_handler(request: Request, exc: Exception):
             status = HTTPStatus.BAD_REQUEST
         case PermissionError():
             status = HTTPStatus.FORBIDDEN
+        case ConflictError():
+            status = HTTPStatus.CONFLICT
+        case RateLimitedError():
+            status = HTTPStatus.TOO_MANY_REQUESTS
         case RuntimeError():
             status = HTTPStatus.SERVICE_UNAVAILABLE
         case _:

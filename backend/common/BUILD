@@ -13,6 +13,11 @@ py_library(
 )
 
 py_library(
+    name = "exceptions",
+    srcs = ["exceptions.py"],
+)
+
+py_library(
     name = "logger",
     srcs = ["logger.py"],
     deps = [
@@ -66,6 +71,7 @@ py_library(
         "fast_api_error_handler.py",
     ],
     deps = [
+        ":exceptions",
         ":fast_api_response_wrapper",
         ":logger",
     ],
