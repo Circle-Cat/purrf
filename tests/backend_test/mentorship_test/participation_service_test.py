@@ -3,7 +3,6 @@ import unittest
 from unittest.mock import MagicMock, AsyncMock
 
 from backend.mentorship.participation_service import ParticipationService
-from backend.dto.partner_dto import PartnerDto
 from backend.dto.user_context_dto import UserContextDto
 from backend.dto.registration_dto import RoundPreferencesDto
 from backend.dto.feedback_create_dto import FeedbackCreateDto
@@ -17,7 +16,9 @@ from backend.common.mentorship_enums import (
     ParticipantRole,
     ApprovalStatus,
     MatchStatus,
+    PairStatus,
 )
+from backend.entity.mentorship_pairs_entity import MentorshipPairsEntity
 
 
 class TestParticipationService(unittest.IsolatedAsyncioTestCase):
@@ -27,7 +28,6 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
 
         self.mock_pairs_repo = MagicMock()
         self.mock_pairs_repo.get_all_partner_ids = AsyncMock()
-        self.mock_pairs_repo.get_partner_ids_by_user_and_round = AsyncMock()
         self.mock_pairs_repo.get_pairs_with_partner_info = AsyncMock()
 
         self.mock_round_participants_repo = MagicMock()
@@ -58,19 +58,32 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
         )
 
         self.mock_users_entities = [
-            MagicMock(spec=UsersEntity, user_id=456),
-            MagicMock(spec=UsersEntity, user_id=789),
+            MagicMock(
+                spec=UsersEntity,
+                user_id=456,
+                first_name="Bob",
+                last_name="Smith",
+                preferred_name="Bob Smith",
+            ),
+            MagicMock(
+                spec=UsersEntity,
+                user_id=789,
+                first_name="Carol",
+                last_name="Jones",
+                preferred_name="Carol Jones",
+            ),
         ]
-        self.mock_specific_users_entity = [MagicMock(spec=UsersEntity, user_id=456)]
 
         self.mock_all_round_partner_ids = [456, 789]
-        self.mock_specific_round_partner_ids = [456]
 
-        self.mock_partner_dtos = [
-            MagicMock(spec=PartnerDto, id=456),
-            MagicMock(spec=PartnerDto, id=789),
-        ]
-        self.mock_specific_partner_dto = [MagicMock(spec=PartnerDto, id=456)]
+        self.mock_specific_partner_user = MagicMock(
+            spec=UsersEntity,
+            user_id=456,
+            first_name="Alice",
+            last_name="Smith",
+            preferred_name="Alice Smith",
+            primary_email="partner@example.com",
+        )
 
         self.user_context = MagicMock(
             spec=UserContextDto,
@@ -83,14 +96,15 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
         """Test retrieve and map partners for a user with user context and round id."""
         mock_round_id = 1
 
-        self.mock_pairs_repo.get_partner_ids_by_user_and_round.return_value = (
-            self.mock_specific_round_partner_ids
-        )
-        self.mock_users_repo.get_all_by_ids.return_value = (
-            self.mock_specific_users_entity
-        )
-        self.mock_mapper.map_to_partner_dto.return_value = (
-            self.mock_specific_partner_dto
+        mock_pair = MagicMock(spec=MentorshipPairsEntity, status=PairStatus.ACTIVE)
+        self.mock_pairs_repo.get_pairs_with_partner_info.return_value = [
+            (mock_pair, self.mock_specific_partner_user)
+        ]
+        self.mock_round_participants_repo.get_by_user_id_and_round_id.return_value = (
+            MagicMock(
+                spec=MentorshipRoundParticipantsEntity,
+                approval_status=ApprovalStatus.MATCHED,
+            )
         )
 
         result = await self.participation_service.get_partners_for_user(
@@ -99,38 +113,83 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
             round_id=mock_round_id,
         )
 
-        self.assertEqual(result, self.mock_specific_partner_dto)
-        self.mock_pairs_repo.get_partner_ids_by_user_and_round.assert_awaited_once_with(
+        self.assertEqual(
+            result[0].primary_email, self.mock_specific_partner_user.primary_email
+        )
+        self.mock_pairs_repo.get_pairs_with_partner_info.assert_awaited_once_with(
             session=self.mock_session,
             user_id=self.user_context.user_id,
             round_id=mock_round_id,
         )
-
         self.mock_pairs_repo.get_all_partner_ids.assert_not_awaited()
         self.mock_session.commit.assert_not_awaited()
-        self.mock_users_repo.get_all_by_ids.assert_awaited_once_with(
-            session=self.mock_session, user_ids=self.mock_specific_round_partner_ids
+
+    async def test_get_partners_for_user_excludes_partner_email_for_inactive_pair(self):
+        """Test that primary_email is None when user is MATCHED but pair is INACTIVE."""
+        mock_round_id = 1
+
+        mock_pair = MagicMock(spec=MentorshipPairsEntity, status=PairStatus.INACTIVE)
+        self.mock_pairs_repo.get_pairs_with_partner_info.return_value = [
+            (mock_pair, self.mock_specific_partner_user)
+        ]
+        self.mock_round_participants_repo.get_by_user_id_and_round_id.return_value = (
+            MagicMock(
+                spec=MentorshipRoundParticipantsEntity,
+                approval_status=ApprovalStatus.MATCHED,
+            )
         )
+
+        result = await self.participation_service.get_partners_for_user(
+            session=self.mock_session,
+            user_context=self.user_context,
+            round_id=mock_round_id,
+        )
+
+        self.assertIsNone(result[0].primary_email)
+
+    async def test_get_partners_for_user_excludes_partner_email_without_participant(
+        self,
+    ):
+        """Test that primary_email is None when participant record does not exist."""
+        mock_round_id = 1
+
+        mock_pair = MagicMock(spec=MentorshipPairsEntity, status=PairStatus.ACTIVE)
+        self.mock_pairs_repo.get_pairs_with_partner_info.return_value = [
+            (mock_pair, self.mock_specific_partner_user)
+        ]
+        self.mock_round_participants_repo.get_by_user_id_and_round_id.return_value = (
+            None
+        )
+
+        result = await self.participation_service.get_partners_for_user(
+            session=self.mock_session,
+            user_context=self.user_context,
+            round_id=mock_round_id,
+        )
+
+        self.assertIsNone(result[0].primary_email)
 
     async def test_get_partners_for_user_without_round_id(self):
         """Test retrieve and map partners for a user without round id."""
         self.mock_pairs_repo.get_all_partner_ids.return_value = (
             self.mock_all_round_partner_ids
         )
-
         self.mock_users_repo.get_all_by_ids.return_value = self.mock_users_entities
-        self.mock_mapper.map_to_partner_dto.return_value = self.mock_partner_dtos
 
         result = await self.participation_service.get_partners_for_user(
             session=self.mock_session, user_context=self.user_context
         )
 
-        self.assertEqual(result, self.mock_partner_dtos)
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0].id, self.mock_users_entities[0].user_id)
+        self.assertEqual(result[1].id, self.mock_users_entities[1].user_id)
+        self.assertIsNone(result[0].primary_email)
+        self.assertIsNone(result[1].primary_email)
 
         self.mock_pairs_repo.get_all_partner_ids.assert_awaited_once_with(
             session=self.mock_session, user_id=self.user_context.user_id
         )
-        self.mock_pairs_repo.get_partner_ids_by_user_and_round.assert_not_awaited()
+        self.mock_pairs_repo.get_pairs_with_partner_info.assert_not_awaited()
 
         self.mock_users_repo.get_all_by_ids.assert_awaited_once_with(
             session=self.mock_session, user_ids=self.mock_all_round_partner_ids

@@ -9,7 +9,6 @@ from backend.dto.preference_dto import (
 )
 from backend.dto.registration_dto import GlobalPreferencesDto, RoundPreferencesDto
 from backend.dto.rounds_dto import RoundsDto, TimelineDto
-from backend.dto.partner_dto import PartnerDto
 from backend.dto.meeting_dto import MeetingDto
 from backend.entity.users_entity import UsersEntity
 from backend.entity.preference_entity import PreferenceEntity
@@ -214,27 +213,6 @@ class TestMentorshipMapper(unittest.TestCase):
         self.assertIsNone(dtos[2].active_pairs)
         self.assertIsNone(dtos[2].matched_participants)
         self.assertIsNone(dtos[2].total_completed_meetings)
-
-    def test_map_to_partner_dto_with_full_data(self):
-        """Test mapping users entity has preferred_name to partner dto."""
-        self.users[0].preferred_name = "Amy"
-        dtos = self.mapper.map_to_partner_dto(self.users)
-        dto = dtos[0]
-
-        self.assertIsInstance(dto, PartnerDto)
-        self.assertEqual(dto.id, self.users[0].user_id)
-        self.assertEqual(dto.first_name, self.users[0].first_name)
-        self.assertEqual(dto.last_name, self.users[0].last_name)
-        self.assertEqual(dto.preferred_name, self.users[0].preferred_name)
-        self.assertEqual(dto.primary_email, self.users[0].primary_email)
-
-    def test_map_to_partner_dto_without_preferred_name(self):
-        """Test mapping users entity with no preferred_name to partner dto."""
-        dtos = self.mapper.map_to_partner_dto(self.users)
-        dto = dtos[0]
-
-        self.assertIsInstance(dto, PartnerDto)
-        self.assertEqual(dto.preferred_name, self.users[0].first_name)
 
     def test_map_to_global_preferences_dto_success(self):
         """Test mapping preference entity to global preferences dto correctly."""
