@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.common.mentorship_enums import (
     ApprovalStatus,
     MatchStatus,
+    PairStatus,
 )
 
 
@@ -47,32 +48,6 @@ class ParticipationService:
         self.mentorship_round_participants_repo = mentorship_round_participants_repo
         self.mentorship_round_repository = mentorship_round_repository
         self.mentorship_mapper = mentorship_mapper
-
-    async def _get_partners_info(
-        self, session: AsyncSession, partners_id_list: list[int]
-    ) -> list[PartnerDto]:
-        """
-        Retrieve partial partner information and map it to DTOs.
-
-        Args:
-            session (AsyncSession): Active database async session.
-            partners_id_list (list): A list of user IDs representing the partners.
-
-        Returns:
-            list[PartnerDto]: A list of PartnerDto objects representing the matched users,
-                            or an empty list if no users are found.
-        """
-        partner_user_entities = await self.users_repository.get_all_by_ids(
-            session=session, user_ids=partners_id_list
-        )
-
-        if not partner_user_entities:
-            self.logger.warning(
-                "No partner users found for partner_ids=%s", partners_id_list
-            )
-            return []
-
-        return self.mentorship_mapper.map_to_partner_dto(partner_user_entities)
 
     async def resolve_participant_role_with_fallback(
         self, session: AsyncSession, user_context: UserContextDto, user_id: int
@@ -120,11 +95,13 @@ class ParticipationService:
         This method:
         1. Resolves the internal user ID based on the provided UserContextDto.
         2. Determines the applicable mentorship round scope:
-            - If round_id is provided, return partners associated with the current user
-                in the specified mentorship round.
-            - If round_id is not provided, return partners associated with the current user
-                across all mentorship rounds.
-        3. Returns partners associated with the current user within the resolved round scope.
+            - If round_id is not provided, returns partners associated with the current user
+              across all mentorship rounds.
+            - If round_id is provided, returns partners associated with the current user
+              in the specified mentorship round.
+        3. Returns partner information mapped to PartnerDto objects. The primary_email
+           field is populated only when round_id is provided, the user's approval status
+           is MATCHED, and the corresponding pair status is ACTIVE; otherwise None.
 
         Args:
             session (AsyncSession): Active database async session.
@@ -137,26 +114,63 @@ class ParticipationService:
         """
         current_user_id = user_context.user_id
 
-        if round_id:
-            partner_ids = await self.mentorship_pairs_repository.get_partner_ids_by_user_and_round(
-                session=session, user_id=current_user_id, round_id=round_id
-            )
-        else:
+        if round_id is None:
             partner_ids = await self.mentorship_pairs_repository.get_all_partner_ids(
                 session=session, user_id=current_user_id
             )
+            if not partner_ids:
+                self.logger.info(
+                    "No partners found for user_id=%s, round_id=%s",
+                    current_user_id,
+                    round_id,
+                )
+                return []
+            users = await self.users_repository.get_all_by_ids(
+                session=session, user_ids=partner_ids
+            )
+            return [
+                PartnerDto(
+                    id=u.user_id,
+                    first_name=u.first_name,
+                    last_name=u.last_name,
+                    preferred_name=u.preferred_name or u.first_name,
+                    primary_email=None,
+                )
+                for u in users
+            ]
 
-        if not partner_ids:
+        pairs_data = await self.mentorship_pairs_repository.get_pairs_with_partner_info(
+            session=session, user_id=current_user_id, round_id=round_id
+        )
+        if not pairs_data:
             self.logger.info(
                 "No partners found for user_id=%s, round_id=%s",
                 current_user_id,
                 round_id,
             )
             return []
-
-        return await self._get_partners_info(
-            session=session, partners_id_list=partner_ids
+        participant = (
+            await self.mentorship_round_participants_repo.get_by_user_id_and_round_id(
+                session=session, user_id=current_user_id, round_id=round_id
+            )
         )
+
+        return [
+            PartnerDto(
+                id=p_user.user_id,
+                first_name=p_user.first_name,
+                last_name=p_user.last_name,
+                preferred_name=p_user.preferred_name or p_user.first_name,
+                primary_email=(
+                    p_user.primary_email
+                    if participant
+                    and participant.approval_status == ApprovalStatus.MATCHED
+                    and pair.status == PairStatus.ACTIVE
+                    else None
+                ),
+            )
+            for pair, p_user in pairs_data
+        ]
 
     async def get_user_round_preferences(
         self,

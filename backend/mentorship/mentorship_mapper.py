@@ -1,5 +1,4 @@
 from backend.dto.rounds_dto import RoundsDto, TimelineDto
-from backend.dto.partner_dto import PartnerDto
 from backend.dto.preference_dto import (
     SpecificIndustryDto,
     SkillsetsDto,
@@ -13,7 +12,6 @@ from backend.entity.preference_entity import PreferenceEntity
 from backend.entity.mentorship_round_participants_entity import (
     MentorshipRoundParticipantsEntity,
 )
-from backend.entity.users_entity import UsersEntity
 from backend.entity.mentorship_round_entity import MentorshipRoundEntity
 from backend.common.mentorship_enums import ParticipantRole
 
@@ -76,19 +74,6 @@ class MentorshipMapper:
             feedback_start_at=d.get("feedback_start_at"),
             feedback_deadline_at=d.get("feedback_deadline_at"),
         )
-
-    def map_to_partner_dto(self, user_entities: list[UsersEntity]) -> list[PartnerDto]:
-        """Maps a list of UsersEntity objects to a list of PartnerDto objects."""
-        return [
-            PartnerDto(
-                id=u.user_id,
-                first_name=u.first_name,
-                last_name=u.last_name,
-                preferred_name=u.preferred_name or u.first_name,
-                primary_email=u.primary_email,
-            )
-            for u in user_entities
-        ]
 
     def map_to_global_preferences_dto(
         self, preference_entity: PreferenceEntity
