@@ -25,3 +25,22 @@ export const batchDeleteMeetings = (deletions) => {
     deletions,
   });
 };
+
+/**
+ * Get my meetings for a specific round.
+ * @param {string|number} roundId - The current mentorship round ID
+ */
+export const getMyMentorshipMeetingsV2 = ({ roundId, includeDetails }) =>
+  request.get(API_ENDPOINTS.MENTORSHIP_MEETINGS_V2, {
+    params: {
+      round_id: roundId,
+      include_details: includeDetails,
+    },
+  });
+
+/**
+ * Create a mentorship meeting V2.
+ * @param {object} data - The meeting data to be created.
+ */
+export const postMyMentorshipMeetingV2 = (data) =>
+  request.post(API_ENDPOINTS.MENTORSHIP_MEETINGS_V2, data);

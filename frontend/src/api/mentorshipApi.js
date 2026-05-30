@@ -53,25 +53,6 @@ export const postMyMentorshipMeetingLog = (data) =>
   request.post(API_ENDPOINTS.MENTORSHIP_MEETINGS_ENDPOINT, data);
 
 /**
- * Fetch meetings by roundId for Mentorship V2.
- * @param {string} roundId - The ID of the mentorship round.
- */
-export const getMyMentorshipMeetingsV2 = ({ roundId, includeDetails }) =>
-  request.get(API_ENDPOINTS.MENTORSHIP_MEETINGS_V2, {
-    params: {
-      round_id: roundId,
-      include_details: includeDetails,
-    },
-  });
-
-/**
- * Create a mentorship meeting V2.
- * @param {object} data - The meeting data to be created.
- */
-export const postMyMentorshipMeetingV2 = (data) =>
-  request.post(API_ENDPOINTS.MENTORSHIP_MEETINGS_V2, data);
-
-/**
  * Fetch the current user's program feedback for a specific round.
  * @param {string} roundId - The ID of the mentorship round.
  */
