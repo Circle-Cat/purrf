@@ -5,8 +5,8 @@ import {
   postMyMentorshipRegistration,
   getMyMentorshipMatchResult,
   getMyMentorshipMeetingLog,
-  getMyMentorshipMeetingsV2,
 } from "@/api/mentorshipApi";
+import { getMyMentorshipMeetingsV2 } from "@/api/meetingApi";
 
 import {
   calculateMentorshipSlots,

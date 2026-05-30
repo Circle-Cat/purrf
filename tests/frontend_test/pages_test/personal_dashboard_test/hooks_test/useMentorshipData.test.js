@@ -10,8 +10,8 @@ import {
   postMyMentorshipRegistration,
   getMyMentorshipMatchResult,
   getMyMentorshipMeetingLog,
-  getMyMentorshipMeetingsV2,
 } from "@/api/mentorshipApi";
+import { getMyMentorshipMeetingsV2 } from "@/api/meetingApi";
 import {
   calculateMentorshipSlots,
   calculateRoundStatus,
@@ -25,6 +25,8 @@ vi.mock("@/api/mentorshipApi", () => ({
   postMyMentorshipRegistration: vi.fn(),
   getMyMentorshipMatchResult: vi.fn(),
   getMyMentorshipMeetingLog: vi.fn(),
+}));
+vi.mock("@/api/meetingApi", () => ({
   getMyMentorshipMeetingsV2: vi.fn(),
 }));
 
