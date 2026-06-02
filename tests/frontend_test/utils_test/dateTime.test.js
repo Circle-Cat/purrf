@@ -208,4 +208,12 @@ describe("localToUtcIso", () => {
       "2024-01-15T00:00:00Z",
     );
   });
+
+  it("includes seconds when time string has HH:mm:ss format", () => {
+    // Jan 15 2024 10:00:30 in New York (UTC-5) → 15:00:30 UTC
+    const dateObj = new Date(2024, 0, 15);
+    expect(localToUtcIso(dateObj, "10:00:30", "America/New_York")).toBe(
+      "2024-01-15T15:00:30Z",
+    );
+  });
 });

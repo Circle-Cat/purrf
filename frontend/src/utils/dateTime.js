@@ -61,20 +61,20 @@ export function nowInTz(tz) {
  * Inverse of formatInTz — used when submitting user-selected local datetimes to the backend.
  *
  * @param {Date} dateObj - Plain Date whose getFullYear/Month/Date components are used.
- * @param {string} timeStr - "HH:mm" string (e.g. "14:30").
+ * @param {string} timeStr - "HH:mm" or "HH:mm:ss" string (e.g. "14:30", "23:59:59"). Seconds default to 0.
  * @param {string} tz - IANA timezone string.
  * @param {number} [addDays=0] - Optional day offset applied to dateObj's date.
  * @returns {string} UTC ISO string without milliseconds, e.g. "2024-03-15T12:00:00Z".
  */
 export function localToUtcIso(dateObj, timeStr, tz, addDays = 0) {
-  const [h, m] = timeStr.split(":").map(Number);
+  const [h, m, s = 0] = timeStr.split(":").map(Number);
   const d = new TZDate(
     dateObj.getFullYear(),
     dateObj.getMonth(),
     dateObj.getDate() + addDays,
     h,
     m,
-    0,
+    s,
     tz,
   );
   return new Date(+d).toISOString().split(".")[0] + "Z";

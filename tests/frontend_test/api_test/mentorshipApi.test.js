@@ -2,6 +2,7 @@ import { vi, describe, it, expect, beforeEach } from "vitest";
 import request from "@/utils/request";
 import {
   getAllMentorshipRounds,
+  upsertMentorshipRound,
   getMyMentorshipPartners,
   getMyMentorshipRegistration,
   postMyMentorshipRegistration,
@@ -22,6 +23,15 @@ vi.mock("@/utils/request", () => {
 describe("Mentorship Service API", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it("upsertMentorshipRound should send a POST request with the payload", async () => {
+    const payload = { name: "Mentorship 2026 Spring", required_meetings: 5 };
+    await upsertMentorshipRound(payload);
+    expect(request.post).toHaveBeenCalledWith(
+      API_ENDPOINTS.MENTORSHIP_ROUNDS,
+      payload,
+    );
   });
 
   it("getAllMentorshipRounds should call the correct GET endpoint with need_details=false by default", async () => {
