@@ -11,6 +11,13 @@ export const getAllMentorshipRounds = (needDetails = false) =>
   });
 
 /**
+ * Create or update a mentorship round (admin only).
+ * @param {object} data - Round form data to submit.
+ */
+export const upsertMentorshipRound = (data) =>
+  request.post(API_ENDPOINTS.MENTORSHIP_ROUNDS, data);
+
+/**
  * Fetch the mentorship partners for a specific round.
  * @param {string} roundId - Optional: the ID of the mentorship round.
  */

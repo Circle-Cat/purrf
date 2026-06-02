@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
-import { getAllMentorshipRounds } from "@/api/mentorshipApi";
+import {
+  getAllMentorshipRounds,
+  upsertMentorshipRound,
+} from "@/api/mentorshipApi";
 import { calculateRoundStatus } from "@/pages/PersonalDashboard/utils/mentorshipRounds";
 
 /**
@@ -37,10 +40,8 @@ export const useMentorshipManagement = () => {
     refreshRounds();
   }, [refreshRounds]);
 
-  // Derive sorted rounds and status labels via existing utility
   const { sortedRounds } = calculateRoundStatus(rounds);
 
-  // Compute footer totals
   const totals = {
     totalCompletedRounds: sortedRounds.filter((r) => r.status === "completed")
       .length,
@@ -54,10 +55,15 @@ export const useMentorshipManagement = () => {
     ),
   };
 
-  // Modal actions
   const openCreate = () => setRoundModalState({ open: true, round: null });
   const openEdit = (round) => setRoundModalState({ open: true, round });
   const closeModal = () => setRoundModalState({ open: false, round: null });
+
+  const saveRound = async (payload) => {
+    await upsertMentorshipRound(payload);
+    await refreshRounds();
+    closeModal();
+  };
 
   return {
     sortedRounds,
@@ -68,5 +74,6 @@ export const useMentorshipManagement = () => {
     openCreate,
     openEdit,
     closeModal,
+    saveRound,
   };
 };

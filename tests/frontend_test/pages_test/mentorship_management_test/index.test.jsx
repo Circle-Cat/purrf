@@ -39,6 +39,7 @@ const defaultHookData = {
   openCreate: vi.fn(),
   openEdit: vi.fn(),
   closeModal: vi.fn(),
+  saveRound: vi.fn(),
 };
 
 describe("MentorshipManagement", () => {
@@ -47,14 +48,7 @@ describe("MentorshipManagement", () => {
     useMentorshipManagement.mockReturnValue(defaultHookData);
   });
 
-  it("renders RoundsManagementCard", () => {
-    render(<MentorshipManagement />);
-    expect(
-      screen.getByTestId("mock-rounds-management-card"),
-    ).toBeInTheDocument();
-  });
-
-  it("passes sortedRounds and totals to RoundsManagementCard", () => {
+  it("passes rounds and totals to RoundsManagementCard", () => {
     render(<MentorshipManagement />);
     expect(screen.getByTestId("rounds-count").textContent).toBe("1");
     expect(screen.getByTestId("total-completed-rounds").textContent).toBe("1");

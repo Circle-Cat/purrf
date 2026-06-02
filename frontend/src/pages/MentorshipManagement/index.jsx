@@ -10,8 +10,16 @@ import { useMentorshipManagement } from "@/pages/MentorshipManagement/hooks/useM
  * @returns {JSX.Element}
  */
 const MentorshipManagement = () => {
-  const { sortedRounds, totals, isLoading, openCreate, openEdit } =
-    useMentorshipManagement();
+  const {
+    sortedRounds,
+    totals,
+    isLoading,
+    roundModalState,
+    openCreate,
+    openEdit,
+    closeModal,
+    saveRound,
+  } = useMentorshipManagement();
 
   return (
     <div className="mentorship-management">
@@ -19,8 +27,11 @@ const MentorshipManagement = () => {
         rounds={sortedRounds}
         totals={totals}
         isLoading={isLoading}
+        roundModalState={roundModalState}
         openCreate={openCreate}
         openEdit={openEdit}
+        closeModal={closeModal}
+        saveRound={saveRound}
       />
     </div>
   );

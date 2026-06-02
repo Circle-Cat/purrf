@@ -13,6 +13,16 @@ vi.mock("@/pages/MentorshipManagement/components/AllRoundsTable", () => ({
   )),
 }));
 
+vi.mock("@/pages/MentorshipManagement/components/RoundModal", () => ({
+  default: vi.fn(({ open, onClose }) =>
+    open ? (
+      <div data-testid="mock-round-modal">
+        <button onClick={onClose}>Close Modal</button>
+      </div>
+    ) : null,
+  ),
+}));
+
 const defaultRound = {
   id: 1,
   name: "Mentorship 2026 Spring",
@@ -26,8 +36,11 @@ const defaultProps = {
   rounds: [defaultRound],
   totals: { totalCompletedRounds: 1, totalParticipants: 52, totalMeetings: 93 },
   isLoading: false,
+  roundModalState: { open: false, round: null },
   openCreate: vi.fn(),
   openEdit: vi.fn(),
+  closeModal: vi.fn(),
+  saveRound: vi.fn(),
 };
 
 const renderCard = (props = {}) =>
@@ -87,5 +100,24 @@ describe("RoundsManagementCard", () => {
       screen.getByRole("button", { name: /edit first round/i }),
     );
     expect(openEdit).toHaveBeenCalledWith(defaultRound);
+  });
+
+  it("renders RoundModal only when roundModalState.open is true", () => {
+    const { rerender } = renderCard();
+    expect(screen.queryByTestId("mock-round-modal")).not.toBeInTheDocument();
+    rerender(
+      <RoundsManagementCard
+        {...defaultProps}
+        roundModalState={{ open: true, round: null }}
+      />,
+    );
+    expect(screen.getByTestId("mock-round-modal")).toBeInTheDocument();
+  });
+
+  it("calls closeModal when RoundModal closes", async () => {
+    const closeModal = vi.fn();
+    renderCard({ roundModalState: { open: true, round: null }, closeModal });
+    await userEvent.click(screen.getByRole("button", { name: /close modal/i }));
+    expect(closeModal).toHaveBeenCalledTimes(1);
   });
 });

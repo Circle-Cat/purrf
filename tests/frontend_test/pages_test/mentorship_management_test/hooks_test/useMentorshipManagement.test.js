@@ -1,11 +1,15 @@
 import { renderHook, waitFor, act } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { useMentorshipManagement } from "@/pages/MentorshipManagement/hooks/useMentorshipManagement";
-import { getAllMentorshipRounds } from "@/api/mentorshipApi";
+import {
+  getAllMentorshipRounds,
+  upsertMentorshipRound,
+} from "@/api/mentorshipApi";
 import { calculateRoundStatus } from "@/pages/PersonalDashboard/utils/mentorshipRounds";
 
 vi.mock("@/api/mentorshipApi", () => ({
   getAllMentorshipRounds: vi.fn(),
+  upsertMentorshipRound: vi.fn(),
 }));
 
 vi.mock("@/pages/PersonalDashboard/utils/mentorshipRounds", () => ({
@@ -103,6 +107,26 @@ describe("useMentorshipManagement", () => {
       expect.any(Error),
     );
     consoleSpy.mockRestore();
+  });
+
+  it("saveRound calls upsertMentorshipRound, refreshes rounds, and closes modal", async () => {
+    getAllMentorshipRounds.mockResolvedValue({ data: [] });
+    upsertMentorshipRound.mockResolvedValue({});
+
+    const { result } = renderHook(() => useMentorshipManagement());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    act(() => result.current.openCreate());
+    expect(result.current.roundModalState.open).toBe(true);
+
+    const payload = { name: "Mentorship 2026 Spring", required_meetings: 5 };
+    await act(async () => {
+      await result.current.saveRound(payload);
+    });
+
+    expect(upsertMentorshipRound).toHaveBeenCalledWith(payload);
+    expect(getAllMentorshipRounds).toHaveBeenCalledTimes(2);
+    expect(result.current.roundModalState.open).toBe(false);
   });
 
   it("initialises closed, openCreate/openEdit/closeModal work correctly", async () => {
