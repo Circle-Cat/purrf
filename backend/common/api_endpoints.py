@@ -1,4 +1,4 @@
-MY_ROLES = "/roles/me"
+MY_PERMISSIONS = "/permissions/me"
 EMAIL_MANAGEMENT_INITIATE_ENDPOINT = "/auth/emails/initiate"
 EMAIL_MANAGEMENT_VERIFY_ENDPOINT = "/auth/emails/verify"
 GOOGLE_CHAT_SUBSCRIBE_ENDPOINT = "/google/chat/spaces/subscribe"

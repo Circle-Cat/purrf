@@ -14,7 +14,8 @@ from backend.common.environment_constants import (
     GOOGLE_AUDIENCE,
 )
 from backend.dto.user_context_dto import UserContextDto
-from backend.common.user_role import UserRole, SUPER_ADMIN_ROLES, IdentityType
+from backend.common.constants import is_company_email
+from backend.common.identity_type import IdentityType
 
 
 class AuthenticationService:
@@ -165,81 +166,55 @@ class AuthenticationService:
 
     def _build_context(self, payload: dict[str, Any], source: str) -> UserContextDto:
         """
-        Build the UserContextDto from token payload based on the source.
+        Build the UserContextDto from a token payload.
+
+        Sets only the identity-layer fields the auth layer can know from the
+        token: sub, email, identity_type, and is_service_account. Permissions
+        and is_super_admin are resolved later (DB-backed) by the middleware's
+        resolve_permissions step.
 
         Args:
             payload (dict): Decoded JWT payload.
             source (str): Source of the token, either "google" or "cloudflare".
-
-        Returns:
-            UserContextDto: Contains sub, primary_email, and roles.
         """
-        roles = []
         email = ""
         sub = ""
         last_login_at = None
         first_name = ""
         last_name = ""
         identity_type = IdentityType.EXTERNAL
+        is_service_account = False
         email_verified = False
 
         if "google" == source:
-            # Google CronJob / Service Account
-            roles.append(UserRole.CRON_RUNNER)
+            # Google CronJob / service account.
+            is_service_account = True
+            identity_type = IdentityType.CRONJOB
             email = payload.get("email")
             sub = payload.get("sub")
             last_login_at = payload.get("iat")
-            identity_type = IdentityType.CRONJOB
 
         elif "cloudflare" == source:
-            # Cloudflare User
             custom_claims = payload.get("custom", {})
             email = custom_claims.get("email", "")
             sub = custom_claims.get("sub", "")
-            upn = custom_claims.get("upn", "")
             last_login_at = custom_claims.get("iat")
             first_name = custom_claims.get("given_name", "")
             last_name = custom_claims.get("family_name", "")
             email_verified = custom_claims.get("email_verified", False)
-
-            raw_role_claim = custom_claims.get("extn.purrf_role", [])
-            role_claim = raw_role_claim
-            # Azure directory extensions only support string values, so roles are stored as a
-            # JSON-encoded string (e.g. '["admin","manager"]'). Cloudflare wraps it in an array,
-            # resulting in ['["admin","manager"]']. Parse the inner string back into a list.
-            if len(raw_role_claim) == 1 and isinstance(raw_role_claim[0], str):
-                try:
-                    parsed = json.loads(raw_role_claim[0])
-                    if isinstance(parsed, list):
-                        role_claim = parsed
-                except json.JSONDecodeError:
-                    pass
-
-            if "superAdmin" in role_claim:
-                roles.extend(SUPER_ADMIN_ROLES)
-            else:
-                if "infraAdmin" in role_claim:
-                    roles.append(UserRole.INFRA_ADMIN)
-                if "manager" in role_claim:
-                    roles.append(UserRole.MANAGER)
-                if "mentorshipAdmin" in role_claim:
-                    roles.append(UserRole.MENTORSHIP_ADMIN)
-
-            if upn.endswith("@u.circlecat.org"):
-                roles.append(UserRole.CC_INTERNAL)
-                email = upn
-            elif sub.startswith("google-oauth2|") and email.endswith("@google.com"):
-                roles.append(UserRole.CONTACT_GOOGLE_CHAT)
-
-            roles.append(UserRole.MENTORSHIP)
+            # Internal is keyed off the company email domain, not the login
+            # connection, Require email_verified so a connection that lets
+            # a user self-assert an unverified address cannot claim a company domain.
+            if email_verified and is_company_email(email):
+                identity_type = IdentityType.INTERNAL
 
         return UserContextDto(
             sub=sub,
             primary_email=email,
             identity_type=identity_type,
+            is_service_account=is_service_account,
             last_login_at=last_login_at,
             first_name=first_name,
             last_name=last_name,
             email_verified=email_verified,
-            roles=list(dict.fromkeys(roles)),
         )

@@ -7,7 +7,7 @@ import jwt
 
 from backend.authentication.email_management_service import EmailManagementService
 from backend.common.exceptions import ConflictError
-from backend.common.user_role import IdentityType
+from backend.common.identity_type import IdentityType
 from backend.entity.user_emails_entity import UserEmailsEntity
 from backend.entity.user_identities_entity import UserIdentitiesEntity
 

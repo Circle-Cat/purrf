@@ -34,6 +34,7 @@ from backend.common.environment_constants import (
 @patch("backend.utils.app_dependency_builder.ExperienceRepository")
 @patch("backend.utils.app_dependency_builder.UserEmailsRepository")
 @patch("backend.utils.app_dependency_builder.UserIdentitiesRepository")
+@patch("backend.utils.app_dependency_builder.UserPermissionsRepository")
 @patch("backend.utils.app_dependency_builder.UsersRepository")
 @patch("backend.utils.app_dependency_builder.AuthenticationController")
 @patch("backend.utils.app_dependency_builder.AuthenticationService")
@@ -129,6 +130,7 @@ class TestAppDependencyBuilder(TestCase):
         mock_authentication_service_cls,
         mock_authentication_controller_cls,
         mock_users_repo_cls,
+        mock_user_permissions_repo_cls,
         mock_user_identities_repo_cls,
         mock_user_emails_repo_cls,
         mock_experience_repo_cls,
@@ -432,6 +434,7 @@ class TestAppDependencyBuilder(TestCase):
         mock_authentication_controller_cls.assert_called_once()
 
         mock_users_repo_cls.assert_called_once()
+        mock_user_permissions_repo_cls.assert_called_once()
         mock_mentorship_pairs_repo_cls.assert_called_once()
         mock_experience_repo_cls.assert_called_once()
         mock_training_repo_cls.assert_called_once()
@@ -453,6 +456,7 @@ class TestAppDependencyBuilder(TestCase):
             users_repository=mock_users_repo_cls.return_value,
             user_identities_repository=mock_user_identities_repo_cls.return_value,
             user_emails_repository=mock_user_emails_repo_cls.return_value,
+            user_permissions_repository=mock_user_permissions_repo_cls.return_value,
         )
         mock_profile_service_cls.assert_called_once_with(
             query_service=mock_profile_query_service_cls.return_value,
@@ -513,6 +517,7 @@ class TestAppDependencyBuilder(TestCase):
             authentication_controller=mock_authentication_controller_cls.return_value,
             authentication_service=mock_authentication_service_cls.return_value,
             user_identity_service=mock_user_identity_service_cls.return_value,
+            user_permissions_repository=mock_user_permissions_repo_cls.return_value,
             notification_controller=mock_notification_controller.return_value,
             historical_controller=mock_historical_controller_cls.return_value,
             consumer_controller=mock_consumer_controller_cls.return_value,
@@ -712,6 +717,10 @@ class TestAppDependencyBuilder(TestCase):
             mock_authentication_controller_cls.return_value,
         )
         self.assertEqual(builder.users_repository, mock_users_repo_cls.return_value)
+        self.assertEqual(
+            builder.user_permissions_repository,
+            mock_user_permissions_repo_cls.return_value,
+        )
         self.assertEqual(
             builder.experience_repository, mock_experience_repo_cls.return_value
         )

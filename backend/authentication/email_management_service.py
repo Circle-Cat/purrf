@@ -18,13 +18,10 @@ import uuid
 
 import jwt
 
-from backend.common.constants import (
-    INTERNAL_GOOGLE_ACCOUNT_DOMAIN,
-    INTERNAL_MICROSOFT_ACCOUNT_DOMAIN,
-)
+from backend.common.constants import is_company_email
 from backend.common.environment_constants import EMAIL_OTP_STATE_JWT_SECRET
 from backend.common.exceptions import ConflictError
-from backend.common.user_role import IdentityType
+from backend.common.identity_type import IdentityType
 from backend.entity.user_emails_entity import UserEmailsEntity
 from backend.entity.user_identities_entity import UserIdentitiesEntity
 
@@ -145,7 +142,7 @@ class EmailManagementService:
                     subject_identifier=new_sub,
                     identity_type=(
                         IdentityType.INTERNAL
-                        if self._is_company_email(target_email)
+                        if is_company_email(target_email)
                         else IdentityType.EXTERNAL
                     ),
                     email_claim=target_email,
@@ -155,18 +152,6 @@ class EmailManagementService:
 
         self._sync_alias_best_effort(current_sub, target_email, current_user_id)
         return {"ok": True, "linked_sub": new_sub, "email": target_email}
-
-    def _is_company_email(self, email: str) -> bool:
-        """
-        Whether the address belongs to a CircleCat company account.
-
-        Covers both internal domains: '@u.circlecat.org' (Microsoft) and
-        '@circlecat.org' (Google). A company address marks the new identity
-        INTERNAL rather than the default EXTERNAL.
-        """
-        return email.endswith(INTERNAL_MICROSOFT_ACCOUNT_DOMAIN) or email.endswith(
-            INTERNAL_GOOGLE_ACCOUNT_DOMAIN
-        )
 
     def _decode_state(self, state: str) -> dict:
         """Decode and verify the state JWT; any JWT error becomes a ValueError."""

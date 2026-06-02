@@ -10,7 +10,8 @@ from backend.entity.users_entity import UsersEntity
 from backend.entity.user_identities_entity import UserIdentitiesEntity
 from backend.entity.user_emails_entity import UserEmailsEntity
 from backend.dto.user_context_dto import UserContextDto
-from backend.common.user_role import UserRole
+from backend.common.identity_type import IdentityType
+from backend.common.permissions import INTERNAL_EMPLOYEE_PERMISSIONS
 
 
 class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
@@ -18,6 +19,7 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
         self.users_repo = AsyncMock()
         self.identities_repo = AsyncMock()
         self.emails_repo = AsyncMock()
+        self.permissions_repo = AsyncMock()
         self.session = AsyncMock()
         self.logger = MagicMock()
 
@@ -26,6 +28,7 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
             users_repository=self.users_repo,
             user_identities_repository=self.identities_repo,
             user_emails_repository=self.emails_repo,
+            user_permissions_repository=self.permissions_repo,
         )
 
         self.iat = 1_700_000_000
@@ -107,7 +110,6 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
             primary_email="Alice@Example.com",
             identity_type="external",
             last_login_at=self.iat,
-            roles=[UserRole.MENTORSHIP],
         )
         mocked = MagicMock(
             spec=UserIdentitiesEntity,
@@ -197,6 +199,8 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(email_row.email, "carol@example.com")
         self.assertTrue(email_row.otp_confirmed)
         self.assertTrue(email_row.is_primary)
+        # non-internal identity: no permission grant
+        self.permissions_repo.grant.assert_not_awaited()
         # DTO user_id write-back
         self.assertEqual(user_info.user_id, 99)
 
@@ -217,7 +221,33 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
         self.assertIs(result, created)
         self.identities_repo.upsert_identity.assert_awaited_once()
         self.emails_repo.upsert_email.assert_not_awaited()
+        # non-internal identity: no permission grant
+        self.permissions_repo.grant.assert_not_awaited()
         self.assertEqual(user_info.user_id, 77)
+
+    async def test_create_or_swap_first_login_internal_grants_permissions(self):
+        """First login with an internal identity grants the internal employee
+        permission bundle via user_permissions_repository.grant."""
+        user_info = UserContextDto(
+            sub="google-oauth2|emp",
+            primary_email="emp@circlecat.org",
+            identity_type=IdentityType.INTERNAL,
+            last_login_at=self.iat,
+        )
+        self.identities_repo.find_swappable_by_email.return_value = None
+        created = MagicMock(spec=UsersEntity, user_id=55)
+        self.users_repo.upsert_users.return_value = created
+
+        result = await self.service.create_or_swap_user(self.session, user_info)
+
+        self.assertIs(result, created)
+        self.permissions_repo.grant.assert_awaited_once_with(
+            session=self.session,
+            user_id=55,
+            permission_names=INTERNAL_EMPLOYEE_PERMISSIONS,
+            granted_source="system_internal",
+        )
+        self.assertEqual(user_info.user_id, 55)
 
     # _iat_as_datetime helper
     async def test_iat_as_datetime_none(self):

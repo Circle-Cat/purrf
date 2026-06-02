@@ -185,9 +185,9 @@ py_library(
 )
 
 py_library(
-    name = "user_role",
+    name = "identity_type",
     srcs = [
-        "user_role.py",
+        "identity_type.py",
     ],
 )
 

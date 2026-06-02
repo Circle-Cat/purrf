@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 from backend.common.fast_api_response_wrapper import api_response
-from backend.common.api_endpoints import MY_ROLES
+from backend.common.api_endpoints import MY_PERMISSIONS
 from backend.utils.permission_decorators import authenticate
 from backend.dto.user_context_dto import UserContextDto
 
@@ -9,12 +9,12 @@ class AuthenticationController:
     """
     Controller for user authentication-related endpoints.
 
-    This controller provides routes to fetch the currently authenticated user's roles
-    and basic user information. It uses the `@authenticate` decorator to inject the user context
-    into `current_user`.
+    Provides a route to fetch the current user's resolved permissions and basic
+    identity. Uses the `@authenticate` decorator to inject the user context into
+    `current_user`.
 
     Endpoints:
-        GET /roles/me: Returns the roles of the current user.
+        GET /permissions/me: Returns the current user's permissions.
     """
 
     def __init__(self, user_emails_repository, database):
@@ -24,34 +24,32 @@ class AuthenticationController:
 
         # Register route
         self.router.add_api_route(
-            MY_ROLES,
-            authenticate()(self.get_my_roles),
+            MY_PERMISSIONS,
+            authenticate()(self.get_my_permissions),
             methods=["GET"],
             response_model=dict,
         )
 
-    async def get_my_roles(self, current_user: UserContextDto):
+    async def get_my_permissions(self, current_user: UserContextDto):
         """
-        Retrieve the current user's roles plus whether they have a confirmed
-        email — the frontend reads ``has_verified_email`` to decide whether to
-        hold the user at the ``/verify-required`` hard wall.
+        Retrieve the current user's resolved permissions, the super-admin flag,
+        and whether they have a confirmed email — the frontend reads
+        ``has_verified_email`` to decide whether to hold the user at the
+        ``/verify-required`` hard wall.
 
         Args:
-            current_user (UserContextDto): The authenticated user context, including:
-                - sub (str): The unique user identifier.
-                - primary_email (str): The user's primary email address.
-                - roles (List[str]): The list of roles assigned to the user.
+            current_user (UserContextDto): The authenticated user context.
 
         Returns:
-            dict: Standard API response containing user identity, roles, and
-                ``has_verified_email``, e.g.:
+            dict: Standard API response, e.g.:
                 {
                     "success": True,
-                    "message": "Successfully retrieved user roles",
+                    "message": "Successfully retrieved user permissions",
                     "data": {
                         "sub": "user-id",
                         "email": "user@example.com",
-                        "roles": ["ccInternal", "mentorship"],
+                        "permissions": ["internal_activity.read"],
+                        "is_super_admin": false,
                         "has_verified_email": true
                     }
                 }
@@ -66,8 +64,9 @@ class AuthenticationController:
             data={
                 "sub": current_user.sub,
                 "email": current_user.primary_email,
-                "roles": current_user.roles,
+                "permissions": sorted(str(p) for p in current_user.permissions),
+                "is_super_admin": current_user.is_super_admin,
                 "has_verified_email": has_verified_email,
             },
-            message="Successfully retrieved user roles",
+            message="Successfully retrieved user permissions",
         )

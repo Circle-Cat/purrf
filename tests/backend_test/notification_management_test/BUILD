@@ -12,6 +12,7 @@ py_test(
     name = "notification_controller_test",
     srcs = ["notification_controller_test.py"],
     deps = [
+        "//backend/common:permissions",
         "//backend/notification_management:notification_controller",
         "//backend/utils:auth_middleware",
         "@pypi//fastapi",

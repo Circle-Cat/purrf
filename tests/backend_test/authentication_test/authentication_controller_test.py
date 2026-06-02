@@ -3,7 +3,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 from starlette.responses import JSONResponse
-from backend.common.api_endpoints import MY_ROLES
+from backend.common.api_endpoints import MY_PERMISSIONS
+from backend.common.permissions import Permission
 from backend.authentication.authentication_controller import AuthenticationController
 from http import HTTPStatus
 
@@ -57,7 +58,12 @@ class TestAuthenticationController(unittest.TestCase):
         self.patcher.stop()
 
     def _get_client_with_mock_user(
-        self, roles, sub="test-sub", email="test@example.com"
+        self,
+        permissions,
+        sub="test-sub",
+        email="test@example.com",
+        is_super_admin=False,
+        user_id=42,
     ):
         """
         Helper method:
@@ -66,10 +72,11 @@ class TestAuthenticationController(unittest.TestCase):
         authorization and argument injection.
         """
         mock_user = MagicMock()
-        mock_user.roles = roles
+        mock_user.permissions = frozenset(permissions)
         mock_user.sub = sub
         mock_user.primary_email = email
-        mock_user.user_id = 42
+        mock_user.is_super_admin = is_super_admin
+        mock_user.user_id = user_id
 
         @self.app.middleware("http")
         async def mock_auth_middleware(request: Request, call_next):
@@ -78,52 +85,53 @@ class TestAuthenticationController(unittest.TestCase):
 
         return TestClient(self.app)
 
-    def test_get_my_roles_success(self):
+    def test_get_my_permissions_success(self):
         """
-        Test: successfully retrieving user roles.
+        Test: successfully retrieving user permissions.
         """
-        expected_roles = ["manager", "ccInternal"]
         expected_sub = "user-123"
         expected_email = "user@test.com"
         self.user_emails_repository.has_confirmed.return_value = True
 
         client = self._get_client_with_mock_user(
-            roles=expected_roles,
+            permissions={Permission.INTERNAL_ACTIVITY_READ},
             sub=expected_sub,
             email=expected_email,
+            is_super_admin=False,
+            user_id=42,
         )
 
-        response = client.get(MY_ROLES)
+        response = client.get(MY_PERMISSIONS)
 
         self.assertEqual(response.status_code, HTTPStatus.OK)
 
         json_resp = response.json()
-        self.assertEqual(json_resp["data"]["roles"], expected_roles)
+        self.assertEqual(json_resp["data"]["permissions"], ["internal_activity.read"])
         self.assertEqual(json_resp["data"]["sub"], expected_sub)
         self.assertEqual(json_resp["data"]["email"], expected_email)
         self.assertTrue(json_resp["data"]["has_verified_email"])
+        self.assertFalse(json_resp["data"]["is_super_admin"])
 
         self.mock_api_response.assert_called_once()
 
-    def test_get_my_roles_empty(self):
+    def test_get_my_permissions_empty(self):
         """
-        Test: behavior when the user has no roles.
+        Test: behavior when the user has no permissions.
         """
-        expected_roles = []
-        client = self._get_client_with_mock_user(roles=expected_roles)
+        client = self._get_client_with_mock_user(permissions=frozenset())
 
-        response = client.get(MY_ROLES)
+        response = client.get(MY_PERMISSIONS)
 
         self.assertEqual(response.status_code, HTTPStatus.OK)
-        self.assertEqual(response.json()["data"]["roles"], [])
+        self.assertEqual(response.json()["data"]["permissions"], [])
 
-    def test_get_my_roles_missing_user_context(self):
+    def test_get_my_permissions_missing_user_context(self):
         """
         Test: behavior when current_user is not provided.
         Authenticate decorator should intercept the request with 401 Unauthorized.
         """
         client = TestClient(self.app, raise_server_exceptions=False)
-        response = client.get(MY_ROLES)
+        response = client.get(MY_PERMISSIONS)
 
         self.assertEqual(response.status_code, HTTPStatus.UNAUTHORIZED)
 

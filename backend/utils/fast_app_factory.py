@@ -17,6 +17,7 @@ class FastAppFactory:
         authentication_controller,
         authentication_service,
         user_identity_service,
+        user_permissions_repository,
         notification_controller,
         historical_controller,
         consumer_controller,
@@ -48,6 +49,7 @@ class FastAppFactory:
         self.authentication_controller = authentication_controller
         self.authentication_service = authentication_service
         self.user_identity_service = user_identity_service
+        self.user_permissions_repository = user_permissions_repository
         self.notification_controller = notification_controller
         self.historical_controller = historical_controller
         self.consumer_controller = consumer_controller
@@ -113,6 +115,7 @@ class FastAppFactory:
             auth_service=self.authentication_service,
             database=self.database,
             user_identity_service=self.user_identity_service,
+            user_permissions_repository=self.user_permissions_repository,
             logger=self.logger,
         )
 

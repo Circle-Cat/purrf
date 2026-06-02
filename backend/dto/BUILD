@@ -6,8 +6,9 @@ py_library(
     name = "dto",
     srcs = glob(["*.py"]),
     deps = [
+        "//backend/common:identity_type",
         "//backend/common:mentorship_enums",
-        "//backend/common:user_role",
+        "//backend/common:permissions",
         "//backend/entity:entities",
         "@pypi//pydantic",
     ],

@@ -58,7 +58,6 @@ class TestEmailManagementController(unittest.TestCase):
         mock_user = MagicMock()
         mock_user.user_id = user_id
         mock_user.sub = sub
-        mock_user.roles = []
 
         @self.app.middleware("http")
         async def _inject_user(request: Request, call_next):
