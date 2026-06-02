@@ -385,6 +385,7 @@ class AppDependencyBuilder:
         self.user_identities_repository = UserIdentitiesRepository()
         self.user_emails_repository = UserEmailsRepository()
         self.training_repository = TrainingRepository()
+        self.database = Database(echo=False)
         self.user_identity_service = UserIdentityService(
             logger=self.logger,
             users_repository=self.users_repository,
@@ -392,7 +393,10 @@ class AppDependencyBuilder:
             user_emails_repository=self.user_emails_repository,
         )
         self.authentication_service = AuthenticationService(logger=self.logger)
-        self.authentication_controller = AuthenticationController()
+        self.authentication_controller = AuthenticationController(
+            user_emails_repository=self.user_emails_repository,
+            database=self.database,
+        )
         self.auth0_client = Auth0Client(logger=self.logger)
         self.email_management_service = EmailManagementService(
             auth0_client=self.auth0_client,
@@ -407,7 +411,6 @@ class AppDependencyBuilder:
         )
         self.preferences_repository = PreferencesRepository()
         self.mentorship_mapper = MentorshipMapper()
-        self.database = Database(echo=False)
         self.rounds_service = RoundsService(
             mentorship_round_repository=self.mentorship_round_repository,
             mentorship_mapper=self.mentorship_mapper,
