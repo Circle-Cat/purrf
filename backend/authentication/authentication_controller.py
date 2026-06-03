@@ -35,7 +35,9 @@ class AuthenticationController:
         Retrieve the current user's resolved permissions, the super-admin flag,
         and whether they have a confirmed email — the frontend reads
         ``has_verified_email`` to decide whether to hold the user at the
-        ``/verify-required`` hard wall.
+        ``/verify-required`` hard wall. ``identity_type`` and ``user_id`` are
+        also returned so the frontend can hand them to LaunchDarkly for flag
+        targeting.
 
         Args:
             current_user (UserContextDto): The authenticated user context.
@@ -47,7 +49,9 @@ class AuthenticationController:
                     "message": "Successfully retrieved user permissions",
                     "data": {
                         "sub": "user-id",
+                        "user_id": 1,
                         "email": "user@example.com",
+                        "identity_type": "internal",
                         "permissions": ["internal_activity.read"],
                         "is_super_admin": false,
                         "has_verified_email": true
@@ -63,7 +67,9 @@ class AuthenticationController:
         return api_response(
             data={
                 "sub": current_user.sub,
+                "user_id": current_user.user_id,
                 "email": current_user.primary_email,
+                "identity_type": str(current_user.identity_type),
                 "permissions": sorted(str(p) for p in current_user.permissions),
                 "is_super_admin": current_user.is_super_admin,
                 "has_verified_email": has_verified_email,

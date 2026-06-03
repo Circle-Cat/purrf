@@ -39,6 +39,7 @@ py_test(
     deps = [
         "//backend/authentication:authentication_controller",
         "//backend/common:api_endpoints",
+        "//backend/common:identity_type",
         "//backend/common:permissions",
         "//backend/dto",
         "@pypi//fastapi",

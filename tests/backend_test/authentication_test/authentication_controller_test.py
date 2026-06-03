@@ -4,6 +4,7 @@ from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 from starlette.responses import JSONResponse
 from backend.common.api_endpoints import MY_PERMISSIONS
+from backend.common.identity_type import IdentityType
 from backend.common.permissions import Permission
 from backend.authentication.authentication_controller import AuthenticationController
 from http import HTTPStatus
@@ -64,6 +65,7 @@ class TestAuthenticationController(unittest.TestCase):
         email="test@example.com",
         is_super_admin=False,
         user_id=42,
+        identity_type=IdentityType.INTERNAL,
     ):
         """
         Helper method:
@@ -77,6 +79,7 @@ class TestAuthenticationController(unittest.TestCase):
         mock_user.primary_email = email
         mock_user.is_super_admin = is_super_admin
         mock_user.user_id = user_id
+        mock_user.identity_type = identity_type
 
         @self.app.middleware("http")
         async def mock_auth_middleware(request: Request, call_next):
@@ -108,7 +111,9 @@ class TestAuthenticationController(unittest.TestCase):
         json_resp = response.json()
         self.assertEqual(json_resp["data"]["permissions"], ["internal_activity.read"])
         self.assertEqual(json_resp["data"]["sub"], expected_sub)
+        self.assertEqual(json_resp["data"]["user_id"], 42)
         self.assertEqual(json_resp["data"]["email"], expected_email)
+        self.assertEqual(json_resp["data"]["identity_type"], "internal")
         self.assertTrue(json_resp["data"]["has_verified_email"])
         self.assertFalse(json_resp["data"]["is_super_admin"])
 
