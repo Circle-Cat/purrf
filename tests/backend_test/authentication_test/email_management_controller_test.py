@@ -2,17 +2,22 @@ import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 from http import HTTPStatus
 
+from datetime import datetime, timezone
+
 from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.testclient import TestClient
 from starlette.responses import JSONResponse
 
 from backend.common.api_endpoints import (
     EMAIL_MANAGEMENT_INITIATE_ENDPOINT,
+    EMAIL_MANAGEMENT_LIST_ENDPOINT,
     EMAIL_MANAGEMENT_VERIFY_ENDPOINT,
 )
 from backend.authentication.email_management_controller import (
     EmailManagementController,
 )
+from backend.dto.emails_view_dto import EmailEntryDto, EmailsViewDto, IdentityDto
 
 
 class _FakeSessionContext:
@@ -30,6 +35,29 @@ class TestEmailManagementController(unittest.TestCase):
         self.service.verify = AsyncMock(
             return_value={"ok": True, "linked_sub": "email|abc"}
         )
+        self.service.list_emails_and_identities = AsyncMock(
+            return_value=EmailsViewDto(
+                emails=[
+                    EmailEntryDto(
+                        email_id=12,
+                        email="alice@gmail.com",
+                        otp_confirmed=True,
+                        is_primary=True,
+                        added_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                        linked_identity_count=1,
+                    )
+                ],
+                internal_identity=None,
+                external_identities=[
+                    IdentityDto(
+                        identity_id=7,
+                        subject_identifier="google-oauth2|primary",
+                        email_claim="alice@gmail.com",
+                        last_used_at=datetime(2026, 2, 1, tzinfo=timezone.utc),
+                    )
+                ],
+            )
+        )
         database = MagicMock()
         database.session.return_value = _FakeSessionContext()
 
@@ -46,7 +74,8 @@ class TestEmailManagementController(unittest.TestCase):
 
         def side_effect(data, message, status_code=HTTPStatus.OK):
             return JSONResponse(
-                content={"message": message, "data": data}, status_code=status_code
+                content=jsonable_encoder({"message": message, "data": data}),
+                status_code=status_code,
             )
 
         self.mock_api_response.side_effect = side_effect
@@ -92,6 +121,34 @@ class TestEmailManagementController(unittest.TestCase):
         self.assertEqual(kwargs["current_user_id"], 42)
         self.assertEqual(kwargs["state"], "signed.jwt")
         self.assertEqual(kwargs["otp"], "123456")
+
+    def test_list_emails_passes_session_user_to_service(self):
+        client = self._client_with_user()
+        response = client.get(EMAIL_MANAGEMENT_LIST_ENDPOINT)
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        data = response.json()["data"]
+
+        # Keys serialize to camelCase via the BaseDto alias generator.
+        email = data["emails"][0]
+        self.assertEqual(email["emailId"], 12)
+        self.assertEqual(email["email"], "alice@gmail.com")
+        self.assertTrue(email["otpConfirmed"])
+        self.assertTrue(email["isPrimary"])
+        self.assertEqual(email["linkedIdentityCount"], 1)
+
+        self.assertIsNone(data["internalIdentity"])
+        ext = data["externalIdentities"][0]
+        self.assertEqual(ext["identityId"], 7)
+        self.assertIsNotNone(ext["lastUsedAt"])
+
+        _, kwargs = self.service.list_emails_and_identities.call_args
+        self.assertEqual(kwargs["current_user_id"], 42)
+
+    def test_list_emails_requires_authentication(self):
+        client = TestClient(self.app, raise_server_exceptions=False)
+        response = client.get(EMAIL_MANAGEMENT_LIST_ENDPOINT)
+        self.assertEqual(response.status_code, HTTPStatus.UNAUTHORIZED)
 
     def test_requires_authentication(self):
         client = TestClient(self.app, raise_server_exceptions=False)
