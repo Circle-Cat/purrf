@@ -185,7 +185,16 @@ export default function MentorshipParticipantsCard({
                         : "Mentee"}
                       :
                     </span>{" "}
-                    {overview.preferredName}
+                    {overview.partnerEmail ? (
+                      <a
+                        href={`mailto:${overview.partnerEmail}`}
+                        className="text-primary underline hover:opacity-80"
+                      >
+                        {overview.preferredName}
+                      </a>
+                    ) : (
+                      overview.preferredName
+                    )}
                   </p>
                   <MeetingOverviewCard
                     overview={overview}

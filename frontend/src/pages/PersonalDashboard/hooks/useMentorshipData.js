@@ -265,6 +265,7 @@ export const useMentorshipData = () => {
         return {
           partnerId: partner.id,
           preferredName: partner.preferredName,
+          partnerEmail: partner.primaryEmail,
           requiredMeetings,
           completedCount,
           completedRate,
