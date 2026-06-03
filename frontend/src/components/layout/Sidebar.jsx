@@ -1,41 +1,41 @@
 import { NavLink } from "react-router-dom";
 import { useAuth } from "@/context/auth";
-import { USER_ROLES } from "@/constants/UserRoles";
+import { PERMISSIONS } from "@/constants/Permissions";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
 
 const Sidebar = () => {
-  const { roles } = useAuth();
+  const { permissions } = useAuth();
 
   /**
-   * Checks if the user has at least one of the required roles to access a page or feature.
+   * Checks if the user may access a page. An empty list means the item is open
+   * to any authenticated user; otherwise the user needs at least one of the
+   * required permissions.
    *
-   * @param {Array<string>} requiredRoles - The roles required to access the page.
-   * @returns {boolean} Returns `true` if the user has at least one required role, otherwise `false`.
+   * @param {Array<string>} requiredPermissions - The permissions required to access the page.
+   * @returns {boolean} Whether the user may see the nav item.
    */
-  const hasAccess = (requiredRoles) => {
-    return roles.some((role) => requiredRoles.includes(role));
+  const hasAccess = (requiredPermissions) => {
+    return (
+      requiredPermissions.length === 0 ||
+      permissions.some((p) => requiredPermissions.includes(p))
+    );
   };
 
   const navItems = [
     {
       label: "Personal Dashboard",
       to: ROUTE_PATHS.PERSONAL_DASHBOARD,
-      roles: [USER_ROLES.MENTORSHIP],
+      permissions: [],
     },
     {
       label: "Dashboard",
       to: ROUTE_PATHS.DASHBOARD,
-      roles: [USER_ROLES.MANAGER, USER_ROLES.CC_INTERNAL],
+      permissions: [PERMISSIONS.DASHBOARD_ACTIVITY_SUMMARY_READ],
     },
     {
       label: "DataSearch",
       to: ROUTE_PATHS.DATASEARCH,
-      roles: [USER_ROLES.MANAGER],
-    },
-    {
-      label: "Mentorship Management",
-      to: ROUTE_PATHS.MENTORSHIP_MANAGEMENT,
-      roles: [USER_ROLES.MENTORSHIP_ADMIN],
+      permissions: [PERMISSIONS.INTERNAL_ACTIVITY_READ],
     },
   ];
 
@@ -45,7 +45,7 @@ const Sidebar = () => {
         <ul>
           {navItems.map(
             (item) =>
-              hasAccess(item.roles) && (
+              hasAccess(item.permissions) && (
                 <li key={item.to}>
                   <NavLink
                     to={item.to}

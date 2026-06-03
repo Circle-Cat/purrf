@@ -57,8 +57,12 @@ describe("LDIdentifier", () => {
       off: vi.fn(),
     };
     useAuth.mockReturnValue({
-      user: { sub: "u1", email: "a@b.com" },
-      roles: [],
+      user: {
+        sub: "u1",
+        email: "a@b.com",
+        userId: 1,
+        identityType: "external",
+      },
     });
   });
 
@@ -88,17 +92,21 @@ describe("LDIdentifier", () => {
   });
 
   it("does nothing when user is null", () => {
-    useAuth.mockReturnValue({ user: null, roles: [] });
+    useAuth.mockReturnValue({ user: null });
 
     renderLDIdentifier(mockLDClient);
 
     expect(mockLDClient.identify).not.toHaveBeenCalled();
   });
 
-  it("calls identify with the user's sub, email, and roles", async () => {
+  it("calls identify with the user's sub, userId, email, and identity_type", async () => {
     useAuth.mockReturnValue({
-      user: { sub: "azure|123", email: "user@example.com" },
-      roles: ["cc_internal"],
+      user: {
+        sub: "azure|123",
+        email: "user@example.com",
+        userId: 42,
+        identityType: "internal",
+      },
     });
 
     await act(async () => {
@@ -108,24 +116,10 @@ describe("LDIdentifier", () => {
     expect(mockLDClient.identify).toHaveBeenCalledWith({
       kind: "user",
       key: "azure|123",
+      userId: 42,
       email: "user@example.com",
-      roles: ["cc_internal"],
+      identity_type: "internal",
     });
-  });
-
-  it("defaults roles to [] when roles is undefined", async () => {
-    useAuth.mockReturnValue({
-      user: { sub: "u1", email: "a@b.com" },
-      roles: undefined,
-    });
-
-    await act(async () => {
-      renderLDIdentifier(mockLDClient);
-    });
-
-    expect(mockLDClient.identify).toHaveBeenCalledWith(
-      expect.objectContaining({ roles: [] }),
-    );
   });
 
   it("writes allFlags into FlagsContext after identify resolves", async () => {

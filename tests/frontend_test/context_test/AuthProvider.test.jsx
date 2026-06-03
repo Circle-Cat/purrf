@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, waitFor, act } from "@testing-library/react";
 import { AuthProvider, useAuth } from "@/context/auth";
-import { USER_ROLES } from "@/constants/UserRoles";
-import { getUserRoles } from "@/api/rolesApi";
+import { PERMISSIONS } from "@/constants/Permissions";
+import { getUserPermissions } from "@/api/permissionsApi";
 
-vi.mock("@/api/rolesApi", () => ({
-  getUserRoles: vi.fn(),
+vi.mock("@/api/permissionsApi", () => ({
+  getUserPermissions: vi.fn(),
 }));
 
 describe("AuthProvider", () => {
@@ -13,33 +13,24 @@ describe("AuthProvider", () => {
     vi.clearAllMocks();
   });
 
-  it("should initialize with loading true and empty roles", () => {
-    getUserRoles.mockReturnValue(new Promise(() => {}));
+  it("should initialize with loading true and empty permissions", () => {
+    getUserPermissions.mockReturnValue(new Promise(() => {}));
 
     const { result } = renderHook(() => useAuth(), {
       wrapper: AuthProvider,
     });
 
     expect(result.current.loading).toBe(true);
-    expect(result.current.roles).toEqual([]);
+    expect(result.current.permissions).toEqual([]);
   });
 
-  it("should provide manager and ccInternal role when API call is successful", async () => {
-    const mockRolesData = [USER_ROLES.MANAGER, USER_ROLES.CC_INTERNAL];
-    getUserRoles.mockResolvedValue({ data: { roles: mockRolesData } });
-
-    const { result } = renderHook(() => useAuth(), {
-      wrapper: AuthProvider,
-    });
-
-    await waitFor(() => expect(result.current.loading).toBe(false));
-    expect(result.current.roles).toEqual(mockRolesData);
-    expect(result.current.roles).toContain(USER_ROLES.MANAGER);
-  });
-
-  it("should provide mentorship role when API call is successful", async () => {
-    getUserRoles.mockResolvedValue({
-      data: { roles: [USER_ROLES.MENTORSHIP] },
+  it("should provide permissions when API call is successful", async () => {
+    const mockPermissions = [
+      PERMISSIONS.DASHBOARD_ACTIVITY_SUMMARY_READ,
+      PERMISSIONS.INTERNAL_ACTIVITY_READ,
+    ];
+    getUserPermissions.mockResolvedValue({
+      data: { permissions: mockPermissions, is_super_admin: false },
     });
 
     const { result } = renderHook(() => useAuth(), {
@@ -47,34 +38,63 @@ describe("AuthProvider", () => {
     });
 
     await waitFor(() => expect(result.current.loading).toBe(false));
-    expect(result.current.roles).toEqual([USER_ROLES.MENTORSHIP]);
+    expect(result.current.permissions).toEqual(mockPermissions);
+    expect(result.current.permissions).toContain(
+      PERMISSIONS.DASHBOARD_ACTIVITY_SUMMARY_READ,
+    );
   });
 
-  it("should return empty roles when user has no permissions)", async () => {
-    getUserRoles.mockResolvedValue({ data: { roles: [] } });
+  it("should expose identity and super-admin flag from the API", async () => {
+    getUserPermissions.mockResolvedValue({
+      data: {
+        permissions: [],
+        sub: "u1",
+        user_id: 7,
+        email: "a@b.com",
+        identity_type: "internal",
+        is_super_admin: true,
+      },
+    });
 
     const { result } = renderHook(() => useAuth(), {
       wrapper: AuthProvider,
     });
 
     await waitFor(() => expect(result.current.loading).toBe(false));
-    expect(result.current.roles).toEqual([]);
+    expect(result.current.isSuperAdmin).toBe(true);
+    expect(result.current.user).toEqual({
+      sub: "u1",
+      userId: 7,
+      email: "a@b.com",
+      identityType: "internal",
+    });
   });
 
-  it("should return empty roles when API fails", async () => {
-    getUserRoles.mockRejectedValue(new Error("Network Error"));
+  it("should return empty permissions when user has none", async () => {
+    getUserPermissions.mockResolvedValue({ data: { permissions: [] } });
 
     const { result } = renderHook(() => useAuth(), {
       wrapper: AuthProvider,
     });
 
     await waitFor(() => expect(result.current.loading).toBe(false));
-    expect(result.current.roles).toEqual([]);
+    expect(result.current.permissions).toEqual([]);
+  });
+
+  it("should return empty permissions when API fails", async () => {
+    getUserPermissions.mockRejectedValue(new Error("Network Error"));
+
+    const { result } = renderHook(() => useAuth(), {
+      wrapper: AuthProvider,
+    });
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.permissions).toEqual([]);
   });
 
   it("exposes hasVerifiedEmail true when the API reports a verified email", async () => {
-    getUserRoles.mockResolvedValue({
-      data: { roles: [], has_verified_email: true },
+    getUserPermissions.mockResolvedValue({
+      data: { permissions: [], has_verified_email: true },
     });
 
     const { result } = renderHook(() => useAuth(), {
@@ -86,7 +106,7 @@ describe("AuthProvider", () => {
   });
 
   it("defaults hasVerifiedEmail to false when the flag is absent", async () => {
-    getUserRoles.mockResolvedValue({ data: { roles: [] } });
+    getUserPermissions.mockResolvedValue({ data: { permissions: [] } });
 
     const { result } = renderHook(() => useAuth(), {
       wrapper: AuthProvider,
@@ -97,9 +117,13 @@ describe("AuthProvider", () => {
   });
 
   it("refreshAuth re-pulls auth state so a freshly verified email is reflected", async () => {
-    getUserRoles
-      .mockResolvedValueOnce({ data: { roles: [], has_verified_email: false } })
-      .mockResolvedValueOnce({ data: { roles: [], has_verified_email: true } });
+    getUserPermissions
+      .mockResolvedValueOnce({
+        data: { permissions: [], has_verified_email: false },
+      })
+      .mockResolvedValueOnce({
+        data: { permissions: [], has_verified_email: true },
+      });
 
     const { result } = renderHook(() => useAuth(), {
       wrapper: AuthProvider,
@@ -113,6 +137,6 @@ describe("AuthProvider", () => {
     });
 
     expect(result.current.hasVerifiedEmail).toBe(true);
-    expect(getUserRoles).toHaveBeenCalledTimes(2);
+    expect(getUserPermissions).toHaveBeenCalledTimes(2);
   });
 });

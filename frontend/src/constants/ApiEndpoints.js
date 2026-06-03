@@ -1,6 +1,6 @@
 export const API_ENDPOINTS = {
   MY_PROFILE: "/profiles/me",
-  MY_ROLES: "/roles/me",
+  MY_PERMISSIONS: "/permissions/me",
   EMAIL_OTP_INITIATE: "/auth/emails/initiate",
   EMAIL_OTP_VERIFY: "/auth/emails/verify",
   MENTORSHIP_REGISTRATION: (roundId) =>

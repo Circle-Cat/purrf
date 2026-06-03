@@ -31,7 +31,7 @@ export function FlagsProvider({ children }) {
  */
 export function LDIdentifier() {
   const ldClient = useLDClient(ldReactContext);
-  const { user, roles } = useAuth();
+  const { user } = useAuth();
   const { setFlags } = useContext(FlagsContext);
 
   useEffect(() => {
@@ -41,8 +41,9 @@ export function LDIdentifier() {
       .identify({
         kind: "user",
         key: user.sub,
+        userId: user.userId,
         email: user.email,
-        roles: roles ?? [],
+        identity_type: user.identityType,
       })
       .then(() => {
         setFlags(ldClient.allFlags());

@@ -1,9 +1,7 @@
 import React, { useState, useEffect } from "react";
 import "@/pages/Profile/modals/Modal.css";
-import { CommunicationMethodEnum, isValidEmail } from "@/pages/Profile/utils";
+import { isValidEmail } from "@/pages/Profile/utils";
 import TimezoneSelector from "@/components/common/TimezoneSelector";
-import { useAuth } from "@/context/auth/AuthContext";
-import { USER_ROLES } from "@/constants/UserRoles";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
@@ -78,7 +76,6 @@ const PersonalEditModal = ({
   canEditTimezone,
   nextEditableDate,
 }) => {
-  const { roles, loading } = useAuth();
   const [formData, setFormData] = useState({});
   const [errors, setErrors] = useState({});
   const [isSaving, setIsSaving] = useState(false);
@@ -305,41 +302,6 @@ const PersonalEditModal = ({
               ))}
             </div>
           </div>
-
-          {/* Communication Method */}
-          {!loading && roles.includes(USER_ROLES.CONTACT_GOOGLE_CHAT) && (
-            <div className="form-group">
-              <label>Preferred Communication Method</label>
-              <div className="radio-group">
-                <input
-                  type="radio"
-                  name="communicationMethod"
-                  value={CommunicationMethodEnum.Email}
-                  checked={
-                    formData.communicationMethod ===
-                    CommunicationMethodEnum.Email
-                  }
-                  onChange={(e) =>
-                    handleChange("communicationMethod", e.target.value)
-                  }
-                />
-                Email
-                <input
-                  type="radio"
-                  name="communicationMethod"
-                  value={CommunicationMethodEnum.GoogleChat}
-                  checked={
-                    formData.communicationMethod ===
-                    CommunicationMethodEnum.GoogleChat
-                  }
-                  onChange={(e) =>
-                    handleChange("communicationMethod", e.target.value)
-                  }
-                />
-                Google Chat
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Modal Actions */}

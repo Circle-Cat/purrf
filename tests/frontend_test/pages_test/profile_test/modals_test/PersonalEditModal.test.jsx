@@ -3,12 +3,6 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import React from "react";
 import PersonalEditModal from "@/pages/Profile/modals/PersonalEditModal";
-import { useAuth } from "@/context/auth/AuthContext";
-import { USER_ROLES } from "@/constants/UserRoles";
-
-vi.mock("@/context/auth/AuthContext", () => ({
-  useAuth: vi.fn(),
-}));
 
 vi.mock("@/pages/Profile/utils", () => ({
   CommunicationMethodEnum: {
@@ -51,11 +45,6 @@ describe("PersonalEditModal Component", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-
-    useAuth.mockReturnValue({
-      roles: [USER_ROLES.CONTACT_GOOGLE_CHAT],
-      loading: false,
-    });
   });
 
   it("should not render when isOpen is false", () => {
@@ -214,27 +203,10 @@ describe("PersonalEditModal Component", () => {
     ).toBeInTheDocument();
   });
 
-  it("should show communication methods only if user has correct role", () => {
-    //  Test the case with permissions (already set in beforeEach)
-    const { rerender } = render(
-      <PersonalEditModal
-        isOpen={true}
-        onClose={mockOnClose}
-        initialData={initialData}
-        onSave={mockOnSave}
-      />,
-    );
-    expect(
-      screen.getByText("Preferred Communication Method"),
-    ).toBeInTheDocument();
-
-    // Test the case without permissions
-    useAuth.mockReturnValue({
-      roles: [USER_ROLES.STUDENT],
-      loading: false,
-    });
-
-    rerender(
+  it("does not render the communication method selector", () => {
+    // The Email/Google Chat selector was gated by the old CONTACT_GOOGLE_CHAT
+    // role; it is hidden until its source is reworked off the role system.
+    render(
       <PersonalEditModal
         isOpen={true}
         onClose={mockOnClose}

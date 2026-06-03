@@ -3,7 +3,7 @@ import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import Sidebar from "@/components/layout/Sidebar";
 import { useAuth } from "@/context/auth";
-import { USER_ROLES } from "@/constants/UserRoles";
+import { PERMISSIONS } from "@/constants/Permissions";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
 
 vi.mock("@/context/auth", () => ({
@@ -18,11 +18,11 @@ describe("Sidebar Component", () => {
   /**
    * Helper function to render Sidebar with mocked auth and router context.
    *
-   * @param {string[]} roles - The roles assigned to the current user.
+   * @param {string[]} permissions - The permissions assigned to the current user.
    * @param {string} [initialPath="/"] - The current active route path (for testing active states).
    */
-  const renderSidebar = (roles = [], initialPath = ROUTE_PATHS.ROOT) => {
-    useAuth.mockReturnValue({ roles });
+  const renderSidebar = (permissions = [], initialPath = ROUTE_PATHS.ROOT) => {
+    useAuth.mockReturnValue({ permissions });
     return render(
       <MemoryRouter initialEntries={[initialPath]}>
         <Sidebar />
@@ -30,59 +30,37 @@ describe("Sidebar Component", () => {
     );
   };
 
-  test("renders nothing if user has no roles", () => {
+  test("renders only Personal Dashboard for a user with no permissions", () => {
     renderSidebar([]);
 
-    const listItems = screen.queryAllByRole("listitem");
-
-    expect(listItems).toHaveLength(0);
+    // Personal Dashboard is open to any authenticated user (no permission gate).
+    expect(screen.getByText("Personal Dashboard")).toBeInTheDocument();
     expect(screen.queryByText("Dashboard")).not.toBeInTheDocument();
     expect(screen.queryByText("DataSearch")).not.toBeInTheDocument();
-    expect(screen.queryByText("Personal Dashboard")).not.toBeInTheDocument();
   });
 
-  test("renders all links for manager user", () => {
-    renderSidebar([USER_ROLES.MANAGER, USER_ROLES.MENTORSHIP]);
+  test("renders all links for a user with both internal permissions", () => {
+    renderSidebar([
+      PERMISSIONS.DASHBOARD_ACTIVITY_SUMMARY_READ,
+      PERMISSIONS.INTERNAL_ACTIVITY_READ,
+    ]);
 
     expect(screen.getByText("Dashboard")).toBeInTheDocument();
     expect(screen.getByText("DataSearch")).toBeInTheDocument();
     expect(screen.getByText("Personal Dashboard")).toBeInTheDocument();
   });
 
-  test("renders all links except DataSearch for cc_internal user", () => {
-    renderSidebar([USER_ROLES.CC_INTERNAL, USER_ROLES.MENTORSHIP]);
+  test("renders Dashboard and Personal Dashboard but not DataSearch for a dashboard-only user", () => {
+    renderSidebar([PERMISSIONS.DASHBOARD_ACTIVITY_SUMMARY_READ]);
 
     expect(screen.getByText("Dashboard")).toBeInTheDocument();
     expect(screen.queryByText("DataSearch")).not.toBeInTheDocument();
     expect(screen.getByText("Personal Dashboard")).toBeInTheDocument();
   });
 
-  test("renders PersonalDashboard link for mentorship user", () => {
-    renderSidebar([USER_ROLES.MENTORSHIP]);
-
-    expect(screen.queryByText("Dashboard")).not.toBeInTheDocument();
-    expect(screen.queryByText("DataSearch")).not.toBeInTheDocument();
-    expect(screen.getByText("Personal Dashboard")).toBeInTheDocument();
-  });
-
-  test("renders mentorship management link for mentorship admin user", () => {
-    renderSidebar([USER_ROLES.MENTORSHIP_ADMIN, USER_ROLES.MENTORSHIP]);
-
-    expect(screen.getByText("Mentorship Management")).toBeInTheDocument();
-    expect(screen.getByText("Personal Dashboard")).toBeInTheDocument();
-    expect(screen.queryByText("Dashboard")).not.toBeInTheDocument();
-    expect(screen.queryByText("DataSearch")).not.toBeInTheDocument();
-  });
-
-  test("does not render Mentorship Management link for users without MENTORSHIP_ADMIN role", () => {
-    renderSidebar([USER_ROLES.MENTORSHIP, USER_ROLES.MANAGER]);
-
-    expect(screen.queryByText("Mentorship Management")).not.toBeInTheDocument();
-  });
-
   test("applies active class to the current route link", () => {
     renderSidebar(
-      [USER_ROLES.CC_INTERNAL, USER_ROLES.MENTORSHIP],
+      [PERMISSIONS.DASHBOARD_ACTIVITY_SUMMARY_READ],
       ROUTE_PATHS.DASHBOARD,
     );
 
