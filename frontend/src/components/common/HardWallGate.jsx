@@ -1,5 +1,6 @@
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/context/auth";
+import AccessDenied from "@/pages/AccessDenied";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
 
 /**
@@ -17,10 +18,16 @@ import { ROUTE_PATHS } from "@/constants/RoutePaths";
  * @param {React.ReactNode} props.children - the route tree to guard.
  */
 const HardWallGate = ({ children }) => {
-  const { loading, hasVerifiedEmail } = useAuth();
+  const { loading, hasVerifiedEmail, accessDenied, accessDeniedMessage } =
+    useAuth();
   const location = useLocation();
 
   if (loading) return null;
+
+  // A forbidden account (e.g. deactivated) gets a 403 on /permissions/me, which
+  // leaves hasVerifiedEmail false. Show the 403 page instead of mistaking it
+  // for an unverified user and redirecting to the verify wall.
+  if (accessDenied) return <AccessDenied message={accessDeniedMessage} />;
 
   const onWall = location.pathname === ROUTE_PATHS.VERIFY_REQUIRED;
 

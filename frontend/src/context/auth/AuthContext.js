@@ -15,6 +15,8 @@ export const AuthContext = createContext(null);
  *   user: { sub: string, userId: number, email: string, identityType: string } | null,
  *   isSuperAdmin: boolean,
  *   hasVerifiedEmail: boolean,
+ *   accessDenied: boolean,
+ *   accessDeniedMessage: string,
  *   loading: boolean,
  *   refreshAuth: () => Promise<void>
  * }} The current authentication state plus a refresher to re-pull it.
