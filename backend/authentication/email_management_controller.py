@@ -17,6 +17,8 @@ from backend.common.api_endpoints import (
     EMAIL_MANAGEMENT_LIST_ENDPOINT,
     EMAIL_MANAGEMENT_SET_PRIMARY_CONFIRM_ENDPOINT,
     EMAIL_MANAGEMENT_SET_PRIMARY_INITIATE_ENDPOINT,
+    EMAIL_MANAGEMENT_UNLINK_CONFIRM_ENDPOINT,
+    EMAIL_MANAGEMENT_UNLINK_INITIATE_ENDPOINT,
     EMAIL_MANAGEMENT_VERIFY_ENDPOINT,
 )
 from backend.common.fast_api_response_wrapper import api_response
@@ -73,6 +75,77 @@ class EmailManagementController:
             methods=["POST"],
             response_model=None,
         )
+        self.router.add_api_route(
+            EMAIL_MANAGEMENT_UNLINK_INITIATE_ENDPOINT,
+            endpoint=authenticate()(self.unlink_initiate),
+            methods=["POST"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            EMAIL_MANAGEMENT_UNLINK_CONFIRM_ENDPOINT,
+            endpoint=authenticate()(self.unlink_confirm),
+            methods=["POST"],
+            response_model=None,
+        )
+
+    async def unlink_initiate(self, current_user: UserContextDto, identity_id: int):
+        """
+        Start a step-up-OTP unlink of one of the caller's sign-in identities.
+
+        Empty-bodied POST: the path's ``identity_id`` is the whole request. The
+        service validates the identity can be unlinked, then sends an OTP to the
+        *current primary* and returns a signed state snapshotting that primary.
+
+        Args:
+            current_user (UserContextDto): The authenticated user context.
+            identity_id (int): Primary key of the identity to unlink, from the path.
+
+        Returns:
+            A standardized API response wrapping the signed unlink state.
+        """
+        async with self._database.session() as session:
+            data = await self._service.initiate_unlink(
+                session=session,
+                current_user_id=current_user.user_id,
+                current_sub=current_user.sub,
+                identity_id=identity_id,
+            )
+        return api_response(message="OTP sent to primary email", data=data)
+
+    async def unlink_confirm(
+        self,
+        current_user: UserContextDto,
+        identity_id: int,
+        body: OtpConfirmRequest,
+    ):
+        """
+        Confirm the step-up OTP, unlink the sign-in identity, and drop its
+        synced contact email when nothing else uses it.
+
+        The service validates the signed state against the path's ``identity_id``,
+        rechecks the primary has not changed since initiate, verifies the OTP,
+        unlinks from Auth0, deletes the identity row, then deletes the matching
+        contact email when no surviving identity claims it, and reverse-syncs the
+        Auth0 alias index.
+
+        Args:
+            current_user (UserContextDto): The authenticated user context.
+            identity_id (int): Primary key of the identity to unlink, from the path.
+            body (UnlinkConfirmRequest): The signed state and the OTP code.
+
+        Returns:
+            A standardized API response confirming the unlink.
+        """
+        async with self._database.session() as session:
+            data = await self._service.confirm_unlink(
+                session=session,
+                current_user_id=current_user.user_id,
+                current_sub=current_user.sub,
+                identity_id=identity_id,
+                state=body.state,
+                code=body.code,
+            )
+        return api_response(message="Sign-in method removed", data=data)
 
     async def set_primary_initiate(self, current_user: UserContextDto, email_id: int):
         """

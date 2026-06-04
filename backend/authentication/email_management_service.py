@@ -32,6 +32,7 @@ from backend.entity.user_identities_entity import UserIdentitiesEntity
 
 _STATE_TTL_SECONDS = 600
 _STATE_FLOW = "add_email"
+_UNLINK_STATE_FLOW = "unlink_identity"
 _STATE_ALGORITHM = "HS256"
 _EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 _INVALID_STATE_MESSAGE = "Verification state is invalid or expired"
@@ -124,7 +125,7 @@ class EmailManagementService:
         ):
             raise ConflictError("Identity already linked to another account")
 
-        provider, _, secondary_user_id = new_sub.partition("|")
+        provider, secondary_user_id = self._split_sub(new_sub)
         self._auth0.link_identity(
             primary_sub=current_sub,
             provider=provider,
@@ -208,6 +209,42 @@ class EmailManagementService:
             external_identities=external_identities,
         )
 
+    async def _drop_alias_best_effort(
+        self, session, user_id: int, primary_sub: str, removed, identities_before
+    ) -> None:
+        """
+        Remove the unlinked identity's address from the Auth0 alias index when
+        nothing else references it.
+
+        Skips the drop when another of the user's identities still claims the
+        same address (case-insensitive) or it remains a ``user_emails`` contact.
+        Best-effort: a failure here is logged and swallowed so it never undoes
+        the already-committed unlink.
+        """
+        email_claim = removed.email_claim
+        if not email_claim:
+            return
+        normalized = email_claim.lower()
+
+        still_linked = any(
+            other.identity_id != removed.identity_id
+            and (other.email_claim or "").lower() == normalized
+            for other in identities_before
+        )
+        if still_linked:
+            return
+        if await self._user_emails.get_by_user_and_email(session, user_id, normalized):
+            return
+
+        try:
+            self._auth0.remove_alias_email_from_primary(primary_sub, email_claim)
+        except Exception as exc:
+            self._logger.warning(
+                "[EmailManagementService] auth.alias_sync.failed user_id=%s op=remove error=%s",
+                user_id,
+                exc,
+            )
+
     @staticmethod
     def _to_identity_dto(identity) -> IdentityDto:
         """
@@ -289,11 +326,9 @@ class EmailManagementService:
         ):
             raise ValueError(_INVALID_STATE_MESSAGE)
 
-        primary = await self._user_emails.get_primary(session, current_user_id)
-        if primary is None or primary.email != claims["primary_email_at_request"]:
-            raise PermissionError("Primary email changed during switch; restart")
-
-        self._auth0.exchange_otp(primary.email, code)
+        await self._consume_step_up_otp(
+            session, current_user_id, claims, code, "switch"
+        )
 
         target = await self._user_emails.get_by_id(session, email_id)
         await self._validate_promotable(session, current_user_id, target)
@@ -356,6 +391,32 @@ class EmailManagementService:
         except jwt.PyJWTError:
             raise ValueError(_INVALID_STATE_MESSAGE)
 
+    async def _consume_step_up_otp(
+        self, session, current_user_id: int, claims: dict, code: str, operation: str
+    ) -> None:
+        """
+        Verify a step-up OTP against the *current* primary email.
+
+        Shared by the set-primary and unlink confirm paths: re-fetches the
+        primary and refuses (``PermissionError``) if it changed since initiate —
+        the OTP was mailed to the primary snapshotted in ``claims``, so a swap
+        mid-flow must abort rather than accept a code sent to a stale address —
+        then consumes the OTP. ``operation`` only customizes the error wording.
+        """
+        primary = await self._user_emails.get_primary(session, current_user_id)
+        if primary is None or primary.email != claims["primary_email_at_request"]:
+            raise PermissionError(f"Primary email changed during {operation}; restart")
+        self._auth0.exchange_otp(primary.email, code)
+
+    @staticmethod
+    def _split_sub(sub: str) -> tuple[str, str]:
+        """
+        Split an Auth0 ``sub`` (``provider|secondary_user_id``) into the
+        ``(provider, secondary_user_id)`` pair the link/unlink calls expect.
+        """
+        provider, _, secondary_user_id = sub.partition("|")
+        return provider, secondary_user_id
+
     async def _confirm_email(self, session, user_id: int, email: str) -> None:
         """
         Record `email` as an OTP-confirmed contact for the user.
@@ -403,3 +464,197 @@ class EmailManagementService:
                 user_id,
                 exc,
             )
+
+    async def _validate_unlinkable(
+        self, session, current_user_id: int, current_sub: str, identity
+    ) -> list:
+        """
+        Shared guard for unlinking ``identity`` (ownership assumed already
+        checked by the caller): refuses the caller's only remaining sign-in, the
+        identity backing the current session, and an active employee's INTERNAL
+        corp sign-in.
+
+        Re-run at confirm time, not just initiate: between the two steps the user
+        may have dropped their other sign-ins or become an active employee, and
+        neither must be allowed to strip the last or locked identity.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            current_user_id (int): user_id of the authenticated caller.
+            current_sub (str): JWT ``sub`` of the caller, the current-session
+                identity to protect.
+            identity (UserIdentitiesEntity): The identity row to unlink.
+
+        Returns:
+            list[UserIdentitiesEntity]: The caller's identities including
+            ``identity``, so the caller can reuse them without a second query.
+
+        Raises:
+            ConflictError: It is the only identity, or the current session's.
+            PermissionError: It is an active employee's INTERNAL identity.
+        """
+        identities = await self._user_identities.list_by_user(session, current_user_id)
+        if len(identities) <= 1:
+            raise ConflictError("Cannot remove the only remaining sign-in method")
+
+        if identity.subject_identifier == current_sub:
+            raise ConflictError(
+                "Cannot remove the sign-in used for the current session; "
+                "log in with another method first"
+            )
+
+        if (
+            IdentityType.INTERNAL == identity.identity_type
+            and await self._user_identities.exists_active_internal(
+                session, current_user_id
+            )
+        ):
+            raise PermissionError("Active employees cannot remove corp sign-in")
+
+        return identities
+
+    async def initiate_unlink(
+        self, session, current_user_id: int, current_sub: str, identity_id: int
+    ) -> dict:
+        """
+        Begin a step-up-OTP unlink of one of the caller's sign-in identities.
+
+        Validates the identity can be unlinked — owned by the caller, not the
+        only one, not the current session's, and not an active employee's
+        INTERNAL corp sign-in. Because unlinking also drops the identity's
+        synced contact email, it additionally refuses when that email is the
+        primary (switch the primary first; the primary cannot be deleted). The
+        OTP is sent to the current primary, snapshotted into the signed state so
+        :meth:`confirm_unlink` can detect a swap mid-flow.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            current_user_id (int): user_id of the authenticated caller.
+            current_sub (str): JWT ``sub`` of the caller, the current-session
+                identity to protect.
+            identity_id (int): Primary key of the identity row to unlink.
+
+        Returns:
+            dict: ``{"state": <jwt>}`` binding the OTP to this unlink request.
+
+        Raises:
+            ValueError: The identity is missing/owned by another user, or there
+                is no primary email to verify against.
+            ConflictError: It is the only identity, or the current session's.
+            PermissionError: It is an active employee's INTERNAL identity, or
+                its email is the primary contact.
+        """
+        identity = await self._user_identities.get_by_id(session, identity_id)
+        if identity is None or identity.user_id != current_user_id:
+            raise ValueError("Identity not found")
+
+        await self._validate_unlinkable(session, current_user_id, current_sub, identity)
+
+        primary = await self._user_emails.get_primary(session, current_user_id)
+        if primary is None:
+            raise ValueError("No primary email to verify against")
+
+        if (identity.email_claim or "").lower() == primary.email.lower():
+            raise PermissionError(
+                "This sign-in's email is your primary contact; "
+                "switch your primary email first"
+            )
+
+        self._auth0.start_passwordless(primary.email)
+        state = self._sign_state(
+            _UNLINK_STATE_FLOW,
+            user_id=current_user_id,
+            target_identity_id=identity_id,
+            primary_email_at_request=primary.email,
+        )
+        return {"state": state}
+
+    async def confirm_unlink(
+        self,
+        session,
+        current_user_id: int,
+        current_sub: str,
+        identity_id: int,
+        state: str,
+        code: str,
+    ) -> dict:
+        """
+        Confirm the step-up OTP, unlink the sign-in identity, and drop its
+        synced contact email when no other identity still uses that address.
+
+        Validates the signed state (signature, expiry, caller, and that the URL
+        ``identity_id`` matches the bound target), rechecks the primary *before*
+        consuming the OTP — refusing if it changed since initiate — verifies the
+        code against the primary, unlinks from Auth0, deletes the
+        ``user_identities`` row, then deletes the matching ``user_emails``
+        contact row when no surviving identity claims the same address. The
+        Auth0 alias index is reverse-synced best-effort.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            current_user_id (int): user_id of the authenticated caller.
+            current_sub (str): JWT ``sub`` of the caller, the Auth0 primary user.
+            identity_id (int): Primary key from the URL; must match the state.
+            state (str): The signed state JWT from initiate.
+            code (str): The OTP the user received at the primary address.
+
+        Returns:
+            dict: ``{"ok": True}`` once the unlink is committed.
+
+        Raises:
+            ValueError: The state is invalid/expired/mismatched, the OTP is
+                wrong, or the identity vanished or is owned by another user.
+            ConflictError: It became the only identity, or the current session's,
+                between initiate and confirm.
+            PermissionError: The primary changed since initiate, or it is now an
+                active employee's INTERNAL identity.
+        """
+        claims = self._decode_state(state)
+        if claims.get("flow") != _UNLINK_STATE_FLOW:
+            raise ValueError(_INVALID_STATE_MESSAGE)
+        if claims.get("user_id") != current_user_id:
+            raise ValueError(_INVALID_STATE_MESSAGE)
+        if claims.get("target_identity_id") != identity_id:
+            raise ValueError(_INVALID_STATE_MESSAGE)
+
+        await self._consume_step_up_otp(
+            session, current_user_id, claims, code, "unlink"
+        )
+
+        identity = await self._user_identities.get_by_id(session, identity_id)
+        if identity is None or identity.user_id != current_user_id:
+            raise ValueError("Identity not found")
+
+        # Re-check the unlink preconditions against current state — the only/
+        # current-session/active-employee guards from initiate may no longer hold.
+        identities_before = await self._validate_unlinkable(
+            session, current_user_id, current_sub, identity
+        )
+
+        provider, secondary_user_id = self._split_sub(identity.subject_identifier)
+        self._auth0.unlink_identity(
+            primary_sub=current_sub,
+            provider=provider,
+            secondary_user_id=secondary_user_id,
+        )
+        await self._user_identities.delete(session, identity_id)
+
+        removed_claim = (identity.email_claim or "").lower()
+        still_claimed = any(
+            other.identity_id != identity.identity_id
+            and (other.email_claim or "").lower() == removed_claim
+            for other in identities_before
+        )
+        if removed_claim and not still_claimed:
+            email_row = await self._user_emails.get_by_user_and_email(
+                session, current_user_id, removed_claim
+            )
+            if email_row is not None and not email_row.is_primary:
+                await self._user_emails.delete(session, email_row.email_id)
+
+        await session.commit()
+
+        await self._drop_alias_best_effort(
+            session, current_user_id, current_sub, identity, identities_before
+        )
+        return {"ok": True}
