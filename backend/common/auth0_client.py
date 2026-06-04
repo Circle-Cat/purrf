@@ -238,6 +238,75 @@ class Auth0Client:
             _mask_email(normalized),
         )
 
+    def unlink_identity(
+        self, primary_sub: str, provider: str, secondary_user_id: str
+    ) -> None:
+        """
+        Detach a secondary identity from ``primary_sub``.
+
+        A 404 is treated as success so a retry after a partial failure (or an
+        already-detached identity) is idempotent — the reverse of
+        :meth:`link_identity`. ``secondary_user_id`` is the local part of the
+        sub (after the ``|``).
+        """
+        encoded = urllib.parse.quote(primary_sub, safe="")
+        url = (
+            f"https://{self._tenant}/api/v2/users/{encoded}"
+            f"/identities/{provider}/{secondary_user_id}"
+        )
+        response = requests.delete(
+            url,
+            headers={"Authorization": f"Bearer {self._get_m2m_token()}"},
+            timeout=_HTTP_TIMEOUT_SECONDS,
+        )
+
+        if response.status_code == HTTPStatus.NOT_FOUND:
+            self._logger.info(
+                "[Auth0Client] unlink_identity idempotent: %s already detached",
+                secondary_user_id,
+            )
+            return
+        self._raise_for_auth0_error(response, "unlink_identity")
+        self._logger.info(
+            "[Auth0Client] unlink_identity detached %s from primary",
+            secondary_user_id,
+        )
+
+    def remove_alias_email_from_primary(self, primary_sub: str, email: str) -> None:
+        """
+        Remove ``email`` from the primary user's ``app_metadata.alias_emails``.
+
+        The reverse of :meth:`add_alias_email_to_primary`, called when an
+        unlinked identity's address is no longer referenced by the user. Reads
+        current metadata first and only PATCHes when the address is present, so
+        an already-absent alias is a no-op.
+        """
+        encoded = urllib.parse.quote(primary_sub, safe="")
+        url = f"https://{self._tenant}/api/v2/users/{encoded}"
+        auth_header = {"Authorization": f"Bearer {self._get_m2m_token()}"}
+        normalized = email.lower()
+
+        get_resp = requests.get(url, headers=auth_header, timeout=_HTTP_TIMEOUT_SECONDS)
+        self._raise_for_auth0_error(get_resp, "get_user_for_alias_emails")
+        app_metadata = get_resp.json().get("app_metadata") or {}
+        aliases = app_metadata.get("alias_emails") or []
+
+        remaining = [e for e in aliases if e.lower() != normalized]
+        if len(remaining) == len(aliases):
+            return
+
+        patch_resp = requests.patch(
+            url,
+            json={"app_metadata": {"alias_emails": remaining}},
+            headers={**auth_header, "Content-Type": "application/json"},
+            timeout=_HTTP_TIMEOUT_SECONDS,
+        )
+        self._raise_for_auth0_error(patch_resp, "remove_alias_email_from_primary")
+        self._logger.info(
+            "[Auth0Client] remove_alias_email_from_primary dropped %s from primary",
+            _mask_email(normalized),
+        )
+
     def _verify_id_token(self, id_token: str) -> dict:
         """
         Verify the ID token against the tenant JWKS and return its claims.

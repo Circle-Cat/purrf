@@ -1,5 +1,5 @@
 from backend.entity.user_emails_entity import UserEmailsEntity
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -192,5 +192,21 @@ class UserEmailsRepository:
             update(UserEmailsEntity)
             .where(UserEmailsEntity.email_id == email_id)
             .values(is_primary=True)
+        )
+        await session.flush()
+
+    async def delete(self, session: AsyncSession, email_id: int) -> None:
+        """
+        Remove one email row by primary key, backing the unlink flow's drop of a
+        sign-in identity's synced contact address.
+
+        Flushes but does not commit; the caller owns the transaction boundary.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            email_id (int): Primary key of the email row to delete.
+        """
+        await session.execute(
+            delete(UserEmailsEntity).where(UserEmailsEntity.email_id == email_id)
         )
         await session.flush()
