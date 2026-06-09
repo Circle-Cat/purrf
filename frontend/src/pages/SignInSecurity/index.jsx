@@ -1,28 +1,122 @@
+import { useState } from "react";
+import { toast } from "sonner";
+
 import {
   Card,
   CardHeader,
   CardTitle,
   CardDescription,
+  CardAction,
   CardContent,
 } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 
+import {
+  initiateSetPrimary,
+  confirmSetPrimary,
+  initiateUnlink,
+  confirmUnlink,
+} from "@/api/emailApi";
 import { useEmailSettings } from "@/pages/SignInSecurity/hooks/useEmailSettings";
 import EmailAddressList from "@/pages/SignInSecurity/components/EmailAddressList";
 import SignInMethodList from "@/pages/SignInSecurity/components/SignInMethodList";
+import AddSignInMethodDialog from "@/pages/SignInSecurity/components/AddSignInMethodDialog";
+import StepUpConfirmDialog from "@/pages/SignInSecurity/components/StepUpConfirmDialog";
+
+const errorMessage = (error, fallback) =>
+  error?.response?.data?.message || fallback;
+
+const PROVIDER_LABELS = {
+  "google-oauth2": "Google",
+  google: "Google",
+  email: "Email",
+  auth0: "Email & password",
+};
+
+const identityLabel = (identity) => {
+  const provider = (identity.subjectIdentifier || "").split("|")[0];
+  const name = PROVIDER_LABELS[provider] || provider || "this sign-in method";
+  return identity.emailClaim ? `${name} (${identity.emailClaim})` : name;
+};
 
 /**
  * Sign in & security settings page.
  *
- * Read-only comprehensive view of the caller's contact emails and linked
- * sign-in methods, backed by `GET /auth/emails`. Mutating actions (add email,
- * make primary, remove email, unlink identity) are layered on by later stories.
- * Cards span the full content area width.
+ * Sign-in methods are the management subject; contact emails are synced from
+ * them. Backed by `GET /auth/emails`: add a sign-in method (email OTP), switch
+ * the primary contact email (step-up OTP), and unlink a sign-in method (step-up
+ * OTP, which also drops its synced contact email). Cards span the full width.
  *
  * @component
  */
 const SignInSecurity = () => {
-  const { isLoading, emails, internalIdentity, externalIdentities } =
+  const { isLoading, emails, internalIdentity, externalIdentities, refresh } =
     useEmailSettings();
+  const [addOpen, setAddOpen] = useState(false);
+  const [primaryTarget, setPrimaryTarget] = useState(null);
+  const [unlinkTarget, setUnlinkTarget] = useState(null);
+
+  const handleSetPrimary = async (email) => {
+    try {
+      const { data } = await initiateSetPrimary(email.emailId);
+      setPrimaryTarget({
+        emailId: email.emailId,
+        email: email.email,
+        state: data.state,
+      });
+    } catch (error) {
+      toast.error(
+        errorMessage(error, "Could not start switching your primary email."),
+      );
+    }
+  };
+
+  const handleConfirmSetPrimary = async (code) => {
+    try {
+      await confirmSetPrimary(primaryTarget.emailId, primaryTarget.state, code);
+      setPrimaryTarget(null);
+      toast.success("Primary email updated.");
+      await refresh();
+    } catch (error) {
+      toast.error(errorMessage(error, "Could not switch your primary email."));
+    }
+  };
+
+  const handleResendSetPrimary = async () => {
+    const { data } = await initiateSetPrimary(primaryTarget.emailId);
+    setPrimaryTarget((t) => ({ ...t, state: data.state }));
+  };
+
+  const handleUnlink = async (identity) => {
+    try {
+      const { data } = await initiateUnlink(identity.identityId);
+      setUnlinkTarget({
+        identityId: identity.identityId,
+        label: identityLabel(identity),
+        state: data.state,
+      });
+    } catch (error) {
+      toast.error(
+        errorMessage(error, "Could not start removing this sign-in method."),
+      );
+    }
+  };
+
+  const handleConfirmUnlink = async (code) => {
+    try {
+      await confirmUnlink(unlinkTarget.identityId, unlinkTarget.state, code);
+      setUnlinkTarget(null);
+      toast.success("Sign-in method removed.");
+      await refresh();
+    } catch (error) {
+      toast.error(errorMessage(error, "Could not remove this sign-in method."));
+    }
+  };
+
+  const handleResendUnlink = async () => {
+    const { data } = await initiateUnlink(unlinkTarget.identityId);
+    setUnlinkTarget((t) => ({ ...t, state: data.state }));
+  };
 
   return (
     <div className="flex flex-col gap-4 py-8">
@@ -30,12 +124,16 @@ const SignInSecurity = () => {
         <CardHeader>
           <CardTitle>Email addresses</CardTitle>
           <CardDescription>
-            Your contact email addresses. Your primary address receives account
-            notifications.
+            Your contact email addresses, synced from your sign-in methods. Your
+            primary address receives account notifications.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <EmailAddressList emails={emails} isLoading={isLoading} />
+          <EmailAddressList
+            emails={emails}
+            isLoading={isLoading}
+            onSetPrimary={handleSetPrimary}
+          />
         </CardContent>
       </Card>
 
@@ -45,15 +143,56 @@ const SignInSecurity = () => {
           <CardDescription>
             The accounts you can use to sign in to Purrf.
           </CardDescription>
+          <CardAction>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setAddOpen(true)}
+            >
+              Add sign-in method
+            </Button>
+          </CardAction>
         </CardHeader>
         <CardContent>
           <SignInMethodList
             internalIdentity={internalIdentity}
             externalIdentities={externalIdentities}
             isLoading={isLoading}
+            onUnlink={handleUnlink}
           />
         </CardContent>
       </Card>
+
+      <AddSignInMethodDialog
+        open={addOpen}
+        onOpenChange={setAddOpen}
+        onAdded={refresh}
+      />
+
+      <StepUpConfirmDialog
+        open={primaryTarget !== null}
+        onOpenChange={(o) => {
+          if (!o) setPrimaryTarget(null);
+        }}
+        title="Switch primary email"
+        description={`Enter the 6-digit code we sent to your current primary email to make ${primaryTarget?.email} your primary contact address.`}
+        confirmLabel="Switch primary"
+        onConfirm={handleConfirmSetPrimary}
+        onResend={handleResendSetPrimary}
+      />
+
+      <StepUpConfirmDialog
+        open={unlinkTarget !== null}
+        onOpenChange={(o) => {
+          if (!o) setUnlinkTarget(null);
+        }}
+        title="Remove sign-in method"
+        description={`Enter the 6-digit code we sent to your primary email to confirm removing ${unlinkTarget?.label}. Its contact email is removed too unless another sign-in method uses it.`}
+        confirmLabel="Remove sign-in method"
+        confirmVariant="destructive"
+        onConfirm={handleConfirmUnlink}
+        onResend={handleResendUnlink}
+      />
     </div>
   );
 };
