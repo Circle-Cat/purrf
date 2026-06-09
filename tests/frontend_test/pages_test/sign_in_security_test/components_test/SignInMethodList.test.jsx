@@ -1,5 +1,12 @@
-import { render, screen, cleanup, within } from "@testing-library/react";
-import { describe, it, expect, afterEach } from "vitest";
+import {
+  render,
+  screen,
+  cleanup,
+  within,
+  waitFor,
+} from "@testing-library/react";
+import { describe, it, expect, afterEach, vi } from "vitest";
+import userEvent from "@testing-library/user-event";
 
 import SignInMethodList from "@/pages/SignInSecurity/components/SignInMethodList";
 
@@ -186,5 +193,132 @@ describe("SignInMethodList", () => {
     expect(within(rows[0]).getByText("Google")).toBeInTheDocument();
     // Only the provider label is present, no email claim line.
     expect(within(rows[0]).queryByText(/@/)).not.toBeInTheDocument();
+  });
+
+  describe("Unlink action", () => {
+    it("never offers Unlink for the internal identity", () => {
+      const internalIdentity = makeIdentity({
+        identityId: 99,
+        subjectIdentifier: "auth0|work",
+      });
+      const externalIdentities = [
+        makeIdentity({ identityId: 1, subjectIdentifier: "google-oauth2|1" }),
+      ];
+
+      render(
+        <SignInMethodList
+          internalIdentity={internalIdentity}
+          externalIdentities={externalIdentities}
+          isLoading={false}
+          onUnlink={vi.fn()}
+        />,
+      );
+
+      const rows = screen.getAllByRole("listitem");
+      // Internal row (first) has no Unlink; the external one does (total > 1).
+      expect(
+        within(rows[0]).queryByRole("button", { name: "Unlink" }),
+      ).not.toBeInTheDocument();
+      expect(
+        within(rows[1]).getByRole("button", { name: "Unlink" }),
+      ).toBeInTheDocument();
+    });
+
+    it("does not offer Unlink when only one sign-in method remains", () => {
+      const externalIdentities = [
+        makeIdentity({ identityId: 1, subjectIdentifier: "google-oauth2|1" }),
+      ];
+
+      render(
+        <SignInMethodList
+          internalIdentity={null}
+          externalIdentities={externalIdentities}
+          isLoading={false}
+          onUnlink={vi.fn()}
+        />,
+      );
+
+      expect(
+        screen.queryByRole("button", { name: "Unlink" }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("offers Unlink on every external identity when more than one exists", () => {
+      const externalIdentities = [
+        makeIdentity({ identityId: 1, subjectIdentifier: "google-oauth2|1" }),
+        makeIdentity({ identityId: 2, subjectIdentifier: "auth0|2" }),
+      ];
+
+      render(
+        <SignInMethodList
+          internalIdentity={null}
+          externalIdentities={externalIdentities}
+          isLoading={false}
+          onUnlink={vi.fn()}
+        />,
+      );
+
+      expect(screen.getAllByRole("button", { name: "Unlink" })).toHaveLength(2);
+    });
+
+    it("calls onUnlink with the identity when clicked", async () => {
+      const user = userEvent.setup();
+      const onUnlink = vi.fn().mockResolvedValue();
+      const externalIdentities = [
+        makeIdentity({ identityId: 1, subjectIdentifier: "google-oauth2|1" }),
+        makeIdentity({ identityId: 2, subjectIdentifier: "auth0|2" }),
+      ];
+
+      render(
+        <SignInMethodList
+          internalIdentity={null}
+          externalIdentities={externalIdentities}
+          isLoading={false}
+          onUnlink={onUnlink}
+        />,
+      );
+
+      const rows = screen.getAllByRole("listitem");
+      await user.click(within(rows[1]).getByRole("button", { name: "Unlink" }));
+
+      expect(onUnlink).toHaveBeenCalledWith(externalIdentities[1]);
+    });
+
+    it("shows a busy label and disables actions while unlinking", async () => {
+      const user = userEvent.setup();
+      let resolve;
+      const onUnlink = vi.fn(
+        () =>
+          new Promise((r) => {
+            resolve = r;
+          }),
+      );
+      const externalIdentities = [
+        makeIdentity({ identityId: 1, subjectIdentifier: "google-oauth2|1" }),
+        makeIdentity({ identityId: 2, subjectIdentifier: "auth0|2" }),
+      ];
+
+      render(
+        <SignInMethodList
+          internalIdentity={null}
+          externalIdentities={externalIdentities}
+          isLoading={false}
+          onUnlink={onUnlink}
+        />,
+      );
+
+      const [firstButton] = screen.getAllByRole("button", { name: "Unlink" });
+      await user.click(firstButton);
+
+      expect(screen.getByText("Removing…")).toBeInTheDocument();
+      screen
+        .getAllByRole("button")
+        .forEach((button) => expect(button).toBeDisabled());
+
+      resolve();
+      await waitFor(() =>
+        expect(screen.queryByText("Removing…")).not.toBeInTheDocument(),
+      );
+    });
   });
 });
