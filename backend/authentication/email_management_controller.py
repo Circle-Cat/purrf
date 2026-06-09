@@ -219,6 +219,7 @@ class EmailManagementController:
             result: EmailsViewDto = await self._service.list_emails_and_identities(
                 session=session,
                 current_user_id=current_user.user_id,
+                current_sub=current_user.sub,
             )
         return api_response(message="Emails and identities", data=result)
 

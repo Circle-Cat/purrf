@@ -154,6 +154,7 @@ class TestEmailManagementController(unittest.TestCase):
 
         _, kwargs = self.service.list_emails_and_identities.call_args
         self.assertEqual(kwargs["current_user_id"], 42)
+        self.assertEqual(kwargs["current_sub"], "google-oauth2|primary")
 
     def test_set_primary_initiate_passes_session_user_and_email_id(self):
         client = self._client_with_user()
