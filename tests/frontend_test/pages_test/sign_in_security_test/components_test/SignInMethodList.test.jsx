@@ -321,4 +321,109 @@ describe("SignInMethodList", () => {
       );
     });
   });
+
+  describe("Current session identity", () => {
+    it("badges the current-session identity as the primary sign-in", () => {
+      const externalIdentities = [
+        makeIdentity({
+          identityId: 1,
+          subjectIdentifier: "google-oauth2|1",
+          isCurrentSession: true,
+        }),
+      ];
+
+      render(
+        <SignInMethodList
+          internalIdentity={null}
+          externalIdentities={externalIdentities}
+          isLoading={false}
+          onUnlink={vi.fn()}
+        />,
+      );
+
+      expect(screen.getByText("Primary sign-in")).toBeInTheDocument();
+    });
+
+    it("does not badge identities that are not the current session", () => {
+      const externalIdentities = [
+        makeIdentity({
+          identityId: 1,
+          subjectIdentifier: "google-oauth2|1",
+          isCurrentSession: false,
+        }),
+      ];
+
+      render(
+        <SignInMethodList
+          internalIdentity={null}
+          externalIdentities={externalIdentities}
+          isLoading={false}
+          onUnlink={vi.fn()}
+        />,
+      );
+
+      expect(screen.queryByText("Primary sign-in")).not.toBeInTheDocument();
+    });
+
+    it("hides Unlink for the current-session identity while peers keep theirs", () => {
+      const externalIdentities = [
+        makeIdentity({
+          identityId: 1,
+          subjectIdentifier: "google-oauth2|1",
+          isCurrentSession: true,
+        }),
+        makeIdentity({
+          identityId: 2,
+          subjectIdentifier: "auth0|2",
+          isCurrentSession: false,
+        }),
+      ];
+
+      render(
+        <SignInMethodList
+          internalIdentity={null}
+          externalIdentities={externalIdentities}
+          isLoading={false}
+          onUnlink={vi.fn()}
+        />,
+      );
+
+      const rows = screen.getAllByRole("listitem");
+      // total > 1 so canUnlink is true, but the current-session row still has
+      // no Unlink control; the other external identity keeps its own.
+      expect(
+        within(rows[0]).queryByRole("button", { name: "Unlink" }),
+      ).not.toBeInTheDocument();
+      expect(
+        within(rows[1]).getByRole("button", { name: "Unlink" }),
+      ).toBeInTheDocument();
+    });
+
+    it("shows both Internal and Primary sign-in badges on an internal current-session identity", () => {
+      const internalIdentity = makeIdentity({
+        identityId: 99,
+        subjectIdentifier: "auth0|work",
+        isCurrentSession: true,
+      });
+      const externalIdentities = [
+        makeIdentity({ identityId: 1, subjectIdentifier: "google-oauth2|1" }),
+      ];
+
+      render(
+        <SignInMethodList
+          internalIdentity={internalIdentity}
+          externalIdentities={externalIdentities}
+          isLoading={false}
+          onUnlink={vi.fn()}
+        />,
+      );
+
+      const rows = screen.getAllByRole("listitem");
+      expect(within(rows[0]).getByText("Internal")).toBeInTheDocument();
+      expect(within(rows[0]).getByText("Primary sign-in")).toBeInTheDocument();
+      expect(
+        within(rows[0]).queryByRole("button", { name: "Unlink" }),
+      ).not.toBeInTheDocument();
+    });
+  });
 });
