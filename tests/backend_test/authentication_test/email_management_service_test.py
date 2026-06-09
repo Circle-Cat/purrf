@@ -335,7 +335,9 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         external_current.identity_id = 7
         self.user_identities.list_by_user_id.return_value = [internal, external_current]
 
-        result = await self.service.list_emails_and_identities(self.session, _USER_ID)
+        result = await self.service.list_emails_and_identities(
+            self.session, _USER_ID, _CURRENT_SUB
+        )
 
         emails = {e.email_id: e for e in result.emails}
         self.assertEqual(emails[12].linked_identity_count, 1)
@@ -350,6 +352,10 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(result.external_identities), 1)
         ext = result.external_identities[0]
         self.assertEqual(ext.identity_id, 7)
+        # external_current carries _CURRENT_SUB -> flagged as the session's primary;
+        # the internal identity (a different sub) is not.
+        self.assertTrue(ext.is_current_session)
+        self.assertFalse(result.internal_identity.is_current_session)
 
     async def test_list_emails_and_identities_null_internal(self):
         self.user_emails.list_by_user_id.return_value = []
@@ -362,10 +368,13 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         external.identity_id = 9
         self.user_identities.list_by_user_id.return_value = [external]
 
-        result = await self.service.list_emails_and_identities(self.session, _USER_ID)
+        result = await self.service.list_emails_and_identities(
+            self.session, _USER_ID, _CURRENT_SUB
+        )
 
         self.assertIsNone(result.internal_identity)
         self.assertEqual(result.external_identities[0].identity_id, 9)
+        self.assertFalse(result.external_identities[0].is_current_session)
 
     # initiate_set_primary — step 1: validate target, OTP the current primary
     async def test_initiate_set_primary_sends_otp_to_current_primary(self):

@@ -18,6 +18,7 @@ class IdentityDto(BaseDto):
     email_claim: str | None = None
     linked_at: datetime | None = None
     last_used_at: datetime | None = None
+    is_current_session: bool = False
 
 
 class EmailsViewDto(BaseDto):
