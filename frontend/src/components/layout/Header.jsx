@@ -26,6 +26,10 @@ const Header = () => {
     navigate(ROUTE_PATHS.PROFILE);
   };
 
+  const goToSettings = () => {
+    navigate(ROUTE_PATHS.SIGN_IN_SECURITY);
+  };
+
   const openContactUs = () => {
     setIsDialogOpen(true);
   };
@@ -64,6 +68,13 @@ const Header = () => {
               aria-label="View Profile"
             >
               View Profile
+            </Item>
+            <Item
+              onClick={goToSettings}
+              className="dropdown-item"
+              aria-label="Settings"
+            >
+              Settings
             </Item>
             <Item
               onClick={openContactUs}

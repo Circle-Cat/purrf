@@ -3,6 +3,7 @@ export const API_ENDPOINTS = {
   MY_PERMISSIONS: "/permissions/me",
   EMAIL_OTP_INITIATE: "/auth/emails/initiate",
   EMAIL_OTP_VERIFY: "/auth/emails/verify",
+  EMAIL_LIST: "/auth/emails",
   MENTORSHIP_REGISTRATION: (roundId) =>
     `/mentorship/rounds/${roundId}/registration`,
   MENTORSHIP_MATCH_RESULT: (roundId) => `/mentorship/rounds/${roundId}/matches`,
