@@ -1,0 +1,23 @@
+# Test-environment overrides, layered on top of values.yaml.
+# Read by the ArgoCD `purrf-test` Application via source.helm.valueFiles.
+# These were previously injected by Terraform (module.purrf_instance.helm_release.purrf_app).
+# Shared chart defaults (securityContext, cronjobs, resources, ...) stay in values.yaml.
+
+fullnameOverride: purrf-test
+
+image:
+  repository: us-docker.pkg.dev/k8s-dev-437501/purrf/purrf
+  tag: "20260516-021842"
+
+envFrom:
+  - secretRef:
+      name: purrf-test
+
+ingress:
+  enabled: true
+  className: cloudflare-tunnel
+  hosts:
+    - host: test-api.purrf.io
+      paths:
+        - path: /
+          pathType: Prefix
