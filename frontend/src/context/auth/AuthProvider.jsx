@@ -1,12 +1,14 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { getUserRoles } from "@/api/rolesApi";
 import { AuthContext } from "./AuthContext";
 
 /**
  * Authentication Provider Component.
  *
- * Fetches user roles from the API and provides authentication data to child components.
- * Automatically initializes roles when the component mounts.
+ * Fetches the current user's roles and verification status from the API and
+ * provides them to child components. Exposes `refreshAuth` so flows like the
+ * email hard wall can re-pull state (e.g. after a successful OTP) without a
+ * full page reload.
  *
  * @component
  * @param {Object} props - Component props
@@ -15,36 +17,37 @@ import { AuthContext } from "./AuthContext";
 export const AuthProvider = ({ children }) => {
   const [roles, setRoles] = useState([]);
   const [user, setUser] = useState(null);
+  const [hasVerifiedEmail, setHasVerifiedEmail] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    /**
-     * Initializes authentication state.
-     * Asynchronously fetches user roles and handles success/loading states.
-     */
-    const initAuth = async () => {
-      try {
-        const { data } = await getUserRoles();
-        setRoles(data.roles || []);
-        setUser({ sub: data.sub, email: data.email });
-      } catch (error) {
-        console.error("Auth initialization failed", error);
-        setRoles([]);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    initAuth();
+  /**
+   * Fetches authentication state (roles, identity, verified-email flag).
+   * Reusable so callers can refresh after state-changing actions.
+   */
+  const loadAuth = useCallback(async () => {
+    try {
+      const { data } = await getUserRoles();
+      setRoles(data.roles || []);
+      setUser({ sub: data.sub, email: data.email });
+      setHasVerifiedEmail(Boolean(data.has_verified_email));
+    } catch (error) {
+      console.error("Auth initialization failed", error);
+      setRoles([]);
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    loadAuth();
+  }, [loadAuth]);
 
   /**
    * Memoizes the context value to prevent unnecessary re-renders.
-   * The value is only recalculated when 'roles', 'user', or 'loading' state changes.
    */
   const value = useMemo(
-    () => ({ roles, user, loading }),
-    [roles, user, loading],
+    () => ({ roles, user, hasVerifiedEmail, loading, refreshAuth: loadAuth }),
+    [roles, user, hasVerifiedEmail, loading, loadAuth],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

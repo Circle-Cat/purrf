@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { renderHook, waitFor } from "@testing-library/react";
+import { renderHook, waitFor, act } from "@testing-library/react";
 import { AuthProvider, useAuth } from "@/context/auth";
 import { USER_ROLES } from "@/constants/UserRoles";
 import { getUserRoles } from "@/api/rolesApi";
@@ -70,5 +70,49 @@ describe("AuthProvider", () => {
 
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.roles).toEqual([]);
+  });
+
+  it("exposes hasVerifiedEmail true when the API reports a verified email", async () => {
+    getUserRoles.mockResolvedValue({
+      data: { roles: [], has_verified_email: true },
+    });
+
+    const { result } = renderHook(() => useAuth(), {
+      wrapper: AuthProvider,
+    });
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.hasVerifiedEmail).toBe(true);
+  });
+
+  it("defaults hasVerifiedEmail to false when the flag is absent", async () => {
+    getUserRoles.mockResolvedValue({ data: { roles: [] } });
+
+    const { result } = renderHook(() => useAuth(), {
+      wrapper: AuthProvider,
+    });
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.hasVerifiedEmail).toBe(false);
+  });
+
+  it("refreshAuth re-pulls auth state so a freshly verified email is reflected", async () => {
+    getUserRoles
+      .mockResolvedValueOnce({ data: { roles: [], has_verified_email: false } })
+      .mockResolvedValueOnce({ data: { roles: [], has_verified_email: true } });
+
+    const { result } = renderHook(() => useAuth(), {
+      wrapper: AuthProvider,
+    });
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.hasVerifiedEmail).toBe(false);
+
+    await act(async () => {
+      await result.current.refreshAuth();
+    });
+
+    expect(result.current.hasVerifiedEmail).toBe(true);
+    expect(getUserRoles).toHaveBeenCalledTimes(2);
   });
 });
