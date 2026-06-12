@@ -1,10 +1,15 @@
 name: Deploy Test
 
-# Builds the backend image on every push to main and pushes it to GHCR under
-# the mutable `main` tag (plus an immutable commit-SHA tag for traceability).
-# ArgoCD Image Updater watches the `main` tag's digest and writes the new
-# digest into helm/purrf/values-test.yaml, which the purrf-test ArgoCD
-# Application syncs. This workflow itself never touches git or the values file.
+# Continuous deploy to the test environment. On every push to main that touches
+# the backend image, this builds and pushes the image to GHCR, then pins the new
+# tag into helm/purrf/values-test.yaml by committing straight back to main (with
+# [skip ci] so the pin commit doesn't re-trigger any workflow). The purrf-test
+# ArgoCD Application watches that file and syncs automatically.
+#
+# The pin commit is pushed using a GitHub App token (NOT the built-in
+# GITHUB_TOKEN), because main is protected by the `main-squash-only` ruleset.
+# The app must be listed in that ruleset's bypass_actors (actor_type:
+# Integration, bypass_mode: always). The same app is reused by promote.yml.
 on:
   push:
     branches: [main]
@@ -26,15 +31,27 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: read
-  packages: write
+  contents: read    # checkout falls back to this; the app token does the push
+  packages: write   # push the image to GHCR via the built-in token
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
+      # Mint an installation token for the app so the pin commit can bypass the
+      # protected-branch ruleset. Generated first so checkout uses it, making
+      # the later `git push` authenticate (and be attributed) as the app.
+      - name: Generate app token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.PURRF_BOT_APP_ID }}         # TODO: set once app exists
+          private-key: ${{ secrets.PURRF_BOT_PRIVATE_KEY }}  # TODO: set once app exists
+
       - uses: actions/checkout@v4
+        with:
+          token: ${{ steps.app-token.outputs.token }}
 
       - uses: bazel-contrib/setup-bazel@0.19.0
 
@@ -46,11 +63,28 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push backend image
-        # TAG_1=main is the mutable tag ArgoCD Image Updater tracks by digest.
-        # TAG_2=<sha> is an immutable per-build tag for traceability/rollback.
+        # TAG_1=main is a mutable "latest on test" convenience pointer.
+        # TAG_2=<sha> is the immutable per-build tag that values-test.yaml pins.
         run: >-
           bazel --max_idle_secs=10 run //:purrf_image_push_dynamic
           --action_env=BE_REPO=ghcr.io/circle-cat/purrf
           --action_env=TAG_1=main
           --action_env=TAG_2=${{ github.sha }}
-  
+
+      - name: Pin image tag in values-test.yaml on main
+        env:
+          TAG: ${{ github.sha }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Commit the pin on top of the latest main so a merge that lands
+          # during the build doesn't cause a non-fast-forward rejection.
+          git fetch origin main
+          git checkout -B deploy-test-pin origin/main
+          yq -i '.image.tag = strenv(TAG)' helm/purrf/values-test.yaml
+          if git diff --quiet helm/purrf/values-test.yaml; then
+            echo "values-test.yaml already pinned to ${TAG}; nothing to commit."
+            exit 0
+          fi
+          git commit -am "chore(test): pin image to ${TAG} [skip ci]"
+          git push origin deploy-test-pin:main
