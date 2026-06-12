@@ -222,6 +222,14 @@ class UserIdentityService:
         )
 
         if sub.startswith("email|"):
+            # 'email|' is the Auth0 passwordless-email connection: logging in
+            # already required entering a one-time code Auth0 mailed to this
+            # address, so the mailbox round-trip is done at login. Trusting
+            # email_verified here is therefore consistent with the "only an
+            # OTP round-trip confirms a contact" doctrine — the passwordless
+            # login *is* that round-trip — and lets us seed a confirmed primary
+            # without a redundant /verify. (is_primary=True also requires
+            # otp_confirmed=True per the user_emails CHECK constraint.)
             new_email_row = UserEmailsEntity(
                 user_id=created_user.user_id,
                 email=email,

@@ -132,3 +132,23 @@ class UserIdentitiesRepository:
             .values(last_login_at=login_at)
         )
         await session.flush()
+
+    async def get_by_subject_identifier(
+        self, session: AsyncSession, subject_identifier: str
+    ) -> UserIdentitiesEntity | None:
+        """
+        Fetch a single identity row by its Auth0 subject identifier.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            subject_identifier (str): Auth0 sub (e.g. 'google-oauth2|123').
+
+        Returns:
+            UserIdentitiesEntity | None: The row if found; otherwise None.
+        """
+        result = await session.execute(
+            select(UserIdentitiesEntity).where(
+                UserIdentitiesEntity.subject_identifier == subject_identifier
+            )
+        )
+        return result.scalars().one_or_none()
