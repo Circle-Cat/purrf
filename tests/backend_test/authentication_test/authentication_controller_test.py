@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 from starlette.responses import JSONResponse
@@ -8,12 +8,27 @@ from backend.authentication.authentication_controller import AuthenticationContr
 from http import HTTPStatus
 
 
+class _FakeSessionContext:
+    async def __aenter__(self):
+        return MagicMock()
+
+    async def __aexit__(self, *args):
+        return False
+
+
 class TestAuthenticationController(unittest.TestCase):
     def setUp(self):
         """
         Initialize the test environment.
         """
-        self.controller = AuthenticationController()
+        self.user_emails_repository = AsyncMock()
+        self.user_emails_repository.has_confirmed.return_value = False
+        database = MagicMock()
+        database.session.return_value = _FakeSessionContext()
+        self.controller = AuthenticationController(
+            user_emails_repository=self.user_emails_repository,
+            database=database,
+        )
 
         # Create a temporary FastAPI app to attach the controller's router
         self.app = FastAPI()
@@ -54,6 +69,7 @@ class TestAuthenticationController(unittest.TestCase):
         mock_user.roles = roles
         mock_user.sub = sub
         mock_user.primary_email = email
+        mock_user.user_id = 42
 
         @self.app.middleware("http")
         async def mock_auth_middleware(request: Request, call_next):
@@ -69,6 +85,7 @@ class TestAuthenticationController(unittest.TestCase):
         expected_roles = ["manager", "ccInternal"]
         expected_sub = "user-123"
         expected_email = "user@test.com"
+        self.user_emails_repository.has_confirmed.return_value = True
 
         client = self._get_client_with_mock_user(
             roles=expected_roles,
@@ -84,6 +101,7 @@ class TestAuthenticationController(unittest.TestCase):
         self.assertEqual(json_resp["data"]["roles"], expected_roles)
         self.assertEqual(json_resp["data"]["sub"], expected_sub)
         self.assertEqual(json_resp["data"]["email"], expected_email)
+        self.assertTrue(json_resp["data"]["has_verified_email"])
 
         self.mock_api_response.assert_called_once()
 

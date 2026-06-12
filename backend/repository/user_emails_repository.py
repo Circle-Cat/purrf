@@ -45,6 +45,21 @@ class UserEmailsRepository:
         )
         return result.first() is not None
 
+    async def has_confirmed(self, session: AsyncSession, user_id: int) -> bool:
+        """
+        Whether the user has any OTP-confirmed email — the hard-wall predicate:
+        a user with none is dangling and must verify before acting.
+        """
+        result = await session.execute(
+            select(UserEmailsEntity.email_id)
+            .where(
+                UserEmailsEntity.user_id == user_id,
+                UserEmailsEntity.otp_confirmed.is_(True),
+            )
+            .limit(1)
+        )
+        return result.first() is not None
+
     async def has_primary(self, session: AsyncSession, user_id: int) -> bool:
         """Whether the user already has a primary email, used to auto-promote the first confirmed one."""
         result = await session.execute(

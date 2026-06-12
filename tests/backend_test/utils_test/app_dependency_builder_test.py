@@ -7,6 +7,9 @@ from backend.common.environment_constants import (
 )
 
 
+@patch("backend.utils.app_dependency_builder.EmailManagementController")
+@patch("backend.utils.app_dependency_builder.EmailManagementService")
+@patch("backend.utils.app_dependency_builder.Auth0Client")
 @patch("backend.utils.app_dependency_builder.LaunchDarklyService")
 @patch("backend.utils.app_dependency_builder.LaunchDarklyClient")
 @patch("backend.utils.app_dependency_builder.UserIdentityService")
@@ -150,6 +153,9 @@ class TestAppDependencyBuilder(TestCase):
         mock_user_identity_service_cls,
         mock_launchdarkly_client_cls,
         mock_launchdarkly_service_cls,
+        mock_auth0_client_cls,
+        mock_email_management_service_cls,
+        mock_email_management_controller_cls,
     ):
         """
         Tests that the AppDependencyBuilder correctly instantiates and wires all its dependencies.
@@ -513,7 +519,7 @@ class TestAppDependencyBuilder(TestCase):
             internal_activity_controller=mock_internal_activity_controller_cls.return_value,
             profile_controller=mock_profile_controller_cls.return_value,
             mentorship_controller=mock_mentorship_controller_cls.return_value,
-            email_management_controller=builder.email_management_controller,
+            email_management_controller=mock_email_management_controller_cls.return_value,
             launchdarkly_client=mock_launchdarkly_client_cls.return_value,
             database=mock_database_cls.return_value,
             logger=mock_logger,
