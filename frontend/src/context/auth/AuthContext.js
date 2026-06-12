@@ -13,8 +13,10 @@ export const AuthContext = createContext(null);
  * @returns {{
  *   roles: string[],
  *   user: { sub: string, email: string } | null,
- *   loading: boolean
- * }} The current authentication state containing user identity, roles, and loading status.
+ *   hasVerifiedEmail: boolean,
+ *   loading: boolean,
+ *   refreshAuth: () => Promise<void>
+ * }} The current authentication state plus a refresher to re-pull it.
  *
  * @example
  * const { roles, loading } = useAuth();
