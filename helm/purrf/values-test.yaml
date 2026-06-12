@@ -4,19 +4,16 @@
 # Shared chart defaults (securityContext, cronjobs, resources, ...) stay in values.yaml.
 
 fullnameOverride: purrf-test
-
 image:
   # Public GHCR image. On every push to main, .github/workflows/deploy-test.yml
   # builds the image and commits the new commit-SHA into `tag` below (with
   # [skip ci]); the purrf-test ArgoCD Application syncs it. The "main" value
   # here is just the bootstrap before the first deploy-test run pins a SHA.
   repository: ghcr.io/circle-cat/purrf
-  tag: "main"
-
+  tag: "f0abed87be62125b79b53a3dfa93a158170c6d9f"
 envFrom:
   - secretRef:
       name: purrf-test
-
 ingress:
   enabled: true
   className: cloudflare-tunnel
