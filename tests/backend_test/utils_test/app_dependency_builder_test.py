@@ -513,6 +513,7 @@ class TestAppDependencyBuilder(TestCase):
             internal_activity_controller=mock_internal_activity_controller_cls.return_value,
             profile_controller=mock_profile_controller_cls.return_value,
             mentorship_controller=mock_mentorship_controller_cls.return_value,
+            email_management_controller=builder.email_management_controller,
             launchdarkly_client=mock_launchdarkly_client_cls.return_value,
             database=mock_database_cls.return_value,
             logger=mock_logger,

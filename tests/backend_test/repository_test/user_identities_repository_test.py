@@ -175,6 +175,26 @@ class TestUserIdentitiesRepository(BaseRepositoryTestLib):
         await self.session.refresh(identity)
         self.assertEqual(identity.last_login_at, self.t2)
 
+    async def test_get_by_subject_identifier_hit(self):
+        identity = UserIdentitiesEntity(
+            user_id=self.user.user_id,
+            subject_identifier="google-oauth2|sub",
+            identity_type="external",
+            email_claim="alice@example.com",
+        )
+        await self.insert_entities([identity])
+
+        found = await self.repo.get_by_subject_identifier(
+            self.session, "google-oauth2|sub"
+        )
+        self.assertIsNotNone(found)
+        self.assertEqual(found.identity_id, identity.identity_id)
+        self.assertEqual(found.subject_identifier, "google-oauth2|sub")
+
+    async def test_get_by_subject_identifier_not_found(self):
+        found = await self.repo.get_by_subject_identifier(self.session, "missing|sub")
+        self.assertIsNone(found)
+
 
 if __name__ == "__main__":
     unittest.main()

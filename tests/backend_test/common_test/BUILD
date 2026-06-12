@@ -9,6 +9,16 @@ py_test(
 )
 
 py_test(
+    name = "auth0_client_test",
+    srcs = ["auth0_client_test.py"],
+    deps = [
+        "//backend/common:auth0_client",
+        "//backend/common:exceptions",
+        "@pypi//pyjwt",
+    ],
+)
+
+py_test(
     name = "google_client_test",
     srcs = ["google_client_test.py"],
     deps = [

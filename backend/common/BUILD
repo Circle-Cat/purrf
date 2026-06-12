@@ -18,6 +18,17 @@ py_library(
 )
 
 py_library(
+    name = "auth0_client",
+    srcs = ["auth0_client.py"],
+    deps = [
+        ":environment_constants",
+        ":exceptions",
+        "@pypi//pyjwt",
+        "@pypi//requests",
+    ],
+)
+
+py_library(
     name = "logger",
     srcs = ["logger.py"],
     deps = [

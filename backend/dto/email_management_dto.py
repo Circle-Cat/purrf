@@ -1,0 +1,10 @@
+from backend.dto.base_request_dto import BaseRequestDto
+
+
+class InitiateRequest(BaseRequestDto):
+    email: str
+
+
+class VerifyRequest(BaseRequestDto):
+    state: str
+    otp: str
