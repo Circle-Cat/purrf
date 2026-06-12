@@ -1,0 +1,24 @@
+name: PR Title
+
+on:
+  pull_request:
+    # `edited` re-runs this check when the title is fixed, without
+    # re-triggering the (edited-insensitive) presubmit workflow.
+    types: [opened, edited, synchronize, reopened]
+    branches: [main]
+
+jobs:
+  pr-title:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check PR title format
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          regex='^\[[a-zA-Z]*-[0-9]*\] [A-Z][a-zA-Z0-9_. -]*$'
+          if [[ "$PR_TITLE" =~ $regex ]]; then
+            echo "PR title '$PR_TITLE' matches the pattern."
+          else
+            echo "::error::PR title '$PR_TITLE' does not match the pattern. It should be [jira ticket number] followed by a space, then the message starting with a capital letter."
+            exit 1
+          fi
