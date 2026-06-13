@@ -19,6 +19,8 @@ class Permission(StrEnum):
     INTERNAL_ACTIVITY_READ = "internal_activity.read"
     DIRECTORY_MICROSOFT_LDAP_READ = "directory.microsoft_ldap.read"
     DASHBOARD_ACTIVITY_SUMMARY_READ = "dashboard.activity_summary.read"
+    MENTORSHIP_MANAGEMENT_READ = "mentorship.management.read"
+    MENTORSHIP_ROUND_READ = "mentorship.round.read"
     MENTORSHIP_ROUND_WRITE = "mentorship.round.write"
     MENTORSHIP_APPLICATION_REVIEW = "mentorship.application.review"
     PERMISSION_MANAGE = "permission.manage"

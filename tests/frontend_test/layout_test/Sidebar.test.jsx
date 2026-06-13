@@ -58,6 +58,24 @@ describe("Sidebar Component", () => {
     expect(screen.getByText("Personal Dashboard")).toBeInTheDocument();
   });
 
+  test("renders Mentorship Management for a user with management-read permission", () => {
+    renderSidebar([PERMISSIONS.MENTORSHIP_MANAGEMENT_READ]);
+
+    expect(screen.getByText("Mentorship Management")).toBeInTheDocument();
+    expect(screen.getByText("Personal Dashboard")).toBeInTheDocument();
+    expect(screen.queryByText("Dashboard")).not.toBeInTheDocument();
+    expect(screen.queryByText("DataSearch")).not.toBeInTheDocument();
+  });
+
+  test("does not render Mentorship Management without management-read permission", () => {
+    renderSidebar([
+      PERMISSIONS.DASHBOARD_ACTIVITY_SUMMARY_READ,
+      PERMISSIONS.INTERNAL_ACTIVITY_READ,
+    ]);
+
+    expect(screen.queryByText("Mentorship Management")).not.toBeInTheDocument();
+  });
+
   test("applies active class to the current route link", () => {
     renderSidebar(
       [PERMISSIONS.DASHBOARD_ACTIVITY_SUMMARY_READ],

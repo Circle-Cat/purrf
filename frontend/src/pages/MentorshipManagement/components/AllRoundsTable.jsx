@@ -13,6 +13,7 @@ import Table from "@/components/common/Table";
  *   rounds: Object[], mentorship round objects with pair stats
  *   totals: { totalCompletedRounds: number, totalParticipants: number, totalMeetings: number },
  *   onEdit: (round: Object) => void, round to edit
+ *   canEdit: boolean, whether to show the per-row edit action (MENTORSHIP_ROUND_WRITE)
  * }} props
  */
 
@@ -23,17 +24,20 @@ const getAvgMeetings = (totalCompletedMeetings, activePairs) => {
   return ((totalCompletedMeetings ?? 0) / activePairs).toFixed(1);
 };
 
-const COLUMNS = [
+const BASE_COLUMNS = [
   { header: "Round Name", accessor: "name" },
   { header: "Participants", accessor: "participants" },
   { header: "Required Meetings", accessor: "requiredMeetings" },
   { header: "Mentor Rating", accessor: "mentorRating" },
   { header: "Mentee Rating", accessor: "menteeRating" },
   { header: "Average Meetings Per Pair", accessor: "avgMeetings" },
-  { header: "Action", accessor: "action" },
 ];
 
-export default function AllRoundsTable({ rounds, totals, onEdit }) {
+const ACTION_COLUMN = { header: "Action", accessor: "action" };
+
+export default function AllRoundsTable({ rounds, totals, onEdit, canEdit = true }) {
+  const columns = canEdit ? [...BASE_COLUMNS, ACTION_COLUMN] : BASE_COLUMNS;
+
   const data = rounds.map((round) => ({
     name: round.name,
     participants: (
@@ -50,22 +54,24 @@ export default function AllRoundsTable({ rounds, totals, onEdit }) {
       round.totalCompletedMeetings,
       round.activePairs,
     ),
-    action: (
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={() => onEdit(round)}
-        aria-label="Edit round"
-        className="h-8 w-8 p-0"
-      >
-        <Pencil className="h-4 w-4" />
-      </Button>
-    ),
+    ...(canEdit && {
+      action: (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => onEdit(round)}
+          aria-label="Edit round"
+          className="h-8 w-8 p-0"
+        >
+          <Pencil className="h-4 w-4" />
+        </Button>
+      ),
+    }),
   }));
 
   return (
     <div>
-      <Table columns={COLUMNS} data={data} />
+      <Table columns={columns} data={data} />
       <div className="flex gap-6 px-4 py-3 bg-gray-50 border-t border-gray-200 text-sm font-bold text-gray-700">
         <span>Total Completed Rounds: {totals?.totalCompletedRounds ?? 0}</span>
         <span>Total Participants: {totals?.totalParticipants ?? 0}</span>

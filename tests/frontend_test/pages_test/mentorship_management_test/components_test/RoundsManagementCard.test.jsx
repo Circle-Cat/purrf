@@ -3,6 +3,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import RoundsManagementCard from "@/pages/MentorshipManagement/components/RoundsManagementCard";
+import AllRoundsTable from "@/pages/MentorshipManagement/components/AllRoundsTable";
 
 vi.mock("@/pages/MentorshipManagement/components/AllRoundsTable", () => ({
   default: vi.fn(({ rounds, onEdit }) => (
@@ -119,5 +120,29 @@ describe("RoundsManagementCard", () => {
     renderCard({ roundModalState: { open: true, round: null }, closeModal });
     await userEvent.click(screen.getByRole("button", { name: /close modal/i }));
     expect(closeModal).toHaveBeenCalledTimes(1);
+  });
+
+  it("hides the Create New Round button without write permission", () => {
+    renderCard({ canWriteRounds: false });
+    expect(
+      screen.queryByRole("button", { name: /create new round/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows a no-permission message and hides the table without read permission", () => {
+    renderCard({ canReadRounds: false });
+    expect(
+      screen.getByText(/permission to view mentorship rounds/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("mock-all-rounds-table"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("forwards canWriteRounds to AllRoundsTable as canEdit", () => {
+    renderCard({ canWriteRounds: false });
+    const tableMock = AllRoundsTable;
+    expect(tableMock).toHaveBeenCalled();
+    expect(tableMock.mock.calls[0][0].canEdit).toBe(false);
   });
 });

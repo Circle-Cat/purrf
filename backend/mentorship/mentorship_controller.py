@@ -1,3 +1,4 @@
+from http import HTTPStatus
 from fastapi import APIRouter
 from backend.dto.rounds_dto import RoundsDto
 from backend.dto.rounds_create_dto import RoundsCreateDto
@@ -64,7 +65,7 @@ class MentorshipController:
 
         self.router.add_api_route(
             MENTORSHIP_ROUNDS_ENDPOINT,
-            endpoint=self.get_all_rounds,
+            endpoint=authenticate()(self.get_all_rounds),
             methods=["GET"],
             response_model=None,
         )
@@ -212,18 +213,32 @@ class MentorshipController:
             data=result,
         )
 
-    async def get_all_rounds(self, need_details: bool = False):
+    async def get_all_rounds(
+        self, current_user: UserContextDto, need_details: bool = False
+    ):
         """
         Retrieve all mentorship rounds.
 
         Args:
+            current_user (UserContextDto): The authenticated user context.
             need_details (bool): If True, returns participant and completed
-                meeting counts per round. Reserved for MENTORSHIP_ADMIN users
-                on the mentorship admin dashboard page.
+                meeting counts per round for the mentorship admin dashboard.
+                This detailed view requires the MENTORSHIP_ROUND_READ
+                permission; the basic list (need_details=False) is open to any
+                authenticated user.
 
         Return:
             API response containing a list of rounds DTOs.
         """
+        if need_details and not current_user.has_permission(
+            Permission.MENTORSHIP_ROUND_READ
+        ):
+            return api_response(
+                success=False,
+                message="Forbidden: Insufficient permissions",
+                status_code=HTTPStatus.FORBIDDEN,
+            )
+
         async with self.database.session() as session:
             rounds: list[RoundsDto] = await self.rounds_service.get_all_rounds(
                 session, include_details=need_details

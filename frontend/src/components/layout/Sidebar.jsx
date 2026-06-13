@@ -37,6 +37,11 @@ const Sidebar = () => {
       to: ROUTE_PATHS.DATASEARCH,
       permissions: [PERMISSIONS.INTERNAL_ACTIVITY_READ],
     },
+    {
+      label: "Mentorship Management",
+      to: ROUTE_PATHS.MENTORSHIP_MANAGEMENT,
+      permissions: [PERMISSIONS.MENTORSHIP_MANAGEMENT_READ],
+    },
   ];
 
   return (
