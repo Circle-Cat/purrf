@@ -6,7 +6,15 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
 from backend.common.fast_api_response_wrapper import api_response
-from backend.common.user_role import IdentityType
+from backend.common.permissions import (
+    Permission,
+    SERVICE_ACCOUNT_PERMISSIONS,
+    SUPER_ADMIN_PERMISSIONS,
+)
+
+# Maps stored permission_name strings back to Permission members; unknown
+# (stale) names are skipped during resolution.
+_PERMISSION_BY_VALUE = {p.value: p for p in Permission}
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
@@ -16,20 +24,22 @@ class AuthMiddleware(BaseHTTPMiddleware):
     This middleware automatically detects and verifies authentication tokens from
     multiple sources, including Cloudflare Access JWTs and Google identity tokens.
     It injects the authenticated user's context into the request state, allowing
-    downstream route handlers to access user information and roles.
+    downstream route handlers to access user information and permissions.
 
     Features:
         1. Delegates token verification to `AuthenticationService`.
         2. Adds `request.state.user` containing:
             - sub: Unique identifier
             - primary_email: User's primary email
-            - roles: List of user roles (UserRole Enum)
+            - permissions: frozenset[Permission] resolved from the DB
+            - is_super_admin / is_service_account: identity-layer flags
         3. Returns a standardized API response on authentication failure using `api_response`.
 
     Attributes:
         auth_service: An instance of `AuthenticationService` responsible for token validation.
         database: Database used to open the short bootstrap transaction.
         user_identity_service: Resolves / first-login creates the internal user.
+        user_permissions_repository: Reads active permission grants during resolve.
 
     Usage:
         app.add_middleware(
@@ -37,6 +47,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             auth_service=auth_service,
             database=database,
             user_identity_service=user_identity_service,
+            user_permissions_repository=user_permissions_repository,
             logger=logger,
         )
 
@@ -46,24 +57,32 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
     Example:
         @app.get("/dashboard")
-        async def dashboard(request: Request):
-            user = request.state.user
-            if "ccInternal" not in user.roles and "manager" not in user.roles:
+        async def dashboard(current_user: UserContextDto):
+            if not current_user.has_permission(Permission.INTERNAL_ACTIVITY_READ):
                 return api_response(
                     message="Forbidden",
                     status_code=HTTPStatus.FORBIDDEN
                 )
             return api_response(
                 message="Dashboard data",
-                data={"user": user.primary_email}
+                data={"user": current_user.primary_email}
             )
     """
 
-    def __init__(self, app, auth_service, database, user_identity_service, logger):
+    def __init__(
+        self,
+        app,
+        auth_service,
+        database,
+        user_identity_service,
+        user_permissions_repository,
+        logger,
+    ):
         super().__init__(app)
         self.auth_service = auth_service
         self.database = database
         self.user_identity_service = user_identity_service
+        self.user_permissions_repository = user_permissions_repository
         self.logger = logger
 
     async def dispatch(self, request: Request, call_next):
@@ -96,10 +115,13 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 self.auth_service.authenticate_request, request.headers
             )
 
-            # Cron / service-account tokens (identity_type "cronjob") have no
-            # user_identities row; skip first-login bootstrap and leave user_id
-            # unset. Gating on identity_type keeps this off the permission path.
-            if user_context.identity_type != IdentityType.CRONJOB:
+            # Service accounts (Google cron tokens) have no users row, so they
+            # skip first-login bootstrap and resolve to a fixed code bundle.
+            # Human users are bootstrapped and their permissions resolved from
+            # the DB.
+            if user_context.is_service_account:
+                user_context.permissions = SERVICE_ACCOUNT_PERMISSIONS
+            else:
                 await self._bootstrap_user(user_context)
 
             request.state.user = user_context
@@ -140,11 +162,12 @@ class AuthMiddleware(BaseHTTPMiddleware):
     async def _bootstrap_user(self, user_context):
         """
         Resolve (and on first login create) the internal user for an
-        authenticated request, writing user_context.user_id.
+        authenticated request, then resolve its permissions onto user_context
+        (user_id, is_super_admin, permissions).
 
         Runs in a short transaction that commits before the request handler
         opens its own session: one SELECT per authenticated request, plus an
-        INSERT only on first login.
+        INSERT only on first login, plus the permission lookup.
 
         Two concurrent first logins for the same sub both miss find_by_sub and
         enter create_or_swap_user; the second collides on the
@@ -182,7 +205,34 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 # user) but must not be allowed to act.
                 if not user.is_active:
                     raise PermissionError("User account is deactivated")
+                await self._resolve_permissions(session, user, user_context)
+
+    async def _resolve_permissions(self, session, user, user_context):
+        """
+        Resolve a human user's permissions. super_admin short-circuits
+        to the full enum; everyone else gets their active user_permissions rows.
+        Runs in the bootstrap transaction so the user row is not yet expired.
+        """
         user_context.user_id = user.user_id
         self.logger.info(
             "[AuthMiddleware] user login: user_id=%s", user_context.user_id
+        )
+        # The DB flag is authoritative; the auth layer only sets the DTO flag in
+        # local dev (DevAuthenticationService), never in production.
+        user_context.is_super_admin = user.is_super_admin or user_context.is_super_admin
+        if user_context.is_super_admin:
+            user_context.permissions = SUPER_ADMIN_PERMISSIONS
+            return
+        names = await self.user_permissions_repository.get_active_permission_names(
+            session, user.user_id
+        )
+        unknown = [name for name in names if name not in _PERMISSION_BY_VALUE]
+        if unknown:
+            self.logger.warning(
+                "[AuthMiddleware] user_id=%s has unmapped permission grants %s; skipping",
+                user.user_id,
+                unknown,
+            )
+        user_context.permissions = frozenset(
+            _PERMISSION_BY_VALUE[name] for name in names if name in _PERMISSION_BY_VALUE
         )

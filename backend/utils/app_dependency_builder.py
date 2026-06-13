@@ -87,6 +87,7 @@ from backend.common.auth0_client import Auth0Client
 from backend.repository.users_repository import UsersRepository
 from backend.repository.user_identities_repository import UserIdentitiesRepository
 from backend.repository.user_emails_repository import UserEmailsRepository
+from backend.repository.user_permissions_repository import UserPermissionsRepository
 from backend.repository.experience_repository import ExperienceRepository
 from backend.repository.training_repository import TrainingRepository
 from backend.repository.mentorship_round_repository import MentorshipRoundRepository
@@ -384,6 +385,7 @@ class AppDependencyBuilder:
         self.users_repository = UsersRepository()
         self.user_identities_repository = UserIdentitiesRepository()
         self.user_emails_repository = UserEmailsRepository()
+        self.user_permissions_repository = UserPermissionsRepository()
         self.training_repository = TrainingRepository()
         self.database = Database(echo=False)
         self.user_identity_service = UserIdentityService(
@@ -391,6 +393,7 @@ class AppDependencyBuilder:
             users_repository=self.users_repository,
             user_identities_repository=self.user_identities_repository,
             user_emails_repository=self.user_emails_repository,
+            user_permissions_repository=self.user_permissions_repository,
         )
         self.authentication_service = AuthenticationService(logger=self.logger)
         self.authentication_controller = AuthenticationController(
@@ -486,6 +489,7 @@ class AppDependencyBuilder:
             authentication_controller=self.authentication_controller,
             authentication_service=self.authentication_service,
             user_identity_service=self.user_identity_service,
+            user_permissions_repository=self.user_permissions_repository,
             notification_controller=self.notification_controller,
             historical_controller=self.historical_controller,
             consumer_controller=self.consumer_controller,

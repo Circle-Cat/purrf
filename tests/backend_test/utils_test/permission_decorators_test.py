@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 from http import HTTPStatus
 from starlette.requests import Request
 from backend.utils.permission_decorators import authenticate
+from backend.common.permissions import Permission
 from fastapi import FastAPI, APIRouter
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
@@ -32,7 +33,10 @@ class TestAuthenticateDecorator(unittest.IsolatedAsyncioTestCase):
 
         self.mock_user = MagicMock()
         self.mock_user.sub = "user_123"
-        self.mock_user.roles = ["admin", "editor"]
+        self.mock_user.permissions = frozenset({
+            Permission.INTERNAL_ACTIVITY_READ,
+            Permission.MENTORSHIP_ROUND_WRITE,
+        })
         self.mock_user.primary_email = "test@example.com"
 
     async def test_no_user_in_state_returns_401(self):
@@ -49,10 +53,10 @@ class TestAuthenticateDecorator(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, HTTPStatus.UNAUTHORIZED)
 
     async def test_insufficient_permissions_returns_403(self):
-        """Requirement: return 403 when user roles do not match required roles."""
+        """Requirement: return 403 when user lacks the required permission."""
         self.mock_request.state.user = self.mock_user
 
-        @authenticate(roles=["super_admin"])  # User has admin, not super_admin
+        @authenticate(permissions=[Permission.PERMISSION_MANAGE])  # User lacks it
         async def dummy_func():
             return "success"
 
@@ -60,10 +64,10 @@ class TestAuthenticateDecorator(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, HTTPStatus.FORBIDDEN)
 
     async def test_sufficient_permissions_calls_func(self):
-        """Requirement: successfully call the function when roles match."""
+        """Requirement: successfully call the function when permissions match."""
         self.mock_request.state.user = self.mock_user
 
-        @authenticate(roles=["admin"])
+        @authenticate(permissions=[Permission.INTERNAL_ACTIVITY_READ])
         async def dummy_func():
             return "called"
 
@@ -101,7 +105,7 @@ class TestAuthenticateDecorator(unittest.IsolatedAsyncioTestCase):
         """
         self.mock_request.state.user = self.mock_user
 
-        @authenticate(roles=["admin"])
+        @authenticate(permissions=[Permission.INTERNAL_ACTIVITY_READ])
         async def dummy_func(payload: dict, user_sub: str):
             return {"payload": payload, "sub": user_sub}
 
@@ -113,7 +117,7 @@ class TestAuthenticateDecorator(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response["sub"], "user_123")
 
     async def test_no_roles_specified_only_checks_login(self):
-        """Requirement: when no roles are specified, only check that the user exists."""
+        """Requirement: when no permissions are specified, only check that the user exists."""
         self.mock_request.state.user = self.mock_user
 
         @authenticate()  # Login check only
@@ -125,7 +129,7 @@ class TestAuthenticateDecorator(unittest.IsolatedAsyncioTestCase):
 
     async def test_manual_decoration_of_bound_method(self):
         """
-        Scenario: endpoint = authenticate(roles=["admin"])(self.cleanup_system)
+        Scenario: endpoint = authenticate(permissions=[...])(self.cleanup_system)
 
         Verify:
         1. The decorator can correctly handle bound methods of a class.
@@ -146,12 +150,14 @@ class TestAuthenticateDecorator(unittest.IsolatedAsyncioTestCase):
 
         controller = MockController()
 
-        # Simulate middleware injecting a user with admin role
+        # Simulate middleware injecting a user with the required permission
         self.mock_request.state.user = self.mock_user
 
         # Manually decorate (simulating behavior in add_api_route)
         # Here controller.cleanup_system is a bound method and already carries `self`
-        decorated_endpoint = authenticate(roles=["admin"])(controller.cleanup_system)
+        decorated_endpoint = authenticate(
+            permissions=[Permission.INTERNAL_ACTIVITY_READ]
+        )(controller.cleanup_system)
 
         # Simulate FastAPI calling the endpoint
         test_payload = {"action": "delete_logs"}
@@ -177,13 +183,15 @@ class TestAuthenticateDecorator(unittest.IsolatedAsyncioTestCase):
 
         controller = MockController()
 
-        # Simulate a low-privilege user without admin role
+        # Simulate a low-privilege user without the required permission
         low_privilege_user = MagicMock()
-        low_privilege_user.roles = ["guest"]
+        low_privilege_user.permissions = frozenset()
         self.mock_request.state.user = low_privilege_user
 
         # Manual decoration
-        decorated_endpoint = authenticate(roles=["admin"])(controller.secure_action)
+        decorated_endpoint = authenticate(
+            permissions=[Permission.INTERNAL_ACTIVITY_READ]
+        )(controller.secure_action)
 
         # Execute
         response = await decorated_endpoint(request=self.mock_request)
@@ -199,13 +207,12 @@ class TestFastAPIParamsIntegration(unittest.TestCase):
         # Mock authentication middleware
         @self.app.middleware("http")
         async def mock_auth_middleware(request: Request, call_next):
-            role = request.headers.get("x-test-role", "admin")
             user = type(
                 "User",
                 (),
                 {
                     "sub": "user_12345",
-                    "roles": [role],
+                    "permissions": frozenset({Permission.INTERNAL_ACTIVITY_READ}),
                 },
             )
             request.state.user = user
@@ -232,7 +239,9 @@ class TestFastAPIParamsIntegration(unittest.TestCase):
                 # 3. Mixed scenario: path + query + body + injected params
                 self.router.add_api_route(
                     "/update/{item_id}",
-                    endpoint=authenticate(roles=["admin"])(self.update_item),
+                    endpoint=authenticate(
+                        permissions=[Permission.INTERNAL_ACTIVITY_READ]
+                    )(self.update_item),
                     methods=["PUT"],
                 )
 
@@ -293,7 +302,6 @@ class TestFastAPIParamsIntegration(unittest.TestCase):
         response = self.client.put(
             f"/update/{item_id}?priority={priority}",
             json=payload,
-            headers={"x-test-role": "admin"},
         )
 
         self.assertEqual(response.status_code, HTTPStatus.OK)

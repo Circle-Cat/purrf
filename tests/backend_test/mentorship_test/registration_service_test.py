@@ -22,7 +22,6 @@ from backend.entity.preference_entity import PreferenceEntity
 from backend.entity.mentorship_round_participants_entity import (
     MentorshipRoundParticipantsEntity,
 )
-from backend.common.user_role import UserRole
 from backend.common.mentorship_enums import (
     ParticipantRole,
     TrainingStatus,
@@ -102,7 +101,6 @@ class TestRegistrationService(unittest.IsolatedAsyncioTestCase):
             primary_email="user@example.com",
             identity_type="external",
             user_id=self.user_id,
-            roles=[UserRole.CONTACT_GOOGLE_CHAT],
         )
         self.mock_round_id = 1
         self.mock_participation_service.resolve_participant_role_with_fallback.return_value = ParticipantRole.MENTOR
@@ -430,8 +428,6 @@ class TestRegistrationService(unittest.IsolatedAsyncioTestCase):
         )
 
         self.sample_dto.round_preferences.participant_role = ParticipantRole.MENTOR
-
-        self.user_context.roles = [UserRole.MENTORSHIP]
 
         global_entity = PreferenceEntity(user_id=self.user_id)
         participant_entity = MentorshipRoundParticipantsEntity(

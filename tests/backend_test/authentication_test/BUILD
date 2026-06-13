@@ -5,6 +5,8 @@ py_test(
     srcs = ["authentication_service_test.py"],
     deps = [
         "//backend/authentication:authentication_service",
+        "//backend/common:identity_type",
+        "//backend/dto",
     ],
 )
 
@@ -14,6 +16,7 @@ py_test(
     deps = [
         "//backend/authentication:email_management_service",
         "//backend/common:exceptions",
+        "//backend/common:identity_type",
         "//backend/entity:entities",
         "@pypi//pyjwt",
     ],
@@ -35,6 +38,10 @@ py_test(
     srcs = ["authentication_controller_test.py"],
     deps = [
         "//backend/authentication:authentication_controller",
+        "//backend/common:api_endpoints",
+        "//backend/common:identity_type",
+        "//backend/common:permissions",
+        "//backend/dto",
         "@pypi//fastapi",
         "@pypi//httpx",
     ],

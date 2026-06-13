@@ -50,7 +50,8 @@ py_library(
     ],
     deps = [
         "//backend/common:fast_api_response_wrapper",
-        "//backend/common:user_role",
+        "//backend/common:identity_type",
+        "//backend/common:permissions",
         "@pypi//fastapi",
         "@pypi//sqlalchemy",
     ],
@@ -63,7 +64,8 @@ py_library(
     ],
     deps = [
         "//backend/common:fast_api_response_wrapper",
-        "//backend/common:user_role",
+        "//backend/common:identity_type",
+        "//backend/common:permissions",
         "@pypi//starlette",
     ],
 )

@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from http import HTTPStatus
 
-from backend.common.user_role import UserRole
+from backend.common.permissions import Permission
 from backend.common.api_endpoints import (
     GOOGLE_CHAT_SUBSCRIBE_ENDPOINT,
     MICROSOFT_CHAT_SUBSCRIBE_ENDPOINT,
@@ -43,7 +43,11 @@ class TestNotificationIntegration(unittest.TestCase):
         self.mock_database.session = MagicMock(return_value=session_cm)
         self.mock_user_identity_service = MagicMock()
         self.mock_user_identity_service.find_user_by_sub = AsyncMock(
-            return_value=MagicMock(user_id=1)
+            return_value=MagicMock(user_id=1, is_super_admin=False)
+        )
+        self.mock_user_permissions_repository = MagicMock()
+        self.mock_user_permissions_repository.get_active_permission_names = AsyncMock(
+            return_value=[]
         )
 
         # Assemble the FastAPI app
@@ -55,6 +59,7 @@ class TestNotificationIntegration(unittest.TestCase):
             auth_service=self.mock_auth_service,
             database=self.mock_database,
             user_identity_service=self.mock_user_identity_service,
+            user_permissions_repository=self.mock_user_permissions_repository,
             logger=MagicMock(),
         )
 
@@ -63,24 +68,28 @@ class TestNotificationIntegration(unittest.TestCase):
 
         self.client = TestClient(self.app)
 
-    def _set_authenticated_user(self, roles=None, sub="test_user_123"):
-        """Helper method: configure mock_auth_service to return a user with given roles"""
-        if roles is None:
-            roles = [UserRole.INFRA_ADMIN]
+    def _set_authenticated_user(self, permissions=None, sub="test_user_123"):
+        """Resolve the request user to the given permissions via the middleware."""
+        if permissions is None:
+            permissions = [Permission.SYSTEM_SUBSCRIBE]
 
         mock_user = MagicMock()
         mock_user.sub = sub
-        mock_user.roles = roles
+        mock_user.is_service_account = False
+        mock_user.is_super_admin = False
         mock_user.primary_email = "admin@example.com"
 
         # Return this user when authenticate_request is called by the middleware
         self.mock_auth_service.authenticate_request.return_value = mock_user
+        self.mock_user_permissions_repository.get_active_permission_names.return_value = [
+            p.value for p in permissions
+        ]
 
     def test_microsoft_subscribe_integration_success(self):
         """Verify the full flow from auth to Microsoft subscription"""
 
-        # Configure auth service: simulate an Admin user
-        self._set_authenticated_user(roles=[UserRole.INFRA_ADMIN])
+        # Configure auth service: simulate a user holding the subscribe permission
+        self._set_authenticated_user(permissions=[Permission.SYSTEM_SUBSCRIBE])
 
         # Configure business service return value
         self.microsoft_service.subscribe_chat_messages.return_value = (
@@ -110,8 +119,8 @@ class TestNotificationIntegration(unittest.TestCase):
     def test_google_subscribe_integration_forbidden(self):
         """Verify middleware/decorator blocks when roles do not match"""
 
-        # Configure auth service: simulate a normal user (no ADMIN role)
-        self._set_authenticated_user(roles=[UserRole.MENTORSHIP])
+        # Configure auth service: simulate a user without the subscribe permission
+        self._set_authenticated_user(permissions=[])
 
         payload = {"project_id": "p1", "topic_id": "t1", "space_id": "s1"}
 

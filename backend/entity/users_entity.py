@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Boolean, String, DateTime, func, Enum as SAEnum
+from sqlalchemy import Boolean, String, DateTime, func, text, Enum as SAEnum
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column
 from backend.common.base import Base
@@ -42,6 +42,12 @@ class UsersEntity(Base):
     )
 
     is_active: Mapped[bool] = mapped_column(Boolean)
+
+    # Identity-layer super-admin flag: resolves to the full
+    # Permission set without expanding user_permissions rows.
+    is_super_admin: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
 
     updated_timestamp: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=func.now(), onupdate=func.now()

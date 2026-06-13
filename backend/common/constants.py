@@ -63,6 +63,19 @@ INTERNAL_MICROSOFT_ACCOUNT_DOMAIN = "@u.circlecat.org"
 INTERNAL_GOOGLE_ACCOUNT_DOMAIN = "@circlecat.org"
 
 
+def is_company_email(email: str) -> bool:
+    """
+    Whether the address belongs to a CircleCat company account.
+
+    Covers both internal domains: '@circlecat.org' (Google Workspace) and
+    '@u.circlecat.org' (Microsoft). Used to classify an identity as INTERNAL
+    rather than the default EXTERNAL.
+    """
+    return email.endswith(INTERNAL_MICROSOFT_ACCOUNT_DOMAIN) or email.endswith(
+        INTERNAL_GOOGLE_ACCOUNT_DOMAIN
+    )
+
+
 class MicrosoftAccountStatus(str, Enum):
     ACTIVE = "active"
     TERMINATED = "terminated"

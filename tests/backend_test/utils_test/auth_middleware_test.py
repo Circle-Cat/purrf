@@ -10,25 +10,30 @@ from starlette.responses import JSONResponse, PlainTextResponse
 from starlette.routing import Route
 from starlette.testclient import TestClient
 
-from backend.common.user_role import UserRole
 from backend.utils.auth_middleware import AuthMiddleware
 
 
 def make_user_context(
-    sub="user_123", roles=None, last_login_at=None, identity_type="external"
+    sub="user_123",
+    last_login_at=None,
+    identity_type="external",
+    is_service_account=False,
 ):
     """
     Build a UserContextDto-like object. The middleware accesses attributes
-    (sub / identity_type / roles / last_login_at / user_id), not dict keys, so
-    we use a SimpleNamespace rather than a plain dict.
+    (sub / identity_type / is_service_account / is_super_admin / last_login_at /
+    user_id / permissions), not dict keys, so we use a SimpleNamespace rather
+    than a plain dict.
     """
     return SimpleNamespace(
         sub=sub,
         primary_email="test@example.com",
         identity_type=identity_type,
-        roles=roles if roles is not None else [UserRole.MANAGER],
+        is_service_account=is_service_account,
+        is_super_admin=False,
         last_login_at=last_login_at,
         user_id=None,
+        permissions=frozenset(),
     )
 
 
@@ -70,7 +75,8 @@ class TestAuthMiddleware(unittest.TestCase):
         Runs before each test.
 
         Initializes a Starlette application containing test routes,
-        and prepares mocked auth_service / database / user_identity_service.
+        and prepares mocked auth_service / database / user_identity_service /
+        user_permissions_repository.
         """
         self.mock_auth_service = MagicMock()
         self.mock_database, self.mock_session = make_session_mock()
@@ -78,6 +84,10 @@ class TestAuthMiddleware(unittest.TestCase):
         self.mock_user_identity_service.find_user_by_sub = AsyncMock(return_value=None)
         self.mock_user_identity_service.create_or_swap_user = AsyncMock(
             return_value=None
+        )
+        self.mock_user_permissions_repository = MagicMock()
+        self.mock_user_permissions_repository.get_active_permission_names = AsyncMock(
+            return_value=[]
         )
         self.mock_logger = MagicMock()
 
@@ -88,7 +98,6 @@ class TestAuthMiddleware(unittest.TestCase):
             return JSONResponse({
                 "sub": user.sub,
                 "user_id": user.user_id,
-                "roles": list(user.roles),
             })
 
         async def health_check(request):
@@ -105,6 +114,7 @@ class TestAuthMiddleware(unittest.TestCase):
             auth_service=self.mock_auth_service,
             database=self.mock_database,
             user_identity_service=self.mock_user_identity_service,
+            user_permissions_repository=self.mock_user_permissions_repository,
             logger=self.mock_logger,
         )
         return TestClient(self.app)
@@ -118,7 +128,7 @@ class TestAuthMiddleware(unittest.TestCase):
         user_context = make_user_context(last_login_at=1700000000)
         self.mock_auth_service.authenticate_request.return_value = user_context
         self.mock_user_identity_service.find_user_by_sub.return_value = SimpleNamespace(
-            user_id=42, is_active=True
+            user_id=42, is_super_admin=False, is_active=True
         )
 
         client = self._add_middleware()
@@ -143,7 +153,7 @@ class TestAuthMiddleware(unittest.TestCase):
         self.mock_auth_service.authenticate_request.return_value = user_context
         self.mock_user_identity_service.find_user_by_sub.return_value = None
         self.mock_user_identity_service.create_or_swap_user.return_value = (
-            SimpleNamespace(user_id=99, is_active=True)
+            SimpleNamespace(user_id=99, is_super_admin=False, is_active=True)
         )
 
         client = self._add_middleware()
@@ -189,7 +199,7 @@ class TestAuthMiddleware(unittest.TestCase):
         # First find misses, second find (after the savepoint unwinds) hits.
         self.mock_user_identity_service.find_user_by_sub.side_effect = [
             None,
-            SimpleNamespace(user_id=7, is_active=True),
+            SimpleNamespace(user_id=7, is_super_admin=False, is_active=True),
         ]
         self.mock_user_identity_service.create_or_swap_user.side_effect = (
             IntegrityError("stmt", "params", Exception("unique"))
@@ -225,6 +235,7 @@ class TestAuthMiddleware(unittest.TestCase):
             auth_service=self.mock_auth_service,
             database=self.mock_database,
             user_identity_service=self.mock_user_identity_service,
+            user_permissions_repository=self.mock_user_permissions_repository,
             logger=self.mock_logger,
         )
         user_context = make_user_context(last_login_at=1700000000)
@@ -234,11 +245,13 @@ class TestAuthMiddleware(unittest.TestCase):
 
     def test_cron_runner_skips_bootstrap(self):
         """
-        Cron / service-account tokens (identity_type "cronjob") have no
-        user_identities row: bootstrap is skipped entirely (no DB session, no
-        find_user_by_sub) and user_id stays None.
+        Service-account tokens (is_service_account=True) have no user_identities
+        row: bootstrap is skipped entirely (no DB session, no find_user_by_sub)
+        and user_id stays None.
         """
-        user_context = make_user_context(identity_type="cronjob")
+        user_context = make_user_context(
+            identity_type="cronjob", is_service_account=True
+        )
         self.mock_auth_service.authenticate_request.return_value = user_context
 
         client = self._add_middleware()
@@ -312,7 +325,7 @@ class TestAuthMiddleware(unittest.TestCase):
         user_context = make_user_context()
         self.mock_auth_service.authenticate_request.return_value = user_context
         self.mock_user_identity_service.find_user_by_sub.return_value = SimpleNamespace(
-            user_id=1, is_active=True
+            user_id=1, is_super_admin=False, is_active=True
         )
 
         client = self._add_middleware()

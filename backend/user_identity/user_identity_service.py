@@ -2,7 +2,9 @@ from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.common.identity_type import IdentityType
 from backend.common.mentorship_enums import CommunicationMethod
+from backend.common.permissions import INTERNAL_EMPLOYEE_PERMISSIONS
 from backend.dto.user_context_dto import UserContextDto
 from backend.entity.user_emails_entity import UserEmailsEntity
 from backend.entity.user_identities_entity import UserIdentitiesEntity
@@ -34,6 +36,7 @@ class UserIdentityService:
         users_repository,
         user_identities_repository,
         user_emails_repository,
+        user_permissions_repository,
     ):
         """
         Initialize the UserIdentityService with its dependencies.
@@ -43,11 +46,13 @@ class UserIdentityService:
             users_repository (UsersRepository): Repository handling UsersEntity.
             user_identities_repository (UserIdentitiesRepository): Repository handling UserIdentitiesEntity.
             user_emails_repository (UserEmailsRepository): Repository handling UserEmailsEntity.
+            user_permissions_repository (UserPermissionsRepository): Repository handling UserPermissionsEntity.
         """
         self.logger = logger
         self.users_repository = users_repository
         self.user_identities_repository = user_identities_repository
         self.user_emails_repository = user_emails_repository
+        self.user_permissions_repository = user_permissions_repository
 
     async def find_user_by_sub(
         self,
@@ -238,6 +243,16 @@ class UserIdentityService:
             )
             await self.user_emails_repository.upsert_email(
                 session=session, entity=new_email_row
+            )
+
+        # Lifecycle hook: a new internal employee gets the internal
+        # permission bundle auto-injected.
+        if user_info.identity_type == IdentityType.INTERNAL:
+            await self.user_permissions_repository.grant(
+                session=session,
+                user_id=created_user.user_id,
+                permission_names=INTERNAL_EMPLOYEE_PERMISSIONS,
+                granted_source="system_internal",
             )
 
         self.logger.info(

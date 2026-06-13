@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { API_ENDPOINTS } from "@/constants/ApiEndpoints";
-import { getUserRoles } from "@/api/rolesApi";
+import { getUserPermissions } from "@/api/permissionsApi";
 import request from "@/utils/request";
 
 vi.mock("@/utils/request", () => ({
@@ -9,17 +9,17 @@ vi.mock("@/utils/request", () => ({
   },
 }));
 
-describe("rolesApi", () => {
+describe("permissionsApi", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  describe("getUserRoles", () => {
+  describe("getUserPermissions", () => {
     it("should call request.get with the correct URL", async () => {
-      await getUserRoles();
+      await getUserPermissions();
 
       expect(request.get).toHaveBeenCalledTimes(1);
-      expect(request.get).toHaveBeenCalledWith(API_ENDPOINTS.MY_ROLES);
+      expect(request.get).toHaveBeenCalledWith(API_ENDPOINTS.MY_PERMISSIONS);
     });
   });
 });

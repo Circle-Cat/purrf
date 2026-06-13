@@ -5,7 +5,7 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
 from backend.common.fast_api_response_wrapper import api_response
-from backend.common.user_role import UserRole
+from backend.common.permissions import Permission
 from backend.utils.permission_decorators import authenticate
 from backend.common.api_endpoints import (
     MICROSOFT_BACKFILL_LDAPS_ENDPOINT,
@@ -64,63 +64,63 @@ class HistoricalController:
 
         self.router.add_api_route(
             MICROSOFT_BACKFILL_LDAPS_ENDPOINT,
-            endpoint=authenticate(roles=[UserRole.INFRA_ADMIN, UserRole.CRON_RUNNER])(
+            endpoint=authenticate(permissions=[Permission.SYSTEM_BACKFILL_SCHEDULED])(
                 self.backfill_microsoft_ldaps
             ),
             methods=["POST"],
         )
         self.router.add_api_route(
             MICROSOFT_BACKFILL_CHAT_MESSAGES_ENDPOINT,
-            endpoint=authenticate(roles=[UserRole.INFRA_ADMIN])(
+            endpoint=authenticate(permissions=[Permission.SYSTEM_BACKFILL])(
                 self.backfill_microsoft_chat_messages
             ),
             methods=["POST"],
         )
         self.router.add_api_route(
             JIRA_SYNC_PROJECTS_ENDPOINT,
-            endpoint=authenticate(roles=[UserRole.INFRA_ADMIN, UserRole.CRON_RUNNER])(
+            endpoint=authenticate(permissions=[Permission.SYSTEM_BACKFILL_SCHEDULED])(
                 self.sync_jira_projects
             ),
             methods=["POST"],
         )
         self.router.add_api_route(
             JIRA_BACKFILL_ISSUES_ENDPOINT,
-            endpoint=authenticate(roles=[UserRole.INFRA_ADMIN])(
+            endpoint=authenticate(permissions=[Permission.SYSTEM_BACKFILL])(
                 self.backfill_jira_issues
             ),
             methods=["POST"],
         )
         self.router.add_api_route(
             JIRA_UPDATE_ISSUES_ENDPOINT,
-            endpoint=authenticate(roles=[UserRole.INFRA_ADMIN, UserRole.CRON_RUNNER])(
+            endpoint=authenticate(permissions=[Permission.SYSTEM_SYNC])(
                 self.update_jira_issues
             ),
             methods=["POST"],
         )
         self.router.add_api_route(
             GOOGLE_CALENDAR_PULL_HISTORY_ENDPOINT,
-            endpoint=authenticate(roles=[UserRole.INFRA_ADMIN, UserRole.CRON_RUNNER])(
+            endpoint=authenticate(permissions=[Permission.SYSTEM_SYNC])(
                 self.pull_calendar_history_api
             ),
             methods=["POST"],
         )
         self.router.add_api_route(
             GERRIT_BACKFILL_CHANGES_ENDPOINT,
-            endpoint=authenticate(roles=[UserRole.INFRA_ADMIN])(
+            endpoint=authenticate(permissions=[Permission.SYSTEM_BACKFILL])(
                 self.backfill_gerrit_changes
             ),
             methods=["POST"],
         )
         self.router.add_api_route(
             GERRIT_BACKFILL_PROJECTS_ENDPOINT,
-            endpoint=authenticate(roles=[UserRole.INFRA_ADMIN])(
+            endpoint=authenticate(permissions=[Permission.SYSTEM_BACKFILL])(
                 self.backfill_gerrit_projects
             ),
             methods=["POST"],
         )
         self.router.add_api_route(
             GOOGLE_CHAT_SYNC_HISTORY_MESSAGES_ENDPOINT,
-            endpoint=authenticate(roles=[UserRole.INFRA_ADMIN])(
+            endpoint=authenticate(permissions=[Permission.SYSTEM_BACKFILL])(
                 self.sync_google_chat_history_messages
             ),
             methods=["POST"],

@@ -103,4 +103,30 @@ describe("AllRoundsTable", () => {
 
     expect(onEdit).toHaveBeenCalledWith(round2);
   });
+
+  it("shows the Action column and edit buttons when canEdit is true", () => {
+    render(
+      <AllRoundsTable rounds={[makeTestRound()]} onEdit={vi.fn()} canEdit />,
+    );
+
+    expect(screen.getByText("Action")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /edit round/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("hides the Action column and edit buttons when canEdit is false", () => {
+    render(
+      <AllRoundsTable
+        rounds={[makeTestRound()]}
+        onEdit={vi.fn()}
+        canEdit={false}
+      />,
+    );
+
+    expect(screen.queryByText("Action")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /edit round/i }),
+    ).not.toBeInTheDocument();
+  });
 });

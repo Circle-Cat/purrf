@@ -34,7 +34,8 @@ py_library(
     deps = [
         "//backend/common:api_endpoints",
         "//backend/common:fast_api_response_wrapper",
-        "//backend/common:user_role",
+        "//backend/common:identity_type",
+        "//backend/common:permissions",
         "//backend/utils:date_time_util",
         "//backend/utils:permission_decorators",
         "@pypi//fastapi",

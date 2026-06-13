@@ -1,3 +1,4 @@
+from http import HTTPStatus
 from fastapi import APIRouter
 from backend.dto.rounds_dto import RoundsDto
 from backend.dto.rounds_create_dto import RoundsCreateDto
@@ -23,7 +24,7 @@ from backend.common.api_endpoints import (
     MEET_ATTENDANCE_SYNC_ENDPOINT,
     MENTORSHIP_ROUNDS_FEEDBACK_ENDPOINT,
 )
-from backend.common.user_role import UserRole
+from backend.common.permissions import Permission
 from backend.dto.google_meeting_create_dto import GoogleMeetingCreateDto
 from backend.dto.google_meeting_delete_dto import GoogleMeetingDeleteDto
 
@@ -64,7 +65,7 @@ class MentorshipController:
 
         self.router.add_api_route(
             MENTORSHIP_ROUNDS_ENDPOINT,
-            endpoint=self.get_all_rounds,
+            endpoint=authenticate()(self.get_all_rounds),
             methods=["GET"],
             response_model=None,
         )
@@ -92,7 +93,7 @@ class MentorshipController:
 
         self.router.add_api_route(
             MENTORSHIP_ROUNDS_ENDPOINT,
-            endpoint=authenticate(roles=[UserRole.MENTORSHIP_ADMIN])(
+            endpoint=authenticate(permissions=[Permission.MENTORSHIP_ROUND_WRITE])(
                 self.upsert_rounds
             ),
             methods=["POST"],
@@ -100,64 +101,52 @@ class MentorshipController:
         )
         self.router.add_api_route(
             MENTORSHIP_MATCH_RESULT_ENDPOINT,
-            endpoint=authenticate(roles=[UserRole.MENTORSHIP])(
-                self.get_my_match_result
-            ),
+            endpoint=authenticate()(self.get_my_match_result),
             methods=["GET"],
             response_model=None,
         )
 
         self.router.add_api_route(
             MENTORSHIP_MEETINGS_ENDPOINT,
-            endpoint=authenticate(roles=[UserRole.MENTORSHIP])(
-                self.get_meetings_for_user
-            ),
+            endpoint=authenticate()(self.get_meetings_for_user),
             methods=["GET"],
             response_model=None,
         )
 
         self.router.add_api_route(
             MENTORSHIP_MEETINGS_ENDPOINT,
-            endpoint=authenticate(roles=[UserRole.MENTORSHIP])(self.upsert_meetings),
+            endpoint=authenticate()(self.upsert_meetings),
             methods=["POST"],
             response_model=None,
         )
 
         self.router.add_api_route(
             MENTORSHIP_MEETING_V2_ENDPOINT,
-            endpoint=authenticate(roles=[UserRole.MENTORSHIP])(
-                self.create_google_meeting
-            ),
+            endpoint=authenticate()(self.create_google_meeting),
             methods=["POST"],
             response_model=None,
         )
         self.router.add_api_route(
             MENTORSHIP_MEETING_V2_ENDPOINT,
-            endpoint=authenticate(roles=[UserRole.MENTORSHIP])(
-                self.get_meetings_for_user_v2
-            ),
+            endpoint=authenticate()(self.get_meetings_for_user_v2),
             methods=["GET"],
             response_model=None,
         )
         self.router.add_api_route(
             MENTORSHIP_MEETING_V2_BATCH_DELETE_ENDPOINT,
-            endpoint=authenticate(roles=[UserRole.MENTORSHIP])(
-                self.batch_delete_google_meetings
-            ),
+            endpoint=authenticate()(self.batch_delete_google_meetings),
             methods=["POST"],
             response_model=None,
         )
         self.router.add_api_route(
             MENTORSHIP_MEETING_V2_SINGLE_ENDPOINT,
-            endpoint=authenticate(roles=[UserRole.MENTORSHIP])(
-                self.delete_single_google_meeting
-            ),
+            endpoint=authenticate()(self.delete_single_google_meeting),
             methods=["DELETE"],
             response_model=None,
         )
         self.router.add_api_route(
             MEET_ATTENDANCE_SYNC_ENDPOINT,
-            endpoint=authenticate(roles=[UserRole.CRON_RUNNER, UserRole.INFRA_ADMIN])(
+            endpoint=authenticate(permissions=[Permission.SYSTEM_SYNC])(
                 self.sync_meet_attendance
             ),
             methods=["POST"],
@@ -166,18 +155,14 @@ class MentorshipController:
 
         self.router.add_api_route(
             MENTORSHIP_ROUNDS_FEEDBACK_ENDPOINT,
-            endpoint=authenticate(roles=[UserRole.MENTORSHIP])(
-                self.get_program_feedback
-            ),
+            endpoint=authenticate()(self.get_program_feedback),
             methods=["GET"],
             response_model=None,
         )
 
         self.router.add_api_route(
             MENTORSHIP_ROUNDS_FEEDBACK_ENDPOINT,
-            endpoint=authenticate(roles=[UserRole.MENTORSHIP])(
-                self.upsert_program_feedback
-            ),
+            endpoint=authenticate()(self.upsert_program_feedback),
             methods=["POST"],
             response_model=None,
         )
@@ -228,18 +213,32 @@ class MentorshipController:
             data=result,
         )
 
-    async def get_all_rounds(self, need_details: bool = False):
+    async def get_all_rounds(
+        self, current_user: UserContextDto, need_details: bool = False
+    ):
         """
         Retrieve all mentorship rounds.
 
         Args:
+            current_user (UserContextDto): The authenticated user context.
             need_details (bool): If True, returns participant and completed
-                meeting counts per round. Reserved for MENTORSHIP_ADMIN users
-                on the mentorship admin dashboard page.
+                meeting counts per round for the mentorship admin dashboard.
+                This detailed view requires the MENTORSHIP_ROUND_READ
+                permission; the basic list (need_details=False) is open to any
+                authenticated user.
 
         Return:
             API response containing a list of rounds DTOs.
         """
+        if need_details and not current_user.has_permission(
+            Permission.MENTORSHIP_ROUND_READ
+        ):
+            return api_response(
+                success=False,
+                message="Forbidden: Insufficient permissions",
+                status_code=HTTPStatus.FORBIDDEN,
+            )
+
         async with self.database.session() as session:
             rounds: list[RoundsDto] = await self.rounds_service.get_all_rounds(
                 session, include_details=need_details
