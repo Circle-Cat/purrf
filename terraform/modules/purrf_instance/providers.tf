@@ -18,5 +18,8 @@ terraform {
     azuread = {
       source = "hashicorp/azuread"
     }
+    random = {
+      source = "hashicorp/random"
+    }
   }
 }
