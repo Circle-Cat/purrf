@@ -19,15 +19,29 @@ class DevAuthenticationService(AuthenticationService):
     """
     Authentication service used exclusively in development mode.
 
-    This service skips real token validation and always returns a
-    predefined super-admin user. It should never be used in production
-    environments.
+    Skips real token validation and returns a fixed, already-verified
+    super-admin user. Being "verified" (an ``email|`` sub plus
+    ``email_verified=True``) means first login records a confirmed primary
+    email, so the frontend hard wall lets the dev user straight
+    through — no Auth0 environment variables or OTP round-trip needed to work
+    on unrelated features.
+
+    To exercise the real email-link flow instead, temporarily set ``sub`` to a
+    real Auth0 primary user's sub (e.g. ``google-oauth2|<id>``) and the matching
+    ``primary_email``; link_identity needs a real Auth0 user to merge into.
+    Never use this service in production.
     """
 
     def authenticate_request(self, headers: Headers) -> UserContextDto:
         return UserContextDto(
-            sub="dev_superuser",
+            sub="email|dev-superuser",
             primary_email="admin@dev.local",
+            # Verified, so first login lands a confirmed primary email and the
+            # hard wall passes without touching Auth0.
+            email_verified=True,
+            # Stand-in for the Auth0 token iat; bump it to see last_login_at
+            # advance on the next login.
+            last_login_at=1748000000,
             roles=[
                 UserRole.INFRA_ADMIN,
                 UserRole.MANAGER,
