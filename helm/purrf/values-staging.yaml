@@ -1,0 +1,22 @@
+# Staging-environment overrides, layered on top of values.yaml.
+# Read by the ArgoCD `purrf-staging` Application via source.helm.valueFiles.
+# These were previously injected by Terraform (module.purrf_instance.helm_release.purrf_app).
+# Shared chart defaults (securityContext, cronjobs, resources, ...) stay in values.yaml.
+
+fullnameOverride: purrf-staging
+image:
+  # Kept on the current Terraform-built image (image path unchanged for now);
+  # switching to the CI/GHCR image is a follow-up.
+  repository: us-docker.pkg.dev/k8s-dev-437501/purrf/purrf
+  tag: "20260516-021842"
+envFrom:
+  - secretRef:
+      name: purrf-staging
+ingress:
+  enabled: true
+  className: cloudflare2-tunnel
+  hosts:
+    - host: staging-api.purrf.io
+      paths:
+        - path: /
+          pathType: Prefix
