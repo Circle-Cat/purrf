@@ -5,7 +5,6 @@ from backend.dto.registration_dto import RoundPreferencesDto
 from backend.dto.feedback_create_dto import FeedbackCreateDto
 from backend.dto.feedback_dto import FeedbackDto
 from backend.common.mentorship_enums import ParticipantRole
-from backend.common.user_role import UserRole
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.common.mentorship_enums import (
     ApprovalStatus,
@@ -61,7 +60,8 @@ class ParticipationService:
 
         Resolution order:
         1. Use the most recent round participant role.
-        2. Infer from user permissions.
+        2. Otherwise default to MENTEE (role auto-assignment / self-selection
+           not implemented yet).
 
         Args:
             session (AsyncSession): Active database async session.
@@ -69,7 +69,7 @@ class ParticipationService:
             user_id (int): The ID of the current user.
 
         Returns:
-            ParticipantRole: ParticipantRole: The inferred or resolved role (either 'MENTOR' or 'MENTEE').
+            ParticipantRole: The resolved role (the most recent round's role, else MENTEE).
         """
         recent_participant = await self.mentorship_round_participants_repo.get_recent_participant_by_user_id(
             session=session, user_id=user_id
@@ -77,9 +77,6 @@ class ParticipationService:
 
         if recent_participant:
             return recent_participant.participant_role
-
-        if user_context.has_role(UserRole.CONTACT_GOOGLE_CHAT):
-            return ParticipantRole.MENTOR
 
         return ParticipantRole.MENTEE
 

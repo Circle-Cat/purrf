@@ -4,7 +4,7 @@ import MentorshipParticipantsCard from "@/pages/PersonalDashboard/components/Men
 import { useMentorshipData } from "@/pages/PersonalDashboard/hooks/useMentorshipData";
 import { useWorkActivityData } from "@/pages/PersonalDashboard/hooks/useWorkActivityData";
 import { useAuth } from "@/context/auth";
-import { USER_ROLES } from "@/constants/UserRoles";
+import { PERMISSIONS } from "@/constants/Permissions";
 
 /**
  * PersonalDashboard
@@ -45,11 +45,13 @@ const PersonalDashboard = () => {
     userTimezone, // Current user's IANA timezone string from their profile
   } = useMentorshipData();
 
-  const { roles } = useAuth();
-  const isInternal = roles?.includes(USER_ROLES.CC_INTERNAL);
+  const { permissions } = useAuth();
+  const canViewActivitySummary = permissions?.includes(
+    PERMISSIONS.DASHBOARD_ACTIVITY_SUMMARY_READ,
+  );
 
   const { summary, isPersonalSummaryLoading, fetchPersonalSummary } =
-    useWorkActivityData({ enabled: isInternal });
+    useWorkActivityData({ enabled: canViewActivitySummary });
 
   return (
     <div className="personal-dashboard">
@@ -92,7 +94,7 @@ const PersonalDashboard = () => {
       />
 
       {/* Work Activity Data Card */}
-      {isInternal && (
+      {canViewActivitySummary && (
         <WorkActivityDataCard
           initialData={summary}
           isLoading={isPersonalSummaryLoading}

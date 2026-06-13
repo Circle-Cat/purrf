@@ -13,7 +13,7 @@ import { calculateRoundStatus } from "@/pages/PersonalDashboard/utils/mentorship
  * labels, computes footer totals (completed rounds, total matched participants,
  * total completed meetings), and manages the create/edit round modal state.
  */
-export const useMentorshipManagement = () => {
+export const useMentorshipManagement = (canReadRounds = true) => {
   const [rounds, setRounds] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -25,6 +25,13 @@ export const useMentorshipManagement = () => {
   });
 
   const refreshRounds = useCallback(async () => {
+    // The detailed round view requires MENTORSHIP_ROUND_READ; skip the request
+    // when the user lacks it (the backend would return 403) and show nothing.
+    if (!canReadRounds) {
+      setRounds([]);
+      setIsLoading(false);
+      return;
+    }
     setIsLoading(true);
     try {
       const { data: rounds } = await getAllMentorshipRounds(true);
@@ -34,7 +41,7 @@ export const useMentorshipManagement = () => {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [canReadRounds]);
 
   useEffect(() => {
     refreshRounds();

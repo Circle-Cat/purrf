@@ -5,7 +5,7 @@ from fastapi import APIRouter
 
 from backend.common.api_endpoints import PUBSUB_SYNC_PULL_ENDPOINT
 from backend.common.fast_api_response_wrapper import api_response
-from backend.common.user_role import UserRole
+from backend.common.permissions import Permission
 from backend.utils.permission_decorators import authenticate
 
 
@@ -23,7 +23,7 @@ class ConsumerController:
 
         self.router.add_api_route(
             PUBSUB_SYNC_PULL_ENDPOINT,
-            endpoint=authenticate(roles=[UserRole.INFRA_ADMIN, UserRole.CRON_RUNNER])(
+            endpoint=authenticate(permissions=[Permission.SYSTEM_SYNC])(
                 self.sync_pull_all
             ),
             methods=["POST"],

@@ -9,6 +9,14 @@ py_test(
 )
 
 py_test(
+    name = "permissions_test",
+    srcs = ["permissions_test.py"],
+    deps = [
+        "//backend/common:permissions",
+    ],
+)
+
+py_test(
     name = "auth0_client_test",
     srcs = ["auth0_client_test.py"],
     deps = [

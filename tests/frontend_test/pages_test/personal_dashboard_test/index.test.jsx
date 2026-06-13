@@ -4,7 +4,7 @@ import PersonalDashboard from "@/pages/PersonalDashboard";
 import { useMentorshipData } from "@/pages/PersonalDashboard/hooks/useMentorshipData";
 import { useAuth } from "@/context/auth";
 import { useWorkActivityData } from "@/pages/PersonalDashboard/hooks/useWorkActivityData";
-import { USER_ROLES } from "@/constants/UserRoles";
+import { PERMISSIONS } from "@/constants/Permissions";
 
 vi.mock("@/pages/PersonalDashboard/components/MentorshipInfoBanner", () => ({
   default: vi.fn(({ registration, isRegistrationOpen }) => (
@@ -56,7 +56,7 @@ describe("PersonalDashboard", () => {
     vi.clearAllMocks();
     useMentorshipData.mockReturnValue(mockHookData);
     useWorkActivityData.mockReturnValue(defaultWorkActivityMock);
-    useAuth.mockReturnValue({ roles: [] });
+    useAuth.mockReturnValue({ permissions: [] });
   });
 
   it("renders the welcome header", () => {
@@ -127,7 +127,7 @@ describe("PersonalDashboard", () => {
 
   it("shows work activity card for internal users", () => {
     useAuth.mockReturnValue({
-      roles: [USER_ROLES.CC_INTERNAL],
+      permissions: [PERMISSIONS.DASHBOARD_ACTIVITY_SUMMARY_READ],
     });
 
     useWorkActivityData.mockReturnValue({
@@ -143,7 +143,7 @@ describe("PersonalDashboard", () => {
 
   it("does not show work activity card for non internal users", () => {
     useAuth.mockReturnValue({
-      roles: [],
+      permissions: [],
     });
 
     useWorkActivityData.mockReturnValue({
@@ -159,7 +159,7 @@ describe("PersonalDashboard", () => {
 
   it("disables work activity card search button while loading for internal users", () => {
     useAuth.mockReturnValue({
-      roles: [USER_ROLES.CC_INTERNAL],
+      permissions: [PERMISSIONS.DASHBOARD_ACTIVITY_SUMMARY_READ],
     });
 
     useWorkActivityData.mockReturnValue({

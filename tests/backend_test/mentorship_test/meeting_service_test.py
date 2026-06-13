@@ -12,7 +12,7 @@ from backend.dto.google_meeting_response_detail_dto import (
 from backend.entity.users_entity import UsersEntity
 from backend.entity.mentorship_pairs_entity import MentorshipPairsEntity
 from backend.common.mentorship_enums import PairStatus
-from backend.common.user_role import UserRole
+from backend.common.permissions import Permission
 
 
 class TestMeetingServiceV1(unittest.IsolatedAsyncioTestCase):
@@ -249,7 +249,7 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
 
         self.mock_current_user.timezone = "America/New_York"
 
-        self.user_context.roles = [UserRole.MENTORSHIP]
+        self.user_context.has_permission.return_value = False
 
         self.mock_pair_entity = MagicMock(
             spec=MentorshipPairsEntity,
@@ -489,7 +489,7 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
             self.mock_pair_entity
         ]
 
-        self.user_context.roles = [UserRole.MENTORSHIP_ADMIN]
+        self.user_context.has_permission.return_value = True
         stub_dto = MagicMock(spec=MeetingDto)
         self.mock_mapper.map_to_meeting_v2_dto.return_value = stub_dto
 
@@ -512,10 +512,13 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
             grouped_pairs=[(self.mock_pair_entity, self.partner_id)],
             include_details=True,
         )
+        self.user_context.has_permission.assert_called_once_with(
+            Permission.MENTORSHIP_ROUND_WRITE
+        )
 
     async def test_get_meetings_by_user_and_round_v2_no_pair_found(self):
         """Verify that an empty MeetingDto is returned when no mentorship pairs exist in v2."""
-        self.user_context.roles = [UserRole.MENTORSHIP]
+        self.user_context.has_permission.return_value = False
         self.mock_pairs_repo.get_pairs_by_user_and_round.return_value = []
 
         result = await self.meeting_service.get_meetings_by_user_and_round_v2(
@@ -537,7 +540,7 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
         self.mock_pairs_repo.get_pairs_by_user_and_round.return_value = [
             self.mock_pair_entity
         ]
-        self.user_context.roles = [UserRole.MENTORSHIP]
+        self.user_context.has_permission.return_value = False
 
         stub_dto = MagicMock(spec=MeetingDto)
         self.mock_mapper.map_to_meeting_v2_dto.return_value = stub_dto

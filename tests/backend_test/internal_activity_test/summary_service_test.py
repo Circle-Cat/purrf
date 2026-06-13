@@ -214,7 +214,7 @@ class TestSummaryService(TestCase):
         self.assertEqual(result, expected)
 
     def test_get_my_summary_no_primary_email(self):
-        user = UserContextDto(sub="user1", primary_email=None, roles=[])
+        user = UserContextDto(sub="user1", primary_email=None)
 
         with self.assertRaises(ValueError):
             self.service.get_my_summary(
@@ -222,7 +222,7 @@ class TestSummaryService(TestCase):
             )
 
     def test_get_my_summary_correct_ldap_extraction(self):
-        user = UserContextDto(sub="user1", primary_email="user1@example.com", roles=[])
+        user = UserContextDto(sub="user1", primary_email="user1@example.com")
         self.service._search_summary_data = Mock(
             return_value=[
                 {
@@ -246,7 +246,7 @@ class TestSummaryService(TestCase):
         self.assertEqual(result.jira_issue_done, 2)
 
     def test_get_my_summary_calls_search_summary_data(self):
-        user = UserContextDto(sub="user1", primary_email="user1@example.com", roles=[])
+        user = UserContextDto(sub="user1", primary_email="user1@example.com")
         self.service._search_summary_data = Mock(
             return_value=[
                 {
@@ -267,7 +267,7 @@ class TestSummaryService(TestCase):
         )
 
     def test_get_my_summary_empty_data(self):
-        user = UserContextDto(sub="user1", primary_email="user1@example.com", roles=[])
+        user = UserContextDto(sub="user1", primary_email="user1@example.com")
         self.service._search_summary_data = Mock(return_value=[])
         result = self.service.get_my_summary(
             user, start_date="2025-09-01", end_date="2025-09-30"

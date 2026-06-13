@@ -13,7 +13,7 @@ from backend.dto.google_meeting_response_detail_dto import (
     GoogleMeetingResponseDetailDto,
 )
 from backend.dto.user_context_dto import UserContextDto
-from backend.common.user_role import UserRole
+from backend.common.permissions import Permission
 from backend.dto.google_meeting_delete_response_dto import (
     GoogleMeetingDeleteResponseDto,
 )
@@ -425,7 +425,7 @@ class MeetingService:
             session=session, user_id=user_context.user_id
         )
 
-        is_admin = UserRole.MENTORSHIP_ADMIN in (user_context.roles or [])
+        is_admin = user_context.has_permission(Permission.MENTORSHIP_ROUND_WRITE)
         is_detail_allowed = include_details and is_admin
 
         pair_entity = (

@@ -7,7 +7,6 @@ from backend.dto.user_context_dto import UserContextDto
 from backend.dto.registration_dto import RoundPreferencesDto
 from backend.dto.feedback_create_dto import FeedbackCreateDto
 from backend.dto.feedback_dto import FeedbackDto
-from backend.common.user_role import UserRole
 from backend.entity.mentorship_round_participants_entity import (
     MentorshipRoundParticipantsEntity,
 )
@@ -228,27 +227,9 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
             session=self.mock_session, user_id=self.user_context.user_id
         )
 
-    async def test_infers_mentor_role_from_user_permissions(self):
-        """Uses mentor role if user has no participation history and has mentor permission."""
+    async def test_defaults_to_mentee_without_participation_history(self):
+        """Defaults to mentee role when the user has no participation history."""
         self.mock_round_participants_repo.get_recent_participant_by_user_id.return_value = None
-        self.user_context.has_role.side_effect = (
-            lambda role: role == UserRole.CONTACT_GOOGLE_CHAT
-        )
-
-        role = await self.participation_service.resolve_participant_role_with_fallback(
-            session=self.mock_session,
-            user_context=self.user_context,
-            user_id=self.user_context.user_id,
-        )
-
-        self.assertEqual(role, ParticipantRole.MENTOR)
-
-    async def test_infers_mentee_role_from_user_permissions(self):
-        """Uses mentee role if user has neither participation history nor mentor permission."""
-        self.mock_round_participants_repo.get_recent_participant_by_user_id.return_value = None
-        self.user_context.has_role.side_effect = (
-            lambda role: role == UserRole.MENTORSHIP
-        )
 
         role = await self.participation_service.resolve_participant_role_with_fallback(
             session=self.mock_session,
@@ -342,8 +323,6 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
             None
         )
         self.mock_round_participants_repo.get_recent_participant_by_user_id.return_value = None
-
-        self.user_context.has_role.return_value = False
 
         (
             result,

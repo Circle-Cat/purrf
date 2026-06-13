@@ -6,7 +6,8 @@ py_test(
     deps = [
         "//backend/common:api_endpoints",
         "//backend/common:constants",
-        "//backend/common:user_role",
+        "//backend/common:identity_type",
+        "//backend/common:permissions",
         "//backend/internal_activity_service:internal_activity_controller",
         "//backend/utils:auth_middleware",
         "@pypi//fastapi",
@@ -75,6 +76,7 @@ py_test(
     name = "summary_service_test",
     srcs = ["summary_service_test.py"],
     deps = [
+        "//backend/dto",
         "//backend/internal_activity_service:summary_service",
     ],
 )

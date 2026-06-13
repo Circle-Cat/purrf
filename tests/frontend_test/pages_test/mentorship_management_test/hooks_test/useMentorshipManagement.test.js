@@ -45,6 +45,14 @@ describe("useMentorshipManagement", () => {
     expect(getAllMentorshipRounds).toHaveBeenCalledWith(true);
   });
 
+  it("skips the fetch and stops loading when canReadRounds is false", async () => {
+    const { result } = renderHook(() => useMentorshipManagement(false));
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(getAllMentorshipRounds).not.toHaveBeenCalled();
+    expect(result.current.sortedRounds).toEqual([]);
+  });
+
   it("passes rounds through calculateRoundStatus and computes totals correctly", async () => {
     const rounds = [
       makeTestRound({

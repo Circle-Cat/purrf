@@ -12,6 +12,7 @@ from backend.dto.registration_create_dto import RegistrationCreateDto
 from backend.dto.google_meeting_create_dto import GoogleMeetingCreateDto
 from backend.dto.feedback_create_dto import FeedbackCreateDto
 from backend.dto.feedback_dto import FeedbackDto
+from backend.common.permissions import Permission
 from backend.mentorship.mentorship_controller import MentorshipController
 
 
@@ -68,10 +69,11 @@ class TestMentorshipController(unittest.IsolatedAsyncioTestCase):
         self.patcher = patch("backend.mentorship.mentorship_controller.api_response")
         self.mock_api_response = self.patcher.start()
         self.mock_api_response.side_effect = (
-            lambda message, data=None, status_code=HTTPStatus.OK: {
+            lambda message, data=None, status_code=HTTPStatus.OK, success=True: {
                 "message": message,
                 "data": data,
                 "status_code": status_code,
+                "success": success,
             }
         )
 
@@ -121,11 +123,15 @@ class TestMentorshipController(unittest.IsolatedAsyncioTestCase):
 
     async def test_get_all_rounds(self):
         """Test retrieve mentorship rounds with complete data."""
+        mock_user = MagicMock(spec=UserContextDto)
         mock_data = [MagicMock(spec=RoundsDto)]
         self.mock_rounds_service.get_all_rounds.return_value = mock_data
 
-        response = await self.controller.get_all_rounds()
+        response = await self.controller.get_all_rounds(current_user=mock_user)
 
+        # The basic list (need_details=False) is open to any authenticated
+        # user, so no permission check happens.
+        mock_user.has_permission.assert_not_called()
         self.mock_rounds_service.get_all_rounds.assert_awaited_once_with(
             self.mock_session, include_details=False
         )
@@ -137,9 +143,10 @@ class TestMentorshipController(unittest.IsolatedAsyncioTestCase):
 
     async def test_get_all_rounds_empty(self):
         """Test return an empty list when no rounds exist."""
+        mock_user = MagicMock(spec=UserContextDto)
         self.mock_rounds_service.get_all_rounds.return_value = []
 
-        response = await self.controller.get_all_rounds()
+        response = await self.controller.get_all_rounds(current_user=mock_user)
 
         self.mock_rounds_service.get_all_rounds.assert_awaited_once_with(
             self.mock_session, include_details=False
@@ -149,6 +156,41 @@ class TestMentorshipController(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(response["data"], [])
+
+    async def test_get_all_rounds_with_details_authorized(self):
+        """The detailed view returns rounds when the user has round-read."""
+        mock_user = MagicMock(spec=UserContextDto)
+        mock_user.has_permission.return_value = True
+        mock_data = [MagicMock(spec=RoundsDto)]
+        self.mock_rounds_service.get_all_rounds.return_value = mock_data
+
+        response = await self.controller.get_all_rounds(
+            current_user=mock_user, need_details=True
+        )
+
+        mock_user.has_permission.assert_called_once_with(
+            Permission.MENTORSHIP_ROUND_READ
+        )
+        self.mock_rounds_service.get_all_rounds.assert_awaited_once_with(
+            self.mock_session, include_details=True
+        )
+        self.assertEqual(response["data"], mock_data)
+
+    async def test_get_all_rounds_with_details_forbidden(self):
+        """The detailed view is rejected with 403 without round-read."""
+        mock_user = MagicMock(spec=UserContextDto)
+        mock_user.has_permission.return_value = False
+
+        response = await self.controller.get_all_rounds(
+            current_user=mock_user, need_details=True
+        )
+
+        mock_user.has_permission.assert_called_once_with(
+            Permission.MENTORSHIP_ROUND_READ
+        )
+        self.mock_rounds_service.get_all_rounds.assert_not_awaited()
+        self.assertEqual(response["status_code"], HTTPStatus.FORBIDDEN)
+        self.assertFalse(response["success"])
 
     async def test_get_partners_for_user_with_round_id(self):
         """Test retrieve partners with both sub and round_id."""

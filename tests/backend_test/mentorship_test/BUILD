@@ -36,7 +36,10 @@ py_test(
 py_test(
     name = "meeting_service_test",
     srcs = ["meeting_service_test.py"],
-    deps = ["//backend/mentorship"],
+    deps = [
+        "//backend/common:permissions",
+        "//backend/mentorship",
+    ],
 )
 
 py_test(
