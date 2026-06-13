@@ -1,20 +1,20 @@
 resource "auth0_client" "purrf_auth0" {
-  description                                          = "Managed by Terraform"
-  name                                                 = "Purrf (${var.env_name})"
-  allowed_clients                                      = []
-  allowed_logout_urls                                  = var.auth0_logout_urls
-  allowed_origins                                      = []
-  app_type                                             = "regular_web"
-  callbacks                                            = var.auth0_callbacks
-  client_aliases                                       = []
-  client_metadata                                      = {}
-  compliance_level                                     = null
-  cross_origin_auth                                    = false
-  cross_origin_loc                                     = null
-  custom_login_page                                    = null
-  custom_login_page_on                                 = true
-  encryption_key                                       = null
-  form_template                                        = null
+  description          = "Managed by Terraform"
+  name                 = "Purrf (${var.env_name})"
+  allowed_clients      = []
+  allowed_logout_urls  = var.auth0_logout_urls
+  allowed_origins      = []
+  app_type             = "regular_web"
+  callbacks            = var.auth0_callbacks
+  client_aliases       = []
+  client_metadata      = {}
+  compliance_level     = null
+  cross_origin_auth    = false
+  cross_origin_loc     = null
+  custom_login_page    = null
+  custom_login_page_on = true
+  encryption_key       = null
+  form_template        = null
   grant_types = [
     "authorization_code",
     "implicit",
