@@ -25,9 +25,9 @@ locals {
       color        = "0b7a3e"
       beta_gated   = true
       beta_user_rule = {
-        attribute = "roles"
-        op        = "contains"
-        values    = ["ccInternal"]
+        attribute = "identity_type"
+        op        = "in"
+        values    = ["internal"]
       }
     }
   }
