@@ -21,15 +21,24 @@ describe("HardWallGate Component", () => {
    * @param {Object} options
    * @param {boolean} [options.hasVerifiedEmail=false] - Whether the user holds a confirmed email.
    * @param {boolean} [options.loading=false] - The auth context loading state.
+   * @param {boolean} [options.accessDenied=false] - Whether the auth pull came back 403.
+   * @param {string} [options.accessDeniedMessage=""] - The denial reason from the 403 response.
    * @param {string} options.initialPath - The path the router starts at.
    * @returns {Object} React Testing Library render result.
    */
   const renderGate = ({
     hasVerifiedEmail = false,
     loading = false,
+    accessDenied = false,
+    accessDeniedMessage = "",
     initialPath,
   }) => {
-    useAuth.mockReturnValue({ loading, hasVerifiedEmail });
+    useAuth.mockReturnValue({
+      loading,
+      hasVerifiedEmail,
+      accessDenied,
+      accessDeniedMessage,
+    });
     return render(
       <MemoryRouter initialEntries={[initialPath]}>
         <HardWallGate>
@@ -97,6 +106,45 @@ describe("HardWallGate Component", () => {
     });
 
     expect(screen.getByText("Dashboard Page")).toBeInTheDocument();
+    expect(screen.queryByText("Verify Wall")).not.toBeInTheDocument();
+  });
+
+  test("shows the 403 page with the denial message when access is denied", () => {
+    const message =
+      "Your account has been deactivated. Contact an administrator to restore access.";
+    renderGate({
+      accessDenied: true,
+      accessDeniedMessage: message,
+      initialPath: ROUTE_PATHS.DASHBOARD,
+    });
+
+    expect(screen.getByText("403 Forbidden")).toBeInTheDocument();
+    expect(screen.getByText(message)).toBeInTheDocument();
+    expect(screen.queryByText("Dashboard Page")).not.toBeInTheDocument();
+    expect(screen.queryByText("Verify Wall")).not.toBeInTheDocument();
+  });
+
+  test("shows the 403 page instead of bouncing an unverified denied user to the wall", () => {
+    renderGate({
+      hasVerifiedEmail: false,
+      accessDenied: true,
+      accessDeniedMessage: "",
+      initialPath: ROUTE_PATHS.DASHBOARD,
+    });
+
+    expect(screen.getByText("403 Forbidden")).toBeInTheDocument();
+    expect(screen.queryByText("Verify Wall")).not.toBeInTheDocument();
+  });
+
+  test("shows the 403 page even when sitting on the verify wall path", () => {
+    renderGate({
+      accessDenied: true,
+      accessDeniedMessage: "Access revoked.",
+      initialPath: ROUTE_PATHS.VERIFY_REQUIRED,
+    });
+
+    expect(screen.getByText("403 Forbidden")).toBeInTheDocument();
+    expect(screen.getByText("Access revoked.")).toBeInTheDocument();
     expect(screen.queryByText("Verify Wall")).not.toBeInTheDocument();
   });
 });

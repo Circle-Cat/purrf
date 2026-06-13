@@ -90,6 +90,38 @@ describe("AuthProvider", () => {
 
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.permissions).toEqual([]);
+    expect(result.current.accessDenied).toBe(false);
+  });
+
+  it("flags accessDenied with the message on a 403 (e.g. deactivated account)", async () => {
+    const message =
+      "Your account has been deactivated. Contact an administrator to restore access.";
+    getUserPermissions.mockRejectedValue({
+      response: { status: 403, data: { message } },
+    });
+
+    const { result } = renderHook(() => useAuth(), {
+      wrapper: AuthProvider,
+    });
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.accessDenied).toBe(true);
+    expect(result.current.accessDeniedMessage).toBe(message);
+    expect(result.current.hasVerifiedEmail).toBe(false);
+  });
+
+  it("flags accessDenied with an empty message when the 403 has no body", async () => {
+    getUserPermissions.mockRejectedValue({
+      response: { status: 403 },
+    });
+
+    const { result } = renderHook(() => useAuth(), {
+      wrapper: AuthProvider,
+    });
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.accessDenied).toBe(true);
+    expect(result.current.accessDeniedMessage).toBe("");
   });
 
   it("exposes hasVerifiedEmail true when the API reports a verified email", async () => {
