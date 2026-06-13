@@ -129,16 +129,6 @@ describe("RoundsManagementCard", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("shows a no-permission message and hides the table without read permission", () => {
-    renderCard({ canReadRounds: false });
-    expect(
-      screen.getByText(/permission to view mentorship rounds/i),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByTestId("mock-all-rounds-table"),
-    ).not.toBeInTheDocument();
-  });
-
   it("forwards canWriteRounds to AllRoundsTable as canEdit", () => {
     renderCard({ canWriteRounds: false });
     const tableMock = AllRoundsTable;

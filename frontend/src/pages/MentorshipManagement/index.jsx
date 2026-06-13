@@ -35,18 +35,19 @@ const MentorshipManagement = () => {
 
   return (
     <div className="mentorship-management">
-      <RoundsManagementCard
-        rounds={sortedRounds}
-        totals={totals}
-        isLoading={isLoading}
-        roundModalState={roundModalState}
-        openCreate={openCreate}
-        openEdit={openEdit}
-        closeModal={closeModal}
-        saveRound={saveRound}
-        canReadRounds={canReadRounds}
-        canWriteRounds={canWriteRounds}
-      />
+      {canReadRounds && (
+        <RoundsManagementCard
+          rounds={sortedRounds}
+          totals={totals}
+          isLoading={isLoading}
+          roundModalState={roundModalState}
+          openCreate={openCreate}
+          openEdit={openEdit}
+          closeModal={closeModal}
+          saveRound={saveRound}
+          canWriteRounds={canWriteRounds}
+        />
+      )}
     </div>
   );
 };

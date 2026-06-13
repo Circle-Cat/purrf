@@ -16,7 +16,6 @@ import RoundModal from "@/pages/MentorshipManagement/components/RoundModal";
  *   openEdit: (round: Object) => void,
  *   closeModal: () => void,
  *   saveRound: (payload: Object) => Promise<void>,
- *   canReadRounds: boolean, whether the user may view rounds (MENTORSHIP_ROUND_READ)
  *   canWriteRounds: boolean, whether the user may create/edit rounds (MENTORSHIP_ROUND_WRITE)
  * }} props
  */
@@ -29,7 +28,6 @@ export default function RoundsManagementCard({
   openEdit,
   closeModal,
   saveRound,
-  canReadRounds = true,
   canWriteRounds = true,
 }) {
   return (
@@ -45,11 +43,7 @@ export default function RoundsManagementCard({
           )}
         </CardHeader>
         <CardContent>
-          {!canReadRounds ? (
-            <div className="text-center py-8 text-gray-500">
-              You don&apos;t have permission to view mentorship rounds.
-            </div>
-          ) : isLoading ? (
+          {isLoading ? (
             <div className="py-10 text-center text-gray-500">
               Loading rounds...
             </div>
