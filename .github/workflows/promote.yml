@@ -1,0 +1,107 @@
+name: Promote
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Target environment branch
+        required: true
+        type: choice
+        options:
+          - staging
+          - prod
+      commits:
+        description: >-
+          Upstream commit SHAs to cherry-pick, separated by spaces or commas.
+          Leave empty to promote all pending commits.
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    steps:
+      # Mint an installation token for the GitHub App (same app reused by
+      # deploy-test.yml). An app token is a distinct actor, so the PR it opens
+      # triggers presubmit -- unlike the built-in github.token, whose PRs leave
+      # required checks pending forever. Generated first so checkout uses it and
+      # the later push/PR authenticate as the app.
+      - name: Generate app token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.PURRF_BOT_APP_ID }}
+          private-key: ${{ secrets.PURRF_BOT_PRIVATE_KEY }}
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Cherry-pick and open promotion PR
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          TARGET: ${{ inputs.target }}
+          COMMITS: ${{ inputs.commits }}
+          BRANCH: promote/${{ inputs.target }}-${{ github.run_id }}
+        run: |
+          set -o errexit -o pipefail -o nounset
+
+          case "$TARGET" in
+            staging) UPSTREAM=main ;;
+            prod)    UPSTREAM=staging ;;
+          esac
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if [ -n "$COMMITS" ]; then
+            requested=$(echo "$COMMITS" | tr ',' ' ')
+            for sha in $requested; do
+              if ! git merge-base --is-ancestor "$sha" "origin/$UPSTREAM"; then
+                echo "::error::$sha is not a commit on $UPSTREAM."
+                exit 1
+              fi
+            done
+            # Oldest first, so dependencies apply before their dependents.
+            picks=$(git rev-list --reverse --no-walk $requested)
+          else
+            # Every upstream commit whose patch (by patch-id) is not yet on the target.
+            picks=$(git cherry "origin/$TARGET" "origin/$UPSTREAM" | awk '$1 == "+" { print $2 }')
+          fi
+
+          if [ -z "$picks" ]; then
+            echo "::error::Nothing to promote: $TARGET already contains all selected changes."
+            exit 1
+          fi
+
+          git checkout -b "$BRANCH" "origin/$TARGET"
+          for sha in $picks; do
+            if ! git cherry-pick -x "$sha"; then
+              git cherry-pick --abort
+              echo "::error::Cherry-pick of $sha conflicts on $TARGET. Either include the commits it depends on, or create the promotion branch locally, resolve, and push."
+              exit 1
+            fi
+          done
+          git push origin "$BRANCH"
+
+          {
+            echo "Promotes the following commits from \`$UPSTREAM\` to \`$TARGET\`:"
+            echo
+            for sha in $picks; do
+              echo "- $(git log -1 --format='%h %s' "$sha")"
+            done
+            echo
+            echo "Created by promote.yml run ${{ github.run_id }}. Merge with a merge commit (never squash/rebase)."
+          } > pr_body.md
+
+          count=$(echo "$picks" | wc -l)
+          gh pr create \
+            --base "$TARGET" \
+            --head "$BRANCH" \
+            --title "Promote $count commit(s) from $UPSTREAM to $TARGET" \
+            --body-file pr_body.md
