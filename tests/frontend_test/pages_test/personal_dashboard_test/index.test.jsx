@@ -5,6 +5,9 @@ import { useMentorshipData } from "@/pages/PersonalDashboard/hooks/useMentorship
 import { useAuth } from "@/context/auth";
 import { useWorkActivityData } from "@/pages/PersonalDashboard/hooks/useWorkActivityData";
 import { PERMISSIONS } from "@/constants/Permissions";
+import { MentorshipRoundStatus } from "@/constants/MentorshipRoundStatus";
+import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
+import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 
 vi.mock("@/pages/PersonalDashboard/components/MentorshipInfoBanner", () => ({
   default: vi.fn(({ registration, isRegistrationOpen }) => (
@@ -34,6 +37,29 @@ vi.mock("@/pages/PersonalDashboard/components/WorkActivityDataCard", () => ({
   ),
 }));
 
+vi.mock(
+  "@/pages/PersonalDashboard/components/MentorshipParticipantsCard",
+  () => ({
+    default: () => (
+      <div data-testid="mock-participants-card">Participants Card</div>
+    ),
+  }),
+);
+
+vi.mock("@/pages/PersonalDashboard/components/ManageMeetingsButton", () => ({
+  ManageMeetingsButton: vi.fn(({ meetingRoundId }) => (
+    <div data-testid="mock-manage-meetings-btn">
+      Mock Button - Round: {meetingRoundId ?? "null"}
+    </div>
+  )),
+}));
+
+vi.mock("@/hooks/useFeatureFlags", () => {
+  return {
+    useFeatureFlags: vi.fn(),
+  };
+});
+
 describe("PersonalDashboard", () => {
   const mockHookData = {
     registration: { id: "reg-1", status: "PENDING" },
@@ -44,6 +70,9 @@ describe("PersonalDashboard", () => {
     isPartnersLoading: false,
     loadPastPartners: vi.fn(),
     isLoading: false,
+    roundSelectionData: {
+      sortedRounds: [{ id: 1, status: MentorshipRoundStatus.COMPLETED }],
+    },
   };
 
   const defaultWorkActivityMock = {
@@ -57,6 +86,9 @@ describe("PersonalDashboard", () => {
     useMentorshipData.mockReturnValue(mockHookData);
     useWorkActivityData.mockReturnValue(defaultWorkActivityMock);
     useAuth.mockReturnValue({ permissions: [] });
+    vi.mocked(useFeatureFlags).mockReturnValue({
+      [FEATURE_FLAGS.CREATE_GOOGLE_MEETING]: true,
+    });
   });
 
   it("renders the welcome header", () => {
@@ -170,8 +202,43 @@ describe("PersonalDashboard", () => {
 
     render(<PersonalDashboard />);
 
-    const button = screen.getByRole("button");
+    const cardContainer = screen.getByTestId("work-activity-card");
+    const button = cardContainer.querySelector("button");
 
     expect(button).toBeDisabled();
+  });
+
+  describe("Manage Meetings Button", () => {
+    it("calculates active meetingRoundId using enum and passes it to the button", () => {
+      useMentorshipData.mockReturnValue({
+        ...mockHookData,
+        roundSelectionData: {
+          sortedRounds: [
+            { id: 10, status: MentorshipRoundStatus.COMPLETED },
+            { id: 20, status: MentorshipRoundStatus.ACTIVE },
+          ],
+        },
+      });
+
+      render(<PersonalDashboard />);
+
+      const btn = screen.getByTestId("mock-manage-meetings-btn");
+      expect(btn).toBeInTheDocument();
+      expect(btn.innerHTML).toContain("Round: 20");
+    });
+
+    it("passes null to the button when there is no active round", () => {
+      useMentorshipData.mockReturnValue({
+        ...mockHookData,
+        roundSelectionData: {
+          sortedRounds: [{ id: 10, status: MentorshipRoundStatus.COMPLETED }],
+        },
+      });
+
+      render(<PersonalDashboard />);
+
+      const btn = screen.getByTestId("mock-manage-meetings-btn");
+      expect(btn.innerHTML).toContain("Round: null");
+    });
   });
 });

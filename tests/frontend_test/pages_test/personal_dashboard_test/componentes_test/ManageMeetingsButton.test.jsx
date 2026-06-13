@@ -1,0 +1,80 @@
+import { render, screen } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { ManageMeetingsButton } from "@/pages/PersonalDashboard/components/ManageMeetingsButton";
+import { useFeatureFlags } from "@/hooks/useFeatureFlags";
+import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
+import userEvent from "@testing-library/user-event";
+
+vi.mock("@/hooks/useFeatureFlags", () => ({
+  useFeatureFlags: vi.fn(),
+}));
+
+vi.mock("@/components/ui/button", () => ({
+  Button: ({ children, disabled, onClick }) => (
+    <button disabled={disabled} onClick={onClick}>
+      {children}
+    </button>
+  ),
+}));
+
+describe("ManageMeetingsButton", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("should return null and render nothing when FEATURE_FLAGS.CREATE_GOOGLE_MEETING is false", () => {
+    useFeatureFlags.mockReturnValue({
+      [FEATURE_FLAGS.CREATE_GOOGLE_MEETING]: false,
+    });
+
+    const { container } = render(<ManageMeetingsButton meetingRoundId={123} />);
+
+    expect(container.firstChild).toBeNull();
+  });
+
+  it("should disable the button and show tooltip warning when meetingRoundId is null", () => {
+    useFeatureFlags.mockReturnValue({
+      [FEATURE_FLAGS.CREATE_GOOGLE_MEETING]: true,
+    });
+
+    render(<ManageMeetingsButton meetingRoundId={null} />);
+
+    const button = screen.getByRole("button", { name: /manage meetings/i });
+    expect(button).toBeDisabled();
+
+    const tooltipWrapper = screen.getByTitle("No active mentorship round");
+    expect(tooltipWrapper).toContainElement(button);
+  });
+
+  it("should enable the button and remove tooltip when meetingRoundId is provided", () => {
+    useFeatureFlags.mockReturnValue({
+      [FEATURE_FLAGS.CREATE_GOOGLE_MEETING]: true,
+    });
+
+    render(<ManageMeetingsButton meetingRoundId={42} />);
+
+    const button = screen.getByRole("button", { name: /manage meetings/i });
+    expect(button).toBeEnabled();
+
+    expect(
+      screen.queryByTitle("No active mentorship round"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("should trigger click handler and log current meetingRoundId cleanly", async () => {
+    useFeatureFlags.mockReturnValue({
+      [FEATURE_FLAGS.CREATE_GOOGLE_MEETING]: true,
+    });
+
+    const consoleLogSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    render(<ManageMeetingsButton meetingRoundId={99} />);
+
+    const button = screen.getByRole("button", { name: /manage meetings/i });
+    await userEvent.click(button);
+
+    expect(consoleLogSpy).toHaveBeenCalledWith("Current meetingRoundId:", 99);
+
+    consoleLogSpy.mockRestore();
+  });
+});
