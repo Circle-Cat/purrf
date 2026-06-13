@@ -19,6 +19,8 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [hasVerifiedEmail, setHasVerifiedEmail] = useState(false);
+  const [accessDenied, setAccessDenied] = useState(false);
+  const [accessDeniedMessage, setAccessDeniedMessage] = useState("");
   const [loading, setLoading] = useState(true);
 
   /**
@@ -37,9 +39,19 @@ export const AuthProvider = ({ children }) => {
       });
       setIsSuperAdmin(Boolean(data.is_super_admin));
       setHasVerifiedEmail(Boolean(data.has_verified_email));
+      setAccessDenied(false);
+      setAccessDeniedMessage("");
     } catch (error) {
       console.error("Auth initialization failed", error);
       setPermissions([]);
+      // A 403 from /permissions/me means the account is forbidden (e.g.
+      // deactivated), not unverified — flag it so the app shows the 403 page
+      // instead of bouncing the user to the email verify wall.
+      const forbidden = error?.response?.status === 403;
+      setAccessDenied(forbidden);
+      setAccessDeniedMessage(
+        forbidden ? (error.response?.data?.message ?? "") : "",
+      );
     } finally {
       setLoading(false);
     }
@@ -58,10 +70,21 @@ export const AuthProvider = ({ children }) => {
       user,
       isSuperAdmin,
       hasVerifiedEmail,
+      accessDenied,
+      accessDeniedMessage,
       loading,
       refreshAuth: loadAuth,
     }),
-    [permissions, user, isSuperAdmin, hasVerifiedEmail, loading, loadAuth],
+    [
+      permissions,
+      user,
+      isSuperAdmin,
+      hasVerifiedEmail,
+      accessDenied,
+      accessDeniedMessage,
+      loading,
+      loadAuth,
+    ],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
