@@ -35,7 +35,12 @@ const BASE_COLUMNS = [
 
 const ACTION_COLUMN = { header: "Action", accessor: "action" };
 
-export default function AllRoundsTable({ rounds, totals, onEdit, canEdit = true }) {
+export default function AllRoundsTable({
+  rounds,
+  totals,
+  onEdit,
+  canEdit = true,
+}) {
   const columns = canEdit ? [...BASE_COLUMNS, ACTION_COLUMN] : BASE_COLUMNS;
 
   const data = rounds.map((round) => ({
