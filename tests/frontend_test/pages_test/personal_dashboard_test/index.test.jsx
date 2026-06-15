@@ -46,8 +46,8 @@ vi.mock(
   }),
 );
 
-vi.mock("@/pages/PersonalDashboard/components/ManageMeetingsButton", () => ({
-  ManageMeetingsButton: vi.fn(({ meetingRoundId }) => (
+vi.mock("@/pages/PersonalDashboard/components/GoogleMeetingControl", () => ({
+  GoogleMeetingControl: vi.fn(({ meetingRoundId }) => (
     <div data-testid="mock-manage-meetings-btn">
       Mock Button - Round: {meetingRoundId ?? "null"}
     </div>

@@ -2,7 +2,7 @@ import { Button } from "@/components/ui/button";
 import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
 
-export const ManageMeetingsButton = ({ meetingRoundId }) => {
+export const GoogleMeetingControl = ({ meetingRoundId }) => {
   const { [FEATURE_FLAGS.CREATE_GOOGLE_MEETING]: createGoogleMeeting } =
     useFeatureFlags();
 
@@ -10,7 +10,6 @@ export const ManageMeetingsButton = ({ meetingRoundId }) => {
 
   const handleManageMeetingsClick = () => {
     console.log("Current meetingRoundId:", meetingRoundId);
-    // 可以在这里处理弹窗逻辑
   };
 
   const isDisabled = meetingRoundId === null;

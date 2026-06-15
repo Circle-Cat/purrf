@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { ManageMeetingsButton } from "@/pages/PersonalDashboard/components/ManageMeetingsButton";
+import { GoogleMeetingControl } from "@/pages/PersonalDashboard/components/GoogleMeetingControl";
 import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
 import userEvent from "@testing-library/user-event";
@@ -17,7 +17,7 @@ vi.mock("@/components/ui/button", () => ({
   ),
 }));
 
-describe("ManageMeetingsButton", () => {
+describe("GoogleMeetingControl", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -27,7 +27,7 @@ describe("ManageMeetingsButton", () => {
       [FEATURE_FLAGS.CREATE_GOOGLE_MEETING]: false,
     });
 
-    const { container } = render(<ManageMeetingsButton meetingRoundId={123} />);
+    const { container } = render(<GoogleMeetingControl meetingRoundId={123} />);
 
     expect(container.firstChild).toBeNull();
   });
@@ -37,7 +37,7 @@ describe("ManageMeetingsButton", () => {
       [FEATURE_FLAGS.CREATE_GOOGLE_MEETING]: true,
     });
 
-    render(<ManageMeetingsButton meetingRoundId={null} />);
+    render(<GoogleMeetingControl meetingRoundId={null} />);
 
     const button = screen.getByRole("button", { name: /manage meetings/i });
     expect(button).toBeDisabled();
@@ -51,7 +51,7 @@ describe("ManageMeetingsButton", () => {
       [FEATURE_FLAGS.CREATE_GOOGLE_MEETING]: true,
     });
 
-    render(<ManageMeetingsButton meetingRoundId={42} />);
+    render(<GoogleMeetingControl meetingRoundId={42} />);
 
     const button = screen.getByRole("button", { name: /manage meetings/i });
     expect(button).toBeEnabled();
@@ -68,7 +68,7 @@ describe("ManageMeetingsButton", () => {
 
     const consoleLogSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
-    render(<ManageMeetingsButton meetingRoundId={99} />);
+    render(<GoogleMeetingControl meetingRoundId={99} />);
 
     const button = screen.getByRole("button", { name: /manage meetings/i });
     await userEvent.click(button);

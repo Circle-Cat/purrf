@@ -6,7 +6,7 @@ import { useWorkActivityData } from "@/pages/PersonalDashboard/hooks/useWorkActi
 import { useAuth } from "@/context/auth";
 import { PERMISSIONS } from "@/constants/Permissions";
 import { MentorshipRoundStatus } from "@/constants/MentorshipRoundStatus";
-import { ManageMeetingsButton } from "@/pages/PersonalDashboard/components/ManageMeetingsButton";
+import { GoogleMeetingControl } from "@/pages/PersonalDashboard/components/GoogleMeetingControl";
 
 /**
  * PersonalDashboard
@@ -71,7 +71,7 @@ const PersonalDashboard = () => {
           <h2 className="m-0 text-lg font-medium">Welcome</h2>
         </div>
 
-        <ManageMeetingsButton
+        <GoogleMeetingControl
           meetingRoundId={meetingRoundId}
           onRefresh={refreshMeetings}
         />
