@@ -1,0 +1,4 @@
+# Every change requires review from the purrf maintainers team.
+# Combined with branch protection (require code owner review), this guarantees
+# at least one approval from this team on main, staging, and prod PRs.
+* @Circle-Cat/purrf-maintainers
