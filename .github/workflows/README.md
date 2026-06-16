@@ -28,8 +28,7 @@ diverge from `main`. "What is still unreleased" is computed by patch-id
 
 ## Access control
 
-- **`main` PRs** need **2 approvals, at least one from `@Circle-Cat/purrf-maintainers`**
-  (CODEOWNERS + ruleset code-owner review).
+- **`main` PRs** need **2 approvals, who from `@Circle-Cat/purrf-maintainers`**.
 - **Promote** (`promote.yml`) can only be run by members of
   `purrf-maintainers` — an authorize step checks the triggering actor's team
   membership and fails the run otherwise.
