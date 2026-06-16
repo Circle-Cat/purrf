@@ -43,15 +43,24 @@ jobs:
       - name: Authorize actor
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          ACTOR: ${{ github.actor }}
+          ORG: ${{ github.repository_owner }}
         run: |
           set -o errexit -o pipefail -o nounset
-          state=$(gh api \
-            "orgs/${{ github.repository_owner }}/teams/purrf-maintainers/memberships/${{ github.actor }}" \
-            --jq '.state' 2>/dev/null || true)
-          if [ "$state" != "active" ]; then
-            echo "::error::${{ github.actor }} is not an active member of purrf-maintainers; cannot promote."
+          # Capture both the body and any error (HTTP 403/404) so a failure
+          # tells us *why* -- a swallowed error reads as "not a member".
+          if ! resp=$(gh api "orgs/$ORG/teams/purrf-maintainers/memberships/$ACTOR" 2>&1); then
+            echo "::error::Membership lookup for $ACTOR failed (token/permission or team slug):"
+            echo "$resp"
             exit 1
           fi
+          state=$(echo "$resp" | jq -r '.state // "unknown"')
+          if [ "$state" != "active" ]; then
+            echo "::error::$ACTOR is not an active member of purrf-maintainers (state: $state); cannot promote."
+            echo "$resp"
+            exit 1
+          fi
+          echo "$ACTOR authorized (state: active)."
 
       - uses: actions/checkout@v4
         with:
