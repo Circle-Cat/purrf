@@ -37,6 +37,22 @@ jobs:
           app-id: ${{ secrets.PURRF_BOT_APP_ID }}
           private-key: ${{ secrets.PURRF_BOT_PRIVATE_KEY }}
 
+      # Only members of the purrf-maintainers team may promote to staging/prod.
+      # workflow_dispatch already requires write access; this narrows it to the
+      # team. github.actor is the triggering user and cannot be spoofed here.
+      - name: Authorize actor
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -o errexit -o pipefail -o nounset
+          state=$(gh api \
+            "orgs/${{ github.repository_owner }}/teams/purrf-maintainers/memberships/${{ github.actor }}" \
+            --jq '.state' 2>/dev/null || true)
+          if [ "$state" != "active" ]; then
+            echo "::error::${{ github.actor }} is not an active member of purrf-maintainers; cannot promote."
+            exit 1
+          fi
+
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
