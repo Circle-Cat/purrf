@@ -8,7 +8,7 @@ image:
   # Kept on the current Terraform-built image (image path unchanged for now);
   # switching to the CI/GHCR image is a follow-up.
   repository: us-docker.pkg.dev/k8s-dev-437501/purrf/purrf
-  tag: "20260516-021842"
+  tag: "acf1fe95694772548bbd8b3323b3cfc3382d8f82"
 envFrom:
   - secretRef:
       name: purrf-staging
