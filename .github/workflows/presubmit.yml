@@ -126,6 +126,17 @@ jobs:
 
           failed=0
           for sha in $(git rev-list --no-merges "$BASE_SHA..$HEAD_SHA"); do
+            # Exempt env image-pin commits: a single commit touching only this
+            # branch's own values-<env>.yaml. These arrive in-branch (staging's
+            # deploy-staging.yml bump PR, or prod's reused-image pin) rather than
+            # via cherry-pick, so they carry no trailer -- but they only set the
+            # image tag for this very environment, never code.
+            changed=$(git diff-tree --no-commit-id --name-only -r "$sha")
+            if [ "$(printf '%s\n' "$changed" | grep -c .)" -eq 1 ] \
+               && [ "$changed" = "helm/purrf/values-$BASE_REF.yaml" ]; then
+              echo "OK (env image pin): $sha touches only values-$BASE_REF.yaml"
+              continue
+            fi
             # Take the last trailer: staging->prod picks carry one trailer per hop.
             origin_sha=$(git log -1 --format=%B "$sha" \
               | grep -oE '\(cherry picked from commit [0-9a-f]{40}\)' \
