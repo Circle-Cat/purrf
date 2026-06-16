@@ -82,6 +82,7 @@ jobs:
           TARGET: ${{ inputs.target }}
           COMMITS: ${{ inputs.commits }}
           RELEASE_TAG: ${{ inputs.release_tag }}
+          REPO: ${{ github.repository }}
           BRANCH: promote/${{ inputs.target }}-${{ github.run_id }}
         run: |
           set -o errexit -o pipefail -o nounset
@@ -187,7 +188,17 @@ jobs:
             fi
             echo
             for sha in $(git rev-list --reverse "origin/$TARGET..$BRANCH"); do
-              echo "- $(git log -1 --format='%h %s' "$sha")"
+              line="- $(git log -1 --format='%h %s' "$sha")"
+              # First cherry-pick trailer = the original main commit; link its PR
+              # so each released change traces back to the feature PR it came from.
+              origin_sha=$(git log -1 --format=%B "$sha" \
+                | grep -oE '\(cherry picked from commit [0-9a-f]{40}\)' \
+                | head -1 | grep -oE '[0-9a-f]{40}' || true)
+              if [ -n "$origin_sha" ]; then
+                src_pr=$(gh api "repos/$REPO/commits/$origin_sha/pulls" --jq '.[0].number' 2>/dev/null || true)
+                [ -n "$src_pr" ] && [ "$src_pr" != "null" ] && line="$line (#$src_pr)"
+              fi
+              echo "$line"
             done
             echo
             echo "Created by promote.yml run ${{ github.run_id }}. Merge with a merge commit (never squash/rebase)."
