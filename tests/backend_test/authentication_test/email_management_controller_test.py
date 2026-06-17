@@ -14,6 +14,8 @@ from backend.common.api_endpoints import (
     EMAIL_MANAGEMENT_LIST_ENDPOINT,
     EMAIL_MANAGEMENT_SET_PRIMARY_CONFIRM_ENDPOINT,
     EMAIL_MANAGEMENT_SET_PRIMARY_INITIATE_ENDPOINT,
+    EMAIL_MANAGEMENT_UNLINK_CONFIRM_ENDPOINT,
+    EMAIL_MANAGEMENT_UNLINK_INITIATE_ENDPOINT,
     EMAIL_MANAGEMENT_VERIFY_ENDPOINT,
 )
 from backend.authentication.email_management_controller import (
@@ -41,6 +43,8 @@ class TestEmailManagementController(unittest.TestCase):
             return_value={"state": "signed.jwt"}
         )
         self.service.confirm_set_primary = AsyncMock(return_value={"ok": True})
+        self.service.initiate_unlink = AsyncMock(return_value={"state": "signed.jwt"})
+        self.service.confirm_unlink = AsyncMock(return_value={"ok": True})
         self.service.list_emails_and_identities = AsyncMock(
             return_value=EmailsViewDto(
                 emails=[
@@ -182,6 +186,50 @@ class TestEmailManagementController(unittest.TestCase):
         client = TestClient(self.app, raise_server_exceptions=False)
         response = client.post(
             EMAIL_MANAGEMENT_SET_PRIMARY_INITIATE_ENDPOINT.format(email_id=18)
+        )
+        self.assertEqual(response.status_code, HTTPStatus.UNAUTHORIZED)
+
+    def test_unlink_initiate_passes_session_user_and_identity_id(self):
+        client = self._client_with_user()
+        response = client.post(
+            EMAIL_MANAGEMENT_UNLINK_INITIATE_ENDPOINT.format(identity_id=7)
+        )
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.assertEqual(response.json()["data"], {"state": "signed.jwt"})
+        _, kwargs = self.service.initiate_unlink.call_args
+        self.assertEqual(kwargs["current_user_id"], 42)
+        self.assertEqual(kwargs["current_sub"], "google-oauth2|primary")
+        self.assertEqual(kwargs["identity_id"], 7)
+
+    def test_unlink_confirm_passes_state_code_and_identity_id(self):
+        client = self._client_with_user()
+        response = client.post(
+            EMAIL_MANAGEMENT_UNLINK_CONFIRM_ENDPOINT.format(identity_id=7),
+            json={"state": "signed.jwt", "code": "123456"},
+        )
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.assertEqual(response.json()["data"], {"ok": True})
+        _, kwargs = self.service.confirm_unlink.call_args
+        self.assertEqual(kwargs["current_user_id"], 42)
+        self.assertEqual(kwargs["current_sub"], "google-oauth2|primary")
+        self.assertEqual(kwargs["identity_id"], 7)
+        self.assertEqual(kwargs["state"], "signed.jwt")
+        self.assertEqual(kwargs["code"], "123456")
+
+    def test_unlink_initiate_requires_authentication(self):
+        client = TestClient(self.app, raise_server_exceptions=False)
+        response = client.post(
+            EMAIL_MANAGEMENT_UNLINK_INITIATE_ENDPOINT.format(identity_id=7)
+        )
+        self.assertEqual(response.status_code, HTTPStatus.UNAUTHORIZED)
+
+    def test_unlink_confirm_requires_authentication(self):
+        client = TestClient(self.app, raise_server_exceptions=False)
+        response = client.post(
+            EMAIL_MANAGEMENT_UNLINK_CONFIRM_ENDPOINT.format(identity_id=7),
+            json={"state": "signed.jwt", "code": "123456"},
         )
         self.assertEqual(response.status_code, HTTPStatus.UNAUTHORIZED)
 

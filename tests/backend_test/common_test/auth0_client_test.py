@@ -133,6 +133,59 @@ class TestAuth0Client(unittest.TestCase):
             self.client.add_alias_email_to_primary("google-oauth2|1", "B@x.com")
         mock_requests.patch.assert_not_called()
 
+    @patch("backend.common.auth0_client.requests")
+    def test_unlink_identity_success(self, mock_requests):
+        mock_requests.delete.return_value = _response(200, [])
+        with patch.object(self.client, "_get_m2m_token", return_value="m2m"):
+            self.client.unlink_identity("google-oauth2|1", "email", "abc")
+        mock_requests.delete.assert_called_once()
+        url = mock_requests.delete.call_args.args[0]
+        self.assertIn("/identities/email/abc", url)
+
+    @patch("backend.common.auth0_client.requests")
+    def test_unlink_identity_not_found_is_idempotent(self, mock_requests):
+        mock_requests.delete.return_value = _response(404, {"error": "not_found"})
+        with patch.object(self.client, "_get_m2m_token", return_value="m2m"):
+            # Must not raise — an already-detached identity is treated as success.
+            self.client.unlink_identity("google-oauth2|1", "email", "abc")
+
+    @patch("backend.common.auth0_client.requests")
+    def test_unlink_identity_rate_limited(self, mock_requests):
+        mock_requests.delete.return_value = _response(
+            429, {"error": "too_many_requests"}
+        )
+        with patch.object(self.client, "_get_m2m_token", return_value="m2m"):
+            with self.assertRaises(RateLimitedError):
+                self.client.unlink_identity("google-oauth2|1", "email", "abc")
+
+    @patch("backend.common.auth0_client.requests")
+    def test_unlink_identity_server_error_is_runtime_error(self, mock_requests):
+        mock_requests.delete.return_value = _response(500, {"error": "server_error"})
+        with patch.object(self.client, "_get_m2m_token", return_value="m2m"):
+            with self.assertRaises(RuntimeError):
+                self.client.unlink_identity("google-oauth2|1", "email", "abc")
+
+    @patch("backend.common.auth0_client.requests")
+    def test_remove_alias_email_drops_present(self, mock_requests):
+        mock_requests.get.return_value = _response(
+            200, {"app_metadata": {"alias_emails": ["a@x.com", "b@x.com"]}}
+        )
+        mock_requests.patch.return_value = _response(200, {})
+        with patch.object(self.client, "_get_m2m_token", return_value="m2m"):
+            self.client.remove_alias_email_from_primary("google-oauth2|1", "B@x.com")
+        mock_requests.patch.assert_called_once()
+        sent = mock_requests.patch.call_args.kwargs["json"]
+        self.assertEqual(sent["app_metadata"]["alias_emails"], ["a@x.com"])
+
+    @patch("backend.common.auth0_client.requests")
+    def test_remove_alias_email_skips_when_absent(self, mock_requests):
+        mock_requests.get.return_value = _response(
+            200, {"app_metadata": {"alias_emails": ["a@x.com"]}}
+        )
+        with patch.object(self.client, "_get_m2m_token", return_value="m2m"):
+            self.client.remove_alias_email_from_primary("google-oauth2|1", "b@x.com")
+        mock_requests.patch.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

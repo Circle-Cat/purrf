@@ -56,6 +56,27 @@ def _set_primary_state(
     )
 
 
+def _unlink_state(
+    user_id=_USER_ID,
+    target_identity_id=7,
+    primary_email="old@example.com",
+    flow="unlink_identity",
+):
+    now = int(time.time())
+    return jwt.encode(
+        {
+            "user_id": user_id,
+            "target_identity_id": target_identity_id,
+            "primary_email_at_request": primary_email,
+            "flow": flow,
+            "iat": now,
+            "exp": now + 600,
+        },
+        _SECRET,
+        algorithm="HS256",
+    )
+
+
 class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         os.environ["EMAIL_OTP_STATE_JWT_SECRET"] = _SECRET
@@ -500,6 +521,310 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         self.user_emails.set_primary.assert_not_called()
         self.session.commit.assert_not_awaited()
 
+    # unlink step-up — shared fixtures
+    def _identity(
+        self,
+        identity_id,
+        subject_identifier,
+        identity_type="external",
+        email_claim=None,
+    ):
+        row = UserIdentitiesEntity(
+            user_id=_USER_ID,
+            subject_identifier=subject_identifier,
+            identity_type=identity_type,
+            email_claim=email_claim,
+        )
+        row.identity_id = identity_id
+        return row
+
+    def _arrange_unlink(self, target, others):
+        """Wire the mocks for an unlink: get_by_id→target, list_by_user→all rows."""
+        self.user_identities.get_by_id.return_value = target
+        self.user_identities.list_by_user.return_value = [target, *others]
+
+    # initiate_unlink — step 1: validate, OTP the current primary, sign state
+    async def test_initiate_unlink_sends_otp_to_primary_and_returns_state(self):
+        target = self._identity(7, "email|todelete", "external", "alice@gmail.com")
+        keep = self._identity(5, _CURRENT_SUB, "external", "yuji@circlecat.org")
+        self._arrange_unlink(target, [keep])
+        self.user_emails.get_primary.return_value = self._email_row(
+            "old@example.com", is_primary=True
+        )
+
+        result = await self.service.initiate_unlink(
+            self.session, _USER_ID, _CURRENT_SUB, 7
+        )
+
+        # OTP goes to the current primary, not the unlinked identity's address.
+        self.auth0.start_passwordless.assert_called_once_with("old@example.com")
+        claims = jwt.decode(result["state"], _SECRET, algorithms=["HS256"])
+        self.assertEqual(claims["flow"], "unlink_identity")
+        self.assertEqual(claims["target_identity_id"], 7)
+        self.assertEqual(claims["primary_email_at_request"], "old@example.com")
+
+    async def test_initiate_unlink_rejects_missing_identity(self):
+        self.user_identities.get_by_id.return_value = None
+        with self.assertRaises(ValueError):
+            await self.service.initiate_unlink(self.session, _USER_ID, _CURRENT_SUB, 7)
+        self.auth0.start_passwordless.assert_not_called()
+
+    async def test_initiate_unlink_rejects_unowned_identity(self):
+        target = self._identity(7, "email|todelete", "external", "x@x.com")
+        target.user_id = 999
+        self.user_identities.get_by_id.return_value = target
+        with self.assertRaises(ValueError):
+            await self.service.initiate_unlink(self.session, _USER_ID, _CURRENT_SUB, 7)
+        self.auth0.start_passwordless.assert_not_called()
+
+    async def test_initiate_unlink_rejects_last_identity(self):
+        target = self._identity(7, "email|todelete", "external", "x@x.com")
+        self._arrange_unlink(target, [])
+        with self.assertRaises(ConflictError):
+            await self.service.initiate_unlink(self.session, _USER_ID, _CURRENT_SUB, 7)
+        self.auth0.start_passwordless.assert_not_called()
+
+    async def test_initiate_unlink_rejects_current_session_identity(self):
+        target = self._identity(7, _CURRENT_SUB, "external", "x@x.com")
+        keep = self._identity(5, "email|other", "external", "y@y.com")
+        self._arrange_unlink(target, [keep])
+        with self.assertRaises(ConflictError):
+            await self.service.initiate_unlink(self.session, _USER_ID, _CURRENT_SUB, 7)
+        self.auth0.start_passwordless.assert_not_called()
+
+    async def test_initiate_unlink_rejects_active_employee_internal(self):
+        target = self._identity(
+            7, "google-oauth2|corp", "internal", "yuji@circlecat.org"
+        )
+        keep = self._identity(5, _CURRENT_SUB, "external", "yuji@gmail.com")
+        self._arrange_unlink(target, [keep])
+        self.user_identities.exists_active_internal.return_value = True
+        with self.assertRaises(PermissionError):
+            await self.service.initiate_unlink(self.session, _USER_ID, _CURRENT_SUB, 7)
+        self.auth0.start_passwordless.assert_not_called()
+
+    async def test_initiate_unlink_rejects_when_no_primary(self):
+        target = self._identity(7, "email|todelete", "external", "alice@gmail.com")
+        keep = self._identity(5, _CURRENT_SUB, "external", "yuji@circlecat.org")
+        self._arrange_unlink(target, [keep])
+        self.user_emails.get_primary.return_value = None
+        with self.assertRaises(ValueError):
+            await self.service.initiate_unlink(self.session, _USER_ID, _CURRENT_SUB, 7)
+        self.auth0.start_passwordless.assert_not_called()
+
+    async def test_initiate_unlink_rejects_when_email_is_primary_contact(self):
+        # Unlinking would drop the synced contact; refuse when it is the primary.
+        target = self._identity(7, "email|todelete", "external", "alice@gmail.com")
+        keep = self._identity(5, _CURRENT_SUB, "external", "yuji@circlecat.org")
+        self._arrange_unlink(target, [keep])
+        self.user_emails.get_primary.return_value = self._email_row(
+            "Alice@Gmail.com", is_primary=True
+        )
+        with self.assertRaises(PermissionError):
+            await self.service.initiate_unlink(self.session, _USER_ID, _CURRENT_SUB, 7)
+        self.auth0.start_passwordless.assert_not_called()
+
+    # confirm_unlink — step 2: recheck primary + preconditions, verify OTP, unlink
+    async def test_confirm_unlink_happy_path_detaches_and_deletes_identity(self):
+        target = self._identity(7, "email|todelete", "external", "alice@gmail.com")
+        keep = self._identity(5, _CURRENT_SUB, "external", "yuji@circlecat.org")
+        self._arrange_unlink(target, [keep])
+        self.user_emails.get_primary.return_value = self._email_row(
+            "old@example.com", is_primary=True
+        )
+        state = _unlink_state(target_identity_id=7, primary_email="old@example.com")
+
+        result = await self.service.confirm_unlink(
+            self.session, _USER_ID, _CURRENT_SUB, 7, state, "123456"
+        )
+
+        self.auth0.exchange_otp.assert_called_once_with("old@example.com", "123456")
+        self.auth0.unlink_identity.assert_called_once_with(
+            primary_sub=_CURRENT_SUB, provider="email", secondary_user_id="todelete"
+        )
+        self.user_identities.delete.assert_awaited_once_with(self.session, 7)
+        self.session.commit.assert_awaited_once()
+        self.assertEqual(result, {"ok": True})
+
+    async def test_confirm_unlink_rejects_wrong_flow(self):
+        state = _unlink_state(target_identity_id=7, flow="set_primary")
+        with self.assertRaises(ValueError):
+            await self.service.confirm_unlink(
+                self.session, _USER_ID, _CURRENT_SUB, 7, state, "123456"
+            )
+        self.auth0.exchange_otp.assert_not_called()
+
+    async def test_confirm_unlink_rejects_state_for_other_user(self):
+        state = _unlink_state(user_id=999, target_identity_id=7)
+        with self.assertRaises(ValueError):
+            await self.service.confirm_unlink(
+                self.session, _USER_ID, _CURRENT_SUB, 7, state, "123456"
+            )
+        self.auth0.exchange_otp.assert_not_called()
+
+    async def test_confirm_unlink_rejects_identity_id_path_mismatch(self):
+        # State was minted for identity 7 but the path says 99.
+        state = _unlink_state(target_identity_id=7)
+        with self.assertRaises(ValueError):
+            await self.service.confirm_unlink(
+                self.session, _USER_ID, _CURRENT_SUB, 99, state, "123456"
+            )
+        self.auth0.exchange_otp.assert_not_called()
+
+    async def test_confirm_unlink_rejects_when_primary_changed(self):
+        # Primary moved since initiate -> refuse before consuming the OTP.
+        self.user_emails.get_primary.return_value = self._email_row(
+            "changed@example.com", is_primary=True
+        )
+        state = _unlink_state(target_identity_id=7, primary_email="old@example.com")
+        with self.assertRaises(PermissionError):
+            await self.service.confirm_unlink(
+                self.session, _USER_ID, _CURRENT_SUB, 7, state, "123456"
+            )
+        self.auth0.exchange_otp.assert_not_called()
+        self.user_identities.delete.assert_not_awaited()
+
+    async def test_confirm_unlink_propagates_wrong_otp(self):
+        self.user_emails.get_primary.return_value = self._email_row(
+            "old@example.com", is_primary=True
+        )
+        self.auth0.exchange_otp.side_effect = ValueError("Incorrect or expired code")
+        state = _unlink_state(target_identity_id=7, primary_email="old@example.com")
+        with self.assertRaises(ValueError):
+            await self.service.confirm_unlink(
+                self.session, _USER_ID, _CURRENT_SUB, 7, state, "000000"
+            )
+        self.user_identities.delete.assert_not_awaited()
+        self.session.commit.assert_not_awaited()
+
+    async def test_confirm_unlink_revalidates_last_identity_after_initiate(self):
+        # TOCTOU: the user dropped their other sign-in between initiate and
+        # confirm; this one is now the only one and must not be stripped.
+        target = self._identity(7, "email|todelete", "external", "alice@gmail.com")
+        self.user_identities.get_by_id.return_value = target
+        self.user_identities.list_by_user.return_value = [target]
+        self.user_emails.get_primary.return_value = self._email_row(
+            "old@example.com", is_primary=True
+        )
+        state = _unlink_state(target_identity_id=7, primary_email="old@example.com")
+        with self.assertRaises(ConflictError):
+            await self.service.confirm_unlink(
+                self.session, _USER_ID, _CURRENT_SUB, 7, state, "123456"
+            )
+        # OTP was consumed (recheck happens after), but nothing was deleted.
+        self.auth0.unlink_identity.assert_not_called()
+        self.user_identities.delete.assert_not_awaited()
+        self.session.commit.assert_not_awaited()
+
+    async def test_confirm_unlink_revalidates_active_employee_after_initiate(self):
+        # TOCTOU: the user became an active employee; the corp sign-in is locked.
+        target = self._identity(
+            7, "google-oauth2|corp", "internal", "yuji@circlecat.org"
+        )
+        keep = self._identity(5, _CURRENT_SUB, "external", "yuji@gmail.com")
+        self._arrange_unlink(target, [keep])
+        self.user_emails.get_primary.return_value = self._email_row(
+            "old@example.com", is_primary=True
+        )
+        self.user_identities.exists_active_internal.return_value = True
+        state = _unlink_state(target_identity_id=7, primary_email="old@example.com")
+        with self.assertRaises(PermissionError):
+            await self.service.confirm_unlink(
+                self.session, _USER_ID, _CURRENT_SUB, 7, state, "123456"
+            )
+        self.user_identities.delete.assert_not_awaited()
+        self.session.commit.assert_not_awaited()
+
+    async def test_confirm_unlink_rejects_missing_identity_after_otp(self):
+        self.user_emails.get_primary.return_value = self._email_row(
+            "old@example.com", is_primary=True
+        )
+        self.user_identities.get_by_id.return_value = None
+        state = _unlink_state(target_identity_id=7, primary_email="old@example.com")
+        with self.assertRaises(ValueError):
+            await self.service.confirm_unlink(
+                self.session, _USER_ID, _CURRENT_SUB, 7, state, "123456"
+            )
+        self.auth0.unlink_identity.assert_not_called()
+        self.user_identities.delete.assert_not_awaited()
+
+    async def test_confirm_unlink_deletes_contact_email_when_unreferenced(self):
+        target = self._identity(7, "email|todelete", "external", "alice@gmail.com")
+        keep = self._identity(5, _CURRENT_SUB, "external", "yuji@circlecat.org")
+        self._arrange_unlink(target, [keep])
+        self.user_emails.get_primary.return_value = self._email_row(
+            "old@example.com", is_primary=True
+        )
+        email_row = self._email_row("alice@gmail.com", is_primary=False)
+        email_row.email_id = 88
+        self.user_emails.get_by_user_and_email.return_value = email_row
+        state = _unlink_state(target_identity_id=7, primary_email="old@example.com")
+
+        await self.service.confirm_unlink(
+            self.session, _USER_ID, _CURRENT_SUB, 7, state, "123456"
+        )
+
+        self.user_emails.delete.assert_awaited_once_with(self.session, 88)
+
+    async def test_confirm_unlink_keeps_contact_email_referenced_by_other_identity(
+        self,
+    ):
+        target = self._identity(7, "email|todelete", "external", "alice@gmail.com")
+        # Another identity still claims the same address (case-insensitive).
+        other = self._identity(5, "google-oauth2|9", "external", "Alice@Gmail.com")
+        current = self._identity(9, _CURRENT_SUB, "external", "yuji@circlecat.org")
+        self._arrange_unlink(target, [other, current])
+        self.user_emails.get_primary.return_value = self._email_row(
+            "old@example.com", is_primary=True
+        )
+        state = _unlink_state(target_identity_id=7, primary_email="old@example.com")
+
+        await self.service.confirm_unlink(
+            self.session, _USER_ID, _CURRENT_SUB, 7, state, "123456"
+        )
+
+        self.user_emails.delete.assert_not_awaited()
+        self.user_emails.get_by_user_and_email.assert_not_awaited()
+
+    async def test_confirm_unlink_does_not_delete_primary_contact_email(self):
+        target = self._identity(7, "email|todelete", "external", "alice@gmail.com")
+        keep = self._identity(5, _CURRENT_SUB, "external", "yuji@circlecat.org")
+        self._arrange_unlink(target, [keep])
+        self.user_emails.get_primary.return_value = self._email_row(
+            "old@example.com", is_primary=True
+        )
+        self.user_emails.get_by_user_and_email.return_value = self._email_row(
+            "alice@gmail.com", is_primary=True
+        )
+        state = _unlink_state(target_identity_id=7, primary_email="old@example.com")
+
+        await self.service.confirm_unlink(
+            self.session, _USER_ID, _CURRENT_SUB, 7, state, "123456"
+        )
+
+        self.user_emails.delete.assert_not_awaited()
+
+    async def test_confirm_unlink_succeeds_even_if_alias_sync_fails(self):
+        target = self._identity(7, "email|todelete", "external", "alice@gmail.com")
+        keep = self._identity(5, _CURRENT_SUB, "external", "yuji@circlecat.org")
+        self._arrange_unlink(target, [keep])
+        self.user_emails.get_primary.return_value = self._email_row(
+            "old@example.com", is_primary=True
+        )
+        self.user_emails.get_by_user_and_email.return_value = None
+        self.auth0.remove_alias_email_from_primary.side_effect = RuntimeError(
+            "auth0 down"
+        )
+        state = _unlink_state(target_identity_id=7, primary_email="old@example.com")
+
+        result = await self.service.confirm_unlink(
+            self.session, _USER_ID, _CURRENT_SUB, 7, state, "123456"
+        )
+
+        self.user_identities.delete.assert_awaited_once_with(self.session, 7)
+        self.session.commit.assert_awaited_once()
+        self.assertEqual(result, {"ok": True})
+
 
 class TestSignState(unittest.TestCase):
     def setUp(self):
@@ -538,6 +863,66 @@ class TestSignState(unittest.TestCase):
             algorithms=["HS256"],
         )
         self.assertNotEqual(a["nonce"], b["nonce"])
+
+
+class TestConsumeStepUpOtp(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        os.environ["EMAIL_OTP_STATE_JWT_SECRET"] = _SECRET
+        self.auth0 = MagicMock()
+        self.user_emails = AsyncMock()
+        self.session = AsyncMock()
+        self.service = EmailManagementService(
+            self.auth0, self.user_emails, AsyncMock(), MagicMock()
+        )
+
+    def _primary(self, email):
+        return UserEmailsEntity(
+            user_id=_USER_ID, email=email, otp_confirmed=True, is_primary=True
+        )
+
+    async def test_consumes_otp_against_unchanged_primary(self):
+        self.user_emails.get_primary.return_value = self._primary("old@example.com")
+        claims = {"primary_email_at_request": "old@example.com"}
+
+        await self.service._consume_step_up_otp(
+            self.session, _USER_ID, claims, "123456", "switch"
+        )
+
+        self.auth0.exchange_otp.assert_called_once_with("old@example.com", "123456")
+
+    async def test_rejects_when_primary_changed_since_initiate(self):
+        self.user_emails.get_primary.return_value = self._primary("new@example.com")
+        claims = {"primary_email_at_request": "old@example.com"}
+
+        with self.assertRaises(PermissionError) as ctx:
+            await self.service._consume_step_up_otp(
+                self.session, _USER_ID, claims, "123456", "unlink"
+            )
+        # The operation noun customizes the message; the OTP is never consumed.
+        self.assertIn("unlink", str(ctx.exception))
+        self.auth0.exchange_otp.assert_not_called()
+
+    async def test_rejects_when_no_primary(self):
+        self.user_emails.get_primary.return_value = None
+        claims = {"primary_email_at_request": "old@example.com"}
+
+        with self.assertRaises(PermissionError):
+            await self.service._consume_step_up_otp(
+                self.session, _USER_ID, claims, "123456", "switch"
+            )
+        self.auth0.exchange_otp.assert_not_called()
+
+
+class TestSplitSub(unittest.TestCase):
+    def test_splits_provider_and_secondary_user_id(self):
+        self.assertEqual(
+            EmailManagementService._split_sub("google-oauth2|abc123"),
+            ("google-oauth2", "abc123"),
+        )
+
+    def test_handles_sub_without_separator(self):
+        # No pipe: the whole value is the provider, secondary id is empty.
+        self.assertEqual(EmailManagementService._split_sub("opaque"), ("opaque", ""))
 
 
 if __name__ == "__main__":
