@@ -346,8 +346,11 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(emails[25].linked_identity_count, 0)
         self.assertFalse(emails[25].otp_confirmed)
 
-        self.assertEqual(result.internal_identity.identity_id, 5)
-        self.assertEqual(result.internal_identity.email_claim, "yuji@circlecat.org")
+        self.assertEqual(len(result.internal_identities), 1)
+        self.assertEqual(result.internal_identities[0].identity_id, 5)
+        self.assertEqual(
+            result.internal_identities[0].email_claim, "yuji@circlecat.org"
+        )
 
         self.assertEqual(len(result.external_identities), 1)
         ext = result.external_identities[0]
@@ -355,9 +358,9 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         # external_current carries _CURRENT_SUB -> flagged as the session's primary;
         # the internal identity (a different sub) is not.
         self.assertTrue(ext.is_current_session)
-        self.assertFalse(result.internal_identity.is_current_session)
+        self.assertFalse(result.internal_identities[0].is_current_session)
 
-    async def test_list_emails_and_identities_null_internal(self):
+    async def test_list_emails_and_identities_no_internal(self):
         self.user_emails.list_by_user_id.return_value = []
         external = UserIdentitiesEntity(
             user_id=_USER_ID,
@@ -372,9 +375,40 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
             self.session, _USER_ID, _CURRENT_SUB
         )
 
-        self.assertIsNone(result.internal_identity)
+        self.assertEqual(result.internal_identities, [])
         self.assertEqual(result.external_identities[0].identity_id, 9)
         self.assertFalse(result.external_identities[0].is_current_session)
+
+    async def test_list_emails_and_identities_multiple_internal(self):
+        # An employee may hold more than one internal identity (an SSO login plus
+        # an OTP-linked corp email). All must surface, not just the last one.
+        self.user_emails.list_by_user_id.return_value = []
+        sso = UserIdentitiesEntity(
+            user_id=_USER_ID,
+            subject_identifier=_CURRENT_SUB,
+            identity_type="internal",
+            email_claim="yuji@circlecat.org",
+        )
+        sso.identity_id = 2
+        otp_corp = UserIdentitiesEntity(
+            user_id=_USER_ID,
+            subject_identifier="email|abc123",
+            identity_type="internal",
+            email_claim="yuji@circlecat.org",
+        )
+        otp_corp.identity_id = 193
+        self.user_identities.list_by_user_id.return_value = [sso, otp_corp]
+
+        result = await self.service.list_emails_and_identities(
+            self.session, _USER_ID, _CURRENT_SUB
+        )
+
+        ids = {i.identity_id: i for i in result.internal_identities}
+        self.assertEqual(set(ids), {2, 193})
+        self.assertEqual(result.external_identities, [])
+        # The session's own identity (the SSO sub) is still flagged, not dropped.
+        self.assertTrue(ids[2].is_current_session)
+        self.assertFalse(ids[193].is_current_session)
 
     # initiate_set_primary — step 1: validate target, OTP the current primary
     async def test_initiate_set_primary_sends_otp_to_current_primary(self):

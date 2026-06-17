@@ -77,7 +77,7 @@ describe("emailApi", () => {
               linkedIdentityCount: 1,
             },
           ],
-          internalIdentity: null,
+          internalIdentities: [],
           externalIdentities: [],
         },
       };

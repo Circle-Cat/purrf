@@ -22,13 +22,15 @@ const fullPayload = {
       linkedIdentityCount: 1,
     },
   ],
-  internalIdentity: {
-    identityId: 9,
-    subjectIdentifier: "auth0|work",
-    emailClaim: "alice@circlecat.org",
-    linkedAt: "2026-01-01T00:00:00Z",
-    lastUsedAt: "2026-02-01T00:00:00Z",
-  },
+  internalIdentities: [
+    {
+      identityId: 9,
+      subjectIdentifier: "auth0|work",
+      emailClaim: "alice@circlecat.org",
+      linkedAt: "2026-01-01T00:00:00Z",
+      lastUsedAt: "2026-02-01T00:00:00Z",
+    },
+  ],
   externalIdentities: [
     {
       identityId: 1,
@@ -50,7 +52,7 @@ describe("useEmailSettings", () => {
 
     expect(result.current.isLoading).toBe(true);
     expect(result.current.emails).toEqual([]);
-    expect(result.current.internalIdentity).toBeNull();
+    expect(result.current.internalIdentities).toEqual([]);
     expect(result.current.externalIdentities).toEqual([]);
   });
 
@@ -63,8 +65,8 @@ describe("useEmailSettings", () => {
 
     expect(listEmails).toHaveBeenCalledTimes(1);
     expect(result.current.emails).toEqual(fullPayload.emails);
-    expect(result.current.internalIdentity).toEqual(
-      fullPayload.internalIdentity,
+    expect(result.current.internalIdentities).toEqual(
+      fullPayload.internalIdentities,
     );
     expect(result.current.externalIdentities).toEqual(
       fullPayload.externalIdentities,
@@ -80,7 +82,7 @@ describe("useEmailSettings", () => {
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
     expect(result.current.emails).toEqual([]);
-    expect(result.current.internalIdentity).toBeNull();
+    expect(result.current.internalIdentities).toEqual([]);
     expect(result.current.externalIdentities).toEqual([]);
   });
 
@@ -92,7 +94,7 @@ describe("useEmailSettings", () => {
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
     expect(result.current.emails).toEqual([]);
-    expect(result.current.internalIdentity).toBeNull();
+    expect(result.current.internalIdentities).toEqual([]);
     expect(result.current.externalIdentities).toEqual([]);
   });
 

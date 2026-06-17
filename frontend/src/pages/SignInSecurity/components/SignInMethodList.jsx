@@ -52,21 +52,22 @@ const IdentityRow = ({ identity, internal, canUnlink, busyId, onUnlink }) => (
 );
 
 /**
- * List of the caller's linked sign-in methods: the single internal (work)
- * identity, if any, followed by external identities. The internal identity
- * cannot be unlinked here; an external identity can be unless it is the only
- * remaining sign-in method (the backend additionally refuses the current
- * session's identity and an active employee's corp sign-in).
+ * List of the caller's linked sign-in methods: the internal (work) identities,
+ * if any, followed by external identities. An employee may hold more than one
+ * internal identity (e.g. an SSO login plus an OTP-linked corp email). Internal
+ * identities cannot be unlinked here; an external identity can be unless it is
+ * the only remaining sign-in method (the backend additionally refuses the
+ * current session's identity and an active employee's corp sign-in).
  *
  * @component
  * @param {Object} props
- * @param {object|null} props.internalIdentity
+ * @param {Array<object>} props.internalIdentities
  * @param {Array<object>} props.externalIdentities
  * @param {boolean} props.isLoading
  * @param {(identity: object) => Promise<void>} props.onUnlink
  */
 const SignInMethodList = ({
-  internalIdentity,
+  internalIdentities,
   externalIdentities,
   isLoading,
   onUnlink,
@@ -85,20 +86,25 @@ const SignInMethodList = ({
   if (isLoading) {
     return <p className="text-sm text-muted-foreground">Loading…</p>;
   }
-  if (!internalIdentity && !externalIdentities.length) {
+  if (!internalIdentities.length && !externalIdentities.length) {
     return (
       <p className="text-sm text-muted-foreground">No sign-in methods yet.</p>
     );
   }
 
-  const total = (internalIdentity ? 1 : 0) + externalIdentities.length;
+  const total = internalIdentities.length + externalIdentities.length;
   const canUnlink = total > 1;
 
   return (
     <ul className="divide-y">
-      {internalIdentity && (
-        <IdentityRow identity={internalIdentity} internal canUnlink={false} />
-      )}
+      {internalIdentities.map((identity) => (
+        <IdentityRow
+          key={identity.identityId}
+          identity={identity}
+          internal
+          canUnlink={false}
+        />
+      ))}
       {externalIdentities.map((identity) => (
         <IdentityRow
           key={identity.identityId}

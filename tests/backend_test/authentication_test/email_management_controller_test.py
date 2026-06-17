@@ -57,7 +57,7 @@ class TestEmailManagementController(unittest.TestCase):
                         linked_identity_count=1,
                     )
                 ],
-                internal_identity=None,
+                internal_identities=[],
                 external_identities=[
                     IdentityDto(
                         identity_id=7,
@@ -147,7 +147,7 @@ class TestEmailManagementController(unittest.TestCase):
         self.assertTrue(email["isPrimary"])
         self.assertEqual(email["linkedIdentityCount"], 1)
 
-        self.assertIsNone(data["internalIdentity"])
+        self.assertEqual(data["internalIdentities"], [])
         ext = data["externalIdentities"][0]
         self.assertEqual(ext["identityId"], 7)
         self.assertIsNotNone(ext["lastUsedAt"])

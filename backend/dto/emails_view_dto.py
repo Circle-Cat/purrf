@@ -23,5 +23,5 @@ class IdentityDto(BaseDto):
 
 class EmailsViewDto(BaseDto):
     emails: list[EmailEntryDto] = Field(default_factory=list)
-    internal_identity: IdentityDto | None = None
+    internal_identities: list[IdentityDto] = Field(default_factory=list)
     external_identities: list[IdentityDto] = Field(default_factory=list)
