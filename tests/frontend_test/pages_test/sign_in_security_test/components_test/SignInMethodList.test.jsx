@@ -27,7 +27,7 @@ describe("SignInMethodList", () => {
   it("shows a loading placeholder when isLoading is true", () => {
     render(
       <SignInMethodList
-        internalIdentity={null}
+        internalIdentities={[]}
         externalIdentities={[]}
         isLoading
       />,
@@ -39,7 +39,7 @@ describe("SignInMethodList", () => {
   it("shows an empty-state message when there are no identities", () => {
     render(
       <SignInMethodList
-        internalIdentity={null}
+        internalIdentities={[]}
         externalIdentities={[]}
         isLoading={false}
       />,
@@ -57,7 +57,7 @@ describe("SignInMethodList", () => {
 
     render(
       <SignInMethodList
-        internalIdentity={internalIdentity}
+        internalIdentities={[internalIdentity]}
         externalIdentities={[]}
         isLoading={false}
       />,
@@ -79,7 +79,7 @@ describe("SignInMethodList", () => {
 
     render(
       <SignInMethodList
-        internalIdentity={null}
+        internalIdentities={[]}
         externalIdentities={externalIdentities}
         isLoading={false}
       />,
@@ -105,7 +105,7 @@ describe("SignInMethodList", () => {
 
     render(
       <SignInMethodList
-        internalIdentity={internalIdentity}
+        internalIdentities={[internalIdentity]}
         externalIdentities={externalIdentities}
         isLoading={false}
       />,
@@ -118,6 +118,52 @@ describe("SignInMethodList", () => {
     expect(within(rows[1]).getByText("personal@gmail.com")).toBeInTheDocument();
   });
 
+  it("renders every internal identity, each tagged Internal, ahead of external ones", () => {
+    const internalIdentities = [
+      makeIdentity({
+        identityId: 2,
+        subjectIdentifier: "google-oauth2|sso",
+        emailClaim: "alice@circlecat.org",
+      }),
+      makeIdentity({
+        identityId: 193,
+        subjectIdentifier: "email|otp",
+        emailClaim: "alice@circlecat.org",
+      }),
+    ];
+    const externalIdentities = [
+      makeIdentity({
+        identityId: 1,
+        subjectIdentifier: "google-oauth2|1",
+        emailClaim: "personal@gmail.com",
+      }),
+    ];
+
+    render(
+      <SignInMethodList
+        internalIdentities={internalIdentities}
+        externalIdentities={externalIdentities}
+        isLoading={false}
+        onUnlink={vi.fn()}
+      />,
+    );
+
+    const rows = screen.getAllByRole("listitem");
+    expect(rows).toHaveLength(3);
+    // Both internal identities render up front, each badged Internal, and neither
+    // offers Unlink (active employees keep their corp sign-ins).
+    expect(within(rows[0]).getByText("Internal")).toBeInTheDocument();
+    expect(within(rows[1]).getByText("Internal")).toBeInTheDocument();
+    expect(screen.getAllByText("Internal")).toHaveLength(2);
+    expect(
+      within(rows[0]).queryByRole("button", { name: "Unlink" }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(rows[1]).queryByRole("button", { name: "Unlink" }),
+    ).not.toBeInTheDocument();
+    expect(within(rows[2]).getByText("personal@gmail.com")).toBeInTheDocument();
+  });
+
   it("maps known provider prefixes to human-friendly labels", () => {
     const externalIdentities = [
       makeIdentity({ identityId: 1, subjectIdentifier: "google-oauth2|1" }),
@@ -128,7 +174,7 @@ describe("SignInMethodList", () => {
 
     render(
       <SignInMethodList
-        internalIdentity={null}
+        internalIdentities={[]}
         externalIdentities={externalIdentities}
         isLoading={false}
       />,
@@ -146,7 +192,7 @@ describe("SignInMethodList", () => {
 
     render(
       <SignInMethodList
-        internalIdentity={null}
+        internalIdentities={[]}
         externalIdentities={externalIdentities}
         isLoading={false}
       />,
@@ -162,7 +208,7 @@ describe("SignInMethodList", () => {
 
     render(
       <SignInMethodList
-        internalIdentity={null}
+        internalIdentities={[]}
         externalIdentities={externalIdentities}
         isLoading={false}
       />,
@@ -182,7 +228,7 @@ describe("SignInMethodList", () => {
 
     render(
       <SignInMethodList
-        internalIdentity={null}
+        internalIdentities={[]}
         externalIdentities={externalIdentities}
         isLoading={false}
       />,
@@ -207,7 +253,7 @@ describe("SignInMethodList", () => {
 
       render(
         <SignInMethodList
-          internalIdentity={internalIdentity}
+          internalIdentities={[internalIdentity]}
           externalIdentities={externalIdentities}
           isLoading={false}
           onUnlink={vi.fn()}
@@ -231,7 +277,7 @@ describe("SignInMethodList", () => {
 
       render(
         <SignInMethodList
-          internalIdentity={null}
+          internalIdentities={[]}
           externalIdentities={externalIdentities}
           isLoading={false}
           onUnlink={vi.fn()}
@@ -251,7 +297,7 @@ describe("SignInMethodList", () => {
 
       render(
         <SignInMethodList
-          internalIdentity={null}
+          internalIdentities={[]}
           externalIdentities={externalIdentities}
           isLoading={false}
           onUnlink={vi.fn()}
@@ -271,7 +317,7 @@ describe("SignInMethodList", () => {
 
       render(
         <SignInMethodList
-          internalIdentity={null}
+          internalIdentities={[]}
           externalIdentities={externalIdentities}
           isLoading={false}
           onUnlink={onUnlink}
@@ -300,7 +346,7 @@ describe("SignInMethodList", () => {
 
       render(
         <SignInMethodList
-          internalIdentity={null}
+          internalIdentities={[]}
           externalIdentities={externalIdentities}
           isLoading={false}
           onUnlink={onUnlink}
@@ -334,7 +380,7 @@ describe("SignInMethodList", () => {
 
       render(
         <SignInMethodList
-          internalIdentity={null}
+          internalIdentities={[]}
           externalIdentities={externalIdentities}
           isLoading={false}
           onUnlink={vi.fn()}
@@ -355,7 +401,7 @@ describe("SignInMethodList", () => {
 
       render(
         <SignInMethodList
-          internalIdentity={null}
+          internalIdentities={[]}
           externalIdentities={externalIdentities}
           isLoading={false}
           onUnlink={vi.fn()}
@@ -381,7 +427,7 @@ describe("SignInMethodList", () => {
 
       render(
         <SignInMethodList
-          internalIdentity={null}
+          internalIdentities={[]}
           externalIdentities={externalIdentities}
           isLoading={false}
           onUnlink={vi.fn()}
@@ -411,7 +457,7 @@ describe("SignInMethodList", () => {
 
       render(
         <SignInMethodList
-          internalIdentity={internalIdentity}
+          internalIdentities={[internalIdentity]}
           externalIdentities={externalIdentities}
           isLoading={false}
           onUnlink={vi.fn()}

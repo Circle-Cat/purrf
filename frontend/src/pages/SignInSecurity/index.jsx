@@ -50,7 +50,7 @@ const identityLabel = (identity) => {
  * @component
  */
 const SignInSecurity = () => {
-  const { isLoading, emails, internalIdentity, externalIdentities, refresh } =
+  const { isLoading, emails, internalIdentities, externalIdentities, refresh } =
     useEmailSettings();
   const [addOpen, setAddOpen] = useState(false);
   const [primaryTarget, setPrimaryTarget] = useState(null);
@@ -155,7 +155,7 @@ const SignInSecurity = () => {
         </CardHeader>
         <CardContent>
           <SignInMethodList
-            internalIdentity={internalIdentity}
+            internalIdentities={internalIdentities}
             externalIdentities={externalIdentities}
             isLoading={isLoading}
             onUnlink={handleUnlink}

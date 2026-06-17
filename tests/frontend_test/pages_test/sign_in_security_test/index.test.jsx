@@ -43,10 +43,16 @@ vi.mock("@/pages/SignInSecurity/components/EmailAddressList", () => ({
 }));
 
 vi.mock("@/pages/SignInSecurity/components/SignInMethodList", () => ({
-  default: ({ internalIdentity, externalIdentities, isLoading, onUnlink }) => (
+  default: ({
+    internalIdentities,
+    externalIdentities,
+    isLoading,
+    onUnlink,
+  }) => (
     <div data-testid="sign-in-method-list">
       SignInMethodList:{isLoading ? "loading" : "ready"}:
-      {internalIdentity ? "internal" : "none"}:{externalIdentities.length}
+      {internalIdentities.length ? "internal" : "none"}:
+      {externalIdentities.length}
       <button
         onClick={() =>
           onUnlink({
@@ -96,7 +102,7 @@ describe("SignInSecurity page", () => {
   const defaultHookValue = {
     isLoading: false,
     emails: [],
-    internalIdentity: null,
+    internalIdentities: [],
     externalIdentities: [],
     refresh,
   };
@@ -134,7 +140,7 @@ describe("SignInSecurity page", () => {
     useEmailSettings.mockReturnValue({
       ...defaultHookValue,
       emails: [{ emailId: 1 }, { emailId: 2 }],
-      internalIdentity: { identityId: 9 },
+      internalIdentities: [{ identityId: 9 }],
       externalIdentities: [{ identityId: 1 }],
     });
 
