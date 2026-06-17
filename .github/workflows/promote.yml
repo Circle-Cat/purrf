@@ -196,7 +196,12 @@ jobs:
                 | head -1 | grep -oE '[0-9a-f]{40}' || true)
               if [ -n "$origin_sha" ]; then
                 src_pr=$(gh api "repos/$REPO/commits/$origin_sha/pulls" --jq '.[0].number' 2>/dev/null || true)
-                [ -n "$src_pr" ] && [ "$src_pr" != "null" ] && line="$line (#$src_pr)"
+                # Skip if the subject already carries this PR (squash-merge bakes
+                # "(#N)" into the commit message), else it renders twice.
+                if [ -n "$src_pr" ] && [ "$src_pr" != "null" ] \
+                   && ! printf '%s' "$line" | grep -qF "(#$src_pr)"; then
+                  line="$line (#$src_pr)"
+                fi
               fi
               echo "$line"
             done
