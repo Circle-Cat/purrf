@@ -15,10 +15,16 @@ from fastapi import APIRouter
 from backend.common.api_endpoints import (
     EMAIL_MANAGEMENT_INITIATE_ENDPOINT,
     EMAIL_MANAGEMENT_LIST_ENDPOINT,
+    EMAIL_MANAGEMENT_SET_PRIMARY_CONFIRM_ENDPOINT,
+    EMAIL_MANAGEMENT_SET_PRIMARY_INITIATE_ENDPOINT,
     EMAIL_MANAGEMENT_VERIFY_ENDPOINT,
 )
 from backend.common.fast_api_response_wrapper import api_response
-from backend.dto.email_management_dto import InitiateRequest, VerifyRequest
+from backend.dto.email_management_dto import (
+    InitiateRequest,
+    OtpConfirmRequest,
+    VerifyRequest,
+)
 from backend.dto.emails_view_dto import EmailsViewDto
 from backend.dto.user_context_dto import UserContextDto
 from backend.utils.permission_decorators import authenticate
@@ -55,6 +61,72 @@ class EmailManagementController:
             methods=["GET"],
             response_model=None,
         )
+        self.router.add_api_route(
+            EMAIL_MANAGEMENT_SET_PRIMARY_INITIATE_ENDPOINT,
+            endpoint=authenticate()(self.set_primary_initiate),
+            methods=["POST"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            EMAIL_MANAGEMENT_SET_PRIMARY_CONFIRM_ENDPOINT,
+            endpoint=authenticate()(self.set_primary_confirm),
+            methods=["POST"],
+            response_model=None,
+        )
+
+    async def set_primary_initiate(self, current_user: UserContextDto, email_id: int):
+        """
+        Start a step-up-OTP switch of the primary contact email.
+
+        Empty-bodied POST: the path's ``email_id`` is the whole request. The
+        service validates the target is promotable, then sends an OTP to the
+        *current primary* and returns a signed state snapshotting that primary.
+
+        Args:
+            current_user (UserContextDto): The authenticated user context.
+            email_id (int): Primary key of the email row to promote, from the path.
+
+        Returns:
+            A standardized API response wrapping the signed switch state.
+        """
+        async with self._database.session() as session:
+            data = await self._service.initiate_set_primary(
+                session=session,
+                current_user_id=current_user.user_id,
+                email_id=email_id,
+            )
+        return api_response(message="OTP sent to primary email", data=data)
+
+    async def set_primary_confirm(
+        self,
+        current_user: UserContextDto,
+        email_id: int,
+        body: OtpConfirmRequest,
+    ):
+        """
+        Confirm the step-up OTP and swap the primary contact email.
+
+        The service validates the signed state against the path's ``email_id``,
+        rechecks the primary has not changed since initiate, verifies the OTP,
+        and swaps the primary flag.
+
+        Args:
+            current_user (UserContextDto): The authenticated user context.
+            email_id (int): Primary key of the email row to promote, from the path.
+            body (OtpConfirmRequest): The signed state and the OTP code.
+
+        Returns:
+            A standardized API response confirming the swap.
+        """
+        async with self._database.session() as session:
+            data = await self._service.confirm_set_primary(
+                session=session,
+                current_user_id=current_user.user_id,
+                email_id=email_id,
+                state=body.state,
+                code=body.code,
+            )
+        return api_response(message="Primary email updated", data=data)
 
     async def list_emails(self, current_user: UserContextDto):
         """

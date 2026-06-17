@@ -35,6 +35,27 @@ def _state(user_id=_USER_ID, email=_TARGET_EMAIL, flow="add_email"):
     )
 
 
+def _set_primary_state(
+    user_id=_USER_ID,
+    target_email_id=18,
+    primary_email="old@example.com",
+    flow="set_primary",
+):
+    now = int(time.time())
+    return jwt.encode(
+        {
+            "user_id": user_id,
+            "target_email_id": target_email_id,
+            "primary_email_at_request": primary_email,
+            "flow": flow,
+            "iat": now,
+            "exp": now + 600,
+        },
+        _SECRET,
+        algorithm="HS256",
+    )
+
+
 class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         os.environ["EMAIL_OTP_STATE_JWT_SECRET"] = _SECRET
@@ -50,10 +71,24 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         self.user_emails.has_primary.return_value = False
         self.user_identities = AsyncMock()
         self.user_identities.get_by_subject_identifier.return_value = None
+        self.user_identities.list_by_user.return_value = []
+        self.user_identities.exists_active_internal.return_value = False
         self.session = AsyncMock()
         self.service = EmailManagementService(
-            self.auth0, self.user_emails, self.user_identities, MagicMock()
+            self.auth0,
+            self.user_emails,
+            self.user_identities,
+            MagicMock(),
         )
+
+    def _email_row(self, email, otp_confirmed=True, is_primary=False, user_id=_USER_ID):
+        row = UserEmailsEntity(
+            user_id=user_id,
+            email=email,
+            otp_confirmed=otp_confirmed,
+            is_primary=is_primary,
+        )
+        return row
 
     async def test_initiate_sends_otp_and_returns_decodable_state(self):
         result = await self.service.initiate(
@@ -310,6 +345,199 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsNone(result.internal_identity)
         self.assertEqual(result.external_identities[0].identity_id, 9)
+
+    # initiate_set_primary — step 1: validate target, OTP the current primary
+    async def test_initiate_set_primary_sends_otp_to_current_primary(self):
+        self.user_emails.get_by_id.return_value = self._email_row(
+            "new@example.com", otp_confirmed=True
+        )
+        self.user_emails.get_primary.return_value = self._email_row(
+            "old@example.com", is_primary=True
+        )
+
+        result = await self.service.initiate_set_primary(self.session, _USER_ID, 18)
+
+        # OTP goes to the CURRENT primary, not the target.
+        self.auth0.start_passwordless.assert_called_once_with("old@example.com")
+        claims = jwt.decode(result["state"], _SECRET, algorithms=["HS256"])
+        self.assertEqual(claims["flow"], "set_primary")
+        self.assertEqual(claims["target_email_id"], 18)
+        self.assertEqual(claims["primary_email_at_request"], "old@example.com")
+
+    async def test_initiate_set_primary_rejects_unconfirmed_target(self):
+        self.user_emails.get_by_id.return_value = self._email_row(
+            "pending@old.com", otp_confirmed=False
+        )
+
+        with self.assertRaises(ValueError):
+            await self.service.initiate_set_primary(self.session, _USER_ID, 25)
+        self.auth0.start_passwordless.assert_not_called()
+
+    async def test_initiate_set_primary_rejects_missing_target(self):
+        self.user_emails.get_by_id.return_value = None
+
+        with self.assertRaises(ValueError):
+            await self.service.initiate_set_primary(self.session, _USER_ID, 999)
+        self.auth0.start_passwordless.assert_not_called()
+
+    async def test_initiate_set_primary_rejects_target_owned_by_other_user(self):
+        self.user_emails.get_by_id.return_value = self._email_row(
+            "bob@example.com", otp_confirmed=True, user_id=999
+        )
+
+        with self.assertRaises(ValueError):
+            await self.service.initiate_set_primary(self.session, _USER_ID, 7)
+        self.auth0.start_passwordless.assert_not_called()
+
+    async def test_initiate_set_primary_active_employee_rejects_non_corp(self):
+        self.user_emails.get_by_id.return_value = self._email_row(
+            "alice.personal@gmail.com", otp_confirmed=True
+        )
+        self.user_identities.exists_active_internal.return_value = True
+
+        with self.assertRaises(PermissionError):
+            await self.service.initiate_set_primary(self.session, _USER_ID, 18)
+        self.auth0.start_passwordless.assert_not_called()
+
+    async def test_initiate_set_primary_active_employee_allows_microsoft_corp(self):
+        # @u.circlecat.org is a company domain too -> allowed for employees.
+        self.user_emails.get_by_id.return_value = self._email_row(
+            "alice@u.circlecat.org", otp_confirmed=True
+        )
+        self.user_emails.get_primary.return_value = self._email_row(
+            "old@circlecat.org", is_primary=True
+        )
+        self.user_identities.exists_active_internal.return_value = True
+
+        await self.service.initiate_set_primary(self.session, _USER_ID, 5)
+
+        self.auth0.start_passwordless.assert_called_once_with("old@circlecat.org")
+
+    async def test_initiate_set_primary_rejects_when_no_primary(self):
+        self.user_emails.get_by_id.return_value = self._email_row(
+            "new@example.com", otp_confirmed=True
+        )
+        self.user_emails.get_primary.return_value = None
+
+        with self.assertRaises(ValueError):
+            await self.service.initiate_set_primary(self.session, _USER_ID, 18)
+        self.auth0.start_passwordless.assert_not_called()
+
+    # confirm_set_primary — step 2: recheck primary, verify OTP, swap
+    async def test_confirm_set_primary_swaps_on_valid_state_and_otp(self):
+        self.user_emails.get_primary.return_value = self._email_row(
+            "old@example.com", is_primary=True
+        )
+        self.user_emails.get_by_id.return_value = self._email_row(
+            "new@example.com", otp_confirmed=True
+        )
+        state = _set_primary_state(target_email_id=18, primary_email="old@example.com")
+
+        result = await self.service.confirm_set_primary(
+            self.session, _USER_ID, 18, state, "123456"
+        )
+
+        self.auth0.exchange_otp.assert_called_once_with("old@example.com", "123456")
+        self.user_emails.set_primary.assert_awaited_once_with(
+            self.session, _USER_ID, 18
+        )
+        self.session.commit.assert_awaited_once()
+        self.assertEqual(result, {"ok": True})
+
+    async def test_confirm_set_primary_rejects_wrong_flow(self):
+        state = _set_primary_state(
+            target_email_id=18, primary_email="old@example.com", flow="add_email"
+        )
+        with self.assertRaises(ValueError):
+            await self.service.confirm_set_primary(
+                self.session, _USER_ID, 18, state, "123456"
+            )
+        self.auth0.exchange_otp.assert_not_called()
+        self.user_emails.set_primary.assert_not_called()
+
+    async def test_confirm_set_primary_rejects_state_for_other_user(self):
+        state = _set_primary_state(user_id=999, target_email_id=18)
+        with self.assertRaises(ValueError):
+            await self.service.confirm_set_primary(
+                self.session, _USER_ID, 18, state, "123456"
+            )
+        self.auth0.exchange_otp.assert_not_called()
+
+    async def test_confirm_set_primary_rejects_email_id_path_mismatch(self):
+        # State was minted for target 18 but the path says 99.
+        state = _set_primary_state(target_email_id=18)
+        with self.assertRaises(ValueError):
+            await self.service.confirm_set_primary(
+                self.session, _USER_ID, 99, state, "123456"
+            )
+        self.auth0.exchange_otp.assert_not_called()
+
+    async def test_confirm_set_primary_rejects_when_primary_changed(self):
+        # Primary moved since initiate -> refuse before consuming the OTP.
+        self.user_emails.get_primary.return_value = self._email_row(
+            "changed@example.com", is_primary=True
+        )
+        state = _set_primary_state(target_email_id=18, primary_email="old@example.com")
+
+        with self.assertRaises(PermissionError):
+            await self.service.confirm_set_primary(
+                self.session, _USER_ID, 18, state, "123456"
+            )
+        self.auth0.exchange_otp.assert_not_called()
+        self.user_emails.set_primary.assert_not_called()
+
+    async def test_confirm_set_primary_propagates_wrong_otp(self):
+        self.user_emails.get_primary.return_value = self._email_row(
+            "old@example.com", is_primary=True
+        )
+        self.auth0.exchange_otp.side_effect = ValueError("Incorrect or expired code")
+        state = _set_primary_state(target_email_id=18, primary_email="old@example.com")
+
+        with self.assertRaises(ValueError):
+            await self.service.confirm_set_primary(
+                self.session, _USER_ID, 18, state, "000000"
+            )
+        self.user_emails.set_primary.assert_not_called()
+        self.session.commit.assert_not_awaited()
+
+
+class TestSignState(unittest.TestCase):
+    def setUp(self):
+        os.environ["EMAIL_OTP_STATE_JWT_SECRET"] = _SECRET
+        self.service = EmailManagementService(
+            MagicMock(), AsyncMock(), AsyncMock(), MagicMock()
+        )
+
+    def test_sign_state_stamps_envelope_and_roundtrips(self):
+        token = self.service._sign_state(
+            "set_primary", user_id=_USER_ID, target_email_id=7
+        )
+        claims = jwt.decode(token, _SECRET, algorithms=["HS256"])
+
+        # Flow-specific claims are carried through verbatim.
+        self.assertEqual(claims["user_id"], _USER_ID)
+        self.assertEqual(claims["target_email_id"], 7)
+        # The shared envelope is stamped on every state.
+        self.assertEqual(claims["flow"], "set_primary")
+        self.assertIn("nonce", claims)
+        self.assertEqual(claims["exp"] - claims["iat"], 600)
+
+    def test_sign_state_is_decodable_by_decode_state(self):
+        token = self.service._sign_state("add_email", user_id=_USER_ID)
+        self.assertEqual(self.service._decode_state(token)["flow"], "add_email")
+
+    def test_sign_state_uses_a_fresh_nonce_each_call(self):
+        a = jwt.decode(
+            self.service._sign_state("add_email", user_id=_USER_ID),
+            _SECRET,
+            algorithms=["HS256"],
+        )
+        b = jwt.decode(
+            self.service._sign_state("add_email", user_id=_USER_ID),
+            _SECRET,
+            algorithms=["HS256"],
+        )
+        self.assertNotEqual(a["nonce"], b["nonce"])
 
 
 if __name__ == "__main__":

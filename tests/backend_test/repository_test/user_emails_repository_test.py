@@ -111,6 +111,47 @@ class TestUserEmailsRepository(BaseRepositoryTestLib):
         rows = await self.repo.list_by_user_id(self.session, self.user.user_id)
         self.assertEqual(rows, [])
 
+    async def test_get_by_id_returns_row(self):
+        email_row = UserEmailsEntity(
+            user_id=self.user.user_id,
+            email="alice@example.com",
+            otp_confirmed=True,
+            is_primary=True,
+        )
+        await self.insert_entities([email_row])
+
+        fetched = await self.repo.get_by_id(self.session, email_row.email_id)
+
+        self.assertIsNotNone(fetched)
+        self.assertEqual(fetched.email_id, email_row.email_id)
+        self.assertEqual(fetched.email, "alice@example.com")
+
+    async def test_get_by_id_missing_returns_none(self):
+        fetched = await self.repo.get_by_id(self.session, 99999999)
+        self.assertIsNone(fetched)
+
+    async def test_set_primary_swaps_primary_flag(self):
+        old_primary = UserEmailsEntity(
+            user_id=self.user.user_id,
+            email="alice@example.com",
+            otp_confirmed=True,
+            is_primary=True,
+        )
+        target = UserEmailsEntity(
+            user_id=self.user.user_id,
+            email="alice.work@example.com",
+            otp_confirmed=True,
+            is_primary=False,
+        )
+        await self.insert_entities([old_primary, target])
+
+        await self.repo.set_primary(self.session, self.user.user_id, target.email_id)
+
+        rows = await self.repo.list_by_user_id(self.session, self.user.user_id)
+        by_email = {r.email: r for r in rows}
+        self.assertFalse(by_email["alice@example.com"].is_primary)
+        self.assertTrue(by_email["alice.work@example.com"].is_primary)
+
 
 if __name__ == "__main__":
     unittest.main()
