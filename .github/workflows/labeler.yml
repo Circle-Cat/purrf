@@ -1,0 +1,25 @@
+name: Labeler
+
+# Auto-applies area:* (and documentation) labels to PRs based on changed paths,
+# so reviewers see the change surface at a glance and can tell which promotion
+# path it follows (infra = cherry-pick to env branches; backend = rides the
+# reused image to prod; frontend = Cloudflare Pages). Rules: .github/labeler.yml.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    steps:
+      # sync-labels keeps the area:* set accurate as the PR evolves (drops a
+      # label when its paths are no longer touched); only labels defined in
+      # labeler.yml are managed, so manual labels are left alone.
+      - uses: actions/labeler@v5
+        with:
+          sync-labels: true
