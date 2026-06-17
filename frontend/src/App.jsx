@@ -18,6 +18,7 @@ import AccessDenied from "@/pages/AccessDenied";
 import PersonalDashboard from "@/pages/PersonalDashboard";
 import MentorshipManagement from "@/pages/MentorshipManagement";
 import VerifyRequired from "@/pages/VerifyRequired";
+import SignInSecurity from "@/pages/SignInSecurity";
 import { AuthProvider } from "@/context/auth";
 import { FlagsProvider, LDIdentifier } from "@/context/flags";
 import { PERMISSIONS } from "@/constants/Permissions";
@@ -73,6 +74,10 @@ function App() {
                       }
                     />
                     <Route path={ROUTE_PATHS.PROFILE} element={<Profile />} />
+                    <Route
+                      path={ROUTE_PATHS.SIGN_IN_SECURITY}
+                      element={<SignInSecurity />}
+                    />
                     <Route
                       path={ROUTE_PATHS.PERSONAL_DASHBOARD}
                       element={<PersonalDashboard />}

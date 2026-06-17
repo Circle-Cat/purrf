@@ -8,6 +8,7 @@ import {
   performGlobalLogout,
 } from "@/utils/auth";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
+import { ROUTE_PATHS } from "@/constants/RoutePaths";
 import userEvent from "@testing-library/user-event";
 
 import "@testing-library/jest-dom/vitest";
@@ -140,6 +141,38 @@ describe("Header Component", () => {
     await user.click(viewProfileItem);
     await waitFor(() => {
       expect(screen.getByText("Mocked Profile Page")).toBeInTheDocument();
+    });
+  });
+
+  test('should go to the sign in & security settings when "Settings" is clicked', async () => {
+    const user = userEvent.setup();
+    const mockUserName = "Alice";
+    getCookie.mockReturnValue("some-jwt-cookie-string");
+    extractCloudflareUserName.mockReturnValue(mockUserName);
+
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <Routes>
+          <Route path="/" element={<Header />} />
+          <Route
+            path={ROUTE_PATHS.SIGN_IN_SECURITY}
+            element={<div>Mocked Settings Page</div>}
+          />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    const userChar = await screen.findByText(
+      mockUserName.charAt(0).toUpperCase(),
+    );
+    await user.click(userChar.closest("button"));
+    const settingsItem = await screen.findByRole("menuitem", {
+      name: "Settings",
+    });
+
+    await user.click(settingsItem);
+    await waitFor(() => {
+      expect(screen.getByText("Mocked Settings Page")).toBeInTheDocument();
     });
   });
 
