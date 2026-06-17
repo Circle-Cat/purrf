@@ -5,6 +5,8 @@ import { useMentorshipData } from "@/pages/PersonalDashboard/hooks/useMentorship
 import { useWorkActivityData } from "@/pages/PersonalDashboard/hooks/useWorkActivityData";
 import { useAuth } from "@/context/auth";
 import { PERMISSIONS } from "@/constants/Permissions";
+import { MentorshipRoundStatus } from "@/constants/MentorshipRoundStatus";
+import { GoogleMeetingControl } from "@/pages/PersonalDashboard/components/GoogleMeetingControl";
 
 /**
  * PersonalDashboard
@@ -53,6 +55,11 @@ const PersonalDashboard = () => {
   const { summary, isPersonalSummaryLoading, fetchPersonalSummary } =
     useWorkActivityData({ enabled: canViewActivitySummary });
 
+  const activeRound = roundSelectionData?.sortedRounds?.find(
+    (round) => round.status === MentorshipRoundStatus.ACTIVE,
+  );
+  const meetingRoundId = activeRound?.id ?? null;
+
   return (
     <div className="personal-dashboard">
       {/* Welcome header */}
@@ -63,6 +70,11 @@ const PersonalDashboard = () => {
           </span>
           <h2 className="m-0 text-lg font-medium">Welcome</h2>
         </div>
+
+        <GoogleMeetingControl
+          meetingRoundId={meetingRoundId}
+          onRefresh={refreshMeetings}
+        />
       </div>
 
       {/* Mentorship information banner */}
