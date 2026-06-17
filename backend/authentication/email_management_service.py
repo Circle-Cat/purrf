@@ -35,6 +35,7 @@ _STATE_FLOW = "add_email"
 _STATE_ALGORITHM = "HS256"
 _EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 _INVALID_STATE_MESSAGE = "Verification state is invalid or expired"
+_SET_PRIMARY_STATE_FLOW = "set_primary"
 
 
 class EmailManagementService:
@@ -74,19 +75,11 @@ class EmailManagementService:
 
         self._auth0.start_passwordless(normalized)
 
-        now = int(time.time())
-        state = jwt.encode(
-            {
-                "user_id": current_user_id,
-                "sub": current_sub,
-                "email": normalized,
-                "nonce": uuid.uuid4().hex,
-                "flow": _STATE_FLOW,
-                "iat": now,
-                "exp": now + _STATE_TTL_SECONDS,
-            },
-            self._state_secret,
-            algorithm=_STATE_ALGORITHM,
+        state = self._sign_state(
+            _STATE_FLOW,
+            user_id=current_user_id,
+            sub=current_sub,
+            email=normalized,
         )
         return {"state": state}
 
@@ -233,6 +226,128 @@ class EmailManagementService:
             linked_at=identity.linked_at,
             last_used_at=identity.last_login_at,
         )
+
+    async def initiate_set_primary(
+        self, session, current_user_id: int, email_id: int
+    ) -> dict:
+        """
+        Begin a step-up-OTP switch of the primary contact email.
+
+        Validates the target is promotable, then sends an OTP to the *current*
+        primary and snapshots it into the signed state, so :meth:`confirm_set_primary`
+        can refuse a swap mid-flow. Sending to the current primary proves the
+        caller controls the existing account — defeating the takeover where a
+        hijacked session promotes an attacker-added address.
+
+        Returns:
+            dict: ``{"state": <jwt>}`` binding the OTP to this switch request.
+
+        Raises:
+            ValueError: target missing / not the caller's / not OTP-confirmed,
+                or there is no primary to verify against.
+            PermissionError: an active employee targeting a non-corp domain.
+        """
+        target = await self._user_emails.get_by_id(session, email_id)
+        await self._validate_promotable(session, current_user_id, target)
+
+        primary = await self._user_emails.get_primary(session, current_user_id)
+        if primary is None:
+            raise ValueError("No primary email to verify against")
+
+        self._auth0.start_passwordless(primary.email)
+        state = self._sign_state(
+            _SET_PRIMARY_STATE_FLOW,
+            user_id=current_user_id,
+            target_email_id=email_id,
+            primary_email_at_request=primary.email,
+        )
+        return {"state": state}
+
+    async def confirm_set_primary(
+        self, session, current_user_id: int, email_id: int, state: str, code: str
+    ) -> dict:
+        """
+        Confirm the step-up OTP and swap the primary contact email.
+
+        Validates the signed state, rechecks the primary *before* consuming the
+        OTP — refusing if it changed since initiate — verifies the code against
+        the primary, re-validates the target is promotable, then swaps the
+        primary flag in a single transaction (the partial unique index
+        ``user_emails_primary_idx`` keeps at most one primary under races).
+
+        Raises:
+            ValueError: invalid/expired/mismatched state, wrong OTP, or the
+                target vanished / is not promotable.
+            PermissionError: the primary changed since initiate, or an active
+                employee targeting a non-corp domain.
+        """
+        claims = self._decode_state(state)
+        if (
+            claims.get("flow") != _SET_PRIMARY_STATE_FLOW
+            or claims.get("user_id") != current_user_id
+            or claims.get("target_email_id") != email_id
+        ):
+            raise ValueError(_INVALID_STATE_MESSAGE)
+
+        primary = await self._user_emails.get_primary(session, current_user_id)
+        if primary is None or primary.email != claims["primary_email_at_request"]:
+            raise PermissionError("Primary email changed during switch; restart")
+
+        self._auth0.exchange_otp(primary.email, code)
+
+        target = await self._user_emails.get_by_id(session, email_id)
+        await self._validate_promotable(session, current_user_id, target)
+
+        await self._user_emails.set_primary(session, current_user_id, email_id)
+        await session.commit()
+        return {"ok": True}
+
+    async def _validate_promotable(self, session, current_user_id: int, target) -> None:
+        """
+        Shared guard for promoting ``target`` to primary: it must be the
+        caller's, OTP-confirmed, and — for an active employee — a corp address.
+
+        An active employee is ``users.is_active`` True AND holding a
+        user_identities row of type INTERNAL; such a user must keep a
+        ``circlecat.org`` address as primary so HR / IT can reach them.
+
+        Raises:
+            ValueError: missing / owned by another user / not OTP-confirmed.
+            PermissionError: an active employee targeting a non-corp domain.
+        """
+        if target is None or target.user_id != current_user_id:
+            raise ValueError("Email not found")
+        if not target.otp_confirmed:
+            raise ValueError("Email must be verified before promoting to primary")
+
+        # Covers both corp domains (@circlecat.org and @u.circlecat.org); an
+        # active employee must keep a company address as primary.
+        if not is_company_email(
+            target.email
+        ) and await self._user_identities.exists_active_internal(
+            session, current_user_id
+        ):
+            raise PermissionError("Active employees must keep a corp email as primary")
+
+    def _sign_state(self, flow: str, **claims) -> str:
+        """
+        Sign a short-lived state JWT for an OTP flow.
+
+        Stamps the shared envelope — a random ``nonce``, the ``flow`` tag, and
+        ``iat``/``exp`` (``_STATE_TTL_SECONDS``) — around the flow-specific
+        ``claims``. Companion to :meth:`_decode_state`, which verifies the
+        signature and expiry; each caller still checks ``flow`` and its bound
+        ids itself.
+        """
+        now = int(time.time())
+        payload = {
+            **claims,
+            "nonce": uuid.uuid4().hex,
+            "flow": flow,
+            "iat": now,
+            "exp": now + _STATE_TTL_SECONDS,
+        }
+        return jwt.encode(payload, self._state_secret, algorithm=_STATE_ALGORITHM)
 
     def _decode_state(self, state: str) -> dict:
         """Decode and verify the state JWT; any JWT error becomes a ValueError."""

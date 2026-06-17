@@ -1,5 +1,5 @@
 from backend.entity.user_emails_entity import UserEmailsEntity
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -94,6 +94,32 @@ class UserEmailsRepository:
         )
         return result.first() is not None
 
+    async def get_primary(
+        self, session: AsyncSession, user_id: int
+    ) -> UserEmailsEntity | None:
+        """
+        Fetch the user's current primary email row, or None if they have none.
+
+        Backs the set-primary step-up flow, which sends the OTP to the existing
+        primary and snapshots it before swapping. The partial unique index
+        ``user_emails_primary_idx`` guarantees at most one primary per user, so
+        ``one_or_none`` is safe.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            user_id (int): user_id whose primary email to fetch.
+
+        Returns:
+            UserEmailsEntity | None: The primary row, or None when none is set.
+        """
+        result = await session.execute(
+            select(UserEmailsEntity).where(
+                UserEmailsEntity.user_id == user_id,
+                UserEmailsEntity.is_primary.is_(True),
+            )
+        )
+        return result.scalars().one_or_none()
+
     async def upsert_email(
         self, session: AsyncSession, entity: UserEmailsEntity
     ) -> UserEmailsEntity:
@@ -114,3 +140,57 @@ class UserEmailsRepository:
         await session.flush()
 
         return merged_entity
+
+    async def get_by_id(
+        self, session: AsyncSession, email_id: int
+    ) -> UserEmailsEntity | None:
+        """
+        Fetch a single email row by its primary key.
+
+        Backs ownership checks where the caller supplies an email_id from a URL
+        path and the service must verify the row exists and belongs to them.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            email_id (int): Primary key of the email row to fetch.
+
+        Returns:
+            UserEmailsEntity | None: The matching row, or None when no row has
+            that email_id.
+        """
+        result = await session.execute(
+            select(UserEmailsEntity).where(UserEmailsEntity.email_id == email_id)
+        )
+        return result.scalars().one_or_none()
+
+    async def set_primary(
+        self, session: AsyncSession, user_id: int, email_id: int
+    ) -> None:
+        """
+        Move the user's primary flag onto ``email_id`` in a single transaction.
+
+        Clears the user's current primary, then sets the target — the same two
+        UPDATEs the spec prescribes. The partial unique index
+        ``user_emails_primary_idx`` guarantees at most one primary per user even
+        under concurrent calls. Flushes but does not commit; the caller owns the
+        transaction boundary.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            user_id (int): user_id owning both the old and new primary rows.
+            email_id (int): Primary key of the row to promote to primary.
+        """
+        await session.execute(
+            update(UserEmailsEntity)
+            .where(
+                UserEmailsEntity.user_id == user_id,
+                UserEmailsEntity.is_primary.is_(True),
+            )
+            .values(is_primary=False)
+        )
+        await session.execute(
+            update(UserEmailsEntity)
+            .where(UserEmailsEntity.email_id == email_id)
+            .values(is_primary=True)
+        )
+        await session.flush()
