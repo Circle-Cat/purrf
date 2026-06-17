@@ -180,6 +180,9 @@ jobs:
           fi
           git push origin "$BRANCH"
 
+          # Source-PR numbers collected during body build, for promoted:<target> labeling.
+          : > src_prs.txt
+
           {
             if [ "$TARGET" = "prod" ]; then
               echo "Releases \`$RELEASE_TAG\` from \`staging\` to \`prod\`, reusing the staging-tested image \`$IMAGE_TAG\`."
@@ -196,11 +199,15 @@ jobs:
                 | head -1 | grep -oE '[0-9a-f]{40}' || true)
               if [ -n "$origin_sha" ]; then
                 src_pr=$(gh api "repos/$REPO/commits/$origin_sha/pulls" --jq '.[0].number' 2>/dev/null || true)
-                # Skip if the subject already carries this PR (squash-merge bakes
-                # "(#N)" into the commit message), else it renders twice.
-                if [ -n "$src_pr" ] && [ "$src_pr" != "null" ] \
-                   && ! printf '%s' "$line" | grep -qF "(#$src_pr)"; then
-                  line="$line (#$src_pr)"
+                if [ -n "$src_pr" ] && [ "$src_pr" != "null" ]; then
+                  # Record for promoted:<target> labeling regardless of whether the
+                  # subject already shows the number.
+                  echo "$src_pr" >> src_prs.txt
+                  # Skip appending if the subject already carries this PR (squash-merge
+                  # bakes "(#N)" into the commit message), else it renders twice.
+                  if ! printf '%s' "$line" | grep -qF "(#$src_pr)"; then
+                    line="$line (#$src_pr)"
+                  fi
                 fi
               fi
               echo "$line"
@@ -218,5 +225,16 @@ jobs:
           gh pr create \
             --base "$TARGET" \
             --head "$BRANCH" \
+            --label automation:promotion \
             --title "$title" \
             --body-file pr_body.md
+
+          # At-a-glance promotion tracking: tag each source PR as landed on this
+          # target. Cherry-pick rewrites the SHA, so without this there is no native
+          # way to see "did this PR reach staging/prod". Best-effort -- never fail
+          # the promotion on a labeling hiccup.
+          if [ -s src_prs.txt ]; then
+            sort -u src_prs.txt | while read -r pr; do
+              [ -n "$pr" ] && gh pr edit "$pr" --add-label "promoted:$TARGET" || true
+            done
+          fi
