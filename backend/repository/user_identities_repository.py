@@ -3,7 +3,7 @@ from datetime import datetime
 from backend.entity.user_identities_entity import UserIdentitiesEntity
 from backend.entity.users_entity import UsersEntity
 from backend.common.identity_type import IdentityType
-from sqlalchemy import and_, exists, or_, select, update
+from sqlalchemy import and_, delete, exists, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -76,6 +76,60 @@ class UserIdentitiesRepository:
             .order_by(UserIdentitiesEntity.identity_id)
         )
         return list(result.scalars().all())
+
+    async def list_by_user(
+        self, session: AsyncSession, user_id: int
+    ) -> list[UserIdentitiesEntity]:
+        """
+        Return all of this user's identity rows, backing the unlink flow's
+        only-remaining / still-claimed checks.
+
+        Thin alias of :meth:`list_by_user_id` so the query lives in one place.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            user_id (int): user_id whose identity rows to list.
+
+        Returns:
+            list[UserIdentitiesEntity]: The user's identity rows ordered by
+            identity_id; empty when the user has none.
+        """
+        return await self.list_by_user_id(session, user_id)
+
+    async def get_by_id(
+        self, session: AsyncSession, identity_id: int
+    ) -> UserIdentitiesEntity | None:
+        """
+        Fetch a single identity row by its primary key.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            identity_id (int): identity_id to look up.
+
+        Returns:
+            UserIdentitiesEntity | None: The row if found; otherwise None.
+        """
+        result = await session.execute(
+            select(UserIdentitiesEntity).where(
+                UserIdentitiesEntity.identity_id == identity_id
+            )
+        )
+        return result.scalars().one_or_none()
+
+    async def delete(self, session: AsyncSession, identity_id: int) -> None:
+        """
+        Remove one identity row by primary key, backing the unlink flow.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            identity_id (int): identity_id of the row to delete.
+        """
+        await session.execute(
+            delete(UserIdentitiesEntity).where(
+                UserIdentitiesEntity.identity_id == identity_id
+            )
+        )
+        await session.flush()
 
     async def find_swappable_by_email(
         self, session: AsyncSession, email_claim: str

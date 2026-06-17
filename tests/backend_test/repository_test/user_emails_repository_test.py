@@ -152,6 +152,43 @@ class TestUserEmailsRepository(BaseRepositoryTestLib):
         self.assertFalse(by_email["alice@example.com"].is_primary)
         self.assertTrue(by_email["alice.work@example.com"].is_primary)
 
+    async def test_delete_removes_row(self):
+        email_row = UserEmailsEntity(
+            user_id=self.user.user_id,
+            email="alice@example.com",
+            otp_confirmed=True,
+            is_primary=False,
+        )
+        await self.insert_entities([email_row])
+
+        await self.repo.delete(self.session, email_row.email_id)
+
+        self.assertIsNone(await self.repo.get_by_id(self.session, email_row.email_id))
+
+    async def test_delete_leaves_other_rows_intact(self):
+        target = UserEmailsEntity(
+            user_id=self.user.user_id,
+            email="alice@example.com",
+            otp_confirmed=True,
+            is_primary=False,
+        )
+        keep = UserEmailsEntity(
+            user_id=self.user.user_id,
+            email="alice.work@example.com",
+            otp_confirmed=True,
+            is_primary=True,
+        )
+        await self.insert_entities([target, keep])
+
+        await self.repo.delete(self.session, target.email_id)
+
+        rows = await self.repo.list_by_user_id(self.session, self.user.user_id)
+        self.assertEqual({r.email for r in rows}, {"alice.work@example.com"})
+
+    async def test_delete_missing_id_is_noop(self):
+        # Deleting a row that does not exist should not raise.
+        await self.repo.delete(self.session, 99999999)
+
 
 if __name__ == "__main__":
     unittest.main()
