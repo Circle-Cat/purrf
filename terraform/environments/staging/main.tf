@@ -32,10 +32,15 @@ module "purrf_instance" {
   gerrit_producer_entry_point = "gerrit_event_webhook"
   jira_password               = var.jira_password
   gerrit_http_pass            = var.gerrit_http_pass
-  image_tag                   = "20260516-021842"
-  cf_aud_tag                  = "3a069a38522a7ef33aed95d4e58671081380c261391fa14d3433f637f4a0da2a"
-  azure_client_id             = "8f3f85f2-be71-4ed5-95e8-3c777f4c6e13"
-  azure_tenant_id             = "08502fd6-503a-4dfd-85b7-f13b141dc0c4"
-  ld_sdk_key                  = data.terraform_remote_state.ld.outputs.api_keys["staging"]
-  tailscale_proxy             = "http://outbound.tailscale.svc.cluster.local:1055"
+  # The staging deployment is managed by ArgoCD, not Terraform's helm_release.
+  # (image_tag now lives in helm/purrf/values-staging.yaml on the staging branch.)
+  deploy_via_helm = false
+  cf_aud_tag      = "3a069a38522a7ef33aed95d4e58671081380c261391fa14d3433f637f4a0da2a"
+  azure_client_id = "8f3f85f2-be71-4ed5-95e8-3c777f4c6e13"
+  azure_tenant_id = "08502fd6-503a-4dfd-85b7-f13b141dc0c4"
+  ld_sdk_key      = data.terraform_remote_state.ld.outputs.api_keys["staging"]
+  tailscale_proxy = "http://outbound.tailscale.svc.cluster.local:1055"
+
+  auth0_google_client_id     = var.auth0_google_client_id
+  auth0_google_client_secret = var.auth0_google_client_secret
 }

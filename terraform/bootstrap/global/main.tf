@@ -692,11 +692,11 @@ resource "cloudflare_zero_trust_access_application" "purrf_app_test" {
       uri  = "*.purrf.pages.dev"
     },
   ]
-  allowed_idps         = ["762bbddc-6753-4c4b-898e-89e18ecc410c", cloudflare_zero_trust_access_identity_provider.mentorship_login_test.id]
+  allowed_idps         = [cloudflare_zero_trust_access_identity_provider.mentorship_login_test.id]
   session_duration     = "24h"
   app_launcher_visible = true
 
-  auto_redirect_to_identity = false
+  auto_redirect_to_identity = true
   cors_headers = {
     allow_all_methods = true
     allow_credentials = true

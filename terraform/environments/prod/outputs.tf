@@ -71,10 +71,14 @@ output "auth0_custom_domain_cname" {
   value = module.purrf_instance.auth0_custom_domain_cname
 }
 
-# Connection URI for the readonly_daisyisadaisy role, via Neon's pooled
-# endpoint (suitable for ad-hoc human queries).
-# Retrieve with: terraform output -raw readonly_daisy_connection_uri
-output "readonly_daisy_connection_uri" {
-  value     = "postgresql://${postgresql_role.daisy.name}:${urlencode(random_password.daisy.result)}@${module.purrf_instance.neon_pooler_host}/${module.purrf_instance.neon_db_name}?sslmode=require"
+# Connection URIs for each readonly user, via Neon's pooled endpoint
+# (suitable for ad-hoc human queries). Keyed by the short name from
+# `local.readonly_users`.
+# Retrieve one: terraform output -json readonly_connection_uris | jq -r .<key>
+output "readonly_connection_uris" {
+  value = {
+    for key, name in local.readonly_users :
+    key => "postgresql://${postgresql_role.readonly[key].name}:${urlencode(random_password.readonly[key].result)}@${module.purrf_instance.neon_pooler_host}/${module.purrf_instance.neon_db_name}?sslmode=require"
+  }
   sensitive = true
 }
