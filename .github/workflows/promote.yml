@@ -13,7 +13,16 @@ on:
       commits:
         description: >-
           Upstream commit SHAs to cherry-pick, separated by spaces or commas.
-          Leave empty to promote all pending commits.
+          Leave empty to promote all pending commits. (Used for staging; for
+          prod the range is anchored to release_tag instead.)
+        required: false
+        default: ''
+      release_tag:
+        description: >-
+          PROD ONLY (required for target=prod): the release/<...> tag on staging
+          to release. Code is promoted up to this immutable tag, and the image is
+          reused verbatim from values-staging.yaml at the tag -- so a staging that
+          has moved on to newer batches cannot leak in. Ignored for staging.
         required: false
         default: ''
 
@@ -72,6 +81,8 @@ jobs:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           TARGET: ${{ inputs.target }}
           COMMITS: ${{ inputs.commits }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          REPO: ${{ github.repository }}
           BRANCH: promote/${{ inputs.target }}-${{ github.run_id }}
         run: |
           set -o errexit -o pipefail -o nounset
@@ -84,25 +95,66 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
+          # Prod releases a validated, tagged staging point and REUSES the image
+          # built+tested on staging (prod never rebuilds). Anchor the code range
+          # and the image to the immutable tag so a staging that has moved on to
+          # newer batches cannot leak into this release.
+          if [ "$TARGET" = "prod" ]; then
+            if [ -z "$RELEASE_TAG" ]; then
+              echo "::error::prod promotion requires release_tag (a release/... tag on staging)."
+              exit 1
+            fi
+            git fetch --tags --force origin
+            if ! git rev-parse -q --verify "refs/tags/$RELEASE_TAG^{commit}" >/dev/null; then
+              echo "::error::tag '$RELEASE_TAG' not found."
+              exit 1
+            fi
+            if ! git merge-base --is-ancestor "refs/tags/$RELEASE_TAG^{commit}" origin/staging; then
+              echo "::error::tag '$RELEASE_TAG' is not on the staging branch."
+              exit 1
+            fi
+            ANCHOR="refs/tags/$RELEASE_TAG"
+            IMAGE_TAG=$(git show "$ANCHOR:helm/purrf/values-staging.yaml" | yq '.image.tag')
+            if [ -z "$IMAGE_TAG" ] || [ "$IMAGE_TAG" = "null" ]; then
+              echo "::error::could not read image.tag from values-staging.yaml at $RELEASE_TAG."
+              exit 1
+            fi
+            export IMAGE_TAG
+            echo "Releasing $RELEASE_TAG to prod; reusing staging-tested image tag: $IMAGE_TAG"
+          else
+            ANCHOR="origin/$UPSTREAM"
+          fi
+
+          # Select candidate commits.
           if [ -n "$COMMITS" ]; then
             requested=$(echo "$COMMITS" | tr ',' ' ')
             for sha in $requested; do
-              if ! git merge-base --is-ancestor "$sha" "origin/$UPSTREAM"; then
-                echo "::error::$sha is not a commit on $UPSTREAM."
+              if ! git merge-base --is-ancestor "$sha" "$ANCHOR"; then
+                echo "::error::$sha is not contained in $ANCHOR."
                 exit 1
               fi
             done
             # Oldest first, so dependencies apply before their dependents.
-            picks=$(git rev-list --reverse --no-walk $requested)
+            candidates=$(git rev-list --reverse --no-walk $requested)
           else
-            # Every upstream commit whose patch (by patch-id) is not yet on the target.
-            picks=$(git cherry "origin/$TARGET" "origin/$UPSTREAM" | awk '$1 == "+" { print $2 }')
+            # Every commit on the anchor whose patch is not yet on the target.
+            candidates=$(git cherry "origin/$TARGET" "$ANCHOR" | awk '$1 == "+" { print $2 }')
           fi
 
-          if [ -z "$picks" ]; then
-            echo "::error::Nothing to promote: $TARGET already contains all selected changes."
-            exit 1
-          fi
+          # Drop env-local image-pin commits: a single commit touching only some
+          # helm/purrf/values-*.yaml. They are created in-branch by the deploy
+          # workflows (no cherry-pick trailer), are specific to one environment,
+          # and would be rejected by promotion-guard on the target.
+          picks=""
+          for sha in $candidates; do
+            changed=$(git diff-tree --no-commit-id --name-only -r "$sha")
+            if [ "$(printf '%s\n' "$changed" | grep -c .)" -eq 1 ] \
+               && printf '%s\n' "$changed" | grep -qE '^helm/purrf/values-[a-z]+\.yaml$'; then
+              echo "Skipping env image-pin commit: $(git log -1 --format='%h %s' "$sha")"
+              continue
+            fi
+            picks="$picks $sha"
+          done
 
           git checkout -b "$BRANCH" "origin/$TARGET"
           for sha in $picks; do
@@ -112,21 +164,77 @@ jobs:
               exit 1
             fi
           done
+
+          # Prod: pin the reused, staging-tested image into values-prod.yaml as one
+          # extra commit (promotion-guard exempts it -- touches only values-prod.yaml).
+          if [ "$TARGET" = "prod" ]; then
+            yq -i '.image.tag = strenv(IMAGE_TAG)' helm/purrf/values-prod.yaml
+            if ! git diff --quiet helm/purrf/values-prod.yaml; then
+              git commit -am "chore(prod): pin image to ${IMAGE_TAG}"
+            fi
+          fi
+
+          if [ "$(git rev-list --count "origin/$TARGET..$BRANCH")" -eq 0 ]; then
+            echo "::error::Nothing to promote: $TARGET already contains all selected changes."
+            exit 1
+          fi
           git push origin "$BRANCH"
 
+          # Source-PR numbers collected during body build, for promoted:<target> labeling.
+          : > src_prs.txt
+
           {
-            echo "Promotes the following commits from \`$UPSTREAM\` to \`$TARGET\`:"
+            if [ "$TARGET" = "prod" ]; then
+              echo "Releases \`$RELEASE_TAG\` from \`staging\` to \`prod\`, reusing the staging-tested image \`$IMAGE_TAG\`."
+            else
+              echo "Promotes the following commits from \`$UPSTREAM\` to \`$TARGET\`:"
+            fi
             echo
-            for sha in $picks; do
-              echo "- $(git log -1 --format='%h %s' "$sha")"
+            for sha in $(git rev-list --reverse "origin/$TARGET..$BRANCH"); do
+              line="- $(git log -1 --format='%h %s' "$sha")"
+              # First cherry-pick trailer = the original main commit; link its PR
+              # so each released change traces back to the feature PR it came from.
+              origin_sha=$(git log -1 --format=%B "$sha" \
+                | grep -oE '\(cherry picked from commit [0-9a-f]{40}\)' \
+                | head -1 | grep -oE '[0-9a-f]{40}' || true)
+              if [ -n "$origin_sha" ]; then
+                src_pr=$(gh api "repos/$REPO/commits/$origin_sha/pulls" --jq '.[0].number' 2>/dev/null || true)
+                if [ -n "$src_pr" ] && [ "$src_pr" != "null" ]; then
+                  # Record for promoted:<target> labeling regardless of whether the
+                  # subject already shows the number.
+                  echo "$src_pr" >> src_prs.txt
+                  # Skip appending if the subject already carries this PR (squash-merge
+                  # bakes "(#N)" into the commit message), else it renders twice.
+                  if ! printf '%s' "$line" | grep -qF "(#$src_pr)"; then
+                    line="$line (#$src_pr)"
+                  fi
+                fi
+              fi
+              echo "$line"
             done
             echo
             echo "Created by promote.yml run ${{ github.run_id }}. Merge with a merge commit (never squash/rebase)."
           } > pr_body.md
 
-          count=$(echo "$picks" | wc -l)
+          count=$(git rev-list --count "origin/$TARGET..$BRANCH")
+          if [ "$TARGET" = "prod" ]; then
+            title="Release $RELEASE_TAG to prod ($count commit(s), image $IMAGE_TAG)"
+          else
+            title="Promote $count commit(s) from $UPSTREAM to $TARGET"
+          fi
           gh pr create \
             --base "$TARGET" \
             --head "$BRANCH" \
-            --title "Promote $count commit(s) from $UPSTREAM to $TARGET" \
+            --label automation:promotion \
+            --title "$title" \
             --body-file pr_body.md
+
+          # At-a-glance promotion tracking: tag each source PR as landed on this
+          # target. Cherry-pick rewrites the SHA, so without this there is no native
+          # way to see "did this PR reach staging/prod". Best-effort -- never fail
+          # the promotion on a labeling hiccup.
+          if [ -s src_prs.txt ]; then
+            sort -u src_prs.txt | while read -r pr; do
+              [ -n "$pr" ] && gh pr edit "$pr" --add-label "promoted:$TARGET" || true
+            done
+          fi
