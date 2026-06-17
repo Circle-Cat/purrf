@@ -22,3 +22,19 @@ export async function initiateEmailVerification(email) {
 export async function verifyEmailOtp(state, otp) {
   return await request.post(API_ENDPOINTS.EMAIL_OTP_VERIFY, { state, otp });
 }
+
+/**
+ * Fetch the caller's comprehensive email + sign-in identity view that backs
+ * the Sign in & security settings page.
+ *
+ * @returns {Promise<{ data: {
+ *   emails: Array<{ emailId: number, email: string, otpConfirmed: boolean,
+ *     isPrimary: boolean, addedAt: string, linkedIdentityCount: number }>,
+ *   internalIdentity: { identityId: number, subjectIdentifier: string,
+ *     emailClaim: string|null, linkedAt: string|null, lastUsedAt: string|null }|null,
+ *   externalIdentities: Array<object>,
+ * } }>}
+ */
+export async function listEmails() {
+  return await request.get(API_ENDPOINTS.EMAIL_LIST);
+}
