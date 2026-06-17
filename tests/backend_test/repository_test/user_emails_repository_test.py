@@ -75,6 +75,42 @@ class TestUserEmailsRepository(BaseRepositoryTestLib):
         self.assertEqual(merged.email_id, email_row.email_id)
         self.assertTrue(merged.otp_confirmed)
 
+    async def test_list_by_user_id_returns_all_rows(self):
+        primary = UserEmailsEntity(
+            user_id=self.user.user_id,
+            email="alice@example.com",
+            otp_confirmed=True,
+            is_primary=True,
+        )
+        pending = UserEmailsEntity(
+            user_id=self.user.user_id,
+            email="pending@example.com",
+            otp_confirmed=False,
+            is_primary=False,
+        )
+        await self.insert_entities([primary, pending])
+
+        other = _make_user()
+        await self.insert_entities([other])
+        await self.insert_entities([
+            UserEmailsEntity(
+                user_id=other.user_id,
+                email="bob@example.com",
+                otp_confirmed=True,
+                is_primary=True,
+            )
+        ])
+
+        rows = await self.repo.list_by_user_id(self.session, self.user.user_id)
+
+        self.assertEqual(
+            {r.email for r in rows}, {"alice@example.com", "pending@example.com"}
+        )
+
+    async def test_list_by_user_id_empty(self):
+        rows = await self.repo.list_by_user_id(self.session, self.user.user_id)
+        self.assertEqual(rows, [])
+
 
 if __name__ == "__main__":
     unittest.main()

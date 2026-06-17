@@ -54,6 +54,28 @@ class UserIdentitiesRepository:
             return None
         return row[0], row[1], row[2]
 
+    async def list_by_user_id(
+        self, session: AsyncSession, user_id: int
+    ) -> list[UserIdentitiesEntity]:
+        """
+        Return all of this user's identity rows, ordered by identity_id, to back
+        the Settings comprehensive view (internal + external identities).
+
+        Args:
+            session (AsyncSession): The active async database session.
+            user_id (int): user_id whose identity rows to list.
+
+        Returns:
+            list[UserIdentitiesEntity]: The user's identity rows ordered by
+            identity_id; empty when the user has none.
+        """
+        result = await session.execute(
+            select(UserIdentitiesEntity)
+            .where(UserIdentitiesEntity.user_id == user_id)
+            .order_by(UserIdentitiesEntity.identity_id)
+        )
+        return list(result.scalars().all())
+
     async def find_swappable_by_email(
         self, session: AsyncSession, email_claim: str
     ) -> UserIdentitiesEntity | None:

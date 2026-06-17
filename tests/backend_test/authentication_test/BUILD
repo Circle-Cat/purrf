@@ -28,6 +28,7 @@ py_test(
     deps = [
         "//backend/authentication:email_management_controller",
         "//backend/common:api_endpoints",
+        "//backend/dto",
         "@pypi//fastapi",
         "@pypi//httpx",
     ],

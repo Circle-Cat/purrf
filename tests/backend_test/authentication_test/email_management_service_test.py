@@ -1,6 +1,7 @@
 import os
 import time
 import unittest
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
 import jwt
@@ -240,6 +241,75 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         # Alias sync is best-effort: DB already committed, no error surfaced.
         self.session.commit.assert_awaited_once()
         self.assertEqual(result["linked_sub"], _NEW_SUB)
+
+    async def test_list_emails_and_identities_assembles_view(self):
+        added_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        primary = UserEmailsEntity(
+            user_id=_USER_ID,
+            email="alice@gmail.com",
+            otp_confirmed=True,
+            is_primary=True,
+            added_at=added_at,
+        )
+        primary.email_id = 12
+        pending = UserEmailsEntity(
+            user_id=_USER_ID,
+            email="pending@old.com",
+            otp_confirmed=False,
+            is_primary=False,
+            added_at=added_at,
+        )
+        pending.email_id = 25
+        self.user_emails.list_by_user_id.return_value = [primary, pending]
+
+        internal = UserIdentitiesEntity(
+            user_id=_USER_ID,
+            subject_identifier="google-oauth2|internal",
+            identity_type="internal",
+            email_claim="yuji@circlecat.org",
+        )
+        internal.identity_id = 5
+        external_current = UserIdentitiesEntity(
+            user_id=_USER_ID,
+            subject_identifier=_CURRENT_SUB,
+            identity_type="external",
+            # mixed case to prove case-insensitive linked_identity_count match
+            email_claim="Alice@Gmail.com",
+        )
+        external_current.identity_id = 7
+        self.user_identities.list_by_user_id.return_value = [internal, external_current]
+
+        result = await self.service.list_emails_and_identities(self.session, _USER_ID)
+
+        emails = {e.email_id: e for e in result.emails}
+        self.assertEqual(emails[12].linked_identity_count, 1)
+        self.assertTrue(emails[12].is_primary)
+        self.assertTrue(emails[12].otp_confirmed)
+        self.assertEqual(emails[25].linked_identity_count, 0)
+        self.assertFalse(emails[25].otp_confirmed)
+
+        self.assertEqual(result.internal_identity.identity_id, 5)
+        self.assertEqual(result.internal_identity.email_claim, "yuji@circlecat.org")
+
+        self.assertEqual(len(result.external_identities), 1)
+        ext = result.external_identities[0]
+        self.assertEqual(ext.identity_id, 7)
+
+    async def test_list_emails_and_identities_null_internal(self):
+        self.user_emails.list_by_user_id.return_value = []
+        external = UserIdentitiesEntity(
+            user_id=_USER_ID,
+            subject_identifier="email|other",
+            identity_type="external",
+            email_claim="alice@gmail.com",
+        )
+        external.identity_id = 9
+        self.user_identities.list_by_user_id.return_value = [external]
+
+        result = await self.service.list_emails_and_identities(self.session, _USER_ID)
+
+        self.assertIsNone(result.internal_identity)
+        self.assertEqual(result.external_identities[0].identity_id, 9)
 
 
 if __name__ == "__main__":

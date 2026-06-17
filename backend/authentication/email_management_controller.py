@@ -14,10 +14,12 @@ from fastapi import APIRouter
 
 from backend.common.api_endpoints import (
     EMAIL_MANAGEMENT_INITIATE_ENDPOINT,
+    EMAIL_MANAGEMENT_LIST_ENDPOINT,
     EMAIL_MANAGEMENT_VERIFY_ENDPOINT,
 )
 from backend.common.fast_api_response_wrapper import api_response
 from backend.dto.email_management_dto import InitiateRequest, VerifyRequest
+from backend.dto.emails_view_dto import EmailsViewDto
 from backend.dto.user_context_dto import UserContextDto
 from backend.utils.permission_decorators import authenticate
 
@@ -47,6 +49,33 @@ class EmailManagementController:
             methods=["POST"],
             response_model=None,
         )
+        self.router.add_api_route(
+            EMAIL_MANAGEMENT_LIST_ENDPOINT,
+            endpoint=authenticate()(self.list_emails),
+            methods=["GET"],
+            response_model=None,
+        )
+
+    async def list_emails(self, current_user: UserContextDto):
+        """
+        Retrieve the caller's comprehensive email and identity view.
+
+        Backs the Settings page: returns every one of the caller's email rows
+        (each with an app-layer ``linked_identity_count``) alongside the single
+        ``internal_identity`` and the list of ``external_identities``.
+
+        Args:
+            current_user (UserContextDto): The authenticated user context.
+
+        Returns:
+            A standardized API response wrapping an ``EmailsViewDto``.
+        """
+        async with self._database.session() as session:
+            result: EmailsViewDto = await self._service.list_emails_and_identities(
+                session=session,
+                current_user_id=current_user.user_id,
+            )
+        return api_response(message="Emails and identities", data=result)
 
     async def initiate(self, current_user: UserContextDto, body: InitiateRequest):
         """
