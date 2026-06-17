@@ -1,65 +1,14 @@
 import React, { useState, useEffect } from "react";
 import "@/pages/Profile/modals/Modal.css";
-import { isValidEmail } from "@/pages/Profile/utils";
 import TimezoneSelector from "@/components/common/TimezoneSelector";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-
-/**
- * EmailFormItem renders a single email input with label, error handling, and delete option.
- *
- * @param {object} item - Email data { id, email, isPrimary }
- * @param {object} errors - Object mapping field keys to error messages
- * @param {function} onChange - Callback for input change
- * @param {function} onDelete - Callback for deleting this email
- */
-const EmailFormItem = ({ item, errors, onChange, onDelete }) => {
-  const errorKey = `${item.id}-email`;
-  const hasError = errors[errorKey];
-
-  return (
-    <div className="email-edit-item-container">
-      <div className="email-edit-item">
-        <input
-          type="text"
-          value={item.email || ""}
-          onChange={(e) => onChange(item.id, "email", e.target.value)}
-          readOnly={item.isPrimary}
-          disabled={item.isPrimary}
-          style={item.isPrimary ? { backgroundColor: "#f0f0f0" } : {}}
-          title={item.isPrimary ? "Primary email, cannot be modified" : ""}
-          className={`${item.isPrimary ? "primary-input" : ""} ${hasError ? "input-error" : ""}`}
-          placeholder={item.isPrimary ? "Primary email" : "Alternative email"}
-        />
-
-        <div className="email-type-label">
-          {item.isPrimary ? (
-            <Badge className="email-tag primary">Primary</Badge>
-          ) : (
-            <Badge className="email-tag alternative">Alternative</Badge>
-          )}
-        </div>
-
-        {!item.isPrimary && (
-          <Button
-            variant="destructive"
-            size="sm"
-            onClick={() => onDelete(item.id)}
-          >
-            -
-          </Button>
-        )}
-      </div>
-
-      {/* Display validation error for this email if exists */}
-      {hasError && <span className="error-text">{hasError}</span>}
-    </div>
-  );
-};
 
 /**
  * PersonalEditModal allows editing personal profile information including
- * name, timezone, LinkedIn, emails, and communication method.
+ * name, timezone, and LinkedIn. Email addresses are not editable here — they
+ * are managed on the Sign in & security settings page; this modal only passes
+ * the existing alternative emails through unchanged so a save never clears
+ * them.
  *
  * @param {boolean} isOpen - Controls modal visibility
  * @param {function} onClose - Callback to close the modal
@@ -101,44 +50,6 @@ const PersonalEditModal = ({
     });
   };
 
-  /** Handle changes for email inputs */
-  const handleEmailChange = (id, field, value) => {
-    setFormData((prev) => ({
-      ...prev,
-      emails: prev.emails.map((item) =>
-        item.id === id ? { ...item, [field]: value } : item,
-      ),
-    }));
-
-    // Remove email validation error for this field
-    setErrors((prev) => {
-      const next = { ...prev };
-      delete next[`${id}-${field}`];
-      return next;
-    });
-  };
-
-  /** Add a new alternative email row */
-  const handleAddEmail = () => {
-    const newEmail = {
-      id: `new-${Date.now()}`,
-      email: "",
-      isPrimary: false,
-    };
-    setFormData((prev) => ({
-      ...prev,
-      emails: [...(prev.emails || []), newEmail],
-    }));
-  };
-
-  /** Delete an alternative email */
-  const handleDeleteEmail = (id) => {
-    setFormData((prev) => ({
-      ...prev,
-      emails: prev.emails.filter((item) => item.id !== id),
-    }));
-  };
-
   /** Validate the entire form */
   const validate = () => {
     const newErrors = {};
@@ -150,16 +61,6 @@ const PersonalEditModal = ({
       newErrors.lastName = "Last name is required";
     if (!formData.timezone) newErrors.timezone = "Timezone is required";
 
-    // Validate all alternative emails
-    formData.emails?.forEach((item) => {
-      if (!item.isPrimary) {
-        const emailValue = item.email?.trim();
-        if (emailValue && !isValidEmail(emailValue)) {
-          newErrors[`${item.id}-email`] = "Invalid email format";
-        }
-      }
-    });
-
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -170,6 +71,9 @@ const PersonalEditModal = ({
 
     setIsSaving(true);
     try {
+      // Email is managed in Settings, not here. Pass the alternative emails
+      // loaded from the backend through unchanged so this save (a full
+      // overwrite server-side) never clears them.
       const validAltEmails = (formData.emails || [])
         .filter((e) => !e.isPrimary && e.email?.trim())
         .map((e) => e.email.trim());
@@ -273,34 +177,6 @@ const PersonalEditModal = ({
               value={formData.linkedin || ""}
               onChange={(e) => handleChange("linkedin", e.target.value)}
             />
-          </div>
-
-          {/* Email Section */}
-          <div className="email-edit-section border-t border-gray-200 mt-4 pt-4">
-            <div className="section-header">
-              <h3>Emails</h3>
-              <Button size="sm" onClick={handleAddEmail}>
-                +
-              </Button>
-            </div>
-            <p className="modal-info-text">
-              <strong>Primary Email:</strong> This is the email administrators
-              will use to contact you.
-              <br />
-              <strong>Alternative Email:</strong> Additional contacts.
-            </p>
-
-            <div className="email-list">
-              {formData.emails?.map((item) => (
-                <EmailFormItem
-                  key={item.id}
-                  item={item}
-                  errors={errors}
-                  onChange={handleEmailChange}
-                  onDelete={handleDeleteEmail}
-                />
-              ))}
-            </div>
           </div>
         </div>
 
