@@ -1,5 +1,6 @@
-import { render, screen, cleanup } from "@testing-library/react";
-import { describe, it, expect, afterEach } from "vitest";
+import { render, screen, cleanup, waitFor } from "@testing-library/react";
+import { describe, it, expect, afterEach, vi } from "vitest";
+import userEvent from "@testing-library/user-event";
 
 import EmailAddressList from "@/pages/SignInSecurity/components/EmailAddressList";
 
@@ -74,5 +75,122 @@ describe("EmailAddressList", () => {
 
     expect(screen.getByText("Verified")).toBeInTheDocument();
     expect(screen.getByText("Pending")).toBeInTheDocument();
+  });
+
+  describe("Set as primary action", () => {
+    it("offers Set as primary only for verified, non-primary emails", () => {
+      const emails = [
+        makeEmail({ emailId: 1, isPrimary: true, otpConfirmed: true }),
+        makeEmail({ emailId: 2, isPrimary: false, otpConfirmed: true }),
+        makeEmail({ emailId: 3, isPrimary: false, otpConfirmed: false }),
+      ];
+
+      render(
+        <EmailAddressList
+          emails={emails}
+          isLoading={false}
+          onSetPrimary={vi.fn()}
+        />,
+      );
+
+      // Only the verified, non-primary row (emailId 2) gets the button.
+      expect(
+        screen.getAllByRole("button", { name: "Set as primary" }),
+      ).toHaveLength(1);
+    });
+
+    it("does not offer Set as primary for the primary email", () => {
+      const emails = [makeEmail({ emailId: 1, isPrimary: true })];
+
+      render(
+        <EmailAddressList
+          emails={emails}
+          isLoading={false}
+          onSetPrimary={vi.fn()}
+        />,
+      );
+
+      expect(
+        screen.queryByRole("button", { name: "Set as primary" }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("does not offer Set as primary for an unverified email", () => {
+      const emails = [
+        makeEmail({ emailId: 1, isPrimary: false, otpConfirmed: false }),
+      ];
+
+      render(
+        <EmailAddressList
+          emails={emails}
+          isLoading={false}
+          onSetPrimary={vi.fn()}
+        />,
+      );
+
+      expect(
+        screen.queryByRole("button", { name: "Set as primary" }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("calls onSetPrimary with the row when clicked", async () => {
+      const user = userEvent.setup();
+      const onSetPrimary = vi.fn().mockResolvedValue();
+      const target = makeEmail({
+        emailId: 2,
+        email: "bob@gmail.com",
+        isPrimary: false,
+        otpConfirmed: true,
+      });
+
+      render(
+        <EmailAddressList
+          emails={[target]}
+          isLoading={false}
+          onSetPrimary={onSetPrimary}
+        />,
+      );
+
+      await user.click(screen.getByRole("button", { name: "Set as primary" }));
+
+      expect(onSetPrimary).toHaveBeenCalledWith(target);
+    });
+
+    it("shows a busy label and disables actions while promoting", async () => {
+      const user = userEvent.setup();
+      let resolve;
+      const onSetPrimary = vi.fn(
+        () =>
+          new Promise((r) => {
+            resolve = r;
+          }),
+      );
+      const emails = [
+        makeEmail({ emailId: 1, email: "a@gmail.com" }),
+        makeEmail({ emailId: 2, email: "b@gmail.com" }),
+      ];
+
+      render(
+        <EmailAddressList
+          emails={emails}
+          isLoading={false}
+          onSetPrimary={onSetPrimary}
+        />,
+      );
+
+      const buttons = screen.getAllByRole("button", { name: "Set as primary" });
+      await user.click(buttons[0]);
+
+      // The clicked row shows the busy label; every button is disabled.
+      expect(screen.getByText("Setting…")).toBeInTheDocument();
+      screen
+        .getAllByRole("button")
+        .forEach((button) => expect(button).toBeDisabled());
+
+      resolve();
+      await waitFor(() =>
+        expect(screen.queryByText("Setting…")).not.toBeInTheDocument(),
+      );
+    });
   });
 });
