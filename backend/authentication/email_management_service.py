@@ -153,7 +153,7 @@ class EmailManagementService:
         return {"ok": True, "linked_sub": new_sub, "email": target_email}
 
     async def list_emails_and_identities(
-        self, session, current_user_id: int
+        self, session, current_user_id: int, current_sub: str
     ) -> EmailsViewDto:
         """
         Assemble the comprehensive email/identity view for the Settings page.
@@ -162,11 +162,14 @@ class EmailManagementService:
         each address against the user's identity ``email_claim`` rows
         case-insensitively (no FK, application-layer join). Identities split into
         the single ``internal_identity`` (null for non-employees) and the
-        ``external_identities`` list.
+        ``external_identities`` list. The identity whose subject matches
+        ``current_sub`` (the primary the session is bound to) is flagged
+        ``is_current_session`` so the UI can badge it and withhold its unlink.
 
         Args:
             session (AsyncSession): The active async database session.
             current_user_id (int): user_id of the authenticated caller.
+            current_sub (str): JWT ``sub`` of the caller's session (the primary).
 
         Returns:
             EmailsViewDto: The caller's email rows plus their internal and
@@ -187,9 +190,9 @@ class EmailManagementService:
                 key = identity.email_claim.lower()
                 claim_counts[key] = claim_counts.get(key, 0) + 1
             if IdentityType.INTERNAL == identity.identity_type:
-                internal_identity = self._to_identity_dto(identity)
+                internal_identity = self._to_identity_dto(identity, current_sub)
             elif IdentityType.EXTERNAL == identity.identity_type:
-                external_identities.append(self._to_identity_dto(identity))
+                external_identities.append(self._to_identity_dto(identity, current_sub))
 
         email_views = [
             EmailEntryDto(
@@ -246,12 +249,13 @@ class EmailManagementService:
             )
 
     @staticmethod
-    def _to_identity_dto(identity) -> IdentityDto:
+    def _to_identity_dto(identity, current_sub: str) -> IdentityDto:
         """
         Map a user_identities row to an IdentityDto.
 
         Args:
             identity (UserIdentitiesEntity): The identity row to map.
+            current_sub (str): The session's primary sub; flags the matching row.
 
         Returns:
             IdentityDto: The mapped identity.
@@ -262,6 +266,7 @@ class EmailManagementService:
             email_claim=identity.email_claim,
             linked_at=identity.linked_at,
             last_used_at=identity.last_login_at,
+            is_current_session=identity.subject_identifier == current_sub,
         )
 
     async def initiate_set_primary(
