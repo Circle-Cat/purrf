@@ -34,8 +34,11 @@ const IdentityRow = ({ identity, internal, canUnlink, busyId, onUnlink }) => (
         </span>
       )}
       {internal && <Badge>Internal</Badge>}
+      {identity.isCurrentSession && (
+        <Badge variant="secondary">Primary sign-in</Badge>
+      )}
     </div>
-    {canUnlink && (
+    {canUnlink && !identity.isCurrentSession && (
       <Button
         size="sm"
         variant="ghost"
