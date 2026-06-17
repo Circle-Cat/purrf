@@ -1,8 +1,12 @@
-import { Badge } from "@/components/ui/badge";
 import React from "react";
+import { Link } from "react-router-dom";
+
+import { ROUTE_PATHS } from "@/constants/RoutePaths";
 import "@/pages/Profile/components/ContactSection.css";
 
 const ContactSection = ({ info }) => {
+  const primaryEmail = info.emails?.find((emailItem) => emailItem.isPrimary);
+
   return (
     <>
       {/* LinkedIn */}
@@ -19,23 +23,17 @@ const ContactSection = ({ info }) => {
         </div>
       </div>
 
-      {/* Emails */}
+      {/* Email — only the primary contact email, managed in Settings. */}
       <div className="section">
         <h3>Email</h3>
-        {info.emails &&
-          info.emails.map((emailItem) => (
-            <p key={emailItem.id} className="email-display-row section-text">
-              {emailItem.email}
-              {emailItem.isPrimary && (
-                <Badge className="email-tag primary">Primary Email</Badge>
-              )}
-              {!emailItem.isPrimary && (
-                <Badge className="email-tag alternative">
-                  Alternative Email
-                </Badge>
-              )}
-            </p>
-          ))}
+        {primaryEmail ? (
+          <p className="email-display-row section-text">{primaryEmail.email}</p>
+        ) : (
+          <p className="section-text">Not provided</p>
+        )}
+        <Link to={ROUTE_PATHS.SIGN_IN_SECURITY} className="manage-email-link">
+          Manage in Settings
+        </Link>
       </div>
     </>
   );

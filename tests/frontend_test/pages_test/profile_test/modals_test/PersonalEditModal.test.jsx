@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import React from "react";
 import PersonalEditModal from "@/pages/Profile/modals/PersonalEditModal";
@@ -80,13 +80,31 @@ describe("PersonalEditModal Component", () => {
     expect(
       screen.getByDisplayValue("Eastern Time (US & Canada)"),
     ).toBeInTheDocument();
+  });
 
-    const primaryInput = screen.getByDisplayValue("primary@example.com");
-    expect(primaryInput).toBeDisabled();
-    expect(primaryInput).toHaveAttribute("readonly");
+  it("does not render an email editing section", () => {
+    render(
+      <PersonalEditModal
+        isOpen={true}
+        onClose={mockOnClose}
+        initialData={initialData}
+        onSave={mockOnSave}
+        canEditTimezone={true}
+      />,
+    );
 
-    const altInput = screen.getByDisplayValue("alt@example.com");
-    expect(altInput).not.toBeDisabled();
+    // Email is managed in Settings now: no email inputs, no "Emails" heading,
+    // and no add-email button in this modal.
+    expect(
+      screen.queryByDisplayValue("primary@example.com"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByDisplayValue("alt@example.com"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: /emails/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "+" })).not.toBeInTheDocument();
   });
 
   it("should handle input changes and submit updated data", async () => {
@@ -118,6 +136,9 @@ describe("PersonalEditModal Component", () => {
           firstName: "Jane",
           preferredName: "Janey",
           lastName: "Doe",
+          // Alternative emails loaded from the backend are passed through
+          // unchanged so the save never clears them.
+          alternativeEmails: ["alt@example.com"],
         }),
       });
     });
@@ -144,42 +165,6 @@ describe("PersonalEditModal Component", () => {
 
     expect(screen.getByText("Last name is required")).toBeInTheDocument();
     expect(mockOnSave).not.toHaveBeenCalled();
-  });
-
-  it("should handle adding and removing alternative emails", async () => {
-    const user = userEvent.setup();
-    render(
-      <PersonalEditModal
-        isOpen={true}
-        onClose={mockOnClose}
-        initialData={initialData}
-        onSave={mockOnSave}
-      />,
-    );
-
-    const addBtn = screen.getByRole("button", { name: "+" });
-    await user.click(addBtn);
-
-    // New email input should be empty; find it by placeholder.
-    const emptyAltInputs = screen.getAllByPlaceholderText("Alternative email");
-    const newInput = emptyAltInputs.find((input) => input.value === "");
-    await user.type(newInput, "new-alt@test.com");
-
-    expect(screen.getByDisplayValue("new-alt@test.com")).toBeInTheDocument();
-
-    // Remove the existing alternative email ("alt@example.com")
-    // Locate the container for "alt@example.com" and click the delete button inside it
-    const altEmailContainer = screen
-      .getByDisplayValue("alt@example.com")
-      .closest(".email-edit-item");
-    const deleteBtn = within(altEmailContainer).getByRole("button", {
-      name: "-",
-    });
-    await user.click(deleteBtn);
-
-    expect(
-      screen.queryByDisplayValue("alt@example.com"),
-    ).not.toBeInTheDocument();
   });
 
   it("should disable timezone selector when canEditTimezone is false", () => {
