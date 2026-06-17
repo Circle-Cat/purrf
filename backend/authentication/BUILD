@@ -38,6 +38,7 @@ py_library(
         "//backend/common:exceptions",
         "//backend/common:identity_type",
         "//backend/common:permissions",
+        "//backend/dto",
         "//backend/entity:entities",
         "@pypi//pyjwt",
     ],

@@ -22,6 +22,11 @@ from backend.common.constants import is_company_email
 from backend.common.environment_constants import EMAIL_OTP_STATE_JWT_SECRET
 from backend.common.exceptions import ConflictError
 from backend.common.identity_type import IdentityType
+from backend.dto.emails_view_dto import (
+    EmailEntryDto,
+    EmailsViewDto,
+    IdentityDto,
+)
 from backend.entity.user_emails_entity import UserEmailsEntity
 from backend.entity.user_identities_entity import UserIdentitiesEntity
 
@@ -152,6 +157,82 @@ class EmailManagementService:
 
         self._sync_alias_best_effort(current_sub, target_email, current_user_id)
         return {"ok": True, "linked_sub": new_sub, "email": target_email}
+
+    async def list_emails_and_identities(
+        self, session, current_user_id: int
+    ) -> EmailsViewDto:
+        """
+        Assemble the comprehensive email/identity view for the Settings page.
+
+        emails[] carry a ``linked_identity_count`` computed in-memory by matching
+        each address against the user's identity ``email_claim`` rows
+        case-insensitively (no FK, application-layer join). Identities split into
+        the single ``internal_identity`` (null for non-employees) and the
+        ``external_identities`` list.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            current_user_id (int): user_id of the authenticated caller.
+
+        Returns:
+            EmailsViewDto: The caller's email rows plus their internal and
+            external identities.
+        """
+        emails = await self._user_emails.list_by_user_id(session, current_user_id)
+        identities = await self._user_identities.list_by_user_id(
+            session, current_user_id
+        )
+
+        # One pass over identities: tally the per-email_claim counts and split
+        # the rows into the single internal identity and the external list.
+        claim_counts: dict[str, int] = {}
+        internal_identity: IdentityDto | None = None
+        external_identities: list[IdentityDto] = []
+        for identity in identities:
+            if identity.email_claim is not None:
+                key = identity.email_claim.lower()
+                claim_counts[key] = claim_counts.get(key, 0) + 1
+            if IdentityType.INTERNAL == identity.identity_type:
+                internal_identity = self._to_identity_dto(identity)
+            elif IdentityType.EXTERNAL == identity.identity_type:
+                external_identities.append(self._to_identity_dto(identity))
+
+        email_views = [
+            EmailEntryDto(
+                email_id=row.email_id,
+                email=row.email,
+                otp_confirmed=row.otp_confirmed,
+                is_primary=row.is_primary,
+                added_at=row.added_at,
+                linked_identity_count=claim_counts.get(row.email.lower(), 0),
+            )
+            for row in emails
+        ]
+
+        return EmailsViewDto(
+            emails=email_views,
+            internal_identity=internal_identity,
+            external_identities=external_identities,
+        )
+
+    @staticmethod
+    def _to_identity_dto(identity) -> IdentityDto:
+        """
+        Map a user_identities row to an IdentityDto.
+
+        Args:
+            identity (UserIdentitiesEntity): The identity row to map.
+
+        Returns:
+            IdentityDto: The mapped identity.
+        """
+        return IdentityDto(
+            identity_id=identity.identity_id,
+            subject_identifier=identity.subject_identifier,
+            email_claim=identity.email_claim,
+            linked_at=identity.linked_at,
+            last_used_at=identity.last_login_at,
+        )
 
     def _decode_state(self, state: str) -> dict:
         """Decode and verify the state JWT; any JWT error becomes a ValueError."""

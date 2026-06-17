@@ -195,6 +195,44 @@ class TestUserIdentitiesRepository(BaseRepositoryTestLib):
         found = await self.repo.get_by_subject_identifier(self.session, "missing|sub")
         self.assertIsNone(found)
 
+    # list_by_user_id — all identity rows for one user
+    async def test_list_by_user_id_returns_all_rows(self):
+        internal = UserIdentitiesEntity(
+            user_id=self.user.user_id,
+            subject_identifier="google-oauth2|internal",
+            identity_type="internal",
+            email_claim="alice@circlecat.org",
+        )
+        external = UserIdentitiesEntity(
+            user_id=self.user.user_id,
+            subject_identifier="email|external",
+            identity_type="external",
+            email_claim="alice@gmail.com",
+        )
+        await self.insert_entities([internal, external])
+
+        other = _make_user()
+        await self.insert_entities([other])
+        await self.insert_entities([
+            UserIdentitiesEntity(
+                user_id=other.user_id,
+                subject_identifier="email|bob",
+                identity_type="external",
+                email_claim="bob@gmail.com",
+            )
+        ])
+
+        rows = await self.repo.list_by_user_id(self.session, self.user.user_id)
+
+        self.assertEqual(
+            {r.subject_identifier for r in rows},
+            {"google-oauth2|internal", "email|external"},
+        )
+
+    async def test_list_by_user_id_empty(self):
+        rows = await self.repo.list_by_user_id(self.session, self.user.user_id)
+        self.assertEqual(rows, [])
+
 
 if __name__ == "__main__":
     unittest.main()

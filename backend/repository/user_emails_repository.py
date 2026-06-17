@@ -27,6 +27,28 @@ class UserEmailsRepository:
         )
         return result.scalars().one_or_none()
 
+    async def list_by_user_id(
+        self, session: AsyncSession, user_id: int
+    ) -> list[UserEmailsEntity]:
+        """
+        Return all of this user's email rows (confirmed and pending), ordered by
+        email_id, to back the Settings comprehensive view.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            user_id (int): user_id whose email rows to list.
+
+        Returns:
+            list[UserEmailsEntity]: The user's email rows ordered by email_id;
+            empty when the user has none.
+        """
+        result = await session.execute(
+            select(UserEmailsEntity)
+            .where(UserEmailsEntity.user_id == user_id)
+            .order_by(UserEmailsEntity.email_id)
+        )
+        return list(result.scalars().all())
+
     async def exists_confirmed_on_other_user(
         self, session: AsyncSession, email: str, user_id: int
     ) -> bool:
