@@ -13,7 +13,7 @@ import { listEmails } from "@/api/emailApi";
  * @returns {{
  *   isLoading: boolean,
  *   emails: Array<object>,
- *   internalIdentity: object|null,
+ *   internalIdentities: Array<object>,
  *   externalIdentities: Array<object>,
  *   refresh: () => Promise<void>,
  * }}
@@ -21,7 +21,7 @@ import { listEmails } from "@/api/emailApi";
 export function useEmailSettings() {
   const [isLoading, setIsLoading] = useState(true);
   const [emails, setEmails] = useState([]);
-  const [internalIdentity, setInternalIdentity] = useState(null);
+  const [internalIdentities, setInternalIdentities] = useState([]);
   const [externalIdentities, setExternalIdentities] = useState([]);
 
   const load = useCallback(async () => {
@@ -29,7 +29,7 @@ export function useEmailSettings() {
     try {
       const { data } = await listEmails();
       setEmails(data?.emails ?? []);
-      setInternalIdentity(data?.internalIdentity ?? null);
+      setInternalIdentities(data?.internalIdentities ?? []);
       setExternalIdentities(data?.externalIdentities ?? []);
     } catch (error) {
       toast.error(
@@ -48,7 +48,7 @@ export function useEmailSettings() {
   return {
     isLoading,
     emails,
-    internalIdentity,
+    internalIdentities,
     externalIdentities,
     refresh: load,
   };

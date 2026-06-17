@@ -206,8 +206,8 @@ class EmailManagementController:
         Retrieve the caller's comprehensive email and identity view.
 
         Backs the Settings page: returns every one of the caller's email rows
-        (each with an app-layer ``linked_identity_count``) alongside the single
-        ``internal_identity`` and the list of ``external_identities``.
+        (each with an app-layer ``linked_identity_count``) alongside the list of
+        ``internal_identities`` and the list of ``external_identities``.
 
         Args:
             current_user (UserContextDto): The authenticated user context.

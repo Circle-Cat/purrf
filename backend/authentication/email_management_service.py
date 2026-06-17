@@ -161,8 +161,9 @@ class EmailManagementService:
         emails[] carry a ``linked_identity_count`` computed in-memory by matching
         each address against the user's identity ``email_claim`` rows
         case-insensitively (no FK, application-layer join). Identities split into
-        the single ``internal_identity`` (null for non-employees) and the
-        ``external_identities`` list. The identity whose subject matches
+        the ``internal_identities`` list (empty for non-employees; an employee
+        may hold more than one, e.g. an SSO login plus an OTP-linked corp email)
+        and the ``external_identities`` list. The identity whose subject matches
         ``current_sub`` (the primary the session is bound to) is flagged
         ``is_current_session`` so the UI can badge it and withhold its unlink.
 
@@ -181,16 +182,16 @@ class EmailManagementService:
         )
 
         # One pass over identities: tally the per-email_claim counts and split
-        # the rows into the single internal identity and the external list.
+        # the rows into the internal and external identity lists.
         claim_counts: dict[str, int] = {}
-        internal_identity: IdentityDto | None = None
+        internal_identities: list[IdentityDto] = []
         external_identities: list[IdentityDto] = []
         for identity in identities:
             if identity.email_claim is not None:
                 key = identity.email_claim.lower()
                 claim_counts[key] = claim_counts.get(key, 0) + 1
             if IdentityType.INTERNAL == identity.identity_type:
-                internal_identity = self._to_identity_dto(identity, current_sub)
+                internal_identities.append(self._to_identity_dto(identity, current_sub))
             elif IdentityType.EXTERNAL == identity.identity_type:
                 external_identities.append(self._to_identity_dto(identity, current_sub))
 
@@ -208,7 +209,7 @@ class EmailManagementService:
 
         return EmailsViewDto(
             emails=email_views,
-            internal_identity=internal_identity,
+            internal_identities=internal_identities,
             external_identities=external_identities,
         )
 
