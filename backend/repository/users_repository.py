@@ -1,5 +1,5 @@
 from backend.entity.users_entity import UsersEntity
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -115,3 +115,48 @@ class UsersRepository:
         await session.flush()
 
         return merged_entity
+
+    async def list_users(
+        self,
+        session: AsyncSession,
+        *,
+        search: str | None = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> tuple[list[UsersEntity], int]:
+        """
+        Paginated user list with optional case-insensitive substring search over
+        first_name / last_name / primary_email.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            search (str | None): Case-insensitive substring; None lists everyone.
+            limit (int): Max rows to return.
+            offset (int): Rows to skip (for pagination).
+
+        Returns:
+            tuple[list[UsersEntity], int]: (page rows ordered by user_id, total
+            number of rows matching the search across all pages).
+        """
+        filters = []
+        if search:
+            pattern = f"%{search.lower()}%"
+            filters.append(
+                or_(
+                    func.lower(UsersEntity.first_name).like(pattern),
+                    func.lower(UsersEntity.last_name).like(pattern),
+                    func.lower(UsersEntity.primary_email).like(pattern),
+                )
+            )
+
+        total = await session.scalar(
+            select(func.count()).select_from(UsersEntity).where(*filters)
+        )
+        result = await session.execute(
+            select(UsersEntity)
+            .where(*filters)
+            .order_by(UsersEntity.user_id)
+            .limit(limit)
+            .offset(offset)
+        )
+        return list(result.scalars().all()), int(total or 0)

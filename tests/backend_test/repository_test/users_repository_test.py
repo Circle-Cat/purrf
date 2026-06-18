@@ -207,6 +207,51 @@ class TestUsersRepository(BaseRepositoryTestLib):
         self.assertFalse(user.is_active)
         self.assertEqual(user.subject_identifier, self.user_entity.subject_identifier)
 
+    def _make_user(self, *, first_name="T", last_name="U", email):
+        return UsersEntity(
+            first_name=first_name,
+            last_name=last_name,
+            timezone="UTC",
+            timezone_updated_at=datetime.now(timezone.utc),
+            communication_channel=CommunicationMethod.EMAIL,
+            primary_email=email,
+            is_active=True,
+            updated_timestamp=datetime.now(timezone.utc),
+            subject_identifier=str(uuid.uuid4()),
+        )
+
+    async def test_list_users_search_matches_and_paginates(self):
+        """A unique token isolates these rows from any pre-existing DB data."""
+        token = uuid.uuid4().hex[:10]
+        await self.insert_entities([
+            self._make_user(first_name="Zoe", email=f"zoe-{token}@example.com"),
+            self._make_user(first_name="Yan", email=f"yan-{token}@example.com"),
+        ])
+
+        page1, total = await self.repo.list_users(
+            self.session, search=token, limit=1, offset=0
+        )
+        self.assertEqual(total, 2)
+        self.assertEqual(len(page1), 1)
+
+        page2, total2 = await self.repo.list_users(
+            self.session, search=token, limit=1, offset=1
+        )
+        self.assertEqual(total2, 2)
+        self.assertEqual(len(page2), 1)
+        self.assertNotEqual(page1[0].user_id, page2[0].user_id)
+
+    async def test_list_users_search_is_case_insensitive_over_name_and_email(self):
+        token = uuid.uuid4().hex[:10]
+        await self.insert_entities([
+            self._make_user(first_name=f"Name{token}", email="byname@example.com"),
+        ])
+        by_name, total = await self.repo.list_users(
+            self.session, search=token.upper()
+        )
+        self.assertEqual(total, 1)
+        self.assertEqual(by_name[0].first_name, f"Name{token}")
+
 
 if __name__ == "__main__":
     unittest.main()
