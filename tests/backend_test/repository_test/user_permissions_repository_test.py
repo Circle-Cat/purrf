@@ -36,7 +36,10 @@ class TestUserPermissionsRepository(BaseRepositoryTestLib):
 
     async def test_get_grants_for_user_includes_and_excludes_revoked(self):
         await self.repo.grant(
-            self.session, self.u1.user_id, ["a.read", "b.read"], "admin",
+            self.session,
+            self.u1.user_id,
+            ["a.read", "b.read"],
+            "admin",
             granted_by=self.admin.user_id,
         )
         await self.repo.revoke(

@@ -246,9 +246,7 @@ class TestUsersRepository(BaseRepositoryTestLib):
         await self.insert_entities([
             self._make_user(first_name=f"Name{token}", email="byname@example.com"),
         ])
-        by_name, total = await self.repo.list_users(
-            self.session, search=token.upper()
-        )
+        by_name, total = await self.repo.list_users(self.session, search=token.upper())
         self.assertEqual(total, 1)
         self.assertEqual(by_name[0].first_name, f"Name{token}")
 

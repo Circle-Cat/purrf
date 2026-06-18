@@ -85,9 +85,7 @@ class PermissionAdminController:
             )
         return api_response(message="Users", data=view)
 
-    async def get_user_permissions(
-        self, current_user: UserContextDto, user_id: int
-    ):
+    async def get_user_permissions(self, current_user: UserContextDto, user_id: int):
         """A user's active permissions plus full grant/revoke history."""
         async with self._database.session() as session:
             view = await self._service.get_user_permissions(session, user_id)

@@ -50,9 +50,7 @@ class TestPermissionAdminController(unittest.TestCase):
         self.service.list_permission_catalog = MagicMock(
             return_value=["a.read", "b.read"]
         )
-        self.service.list_users = AsyncMock(
-            return_value=UserListDto(users=[], total=0)
-        )
+        self.service.list_users = AsyncMock(return_value=UserListDto(users=[], total=0))
         self.service.get_user_permissions = AsyncMock(
             return_value=UserPermissionsViewDto(user_id=1, active=[], history=[])
         )

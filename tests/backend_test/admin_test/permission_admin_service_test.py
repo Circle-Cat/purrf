@@ -52,8 +52,10 @@ class TestPermissionAdminService(unittest.IsolatedAsyncioTestCase):
     async def test_list_permission_users_rejects_unknown_permission(self):
         with self.assertRaises(ValueError):
             await self.service.list_permission_users(
-                self.session, "not.a.real.permission",
-                include_revoked=False, granted_source=None,
+                self.session,
+                "not.a.real.permission",
+                include_revoked=False,
+                granted_source=None,
             )
 
     async def test_list_permission_users_returns_grant_dtos(self):
@@ -61,8 +63,10 @@ class TestPermissionAdminService(unittest.IsolatedAsyncioTestCase):
             _grant(5, 7, "permission.manage")
         ]
         out = await self.service.list_permission_users(
-            self.session, "permission.manage",
-            include_revoked=False, granted_source=None,
+            self.session,
+            "permission.manage",
+            include_revoked=False,
+            granted_source=None,
         )
         self.assertEqual(len(out), 1)
         self.assertEqual(out[0].user_id, 7)
@@ -72,8 +76,12 @@ class TestPermissionAdminService(unittest.IsolatedAsyncioTestCase):
         self.users.list_users.return_value = (
             [
                 UsersEntity(
-                    user_id=1, primary_email="a@x.com", first_name="A",
-                    last_name="B", is_active=True, is_super_admin=False,
+                    user_id=1,
+                    primary_email="a@x.com",
+                    first_name="A",
+                    last_name="B",
+                    is_active=True,
+                    is_super_admin=False,
                 )
             ],
             1,
@@ -87,8 +95,12 @@ class TestPermissionAdminService(unittest.IsolatedAsyncioTestCase):
     async def test_list_audit_wraps_repo_result(self):
         self.perms.list_audit.return_value = ([_grant(1, 1, "system.sync")], 1)
         out = await self.service.list_audit(
-            self.session, user_id=None, permission_name=None,
-            action=None, limit=50, offset=0,
+            self.session,
+            user_id=None,
+            permission_name=None,
+            action=None,
+            limit=50,
+            offset=0,
         )
         self.assertEqual(out.total, 1)
         self.assertEqual(out.entries[0].permission_name, "system.sync")
