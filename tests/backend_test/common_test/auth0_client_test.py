@@ -119,7 +119,7 @@ class TestAuth0Client(unittest.TestCase):
         )
         mock_requests.patch.return_value = _response(200, {})
         with patch.object(self.client, "_get_m2m_token", return_value="m2m"):
-            self.client.add_alias_email_to_primary("google-oauth2|1", "b@x.com")
+            self.client.add_alias_email_to_account_root("google-oauth2|1", "b@x.com")
         mock_requests.patch.assert_called_once()
         sent = mock_requests.patch.call_args.kwargs["json"]
         self.assertEqual(sent["app_metadata"]["alias_emails"], ["a@x.com", "b@x.com"])
@@ -130,7 +130,7 @@ class TestAuth0Client(unittest.TestCase):
             200, {"app_metadata": {"alias_emails": ["b@x.com"]}}
         )
         with patch.object(self.client, "_get_m2m_token", return_value="m2m"):
-            self.client.add_alias_email_to_primary("google-oauth2|1", "B@x.com")
+            self.client.add_alias_email_to_account_root("google-oauth2|1", "B@x.com")
         mock_requests.patch.assert_not_called()
 
     @patch("backend.common.auth0_client.requests")
@@ -172,7 +172,9 @@ class TestAuth0Client(unittest.TestCase):
         )
         mock_requests.patch.return_value = _response(200, {})
         with patch.object(self.client, "_get_m2m_token", return_value="m2m"):
-            self.client.remove_alias_email_from_primary("google-oauth2|1", "B@x.com")
+            self.client.remove_alias_email_from_account_root(
+                "google-oauth2|1", "B@x.com"
+            )
         mock_requests.patch.assert_called_once()
         sent = mock_requests.patch.call_args.kwargs["json"]
         self.assertEqual(sent["app_metadata"]["alias_emails"], ["a@x.com"])
@@ -183,7 +185,9 @@ class TestAuth0Client(unittest.TestCase):
             200, {"app_metadata": {"alias_emails": ["a@x.com"]}}
         )
         with patch.object(self.client, "_get_m2m_token", return_value="m2m"):
-            self.client.remove_alias_email_from_primary("google-oauth2|1", "b@x.com")
+            self.client.remove_alias_email_from_account_root(
+                "google-oauth2|1", "b@x.com"
+            )
         mock_requests.patch.assert_not_called()
 
 
