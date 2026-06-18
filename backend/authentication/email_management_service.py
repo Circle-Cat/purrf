@@ -435,8 +435,19 @@ class EmailManagementService:
             session, user_id, email
         )
         if existing is not None:
+            changed = False
             if not existing.otp_confirmed:
                 existing.otp_confirmed = True
+                changed = True
+            # A migration-backfilled row starts unconfirmed and non-primary;
+            # confirming the user's first usable address must also make it
+            # primary so they always have a notification target.
+            if not existing.is_primary and not await self._user_emails.has_primary(
+                session, user_id
+            ):
+                existing.is_primary = True
+                changed = True
+            if changed:
                 await self._user_emails.upsert_email(session=session, entity=existing)
             return
 
