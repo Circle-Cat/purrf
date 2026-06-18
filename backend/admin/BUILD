@@ -10,3 +10,17 @@ py_library(
         "//backend/dto",
     ],
 )
+
+py_library(
+    name = "permission_admin_controller",
+    srcs = ["permission_admin_controller.py"],
+    deps = [
+        ":permission_admin_service",
+        "//backend/common:api_endpoints",
+        "//backend/common:fast_api_response_wrapper",
+        "//backend/common:permissions",
+        "//backend/dto",
+        "//backend/utils:permission_decorators",
+        "@pypi//fastapi",
+    ],
+)

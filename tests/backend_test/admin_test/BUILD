@@ -9,3 +9,16 @@ py_test(
         "//backend/entity:entities",
     ],
 )
+
+py_test(
+    name = "permission_admin_controller_test",
+    srcs = ["permission_admin_controller_test.py"],
+    deps = [
+        "//backend/admin:permission_admin_controller",
+        "//backend/common:api_endpoints",
+        "//backend/common:permissions",
+        "//backend/dto",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+    ],
+)
