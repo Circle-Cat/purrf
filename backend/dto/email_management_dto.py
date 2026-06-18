@@ -8,3 +8,8 @@ class InitiateRequest(BaseRequestDto):
 class VerifyRequest(BaseRequestDto):
     state: str
     otp: str
+
+
+class OtpConfirmRequest(BaseRequestDto):
+    state: str
+    code: str

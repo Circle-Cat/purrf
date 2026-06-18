@@ -2,7 +2,8 @@ from datetime import datetime
 
 from backend.entity.user_identities_entity import UserIdentitiesEntity
 from backend.entity.users_entity import UsersEntity
-from sqlalchemy import or_, select, update
+from backend.common.identity_type import IdentityType
+from sqlalchemy import and_, delete, exists, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -53,6 +54,82 @@ class UserIdentitiesRepository:
         if row is None:
             return None
         return row[0], row[1], row[2]
+
+    async def list_by_user_id(
+        self, session: AsyncSession, user_id: int
+    ) -> list[UserIdentitiesEntity]:
+        """
+        Return all of this user's identity rows, ordered by identity_id, to back
+        the Settings comprehensive view (internal + external identities).
+
+        Args:
+            session (AsyncSession): The active async database session.
+            user_id (int): user_id whose identity rows to list.
+
+        Returns:
+            list[UserIdentitiesEntity]: The user's identity rows ordered by
+            identity_id; empty when the user has none.
+        """
+        result = await session.execute(
+            select(UserIdentitiesEntity)
+            .where(UserIdentitiesEntity.user_id == user_id)
+            .order_by(UserIdentitiesEntity.identity_id)
+        )
+        return list(result.scalars().all())
+
+    async def list_by_user(
+        self, session: AsyncSession, user_id: int
+    ) -> list[UserIdentitiesEntity]:
+        """
+        Return all of this user's identity rows, backing the unlink flow's
+        only-remaining / still-claimed checks.
+
+        Thin alias of :meth:`list_by_user_id` so the query lives in one place.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            user_id (int): user_id whose identity rows to list.
+
+        Returns:
+            list[UserIdentitiesEntity]: The user's identity rows ordered by
+            identity_id; empty when the user has none.
+        """
+        return await self.list_by_user_id(session, user_id)
+
+    async def get_by_id(
+        self, session: AsyncSession, identity_id: int
+    ) -> UserIdentitiesEntity | None:
+        """
+        Fetch a single identity row by its primary key.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            identity_id (int): identity_id to look up.
+
+        Returns:
+            UserIdentitiesEntity | None: The row if found; otherwise None.
+        """
+        result = await session.execute(
+            select(UserIdentitiesEntity).where(
+                UserIdentitiesEntity.identity_id == identity_id
+            )
+        )
+        return result.scalars().one_or_none()
+
+    async def delete(self, session: AsyncSession, identity_id: int) -> None:
+        """
+        Remove one identity row by primary key, backing the unlink flow.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            identity_id (int): identity_id of the row to delete.
+        """
+        await session.execute(
+            delete(UserIdentitiesEntity).where(
+                UserIdentitiesEntity.identity_id == identity_id
+            )
+        )
+        await session.flush()
 
     async def find_swappable_by_email(
         self, session: AsyncSession, email_claim: str
@@ -152,3 +229,30 @@ class UserIdentitiesRepository:
             )
         )
         return result.scalars().one_or_none()
+
+    async def exists_active_internal(self, session: AsyncSession, user_id: int) -> bool:
+        """
+        Whether ``user_id`` is an active user holding at least one INTERNAL
+        identity — the "still-employed Circle Cat staffer" check — resolved in a
+        single EXISTS over the users/user_identities JOIN. A missing user or an
+        inactive one yields no matching row and so returns False, matching the
+        prior two-query semantics in one round-trip.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            user_id (int): user_id to evaluate.
+
+        Returns:
+            bool: True when active and internal-identity-bearing; else False.
+        """
+        stmt = select(
+            exists().where(
+                and_(
+                    UsersEntity.user_id == user_id,
+                    UsersEntity.is_active.is_(True),
+                    UserIdentitiesEntity.user_id == UsersEntity.user_id,
+                    UserIdentitiesEntity.identity_type == IdentityType.INTERNAL,
+                )
+            )
+        )
+        return bool(await session.scalar(stmt))

@@ -1,6 +1,19 @@
 MY_PERMISSIONS = "/permissions/me"
+EMAIL_MANAGEMENT_LIST_ENDPOINT = "/auth/emails"
 EMAIL_MANAGEMENT_INITIATE_ENDPOINT = "/auth/emails/initiate"
 EMAIL_MANAGEMENT_VERIFY_ENDPOINT = "/auth/emails/verify"
+EMAIL_MANAGEMENT_SET_PRIMARY_INITIATE_ENDPOINT = (
+    "/auth/emails/{email_id}/primary/initiate"
+)
+EMAIL_MANAGEMENT_SET_PRIMARY_CONFIRM_ENDPOINT = (
+    "/auth/emails/{email_id}/primary/confirm"
+)
+EMAIL_MANAGEMENT_UNLINK_INITIATE_ENDPOINT = (
+    "/auth/identities/{identity_id}/unlink/initiate"
+)
+EMAIL_MANAGEMENT_UNLINK_CONFIRM_ENDPOINT = (
+    "/auth/identities/{identity_id}/unlink/confirm"
+)
 GOOGLE_CHAT_SUBSCRIBE_ENDPOINT = "/google/chat/spaces/subscribe"
 MICROSOFT_CHAT_SUBSCRIBE_ENDPOINT = "/microsoft/chat/subscribe"
 
