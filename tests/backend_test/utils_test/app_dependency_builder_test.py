@@ -7,6 +7,8 @@ from backend.common.environment_constants import (
 )
 
 
+@patch("backend.utils.app_dependency_builder.PermissionAdminController")
+@patch("backend.utils.app_dependency_builder.PermissionAdminService")
 @patch("backend.utils.app_dependency_builder.EmailManagementController")
 @patch("backend.utils.app_dependency_builder.EmailManagementService")
 @patch("backend.utils.app_dependency_builder.Auth0Client")
@@ -158,6 +160,8 @@ class TestAppDependencyBuilder(TestCase):
         mock_auth0_client_cls,
         mock_email_management_service_cls,
         mock_email_management_controller_cls,
+        mock_permission_admin_service_cls,
+        mock_permission_admin_controller_cls,
     ):
         """
         Tests that the AppDependencyBuilder correctly instantiates and wires all its dependencies.
@@ -525,6 +529,7 @@ class TestAppDependencyBuilder(TestCase):
             profile_controller=mock_profile_controller_cls.return_value,
             mentorship_controller=mock_mentorship_controller_cls.return_value,
             email_management_controller=mock_email_management_controller_cls.return_value,
+            permission_admin_controller=mock_permission_admin_controller_cls.return_value,
             launchdarkly_client=mock_launchdarkly_client_cls.return_value,
             database=mock_database_cls.return_value,
             logger=mock_logger,
