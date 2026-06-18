@@ -16,6 +16,8 @@ from backend.dto.admin_permission_dto import (
 
 _VALID_PERMISSION_VALUES = frozenset(str(p) for p in Permission)
 _ADMIN_SOURCE = "admin"
+_SUPER_ADMIN_SOURCE = "super_admin_set"
+_SUPER_ADMIN_MARKER = "*"
 
 
 class PermissionAdminService:
@@ -54,17 +56,7 @@ class PermissionAdminService:
             session, search=search, limit=limit, offset=offset
         )
         return UserListDto(
-            users=[
-                AdminUserDto(
-                    user_id=u.user_id,
-                    primary_email=u.primary_email,
-                    first_name=u.first_name,
-                    last_name=u.last_name,
-                    is_active=u.is_active,
-                    is_super_admin=u.is_super_admin,
-                )
-                for u in rows
-            ],
+            users=[self._to_admin_user_dto(u) for u in rows],
             total=total,
         )
 
@@ -250,6 +242,90 @@ class PermissionAdminService:
             raise ValueError("User not found")
         await self._perms.revoke(session, user_id, names, revoked_by=revoked_by)
         return await self.get_user_permissions(session, user_id)
+
+    async def set_super_admin(
+        self, session, user_id: int, *, granted_by: int
+    ) -> AdminUserDto:
+        """
+        Promote a user to super-admin and record the audit marker row
+        (``granted_source='super_admin_set', permission_name='*'``). Caller
+        authorization (must itself be super-admin) is enforced in the controller.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            user_id (int): The user to promote.
+            granted_by (int): The acting super-admin's user id.
+
+        Returns:
+            AdminUserDto: The refreshed user row (is_super_admin True).
+
+        Raises:
+            ValueError: If no user has ``user_id`` (400).
+        """
+        user = await self._users.get_user_by_user_id(session, user_id)
+        if user is None:
+            raise ValueError("User not found")
+        await self._users.set_super_admin(session, user_id, True)
+        await self._perms.grant(
+            session,
+            user_id,
+            [_SUPER_ADMIN_MARKER],
+            granted_source=_SUPER_ADMIN_SOURCE,
+            granted_by=granted_by,
+        )
+        user.is_super_admin = True
+        return self._to_admin_user_dto(user)
+
+    async def revoke_super_admin(
+        self, session, user_id: int, *, caller_user_id: int, revoked_by: int
+    ) -> AdminUserDto:
+        """
+        Demote a super-admin and soft-delete the audit marker row. A caller may
+        not revoke their own super-admin status.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            user_id (int): The user to demote.
+            caller_user_id (int): The acting user's id (self-revoke guard).
+            revoked_by (int): The acting user's id (audit attribution).
+
+        Returns:
+            AdminUserDto: The refreshed user row (is_super_admin False).
+
+        Raises:
+            ValueError: On self-revoke or unknown user (400).
+        """
+        if user_id == caller_user_id:
+            raise ValueError("Cannot revoke your own super-admin status")
+        user = await self._users.get_user_by_user_id(session, user_id)
+        if user is None:
+            raise ValueError("User not found")
+        await self._users.set_super_admin(session, user_id, False)
+        await self._perms.revoke_by_source(
+            session, user_id, _SUPER_ADMIN_SOURCE, revoked_by=revoked_by
+        )
+        user.is_super_admin = False
+        return self._to_admin_user_dto(user)
+
+    @staticmethod
+    def _to_admin_user_dto(user) -> AdminUserDto:
+        """
+        Map a UsersEntity to an AdminUserDto.
+
+        Args:
+            user (UsersEntity): The user row.
+
+        Returns:
+            AdminUserDto: The serializable view.
+        """
+        return AdminUserDto(
+            user_id=user.user_id,
+            primary_email=user.primary_email,
+            first_name=user.first_name,
+            last_name=user.last_name,
+            is_active=user.is_active,
+            is_super_admin=user.is_super_admin,
+        )
 
     @staticmethod
     def _to_grant_dto(row) -> GrantDto:

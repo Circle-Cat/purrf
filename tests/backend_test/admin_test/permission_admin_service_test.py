@@ -169,5 +169,53 @@ class TestPermissionAdminService(unittest.IsolatedAsyncioTestCase):
             )
 
 
+    async def test_set_super_admin_updates_flag_and_writes_marker(self):
+        self.users.get_user_by_user_id.return_value = UsersEntity(
+            user_id=2,
+            primary_email="s@x.com",
+            first_name="S",
+            last_name="A",
+            is_active=True,
+            is_super_admin=False,
+        )
+        self.users.set_super_admin.return_value = 1
+        dto = await self.service.set_super_admin(self.session, 2, granted_by=9)
+        self.users.set_super_admin.assert_awaited_once_with(self.session, 2, True)
+        self.perms.grant.assert_awaited_once()
+        args, kwargs = self.perms.grant.await_args
+        self.assertEqual(kwargs.get("granted_source"), "super_admin_set")
+        names = args[2] if len(args) > 2 else kwargs["permission_names"]
+        self.assertEqual(list(names), ["*"])
+        self.assertTrue(dto.is_super_admin)
+
+    async def test_set_super_admin_missing_user_raises(self):
+        self.users.get_user_by_user_id.return_value = None
+        with self.assertRaises(ValueError):
+            await self.service.set_super_admin(self.session, 999, granted_by=9)
+
+    async def test_revoke_super_admin_self_raises(self):
+        with self.assertRaises(ValueError):
+            await self.service.revoke_super_admin(
+                self.session, 9, caller_user_id=9, revoked_by=9
+            )
+
+    async def test_revoke_super_admin_clears_flag_and_marker(self):
+        self.users.get_user_by_user_id.return_value = UsersEntity(
+            user_id=2,
+            primary_email="s@x.com",
+            first_name="S",
+            last_name="A",
+            is_active=True,
+            is_super_admin=True,
+        )
+        self.users.set_super_admin.return_value = 1
+        dto = await self.service.revoke_super_admin(
+            self.session, 2, caller_user_id=9, revoked_by=9
+        )
+        self.users.set_super_admin.assert_awaited_once_with(self.session, 2, False)
+        self.perms.revoke_by_source.assert_awaited_once()
+        self.assertFalse(dto.is_super_admin)
+
+
 if __name__ == "__main__":
     unittest.main()
