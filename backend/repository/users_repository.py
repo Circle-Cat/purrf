@@ -1,5 +1,5 @@
 from backend.entity.users_entity import UsersEntity
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -160,3 +160,25 @@ class UsersRepository:
             .offset(offset)
         )
         return list(result.scalars().all()), int(total or 0)
+
+    async def set_super_admin(
+        self, session: AsyncSession, user_id: int, is_super_admin: bool
+    ) -> int:
+        """
+        Set a user's super-admin flag.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            user_id (int): The user to update.
+            is_super_admin (bool): The new flag value.
+
+        Returns:
+            int: The number of rows updated (0 if no user has ``user_id``).
+        """
+        result = await session.execute(
+            update(UsersEntity)
+            .where(UsersEntity.user_id == user_id)
+            .values(is_super_admin=is_super_admin)
+        )
+        await session.flush()
+        return result.rowcount
