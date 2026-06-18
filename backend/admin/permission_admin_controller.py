@@ -65,7 +65,15 @@ class PermissionAdminController:
         )
 
     async def list_permissions(self, current_user: UserContextDto):
-        """Return the grantable permission catalog (the code enum)."""
+        """
+        Return the grantable permission catalog (the code enum).
+
+        Args:
+            current_user (UserContextDto): The authenticated caller (injected).
+
+        Returns:
+            A standardized API response wrapping ``{"permissions": [...]}``.
+        """
         return api_response(
             message="Permission catalog",
             data={"permissions": self._service.list_permission_catalog()},
@@ -78,7 +86,18 @@ class PermissionAdminController:
         limit: int = 20,
         offset: int = 0,
     ):
-        """Paginated user list with optional email/name search."""
+        """
+        Paginated user list with optional email/name search.
+
+        Args:
+            current_user (UserContextDto): The authenticated caller (injected).
+            search (str | None): Case-insensitive name/email substring filter.
+            limit (int): Page size.
+            offset (int): Rows to skip (pagination).
+
+        Returns:
+            A standardized API response wrapping a ``UserListDto``.
+        """
         async with self._database.session() as session:
             view = await self._service.list_users(
                 session, search=search, limit=limit, offset=offset
@@ -86,7 +105,17 @@ class PermissionAdminController:
         return api_response(message="Users", data=view)
 
     async def get_user_permissions(self, current_user: UserContextDto, user_id: int):
-        """A user's active permissions plus full grant/revoke history."""
+        """
+        A user's active permissions plus full grant/revoke history.
+
+        Args:
+            current_user (UserContextDto): The authenticated caller (injected).
+            user_id (int): Target user, from the path.
+
+        Returns:
+            A standardized API response wrapping a ``UserPermissionsViewDto``.
+            Unknown ``user_id`` surfaces as 400 from the service.
+        """
         async with self._database.session() as session:
             view = await self._service.get_user_permissions(session, user_id)
         return api_response(message="User permissions", data=view)
@@ -98,7 +127,19 @@ class PermissionAdminController:
         include_revoked: bool = False,
         granted_source: str | None = None,
     ):
-        """Reverse lookup: who holds a given permission."""
+        """
+        Reverse lookup: who holds a given permission.
+
+        Args:
+            current_user (UserContextDto): The authenticated caller (injected).
+            permission_name (str): Permission to find holders of, from the path.
+            include_revoked (bool): Include soft-deleted grants when True.
+            granted_source (str | None): Restrict to one grant source, or any.
+
+        Returns:
+            A standardized API response wrapping ``{"grants": [GrantDto, ...]}``.
+            Unknown ``permission_name`` surfaces as 400 from the service.
+        """
         async with self._database.session() as session:
             grants = await self._service.list_permission_users(
                 session,
@@ -117,7 +158,20 @@ class PermissionAdminController:
         limit: int = 50,
         offset: int = 0,
     ):
-        """Global permission-change audit feed (the soft-delete grant rows)."""
+        """
+        Global permission-change audit feed (the soft-delete grant rows).
+
+        Args:
+            current_user (UserContextDto): The authenticated caller (injected).
+            user_id (int | None): Restrict to one user, or None for all.
+            permission_name (str | None): Restrict to one permission, or None.
+            action (str | None): 'granted' / 'revoked' / None.
+            limit (int): Page size.
+            offset (int): Rows to skip (pagination).
+
+        Returns:
+            A standardized API response wrapping an ``AuditListDto``.
+        """
         async with self._database.session() as session:
             view = await self._service.list_audit(
                 session,

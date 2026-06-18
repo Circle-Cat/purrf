@@ -19,6 +19,13 @@ _VALID_PERMISSION_VALUES = frozenset(str(p) for p in Permission)
 
 class PermissionAdminService:
     def __init__(self, users_repository, user_permissions_repository):
+        """
+        Args:
+            users_repository (UsersRepository): Repository for user rows
+                (list/search and single lookups).
+            user_permissions_repository (UserPermissionsRepository): Repository
+                for grant rows (active permissions, history, reverse lookup, audit).
+        """
         self._users = users_repository
         self._perms = user_permissions_repository
 
@@ -29,6 +36,19 @@ class PermissionAdminService:
     async def list_users(
         self, session, *, search: str | None, limit: int, offset: int
     ) -> UserListDto:
+        """
+        Paginated user list for the admin UI.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            search (str | None): Case-insensitive substring over name/email;
+                None lists everyone.
+            limit (int): Max users per page.
+            offset (int): Users to skip (for pagination).
+
+        Returns:
+            UserListDto: The page of users plus the total match count.
+        """
         rows, total = await self._users.list_users(
             session, search=search, limit=limit, offset=offset
         )
@@ -50,6 +70,20 @@ class PermissionAdminService:
     async def get_user_permissions(
         self, session, user_id: int
     ) -> UserPermissionsViewDto:
+        """
+        A user's active permissions plus their full grant/revoke history.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            user_id (int): The user to inspect.
+
+        Returns:
+            UserPermissionsViewDto: Active permission names and the ordered
+            grant history.
+
+        Raises:
+            ValueError: If no user exists with ``user_id`` (surfaces as 400).
+        """
         user = await self._users.get_user_by_user_id(session, user_id)
         if user is None:
             raise ValueError("User not found")
@@ -68,6 +102,23 @@ class PermissionAdminService:
         include_revoked: bool,
         granted_source: str | None,
     ) -> list[GrantDto]:
+        """
+        Reverse lookup: the grants holding a given permission.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            permission_name (str): Permission to find holders of; validated
+                against the code enum.
+            include_revoked (bool): Include soft-deleted grants when True.
+            granted_source (str | None): Restrict to one source, or None for any.
+
+        Returns:
+            list[GrantDto]: Matching grant rows, newest first.
+
+        Raises:
+            ValueError: If ``permission_name`` is not a known permission
+                (surfaces as 400).
+        """
         if permission_name not in _VALID_PERMISSION_VALUES:
             raise ValueError("Unknown permission")
         rows = await self._perms.get_users_with_permission(
@@ -88,6 +139,20 @@ class PermissionAdminService:
         limit: int,
         offset: int,
     ) -> AuditListDto:
+        """
+        Global permission-change audit feed.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            user_id (int | None): Restrict to one user, or None for all.
+            permission_name (str | None): Restrict to one permission, or None.
+            action (str | None): 'granted' / 'revoked' / None (see repository).
+            limit (int): Max entries per page.
+            offset (int): Entries to skip (for pagination).
+
+        Returns:
+            AuditListDto: The page of audit entries plus the total match count.
+        """
         rows, total = await self._perms.list_audit(
             session,
             user_id=user_id,
@@ -100,6 +165,16 @@ class PermissionAdminService:
 
     @staticmethod
     def _to_grant_dto(row) -> GrantDto:
+        """
+        Map a UserPermissionsEntity row to a GrantDto, deriving ``is_active``
+        from whether the row has been revoked.
+
+        Args:
+            row (UserPermissionsEntity): The grant row to map.
+
+        Returns:
+            GrantDto: The serializable view of the grant.
+        """
         return GrantDto(
             id=row.id,
             user_id=row.user_id,

@@ -69,7 +69,19 @@ class UserPermissionsRepository:
     async def get_grants_for_user(
         self, session: AsyncSession, user_id: int, *, include_revoked: bool = True
     ) -> list[UserPermissionsEntity]:
-        """Grant rows for a user, newest first (active + history unless filtered)."""
+        """
+        Fetch a user's grant rows, newest first.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            user_id (int): The user whose grants to fetch.
+            include_revoked (bool): When True, return the full history (active
+                plus soft-deleted rows); when False, only currently-active rows.
+
+        Returns:
+            list[UserPermissionsEntity]: Matching rows ordered by
+            ``granted_timestamp`` descending.
+        """
         stmt = select(UserPermissionsEntity).where(
             UserPermissionsEntity.user_id == user_id
         )
@@ -86,7 +98,21 @@ class UserPermissionsRepository:
         include_revoked: bool = False,
         granted_source: str | None = None,
     ) -> list[UserPermissionsEntity]:
-        """Reverse lookup: grant rows holding a given permission, newest first."""
+        """
+        Reverse lookup: grant rows holding a given permission, newest first.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            permission_name (str): The permission to look up holders of.
+            include_revoked (bool): When True, include soft-deleted rows as well
+                as active ones; when False, only currently-active grants.
+            granted_source (str | None): When set, restrict to rows granted from
+                this source (e.g. 'admin', 'system_internal'); None means any.
+
+        Returns:
+            list[UserPermissionsEntity]: Matching rows ordered by
+            ``granted_timestamp`` descending.
+        """
         stmt = select(UserPermissionsEntity).where(
             UserPermissionsEntity.permission_name == str(permission_name)
         )
@@ -110,8 +136,19 @@ class UserPermissionsRepository:
         """
         Global audit feed over the soft-delete grant rows, newest first.
 
-        ``action='granted'`` keeps active rows, ``'revoked'`` keeps soft-deleted
-        rows, ``None`` keeps all. Returns (page rows, total matching count).
+        Args:
+            session (AsyncSession): The active async database session.
+            user_id (int | None): When set, restrict to one user's rows.
+            permission_name (str | None): When set, restrict to one permission.
+            action (str | None): ``'granted'`` keeps currently-active rows,
+                ``'revoked'`` keeps soft-deleted rows, ``None`` keeps both.
+            limit (int): Max rows to return on this page.
+            offset (int): Rows to skip (for pagination).
+
+        Returns:
+            tuple[list[UserPermissionsEntity], int]: (page rows ordered by
+            ``granted_timestamp`` descending, total rows matching the filters
+            across all pages).
         """
         filters = []
         if user_id is not None:
