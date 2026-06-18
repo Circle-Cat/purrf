@@ -289,6 +289,48 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         self.user_identities.upsert_identity.assert_not_called()
         self.session.commit.assert_awaited_once()
 
+    async def test_verify_promotes_existing_row_to_primary_when_user_has_no_primary(
+        self,
+    ):
+        # Migration-backfilled users carry an unconfirmed, non-primary
+        # user_emails row. Confirming it via OTP must also make it primary when
+        # the user still has no primary, so they end up with a notification
+        # target rather than a confirmed-but-orphaned address.
+        existing_email = UserEmailsEntity(
+            user_id=_USER_ID, email=_TARGET_EMAIL, otp_confirmed=False, is_primary=False
+        )
+        self.user_emails.get_by_user_and_email.return_value = existing_email
+        self.user_emails.has_primary.return_value = False
+        self.user_identities.get_by_subject_identifier.return_value = (
+            UserIdentitiesEntity(user_id=_USER_ID, subject_identifier=_NEW_SUB)
+        )
+
+        await self.service.verify(
+            self.session, _USER_ID, _CURRENT_SUB, _state(), "123456"
+        )
+
+        self.assertTrue(existing_email.otp_confirmed)
+        self.assertTrue(existing_email.is_primary)
+
+    async def test_verify_existing_row_stays_secondary_when_primary_exists(self):
+        # If the user already has a primary, confirming an existing secondary
+        # row must not steal primary from it.
+        existing_email = UserEmailsEntity(
+            user_id=_USER_ID, email=_TARGET_EMAIL, otp_confirmed=False, is_primary=False
+        )
+        self.user_emails.get_by_user_and_email.return_value = existing_email
+        self.user_emails.has_primary.return_value = True
+        self.user_identities.get_by_subject_identifier.return_value = (
+            UserIdentitiesEntity(user_id=_USER_ID, subject_identifier=_NEW_SUB)
+        )
+
+        await self.service.verify(
+            self.session, _USER_ID, _CURRENT_SUB, _state(), "123456"
+        )
+
+        self.assertTrue(existing_email.otp_confirmed)
+        self.assertFalse(existing_email.is_primary)
+
     async def test_verify_succeeds_even_if_alias_sync_fails(self):
         self.auth0.add_alias_email_to_primary.side_effect = RuntimeError("auth0 down")
         result = await self.service.verify(
