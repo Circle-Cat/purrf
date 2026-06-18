@@ -14,8 +14,12 @@ vi.mock("@/pages/Profile/components/ProfileHeader", () => ({
   ),
 }));
 
-vi.mock("@/pages/Profile/components/ContactSection", () => ({
-  default: () => <div data-testid="contact-section">Contact Section</div>,
+vi.mock("@/pages/Profile/components/LinkedInSection", () => ({
+  default: () => <div data-testid="linkedin-section">LinkedIn Section</div>,
+}));
+
+vi.mock("@/pages/Profile/components/EmailSection", () => ({
+  default: () => <div data-testid="email-section">Email Section</div>,
 }));
 
 vi.mock("@/pages/Profile/components/ExperienceSection", () => ({
@@ -100,7 +104,8 @@ describe("Profile Component", () => {
 
     expect(screen.queryByText("Loading profile...")).not.toBeInTheDocument();
     expect(screen.getByTestId("profile-header")).toBeInTheDocument();
-    expect(screen.getByTestId("contact-section")).toBeInTheDocument();
+    expect(screen.getByTestId("linkedin-section")).toBeInTheDocument();
+    expect(screen.getByTestId("email-section")).toBeInTheDocument();
     expect(screen.getByTestId("experience-section")).toBeInTheDocument();
     expect(screen.getByTestId("education-section")).toBeInTheDocument();
     expect(screen.getByTestId("training-section")).toBeInTheDocument();
