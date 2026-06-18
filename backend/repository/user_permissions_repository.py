@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from collections.abc import Iterable
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.entity.user_permissions_entity import UserPermissionsEntity
@@ -65,6 +65,78 @@ class UserPermissionsRepository:
             .values(revoked_by=revoked_by, revoked_timestamp=datetime.now(timezone.utc))
         )
         await session.flush()
+
+    async def get_grants_for_user(
+        self, session: AsyncSession, user_id: int, *, include_revoked: bool = True
+    ) -> list[UserPermissionsEntity]:
+        """Grant rows for a user, newest first (active + history unless filtered)."""
+        stmt = select(UserPermissionsEntity).where(
+            UserPermissionsEntity.user_id == user_id
+        )
+        if not include_revoked:
+            stmt = stmt.where(UserPermissionsEntity.revoked_timestamp.is_(None))
+        stmt = stmt.order_by(UserPermissionsEntity.granted_timestamp.desc())
+        return list((await session.execute(stmt)).scalars().all())
+
+    async def get_users_with_permission(
+        self,
+        session: AsyncSession,
+        permission_name: str,
+        *,
+        include_revoked: bool = False,
+        granted_source: str | None = None,
+    ) -> list[UserPermissionsEntity]:
+        """Reverse lookup: grant rows holding a given permission, newest first."""
+        stmt = select(UserPermissionsEntity).where(
+            UserPermissionsEntity.permission_name == str(permission_name)
+        )
+        if not include_revoked:
+            stmt = stmt.where(UserPermissionsEntity.revoked_timestamp.is_(None))
+        if granted_source is not None:
+            stmt = stmt.where(UserPermissionsEntity.granted_source == granted_source)
+        stmt = stmt.order_by(UserPermissionsEntity.granted_timestamp.desc())
+        return list((await session.execute(stmt)).scalars().all())
+
+    async def list_audit(
+        self,
+        session: AsyncSession,
+        *,
+        user_id: int | None = None,
+        permission_name: str | None = None,
+        action: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> tuple[list[UserPermissionsEntity], int]:
+        """
+        Global audit feed over the soft-delete grant rows, newest first.
+
+        ``action='granted'`` keeps active rows, ``'revoked'`` keeps soft-deleted
+        rows, ``None`` keeps all. Returns (page rows, total matching count).
+        """
+        filters = []
+        if user_id is not None:
+            filters.append(UserPermissionsEntity.user_id == user_id)
+        if permission_name is not None:
+            filters.append(
+                UserPermissionsEntity.permission_name == str(permission_name)
+            )
+        if action == "revoked":
+            filters.append(UserPermissionsEntity.revoked_timestamp.is_not(None))
+        elif action == "granted":
+            filters.append(UserPermissionsEntity.revoked_timestamp.is_(None))
+
+        total = await session.scalar(
+            select(func.count()).select_from(UserPermissionsEntity).where(*filters)
+        )
+        stmt = (
+            select(UserPermissionsEntity)
+            .where(*filters)
+            .order_by(UserPermissionsEntity.granted_timestamp.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        rows = list((await session.execute(stmt)).scalars().all())
+        return rows, int(total or 0)
 
     async def revoke_by_source(
         self,
