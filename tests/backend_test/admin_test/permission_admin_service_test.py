@@ -128,6 +128,7 @@ class TestPermissionAdminService(unittest.IsolatedAsyncioTestCase):
         args, kwargs = self.perms.grant.await_args
         granted = set(args[2]) if len(args) > 2 else set(kwargs["permission_names"])
         self.assertEqual(granted, {"system.sync"})
+        self.session.commit.assert_awaited_once()
 
     async def test_grant_missing_user_raises(self):
         self.users.get_user_by_user_id.return_value = None
@@ -135,6 +136,7 @@ class TestPermissionAdminService(unittest.IsolatedAsyncioTestCase):
             await self.service.grant_permissions(
                 self.session, 1, ["system.sync"], granted_by=9
             )
+        self.session.commit.assert_not_awaited()
 
     async def test_revoke_rejects_unknown_permission(self):
         self.users.get_user_by_user_id.return_value = UsersEntity(user_id=1)
@@ -151,6 +153,7 @@ class TestPermissionAdminService(unittest.IsolatedAsyncioTestCase):
         )
         self.perms.revoke.assert_awaited_once()
         self.assertEqual(view.user_id, 1)
+        self.session.commit.assert_awaited_once()
 
     async def test_revoke_rejects_empty_list(self):
         self.users.get_user_by_user_id.return_value = UsersEntity(user_id=1)
@@ -163,6 +166,7 @@ class TestPermissionAdminService(unittest.IsolatedAsyncioTestCase):
             await self.service.revoke_permissions(
                 self.session, 1, ["system.sync"], revoked_by=9
             )
+        self.session.commit.assert_not_awaited()
 
     async def test_set_super_admin_updates_flag_and_writes_marker(self):
         self.users.get_user_by_user_id.return_value = UsersEntity(
@@ -182,17 +186,20 @@ class TestPermissionAdminService(unittest.IsolatedAsyncioTestCase):
         names = args[2] if len(args) > 2 else kwargs["permission_names"]
         self.assertEqual(list(names), ["*"])
         self.assertTrue(dto.is_super_admin)
+        self.session.commit.assert_awaited_once()
 
     async def test_set_super_admin_missing_user_raises(self):
         self.users.get_user_by_user_id.return_value = None
         with self.assertRaises(ValueError):
             await self.service.set_super_admin(self.session, 999, granted_by=9)
+        self.session.commit.assert_not_awaited()
 
     async def test_revoke_super_admin_self_raises(self):
         with self.assertRaises(ValueError):
             await self.service.revoke_super_admin(
                 self.session, 9, caller_user_id=9, revoked_by=9
             )
+        self.session.commit.assert_not_awaited()
 
     async def test_revoke_super_admin_clears_flag_and_marker(self):
         self.users.get_user_by_user_id.return_value = UsersEntity(
@@ -208,8 +215,11 @@ class TestPermissionAdminService(unittest.IsolatedAsyncioTestCase):
             self.session, 2, caller_user_id=9, revoked_by=9
         )
         self.users.set_super_admin.assert_awaited_once_with(self.session, 2, False)
-        self.perms.revoke_by_source.assert_awaited_once()
+        self.perms.revoke_by_source.assert_awaited_once_with(
+            self.session, 2, "super_admin_set", revoked_by=9
+        )
         self.assertFalse(dto.is_super_admin)
+        self.session.commit.assert_awaited_once()
 
 
 if __name__ == "__main__":

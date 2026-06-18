@@ -214,7 +214,9 @@ class PermissionAdminService:
                 granted_source=_ADMIN_SOURCE,
                 granted_by=granted_by,
             )
-        return await self.get_user_permissions(session, user_id)
+        view = await self.get_user_permissions(session, user_id)
+        await session.commit()
+        return view
 
     async def revoke_permissions(
         self, session, user_id: int, permission_names: list[str], *, revoked_by: int
@@ -241,7 +243,9 @@ class PermissionAdminService:
         if user is None:
             raise ValueError("User not found")
         await self._perms.revoke(session, user_id, names, revoked_by=revoked_by)
-        return await self.get_user_permissions(session, user_id)
+        view = await self.get_user_permissions(session, user_id)
+        await session.commit()
+        return view
 
     async def set_super_admin(
         self, session, user_id: int, *, granted_by: int
@@ -274,7 +278,9 @@ class PermissionAdminService:
             granted_by=granted_by,
         )
         user.is_super_admin = True
-        return self._to_admin_user_dto(user)
+        dto = self._to_admin_user_dto(user)
+        await session.commit()
+        return dto
 
     async def revoke_super_admin(
         self, session, user_id: int, *, caller_user_id: int, revoked_by: int
@@ -305,7 +311,9 @@ class PermissionAdminService:
             session, user_id, _SUPER_ADMIN_SOURCE, revoked_by=revoked_by
         )
         user.is_super_admin = False
-        return self._to_admin_user_dto(user)
+        dto = self._to_admin_user_dto(user)
+        await session.commit()
+        return dto
 
     @staticmethod
     def _to_admin_user_dto(user) -> AdminUserDto:
