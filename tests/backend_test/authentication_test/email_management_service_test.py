@@ -141,7 +141,7 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         )
 
         self.auth0.link_identity.assert_called_once_with(
-            primary_sub=_CURRENT_SUB, provider="email", secondary_user_id="abc123"
+            account_root_sub=_CURRENT_SUB, provider="email", secondary_user_id="abc123"
         )
         email_entity = self.user_emails.upsert_email.call_args.kwargs["entity"]
         self.assertTrue(email_entity.otp_confirmed)
@@ -151,7 +151,7 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         ]
         self.assertEqual(identity_entity.subject_identifier, _NEW_SUB)
         self.session.commit.assert_awaited_once()
-        self.auth0.add_alias_email_to_primary.assert_called_once()
+        self.auth0.add_alias_email_to_account_root.assert_called_once()
         self.assertEqual(result["linked_sub"], _NEW_SUB)
 
     async def test_verify_marks_external_identity_for_outside_email(self):
@@ -332,7 +332,9 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(existing_email.is_primary)
 
     async def test_verify_succeeds_even_if_alias_sync_fails(self):
-        self.auth0.add_alias_email_to_primary.side_effect = RuntimeError("auth0 down")
+        self.auth0.add_alias_email_to_account_root.side_effect = RuntimeError(
+            "auth0 down"
+        )
         result = await self.service.verify(
             self.session, _USER_ID, _CURRENT_SUB, _state(), "123456"
         )
@@ -725,7 +727,9 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
 
         self.auth0.exchange_otp.assert_called_once_with("old@example.com", "123456")
         self.auth0.unlink_identity.assert_called_once_with(
-            primary_sub=_CURRENT_SUB, provider="email", secondary_user_id="todelete"
+            account_root_sub=_CURRENT_SUB,
+            provider="email",
+            secondary_user_id="todelete",
         )
         self.user_identities.delete.assert_awaited_once_with(self.session, 7)
         self.session.commit.assert_awaited_once()
@@ -897,7 +901,7 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
             "old@example.com", is_primary=True
         )
         self.user_emails.get_by_user_and_email.return_value = None
-        self.auth0.remove_alias_email_from_primary.side_effect = RuntimeError(
+        self.auth0.remove_alias_email_from_account_root.side_effect = RuntimeError(
             "auth0 down"
         )
         state = _unlink_state(target_identity_id=7, primary_email="old@example.com")
