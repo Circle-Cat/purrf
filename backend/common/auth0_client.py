@@ -7,9 +7,10 @@ Wraps the four Auth0 calls the email flow needs:
 - ``exchange_otp``       — POST /oauth/token with the passwordless OTP grant,
                            verifying the returned ID token signature against the
                            tenant JWKS before trusting its claims
-- ``link_identity``      — POST /api/v2/users/{primary_sub}/identities
-- ``add_alias_email_to_primary`` — PATCH app_metadata so the Auto-Link Action
-                           can find the address on a later social login
+- ``link_identity``      — POST /api/v2/users/{account_root_sub}/identities
+- ``add_alias_email_to_account_root`` — PATCH app_metadata so a later social
+                           login with the same address resolves to this account
+                           instead of forking a new Auth0 user
 
 Auth0 HTTP failures are translated into the shared domain exceptions so the API
 layer can answer callers correctly: a throttled tenant becomes
@@ -151,16 +152,16 @@ class Auth0Client:
         return claims
 
     def link_identity(
-        self, primary_sub: str, provider: str, secondary_user_id: str
+        self, account_root_sub: str, provider: str, secondary_user_id: str
     ) -> None:
         """
-        Merge a secondary identity into ``primary_sub``.
+        Merge a secondary identity into ``account_root_sub``.
 
         Re-linking an already-linked identity is treated as success so a retry
         after a partial failure is idempotent.
 
         Args:
-            primary_sub (str): Auth0 sub of the primary user to link onto.
+            account_root_sub (str): Auth0 sub of the account-root user to link onto.
             provider (str): Provider of the secondary identity (e.g. 'email').
             secondary_user_id (str): Provider-scoped id of the secondary identity.
 
@@ -169,7 +170,7 @@ class Auth0Client:
             RuntimeError: For any other non-2xx Auth0 response (already-linked is
                 treated as success, not an error).
         """
-        encoded = urllib.parse.quote(primary_sub, safe="")
+        encoded = urllib.parse.quote(account_root_sub, safe="")
         url = f"https://{self._tenant}/api/v2/users/{encoded}/identities"
         payload = {"provider": provider, "user_id": secondary_user_id}
         response = requests.post(
@@ -187,25 +188,27 @@ class Auth0Client:
             _, description = _auth0_error(response)
             if "already" in (description or "").lower():
                 self._logger.info(
-                    "[Auth0Client] link_identity idempotent: %s already linked to primary",
+                    "[Auth0Client] link_identity idempotent: %s already linked to account root",
                     secondary_user_id,
                 )
                 return
         self._raise_for_auth0_error(response, "link_identity")
         self._logger.info(
-            "[Auth0Client] link_identity merged %s into primary", secondary_user_id
+            "[Auth0Client] link_identity merged %s into account root", secondary_user_id
         )
 
-    def add_alias_email_to_primary(self, primary_sub: str, email: str) -> None:
+    def add_alias_email_to_account_root(
+        self, account_root_sub: str, email: str
+    ) -> None:
         """
-        Append ``email`` to the primary user's ``app_metadata.alias_emails```.
+        Append ``email`` to the account-root user's ``app_metadata.alias_emails```.
 
         Auth0's getByEmail only indexes the top-level ``email`` field, so without
         this index a later social login with the same address forks a fresh Auth0
         user. Reads current metadata first so the PATCH only touches the one key.
 
         Args:
-            primary_sub (str): Auth0 sub of the primary user to index the email on.
+            account_root_sub (str): Auth0 sub of the account-root user to index the email on.
             email (str): Address to add to ``app_metadata.alias_emails```
                 (stored lowercased; a no-op if already present).
 
@@ -213,7 +216,7 @@ class Auth0Client:
             RateLimitedError: If Auth0 throttles either the read or the PATCH.
             RuntimeError: For any other non-2xx Auth0 response.
         """
-        encoded = urllib.parse.quote(primary_sub, safe="")
+        encoded = urllib.parse.quote(account_root_sub, safe="")
         url = f"https://{self._tenant}/api/v2/users/{encoded}"
         auth_header = {"Authorization": f"Bearer {self._get_m2m_token()}"}
         normalized = email.lower()
@@ -232,24 +235,24 @@ class Auth0Client:
             headers={**auth_header, "Content-Type": "application/json"},
             timeout=_HTTP_TIMEOUT_SECONDS,
         )
-        self._raise_for_auth0_error(patch_resp, "add_alias_email_to_primary")
+        self._raise_for_auth0_error(patch_resp, "add_alias_email_to_account_root")
         self._logger.info(
-            "[Auth0Client] add_alias_email_to_primary indexed %s on primary",
+            "[Auth0Client] add_alias_email_to_account_root indexed %s on account root",
             _mask_email(normalized),
         )
 
     def unlink_identity(
-        self, primary_sub: str, provider: str, secondary_user_id: str
+        self, account_root_sub: str, provider: str, secondary_user_id: str
     ) -> None:
         """
-        Detach a secondary identity from ``primary_sub``.
+        Detach a secondary identity from ``account_root_sub``.
 
         A 404 is treated as success so a retry after a partial failure (or an
         already-detached identity) is idempotent — the reverse of
         :meth:`link_identity`. ``secondary_user_id`` is the local part of the
         sub (after the ``|``).
         """
-        encoded = urllib.parse.quote(primary_sub, safe="")
+        encoded = urllib.parse.quote(account_root_sub, safe="")
         url = (
             f"https://{self._tenant}/api/v2/users/{encoded}"
             f"/identities/{provider}/{secondary_user_id}"
@@ -268,20 +271,22 @@ class Auth0Client:
             return
         self._raise_for_auth0_error(response, "unlink_identity")
         self._logger.info(
-            "[Auth0Client] unlink_identity detached %s from primary",
+            "[Auth0Client] unlink_identity detached %s from account root",
             secondary_user_id,
         )
 
-    def remove_alias_email_from_primary(self, primary_sub: str, email: str) -> None:
+    def remove_alias_email_from_account_root(
+        self, account_root_sub: str, email: str
+    ) -> None:
         """
-        Remove ``email`` from the primary user's ``app_metadata.alias_emails``.
+        Remove ``email`` from the account-root user's ``app_metadata.alias_emails``.
 
-        The reverse of :meth:`add_alias_email_to_primary`, called when an
+        The reverse of :meth:`add_alias_email_to_account_root`, called when an
         unlinked identity's address is no longer referenced by the user. Reads
         current metadata first and only PATCHes when the address is present, so
         an already-absent alias is a no-op.
         """
-        encoded = urllib.parse.quote(primary_sub, safe="")
+        encoded = urllib.parse.quote(account_root_sub, safe="")
         url = f"https://{self._tenant}/api/v2/users/{encoded}"
         auth_header = {"Authorization": f"Bearer {self._get_m2m_token()}"}
         normalized = email.lower()
@@ -301,9 +306,9 @@ class Auth0Client:
             headers={**auth_header, "Content-Type": "application/json"},
             timeout=_HTTP_TIMEOUT_SECONDS,
         )
-        self._raise_for_auth0_error(patch_resp, "remove_alias_email_from_primary")
+        self._raise_for_auth0_error(patch_resp, "remove_alias_email_from_account_root")
         self._logger.info(
-            "[Auth0Client] remove_alias_email_from_primary dropped %s from primary",
+            "[Auth0Client] remove_alias_email_from_account_root dropped %s from account root",
             _mask_email(normalized),
         )
 

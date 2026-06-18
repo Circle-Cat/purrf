@@ -3,7 +3,7 @@ Email OTP verify service.
 
 Drives the shared "confirm an email address" mechanism: send a one-time code via
 Auth0 passwordless, then on success link the new Auth0 identity into the caller's
-primary user and record the address as a Purrf-confirmed contact.
+account-root user and record the address as a Purrf-confirmed contact.
 
 identity vs contact: an IdP's own ``email_verified`` only means the IdP checked
 the address once — it does not prove the mailbox is still reachable. Only an
@@ -127,7 +127,7 @@ class EmailManagementService:
 
         provider, secondary_user_id = self._split_sub(new_sub)
         self._auth0.link_identity(
-            primary_sub=current_sub,
+            account_root_sub=current_sub,
             provider=provider,
             secondary_user_id=secondary_user_id,
         )
@@ -164,13 +164,13 @@ class EmailManagementService:
         the ``internal_identities`` list (empty for non-employees; an employee
         may hold more than one, e.g. an SSO login plus an OTP-linked corp email)
         and the ``external_identities`` list. The identity whose subject matches
-        ``current_sub`` (the primary the session is bound to) is flagged
+        ``current_sub`` (the account root the session is bound to) is flagged
         ``is_current_session`` so the UI can badge it and withhold its unlink.
 
         Args:
             session (AsyncSession): The active async database session.
             current_user_id (int): user_id of the authenticated caller.
-            current_sub (str): JWT ``sub`` of the caller's session (the primary).
+            current_sub (str): JWT ``sub`` of the caller's session (the account root).
 
         Returns:
             EmailsViewDto: The caller's email rows plus their internal and
@@ -214,7 +214,7 @@ class EmailManagementService:
         )
 
     async def _drop_alias_best_effort(
-        self, session, user_id: int, primary_sub: str, removed, identities_before
+        self, session, user_id: int, account_root_sub: str, removed, identities_before
     ) -> None:
         """
         Remove the unlinked identity's address from the Auth0 alias index when
@@ -241,7 +241,9 @@ class EmailManagementService:
             return
 
         try:
-            self._auth0.remove_alias_email_from_primary(primary_sub, email_claim)
+            self._auth0.remove_alias_email_from_account_root(
+                account_root_sub, email_claim
+            )
         except Exception as exc:
             self._logger.warning(
                 "[EmailManagementService] auth.alias_sync.failed user_id=%s op=remove error=%s",
@@ -256,7 +258,7 @@ class EmailManagementService:
 
         Args:
             identity (UserIdentitiesEntity): The identity row to map.
-            current_sub (str): The session's primary sub; flags the matching row.
+            current_sub (str): The session's account-root sub; flags the matching row.
 
         Returns:
             IdentityDto: The mapped identity.
@@ -435,8 +437,19 @@ class EmailManagementService:
             session, user_id, email
         )
         if existing is not None:
+            changed = False
             if not existing.otp_confirmed:
                 existing.otp_confirmed = True
+                changed = True
+            # A migration-backfilled row starts unconfirmed and non-primary;
+            # confirming the user's first usable address must also make it
+            # primary so they always have a notification target.
+            if not existing.is_primary and not await self._user_emails.has_primary(
+                session, user_id
+            ):
+                existing.is_primary = True
+                changed = True
+            if changed:
                 await self._user_emails.upsert_email(session=session, entity=existing)
             return
 
@@ -454,16 +467,16 @@ class EmailManagementService:
         )
 
     def _sync_alias_best_effort(
-        self, primary_sub: str, email: str, user_id: int
+        self, account_root_sub: str, email: str, user_id: int
     ) -> None:
         """
-        Index the confirmed email on the Auth0 primary user, logging on failure.
+        Index the confirmed email on the Auth0 account-root user, logging on failure.
 
         Runs after commit: a sync hiccup is logged and swallowed so it never
         undoes an already-confirmed email.
         """
         try:
-            self._auth0.add_alias_email_to_primary(primary_sub, email)
+            self._auth0.add_alias_email_to_account_root(account_root_sub, email)
         except Exception as exc:
             self._logger.warning(
                 "[EmailManagementService] auth.alias_sync.failed user_id=%s op=add error=%s",
@@ -599,7 +612,7 @@ class EmailManagementService:
         Args:
             session (AsyncSession): The active async database session.
             current_user_id (int): user_id of the authenticated caller.
-            current_sub (str): JWT ``sub`` of the caller, the Auth0 primary user.
+            current_sub (str): JWT ``sub`` of the caller, the Auth0 account-root user.
             identity_id (int): Primary key from the URL; must match the state.
             state (str): The signed state JWT from initiate.
             code (str): The OTP the user received at the primary address.
@@ -639,7 +652,7 @@ class EmailManagementService:
 
         provider, secondary_user_id = self._split_sub(identity.subject_identifier)
         self._auth0.unlink_identity(
-            primary_sub=current_sub,
+            account_root_sub=current_sub,
             provider=provider,
             secondary_user_id=secondary_user_id,
         )
