@@ -115,9 +115,7 @@ class TestPermissionAdminService(unittest.IsolatedAsyncioTestCase):
     async def test_grant_rejects_empty_list(self):
         self.users.get_user_by_user_id.return_value = UsersEntity(user_id=1)
         with self.assertRaises(ValueError):
-            await self.service.grant_permissions(
-                self.session, 1, [], granted_by=9
-            )
+            await self.service.grant_permissions(self.session, 1, [], granted_by=9)
 
     async def test_grant_skips_already_active_and_grants_rest(self):
         self.users.get_user_by_user_id.return_value = UsersEntity(user_id=1)
@@ -157,9 +155,7 @@ class TestPermissionAdminService(unittest.IsolatedAsyncioTestCase):
     async def test_revoke_rejects_empty_list(self):
         self.users.get_user_by_user_id.return_value = UsersEntity(user_id=1)
         with self.assertRaises(ValueError):
-            await self.service.revoke_permissions(
-                self.session, 1, [], revoked_by=9
-            )
+            await self.service.revoke_permissions(self.session, 1, [], revoked_by=9)
 
     async def test_revoke_missing_user_raises(self):
         self.users.get_user_by_user_id.return_value = None
@@ -167,7 +163,6 @@ class TestPermissionAdminService(unittest.IsolatedAsyncioTestCase):
             await self.service.revoke_permissions(
                 self.session, 1, ["system.sync"], revoked_by=9
             )
-
 
     async def test_set_super_admin_updates_flag_and_writes_marker(self):
         self.users.get_user_by_user_id.return_value = UsersEntity(

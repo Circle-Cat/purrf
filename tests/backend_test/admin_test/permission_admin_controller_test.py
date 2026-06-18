@@ -68,21 +68,31 @@ class TestPermissionAdminController(unittest.TestCase):
             return_value=AuditListDto(entries=[], total=0)
         )
         self.service.grant_permissions = AsyncMock(
-            return_value=UserPermissionsViewDto(user_id=2, active=["system.sync"], history=[])
+            return_value=UserPermissionsViewDto(
+                user_id=2, active=["system.sync"], history=[]
+            )
         )
         self.service.revoke_permissions = AsyncMock(
             return_value=UserPermissionsViewDto(user_id=2, active=[], history=[])
         )
         self.service.set_super_admin = AsyncMock(
             return_value=AdminUserDto(
-                user_id=2, primary_email="s@x.com", first_name="S",
-                last_name="A", is_active=True, is_super_admin=True,
+                user_id=2,
+                primary_email="s@x.com",
+                first_name="S",
+                last_name="A",
+                is_active=True,
+                is_super_admin=True,
             )
         )
         self.service.revoke_super_admin = AsyncMock(
             return_value=AdminUserDto(
-                user_id=2, primary_email="s@x.com", first_name="S",
-                last_name="A", is_active=True, is_super_admin=False,
+                user_id=2,
+                primary_email="s@x.com",
+                first_name="S",
+                last_name="A",
+                is_active=True,
+                is_super_admin=False,
             )
         )
 
@@ -120,7 +130,9 @@ class TestPermissionAdminController(unittest.TestCase):
         self.assertEqual(resp.status_code, HTTPStatus.FORBIDDEN)
 
     def test_grant_passes_names_and_granted_by(self):
-        client = _client(self.service, permissions={Permission.PERMISSION_MANAGE}, user_id=9)
+        client = _client(
+            self.service, permissions={Permission.PERMISSION_MANAGE}, user_id=9
+        )
         resp = client.post(
             ADMIN_USER_GRANT_PERMISSIONS_ENDPOINT.format(user_id=2),
             json={"permissionNames": ["system.sync"]},
@@ -133,7 +145,9 @@ class TestPermissionAdminController(unittest.TestCase):
         self.assertEqual(kwargs["granted_by"], 9)
 
     def test_revoke_passes_names_and_revoked_by(self):
-        client = _client(self.service, permissions={Permission.PERMISSION_MANAGE}, user_id=9)
+        client = _client(
+            self.service, permissions={Permission.PERMISSION_MANAGE}, user_id=9
+        )
         resp = client.post(
             ADMIN_USER_REVOKE_PERMISSIONS_ENDPOINT.format(user_id=2),
             json={"permissionNames": ["system.sync"]},
@@ -171,7 +185,9 @@ class TestPermissionAdminController(unittest.TestCase):
         resp = client.post(ADMIN_USER_SUPER_ADMIN_ENDPOINT.format(user_id=2))
         self.assertEqual(resp.status_code, HTTPStatus.OK)
         self.service.set_super_admin.assert_awaited_once()
-        self.assertEqual(self.service.set_super_admin.await_args.kwargs["granted_by"], 9)
+        self.assertEqual(
+            self.service.set_super_admin.await_args.kwargs["granted_by"], 9
+        )
 
     def test_revoke_super_admin_passes_caller_id(self):
         client = _client(
