@@ -10,9 +10,14 @@ from backend.common.api_endpoints import (
     ADMIN_AUDIT_PERMISSION_CHANGES_ENDPOINT,
     ADMIN_PERMISSIONS_ENDPOINT,
     ADMIN_USERS_ENDPOINT,
+    ADMIN_USER_GRANT_PERMISSIONS_ENDPOINT,
+    ADMIN_USER_REVOKE_PERMISSIONS_ENDPOINT,
+    ADMIN_USER_SUPER_ADMIN_ENDPOINT,
 )
+from backend.common.fast_api_error_handler import register_exception_handlers
 from backend.common.permissions import Permission
 from backend.dto.admin_permission_dto import (
+    AdminUserDto,
     AuditListDto,
     UserListDto,
     UserPermissionsViewDto,
@@ -27,7 +32,7 @@ class _FakeSession:
         return False
 
 
-def _client(service, *, permissions):
+def _client(service, *, permissions, is_super_admin=False, user_id=1):
     app = FastAPI()
     database = MagicMock()
     database.session = lambda: _FakeSession()
@@ -36,11 +41,15 @@ def _client(service, *, permissions):
     @app.middleware("http")
     async def _inject(request: Request, call_next):
         request.state.user = MagicMock(
-            permissions=permissions, user_id=1, sub="google-oauth2|1"
+            permissions=permissions,
+            user_id=user_id,
+            is_super_admin=is_super_admin,
+            sub="google-oauth2|1",
         )
         return await call_next(request)
 
     app.include_router(controller.router)
+    register_exception_handlers(app)
     return TestClient(app, raise_server_exceptions=False)
 
 
@@ -57,6 +66,34 @@ class TestPermissionAdminController(unittest.TestCase):
         self.service.list_permission_users = AsyncMock(return_value=[])
         self.service.list_audit = AsyncMock(
             return_value=AuditListDto(entries=[], total=0)
+        )
+        self.service.grant_permissions = AsyncMock(
+            return_value=UserPermissionsViewDto(
+                user_id=2, active=["system.sync"], history=[]
+            )
+        )
+        self.service.revoke_permissions = AsyncMock(
+            return_value=UserPermissionsViewDto(user_id=2, active=[], history=[])
+        )
+        self.service.set_super_admin = AsyncMock(
+            return_value=AdminUserDto(
+                user_id=2,
+                primary_email="s@x.com",
+                first_name="S",
+                last_name="A",
+                is_active=True,
+                is_super_admin=True,
+            )
+        )
+        self.service.revoke_super_admin = AsyncMock(
+            return_value=AdminUserDto(
+                user_id=2,
+                primary_email="s@x.com",
+                first_name="S",
+                last_name="A",
+                is_active=True,
+                is_super_admin=False,
+            )
         )
 
     def test_catalog_returns_enum(self):
@@ -90,6 +127,83 @@ class TestPermissionAdminController(unittest.TestCase):
     def test_without_permission_manage_is_403(self):
         client = _client(self.service, permissions=frozenset())
         resp = client.get(ADMIN_PERMISSIONS_ENDPOINT)
+        self.assertEqual(resp.status_code, HTTPStatus.FORBIDDEN)
+
+    def test_grant_passes_names_and_granted_by(self):
+        client = _client(
+            self.service, permissions={Permission.PERMISSION_MANAGE}, user_id=9
+        )
+        resp = client.post(
+            ADMIN_USER_GRANT_PERMISSIONS_ENDPOINT.format(user_id=2),
+            json={"permissionNames": ["system.sync"]},
+        )
+        self.assertEqual(resp.status_code, HTTPStatus.OK)
+        self.service.grant_permissions.assert_awaited_once()
+        args, kwargs = self.service.grant_permissions.await_args
+        self.assertEqual(args[1], 2)
+        self.assertEqual(args[2], ["system.sync"])
+        self.assertEqual(kwargs["granted_by"], 9)
+
+    def test_revoke_passes_names_and_revoked_by(self):
+        client = _client(
+            self.service, permissions={Permission.PERMISSION_MANAGE}, user_id=9
+        )
+        resp = client.post(
+            ADMIN_USER_REVOKE_PERMISSIONS_ENDPOINT.format(user_id=2),
+            json={"permissionNames": ["system.sync"]},
+        )
+        self.assertEqual(resp.status_code, HTTPStatus.OK)
+        self.service.revoke_permissions.assert_awaited_once()
+        kwargs = self.service.revoke_permissions.await_args.kwargs
+        self.assertEqual(kwargs["revoked_by"], 9)
+
+    def test_grant_without_permission_manage_is_403(self):
+        client = _client(self.service, permissions=frozenset())
+        resp = client.post(
+            ADMIN_USER_GRANT_PERMISSIONS_ENDPOINT.format(user_id=2),
+            json={"permissionNames": ["system.sync"]},
+        )
+        self.assertEqual(resp.status_code, HTTPStatus.FORBIDDEN)
+
+    def test_set_super_admin_requires_caller_super_admin(self):
+        client = _client(
+            self.service,
+            permissions={Permission.PERMISSION_MANAGE},
+            is_super_admin=False,
+        )
+        resp = client.post(ADMIN_USER_SUPER_ADMIN_ENDPOINT.format(user_id=2))
+        self.assertEqual(resp.status_code, HTTPStatus.FORBIDDEN)
+        self.service.set_super_admin.assert_not_awaited()
+
+    def test_set_super_admin_allows_super_admin_caller(self):
+        client = _client(
+            self.service,
+            permissions={Permission.PERMISSION_MANAGE},
+            is_super_admin=True,
+            user_id=9,
+        )
+        resp = client.post(ADMIN_USER_SUPER_ADMIN_ENDPOINT.format(user_id=2))
+        self.assertEqual(resp.status_code, HTTPStatus.OK)
+        self.service.set_super_admin.assert_awaited_once()
+        self.assertEqual(
+            self.service.set_super_admin.await_args.kwargs["granted_by"], 9
+        )
+
+    def test_revoke_super_admin_passes_caller_id(self):
+        client = _client(
+            self.service,
+            permissions={Permission.SUPER_ADMIN_REVOKE},
+            user_id=9,
+        )
+        resp = client.delete(ADMIN_USER_SUPER_ADMIN_ENDPOINT.format(user_id=2))
+        self.assertEqual(resp.status_code, HTTPStatus.OK)
+        kwargs = self.service.revoke_super_admin.await_args.kwargs
+        self.assertEqual(kwargs["caller_user_id"], 9)
+        self.assertEqual(kwargs["revoked_by"], 9)
+
+    def test_revoke_super_admin_without_permission_is_403(self):
+        client = _client(self.service, permissions={Permission.PERMISSION_MANAGE})
+        resp = client.delete(ADMIN_USER_SUPER_ADMIN_ENDPOINT.format(user_id=2))
         self.assertEqual(resp.status_code, HTTPStatus.FORBIDDEN)
 
 

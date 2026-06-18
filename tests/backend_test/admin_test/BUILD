@@ -16,6 +16,7 @@ py_test(
     deps = [
         "//backend/admin:permission_admin_controller",
         "//backend/common:api_endpoints",
+        "//backend/common:fast_api_error_handler",
         "//backend/common:permissions",
         "//backend/dto",
         "@pypi//fastapi",
