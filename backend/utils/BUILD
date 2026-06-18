@@ -93,6 +93,8 @@ py_library(
         ":google_chat_message_utils",
         ":microsoft_chat_message_util",
         ":retry_utils",
+        "//backend/admin:permission_admin_controller",
+        "//backend/admin:permission_admin_service",
         "//backend/authentication:authentication_controller",
         "//backend/authentication:authentication_service",
         "//backend/authentication:email_management_controller",

@@ -83,6 +83,8 @@ from backend.authentication.email_management_service import EmailManagementServi
 from backend.authentication.email_management_controller import (
     EmailManagementController,
 )
+from backend.admin.permission_admin_service import PermissionAdminService
+from backend.admin.permission_admin_controller import PermissionAdminController
 from backend.common.auth0_client import Auth0Client
 from backend.repository.users_repository import UsersRepository
 from backend.repository.user_identities_repository import UserIdentitiesRepository
@@ -485,6 +487,14 @@ class AppDependencyBuilder:
             email_management_service=self.email_management_service,
             database=self.database,
         )
+        self.permission_admin_service = PermissionAdminService(
+            self.users_repository,
+            self.user_permissions_repository,
+        )
+        self.permission_admin_controller = PermissionAdminController(
+            self.permission_admin_service,
+            database=self.database,
+        )
         self.fast_app_factory = FastAppFactory(
             authentication_controller=self.authentication_controller,
             authentication_service=self.authentication_service,
@@ -497,6 +507,7 @@ class AppDependencyBuilder:
             profile_controller=self.profile_controller,
             mentorship_controller=self.mentorship_controller,
             email_management_controller=self.email_management_controller,
+            permission_admin_controller=self.permission_admin_controller,
             launchdarkly_client=self.launchdarkly_client,
             database=self.database,
             logger=self.logger,
