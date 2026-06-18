@@ -15,6 +15,7 @@ from backend.dto.admin_permission_dto import (
 )
 
 _VALID_PERMISSION_VALUES = frozenset(str(p) for p in Permission)
+_ADMIN_SOURCE = "admin"
 
 
 class PermissionAdminService:
@@ -162,6 +163,93 @@ class PermissionAdminService:
             offset=offset,
         )
         return AuditListDto(entries=[self._to_grant_dto(r) for r in rows], total=total)
+
+    def _validate_names(self, permission_names: list[str]) -> list[str]:
+        """
+        Validate a batch of permission names against the code enum.
+
+        Args:
+            permission_names (list[str]): Requested permission names.
+
+        Returns:
+            list[str]: The same names, de-duplicated, order-preserved.
+
+        Raises:
+            ValueError: If the list is empty or contains an unknown name
+                (surfaces as 400).
+        """
+        if not permission_names:
+            raise ValueError("No permissions provided")
+        seen = []
+        for name in permission_names:
+            if name not in _VALID_PERMISSION_VALUES:
+                raise ValueError(f"Unknown permission: {name}")
+            if name not in seen:
+                seen.append(name)
+        return seen
+
+    async def grant_permissions(
+        self, session, user_id: int, permission_names: list[str], *, granted_by: int
+    ) -> UserPermissionsViewDto:
+        """
+        Grant a batch of permissions to a user (admin source), skipping any the
+        user already holds. Idempotent: re-granting an active permission is a no-op.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            user_id (int): The target user.
+            permission_names (list[str]): Permissions to grant; each validated
+                against the code enum.
+            granted_by (int): The acting admin's user id (audit attribution).
+
+        Returns:
+            UserPermissionsViewDto: The user's refreshed active list and history.
+
+        Raises:
+            ValueError: Empty/unknown permission names, or unknown user (400).
+        """
+        names = self._validate_names(permission_names)
+        user = await self._users.get_user_by_user_id(session, user_id)
+        if user is None:
+            raise ValueError("User not found")
+        active = await self._perms.get_active_permission_names(session, user_id)
+        to_grant = [n for n in names if n not in active]
+        if to_grant:
+            await self._perms.grant(
+                session,
+                user_id,
+                to_grant,
+                granted_source=_ADMIN_SOURCE,
+                granted_by=granted_by,
+            )
+        return await self.get_user_permissions(session, user_id)
+
+    async def revoke_permissions(
+        self, session, user_id: int, permission_names: list[str], *, revoked_by: int
+    ) -> UserPermissionsViewDto:
+        """
+        Soft-delete a batch of a user's active permission grants. Revoking a
+        permission the user does not hold is a safe no-op.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            user_id (int): The target user.
+            permission_names (list[str]): Permissions to revoke; each validated
+                against the code enum.
+            revoked_by (int): The acting admin's user id (audit attribution).
+
+        Returns:
+            UserPermissionsViewDto: The user's refreshed active list and history.
+
+        Raises:
+            ValueError: Empty/unknown permission names, or unknown user (400).
+        """
+        names = self._validate_names(permission_names)
+        user = await self._users.get_user_by_user_id(session, user_id)
+        if user is None:
+            raise ValueError("User not found")
+        await self._perms.revoke(session, user_id, names, revoked_by=revoked_by)
+        return await self.get_user_permissions(session, user_id)
 
     @staticmethod
     def _to_grant_dto(row) -> GrantDto:
