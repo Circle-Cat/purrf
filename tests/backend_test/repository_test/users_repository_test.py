@@ -250,6 +250,22 @@ class TestUsersRepository(BaseRepositoryTestLib):
         self.assertEqual(total, 1)
         self.assertEqual(by_name[0].first_name, f"Name{token}")
 
+    async def test_set_super_admin_flips_flag(self):
+        token = uuid.uuid4().hex[:10]
+        users = [self._make_user(email=f"sa-{token}@example.com")]
+        await self.insert_entities(users)
+        user_id = users[0].user_id
+
+        updated = await self.repo.set_super_admin(self.session, user_id, True)
+        self.assertEqual(updated, 1)
+
+        refetched = await self.repo.get_user_by_user_id(self.session, user_id)
+        self.assertTrue(refetched.is_super_admin)
+
+    async def test_set_super_admin_missing_user_updates_nothing(self):
+        updated = await self.repo.set_super_admin(self.session, 9_999_999, True)
+        self.assertEqual(updated, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

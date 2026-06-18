@@ -38,3 +38,7 @@ class UserPermissionsViewDto(BaseDto):
 class AuditListDto(BaseDto):
     entries: list[GrantDto]
     total: int
+
+
+class PermissionNamesRequestDto(BaseDto):
+    permission_names: list[str]

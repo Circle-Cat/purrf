@@ -12,15 +12,20 @@ from backend.common.api_endpoints import (
     ADMIN_AUDIT_PERMISSION_CHANGES_ENDPOINT,
     ADMIN_PERMISSION_USERS_ENDPOINT,
     ADMIN_PERMISSIONS_ENDPOINT,
+    ADMIN_USER_GRANT_PERMISSIONS_ENDPOINT,
     ADMIN_USER_PERMISSIONS_ENDPOINT,
+    ADMIN_USER_REVOKE_PERMISSIONS_ENDPOINT,
+    ADMIN_USER_SUPER_ADMIN_ENDPOINT,
     ADMIN_USERS_ENDPOINT,
 )
 from backend.common.fast_api_response_wrapper import api_response
 from backend.common.permissions import Permission
+from backend.dto.admin_permission_dto import PermissionNamesRequestDto
 from backend.dto.user_context_dto import UserContextDto
 from backend.utils.permission_decorators import authenticate
 
 _GATE = [Permission.PERMISSION_MANAGE]
+_SUPER_ADMIN_REVOKE_GATE = [Permission.SUPER_ADMIN_REVOKE]
 
 
 class PermissionAdminController:
@@ -61,6 +66,32 @@ class PermissionAdminController:
             ADMIN_AUDIT_PERMISSION_CHANGES_ENDPOINT,
             endpoint=authenticate(permissions=_GATE)(self.list_audit),
             methods=["GET"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            ADMIN_USER_GRANT_PERMISSIONS_ENDPOINT,
+            endpoint=authenticate(permissions=_GATE)(self.grant_permissions),
+            methods=["POST"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            ADMIN_USER_REVOKE_PERMISSIONS_ENDPOINT,
+            endpoint=authenticate(permissions=_GATE)(self.revoke_permissions),
+            methods=["POST"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            ADMIN_USER_SUPER_ADMIN_ENDPOINT,
+            endpoint=authenticate(permissions=_GATE)(self.set_super_admin),
+            methods=["POST"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            ADMIN_USER_SUPER_ADMIN_ENDPOINT,
+            endpoint=authenticate(permissions=_SUPER_ADMIN_REVOKE_GATE)(
+                self.revoke_super_admin
+            ),
+            methods=["DELETE"],
             response_model=None,
         )
 
@@ -182,3 +213,100 @@ class PermissionAdminController:
                 offset=offset,
             )
         return api_response(message="Permission change audit", data=view)
+
+    async def grant_permissions(
+        self,
+        current_user: UserContextDto,
+        user_id: int,
+        payload: PermissionNamesRequestDto,
+    ):
+        """
+        Grant a batch of permissions to a user.
+
+        Args:
+            current_user (UserContextDto): The authenticated admin (injected).
+            user_id (int): Target user, from the path.
+            payload (PermissionNamesRequestDto): Permission names to grant.
+
+        Returns:
+            A standardized API response wrapping the refreshed
+            ``UserPermissionsViewDto``. Unknown names/user surface as 400.
+        """
+        async with self._database.session() as session:
+            view = await self._service.grant_permissions(
+                session,
+                user_id,
+                payload.permission_names,
+                granted_by=current_user.user_id,
+            )
+        return api_response(message="Permissions granted", data=view)
+
+    async def revoke_permissions(
+        self,
+        current_user: UserContextDto,
+        user_id: int,
+        payload: PermissionNamesRequestDto,
+    ):
+        """
+        Revoke a batch of a user's permissions.
+
+        Args:
+            current_user (UserContextDto): The authenticated admin (injected).
+            user_id (int): Target user, from the path.
+            payload (PermissionNamesRequestDto): Permission names to revoke.
+
+        Returns:
+            A standardized API response wrapping the refreshed
+            ``UserPermissionsViewDto``. Unknown names/user surface as 400.
+        """
+        async with self._database.session() as session:
+            view = await self._service.revoke_permissions(
+                session,
+                user_id,
+                payload.permission_names,
+                revoked_by=current_user.user_id,
+            )
+        return api_response(message="Permissions revoked", data=view)
+
+    async def set_super_admin(self, current_user: UserContextDto, user_id: int):
+        """
+        Promote a user to super-admin. Only an existing super-admin may call this.
+
+        Args:
+            current_user (UserContextDto): The authenticated caller (injected).
+            user_id (int): Target user, from the path.
+
+        Returns:
+            A standardized API response wrapping the refreshed ``AdminUserDto``.
+
+        Raises:
+            PermissionError: If the caller is not a super-admin (403).
+        """
+        if not current_user.is_super_admin:
+            raise PermissionError("Only a super-admin can grant super-admin")
+        async with self._database.session() as session:
+            view = await self._service.set_super_admin(
+                session, user_id, granted_by=current_user.user_id
+            )
+        return api_response(message="Super-admin granted", data=view)
+
+    async def revoke_super_admin(self, current_user: UserContextDto, user_id: int):
+        """
+        Demote a super-admin. Gated by SUPER_ADMIN_REVOKE; cannot self-revoke.
+
+        Args:
+            current_user (UserContextDto): The authenticated caller (injected).
+            user_id (int): Target user, from the path.
+
+        Returns:
+            A standardized API response wrapping the refreshed ``AdminUserDto``.
+            Self-revoke surfaces as 400.
+        """
+        async with self._database.session() as session:
+            view = await self._service.revoke_super_admin(
+                session,
+                user_id,
+                caller_user_id=current_user.user_id,
+                revoked_by=current_user.user_id,
+            )
+        return api_response(message="Super-admin revoked", data=view)
