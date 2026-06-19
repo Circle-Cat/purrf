@@ -55,10 +55,17 @@ const PersonalDashboard = () => {
   const { summary, isPersonalSummaryLoading, fetchPersonalSummary } =
     useWorkActivityData({ enabled: canViewActivitySummary });
 
-  const activeRound = roundSelectionData?.sortedRounds?.find(
-    (round) => round.status === MentorshipRoundStatus.ACTIVE,
+  // const activeRound = roundSelectionData?.sortedRounds?.find(
+  //   (round) => round.status === MentorshipRoundStatus.ACTIVE,
+  // );
+  // const meetingRoundId = activeRound?.id ?? null;
+
+  const currentSelectedRound = roundSelectionData?.sortedRounds?.find(
+    (round) => Number(round.id) === Number(selectedRoundId),
   );
-  const meetingRoundId = activeRound?.id ?? null;
+
+  const isCurrentRoundActive =
+    currentSelectedRound?.status === MentorshipRoundStatus.ACTIVE;
 
   return (
     <div className="personal-dashboard">
@@ -72,7 +79,7 @@ const PersonalDashboard = () => {
         </div>
 
         <GoogleMeetingControl
-          meetingRoundId={meetingRoundId}
+          meetingRoundId={isCurrentRoundActive ? Number(selectedRoundId) : null}
           onRefresh={refreshMeetings}
         />
       </div>
