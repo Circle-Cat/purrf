@@ -72,7 +72,6 @@ export default function RoundModal({
   const [isSaving, setIsSaving] = useState(false);
 
   const initializeEditForm = (r) => {
-    if (!r) return;
     const initial = mapRoundToForm(r);
     setForm(initial);
     setInitialForm({ ...initial });

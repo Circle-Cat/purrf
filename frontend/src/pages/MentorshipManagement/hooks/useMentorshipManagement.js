@@ -77,7 +77,6 @@ export const useMentorshipManagement = (canReadRounds = true) => {
     totals,
     isLoading,
     roundModalState,
-    refreshRounds,
     openCreate,
     openEdit,
     closeModal,
