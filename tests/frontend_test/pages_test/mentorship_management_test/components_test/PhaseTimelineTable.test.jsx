@@ -50,4 +50,11 @@ describe("PhaseTimelineTable", () => {
     renderTable({ errors: { promotionStartAt: "This field is required." } });
     expect(screen.getByText("This field is required.")).toBeInTheDocument();
   });
+
+  it("disables all date picker buttons when readOnly is true", () => {
+    renderTable({ readOnly: true });
+    screen.getAllByRole("button").forEach((btn) => {
+      expect(btn).toBeDisabled();
+    });
+  });
 });

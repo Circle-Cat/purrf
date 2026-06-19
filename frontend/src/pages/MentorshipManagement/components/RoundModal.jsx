@@ -49,6 +49,7 @@ export default function RoundModal({
   onClose,
   onSave,
   rounds = [],
+  readOnly = false,
 }) {
   const isEdit = round != null;
   const currentYear = new Date().getFullYear();
@@ -71,7 +72,6 @@ export default function RoundModal({
   const [isSaving, setIsSaving] = useState(false);
 
   const initializeEditForm = (r) => {
-    if (!r) return;
     const initial = mapRoundToForm(r);
     setForm(initial);
     setInitialForm({ ...initial });
@@ -155,24 +155,30 @@ export default function RoundModal({
       >
         <DialogHeader className="flex-row items-center justify-between">
           <DialogTitle className="text-xl">
-            {isEdit ? "Edit Round" : "Create New Round"}
+            {readOnly
+              ? "View Round"
+              : isEdit
+                ? "Edit Round"
+                : "Create New Round"}
           </DialogTitle>
-          <div className="relative inline-block group mr-5">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={resetForm}
-              disabled={isSaving}
-            >
-              <RotateCcw className="h-4 w-4" />
-              Reset
-            </Button>
-            <span className="invisible group-hover:visible opacity-0 group-hover:opacity-100 transition-opacity absolute top-full right-0 mt-1 px-3 py-1.5 bg-white text-muted-foreground text-sm rounded shadow-lg w-72 z-10 pointer-events-none">
-              {isEdit
-                ? "Restore all fields to their last saved values."
-                : "Clear all fields and reset the season and year selection."}
-            </span>
-          </div>
+          {!readOnly && (
+            <div className="relative inline-block group mr-5">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={resetForm}
+                disabled={isSaving}
+              >
+                <RotateCcw className="h-4 w-4" />
+                Reset
+              </Button>
+              <span className="invisible group-hover:visible opacity-0 group-hover:opacity-100 transition-opacity absolute top-full right-0 mt-1 px-3 py-1.5 bg-white text-muted-foreground text-sm rounded shadow-lg w-72 z-10 pointer-events-none">
+                {isEdit
+                  ? "Restore all fields to their last saved values."
+                  : "Clear all fields and reset the season and year selection."}
+              </span>
+            </div>
+          )}
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto px-1">
@@ -229,7 +235,8 @@ export default function RoundModal({
                   value={form.name}
                   onChange={(e) => setField("name")(e.target.value)}
                   placeholder="e.g. Mentorship 2026 Spring"
-                  className="w-full border rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring placeholder:text-muted-foreground"
+                  disabled={readOnly}
+                  className="w-full border rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring placeholder:text-muted-foreground disabled:opacity-50 disabled:cursor-not-allowed"
                 />
                 {formError.name && (
                   <span className="text-destructive text-xs">
@@ -244,6 +251,7 @@ export default function RoundModal({
                 <Select
                   value={String(form.requiredMeetings)}
                   onValueChange={(v) => setField("requiredMeetings")(Number(v))}
+                  disabled={readOnly}
                 >
                   <SelectTrigger className="w-auto min-w-[7rem]">
                     <SelectValue placeholder="Select" />
@@ -282,6 +290,7 @@ export default function RoundModal({
                 errors={formError}
                 setField={setField}
                 minDate={minDate}
+                readOnly={readOnly}
               />
             </div>
 
@@ -294,11 +303,13 @@ export default function RoundModal({
 
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={isSaving}>
-            Cancel
+            {readOnly ? "Close" : "Cancel"}
           </Button>
-          <Button onClick={submitForm} disabled={isSaving}>
-            {isSaving ? "Saving..." : "Save"}
-          </Button>
+          {!readOnly && (
+            <Button onClick={submitForm} disabled={isSaving}>
+              {isSaving ? "Saving..." : "Save"}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

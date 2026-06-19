@@ -68,6 +68,7 @@ export default function RoundsManagementCard({
         onClose={closeModal}
         onSave={saveRound}
         rounds={rounds}
+        readOnly={!canWriteRounds}
       />
     </>
   );
