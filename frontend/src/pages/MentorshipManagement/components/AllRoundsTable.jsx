@@ -1,4 +1,4 @@
-import { Pencil, Users } from "lucide-react";
+import { Eye, Pencil, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Table from "@/components/common/Table";
 
@@ -13,7 +13,7 @@ import Table from "@/components/common/Table";
  *   rounds: Object[], mentorship round objects with pair stats
  *   totals: { totalCompletedRounds: number, totalParticipants: number, totalMeetings: number },
  *   onEdit: (round: Object) => void, round to edit
- *   canEdit: boolean, whether to show the per-row edit action (MENTORSHIP_ROUND_WRITE)
+ *   canEdit: boolean, whether the user may edit rounds (MENTORSHIP_ROUND_WRITE); controls icon (pencil or eye)
  * }} props
  */
 
@@ -41,7 +41,7 @@ export default function AllRoundsTable({
   onEdit,
   canEdit = true,
 }) {
-  const columns = canEdit ? [...BASE_COLUMNS, ACTION_COLUMN] : BASE_COLUMNS;
+  const columns = [...BASE_COLUMNS, ACTION_COLUMN];
 
   const data = rounds.map((round) => ({
     name: round.name,
@@ -59,19 +59,17 @@ export default function AllRoundsTable({
       round.totalCompletedMeetings,
       round.activePairs,
     ),
-    ...(canEdit && {
-      action: (
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => onEdit(round)}
-          aria-label="Edit round"
-          className="h-8 w-8 p-0"
-        >
-          <Pencil className="h-4 w-4" />
-        </Button>
-      ),
-    }),
+    action: (
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => onEdit(round)}
+        aria-label={canEdit ? "Edit round" : "View round"}
+        className="h-8 w-8 p-0"
+      >
+        {canEdit ? <Pencil className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+      </Button>
+    ),
   }));
 
   return (

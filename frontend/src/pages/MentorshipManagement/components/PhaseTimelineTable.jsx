@@ -12,7 +12,15 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { TIMELINE_PHASES } from "@/pages/MentorshipManagement/utils/roundForm";
 
-function DatePickerField({ label, value, onChange, required, error, minDate }) {
+function DatePickerField({
+  label,
+  value,
+  onChange,
+  required,
+  error,
+  minDate,
+  disabled,
+}) {
   const today = new Date();
   const [month, setMonth] = useState(value ?? today);
 
@@ -34,6 +42,7 @@ function DatePickerField({ label, value, onChange, required, error, minDate }) {
         <PopoverTrigger asChild>
           <Button
             variant="outline"
+            disabled={disabled}
             className={cn(
               "w-full justify-start text-left font-normal",
               !value && "text-muted-foreground",
@@ -89,6 +98,7 @@ export default function PhaseTimelineTable({
   errors,
   setField,
   minDate,
+  readOnly,
 }) {
   return (
     <div className="overflow-x-auto rounded-lg overflow-hidden border border-gray-200">
@@ -126,6 +136,7 @@ export default function PhaseTimelineTable({
                   required={row.adminAction.required}
                   error={errors[row.adminAction.key]}
                   minDate={minDate}
+                  disabled={readOnly}
                 />
               </td>
               <td className="px-3 py-3 border-l border-gray-200 align-top">
@@ -139,6 +150,7 @@ export default function PhaseTimelineTable({
                       required={f.required}
                       error={errors[f.key]}
                       minDate={minDate}
+                      disabled={readOnly}
                     />
                   ))}
                 </div>
