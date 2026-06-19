@@ -24,6 +24,14 @@ export const API_ENDPOINTS = {
   MENTORSHIP_MEETING_V2_SINGLE: (meetingId) =>
     `/mentorship/v2/meetings/${meetingId}`,
   MENTORSHIP_MEETING_V2_BATCH_DELETE: "/mentorship/v2/meetings/batch-delete",
+  ADMIN_PERMISSIONS: "/admin/permissions",
+  ADMIN_USERS: "/admin/users",
+  ADMIN_USER_PERMISSIONS: (userId) => `/admin/users/${userId}/permissions`,
+  ADMIN_PERMISSION_USERS: (name) => `/admin/permissions/${name}/users`,
+  ADMIN_AUDIT_PERMISSION_CHANGES: "/admin/audit/permission-changes",
+  ADMIN_USER_GRANT: (userId) => `/admin/users/${userId}/permissions/grant`,
+  ADMIN_USER_REVOKE: (userId) => `/admin/users/${userId}/permissions/revoke`,
+  ADMIN_USER_SUPER_ADMIN: (userId) => `/admin/users/${userId}/super-admin`,
 };
 
 /**

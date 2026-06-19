@@ -8,4 +8,5 @@ export const ROUTE_PATHS = {
   MENTORSHIP_MANAGEMENT: "/mentorship-management",
   VERIFY_REQUIRED: "/verify-required",
   SIGN_IN_SECURITY: "/settings/sign-in",
+  ADMIN_USERS: "/admin/users",
 };

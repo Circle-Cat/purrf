@@ -42,6 +42,11 @@ const Sidebar = () => {
       to: ROUTE_PATHS.MENTORSHIP_MANAGEMENT,
       permissions: [PERMISSIONS.MENTORSHIP_MANAGEMENT_READ],
     },
+    {
+      label: "User Permissions",
+      to: ROUTE_PATHS.ADMIN_USERS,
+      permissions: [PERMISSIONS.PERMISSION_MANAGE],
+    },
   ];
 
   return (

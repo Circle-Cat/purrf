@@ -20,6 +20,7 @@ import PersonalDashboard from "@/pages/PersonalDashboard";
 import MentorshipManagement from "@/pages/MentorshipManagement";
 import VerifyRequired from "@/pages/VerifyRequired";
 import SignInSecurity from "@/pages/SignInSecurity";
+import AdminPermissions from "@/pages/AdminPermissions";
 import { AuthProvider } from "@/context/auth";
 import { FlagsProvider, LDIdentifier } from "@/context/flags";
 import { PERMISSIONS } from "@/constants/Permissions";
@@ -97,6 +98,16 @@ function App() {
                           ]}
                         >
                           <MentorshipManagement />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path={ROUTE_PATHS.ADMIN_USERS}
+                      element={
+                        <ProtectedRoute
+                          requiredPermissions={[PERMISSIONS.PERMISSION_MANAGE]}
+                        >
+                          <AdminPermissions />
                         </ProtectedRoute>
                       }
                     />
