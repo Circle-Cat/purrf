@@ -115,7 +115,7 @@ describe("AllRoundsTable", () => {
     ).toBeInTheDocument();
   });
 
-  it("hides the Action column and edit buttons when canEdit is false", () => {
+  it("shows a view button instead of an edit button when canEdit is false", () => {
     render(
       <AllRoundsTable
         rounds={[makeTestRound()]}
@@ -124,9 +124,12 @@ describe("AllRoundsTable", () => {
       />,
     );
 
-    expect(screen.queryByText("Action")).not.toBeInTheDocument();
+    expect(screen.getByText("Action")).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /edit round/i }),
     ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /view round/i }),
+    ).toBeInTheDocument();
   });
 });
