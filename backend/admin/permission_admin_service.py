@@ -5,6 +5,7 @@ read-only /admin endpoints. The permission catalog is the code enum; any
 caller-supplied permission name is validated against it.
 """
 
+from backend.common.identity_type import IdentityType
 from backend.common.permissions import Permission
 from backend.dto.admin_permission_dto import (
     AdminUserDto,
@@ -37,7 +38,16 @@ class PermissionAdminService:
         return sorted(_VALID_PERMISSION_VALUES)
 
     async def list_users(
-        self, session, *, search: str | None, limit: int, offset: int
+        self,
+        session,
+        *,
+        search: str | None,
+        limit: int,
+        offset: int,
+        sort_by: str | None = None,
+        order: str = "asc",
+        is_super_admin: bool | None = None,
+        user_type: str | None = None,
     ) -> UserListDto:
         """
         Paginated user list for the admin UI.
@@ -48,15 +58,34 @@ class PermissionAdminService:
                 None lists everyone.
             limit (int): Max users per page.
             offset (int): Users to skip (for pagination).
+            sort_by (str | None): Column to sort by (whitelisted in the repo).
+                Unknown values fall back to deterministic ``user_id`` order.
+            order (str): ``"asc"`` or ``"desc"`` (default ``"asc"``).
+            is_super_admin (bool | None): When not None, restricts to matching
+                super-admin flag.
+            user_type (str | None): ``"internal"`` / ``"external"`` / None.
 
         Returns:
             UserListDto: The page of users plus the total match count.
         """
         rows, total = await self._users.list_users(
-            session, search=search, limit=limit, offset=offset
+            session,
+            search=search,
+            limit=limit,
+            offset=offset,
+            sort_by=sort_by,
+            order=order,
+            is_super_admin=is_super_admin,
+            user_type=user_type,
         )
         return UserListDto(
-            users=[self._to_admin_user_dto(u) for u in rows],
+            users=[
+                self._to_admin_user_dto(
+                    u,
+                    IdentityType.INTERNAL if is_internal else IdentityType.EXTERNAL,
+                )
+                for u, is_internal in rows
+            ],
             total=total,
         )
 
@@ -278,7 +307,11 @@ class PermissionAdminService:
             granted_by=granted_by,
         )
         user.is_super_admin = True
-        dto = self._to_admin_user_dto(user)
+        internal = await self._users.is_internal(session, user_id)
+        dto = self._to_admin_user_dto(
+            user,
+            IdentityType.INTERNAL if internal else IdentityType.EXTERNAL,
+        )
         await session.commit()
         return dto
 
@@ -311,17 +344,22 @@ class PermissionAdminService:
             session, user_id, _SUPER_ADMIN_SOURCE, revoked_by=revoked_by
         )
         user.is_super_admin = False
-        dto = self._to_admin_user_dto(user)
+        internal = await self._users.is_internal(session, user_id)
+        dto = self._to_admin_user_dto(
+            user,
+            IdentityType.INTERNAL if internal else IdentityType.EXTERNAL,
+        )
         await session.commit()
         return dto
 
     @staticmethod
-    def _to_admin_user_dto(user) -> AdminUserDto:
+    def _to_admin_user_dto(user, user_type: str) -> AdminUserDto:
         """
         Map a UsersEntity to an AdminUserDto.
 
         Args:
             user (UsersEntity): The user row.
+            user_type (str): The user type ("internal" or "external").
 
         Returns:
             AdminUserDto: The serializable view.
@@ -333,6 +371,8 @@ class PermissionAdminService:
             last_name=user.last_name,
             is_active=user.is_active,
             is_super_admin=user.is_super_admin,
+            preferred_name=user.preferred_name,
+            user_type=user_type,
         )
 
     @staticmethod
