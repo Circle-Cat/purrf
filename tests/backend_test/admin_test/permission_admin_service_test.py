@@ -147,9 +147,7 @@ class TestPermissionAdminService(unittest.IsolatedAsyncioTestCase):
     async def test_list_users_defaults_sort_and_filter_params(self):
         """Service passes None defaults when sort/filter params are omitted."""
         self.users.list_users.return_value = ([], 0)
-        await self.service.list_users(
-            self.session, search=None, limit=20, offset=0
-        )
+        await self.service.list_users(self.session, search=None, limit=20, offset=0)
         kwargs = self.users.list_users.await_args.kwargs
         self.assertIsNone(kwargs["sort_by"])
         self.assertEqual(kwargs["order"], "asc")

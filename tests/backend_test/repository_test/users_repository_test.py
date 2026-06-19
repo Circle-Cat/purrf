@@ -264,7 +264,9 @@ class TestUsersRepository(BaseRepositoryTestLib):
             )
         ])
 
-        rows, total = await self.repo.list_users(self.session, search=token, limit=10, offset=0)
+        rows, total = await self.repo.list_users(
+            self.session, search=token, limit=10, offset=0
+        )
         self.assertEqual(total, 1)
         entity, is_internal = rows[0]
         self.assertEqual(entity.user_id, user.user_id)
@@ -283,9 +285,11 @@ class TestUsersRepository(BaseRepositoryTestLib):
             )
         ])
 
-        rows, total = await self.repo.list_users(self.session, search=token, limit=10, offset=0)
+        rows, total = await self.repo.list_users(
+            self.session, search=token, limit=10, offset=0
+        )
         self.assertEqual(total, 1)
-        entity, is_internal = rows[0]
+        _, is_internal = rows[0]
         self.assertFalse(is_internal)
 
     async def test_list_users_internal_flag_false_when_no_identities(self):
@@ -293,9 +297,11 @@ class TestUsersRepository(BaseRepositoryTestLib):
         user = self._make_user(email=f"noident-{token}@example.com")
         await self.insert_entities([user])
 
-        rows, total = await self.repo.list_users(self.session, search=token, limit=10, offset=0)
+        rows, total = await self.repo.list_users(
+            self.session, search=token, limit=10, offset=0
+        )
         self.assertEqual(total, 1)
-        entity, is_internal = rows[0]
+        _, is_internal = rows[0]
         self.assertFalse(is_internal)
 
     async def test_list_users_preferred_name_carried_through(self):
@@ -304,7 +310,9 @@ class TestUsersRepository(BaseRepositoryTestLib):
         user.preferred_name = "Zoe Preferred"
         await self.insert_entities([user])
 
-        rows, total = await self.repo.list_users(self.session, search=token, limit=10, offset=0)
+        rows, total = await self.repo.list_users(
+            self.session, search=token, limit=10, offset=0
+        )
         self.assertEqual(total, 1)
         entity, _ = rows[0]
         self.assertEqual(entity.preferred_name, "Zoe Preferred")
@@ -315,7 +323,9 @@ class TestUsersRepository(BaseRepositoryTestLib):
         # preferred_name not set → defaults to None
         await self.insert_entities([user])
 
-        rows, total = await self.repo.list_users(self.session, search=token, limit=10, offset=0)
+        rows, _ = await self.repo.list_users(
+            self.session, search=token, limit=10, offset=0
+        )
         entity, _ = rows[0]
         self.assertIsNone(entity.preferred_name)
 
@@ -405,8 +415,12 @@ class TestUsersRepository(BaseRepositoryTestLib):
         """sort_by='last_name' without order defaults to ascending."""
         token = uuid.uuid4().hex[:10]
         users = [
-            self._make_user(last_name=f"Zebra-{token}", email=f"z2-{token}@example.com"),
-            self._make_user(last_name=f"Apple-{token}", email=f"a2-{token}@example.com"),
+            self._make_user(
+                last_name=f"Zebra-{token}", email=f"z2-{token}@example.com"
+            ),
+            self._make_user(
+                last_name=f"Apple-{token}", email=f"a2-{token}@example.com"
+            ),
         ]
         await self.insert_entities(users)
 
@@ -424,16 +438,24 @@ class TestUsersRepository(BaseRepositoryTestLib):
         """No sort_by → deterministic ascending user_id order."""
         token = uuid.uuid4().hex[:10]
         users = [
-            self._make_user(last_name=f"Zebra-{token}", email=f"d1-{token}@example.com"),
-            self._make_user(last_name=f"Apple-{token}", email=f"d2-{token}@example.com"),
-            self._make_user(last_name=f"Mango-{token}", email=f"d3-{token}@example.com"),
+            self._make_user(
+                last_name=f"Zebra-{token}", email=f"d1-{token}@example.com"
+            ),
+            self._make_user(
+                last_name=f"Apple-{token}", email=f"d2-{token}@example.com"
+            ),
+            self._make_user(
+                last_name=f"Mango-{token}", email=f"d3-{token}@example.com"
+            ),
         ]
         await self.insert_entities(users)
 
         rows, total = await self.repo.list_users(self.session, search=token)
         self.assertEqual(total, 3)
         ids = [r[0].user_id for r in rows]
-        self.assertEqual(ids, sorted(ids), msg="Default order should be ascending user_id")
+        self.assertEqual(
+            ids, sorted(ids), msg="Default order should be ascending user_id"
+        )
 
     async def test_list_users_unknown_sort_by_falls_back_to_user_id(self):
         """An unknown sort_by value silently falls back to user_id order."""
