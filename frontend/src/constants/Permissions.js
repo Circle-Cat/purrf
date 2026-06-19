@@ -9,4 +9,6 @@ export const PERMISSIONS = {
   MENTORSHIP_MANAGEMENT_READ: "mentorship.management.read",
   MENTORSHIP_ROUND_READ: "mentorship.round.read",
   MENTORSHIP_ROUND_WRITE: "mentorship.round.write",
+  PERMISSION_MANAGE: "permission.manage",
+  SUPER_ADMIN_REVOKE: "super_admin.revoke",
 };
