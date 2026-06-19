@@ -83,6 +83,7 @@ class TestPermissionAdminController(unittest.TestCase):
                 last_name="A",
                 is_active=True,
                 is_super_admin=True,
+                user_type="internal",
             )
         )
         self.service.revoke_super_admin = AsyncMock(
@@ -93,6 +94,7 @@ class TestPermissionAdminController(unittest.TestCase):
                 last_name="A",
                 is_active=True,
                 is_super_admin=False,
+                user_type="external",
             )
         )
 
@@ -113,6 +115,36 @@ class TestPermissionAdminController(unittest.TestCase):
         self.assertEqual(
             (kwargs["search"], kwargs["limit"], kwargs["offset"]), ("al", 5, 10)
         )
+
+    def test_users_passes_sort_and_filter_params(self):
+        """Controller forwards sort_by, order, is_super_admin, user_type to service."""
+        client = _client(self.service, permissions={Permission.PERMISSION_MANAGE})
+        resp = client.get(
+            ADMIN_USERS_ENDPOINT,
+            params={
+                "sort_by": "last_name",
+                "order": "desc",
+                "is_super_admin": "true",
+                "user_type": "internal",
+            },
+        )
+        self.assertEqual(resp.status_code, HTTPStatus.OK)
+        kwargs = self.service.list_users.await_args.kwargs
+        self.assertEqual(kwargs["sort_by"], "last_name")
+        self.assertEqual(kwargs["order"], "desc")
+        self.assertEqual(kwargs["is_super_admin"], True)
+        self.assertEqual(kwargs["user_type"], "internal")
+
+    def test_users_sort_filter_defaults_when_omitted(self):
+        """Controller sends None defaults for sort/filter when params are absent."""
+        client = _client(self.service, permissions={Permission.PERMISSION_MANAGE})
+        resp = client.get(ADMIN_USERS_ENDPOINT)
+        self.assertEqual(resp.status_code, HTTPStatus.OK)
+        kwargs = self.service.list_users.await_args.kwargs
+        self.assertIsNone(kwargs["sort_by"])
+        self.assertEqual(kwargs["order"], "asc")
+        self.assertIsNone(kwargs["is_super_admin"])
+        self.assertIsNone(kwargs["user_type"])
 
     def test_audit_passes_filters(self):
         client = _client(self.service, permissions={Permission.PERMISSION_MANAGE})

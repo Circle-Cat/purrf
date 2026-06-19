@@ -1,5 +1,7 @@
 from backend.entity.users_entity import UsersEntity
-from sqlalchemy import func, or_, select, update
+from backend.entity.user_identities_entity import UserIdentitiesEntity
+from backend.common.identity_type import IdentityType
+from sqlalchemy import exists, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -123,21 +125,59 @@ class UsersRepository:
         search: str | None = None,
         limit: int = 20,
         offset: int = 0,
-    ) -> tuple[list[UsersEntity], int]:
+        sort_by: str | None = None,
+        order: str = "asc",
+        is_super_admin: bool | None = None,
+        user_type: str | None = None,
+    ) -> tuple[list[tuple[UsersEntity, bool]], int]:
         """
-        Paginated user list with optional case-insensitive substring search over
-        first_name / last_name / primary_email.
+        Paginated user list with optional case-insensitive substring search,
+        sorting, and filtering.
 
         Args:
             session (AsyncSession): The active async database session.
-            search (str | None): Case-insensitive substring; None lists everyone.
+            search (str | None): Case-insensitive substring over first_name /
+                last_name / primary_email; None lists everyone.
             limit (int): Max rows to return.
             offset (int): Rows to skip (for pagination).
+            sort_by (str | None): Column to sort by. Allowed values:
+                ``"user_id"``, ``"first_name"``, ``"last_name"``,
+                ``"preferred_name"``, ``"is_active"``, ``"is_super_admin"``,
+                ``"user_type"`` (by the derived internal/external flag).
+                Unknown or None values fall back to deterministic ``user_id``
+                order.
+            order (str): ``"asc"`` (default) or ``"desc"``. Only applied when
+                ``sort_by`` resolves to a whitelisted column.
+            is_super_admin (bool | None): When not None, restricts results to
+                users whose ``is_super_admin`` flag matches this value.
+            user_type (str | None): When ``"internal"`` keeps only users that
+                have an INTERNAL identity row; when ``"external"`` keeps only
+                users without one; otherwise no filter.
 
         Returns:
-            tuple[list[UsersEntity], int]: (page rows ordered by user_id, total
-            number of rows matching the search across all pages).
+            tuple[list[tuple[UsersEntity, bool]], int]: (page rows where each
+            element is (entity, is_internal), total number of rows matching all
+            active filters across all pages).
         """
+        internal_identity_exists = exists(
+            select(UserIdentitiesEntity.identity_id).where(
+                UserIdentitiesEntity.user_id == UsersEntity.user_id,
+                UserIdentitiesEntity.identity_type == IdentityType.INTERNAL,
+            )
+        )
+
+        # "user_type" sorts by the derived internal/external flag; ascending
+        # puts external (no internal identity) before internal.
+        _SORT_WHITELIST: dict[str, object] = {
+            "user_id": UsersEntity.user_id,
+            "first_name": UsersEntity.first_name,
+            "last_name": UsersEntity.last_name,
+            "preferred_name": UsersEntity.preferred_name,
+            "is_active": UsersEntity.is_active,
+            "is_super_admin": UsersEntity.is_super_admin,
+            "user_type": internal_identity_exists,
+        }
+
         filters = []
         if search:
             pattern = f"%{search.lower()}%"
@@ -148,18 +188,58 @@ class UsersRepository:
                     func.lower(UsersEntity.primary_email).like(pattern),
                 )
             )
+        if is_super_admin is not None:
+            filters.append(UsersEntity.is_super_admin == is_super_admin)
+        if user_type == IdentityType.INTERNAL:
+            filters.append(internal_identity_exists)
+        elif user_type == IdentityType.EXTERNAL:
+            filters.append(~internal_identity_exists)
+
+        is_internal_col = internal_identity_exists.label("is_internal")
+
+        # Build ORDER BY: whitelisted column (asc/desc) + user_id tiebreaker.
+        sort_col = _SORT_WHITELIST.get(sort_by) if sort_by else None
+        if sort_col is not None:
+            primary_order = sort_col.desc() if order == "desc" else sort_col.asc()
+            order_clauses = [primary_order, UsersEntity.user_id]
+        else:
+            order_clauses = [UsersEntity.user_id]
 
         total = await session.scalar(
             select(func.count()).select_from(UsersEntity).where(*filters)
         )
         result = await session.execute(
-            select(UsersEntity)
+            select(UsersEntity, is_internal_col)
             .where(*filters)
-            .order_by(UsersEntity.user_id)
+            .order_by(*order_clauses)
             .limit(limit)
             .offset(offset)
         )
-        return list(result.scalars().all()), int(total or 0)
+        return list(result.tuples().all()), int(total or 0)
+
+    async def is_internal(self, session: AsyncSession, user_id: int) -> bool:
+        """
+        Returns True if the user has at least one identity_type='internal' row
+        in user_identities.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            user_id (int): The user to check.
+
+        Returns:
+            bool: True if an INTERNAL identity row exists for this user.
+        """
+        result = await session.scalar(
+            select(
+                exists(
+                    select(UserIdentitiesEntity.identity_id).where(
+                        UserIdentitiesEntity.user_id == user_id,
+                        UserIdentitiesEntity.identity_type == IdentityType.INTERNAL,
+                    )
+                )
+            )
+        )
+        return bool(result)
 
     async def set_super_admin(
         self, session: AsyncSession, user_id: int, is_super_admin: bool

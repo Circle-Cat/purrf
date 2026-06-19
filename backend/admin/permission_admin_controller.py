@@ -116,22 +116,40 @@ class PermissionAdminController:
         search: str | None = None,
         limit: int = 20,
         offset: int = 0,
+        sort_by: str | None = None,
+        order: str = "asc",
+        is_super_admin: bool | None = None,
+        user_type: str | None = None,
     ):
         """
-        Paginated user list with optional email/name search.
+        Paginated user list with optional email/name search, sorting, and
+        filtering.
 
         Args:
             current_user (UserContextDto): The authenticated caller (injected).
             search (str | None): Case-insensitive name/email substring filter.
             limit (int): Page size.
             offset (int): Rows to skip (pagination).
+            sort_by (str | None): Column to sort by (whitelisted in the repo).
+                Unknown values fall back to deterministic ``user_id`` order.
+            order (str): ``"asc"`` or ``"desc"`` (default ``"asc"``).
+            is_super_admin (bool | None): When not None, restricts to matching
+                super-admin flag.
+            user_type (str | None): ``"internal"`` / ``"external"`` / None.
 
         Returns:
             A standardized API response wrapping a ``UserListDto``.
         """
         async with self._database.session() as session:
             view = await self._service.list_users(
-                session, search=search, limit=limit, offset=offset
+                session,
+                search=search,
+                limit=limit,
+                offset=offset,
+                sort_by=sort_by,
+                order=order,
+                is_super_admin=is_super_admin,
+                user_type=user_type,
             )
         return api_response(message="Users", data=view)
 
