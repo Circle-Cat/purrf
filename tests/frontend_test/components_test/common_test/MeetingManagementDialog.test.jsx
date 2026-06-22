@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import MeetingManagementDialog from "@/components/common/MeetingManagementDialog";
@@ -59,7 +59,7 @@ describe("MeetingManagementDialog Component", () => {
     });
   });
 
-  it("should disable the button and show correct Chinese tooltip when roundId is invalid", () => {
+  it("should disable the button and show correct tooltip when roundId is invalid", () => {
     const { rerender } = render(<MeetingManagementDialog roundId={null} />);
 
     const triggerButton = screen.getByRole("button", {
@@ -103,38 +103,45 @@ describe("MeetingManagementDialog Component", () => {
     render(<MeetingManagementDialog roundId={2} />);
 
     // Open Dialog
-    fireEvent.click(screen.getByRole("button", { name: /manage meetings/i }));
+    await userEvent.click(
+      screen.getByRole("button", { name: /manage meetings/i }),
+    );
 
     const scheduleTab = screen.getByRole("tab", { name: /schedule meeting/i });
-    fireEvent.click(scheduleTab);
+    await userEvent.click(scheduleTab);
 
-    // Assert that the error toast handles unselected calendar date validation safely
-    await waitFor(() => {
-      const form = screen.getByRole("dialog").querySelector("form");
-      if (!form) throw new Error("Form still not found in DOM");
+    const form = screen.getByRole("dialog").querySelector("form");
+    if (!form) throw new Error("Form still not found in DOM");
+    fireEvent.submit(form);
 
-      fireEvent.submit(form);
-    });
+    expect(mockBookMeeting).not.toHaveBeenCalled();
   });
 
   it("should reset form data with a 200ms delay after the dialog is closed", async () => {
-    vi.useFakeTimers(); // Intercept timers
     render(<MeetingManagementDialog roundId={2} />);
 
-    // Open Dialog
-    fireEvent.click(screen.getByRole("button", { name: /manage meetings/i }));
+    await userEvent.click(
+      screen.getByRole("button", { name: /manage meetings/i }),
+    );
 
-    const dialogContent = screen.getByRole("dialog");
-    expect(dialogContent).toBeInTheDocument();
+    let partnerSelect = screen.getByRole("combobox", {
+      name: /select partner/i,
+    });
+    await userEvent.selectOptions(partnerSelect, "1");
 
-    // Fast-forward animation timeout block to verify cleanups
-    vi.advanceTimersByTime(200);
-    vi.useRealTimers();
+    fireEvent.keyDown(document.activeElement || document.body, {
+      key: "Escape",
+      code: "Escape",
+    });
+    await new Promise((resolve) => setTimeout(resolve, 250));
+
+    await userEvent.click(
+      screen.getByRole("button", { name: /manage meetings/i }),
+    );
+
+    const refreshedPartnerSelect = screen.getByRole("combobox", {
+      name: /select partner/i,
+    });
+    expect(refreshedPartnerSelect.value).toBe("");
   });
 });
-
-screen.getByLabelSelect = (text) => {
-  return screen.getByRole("combobox", {
-    name: (content, element) => element.labels?.[0]?.textContent.includes(text),
-  });
-};

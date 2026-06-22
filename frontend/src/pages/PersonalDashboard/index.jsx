@@ -55,11 +55,6 @@ const PersonalDashboard = () => {
   const { summary, isPersonalSummaryLoading, fetchPersonalSummary } =
     useWorkActivityData({ enabled: canViewActivitySummary });
 
-  // const activeRound = roundSelectionData?.sortedRounds?.find(
-  //   (round) => round.status === MentorshipRoundStatus.ACTIVE,
-  // );
-  // const meetingRoundId = activeRound?.id ?? null;
-
   const currentSelectedRound = roundSelectionData?.sortedRounds?.find(
     (round) => Number(round.id) === Number(selectedRoundId),
   );
