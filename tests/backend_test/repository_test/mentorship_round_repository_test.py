@@ -337,6 +337,12 @@ class TestMentorShipRoundRepository(BaseRepositoryTestLib):
 
         self.assertIsNone(result)
 
+    async def test_round_has_reapply_freeze_days_default(self):
+        from backend.entity.mentorship_round_entity import MentorshipRoundEntity
+        round_entity = MentorshipRoundEntity(name="2026-freeze", required_meetings=5)
+        await self.insert_entities([round_entity])
+        self.assertEqual(round_entity.reapply_freeze_days, 90)
+
 
 if __name__ == "__main__":
     unittest.main()
