@@ -1,4 +1,4 @@
-import "@/components/common/JiraReportTable.css";
+import "@/pages/DataSearch/components/JiraReportTable.css";
 
 import { useState, useEffect } from "react";
 import { getJiraIssueDetails, getJiraIssueBrief } from "@/api/dataSearchApi";

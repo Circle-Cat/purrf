@@ -103,14 +103,15 @@ const StepUpConfirmDialog = ({
             {busy ? "Verifying…" : confirmLabel}
           </Button>
           {onResend && (
-            <button
+            <Button
               type="button"
-              className="text-sm text-muted-foreground hover:underline"
+              variant="link"
+              className="h-auto p-0 text-muted-foreground"
               onClick={handleResend}
               disabled={busy}
             >
               Resend code
-            </button>
+            </Button>
           )}
         </div>
       </DialogContent>

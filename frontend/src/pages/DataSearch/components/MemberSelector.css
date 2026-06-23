@@ -286,19 +286,6 @@
   box-shadow: 0 -1px 0 rgba(17, 24, 39, 0.04);
 }
 
-.ms-btn-flat {
-  background: transparent;
-  border: 0;
-  color: var(--ms-faint);
-  font-size: 16px;
-  padding: 8px 10px;
-  cursor: pointer;
-  border-radius: 8px;
-  transition: background-color .15s ease, color .15s ease;
-}
-.ms-btn-flat:hover { color: var(--ms-muted); background: var(--ms-bg-hover); }
-.ms-btn-flat:focus-visible { outline: 2px solid var(--ms-primary); outline-offset: 2px; }
-
 .ms-spacer { flex: 1; }
 
 .ms-count {
@@ -306,25 +293,9 @@
   font-size: 14px;
 }
 
-.ms-btn-primary {
-  background: var(--ms-primary);
-  color: var(--text-color-white, #fff);
-  border: 0;
-  border-radius: var(--ms-radius);
-  padding: 10px 18px;
-  font-size: 16px;
-  cursor: pointer;
-  transition: filter .15s ease, transform .02s ease-in-out;
-}
-.ms-btn-primary:hover { filter: brightness(0.95); }
-.ms-btn-primary:active { transform: translateY(1px); }
-.ms-btn-primary:focus-visible { outline: 2px solid var(--ms-primary); outline-offset: 2px; }
-
 /* ---------- Motion & responsiveness ---------- */
 @media (prefers-reduced-motion: reduce) {
   .ms-row,
-  .ms-btn-flat,
-  .ms-btn-primary,
   .ms-searchbar {
     transition: none !important;
   }

@@ -5,7 +5,6 @@
   padding: 20px;
   box-sizing: border-box;
   position: relative;
-  background: var(--bg-color-light);
 }
 
 .ds-topbar-row {

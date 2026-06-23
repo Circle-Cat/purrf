@@ -3,8 +3,8 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import "@testing-library/jest-dom/vitest";
-import DataSearch from "@/pages/DataSearch.jsx";
-import Tab from "@/components/common/Tab.jsx";
+import DataSearch from "@/pages/DataSearch/index.jsx";
+import Tab from "@/pages/DataSearch/components/DataSourceReportTabs";
 
 /**
  * Mock MemberSelector:
@@ -12,7 +12,7 @@ import Tab from "@/components/common/Tab.jsx";
  * - Calls onSelectedChange to push ids live
  * - Calls props.onClose() on OK/Cancel to emulate real component
  */
-vi.mock("@/components/common/MemberSelector", () => {
+vi.mock("@/pages/DataSearch/components/MemberSelector", () => {
   return {
     __esModule: true,
     default: function MockMemberSelector(props) {
@@ -101,7 +101,7 @@ vi.mock("@/components/common/DateRangePicker", () => {
   };
 });
 
-vi.mock("@/components/common/DataSourceSelector", () => {
+vi.mock("@/pages/DataSearch/components/DataSourceSelector", () => {
   return {
     __esModule: true,
     DataSourceSelector: vi.fn(({ isOpen, onConfirm, onCancel }) => {
@@ -123,7 +123,7 @@ vi.mock("@/components/common/DataSourceSelector", () => {
   };
 });
 
-vi.mock("@/components/common/Tab.jsx", () => {
+vi.mock("@/pages/DataSearch/components/DataSourceReportTabs", () => {
   return {
     __esModule: true,
     default: vi.fn(({ committedSearchParams }) => (

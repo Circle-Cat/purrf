@@ -1,9 +1,9 @@
 import { useState, useEffect } from "react";
-import "@/pages/DataSearch.css";
-import MemberSelector from "@/components/common/MemberSelector";
+import "@/pages/DataSearch/DataSearch.css";
+import MemberSelector from "@/pages/DataSearch/components/MemberSelector";
 import DateRangePicker from "@/components/common/DateRangePicker";
-import { DataSourceSelector } from "@/components/common/DataSourceSelector";
-import Tab from "@/components/common/Tab.jsx";
+import { DataSourceSelector } from "@/pages/DataSearch/components/DataSourceSelector";
+import DataSourceReportTabs from "@/pages/DataSearch/components/DataSourceReportTabs";
 import { Button } from "@/components/ui/button";
 
 /**
@@ -103,22 +103,20 @@ export default function DataSearch() {
     <div className="datesearch-page ds-page" data-testid="data-search-page">
       <div className="ds-topbar-row">
         <div className="ds-left-group">
-          <button
-            type="button"
+          <Button size="sm" 
             className="ldap-chip"
             onClick={() => setLdapModalOpen(true)}
             title="Pick members"
           >
             {selectedCount ? `LDAP (${selectedCount})` : "LDAP"}
-          </button>
+          </Button>
 
-          <button
-            type="button"
+          <Button size="sm" 
             className="ldap-chip"
             onClick={() => setShowSelector(true)}
           >
             Data Source
-          </button>
+          </Button>
 
           <DateRangePicker
             defaultStartDate={defaultStart}
@@ -158,7 +156,7 @@ export default function DataSearch() {
       {/* Tabbed view for data reports */}
       <div className="ds-content-area">
         {showTab && committedSearchParams && (
-          <Tab committedSearchParams={committedSearchParams} />
+          <DataSourceReportTabs committedSearchParams={committedSearchParams} />
         )}
       </div>
     </div>

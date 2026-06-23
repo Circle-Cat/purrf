@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
-import "@/components/common/DataSourceSelector.css";
+import "@/pages/DataSearch/components/DataSourceSelector.css";
 import {
   getMicrosoftChatTopics,
   getGoogleChatSpaces,
@@ -10,6 +10,7 @@ import {
 import { ChatProvider, DataSourceNames } from "@/constants/Groups";
 import handleMultiplePromises from "@/utils/promiseUtils";
 import Modal from "@/components/common/Modal";
+import { Button } from "@/components/ui/button";
 /**
  * DataSourceSelector Component
  *
@@ -394,12 +395,10 @@ export const DataSourceSelector = ({ isOpen, onConfirm, onCancel }) => {
           </div>
 
           <footer className="dss-footer">
-            <button className="cancel-button" onClick={handleCancelAction}>
+            <Button variant="outline" onClick={handleCancelAction}>
               Cancel
-            </button>
-            <button className="ok-button" onClick={handleConfirm}>
-              OK
-            </button>
+            </Button>
+            <Button onClick={handleConfirm}>OK</Button>
           </footer>
         </>
       )}
