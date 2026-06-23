@@ -51,7 +51,9 @@ class TestApplicationServiceSubmit(unittest.IsolatedAsyncioTestCase):
 
         self.app_repo.create_application = AsyncMock(side_effect=fake_create)
 
-    def _make_user(self, *, is_blocked: bool, primary_email: str = "a@b.c") -> UsersEntity:
+    def _make_user(
+        self, *, is_blocked: bool, primary_email: str = "a@b.c"
+    ) -> UsersEntity:
         return UsersEntity(
             user_id=5,
             user_type=UserType.EXTERNAL,

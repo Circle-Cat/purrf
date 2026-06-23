@@ -3,7 +3,10 @@ from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.mentorship_enums import ApprovalStatus, ParticipantRole
-from backend.common.recruiting_enums import ApplicationStage, MENTOR_ALLOWED_EMAIL_DOMAINS
+from backend.common.recruiting_enums import (
+    ApplicationStage,
+    MENTOR_ALLOWED_EMAIL_DOMAINS,
+)
 from backend.dto.application_dto import (
     ApplicationBoardCardDto,
     ApplicationDto,
