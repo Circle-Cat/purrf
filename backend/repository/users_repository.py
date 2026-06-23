@@ -123,6 +123,7 @@ class UsersRepository:
         session: AsyncSession,
         *,
         search: str | None = None,
+        user_id: int | None = None,
         limit: int = 20,
         offset: int = 0,
         sort_by: str | None = None,
@@ -138,6 +139,8 @@ class UsersRepository:
             session (AsyncSession): The active async database session.
             search (str | None): Case-insensitive substring over first_name /
                 last_name / primary_email; None lists everyone.
+            user_id (int | None): When not None, restricts results to the user
+                with this exact ``user_id``. Applied in addition to ``search``.
             limit (int): Max rows to return.
             offset (int): Rows to skip (for pagination).
             sort_by (str | None): Column to sort by. Allowed values:
@@ -188,6 +191,8 @@ class UsersRepository:
                     func.lower(UsersEntity.primary_email).like(pattern),
                 )
             )
+        if user_id is not None:
+            filters.append(UsersEntity.user_id == user_id)
         if is_super_admin is not None:
             filters.append(UsersEntity.is_super_admin == is_super_admin)
         if user_type == IdentityType.INTERNAL:
