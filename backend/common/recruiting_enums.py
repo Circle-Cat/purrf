@@ -44,7 +44,5 @@ class ApplicationStage(StrEnum):
 
 
 # Work-email domains whose holders are auto-approved as mentors (lowercased, no "@").
-# PLACEHOLDER — replace with the real designated tech-company domains.
-MENTOR_ALLOWED_EMAIL_DOMAINS: frozenset[str] = frozenset(
-    {"google.com", "microsoft.com", "amazon.com"}
-)
+# Add Google subsidiaries (e.g. "youtube.com", "deepmind.com") here if they should qualify.
+MENTOR_ALLOWED_EMAIL_DOMAINS: frozenset[str] = frozenset({"google.com"})
