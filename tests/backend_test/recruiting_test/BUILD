@@ -5,3 +5,9 @@ py_test(
     srcs = ["recruiting_mapper_test.py"],
     deps = ["//backend/recruiting"],
 )
+
+py_test(
+    name = "job_service_test",
+    srcs = ["job_service_test.py"],
+    deps = ["//backend/recruiting"],
+)
