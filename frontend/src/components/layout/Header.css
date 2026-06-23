@@ -25,6 +25,28 @@
     gap: 10px;
 }
 
+.header-left .sidebar-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-color-dark);
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+.header-left .sidebar-toggle:hover {
+    background-color: var(--bg-color-stripe-even);
+}
+
+.header-left .sidebar-toggle:focus-visible {
+    outline: 2px solid var(--primary-color);
+}
+
 .header-right .user-name {
     width: 36px;
     height: 36px;
