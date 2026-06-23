@@ -88,4 +88,37 @@ describe("Sidebar Component", () => {
     expect(dashBoardLink).toHaveClass("active-link");
     expect(dataSearchLink).toBeNull();
   });
+
+  // ── Recruiting nav items ────────────────────────────────────────────────────
+
+  test("renders Recruiting Admin for a user with RECRUITING_JOB_READ", () => {
+    renderSidebar([PERMISSIONS.RECRUITING_JOB_READ]);
+
+    expect(screen.getByText("Recruiting Admin")).toBeInTheDocument();
+    expect(screen.queryByText("Recruiting Screening")).not.toBeInTheDocument();
+  });
+
+  test("renders Recruiting Screening for a user with RECRUITING_APPLICATION_READ", () => {
+    renderSidebar([PERMISSIONS.RECRUITING_APPLICATION_READ]);
+
+    expect(screen.getByText("Recruiting Screening")).toBeInTheDocument();
+    expect(screen.queryByText("Recruiting Admin")).not.toBeInTheDocument();
+  });
+
+  test("renders both Recruiting Admin and Recruiting Screening for a user with both recruiting permissions", () => {
+    renderSidebar([
+      PERMISSIONS.RECRUITING_JOB_READ,
+      PERMISSIONS.RECRUITING_APPLICATION_READ,
+    ]);
+
+    expect(screen.getByText("Recruiting Admin")).toBeInTheDocument();
+    expect(screen.getByText("Recruiting Screening")).toBeInTheDocument();
+  });
+
+  test("does not render Recruiting Admin or Recruiting Screening for a user with no recruiting permissions", () => {
+    renderSidebar([PERMISSIONS.DASHBOARD_ACTIVITY_SUMMARY_READ]);
+
+    expect(screen.queryByText("Recruiting Admin")).not.toBeInTheDocument();
+    expect(screen.queryByText("Recruiting Screening")).not.toBeInTheDocument();
+  });
 });

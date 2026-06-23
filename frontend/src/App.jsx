@@ -17,6 +17,10 @@ import Profile from "@/pages/Profile";
 import AccessDenied from "@/pages/AccessDenied";
 import PersonalDashboard from "@/pages/PersonalDashboard";
 import MentorshipManagement from "@/pages/MentorshipManagement";
+import RecruitingAdmin from "@/pages/RecruitingAdmin";
+import RecruitingApply from "@/pages/RecruitingApply";
+import RecruitingScreening from "@/pages/RecruitingScreening";
+import RecruitingScreeningIndex from "@/pages/RecruitingScreeningIndex";
 import VerifyRequired from "@/pages/VerifyRequired";
 import SignInSecurity from "@/pages/SignInSecurity";
 import { AuthProvider } from "@/context/auth";
@@ -93,6 +97,46 @@ function App() {
                           <MentorshipManagement />
                         </ProtectedRoute>
                       }
+                    />
+                    <Route
+                      path={ROUTE_PATHS.RECRUITING_ADMIN}
+                      element={
+                        <ProtectedRoute
+                          requiredPermissions={[
+                            PERMISSIONS.RECRUITING_JOB_READ,
+                          ]}
+                        >
+                          <RecruitingAdmin />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path={ROUTE_PATHS.RECRUITING_SCREENING_INDEX}
+                      element={
+                        <ProtectedRoute
+                          requiredPermissions={[
+                            PERMISSIONS.RECRUITING_APPLICATION_READ,
+                          ]}
+                        >
+                          <RecruitingScreeningIndex />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path={ROUTE_PATHS.RECRUITING_SCREENING}
+                      element={
+                        <ProtectedRoute
+                          requiredPermissions={[
+                            PERMISSIONS.RECRUITING_APPLICATION_READ,
+                          ]}
+                        >
+                          <RecruitingScreening />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path={ROUTE_PATHS.RECRUITING_APPLY}
+                      element={<RecruitingApply />}
                     />
                     <Route
                       path={ROUTE_PATHS.ACCESS_DENIED}
