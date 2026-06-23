@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import "./Header.css";
+import { PanelLeft } from "lucide-react";
 import { Root, Trigger, Content, Item } from "@radix-ui/react-dropdown-menu";
 import logo from "@/assets/logo.png";
 import {
@@ -17,7 +18,16 @@ import {
 } from "@radix-ui/react-dialog";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
 
-const Header = () => {
+/**
+ * Top navigation bar. Optionally renders a button that toggles the sidebar's
+ * collapsed state; the toggle is only shown when `onToggleSidebar` is provided.
+ *
+ * @param {Object} props
+ * @param {() => void} [props.onToggleSidebar] - Toggles the sidebar collapsed state.
+ * @param {boolean} [props.sidebarCollapsed] - Whether the sidebar is currently collapsed.
+ * @returns {JSX.Element}
+ */
+const Header = ({ onToggleSidebar, sidebarCollapsed }) => {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [char, setChar] = useState("");
   const navigate = useNavigate();
@@ -51,6 +61,19 @@ const Header = () => {
   return (
     <header className="header">
       <div className="header-left">
+        {onToggleSidebar && (
+          <button
+            type="button"
+            className="sidebar-toggle"
+            onClick={onToggleSidebar}
+            aria-label={
+              sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"
+            }
+            aria-expanded={!sidebarCollapsed}
+          >
+            <PanelLeft size={20} />
+          </button>
+        )}
         <img src={logo} alt="Purrf Logo" className="logo" />
         <span className="logo-text">Purrf</span>
       </div>
