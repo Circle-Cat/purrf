@@ -8,7 +8,7 @@ import {
   getGerritProjects,
 } from "@/api/dataSearchApi";
 import { ChatProvider, DataSourceNames } from "@/constants/Groups";
-import { DataSourceSelector } from "@/components/common/DataSourceSelector";
+import { DataSourceSelector } from "@/pages/DataSearch/components/DataSourceSelector";
 
 vi.mock("@/api/dataSearchApi", () => ({
   getMicrosoftChatTopics: vi.fn(),

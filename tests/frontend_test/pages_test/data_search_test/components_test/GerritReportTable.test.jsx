@@ -7,7 +7,7 @@ import {
 } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("@/components/common/GerritReportTable.css", () => ({}));
+vi.mock("@/pages/DataSearch/components/GerritReportTable.css", () => ({}));
 
 vi.mock("@/api/dataSearchApi", () => ({
   getGerritStats: vi.fn(),
@@ -44,7 +44,7 @@ vi.mock("@/components/common/Table", () => ({
 }));
 
 import { getGerritStats } from "@/api/dataSearchApi";
-import GerritReportTable from "@/components/common/GerritReportTable";
+import GerritReportTable from "@/pages/DataSearch/components/GerritReportTable";
 
 describe("GerritReportTable", () => {
   beforeEach(() => {

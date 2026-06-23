@@ -8,7 +8,7 @@ import {
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import "@testing-library/jest-dom/vitest";
 
-import JiraReportTable from "@/components/common/JiraReportTable";
+import JiraReportTable from "@/pages/DataSearch/components/JiraReportTable";
 import { getJiraIssueDetails, getJiraIssueBrief } from "@/api/dataSearchApi";
 
 vi.mock("@/api/dataSearchApi", () => ({
