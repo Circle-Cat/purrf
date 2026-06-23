@@ -114,6 +114,7 @@ class PermissionAdminController:
         self,
         current_user: UserContextDto,
         search: str | None = None,
+        user_id: int | None = None,
         limit: int = 20,
         offset: int = 0,
         sort_by: str | None = None,
@@ -128,6 +129,7 @@ class PermissionAdminController:
         Args:
             current_user (UserContextDto): The authenticated caller (injected).
             search (str | None): Case-insensitive name/email substring filter.
+            user_id (int | None): When not None, exact-match filter on user_id.
             limit (int): Page size.
             offset (int): Rows to skip (pagination).
             sort_by (str | None): Column to sort by (whitelisted in the repo).
@@ -144,6 +146,7 @@ class PermissionAdminController:
             view = await self._service.list_users(
                 session,
                 search=search,
+                user_id=user_id,
                 limit=limit,
                 offset=offset,
                 sort_by=sort_by,

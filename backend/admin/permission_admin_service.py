@@ -42,6 +42,7 @@ class PermissionAdminService:
         session,
         *,
         search: str | None,
+        user_id: int | None = None,
         limit: int,
         offset: int,
         sort_by: str | None = None,
@@ -56,6 +57,8 @@ class PermissionAdminService:
             session (AsyncSession): The active async database session.
             search (str | None): Case-insensitive substring over name/email;
                 None lists everyone.
+            user_id (int | None): When not None, restricts results to the user
+                with this exact ``user_id``.
             limit (int): Max users per page.
             offset (int): Users to skip (for pagination).
             sort_by (str | None): Column to sort by (whitelisted in the repo).
@@ -71,6 +74,7 @@ class PermissionAdminService:
         rows, total = await self._users.list_users(
             session,
             search=search,
+            user_id=user_id,
             limit=limit,
             offset=offset,
             sort_by=sort_by,
