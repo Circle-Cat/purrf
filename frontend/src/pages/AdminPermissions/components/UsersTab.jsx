@@ -16,8 +16,12 @@ const UsersTab = ({ catalog }) => {
     users,
     total,
     loading,
+    hasSearched,
     search,
     setSearch,
+    userId,
+    setUserId,
+    submitSearch,
     offset,
     limit,
     nextPage,
@@ -41,8 +45,12 @@ const UsersTab = ({ catalog }) => {
         users={users}
         total={total}
         loading={loading}
+        hasSearched={hasSearched}
         search={search}
         onSearchChange={setSearch}
+        userId={userId}
+        onUserIdChange={setUserId}
+        onSearch={submitSearch}
         offset={offset}
         limit={limit}
         onPrev={prevPage}

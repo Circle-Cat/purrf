@@ -38,8 +38,12 @@ const ACCESSOR_TO_SORT_FIELD = {
  * @param {Array} props.users
  * @param {number} props.total
  * @param {boolean} props.loading
- * @param {string} props.search
+ * @param {boolean} props.hasSearched - Whether a search has been run yet.
+ * @param {string} props.search - Draft name/email search text.
  * @param {(value: string) => void} props.onSearchChange
+ * @param {string} props.userId - Draft exact User ID search text (digits only).
+ * @param {(value: string) => void} props.onUserIdChange
+ * @param {() => void} props.onSearch - Commit the draft inputs and search.
  * @param {number} props.offset
  * @param {number} props.limit
  * @param {() => void} props.onPrev
@@ -48,17 +52,21 @@ const ACCESSOR_TO_SORT_FIELD = {
  * @param {string|null} props.sortBy - Active backend sort field (e.g. "last_name").
  * @param {"asc"|"desc"} props.order - Current sort direction.
  * @param {(field: string) => void} props.onToggleSort - Called with backend field name.
- * @param {boolean} props.isSuperAdmin - Super-admins-only filter.
+ * @param {boolean} props.isSuperAdmin - Super-admins-only filter (draft).
  * @param {(checked: boolean) => void} props.onSuperAdminFilterChange
- * @param {string} props.userType - "internal"|"external"|"" (all).
+ * @param {string} props.userType - "internal"|"external"|"" (all) (draft).
  * @param {(value: string) => void} props.onUserTypeChange
  */
 const UserList = ({
   users,
   total,
   loading,
+  hasSearched,
   search,
   onSearchChange,
+  userId,
+  onUserIdChange,
+  onSearch,
   offset,
   limit,
   onPrev,
@@ -134,9 +142,19 @@ const UserList = ({
       <div className="flex flex-wrap items-center gap-3">
         <Input
           className="w-64"
-          placeholder="Search by name…"
+          placeholder="Search by name or email…"
           value={search}
           onChange={(e) => onSearchChange(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && onSearch()}
+        />
+
+        <Input
+          className="w-40"
+          inputMode="numeric"
+          placeholder="User ID"
+          value={userId}
+          onChange={(e) => onUserIdChange(e.target.value.replace(/\D/g, ""))}
+          onKeyDown={(e) => e.key === "Enter" && onSearch()}
         />
 
         <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
@@ -161,38 +179,50 @@ const UserList = ({
             <SelectItem value="external">External</SelectItem>
           </SelectContent>
         </Select>
-      </div>
 
-      <Table
-        columns={columns}
-        data={data}
-        onSort={handleSort}
-        sortColumn={activeSortAccessor}
-        sortDirection={order}
-      />
-
-      <div className="admin-user-list-pager flex items-center justify-between gap-2 text-sm text-muted-foreground">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={onPrev}
-          disabled={!hasPrev}
-        >
-          Prev
-        </Button>
-        <span>
-          {total === 0 ? 0 : offset + 1}–{Math.min(offset + limit, total)} of{" "}
-          {total}
-        </span>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={onNext}
-          disabled={!hasNext}
-        >
-          Next
+        <Button type="button" onClick={onSearch}>
+          Search
         </Button>
       </div>
+
+      {!hasSearched ? (
+        <p className="text-sm text-muted-foreground">
+          Enter search criteria and click Search.
+        </p>
+      ) : (
+        <>
+          <Table
+            columns={columns}
+            data={data}
+            onSort={handleSort}
+            sortColumn={activeSortAccessor}
+            sortDirection={order}
+          />
+
+          <div className="admin-user-list-pager flex items-center justify-between gap-2 text-sm text-muted-foreground">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onPrev}
+              disabled={!hasPrev}
+            >
+              Prev
+            </Button>
+            <span>
+              {total === 0 ? 0 : offset + 1}–{Math.min(offset + limit, total)}{" "}
+              of {total}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onNext}
+              disabled={!hasNext}
+            >
+              Next
+            </Button>
+          </div>
+        </>
+      )}
     </div>
   );
 };

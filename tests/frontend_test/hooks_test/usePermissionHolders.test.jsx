@@ -11,39 +11,45 @@ beforeEach(() => {
 });
 
 describe("usePermissionHolders", () => {
-  it("does not fetch until a permission is chosen", async () => {
-    renderHook(() => usePermissionHolders());
+  it("does not fetch on mount or when only a permission is chosen", async () => {
+    const { result } = renderHook(() => usePermissionHolders());
     await act(async () => {});
     expect(api.getPermissionHolders).not.toHaveBeenCalled();
+    act(() => result.current.setPermissionName("permission.manage"));
+    await act(async () => {});
+    expect(api.getPermissionHolders).not.toHaveBeenCalled();
+    expect(result.current.hasSearched).toBe(false);
   });
 
-  it("fetches with filters when a permission is chosen", async () => {
+  it("fetches with the committed permission + filters on submitSearch", async () => {
     const { result } = renderHook(() => usePermissionHolders());
     act(() => result.current.setPermissionName("permission.manage"));
+    act(() => result.current.submitSearch());
     await waitFor(() =>
       expect(api.getPermissionHolders).toHaveBeenCalledWith(
         "permission.manage",
-        {
-          includeRevoked: false,
-        },
+        { includeRevoked: false },
       ),
     );
     await waitFor(() => expect(result.current.grants).toEqual([{ id: 1 }]));
+    expect(result.current.hasSearched).toBe(true);
   });
 
-  it("re-fetches when includeRevoked toggles", async () => {
+  it("does not re-fetch when includeRevoked toggles until submitSearch", async () => {
     const { result } = renderHook(() => usePermissionHolders());
     act(() => result.current.setPermissionName("permission.manage"));
+    act(() => result.current.submitSearch());
     await waitFor(() =>
       expect(api.getPermissionHolders).toHaveBeenCalledTimes(1),
     );
     act(() => result.current.setIncludeRevoked(true));
+    await act(async () => {});
+    expect(api.getPermissionHolders).toHaveBeenCalledTimes(1);
+    act(() => result.current.submitSearch());
     await waitFor(() =>
       expect(api.getPermissionHolders).toHaveBeenLastCalledWith(
         "permission.manage",
-        {
-          includeRevoked: true,
-        },
+        { includeRevoked: true },
       ),
     );
   });

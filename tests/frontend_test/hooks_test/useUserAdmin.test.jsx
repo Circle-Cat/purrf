@@ -28,39 +28,71 @@ describe("useUserAdmin", () => {
     api.getUsers.mockResolvedValue(userPage());
   });
 
-  it("fetches the first page on mount with limit 20, offset 0", async () => {
+  it("does not fetch on mount and reports hasSearched=false", async () => {
     const { result } = renderHook(() => useUserAdmin());
-    await waitFor(() => expect(result.current.users).toHaveLength(1));
-    expect(api.getUsers).toHaveBeenCalledWith(
-      expect.objectContaining({ search: "", limit: 20, offset: 0 }),
-    );
-    expect(result.current.total).toBe(1);
+    await act(async () => {});
+    expect(api.getUsers).not.toHaveBeenCalled();
+    expect(result.current.hasSearched).toBe(false);
   });
 
-  it("refetches with the new search term", async () => {
+  it("does not fetch on a draft input change until submitSearch", async () => {
     const { result } = renderHook(() => useUserAdmin());
-    await waitFor(() => expect(api.getUsers).toHaveBeenCalled());
     act(() => result.current.setSearch("jo"));
+    await act(async () => {});
+    expect(api.getUsers).not.toHaveBeenCalled();
+  });
+
+  it("submitSearch fetches with the committed search term, limit 20, offset 0", async () => {
+    const { result } = renderHook(() => useUserAdmin());
+    act(() => result.current.setSearch("jo"));
+    act(() => result.current.submitSearch());
+    await waitFor(() => expect(result.current.total).toBe(1));
+    expect(api.getUsers).toHaveBeenCalledWith(
+      expect.objectContaining({ search: "jo", limit: 20, offset: 0 }),
+    );
+    expect(result.current.hasSearched).toBe(true);
+  });
+
+  it("submitSearch sends the userId param for exact-match search", async () => {
+    const { result } = renderHook(() => useUserAdmin());
+    act(() => result.current.setUserId("42"));
+    act(() => result.current.submitSearch());
     await waitFor(() =>
       expect(api.getUsers).toHaveBeenLastCalledWith(
-        expect.objectContaining({ search: "jo", limit: 20, offset: 0 }),
+        expect.objectContaining({ userId: "42" }),
       ),
     );
   });
 
-  it("nextPage advances offset by limit", async () => {
+  it("nextPage advances offset by limit after a search", async () => {
     api.getUsers.mockResolvedValue(userPage({ total: 50 }));
     const { result } = renderHook(() => useUserAdmin());
+    act(() => result.current.submitSearch());
     await waitFor(() => expect(result.current.total).toBe(50));
     act(() => result.current.nextPage());
     await waitFor(() =>
       expect(api.getUsers).toHaveBeenLastCalledWith(
-        expect.objectContaining({ search: "", limit: 20, offset: 20 }),
+        expect.objectContaining({ limit: 20, offset: 20 }),
       ),
     );
   });
 
-  it("makeSuperAdmin calls the API for the selected user and refreshes", async () => {
+  it("filters are draft: setIsSuperAdmin does not refetch until submitSearch", async () => {
+    const { result } = renderHook(() => useUserAdmin());
+    act(() => result.current.submitSearch());
+    await waitFor(() => expect(api.getUsers).toHaveBeenCalledTimes(1));
+    act(() => result.current.setIsSuperAdmin(true));
+    await act(async () => {});
+    expect(api.getUsers).toHaveBeenCalledTimes(1);
+    act(() => result.current.submitSearch());
+    await waitFor(() =>
+      expect(api.getUsers).toHaveBeenLastCalledWith(
+        expect.objectContaining({ isSuperAdmin: true, offset: 0 }),
+      ),
+    );
+  });
+
+  it("makeSuperAdmin calls the API for the selected user and updates it", async () => {
     api.setSuperAdmin.mockResolvedValue({
       data: {
         userId: 1,
@@ -72,8 +104,7 @@ describe("useUserAdmin", () => {
       },
     });
     const { result } = renderHook(() => useUserAdmin());
-    await waitFor(() => expect(result.current.users).toHaveLength(1));
-    act(() => result.current.selectUser(result.current.users[0]));
+    act(() => result.current.selectUser({ userId: 1, isSuperAdmin: false }));
     await act(async () => {
       await result.current.makeSuperAdmin();
     });
@@ -81,7 +112,7 @@ describe("useUserAdmin", () => {
     expect(result.current.selectedUser.isSuperAdmin).toBe(true);
   });
 
-  it("revokeSuperAdminFor calls the API for the selected user and refreshes", async () => {
+  it("revokeSuperAdminFor calls the API for the selected user and updates it", async () => {
     api.revokeSuperAdmin.mockResolvedValue({
       data: {
         userId: 1,
@@ -93,8 +124,7 @@ describe("useUserAdmin", () => {
       },
     });
     const { result } = renderHook(() => useUserAdmin());
-    await waitFor(() => expect(result.current.users).toHaveLength(1));
-    act(() => result.current.selectUser(result.current.users[0]));
+    act(() => result.current.selectUser({ userId: 1, isSuperAdmin: true }));
     await act(async () => {
       await result.current.revokeSuperAdminFor();
     });
@@ -102,40 +132,26 @@ describe("useUserAdmin", () => {
     expect(result.current.selectedUser.isSuperAdmin).toBe(false);
   });
 
-  it("setIsSuperAdmin(true) refetches with isSuperAdmin:true and resets offset", async () => {
-    api.getUsers.mockResolvedValue(userPage({ total: 50 }));
+  it("toggleSort sets sortBy/order:asc and resets offset after a search", async () => {
     const { result } = renderHook(() => useUserAdmin());
-    await waitFor(() => expect(result.current.total).toBe(50));
-    // advance to page 2 first
-    act(() => result.current.nextPage());
-    await waitFor(() =>
-      expect(api.getUsers).toHaveBeenLastCalledWith(
-        expect.objectContaining({ offset: 20 }),
-      ),
-    );
-    // now toggle filter — offset should reset to 0
-    act(() => result.current.setIsSuperAdmin(true));
-    await waitFor(() =>
-      expect(api.getUsers).toHaveBeenLastCalledWith(
-        expect.objectContaining({ isSuperAdmin: true, offset: 0 }),
-      ),
-    );
-  });
-
-  it("toggleSort(field) sets sortBy and order:asc on first call", async () => {
-    const { result } = renderHook(() => useUserAdmin());
-    await waitFor(() => expect(result.current.users).toHaveLength(1));
+    act(() => result.current.submitSearch());
+    await waitFor(() => expect(api.getUsers).toHaveBeenCalledTimes(1));
     act(() => result.current.toggleSort("last_name"));
     await waitFor(() =>
       expect(api.getUsers).toHaveBeenLastCalledWith(
-        expect.objectContaining({ sortBy: "last_name", order: "asc" }),
+        expect.objectContaining({
+          sortBy: "last_name",
+          order: "asc",
+          offset: 0,
+        }),
       ),
     );
   });
 
-  it("toggleSort(field) flips to desc on second call for same field", async () => {
+  it("toggleSort flips to desc on the second call for the same field", async () => {
     const { result } = renderHook(() => useUserAdmin());
-    await waitFor(() => expect(result.current.users).toHaveLength(1));
+    act(() => result.current.submitSearch());
+    await waitFor(() => expect(api.getUsers).toHaveBeenCalledTimes(1));
     act(() => result.current.toggleSort("last_name"));
     await waitFor(() =>
       expect(api.getUsers).toHaveBeenLastCalledWith(

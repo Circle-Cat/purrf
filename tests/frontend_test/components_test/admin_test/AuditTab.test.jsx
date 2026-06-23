@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, act } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import AuditTab from "@/pages/AdminPermissions/components/AuditTab";
 import * as api from "@/api/adminPermissionsApi";
 
@@ -39,8 +40,19 @@ beforeEach(() => {
 });
 
 describe("AuditTab", () => {
-  it("renders audit rows from the feed", async () => {
+  it("does not fetch on mount and shows the empty prompt until Search", async () => {
     render(<AuditTab catalog={catalog} />);
+    await act(async () => {});
+    expect(api.getAuditLog).not.toHaveBeenCalled();
+    expect(
+      screen.getByText("Set filters and click Search to load the audit log."),
+    ).toBeInTheDocument();
+  });
+
+  it("renders audit rows from the feed after clicking Search", async () => {
+    const user = userEvent.setup();
+    render(<AuditTab catalog={catalog} />);
+    await user.click(screen.getByRole("button", { name: "Search" }));
     // findByText waits for the async fetch to resolve and the rows to render
     // (the table shows "Loading…" until then) — avoids a flaky race where the
     // assertion runs while loading is still true.
@@ -49,7 +61,9 @@ describe("AuditTab", () => {
   });
 
   it("renders the '*' permission row as 'Super-admin', not a literal '*'", async () => {
+    const user = userEvent.setup();
     render(<AuditTab catalog={catalog} />);
+    await user.click(screen.getByRole("button", { name: "Search" }));
     expect(await screen.findByText("Super-admin")).toBeInTheDocument();
     expect(screen.queryByText("*")).toBeNull();
   });

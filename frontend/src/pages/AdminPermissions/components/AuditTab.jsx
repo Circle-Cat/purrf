@@ -24,8 +24,10 @@ const AuditTab = ({ catalog }) => {
     entries,
     total,
     loading,
+    hasSearched,
     filters,
     setFilter,
+    submitSearch,
     offset,
     limit,
     nextPage,
@@ -60,9 +62,13 @@ const AuditTab = ({ catalog }) => {
       <div className="admin-audit-filters flex items-center gap-3 flex-wrap">
         <Input
           className="w-56"
+          inputMode="numeric"
           placeholder="User ID"
           value={filters.userId}
-          onChange={(e) => setFilter("userId", e.target.value)}
+          onChange={(e) =>
+            setFilter("userId", e.target.value.replace(/\D/g, ""))
+          }
+          onKeyDown={(e) => e.key === "Enter" && submitSearch()}
         />
 
         <Select
@@ -95,32 +101,44 @@ const AuditTab = ({ catalog }) => {
             <SelectItem value="revoked">revoked</SelectItem>
           </SelectContent>
         </Select>
-      </div>
 
-      <Table columns={columns} data={data} />
-
-      <div className="admin-audit-pager flex items-center gap-2 text-sm text-muted-foreground">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={prevPage}
-          disabled={!hasPrev}
-        >
-          Prev
-        </Button>
-        <span>
-          {total === 0 ? 0 : offset + 1}–{Math.min(offset + limit, total)} of{" "}
-          {total}
-        </span>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={nextPage}
-          disabled={!hasNext}
-        >
-          Next
+        <Button type="button" onClick={submitSearch}>
+          Search
         </Button>
       </div>
+
+      {!hasSearched ? (
+        <p className="text-sm text-muted-foreground">
+          Set filters and click Search to load the audit log.
+        </p>
+      ) : (
+        <>
+          <Table columns={columns} data={data} />
+
+          <div className="admin-audit-pager flex items-center gap-2 text-sm text-muted-foreground">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={prevPage}
+              disabled={!hasPrev}
+            >
+              Prev
+            </Button>
+            <span>
+              {total === 0 ? 0 : offset + 1}–{Math.min(offset + limit, total)}{" "}
+              of {total}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={nextPage}
+              disabled={!hasNext}
+            >
+              Next
+            </Button>
+          </div>
+        </>
+      )}
     </div>
   );
 };
