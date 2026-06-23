@@ -103,7 +103,8 @@ export default function DataSearch() {
     <div className="datesearch-page ds-page" data-testid="data-search-page">
       <div className="ds-topbar-row">
         <div className="ds-left-group">
-          <Button size="sm" 
+          <Button
+            size="sm"
             className="ldap-chip"
             onClick={() => setLdapModalOpen(true)}
             title="Pick members"
@@ -111,7 +112,8 @@ export default function DataSearch() {
             {selectedCount ? `LDAP (${selectedCount})` : "LDAP"}
           </Button>
 
-          <Button size="sm" 
+          <Button
+            size="sm"
             className="ldap-chip"
             onClick={() => setShowSelector(true)}
           >

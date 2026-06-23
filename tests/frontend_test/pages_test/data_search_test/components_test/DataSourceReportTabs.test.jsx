@@ -114,7 +114,11 @@ describe("DataSourceReportTabs Component", () => {
       },
     };
 
-    render(<DataSourceReportTabs committedSearchParams={committedSearchParamsMissingLdaps} />);
+    render(
+      <DataSourceReportTabs
+        committedSearchParams={committedSearchParamsMissingLdaps}
+      />,
+    );
 
     expect(
       screen.queryByRole("tab", { name: DataSourceNames.CHAT }),
@@ -135,7 +139,9 @@ describe("DataSourceReportTabs Component", () => {
     };
 
     render(
-      <DataSourceReportTabs committedSearchParams={committedSearchParamsMissingStartDate} />,
+      <DataSourceReportTabs
+        committedSearchParams={committedSearchParamsMissingStartDate}
+      />,
     );
 
     expect(
@@ -166,7 +172,9 @@ describe("DataSourceReportTabs Component", () => {
       },
     };
 
-    render(<DataSourceReportTabs committedSearchParams={committedSearchParams} />);
+    render(
+      <DataSourceReportTabs committedSearchParams={committedSearchParams} />,
+    );
 
     // All tabs should be enabled
     expect(
@@ -183,7 +191,9 @@ describe("DataSourceReportTabs Component", () => {
     ).not.toBeDisabled();
 
     // Chat tab should be active by default
-    expect(screen.getByRole("tab", { name: DataSourceNames.CHAT })).toHaveAttribute("aria-selected", "true");
+    expect(
+      screen.getByRole("tab", { name: DataSourceNames.CHAT }),
+    ).toHaveAttribute("aria-selected", "true");
 
     // ChatReportTable should be rendered with correct props
     await waitFor(() => {
@@ -229,10 +239,14 @@ describe("DataSourceReportTabs Component", () => {
       },
     };
 
-    render(<DataSourceReportTabs committedSearchParams={committedSearchParams} />);
+    render(
+      <DataSourceReportTabs committedSearchParams={committedSearchParams} />,
+    );
 
     // Initially Chat is active
-    expect(screen.getByRole("tab", { name: DataSourceNames.CHAT })).toHaveAttribute("aria-selected", "true");
+    expect(
+      screen.getByRole("tab", { name: DataSourceNames.CHAT }),
+    ).toHaveAttribute("aria-selected", "true");
     await waitFor(() => {
       expect(ChatReportTable).toHaveBeenCalledTimes(1);
     });
@@ -243,7 +257,9 @@ describe("DataSourceReportTabs Component", () => {
     );
 
     // Jira tab should become active
-    expect(screen.getByRole("tab", { name: DataSourceNames.JIRA })).toHaveAttribute("aria-selected", "true");
+    expect(
+      screen.getByRole("tab", { name: DataSourceNames.JIRA }),
+    ).toHaveAttribute("aria-selected", "true");
     expect(
       screen.getByRole("tab", { name: DataSourceNames.CHAT }),
     ).toHaveAttribute("aria-selected", "false");
@@ -281,10 +297,14 @@ describe("DataSourceReportTabs Component", () => {
       },
     };
 
-    render(<DataSourceReportTabs committedSearchParams={committedSearchParams} />);
+    render(
+      <DataSourceReportTabs committedSearchParams={committedSearchParams} />,
+    );
 
     // Initially Chat is active
-    expect(screen.getByRole("tab", { name: DataSourceNames.CHAT })).toHaveAttribute("aria-selected", "true");
+    expect(
+      screen.getByRole("tab", { name: DataSourceNames.CHAT }),
+    ).toHaveAttribute("aria-selected", "true");
     await waitFor(() => {
       expect(ChatReportTable).toHaveBeenCalledTimes(1);
     });
@@ -334,7 +354,9 @@ describe("DataSourceReportTabs Component", () => {
       },
     };
 
-    render(<DataSourceReportTabs committedSearchParams={committedSearchParams} />);
+    render(
+      <DataSourceReportTabs committedSearchParams={committedSearchParams} />,
+    );
 
     expect(
       screen.getByRole("tab", { name: DataSourceNames.CHAT }),
@@ -348,7 +370,9 @@ describe("DataSourceReportTabs Component", () => {
 
     // Attempting to click a disabled tab should not change the active tab
     fireEvent.click(screen.getByRole("tab", { name: DataSourceNames.JIRA }));
-    expect(screen.getByRole("tab", { name: DataSourceNames.CHAT })).toHaveAttribute("aria-selected", "true"); // Still active
+    expect(
+      screen.getByRole("tab", { name: DataSourceNames.CHAT }),
+    ).toHaveAttribute("aria-selected", "true"); // Still active
   });
 
   it("should switch active tab if current active tab becomes invalid due to committedSearchParams change", async () => {
@@ -371,7 +395,9 @@ describe("DataSourceReportTabs Component", () => {
     );
 
     // Initially, Chat is active
-    expect(screen.getByRole("tab", { name: DataSourceNames.CHAT })).toHaveAttribute("aria-selected", "true");
+    expect(
+      screen.getByRole("tab", { name: DataSourceNames.CHAT }),
+    ).toHaveAttribute("aria-selected", "true");
     await waitFor(() => {
       expect(ChatReportTable).toHaveBeenCalledTimes(1);
     });
@@ -385,7 +411,9 @@ describe("DataSourceReportTabs Component", () => {
       },
     };
 
-    rerender(<DataSourceReportTabs committedSearchParams={updatedSearchParams} />);
+    rerender(
+      <DataSourceReportTabs committedSearchParams={updatedSearchParams} />,
+    );
 
     // Expect Jira to become active because Chat is no longer valid and Jira is the first valid one.
     await waitFor(() => {
@@ -433,7 +461,9 @@ describe("DataSourceReportTabs Component", () => {
       },
     };
 
-    rerender(<DataSourceReportTabs committedSearchParams={updatedSearchParams} />);
+    rerender(
+      <DataSourceReportTabs committedSearchParams={updatedSearchParams} />,
+    );
 
     // Chat tab (index 0) should become active and disabled
     await waitFor(() => {
@@ -487,7 +517,9 @@ describe("DataSourceReportTabs Component", () => {
       },
     };
 
-    render(<DataSourceReportTabs committedSearchParams={committedSearchParams} />);
+    render(
+      <DataSourceReportTabs committedSearchParams={committedSearchParams} />,
+    );
 
     fireEvent.click(screen.getByRole("tab", { name: DataSourceNames.CHAT }));
 
@@ -521,7 +553,9 @@ describe("DataSourceReportTabs Component", () => {
       },
     };
 
-    render(<DataSourceReportTabs committedSearchParams={committedSearchParams} />);
+    render(
+      <DataSourceReportTabs committedSearchParams={committedSearchParams} />,
+    );
 
     // Chat tab should be disabled
     expect(
@@ -542,7 +576,9 @@ describe("DataSourceReportTabs Component", () => {
       },
     };
 
-    render(<DataSourceReportTabs committedSearchParams={committedSearchParams} />);
+    render(
+      <DataSourceReportTabs committedSearchParams={committedSearchParams} />,
+    );
 
     // Jira tab should be disabled
     expect(
@@ -563,7 +599,9 @@ describe("DataSourceReportTabs Component", () => {
       },
     };
 
-    render(<DataSourceReportTabs committedSearchParams={committedSearchParams} />);
+    render(
+      <DataSourceReportTabs committedSearchParams={committedSearchParams} />,
+    );
 
     // Calendar tab should be disabled
     expect(
@@ -587,7 +625,11 @@ describe("DataSourceReportTabs Component", () => {
       },
     };
 
-    render(<DataSourceReportTabs committedSearchParams={committedSearchParamsToday} />);
+    render(
+      <DataSourceReportTabs
+        committedSearchParams={committedSearchParamsToday}
+      />,
+    );
 
     fireEvent.click(screen.getByRole("tab", { name: DataSourceNames.JIRA }));
 
