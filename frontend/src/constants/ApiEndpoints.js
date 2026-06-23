@@ -24,6 +24,17 @@ export const API_ENDPOINTS = {
   MENTORSHIP_MEETING_V2_SINGLE: (meetingId) =>
     `/mentorship/v2/meetings/${meetingId}`,
   MENTORSHIP_MEETING_V2_BATCH_DELETE: "/mentorship/v2/meetings/batch-delete",
+  RECRUITING_JOBS: "/recruiting/jobs",
+  RECRUITING_JOB: (jobId) => `/recruiting/jobs/${jobId}`,
+  RECRUITING_JOB_PUBLISH: (jobId) => `/recruiting/jobs/${jobId}/publish`,
+  RECRUITING_JOB_CLOSE: (jobId) => `/recruiting/jobs/${jobId}/close`,
+  RECRUITING_JOB_APPLICATIONS: (jobId) =>
+    `/recruiting/jobs/${jobId}/applications`,
+  RECRUITING_JOB_BOARD: (jobId) => `/recruiting/jobs/${jobId}/board`,
+  RECRUITING_APPLICATION_VIEW: (applicationId) =>
+    `/recruiting/applications/${applicationId}/view`,
+  RECRUITING_APPLICATION_ADVANCE: (applicationId) =>
+    `/recruiting/applications/${applicationId}/advance`,
 };
 
 /**
