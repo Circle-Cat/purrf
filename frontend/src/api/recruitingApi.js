@@ -12,7 +12,8 @@ export const getJobs = () => request.get(API_ENDPOINTS.RECRUITING_JOBS);
  * @param {number|string} jobId - The ID of the job posting.
  * @returns {Promise} Resolves to a job posting object.
  */
-export const getJob = (jobId) => request.get(API_ENDPOINTS.RECRUITING_JOB(jobId));
+export const getJob = (jobId) =>
+  request.get(API_ENDPOINTS.RECRUITING_JOB(jobId));
 
 /**
  * Create a DRAFT job posting.

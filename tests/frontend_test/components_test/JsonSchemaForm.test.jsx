@@ -1,7 +1,9 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
-import JsonSchemaForm, { validate } from "@/components/recruiting/JsonSchemaForm";
+import JsonSchemaForm, {
+  validate,
+} from "@/components/recruiting/JsonSchemaForm";
 
 const schema = {
   type: "object",
@@ -22,8 +24,12 @@ describe("JsonSchemaForm", () => {
   it("calls onChange when a text field changes", () => {
     const onChange = vi.fn();
     render(<JsonSchemaForm schema={schema} value={{}} onChange={onChange} />);
-    fireEvent.change(screen.getByLabelText("Why mentor?"), { target: { value: "exp" } });
-    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ why: "exp" }));
+    fireEvent.change(screen.getByLabelText("Why mentor?"), {
+      target: { value: "exp" },
+    });
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ why: "exp" }),
+    );
   });
   it("validate flags missing required fields", () => {
     expect(validate(schema, {})).toHaveProperty("why");

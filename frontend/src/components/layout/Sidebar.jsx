@@ -42,6 +42,16 @@ const Sidebar = () => {
       to: ROUTE_PATHS.MENTORSHIP_MANAGEMENT,
       permissions: [PERMISSIONS.MENTORSHIP_MANAGEMENT_READ],
     },
+    {
+      label: "Recruiting Admin",
+      to: ROUTE_PATHS.RECRUITING_ADMIN,
+      permissions: [PERMISSIONS.RECRUITING_JOB_READ],
+    },
+    {
+      label: "Recruiting Screening",
+      to: ROUTE_PATHS.RECRUITING_ADMIN,
+      permissions: [PERMISSIONS.RECRUITING_APPLICATION_READ],
+    },
   ];
 
   return (
@@ -51,7 +61,7 @@ const Sidebar = () => {
           {navItems.map(
             (item) =>
               hasAccess(item.permissions) && (
-                <li key={item.to}>
+                <li key={item.label}>
                   <NavLink
                     to={item.to}
                     end

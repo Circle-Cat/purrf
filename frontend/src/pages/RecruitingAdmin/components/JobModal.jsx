@@ -126,7 +126,11 @@ export default function JobModal({
       >
         <DialogHeader>
           <DialogTitle className="text-xl">
-            {readOnly ? "View Posting" : isEdit ? "Edit Posting" : "Create Posting"}
+            {readOnly
+              ? "View Posting"
+              : isEdit
+                ? "Edit Posting"
+                : "Create Posting"}
           </DialogTitle>
         </DialogHeader>
 
@@ -208,7 +212,10 @@ export default function JobModal({
             {readOnly ? "Close" : "Cancel"}
           </Button>
           {!readOnly && (
-            <Button onClick={submitForm} disabled={isSaving || !form.title.trim()}>
+            <Button
+              onClick={submitForm}
+              disabled={isSaving || !form.title.trim()}
+            >
               {isSaving ? "Saving…" : "Save"}
             </Button>
           )}

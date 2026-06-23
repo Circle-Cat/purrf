@@ -146,7 +146,7 @@ const RecruitingApply = () => {
     try {
       await submitApplication(jobId, answers);
       toast.success("Application submitted successfully!");
-    } catch (err) {
+    } catch {
       toast.error("Failed to submit application. Please try again.");
     } finally {
       setIsSubmitting(false);
@@ -237,11 +237,7 @@ const RecruitingApply = () => {
       )}
 
       {/* ── Submit ────────────────────────────────────────────────────────── */}
-      <Button
-        onClick={handleSubmit}
-        disabled={isSubmitting}
-        className="w-full"
-      >
+      <Button onClick={handleSubmit} disabled={isSubmitting} className="w-full">
         {isSubmitting ? "Submitting…" : "Submit application"}
       </Button>
 

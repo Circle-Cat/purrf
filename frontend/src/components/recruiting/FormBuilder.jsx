@@ -65,13 +65,21 @@ export function serialiseFields(fields) {
     let fragment;
     switch (field.type) {
       case "longText":
-        fragment = { type: "string", title: field.title, "x-widget": "textarea" };
+        fragment = {
+          type: "string",
+          title: field.title,
+          "x-widget": "textarea",
+        };
         break;
       case "singleChoice":
         fragment = { type: "string", title: field.title, enum: field.options };
         break;
       case "multiChoice":
-        fragment = { type: "array", title: field.title, items: { enum: field.options } };
+        fragment = {
+          type: "array",
+          title: field.title,
+          items: { enum: field.options },
+        };
         break;
       case "shortText":
       default:
@@ -234,10 +242,7 @@ const FormBuilder = ({ schema, onChange }) => {
 
       <div className="space-y-4">
         {fields.map((field, index) => (
-          <div
-            key={field.key}
-            className="rounded-lg border p-4 space-y-3"
-          >
+          <div key={field.key} className="rounded-lg border p-4 space-y-3">
             {/* Header row: type badge + reorder + delete */}
             <div className="flex items-center gap-2 justify-between">
               <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">

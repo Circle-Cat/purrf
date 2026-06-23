@@ -27,18 +27,13 @@ describe("recruitingApi", () => {
 
   it("getJob GETs a single job by id", () => {
     getJob(5);
-    expect(request.get).toHaveBeenCalledWith(
-      API_ENDPOINTS.RECRUITING_JOB(5),
-    );
+    expect(request.get).toHaveBeenCalledWith(API_ENDPOINTS.RECRUITING_JOB(5));
   });
 
   it("createJob POSTs payload to jobs endpoint", () => {
     const p = { title: "x" };
     createJob(p);
-    expect(request.post).toHaveBeenCalledWith(
-      API_ENDPOINTS.RECRUITING_JOBS,
-      p,
-    );
+    expect(request.post).toHaveBeenCalledWith(API_ENDPOINTS.RECRUITING_JOBS, p);
   });
 
   it("updateJob PUTs payload to job endpoint", () => {

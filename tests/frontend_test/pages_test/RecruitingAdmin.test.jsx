@@ -6,12 +6,7 @@ import "@testing-library/jest-dom/vitest";
 import RecruitingAdmin from "@/pages/RecruitingAdmin";
 import { useAuth } from "@/context/auth";
 import { PERMISSIONS } from "@/constants/Permissions";
-import {
-  getJobs,
-  createJob,
-  publishJob,
-  closeJob,
-} from "@/api/recruitingApi";
+import { getJobs, createJob, publishJob, closeJob } from "@/api/recruitingApi";
 
 // ── API mock ──────────────────────────────────────────────────────────────────
 vi.mock("@/api/recruitingApi", () => ({

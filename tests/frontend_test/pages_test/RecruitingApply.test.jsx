@@ -38,7 +38,9 @@ vi.mock("@/pages/Profile/modals/ExperienceEditModal", () => ({
     isOpen ? (
       <div data-testid="experience-modal">
         <button onClick={onClose}>Close Experience</button>
-        <button onClick={() => onSave({ workHistory: [] })}>Save Experience</button>
+        <button onClick={() => onSave({ workHistory: [] })}>
+          Save Experience
+        </button>
       </div>
     ) : null,
   ),
@@ -59,10 +61,7 @@ function renderApply() {
   return render(
     <MemoryRouter initialEntries={["/recruiting/apply/7"]}>
       <Routes>
-        <Route
-          path="/recruiting/apply/:jobId"
-          element={<RecruitingApply />}
-        />
+        <Route path="/recruiting/apply/:jobId" element={<RecruitingApply />} />
       </Routes>
     </MemoryRouter>,
   );
@@ -152,7 +151,9 @@ describe("RecruitingApply", () => {
     });
 
     // Don't fill in the required "motivation" field — click submit directly
-    const submitBtn = screen.getByRole("button", { name: /submit application/i });
+    const submitBtn = screen.getByRole("button", {
+      name: /submit application/i,
+    });
     fireEvent.click(submitBtn);
 
     // submitApplication must not have been called
@@ -165,7 +166,9 @@ describe("RecruitingApply", () => {
       expect(screen.getByText("Senior Mentor Position")).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: /submit application/i }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /submit application/i }),
+    );
 
     await waitFor(() => {
       expect(screen.getByText(/required/i)).toBeInTheDocument();
@@ -186,7 +189,9 @@ describe("RecruitingApply", () => {
       target: { value: "I am passionate about mentorship." },
     });
 
-    const submitBtn = screen.getByRole("button", { name: /submit application/i });
+    const submitBtn = screen.getByRole("button", {
+      name: /submit application/i,
+    });
     await act(async () => {
       fireEvent.click(submitBtn);
     });
@@ -209,7 +214,9 @@ describe("RecruitingApply", () => {
       target: { value: "I love helping others." },
     });
 
-    const submitBtn = screen.getByRole("button", { name: /submit application/i });
+    const submitBtn = screen.getByRole("button", {
+      name: /submit application/i,
+    });
     await act(async () => {
       fireEvent.click(submitBtn);
     });
