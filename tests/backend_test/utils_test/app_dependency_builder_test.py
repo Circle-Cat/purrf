@@ -7,6 +7,12 @@ from backend.common.environment_constants import (
 )
 
 
+@patch("backend.utils.app_dependency_builder.RecruitingController")
+@patch("backend.utils.app_dependency_builder.ApplicationService")
+@patch("backend.utils.app_dependency_builder.JobService")
+@patch("backend.utils.app_dependency_builder.RecruitingMapper")
+@patch("backend.utils.app_dependency_builder.ApplicationRepository")
+@patch("backend.utils.app_dependency_builder.JobRepository")
 @patch("backend.utils.app_dependency_builder.PermissionAdminController")
 @patch("backend.utils.app_dependency_builder.PermissionAdminService")
 @patch("backend.utils.app_dependency_builder.EmailManagementController")
@@ -162,6 +168,12 @@ class TestAppDependencyBuilder(TestCase):
         mock_email_management_controller_cls,
         mock_permission_admin_service_cls,
         mock_permission_admin_controller_cls,
+        mock_job_repository_cls,
+        mock_application_repository_cls,
+        mock_recruiting_mapper_cls,
+        mock_job_service_cls,
+        mock_application_service_cls,
+        mock_recruiting_controller_cls,
     ):
         """
         Tests that the AppDependencyBuilder correctly instantiates and wires all its dependencies.
@@ -530,6 +542,7 @@ class TestAppDependencyBuilder(TestCase):
             mentorship_controller=mock_mentorship_controller_cls.return_value,
             email_management_controller=mock_email_management_controller_cls.return_value,
             permission_admin_controller=mock_permission_admin_controller_cls.return_value,
+            recruiting_controller=mock_recruiting_controller_cls.return_value,
             launchdarkly_client=mock_launchdarkly_client_cls.return_value,
             database=mock_database_cls.return_value,
             logger=mock_logger,

@@ -114,6 +114,12 @@ from backend.profile.profile_controller import ProfileController
 from backend.user_identity.user_identity_service import UserIdentityService
 from backend.common.launchdarkly_client import LaunchDarklyClient
 from backend.service.launchdarkly_service import LaunchDarklyService
+from backend.repository.job_repository import JobRepository
+from backend.repository.application_repository import ApplicationRepository
+from backend.recruiting.recruiting_mapper import RecruitingMapper
+from backend.recruiting.job_service import JobService
+from backend.recruiting.application_service import ApplicationService
+from backend.recruiting.recruiting_controller import RecruitingController
 
 
 class AppDependencyBuilder:
@@ -495,6 +501,24 @@ class AppDependencyBuilder:
             self.permission_admin_service,
             database=self.database,
         )
+        self.job_repository = JobRepository()
+        self.application_repository = ApplicationRepository()
+        self.recruiting_mapper = RecruitingMapper()
+        self.job_service = JobService(self.job_repository, self.recruiting_mapper)
+        self.application_service = ApplicationService(
+            application_repository=self.application_repository,
+            job_repository=self.job_repository,
+            mentorship_round_repository=self.mentorship_round_repository,
+            users_repository=self.users_repository,
+            recruiting_mapper=self.recruiting_mapper,
+            experience_repository=self.experience_repository,
+            participants_repository=self.mentorship_round_participants_repo,
+        )
+        self.recruiting_controller = RecruitingController(
+            job_service=self.job_service,
+            application_service=self.application_service,
+            database=self.database,
+        )
         self.fast_app_factory = FastAppFactory(
             authentication_controller=self.authentication_controller,
             authentication_service=self.authentication_service,
@@ -508,6 +532,7 @@ class AppDependencyBuilder:
             mentorship_controller=self.mentorship_controller,
             email_management_controller=self.email_management_controller,
             permission_admin_controller=self.permission_admin_controller,
+            recruiting_controller=self.recruiting_controller,
             launchdarkly_client=self.launchdarkly_client,
             database=self.database,
             logger=self.logger,
