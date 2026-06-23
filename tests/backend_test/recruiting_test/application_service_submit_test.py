@@ -20,7 +20,7 @@ class TestApplicationServiceSubmit(unittest.IsolatedAsyncioTestCase):
         self.session = AsyncMock()
         self.now = datetime(2026, 6, 1, tzinfo=timezone.utc)
         self.service = ApplicationService(
-            self.app_repo, self.job_repo, self.round_repo, self.users_repo, RecruitingMapper()
+            self.app_repo, self.job_repo, self.round_repo, self.users_repo, RecruitingMapper(), MagicMock()
         )
         self.job = JobEntity(job_id=3, kind=JobKind.ACTIVITY, mentorship_role=ParticipantRole.MENTEE,
                              status=JobStatus.PUBLISHED, title="Mentee")

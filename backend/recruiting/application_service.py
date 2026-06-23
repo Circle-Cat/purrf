@@ -22,7 +22,7 @@ class ApplicationService:
         mentorship_round_repository: MentorshipRoundRepository,
         users_repository,
         recruiting_mapper: RecruitingMapper,
-        experience_repository: ExperienceRepository = None,
+        experience_repository: ExperienceRepository,
     ):
         """
         Initialise the service with its repositories and mapper.
