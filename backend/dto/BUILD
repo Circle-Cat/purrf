@@ -8,6 +8,7 @@ py_library(
     deps = [
         "//backend/common:identity_type",
         "//backend/common:mentorship_enums",
+        "//backend/common:recruiting_enums",
         "//backend/common:permissions",
         "//backend/entity:entities",
         "@pypi//pydantic",
