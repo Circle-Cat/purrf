@@ -41,3 +41,10 @@ class ApplicationStage(StrEnum):
     REJECTED = "rejected"
     OFFER_DECLINED = "offer_declined"
     BLACKLISTED = "blacklisted"
+
+
+# Work-email domains whose holders are auto-approved as mentors (lowercased, no "@").
+# PLACEHOLDER — replace with the real designated tech-company domains.
+MENTOR_ALLOWED_EMAIL_DOMAINS: frozenset[str] = frozenset(
+    {"google.com", "microsoft.com", "amazon.com"}
+)

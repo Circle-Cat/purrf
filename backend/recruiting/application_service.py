@@ -2,8 +2,8 @@ from datetime import datetime, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.common.mentorship_enums import ApprovalStatus
-from backend.common.recruiting_enums import ApplicationStage
+from backend.common.mentorship_enums import ApprovalStatus, ParticipantRole
+from backend.common.recruiting_enums import ApplicationStage, MENTOR_ALLOWED_EMAIL_DOMAINS
 from backend.dto.application_dto import (
     ApplicationBoardCardDto,
     ApplicationDto,
@@ -67,9 +67,15 @@ class ApplicationService:
         """Submit a candidate application for a posting.
 
         Resolves the open mentorship-round for the posting's role, then creates
-        the application entity. A blocked user is auto-rejected (stage REJECTED,
-        with rejected_round_id and rejected_at stamped). All other users land at
-        RECRUITER_SCREENING. The session is committed before returning.
+        the application entity according to a three-way decision:
+
+        1. Blocked user → REJECTED (rejected_round_id and rejected_at stamped).
+        2. MENTOR posting, allowed email domain → HIRED (enrolled via
+           _enroll_if_absent).
+        3. MENTOR posting, disallowed domain → REJECTED.
+        4. All other users (mentee / non-blocked) → RECRUITER_SCREENING.
+
+        The session is committed before returning.
 
         Args:
             session (AsyncSession): Active database async session.
@@ -98,11 +104,18 @@ class ApplicationService:
         user = await self.users_repository.get_user_by_user_id(session, user_id)
         is_blocked = bool(user and user.is_blocked)
 
-        stage = (
-            ApplicationStage.REJECTED
-            if is_blocked
-            else ApplicationStage.RECRUITER_SCREENING
-        )
+        is_mentor_job = job.mentorship_role == ParticipantRole.MENTOR
+        domain = (user.primary_email or "").rsplit("@", 1)[-1].lower() if user else ""
+
+        if is_blocked:
+            stage = ApplicationStage.REJECTED
+        elif is_mentor_job and domain in MENTOR_ALLOWED_EMAIL_DOMAINS:
+            stage = ApplicationStage.HIRED
+        elif is_mentor_job:
+            stage = ApplicationStage.REJECTED
+        else:
+            stage = ApplicationStage.RECRUITER_SCREENING
+
         application = ApplicationEntity(
             user_id=user_id,
             job_id=job_id,
@@ -111,9 +124,14 @@ class ApplicationService:
             form_answers=dto.form_answers,
             is_viewed=False,
         )
-        if is_blocked:
+        if stage == ApplicationStage.REJECTED:
             application.rejected_round_id = open_round.round_id
             application.rejected_at = now
+
+        if stage == ApplicationStage.HIRED:
+            await self._enroll_if_absent(
+                session, user_id, open_round.round_id, ParticipantRole.MENTOR
+            )
 
         application = await self.application_repository.create_application(
             session, application
@@ -204,19 +222,9 @@ class ApplicationService:
 
         if target_stage == ApplicationStage.HIRED:
             job = await self.job_repository.get_by_job_id(session, app.job_id)
-            existing = await self.participants_repository.get_by_user_id_and_round_id(
-                session, app.user_id, app.round_id
+            await self._enroll_if_absent(
+                session, app.user_id, app.round_id, job.mentorship_role
             )
-            if existing is None:
-                participant = MentorshipRoundParticipantsEntity(
-                    user_id=app.user_id,
-                    round_id=app.round_id,
-                    participant_role=job.mentorship_role,
-                    approval_status=ApprovalStatus.SIGNED_UP,
-                )
-                await self.participants_repository.upsert_participant(
-                    session, participant
-                )
             app.stage = ApplicationStage.HIRED
         elif target_stage == ApplicationStage.REJECTED:
             app.stage = ApplicationStage.REJECTED
@@ -251,6 +259,29 @@ class ApplicationService:
             freeze_until = await self._compute_freeze_until(session, app, job_id, now)
             cards.append(self.recruiting_mapper.to_board_card_dto(app, freeze_until))
         return cards
+
+    async def _enroll_if_absent(self, session, user_id, round_id, role):
+        """Idempotently enroll a user as a SIGNED_UP participant of a round.
+
+        Skips if a participant row for (user_id, round_id) already exists.
+
+        Args:
+            session: Active database async session.
+            user_id (int): Identifier of the user to enroll.
+            round_id (int): Identifier of the mentorship round.
+            role (ParticipantRole): The participant role to assign.
+        """
+        existing = await self.participants_repository.get_by_user_id_and_round_id(
+            session, user_id, round_id
+        )
+        if existing is None:
+            participant = MentorshipRoundParticipantsEntity(
+                user_id=user_id,
+                round_id=round_id,
+                participant_role=role,
+                approval_status=ApprovalStatus.SIGNED_UP,
+            )
+            await self.participants_repository.upsert_participant(session, participant)
 
     async def _compute_freeze_until(
         self, session: AsyncSession, app: ApplicationEntity, job_id: int, now: datetime
