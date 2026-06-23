@@ -3,7 +3,11 @@ import { useParams } from "react-router-dom";
 import { useAuth } from "@/context/auth";
 import { PERMISSIONS } from "@/constants/Permissions";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { getBoard, viewApplication, advanceApplication } from "@/api/recruitingApi";
+import {
+  getBoard,
+  viewApplication,
+  advanceApplication,
+} from "@/api/recruitingApi";
 import ApplicationCard from "@/pages/RecruitingScreening/components/ApplicationCard";
 
 /**
@@ -79,11 +83,9 @@ const RecruitingScreening = () => {
    */
   const handleHire = async (id) => {
     await advanceApplication(id, "hired");
-    setScreeningCards((prev) => {
-      const card = prev.find((c) => c.id === id);
-      if (card) setHiredCards((h) => [...h, { ...card, stage: "hired" }]);
-      return prev.filter((c) => c.id !== id);
-    });
+    const card = screeningCards.find((c) => c.id === id);
+    if (card) setHiredCards((prev) => [...prev, { ...card, stage: "hired" }]);
+    setScreeningCards((prev) => prev.filter((c) => c.id !== id));
   };
 
   /**
@@ -93,11 +95,10 @@ const RecruitingScreening = () => {
    */
   const handleReject = async (id) => {
     await advanceApplication(id, "rejected");
-    setScreeningCards((prev) => {
-      const card = prev.find((c) => c.id === id);
-      if (card) setRejectedCards((r) => [...r, { ...card, stage: "rejected" }]);
-      return prev.filter((c) => c.id !== id);
-    });
+    const card = screeningCards.find((c) => c.id === id);
+    if (card)
+      setRejectedCards((prev) => [...prev, { ...card, stage: "rejected" }]);
+    setScreeningCards((prev) => prev.filter((c) => c.id !== id));
   };
 
   if (!canRead) {
@@ -119,7 +120,7 @@ const RecruitingScreening = () => {
       ) : (
         <div className="grid grid-cols-3 gap-4">
           {/* Screening column */}
-          <ScreeningColumn title="Screening">
+          <ScreeningColumn title="Screening" testId="column-screening">
             {screeningCards.map((card) => (
               <ApplicationCard
                 key={card.id}
@@ -134,7 +135,7 @@ const RecruitingScreening = () => {
           </ScreeningColumn>
 
           {/* Hired column — populated only by cards advanced this session */}
-          <ScreeningColumn title="Hired">
+          <ScreeningColumn title="Hired" testId="column-hired">
             {hiredCards.map((card) => (
               <ApplicationCard
                 key={card.id}
@@ -149,7 +150,7 @@ const RecruitingScreening = () => {
           </ScreeningColumn>
 
           {/* Rejected column — populated only by cards advanced this session */}
-          <ScreeningColumn title="Rejected">
+          <ScreeningColumn title="Rejected" testId="column-rejected">
             {rejectedCards.map((card) => (
               <ApplicationCard
                 key={card.id}
@@ -173,18 +174,17 @@ const RecruitingScreening = () => {
  *
  * @param {Object}    props
  * @param {string}    props.title    - Column heading.
+ * @param {string}    [props.testId] - Optional data-testid for test queries.
  * @param {React.ReactNode} props.children - ApplicationCard elements.
  * @returns {JSX.Element}
  */
-function ScreeningColumn({ title, children }) {
+function ScreeningColumn({ title, testId, children }) {
   return (
-    <Card className="border-gray-200 shadow-sm h-fit">
+    <Card className="border-gray-200 shadow-sm h-fit" data-testid={testId}>
       <CardHeader className="pb-2">
         <CardTitle className="text-base">{title}</CardTitle>
       </CardHeader>
-      <CardContent className="flex flex-col gap-3">
-        {children}
-      </CardContent>
+      <CardContent className="flex flex-col gap-3">{children}</CardContent>
     </Card>
   );
 }

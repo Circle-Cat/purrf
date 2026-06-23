@@ -1,5 +1,11 @@
 import React from "react";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import {
+  render,
+  screen,
+  fireEvent,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import "@testing-library/jest-dom/vitest";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
@@ -192,25 +198,34 @@ describe("RecruitingScreening", () => {
     });
   });
 
-  it("removes the card from the Screening column after Hire", async () => {
+  it("removes card from Screening and places it in Hired after Hire is clicked", async () => {
     renderScreening();
     await waitFor(() => {
       expect(screen.getByText(/user.*42/i)).toBeInTheDocument();
     });
 
-    // Both cards are in Screening; hire the viewed card (id=10, userId=42)
-    const hireButtons = screen.getAllByRole("button", { name: /hire/i });
+    const screeningCol = screen.getByTestId("column-screening");
+    const hiredCol = screen.getByTestId("column-hired");
+
+    // Both cards start in Screening; hire the viewed card (id=10, userId=42)
+    const hireButtons = within(screeningCol).getAllByRole("button", {
+      name: /hire/i,
+    });
     fireEvent.click(hireButtons[0]);
 
     await waitFor(() => {
-      // The Screening column should have one fewer card
-      // The hired card's applicant id moves to Hired column
-      expect(advanceApplication).toHaveBeenCalled();
+      expect(advanceApplication).toHaveBeenCalledWith(
+        expect.any(Number),
+        "hired",
+      );
     });
 
-    // Verify the Hired column now has a card (the column heading is still present)
+    // userId=42 must be gone from Screening and present in Hired
     await waitFor(() => {
-      expect(screen.getByText("Hired")).toBeInTheDocument();
+      expect(
+        within(screeningCol).queryByText(/user.*42/i),
+      ).not.toBeInTheDocument();
+      expect(within(hiredCol).getByText(/user.*42/i)).toBeInTheDocument();
     });
   });
 
@@ -231,5 +246,63 @@ describe("RecruitingScreening", () => {
         "rejected",
       );
     });
+  });
+
+  it("removes card from Screening and places it in Rejected after Reject is clicked", async () => {
+    renderScreening();
+    await waitFor(() => {
+      expect(screen.getByText(/user.*42/i)).toBeInTheDocument();
+    });
+
+    const screeningCol = screen.getByTestId("column-screening");
+    const rejectedCol = screen.getByTestId("column-rejected");
+
+    // Reject the viewed card (id=10, userId=42)
+    const rejectButtons = within(screeningCol).getAllByRole("button", {
+      name: /reject/i,
+    });
+    fireEvent.click(rejectButtons[0]);
+
+    await waitFor(() => {
+      expect(advanceApplication).toHaveBeenCalledWith(
+        expect.any(Number),
+        "rejected",
+      );
+    });
+
+    // userId=42 must be gone from Screening and present in Rejected
+    await waitFor(() => {
+      expect(
+        within(screeningCol).queryByText(/user.*42/i),
+      ).not.toBeInTheDocument();
+      expect(within(rejectedCol).getByText(/user.*42/i)).toBeInTheDocument();
+    });
+  });
+
+  // ── Permission gate ────────────────────────────────────────────────────────
+
+  it("shows cards and Open button but NOT Hire/Reject when user lacks ADVANCE permission", async () => {
+    useAuth.mockReturnValue({
+      permissions: [PERMISSIONS.RECRUITING_APPLICATION_READ],
+    });
+    renderScreening();
+
+    await waitFor(() => {
+      expect(screen.getByText(/user.*42/i)).toBeInTheDocument();
+      expect(screen.getByText(/user.*99/i)).toBeInTheDocument();
+    });
+
+    // Open buttons must be present
+    expect(
+      screen.getAllByRole("button", { name: /open/i }).length,
+    ).toBeGreaterThan(0);
+
+    // Hire and Reject buttons must be absent
+    expect(
+      screen.queryByRole("button", { name: /hire/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /reject/i }),
+    ).not.toBeInTheDocument();
   });
 });
