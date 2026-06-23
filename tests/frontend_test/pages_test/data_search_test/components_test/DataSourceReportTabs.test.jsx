@@ -6,20 +6,21 @@ import {
   waitFor,
   cleanup,
 } from "@testing-library/react";
-import Tab from "@/components/common/Tab.jsx";
+import userEvent from "@testing-library/user-event";
+import DataSourceReportTabs from "@/pages/DataSearch/components/DataSourceReportTabs";
 import {
   DataSourceNames,
   ChatProvider,
   JiraIssueStatus,
 } from "@/constants/Groups"; // Ensure these paths are correct in your project
-import { CalendarReportTable } from "@/components/common/CalendarReportTable";
-import { ChatReportTable } from "@/components/common/ChatReportTable";
-import JiraReportTable from "@/components/common/JiraReportTable";
-import GerritReportTable from "@/components/common/GerritReportTable";
+import { CalendarReportTable } from "@/pages/DataSearch/components/CalendarReportTable";
+import { ChatReportTable } from "@/pages/DataSearch/components/ChatReportTable";
+import JiraReportTable from "@/pages/DataSearch/components/JiraReportTable";
+import GerritReportTable from "@/pages/DataSearch/components/GerritReportTable";
 
 // Mock the child report components
 // We use vi.fn() to allow checking calls and props later.
-vi.mock("@/components/common/CalendarReportTable", () => ({
+vi.mock("@/pages/DataSearch/components/CalendarReportTable", () => ({
   CalendarReportTable: vi.fn((props) => (
     <div data-testid="CalendarReportTable-mock">
       {JSON.stringify(props, null, 2)}
@@ -27,7 +28,7 @@ vi.mock("@/components/common/CalendarReportTable", () => ({
   )),
 }));
 
-vi.mock("@/components/common/ChatReportTable", () => ({
+vi.mock("@/pages/DataSearch/components/ChatReportTable", () => ({
   ChatReportTable: vi.fn((props) => (
     <div data-testid="ChatReportTable-mock">
       {JSON.stringify(props, null, 2)}
@@ -35,7 +36,7 @@ vi.mock("@/components/common/ChatReportTable", () => ({
   )),
 }));
 
-vi.mock("@/components/common/JiraReportTable", () => ({
+vi.mock("@/pages/DataSearch/components/JiraReportTable", () => ({
   default: vi.fn((props) => (
     <div data-testid="JiraReportTable-mock">
       {JSON.stringify(props, null, 2)}
@@ -43,7 +44,7 @@ vi.mock("@/components/common/JiraReportTable", () => ({
   )),
 }));
 
-vi.mock("@/components/common/GerritReportTable", () => ({
+vi.mock("@/pages/DataSearch/components/GerritReportTable", () => ({
   default: vi.fn((props) => (
     <div data-testid="GerritReportTable-mock">
       {JSON.stringify(props, null, 2)}
@@ -51,7 +52,7 @@ vi.mock("@/components/common/GerritReportTable", () => ({
   )),
 }));
 
-describe("Tab Component", () => {
+describe("DataSourceReportTabs Component", () => {
   // Common search parameters for testing
   const commonSearchParams = {
     ldaps: ["ldap1", "ldap2"],
@@ -70,7 +71,7 @@ describe("Tab Component", () => {
   });
 
   it("should not render tabs (no committedSearchParams)", () => {
-    render(<Tab committedSearchParams={null} />);
+    render(<DataSourceReportTabs committedSearchParams={null} />);
 
     // No report tabs should be rendered
     expect(
@@ -113,7 +114,11 @@ describe("Tab Component", () => {
       },
     };
 
-    render(<Tab committedSearchParams={committedSearchParamsMissingLdaps} />);
+    render(
+      <DataSourceReportTabs
+        committedSearchParams={committedSearchParamsMissingLdaps}
+      />,
+    );
 
     expect(
       screen.queryByRole("tab", { name: DataSourceNames.CHAT }),
@@ -134,7 +139,9 @@ describe("Tab Component", () => {
     };
 
     render(
-      <Tab committedSearchParams={committedSearchParamsMissingStartDate} />,
+      <DataSourceReportTabs
+        committedSearchParams={committedSearchParamsMissingStartDate}
+      />,
     );
 
     expect(
@@ -165,7 +172,9 @@ describe("Tab Component", () => {
       },
     };
 
-    render(<Tab committedSearchParams={committedSearchParams} />);
+    render(
+      <DataSourceReportTabs committedSearchParams={committedSearchParams} />,
+    );
 
     // All tabs should be enabled
     expect(
@@ -182,9 +191,9 @@ describe("Tab Component", () => {
     ).not.toBeDisabled();
 
     // Chat tab should be active by default
-    expect(screen.getByRole("tab", { name: DataSourceNames.CHAT })).toHaveClass(
-      "active",
-    );
+    expect(
+      screen.getByRole("tab", { name: DataSourceNames.CHAT }),
+    ).toHaveAttribute("aria-selected", "true");
 
     // ChatReportTable should be rendered with correct props
     await waitFor(() => {
@@ -230,26 +239,30 @@ describe("Tab Component", () => {
       },
     };
 
-    render(<Tab committedSearchParams={committedSearchParams} />);
+    render(
+      <DataSourceReportTabs committedSearchParams={committedSearchParams} />,
+    );
 
     // Initially Chat is active
-    expect(screen.getByRole("tab", { name: DataSourceNames.CHAT })).toHaveClass(
-      "active",
-    );
+    expect(
+      screen.getByRole("tab", { name: DataSourceNames.CHAT }),
+    ).toHaveAttribute("aria-selected", "true");
     await waitFor(() => {
       expect(ChatReportTable).toHaveBeenCalledTimes(1);
     });
 
     // Click on Jira tab
-    fireEvent.click(screen.getByRole("tab", { name: DataSourceNames.JIRA }));
+    await userEvent.click(
+      screen.getByRole("tab", { name: DataSourceNames.JIRA }),
+    );
 
     // Jira tab should become active
-    expect(screen.getByRole("tab", { name: DataSourceNames.JIRA })).toHaveClass(
-      "active",
-    );
+    expect(
+      screen.getByRole("tab", { name: DataSourceNames.JIRA }),
+    ).toHaveAttribute("aria-selected", "true");
     expect(
       screen.getByRole("tab", { name: DataSourceNames.CHAT }),
-    ).not.toHaveClass("active");
+    ).toHaveAttribute("aria-selected", "false");
 
     // JiraReportTable should be rendered with correct props
     await waitFor(() => {
@@ -284,28 +297,30 @@ describe("Tab Component", () => {
       },
     };
 
-    render(<Tab committedSearchParams={committedSearchParams} />);
+    render(
+      <DataSourceReportTabs committedSearchParams={committedSearchParams} />,
+    );
 
     // Initially Chat is active
-    expect(screen.getByRole("tab", { name: DataSourceNames.CHAT })).toHaveClass(
-      "active",
-    );
+    expect(
+      screen.getByRole("tab", { name: DataSourceNames.CHAT }),
+    ).toHaveAttribute("aria-selected", "true");
     await waitFor(() => {
       expect(ChatReportTable).toHaveBeenCalledTimes(1);
     });
 
     // Click on Calendar tab
-    fireEvent.click(
+    await userEvent.click(
       screen.getByRole("tab", { name: DataSourceNames.CALENDAR }),
     );
 
     // Calendar tab should become active
     expect(
       screen.getByRole("tab", { name: DataSourceNames.CALENDAR }),
-    ).toHaveClass("active");
+    ).toHaveAttribute("aria-selected", "true");
     expect(
       screen.getByRole("tab", { name: DataSourceNames.CHAT }),
-    ).not.toHaveClass("active");
+    ).toHaveAttribute("aria-selected", "false");
 
     // CalendarReportTable should be rendered with correct props
     await waitFor(() => {
@@ -339,7 +354,9 @@ describe("Tab Component", () => {
       },
     };
 
-    render(<Tab committedSearchParams={committedSearchParams} />);
+    render(
+      <DataSourceReportTabs committedSearchParams={committedSearchParams} />,
+    );
 
     expect(
       screen.getByRole("tab", { name: DataSourceNames.CHAT }),
@@ -353,9 +370,9 @@ describe("Tab Component", () => {
 
     // Attempting to click a disabled tab should not change the active tab
     fireEvent.click(screen.getByRole("tab", { name: DataSourceNames.JIRA }));
-    expect(screen.getByRole("tab", { name: DataSourceNames.CHAT })).toHaveClass(
-      "active",
-    ); // Still active
+    expect(
+      screen.getByRole("tab", { name: DataSourceNames.CHAT }),
+    ).toHaveAttribute("aria-selected", "true"); // Still active
   });
 
   it("should switch active tab if current active tab becomes invalid due to committedSearchParams change", async () => {
@@ -374,13 +391,13 @@ describe("Tab Component", () => {
     };
 
     const { rerender } = render(
-      <Tab committedSearchParams={initialSearchParams} />,
+      <DataSourceReportTabs committedSearchParams={initialSearchParams} />,
     );
 
     // Initially, Chat is active
-    expect(screen.getByRole("tab", { name: DataSourceNames.CHAT })).toHaveClass(
-      "active",
-    );
+    expect(
+      screen.getByRole("tab", { name: DataSourceNames.CHAT }),
+    ).toHaveAttribute("aria-selected", "true");
     await waitFor(() => {
       expect(ChatReportTable).toHaveBeenCalledTimes(1);
     });
@@ -394,16 +411,18 @@ describe("Tab Component", () => {
       },
     };
 
-    rerender(<Tab committedSearchParams={updatedSearchParams} />);
+    rerender(
+      <DataSourceReportTabs committedSearchParams={updatedSearchParams} />,
+    );
 
     // Expect Jira to become active because Chat is no longer valid and Jira is the first valid one.
     await waitFor(() => {
       expect(
         screen.getByRole("tab", { name: DataSourceNames.JIRA }),
-      ).toHaveClass("active");
+      ).toHaveAttribute("aria-selected", "true");
       expect(
         screen.getByRole("tab", { name: DataSourceNames.CHAT }),
-      ).not.toHaveClass("active");
+      ).toHaveAttribute("aria-selected", "false");
       expect(JiraReportTable).toHaveBeenCalledTimes(1); // Jira table should now be rendered
       expect(ChatReportTable).toHaveBeenCalledTimes(1); // Chat table was called once initially, should not be called again
     });
@@ -418,7 +437,7 @@ describe("Tab Component", () => {
     };
 
     const { rerender } = render(
-      <Tab committedSearchParams={initialSearchParams} />,
+      <DataSourceReportTabs committedSearchParams={initialSearchParams} />,
     );
 
     // Initially, Jira will be active (as it's the first valid one if Chat is not provided or invalid)
@@ -427,7 +446,7 @@ describe("Tab Component", () => {
     await waitFor(() => {
       expect(
         screen.getByRole("tab", { name: DataSourceNames.JIRA }),
-      ).toHaveClass("active");
+      ).toHaveAttribute("aria-selected", "true");
       expect(JiraReportTable).toHaveBeenCalledTimes(1);
     });
     vi.clearAllMocks(); // Clear calls before the next rerender
@@ -442,13 +461,15 @@ describe("Tab Component", () => {
       },
     };
 
-    rerender(<Tab committedSearchParams={updatedSearchParams} />);
+    rerender(
+      <DataSourceReportTabs committedSearchParams={updatedSearchParams} />,
+    );
 
     // Chat tab (index 0) should become active and disabled
     await waitFor(() => {
       expect(
         screen.getByRole("tab", { name: DataSourceNames.CHAT }),
-      ).toHaveClass("active");
+      ).toHaveAttribute("aria-selected", "true");
       expect(
         screen.getByRole("tab", { name: DataSourceNames.CHAT }),
       ).toBeDisabled();
@@ -496,7 +517,9 @@ describe("Tab Component", () => {
       },
     };
 
-    render(<Tab committedSearchParams={committedSearchParams} />);
+    render(
+      <DataSourceReportTabs committedSearchParams={committedSearchParams} />,
+    );
 
     fireEvent.click(screen.getByRole("tab", { name: DataSourceNames.CHAT }));
 
@@ -530,7 +553,9 @@ describe("Tab Component", () => {
       },
     };
 
-    render(<Tab committedSearchParams={committedSearchParams} />);
+    render(
+      <DataSourceReportTabs committedSearchParams={committedSearchParams} />,
+    );
 
     // Chat tab should be disabled
     expect(
@@ -551,7 +576,9 @@ describe("Tab Component", () => {
       },
     };
 
-    render(<Tab committedSearchParams={committedSearchParams} />);
+    render(
+      <DataSourceReportTabs committedSearchParams={committedSearchParams} />,
+    );
 
     // Jira tab should be disabled
     expect(
@@ -572,7 +599,9 @@ describe("Tab Component", () => {
       },
     };
 
-    render(<Tab committedSearchParams={committedSearchParams} />);
+    render(
+      <DataSourceReportTabs committedSearchParams={committedSearchParams} />,
+    );
 
     // Calendar tab should be disabled
     expect(
@@ -596,7 +625,11 @@ describe("Tab Component", () => {
       },
     };
 
-    render(<Tab committedSearchParams={committedSearchParamsToday} />);
+    render(
+      <DataSourceReportTabs
+        committedSearchParams={committedSearchParamsToday}
+      />,
+    );
 
     fireEvent.click(screen.getByRole("tab", { name: DataSourceNames.JIRA }));
 

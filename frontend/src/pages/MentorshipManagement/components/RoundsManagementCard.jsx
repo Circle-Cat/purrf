@@ -32,7 +32,7 @@ export default function RoundsManagementCard({
 }) {
   return (
     <>
-      <Card className="border-gray-200 shadow-sm">
+      <Card className="border-gray-200">
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Mentorship Round Management</CardTitle>
           {canWriteRounds && (

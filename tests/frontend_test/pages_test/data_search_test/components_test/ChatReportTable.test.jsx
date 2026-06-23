@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { ChatReportTable } from "@/components/common/ChatReportTable";
+import { ChatReportTable } from "@/pages/DataSearch/components/ChatReportTable";
 import {
   getMicrosoftChatMessagesCount,
   getGoogleChatMessagesCount,
