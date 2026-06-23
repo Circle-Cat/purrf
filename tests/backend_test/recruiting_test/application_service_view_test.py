@@ -13,7 +13,7 @@ def _service():
     users_repo = MagicMock()
     exp_repo = MagicMock()
     svc = ApplicationService(
-        app_repo, MagicMock(), MagicMock(), users_repo, RecruitingMapper(), exp_repo
+        app_repo, MagicMock(), MagicMock(), users_repo, RecruitingMapper(), exp_repo, MagicMock()
     )
     return svc, app_repo, users_repo, exp_repo
 
