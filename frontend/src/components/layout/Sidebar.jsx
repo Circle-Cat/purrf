@@ -49,7 +49,7 @@ const Sidebar = () => {
     },
     {
       label: "Recruiting Screening",
-      to: ROUTE_PATHS.RECRUITING_ADMIN,
+      to: ROUTE_PATHS.RECRUITING_SCREENING_INDEX,
       permissions: [PERMISSIONS.RECRUITING_APPLICATION_READ],
     },
   ];

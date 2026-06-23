@@ -10,5 +10,6 @@ export const ROUTE_PATHS = {
   SIGN_IN_SECURITY: "/settings/sign-in",
   RECRUITING_ADMIN: "/recruiting/admin",
   RECRUITING_APPLY: "/recruiting/apply/:jobId",
+  RECRUITING_SCREENING_INDEX: "/recruiting/screening",
   RECRUITING_SCREENING: "/recruiting/screening/:jobId",
 };

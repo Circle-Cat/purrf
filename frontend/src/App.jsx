@@ -20,6 +20,7 @@ import MentorshipManagement from "@/pages/MentorshipManagement";
 import RecruitingAdmin from "@/pages/RecruitingAdmin";
 import RecruitingApply from "@/pages/RecruitingApply";
 import RecruitingScreening from "@/pages/RecruitingScreening";
+import RecruitingScreeningIndex from "@/pages/RecruitingScreeningIndex";
 import VerifyRequired from "@/pages/VerifyRequired";
 import SignInSecurity from "@/pages/SignInSecurity";
 import { AuthProvider } from "@/context/auth";
@@ -106,6 +107,18 @@ function App() {
                           ]}
                         >
                           <RecruitingAdmin />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path={ROUTE_PATHS.RECRUITING_SCREENING_INDEX}
+                      element={
+                        <ProtectedRoute
+                          requiredPermissions={[
+                            PERMISSIONS.RECRUITING_APPLICATION_READ,
+                          ]}
+                        >
+                          <RecruitingScreeningIndex />
                         </ProtectedRoute>
                       }
                     />
