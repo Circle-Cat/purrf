@@ -1,9 +1,8 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
-import JsonSchemaForm, {
-  validate,
-} from "@/components/recruiting/JsonSchemaForm";
+import JsonSchemaForm from "@/components/recruiting/JsonSchemaForm";
+import { validate } from "@/components/recruiting/jsonSchemaUtils";
 
 const schema = {
   type: "object",

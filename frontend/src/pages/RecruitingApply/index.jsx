@@ -4,9 +4,8 @@ import { toast } from "sonner";
 
 import { getJob, submitApplication } from "@/api/recruitingApi";
 import { getMyProfile, updateMyProfile } from "@/api/profileApi";
-import JsonSchemaForm, {
-  validate,
-} from "@/components/recruiting/JsonSchemaForm";
+import JsonSchemaForm from "@/components/recruiting/JsonSchemaForm";
+import { validate } from "@/components/recruiting/jsonSchemaUtils";
 import ExperienceEditModal from "@/pages/Profile/modals/ExperienceEditModal";
 import { Button } from "@/components/ui/button";
 import {
