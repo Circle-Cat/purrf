@@ -16,8 +16,16 @@ beforeEach(() => {
 });
 
 describe("useAuditLog", () => {
-  it("fetches the feed on mount with limit 50, offset 0 and empty filters", async () => {
+  it("does not fetch on mount and reports hasSearched=false", async () => {
     const { result } = renderHook(() => useAuditLog());
+    await act(async () => {});
+    expect(api.getAuditLog).not.toHaveBeenCalled();
+    expect(result.current.hasSearched).toBe(false);
+  });
+
+  it("fetches the feed on submitSearch with limit 50, offset 0 and empty filters", async () => {
+    const { result } = renderHook(() => useAuditLog());
+    act(() => result.current.submitSearch());
     await waitFor(() => expect(result.current.entries).toHaveLength(1));
     expect(api.getAuditLog).toHaveBeenCalledWith({
       userId: undefined,
@@ -28,11 +36,14 @@ describe("useAuditLog", () => {
     });
   });
 
-  it("applies a filter and resets to the first page", async () => {
-    api.getAuditLog.mockResolvedValue({ data: { entries: [], total: 0 } });
+  it("does not refetch on a draft filter change until submitSearch", async () => {
     const { result } = renderHook(() => useAuditLog());
-    await waitFor(() => expect(api.getAuditLog).toHaveBeenCalled());
+    act(() => result.current.submitSearch());
+    await waitFor(() => expect(api.getAuditLog).toHaveBeenCalledTimes(1));
     act(() => result.current.setFilter("action", "granted"));
+    await act(async () => {});
+    expect(api.getAuditLog).toHaveBeenCalledTimes(1);
+    act(() => result.current.submitSearch());
     await waitFor(() =>
       expect(api.getAuditLog).toHaveBeenLastCalledWith({
         userId: undefined,
@@ -49,6 +60,7 @@ describe("useAuditLog", () => {
       response: { data: { message: "boom" } },
     });
     const { result } = renderHook(() => useAuditLog());
+    act(() => result.current.submitSearch());
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith("boom"));
     expect(result.current.entries).toEqual([]);
     expect(result.current.total).toBe(0);

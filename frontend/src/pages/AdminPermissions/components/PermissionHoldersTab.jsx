@@ -5,6 +5,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import Table from "@/components/common/Table";
 import { usePermissionHolders } from "@/pages/AdminPermissions/hooks/usePermissionHolders";
@@ -21,12 +22,14 @@ const PermissionHoldersTab = ({ catalog }) => {
     setPermissionName,
     includeRevoked,
     setIncludeRevoked,
+    submitSearch,
+    hasSearched,
     grants,
     loading,
   } = usePermissionHolders();
 
   const columns = [
-    { header: "User", accessor: "userId" },
+    { header: "User ID", accessor: "userId" },
     { header: "Source", accessor: "grantedSource" },
     { header: "By", accessor: "grantedBy" },
     { header: "When", accessor: "grantedTimestamp" },
@@ -65,10 +68,14 @@ const PermissionHoldersTab = ({ catalog }) => {
           />
           <span>Include revoked</span>
         </label>
+
+        <Button type="button" onClick={submitSearch} disabled={!permissionName}>
+          Search
+        </Button>
       </div>
 
-      {!permissionName ? (
-        <p>Choose a permission to see who holds it.</p>
+      {!hasSearched ? (
+        <p>Choose a permission and click Search to see who holds it.</p>
       ) : loading ? (
         <p>Loading…</p>
       ) : (

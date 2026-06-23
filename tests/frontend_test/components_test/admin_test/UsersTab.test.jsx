@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import UsersTab from "@/pages/AdminPermissions/components/UsersTab";
 import { useAuth } from "@/context/auth";
 import * as api from "@/api/adminPermissionsApi";
@@ -39,15 +40,19 @@ describe("UsersTab", () => {
     });
   });
 
-  it("lists users in the table without a dialog open initially", async () => {
+  it("lists users in the table after Search, without a dialog open initially", async () => {
+    const user = userEvent.setup();
     render(<UsersTab catalog={catalog} />);
+    await user.click(screen.getByRole("button", { name: "Search" }));
     await waitFor(() => expect(screen.getByText("A")).toBeInTheDocument());
     // Dialog should not be open yet
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
   it("opens the dialog when 'Manage permissions' is clicked and loads permissions", async () => {
+    const user = userEvent.setup();
     render(<UsersTab catalog={catalog} />);
+    await user.click(screen.getByRole("button", { name: "Search" }));
     // Wait for user row to appear
     await waitFor(() =>
       expect(

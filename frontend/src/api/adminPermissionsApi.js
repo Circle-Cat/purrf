@@ -7,12 +7,13 @@ export const getPermissionCatalog = () =>
 
 /**
  * Paginated user list with optional search, sort, and filter params.
- * @param {{search?: string, limit?: number, offset?: number,
- *          sortBy?: string, order?: string,
+ * @param {{search?: string, userId?: number|string, limit?: number,
+ *          offset?: number, sortBy?: string, order?: string,
  *          isSuperAdmin?: boolean, userType?: string}} params
  */
 export const getUsers = ({
   search,
+  userId,
   limit,
   offset,
   sortBy,
@@ -23,6 +24,7 @@ export const getUsers = ({
   request.get(API_ENDPOINTS.ADMIN_USERS, {
     params: {
       search,
+      user_id: userId,
       limit,
       offset,
       sort_by: sortBy,

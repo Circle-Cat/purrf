@@ -251,6 +251,34 @@ class TestUsersRepository(BaseRepositoryTestLib):
         self.assertEqual(total, 1)
         self.assertEqual(by_name[0][0].first_name, f"Name{token}")
 
+    async def test_list_users_user_id_filters_to_exact_match(self):
+        token = uuid.uuid4().hex[:10]
+        target = self._make_user(
+            first_name=f"Target{token}", email=f"target-{token}@example.com"
+        )
+        other = self._make_user(
+            first_name=f"Other{token}", email=f"other-{token}@example.com"
+        )
+        await self.insert_entities([target, other])
+
+        rows, total = await self.repo.list_users(self.session, user_id=target.user_id)
+        self.assertEqual(total, 1)
+        self.assertEqual(rows[0][0].user_id, target.user_id)
+
+    async def test_list_users_user_id_combines_with_search(self):
+        token = uuid.uuid4().hex[:10]
+        match = self._make_user(
+            first_name=f"Name{token}", email=f"m-{token}@example.com"
+        )
+        await self.insert_entities([match])
+
+        # user_id matches but search does not -> no rows (filters are ANDed).
+        rows, total = await self.repo.list_users(
+            self.session, user_id=match.user_id, search="no-such-token-xyz"
+        )
+        self.assertEqual(total, 0)
+        self.assertEqual(rows, [])
+
     async def test_list_users_internal_flag_true_when_has_internal_identity(self):
         token = uuid.uuid4().hex[:10]
         user = self._make_user(email=f"internal-{token}@example.com")

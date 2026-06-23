@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import UserList from "@/pages/AdminPermissions/components/UserList";
 
 const users = [
@@ -29,8 +30,12 @@ const baseProps = {
   users,
   total: 2,
   loading: false,
+  hasSearched: true,
   search: "",
   onSearchChange: vi.fn(),
+  userId: "",
+  onUserIdChange: vi.fn(),
+  onSearch: vi.fn(),
   offset: 0,
   limit: 20,
   onPrev: vi.fn(),
@@ -127,5 +132,29 @@ describe("UserList", () => {
     });
     fireEvent.click(checkbox);
     expect(baseProps.onSuperAdminFilterChange).toHaveBeenCalled();
+  });
+
+  it("shows the empty prompt and hides the table before a search has run", () => {
+    render(<UserList {...baseProps} hasSearched={false} />);
+    expect(
+      screen.getByText("Enter search criteria and click Search."),
+    ).toBeInTheDocument();
+    // No table rows rendered yet.
+    expect(screen.queryByText("Alice")).not.toBeInTheDocument();
+  });
+
+  it("strips non-digits before calling onUserIdChange", () => {
+    render(<UserList {...baseProps} />);
+    fireEvent.change(screen.getByPlaceholderText("User ID"), {
+      target: { value: "a1b2" },
+    });
+    expect(baseProps.onUserIdChange).toHaveBeenCalledWith("12");
+  });
+
+  it("calls onSearch when the Search button is clicked", async () => {
+    const user = userEvent.setup();
+    render(<UserList {...baseProps} />);
+    await user.click(screen.getByRole("button", { name: "Search" }));
+    expect(baseProps.onSearch).toHaveBeenCalledTimes(1);
   });
 });
