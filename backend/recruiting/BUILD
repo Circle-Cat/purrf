@@ -15,6 +15,7 @@ py_library(
         "//backend/entity:entities",
         "//backend/repository:repositories",
         "//backend/utils:permission_decorators",
+        "@pypi//fastapi",
         "@pypi//sqlalchemy",
     ],
 )

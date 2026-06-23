@@ -29,3 +29,9 @@ py_test(
     srcs = ["application_service_advance_test.py"],
     deps = ["//backend/recruiting"],
 )
+
+py_test(
+    name = "recruiting_controller_test",
+    srcs = ["recruiting_controller_test.py"],
+    deps = ["//backend/recruiting"],
+)
