@@ -103,3 +103,12 @@ py_test(
         ":base_repository_test_lib",
     ],
 )
+
+py_test(
+    name = "users_recruiting_fields_test",
+    srcs = ["users_recruiting_fields_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        ":base_repository_test_lib",
+    ],
+)
