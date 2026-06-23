@@ -14,13 +14,25 @@ class JobEntity(Base):
 
     job_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     kind: Mapped[JobKind] = mapped_column(
-        Enum(JobKind, name="job_kind_enum", values_callable=lambda obj: [e.value for e in obj])
+        Enum(
+            JobKind,
+            name="job_kind_enum",
+            values_callable=lambda obj: [e.value for e in obj],
+        )
     )
     mentorship_role: Mapped[ParticipantRole | None] = mapped_column(
-        Enum(ParticipantRole, name="job_mentorship_role_enum", values_callable=lambda obj: [e.value for e in obj])
+        Enum(
+            ParticipantRole,
+            name="job_mentorship_role_enum",
+            values_callable=lambda obj: [e.value for e in obj],
+        )
     )
     status: Mapped[JobStatus] = mapped_column(
-        Enum(JobStatus, name="job_status_enum", values_callable=lambda obj: [e.value for e in obj]),
+        Enum(
+            JobStatus,
+            name="job_status_enum",
+            values_callable=lambda obj: [e.value for e in obj],
+        ),
         default=JobStatus.DRAFT,
         server_default=JobStatus.DRAFT.value,
         nullable=False,

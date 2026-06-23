@@ -24,18 +24,24 @@ def upgrade() -> None:
     user_type_enum.create(op.get_bind(), checkfirst=True)
     op.add_column(
         "users",
-        sa.Column("user_type", user_type_enum, server_default="external", nullable=False),
+        sa.Column(
+            "user_type", user_type_enum, server_default="external", nullable=False
+        ),
     )
     op.add_column(
         "users",
         sa.Column("is_blocked", sa.Boolean(), server_default="false", nullable=False),
     )
-    op.add_column("users", sa.Column("blocked_at", sa.DateTime(timezone=True), nullable=True))
+    op.add_column(
+        "users", sa.Column("blocked_at", sa.DateTime(timezone=True), nullable=True)
+    )
     op.add_column("users", sa.Column("blocked_reason", sa.String(), nullable=True))
     op.alter_column(
         "users",
         "communication_channel",
-        existing_type=postgresql.ENUM("email", "google_chat", name="communication_method"),
+        existing_type=postgresql.ENUM(
+            "email", "google_chat", name="communication_method"
+        ),
         nullable=True,
     )
 
@@ -44,7 +50,9 @@ def downgrade() -> None:
     op.alter_column(
         "users",
         "communication_channel",
-        existing_type=postgresql.ENUM("email", "google_chat", name="communication_method"),
+        existing_type=postgresql.ENUM(
+            "email", "google_chat", name="communication_method"
+        ),
         nullable=False,
     )
     op.drop_column("users", "blocked_reason")

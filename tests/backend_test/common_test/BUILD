@@ -131,7 +131,7 @@ py_test(
     name = "recruiting_enums_test",
     srcs = ["recruiting_enums_test.py"],
     deps = [
-        "//backend/common:recruiting_enums",
         "//backend/common:permissions",
+        "//backend/common:recruiting_enums",
     ],
 )

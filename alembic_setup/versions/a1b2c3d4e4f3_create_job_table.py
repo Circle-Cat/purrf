@@ -35,8 +35,16 @@ def upgrade() -> None:
         sa.Column("title", sa.String(), nullable=False),
         sa.Column("description", sa.String(), nullable=True),
         sa.Column("form_schema", postgresql.JSONB(), nullable=True),
-        sa.Column("created_datetime", sa.DateTime(timezone=True), server_default=sa.text("now()")),
-        sa.Column("updated_timestamp", sa.DateTime(timezone=True), server_default=sa.text("now()")),
+        sa.Column(
+            "created_datetime",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+        ),
+        sa.Column(
+            "updated_timestamp",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+        ),
     )
 
 

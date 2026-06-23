@@ -106,9 +106,9 @@ class RecruitingController:
         )
         self.router.add_api_route(
             RECRUITING_APPLICATION_ADVANCE_ENDPOINT,
-            endpoint=authenticate(permissions=[Permission.RECRUITING_APPLICATION_ADVANCE])(
-                self.advance_application
-            ),
+            endpoint=authenticate(
+                permissions=[Permission.RECRUITING_APPLICATION_ADVANCE]
+            )(self.advance_application),
             methods=["POST"],
             response_model=None,
         )

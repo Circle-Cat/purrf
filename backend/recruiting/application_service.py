@@ -4,9 +4,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.mentorship_enums import ApprovalStatus
 from backend.common.recruiting_enums import ApplicationStage
-from backend.dto.application_dto import ApplicationBoardCardDto, ApplicationDto, ApplicationSubmitDto
+from backend.dto.application_dto import (
+    ApplicationBoardCardDto,
+    ApplicationDto,
+    ApplicationSubmitDto,
+)
 from backend.entity.application_entity import ApplicationEntity
-from backend.entity.mentorship_round_participants_entity import MentorshipRoundParticipantsEntity
+from backend.entity.mentorship_round_participants_entity import (
+    MentorshipRoundParticipantsEntity,
+)
 from backend.repository.application_repository import ApplicationRepository
 from backend.repository.experience_repository import ExperienceRepository
 from backend.repository.job_repository import JobRepository
@@ -92,7 +98,11 @@ class ApplicationService:
         user = await self.users_repository.get_user_by_user_id(session, user_id)
         is_blocked = bool(user and user.is_blocked)
 
-        stage = ApplicationStage.REJECTED if is_blocked else ApplicationStage.RECRUITER_SCREENING
+        stage = (
+            ApplicationStage.REJECTED
+            if is_blocked
+            else ApplicationStage.RECRUITER_SCREENING
+        )
         application = ApplicationEntity(
             user_id=user_id,
             job_id=job_id,
@@ -105,11 +115,15 @@ class ApplicationService:
             application.rejected_round_id = open_round.round_id
             application.rejected_at = now
 
-        application = await self.application_repository.create_application(session, application)
+        application = await self.application_repository.create_application(
+            session, application
+        )
         await session.commit()
         return self.recruiting_mapper.to_application_dto(application)
 
-    async def mark_viewed(self, session: AsyncSession, application_id: int) -> ApplicationDto:
+    async def mark_viewed(
+        self, session: AsyncSession, application_id: int
+    ) -> ApplicationDto:
         """Flip is_viewed on first screener open and freeze a snapshot. Idempotent.
 
         On the first call, sets ``is_viewed=True`` and writes a ``snapshot`` dict capturing
@@ -144,7 +158,9 @@ class ApplicationService:
                 "first_name": user.first_name,
                 "last_name": user.last_name,
                 "primary_email": user.primary_email,
-            } if user else None,
+            }
+            if user
+            else None,
             "experience": {
                 "education": experience.education if experience else None,
                 "work_history": experience.work_history if experience else None,
@@ -198,7 +214,9 @@ class ApplicationService:
                     participant_role=job.mentorship_role,
                     approval_status=ApprovalStatus.SIGNED_UP,
                 )
-                await self.participants_repository.upsert_participant(session, participant)
+                await self.participants_repository.upsert_participant(
+                    session, participant
+                )
             app.stage = ApplicationStage.HIRED
         elif target_stage == ApplicationStage.REJECTED:
             app.stage = ApplicationStage.REJECTED
@@ -255,12 +273,18 @@ class ApplicationService:
         prior = await self.application_repository.get_latest_rejected(
             session, app.user_id, job_id
         )
-        if prior is None or prior.application_id == app.application_id or prior.rejected_at is None:
+        if (
+            prior is None
+            or prior.application_id == app.application_id
+            or prior.rejected_at is None
+        ):
             return None
         round_entity = await self.mentorship_round_repository.get_by_round_id(
             session, prior.rejected_round_id
         )
         if round_entity is None:
             return None
-        freeze_until = prior.rejected_at + timedelta(days=round_entity.reapply_freeze_days)
+        freeze_until = prior.rejected_at + timedelta(
+            days=round_entity.reapply_freeze_days
+        )
         return freeze_until if freeze_until > now else None

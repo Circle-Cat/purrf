@@ -100,8 +100,14 @@ class MentorshipRoundRepository:
             if role == ParticipantRole.MENTOR
             else "mentee_application_deadline_at"
         )
-        start_ts = cast(MentorshipRoundEntity.description["promotion_start_at"].astext, TIMESTAMP(timezone=True))
-        deadline_ts = cast(MentorshipRoundEntity.description[deadline_key].astext, TIMESTAMP(timezone=True))
+        start_ts = cast(
+            MentorshipRoundEntity.description["promotion_start_at"].astext,
+            TIMESTAMP(timezone=True),
+        )
+        deadline_ts = cast(
+            MentorshipRoundEntity.description[deadline_key].astext,
+            TIMESTAMP(timezone=True),
+        )
         result = await session.execute(
             select(MentorshipRoundEntity)
             .where(start_ts <= now, deadline_ts > now)

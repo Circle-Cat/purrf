@@ -7,30 +7,40 @@ from sqlalchemy.ext.asyncio import AsyncSession
 class ApplicationRepository:
     """Database operations for ApplicationEntity."""
 
-    async def create_application(self, session: AsyncSession, entity: ApplicationEntity) -> ApplicationEntity:
+    async def create_application(
+        self, session: AsyncSession, entity: ApplicationEntity
+    ) -> ApplicationEntity:
         """Insert a new application and flush so its id is populated."""
         session.add(entity)
         await session.flush()
         return entity
 
-    async def get_by_id(self, session: AsyncSession, application_id: int) -> ApplicationEntity | None:
+    async def get_by_id(
+        self, session: AsyncSession, application_id: int
+    ) -> ApplicationEntity | None:
         """Return the application with the given id, or None."""
         if not application_id:
             return None
         result = await session.execute(
-            select(ApplicationEntity).where(ApplicationEntity.application_id == application_id)
+            select(ApplicationEntity).where(
+                ApplicationEntity.application_id == application_id
+            )
         )
         return result.scalar_one_or_none()
 
-    async def list_active_by_job(self, session: AsyncSession, job_id: int) -> list[ApplicationEntity]:
+    async def list_active_by_job(
+        self, session: AsyncSession, job_id: int
+    ) -> list[ApplicationEntity]:
         """Return non-terminal (board) applications for a job, newest first."""
         result = await session.execute(
             select(ApplicationEntity)
             .where(
                 ApplicationEntity.job_id == job_id,
-                ApplicationEntity.stage.notin_(
-                    [ApplicationStage.HIRED, ApplicationStage.REJECTED, ApplicationStage.OFFER_DECLINED]
-                ),
+                ApplicationEntity.stage.notin_([
+                    ApplicationStage.HIRED,
+                    ApplicationStage.REJECTED,
+                    ApplicationStage.OFFER_DECLINED,
+                ]),
             )
             .order_by(desc(ApplicationEntity.created_datetime))
         )
@@ -51,7 +61,9 @@ class ApplicationRepository:
         )
         return result.scalars().first()
 
-    async def update_application(self, session: AsyncSession, entity: ApplicationEntity) -> ApplicationEntity:
+    async def update_application(
+        self, session: AsyncSession, entity: ApplicationEntity
+    ) -> ApplicationEntity:
         """Persist mutations to an attached/merged application entity."""
         merged = await session.merge(entity)
         await session.flush()

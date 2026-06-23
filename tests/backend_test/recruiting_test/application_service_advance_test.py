@@ -49,9 +49,15 @@ class TestAdvance(unittest.IsolatedAsyncioTestCase):
 
     async def test_hired_enrolls_participant_when_absent(self):
         """HIRED stage idempotently creates a participant entry when none exists."""
-        self.participants_repo.get_by_user_id_and_round_id = AsyncMock(return_value=None)
-        self.participants_repo.upsert_participant = AsyncMock(side_effect=lambda s, e: e)
-        result = await self.svc.advance(self.session, 10, ApplicationStage.HIRED, self.now)
+        self.participants_repo.get_by_user_id_and_round_id = AsyncMock(
+            return_value=None
+        )
+        self.participants_repo.upsert_participant = AsyncMock(
+            side_effect=lambda s, e: e
+        )
+        result = await self.svc.advance(
+            self.session, 10, ApplicationStage.HIRED, self.now
+        )
         self.assertEqual(result.stage, ApplicationStage.HIRED)
         self.participants_repo.upsert_participant.assert_awaited_once()
         created = self.participants_repo.upsert_participant.call_args.args[1]
@@ -64,13 +70,17 @@ class TestAdvance(unittest.IsolatedAsyncioTestCase):
             return_value=MagicMock()
         )
         self.participants_repo.upsert_participant = AsyncMock()
-        result = await self.svc.advance(self.session, 10, ApplicationStage.HIRED, self.now)
+        result = await self.svc.advance(
+            self.session, 10, ApplicationStage.HIRED, self.now
+        )
         self.assertEqual(result.stage, ApplicationStage.HIRED)
         self.participants_repo.upsert_participant.assert_not_awaited()
 
     async def test_rejected_records_round_and_time(self):
         """REJECTED stage stamps rejected_round_id and rejected_at on the entity."""
-        result = await self.svc.advance(self.session, 10, ApplicationStage.REJECTED, self.now)
+        result = await self.svc.advance(
+            self.session, 10, ApplicationStage.REJECTED, self.now
+        )
         self.assertEqual(result.stage, ApplicationStage.REJECTED)
         self.assertEqual(self.app.rejected_round_id, 9)
         self.assertEqual(self.app.rejected_at, self.now)

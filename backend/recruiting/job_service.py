@@ -9,7 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 class JobService:
     """Manages recruiting postings (create/edit/publish/close)."""
 
-    def __init__(self, job_repository: JobRepository, recruiting_mapper: RecruitingMapper):
+    def __init__(
+        self, job_repository: JobRepository, recruiting_mapper: RecruitingMapper
+    ):
         """
         Initialise the service with its repository and mapper.
 
@@ -42,7 +44,9 @@ class JobService:
         await session.commit()
         return self.recruiting_mapper.to_job_dto(job)
 
-    async def update_job(self, session: AsyncSession, job_id: int, dto: JobCreateDto) -> JobDto:
+    async def update_job(
+        self, session: AsyncSession, job_id: int, dto: JobCreateDto
+    ) -> JobDto:
         """Update a posting's editable fields (incl. form_schema). No re-review gate.
 
         Args:

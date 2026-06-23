@@ -13,7 +13,13 @@ def _service():
     users_repo = MagicMock()
     exp_repo = MagicMock()
     svc = ApplicationService(
-        app_repo, MagicMock(), MagicMock(), users_repo, RecruitingMapper(), exp_repo, MagicMock()
+        app_repo,
+        MagicMock(),
+        MagicMock(),
+        users_repo,
+        RecruitingMapper(),
+        exp_repo,
+        MagicMock(),
     )
     return svc, app_repo, users_repo, exp_repo
 
@@ -59,7 +65,7 @@ class TestApplicationServiceView(unittest.IsolatedAsyncioTestCase):
 
     async def test_second_view_is_idempotent(self):
         """Second call returns the DTO unchanged without overwriting the snapshot."""
-        svc, app_repo, users_repo, exp_repo = _service()
+        svc, app_repo, _, _ = _service()
         session = AsyncMock()
         app = ApplicationEntity(
             application_id=10,
@@ -79,7 +85,7 @@ class TestApplicationServiceView(unittest.IsolatedAsyncioTestCase):
 
     async def test_missing_application_raises(self):
         """ValueError is raised when the application does not exist."""
-        svc, app_repo, users_repo, exp_repo = _service()
+        svc, app_repo, _, _ = _service()
         session = AsyncMock()
         app_repo.get_by_id = AsyncMock(return_value=None)
 

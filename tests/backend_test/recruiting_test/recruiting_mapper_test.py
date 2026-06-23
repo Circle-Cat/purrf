@@ -11,8 +11,12 @@ class TestRecruitingMapper(unittest.TestCase):
 
     def test_to_job_dto(self):
         job = JobEntity(
-            job_id=7, kind=JobKind.ACTIVITY, mentorship_role=ParticipantRole.MENTOR,
-            status=JobStatus.PUBLISHED, title="Mentor", description="jd",
+            job_id=7,
+            kind=JobKind.ACTIVITY,
+            mentorship_role=ParticipantRole.MENTOR,
+            status=JobStatus.PUBLISHED,
+            title="Mentor",
+            description="jd",
             form_schema={"type": "object"},
         )
         dto = self.mapper.to_job_dto(job)

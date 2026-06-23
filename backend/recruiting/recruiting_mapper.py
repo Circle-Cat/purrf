@@ -11,17 +11,26 @@ class RecruitingMapper:
     def to_job_dto(self, job: JobEntity) -> JobDto:
         """Map a JobEntity to a JobDto."""
         return JobDto(
-            id=job.job_id, title=job.title, description=job.description,
-            kind=job.kind, mentorship_role=job.mentorship_role,
-            status=job.status, form_schema=job.form_schema,
+            id=job.job_id,
+            title=job.title,
+            description=job.description,
+            kind=job.kind,
+            mentorship_role=job.mentorship_role,
+            status=job.status,
+            form_schema=job.form_schema,
         )
 
     def to_application_dto(self, app: ApplicationEntity) -> ApplicationDto:
         """Map an ApplicationEntity to an ApplicationDto."""
         return ApplicationDto(
-            id=app.application_id, user_id=app.user_id, job_id=app.job_id,
-            round_id=app.round_id, stage=app.stage, form_answers=app.form_answers,
-            snapshot=app.snapshot, is_viewed=app.is_viewed,
+            id=app.application_id,
+            user_id=app.user_id,
+            job_id=app.job_id,
+            round_id=app.round_id,
+            stage=app.stage,
+            form_answers=app.form_answers,
+            snapshot=app.snapshot,
+            is_viewed=app.is_viewed,
         )
 
     def to_board_card_dto(
@@ -29,7 +38,13 @@ class RecruitingMapper:
     ) -> ApplicationBoardCardDto:
         """Map an application to a board card with a freeze annotation."""
         return ApplicationBoardCardDto(
-            id=app.application_id, user_id=app.user_id, job_id=app.job_id,
-            round_id=app.round_id, stage=app.stage, form_answers=app.form_answers,
-            snapshot=app.snapshot, is_viewed=app.is_viewed, freeze_until=freeze_until,
+            id=app.application_id,
+            user_id=app.user_id,
+            job_id=app.job_id,
+            round_id=app.round_id,
+            stage=app.stage,
+            form_answers=app.form_answers,
+            snapshot=app.snapshot,
+            is_viewed=app.is_viewed,
+            freeze_until=freeze_until,
         )

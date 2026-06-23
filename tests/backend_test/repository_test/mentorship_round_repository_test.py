@@ -339,6 +339,7 @@ class TestMentorShipRoundRepository(BaseRepositoryTestLib):
 
     async def test_round_has_reapply_freeze_days_default(self):
         from backend.entity.mentorship_round_entity import MentorshipRoundEntity
+
         round_entity = MentorshipRoundEntity(name="2026-freeze", required_meetings=5)
         await self.insert_entities([round_entity])
         self.assertEqual(round_entity.reapply_freeze_days, 90)
@@ -347,8 +348,10 @@ class TestMentorShipRoundRepository(BaseRepositoryTestLib):
         """Test that get_open_application_round returns the open round and ignores closed ones."""
         from datetime import datetime, timezone
         from backend.common.mentorship_enums import ParticipantRole
+
         open_round = MentorshipRoundEntity(
-            name="open", required_meetings=5,
+            name="open",
+            required_meetings=5,
             description={
                 "promotion_start_at": "2026-01-01T00:00:00Z",
                 "mentor_application_deadline_at": "2026-12-31T00:00:00Z",
@@ -356,7 +359,8 @@ class TestMentorShipRoundRepository(BaseRepositoryTestLib):
             },
         )
         closed_round = MentorshipRoundEntity(
-            name="closed", required_meetings=5,
+            name="closed",
+            required_meetings=5,
             description={
                 "promotion_start_at": "2025-01-01T00:00:00Z",
                 "mentor_application_deadline_at": "2025-02-01T00:00:00Z",
@@ -365,7 +369,9 @@ class TestMentorShipRoundRepository(BaseRepositoryTestLib):
         )
         await self.insert_entities([open_round, closed_round])
         now = datetime(2026, 6, 1, tzinfo=timezone.utc)
-        found = await self.repo.get_open_application_round(self.session, ParticipantRole.MENTOR, now)
+        found = await self.repo.get_open_application_round(
+            self.session, ParticipantRole.MENTOR, now
+        )
         self.assertIsNotNone(found)
         self.assertEqual(found.name, "open")
 

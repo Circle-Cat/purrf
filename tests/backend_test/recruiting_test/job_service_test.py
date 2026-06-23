@@ -18,11 +18,15 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         async def fake_create(session, entity):
             entity.job_id = 1
             return entity
+
         self.repo.create_job = AsyncMock(side_effect=fake_create)
 
         dto = JobCreateDto(
-            title="Mentor", description="jd", kind=JobKind.ACTIVITY,
-            mentorship_role=ParticipantRole.MENTOR, form_schema={"type": "object"},
+            title="Mentor",
+            description="jd",
+            kind=JobKind.ACTIVITY,
+            mentorship_role=ParticipantRole.MENTOR,
+            form_schema={"type": "object"},
         )
         result = await self.service.create_job(self.session, dto)
 
@@ -31,7 +35,9 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         self.session.commit.assert_awaited_once()
 
     async def test_publish_sets_status_published(self):
-        job = JobEntity(job_id=2, kind=JobKind.ACTIVITY, status=JobStatus.DRAFT, title="x")
+        job = JobEntity(
+            job_id=2, kind=JobKind.ACTIVITY, status=JobStatus.DRAFT, title="x"
+        )
         self.repo.get_by_job_id = AsyncMock(return_value=job)
         self.repo.update_job = AsyncMock(side_effect=lambda s, e: e)
 

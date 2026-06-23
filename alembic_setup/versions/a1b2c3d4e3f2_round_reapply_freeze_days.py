@@ -21,7 +21,9 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     op.add_column(
         "mentorship_round",
-        sa.Column("reapply_freeze_days", sa.Integer(), server_default="90", nullable=False),
+        sa.Column(
+            "reapply_freeze_days", sa.Integer(), server_default="90", nullable=False
+        ),
     )
 
 

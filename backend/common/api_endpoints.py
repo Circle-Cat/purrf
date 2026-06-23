@@ -74,7 +74,9 @@ RECRUITING_JOB_APPLY_ENDPOINT = "/recruiting/jobs/{job_id}/applications"
 RECRUITING_JOB_BOARD_ENDPOINT = "/recruiting/jobs/{job_id}/board"
 RECRUITING_APPLICATION_ENDPOINT = "/recruiting/applications/{application_id}"
 RECRUITING_APPLICATION_VIEW_ENDPOINT = "/recruiting/applications/{application_id}/view"
-RECRUITING_APPLICATION_ADVANCE_ENDPOINT = "/recruiting/applications/{application_id}/advance"
+RECRUITING_APPLICATION_ADVANCE_ENDPOINT = (
+    "/recruiting/applications/{application_id}/advance"
+)
 
 ADMIN_PERMISSIONS_ENDPOINT = "/admin/permissions"
 ADMIN_USERS_ENDPOINT = "/admin/users"

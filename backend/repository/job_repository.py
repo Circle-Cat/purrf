@@ -13,7 +13,9 @@ class JobRepository:
         await session.flush()
         return entity
 
-    async def get_by_job_id(self, session: AsyncSession, job_id: int) -> JobEntity | None:
+    async def get_by_job_id(
+        self, session: AsyncSession, job_id: int
+    ) -> JobEntity | None:
         """Return the job with the given id, or None."""
         if not job_id:
             return None

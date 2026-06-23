@@ -22,17 +22,35 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     """Create application_stage_enum, the application table, and its indexes."""
     stage = sa.Enum(
-        "applied", "recruiter_screening", "behavioral", "tech", "board_review",
-        "offer", "hired", "rejected", "offer_declined", "blacklisted",
+        "applied",
+        "recruiter_screening",
+        "behavioral",
+        "tech",
+        "board_review",
+        "offer",
+        "hired",
+        "rejected",
+        "offer_declined",
+        "blacklisted",
         name="application_stage_enum",
     )
     stage.create(op.get_bind(), checkfirst=True)
     op.create_table(
         "application",
         sa.Column("application_id", sa.Integer(), primary_key=True, autoincrement=True),
-        sa.Column("user_id", sa.Integer(), sa.ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "user_id",
+            sa.Integer(),
+            sa.ForeignKey("users.user_id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("job_id", sa.Integer(), sa.ForeignKey("job.job_id"), nullable=False),
-        sa.Column("round_id", sa.Integer(), sa.ForeignKey("mentorship_round.round_id"), nullable=False),
+        sa.Column(
+            "round_id",
+            sa.Integer(),
+            sa.ForeignKey("mentorship_round.round_id"),
+            nullable=False,
+        ),
         sa.Column("stage", stage, nullable=False),
         sa.Column("form_answers", postgresql.JSONB(), nullable=True),
         sa.Column("snapshot", postgresql.JSONB(), nullable=True),
@@ -50,8 +68,16 @@ def upgrade() -> None:
             nullable=True,
         ),
         sa.Column("rejected_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("created_datetime", sa.DateTime(timezone=True), server_default=sa.text("now()")),
-        sa.Column("updated_timestamp", sa.DateTime(timezone=True), server_default=sa.text("now()")),
+        sa.Column(
+            "created_datetime",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+        ),
+        sa.Column(
+            "updated_timestamp",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+        ),
     )
     op.create_index("ix_application_user_id", "application", ["user_id"])
     op.create_index("ix_application_job_id", "application", ["job_id"])

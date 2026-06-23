@@ -18,8 +18,12 @@ class TestRecruitingController(unittest.TestCase):
         self.assertIn(("/recruiting/jobs/{job_id}/close", "POST"), routes)
         self.assertIn(("/recruiting/jobs/{job_id}/applications", "POST"), routes)
         self.assertIn(("/recruiting/jobs/{job_id}/board", "GET"), routes)
-        self.assertIn(("/recruiting/applications/{application_id}/view", "POST"), routes)
-        self.assertIn(("/recruiting/applications/{application_id}/advance", "POST"), routes)
+        self.assertIn(
+            ("/recruiting/applications/{application_id}/view", "POST"), routes
+        )
+        self.assertIn(
+            ("/recruiting/applications/{application_id}/advance", "POST"), routes
+        )
 
 
 if __name__ == "__main__":
