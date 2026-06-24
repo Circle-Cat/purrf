@@ -66,6 +66,18 @@ MENTORSHIP_MEETING_V2_BATCH_DELETE_ENDPOINT = "/mentorship/v2/meetings/batch-del
 MEET_ATTENDANCE_SYNC_ENDPOINT = "/mentorship/v2/meetings/attendance/sync"
 MENTORSHIP_ROUNDS_FEEDBACK_ENDPOINT = "/mentorship/rounds/{round_id}/feedback"
 
+RECRUITING_JOBS_ENDPOINT = "/recruiting/jobs"
+RECRUITING_JOB_ENDPOINT = "/recruiting/jobs/{job_id}"
+RECRUITING_JOB_PUBLISH_ENDPOINT = "/recruiting/jobs/{job_id}/publish"
+RECRUITING_JOB_CLOSE_ENDPOINT = "/recruiting/jobs/{job_id}/close"
+RECRUITING_JOB_APPLY_ENDPOINT = "/recruiting/jobs/{job_id}/applications"
+RECRUITING_JOB_BOARD_ENDPOINT = "/recruiting/jobs/{job_id}/board"
+RECRUITING_APPLICATION_ENDPOINT = "/recruiting/applications/{application_id}"
+RECRUITING_APPLICATION_VIEW_ENDPOINT = "/recruiting/applications/{application_id}/view"
+RECRUITING_APPLICATION_ADVANCE_ENDPOINT = (
+    "/recruiting/applications/{application_id}/advance"
+)
+
 ADMIN_PERMISSIONS_ENDPOINT = "/admin/permissions"
 ADMIN_USERS_ENDPOINT = "/admin/users"
 ADMIN_USER_PERMISSIONS_ENDPOINT = "/admin/users/{user_id}/permissions"

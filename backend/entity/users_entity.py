@@ -1,9 +1,10 @@
 from datetime import datetime
-from sqlalchemy import Boolean, String, DateTime, func, text, Enum as SAEnum
+from sqlalchemy import Boolean, String, DateTime, Enum, func, text, Enum as SAEnum
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column
 from backend.common.base import Base
 from backend.common.mentorship_enums import CommunicationMethod
+from backend.common.recruiting_enums import UserType
 
 
 class UsersEntity(Base):
@@ -19,12 +20,13 @@ class UsersEntity(Base):
 
     timezone_updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
-    communication_channel: Mapped[CommunicationMethod] = mapped_column(
+    communication_channel: Mapped[CommunicationMethod | None] = mapped_column(
         SAEnum(
             CommunicationMethod,
             name="communication_method",
             values_callable=lambda obj: [e.value for e in obj],
-        )
+        ),
+        nullable=True,
     )
 
     has_mentorship_mentor_experience: Mapped[bool | None] = mapped_column(Boolean)
@@ -48,6 +50,22 @@ class UsersEntity(Base):
     is_super_admin: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("false")
     )
+
+    user_type: Mapped[UserType] = mapped_column(
+        Enum(
+            UserType,
+            name="user_type_enum",
+            values_callable=lambda obj: [e.value for e in obj],
+        ),
+        default=UserType.EXTERNAL,
+        server_default=UserType.EXTERNAL.value,
+        nullable=False,
+    )
+    is_blocked: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
+    blocked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    blocked_reason: Mapped[str | None] = mapped_column(String)
 
     updated_timestamp: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=func.now(), onupdate=func.now()

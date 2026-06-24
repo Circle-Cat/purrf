@@ -26,6 +26,7 @@ class FastAppFactory:
         mentorship_controller,
         email_management_controller,
         permission_admin_controller,
+        recruiting_controller,
         launchdarkly_client,
         database,
         logger,
@@ -44,6 +45,7 @@ class FastAppFactory:
             profile_controller: Optional ProfileController instance to register profile routes.
             mentorship_controller: An instance of MentorshipController that manages API routes for mentorship services.
             email_management_controller: An instance of EmailManagementController that manages API routes for email OTP verify/link.
+            recruiting_controller: An instance of RecruitingController that manages API routes for job listings and candidate applications.
             launchdarkly_client: LaunchDarklyClient instance for feature flag lifecycle management.
             database: Database instance for application lifecycle cleanup.
         """
@@ -59,6 +61,7 @@ class FastAppFactory:
         self.mentorship_controller = mentorship_controller
         self.email_management_controller = email_management_controller
         self.permission_admin_controller = permission_admin_controller
+        self.recruiting_controller = recruiting_controller
         self.launchdarkly_client = launchdarkly_client
         self.database = database
         self.logger = logger
@@ -131,6 +134,7 @@ class FastAppFactory:
         app.include_router(self.mentorship_controller.router, prefix="/api")
         app.include_router(self.email_management_controller.router, prefix="/api")
         app.include_router(self.permission_admin_controller.router, prefix="/api")
+        app.include_router(self.recruiting_controller.router, prefix="/api")
 
         @app.get("/fastapi/health")
         def health_check():

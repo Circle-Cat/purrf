@@ -1,4 +1,5 @@
 from backend.entity.mentorship_round_entity import MentorshipRoundEntity
+from backend.common.mentorship_enums import ParticipantRole
 from datetime import datetime, timezone
 from sqlalchemy import TIMESTAMP, cast, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -82,6 +83,35 @@ class MentorshipRoundRepository:
                 )
                 >= now_utc,
             )
+        )
+        return result.scalars().first()
+
+    async def get_open_application_round(
+        self, session: AsyncSession, role: ParticipantRole, now: datetime
+    ) -> MentorshipRoundEntity | None:
+        """Return the round whose application window for `role` is currently open.
+
+        Open means promotion_start_at <= now < <role>_application_deadline_at,
+        reading ISO timestamps from the description JSONB. Returns the earliest
+        such round, or None.
+        """
+        deadline_key = (
+            "mentor_application_deadline_at"
+            if role == ParticipantRole.MENTOR
+            else "mentee_application_deadline_at"
+        )
+        start_ts = cast(
+            MentorshipRoundEntity.description["promotion_start_at"].astext,
+            TIMESTAMP(timezone=True),
+        )
+        deadline_ts = cast(
+            MentorshipRoundEntity.description[deadline_key].astext,
+            TIMESTAMP(timezone=True),
+        )
+        result = await session.execute(
+            select(MentorshipRoundEntity)
+            .where(start_ts <= now, deadline_ts > now)
+            .order_by(start_ts)
         )
         return result.scalars().first()
 

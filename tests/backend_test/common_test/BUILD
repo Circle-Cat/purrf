@@ -126,3 +126,12 @@ py_test(
         "//backend/common:database",
     ],
 )
+
+py_test(
+    name = "recruiting_enums_test",
+    srcs = ["recruiting_enums_test.py"],
+    deps = [
+        "//backend/common:permissions",
+        "//backend/common:recruiting_enums",
+    ],
+)

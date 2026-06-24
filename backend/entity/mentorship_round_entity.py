@@ -16,6 +16,9 @@ class MentorshipRoundEntity(Base):
     expectations: Mapped[str | None] = mapped_column(String)
     description: Mapped[dict | None] = mapped_column(JSONB)
     required_meetings: Mapped[int] = mapped_column(Integer, default=5)
+    reapply_freeze_days: Mapped[int] = mapped_column(
+        Integer, default=90, server_default="90", nullable=False
+    )
     created_datetime: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
