@@ -1,0 +1,25 @@
+from typing import Literal
+from backend.dto.base_dto import BaseDto
+from backend.dto.partner_dto import PartnerDto
+from backend.common.mentorship_enums import ApprovalStatus, ParticipantRole
+
+
+class ParticipantRowDto(BaseDto):
+    user_id: int
+    round_id: int | None
+    round_name: str | None
+    pair_id: int | None
+    name: str
+    primary_email: str | None
+    alternative_emails: list[str]
+    matched_user: PartnerDto | None
+    participant_role: ParticipantRole | None
+    approval_status: ApprovalStatus | None
+    onboarding_status: Literal["completed", "incomplete"] | None
+    completed_meeting_count: int | None
+    required_meeting_count: int | None
+
+
+class ParticipantSearchDto(BaseDto):
+    participant_rows: list[ParticipantRowDto]
+    total: int
