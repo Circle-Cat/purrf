@@ -19,11 +19,13 @@ import {
   Phone,
   FileText,
   ChevronRight,
+  ChevronLeft,
   Ban,
   Star,
   MessageSquare,
   ArrowRight,
   Send,
+  Upload,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -44,7 +46,12 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 
-import { JOBS, STAGES, applicationsByStage } from "./mockData";
+import {
+  JOBS,
+  STAGES,
+  applicationsByStage,
+  APPLICATION_HISTORY,
+} from "./mockData";
 
 // ---------------------------------------------------------------------------
 // Static color map — every class string must appear verbatim so Tailwind v4
@@ -131,6 +138,22 @@ const CARD_STATUS = {
 /** Lifecycle order, for the detail-view status selector. */
 const CARD_STATUS_ORDER = ["pending", "in_progress", "evaluated"];
 
+/** Application-level outcome colors (for the candidate's other applications). */
+const APP_STATUS = {
+  in_progress: {
+    label: "In progress",
+    className: "bg-amber-50 text-amber-700 border-amber-200",
+  },
+  hired: {
+    label: "Hired",
+    className: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  },
+  rejected: {
+    label: "Rejected",
+    className: "bg-rose-50 text-rose-700 border-rose-200",
+  },
+};
+
 /** Monotonic id source for activity entries added during the session. */
 let activitySeq = 0;
 const nextActivityId = () => `act-new-${(activitySeq += 1)}`;
@@ -161,6 +184,29 @@ const REJECT_REASONS = [
   "Incomplete application",
   "Other",
 ];
+
+/**
+ * Email templates for composing via the local mail client (mailto). `{name}`
+ * is replaced with the candidate's first name. Sending happens in the user's
+ * own client; the timeline is updated separately by HR uploading the message.
+ */
+const EMAIL_TEMPLATES = {
+  invite: {
+    label: "Interview invite",
+    subject: "CircleCat — interview invitation",
+    body: "Hi {name},\n\nThanks for applying to CircleCat. We'd love to set up a short interview — could you share a few times that work this week?\n\nBest,\nThe CircleCat team",
+  },
+  rejection: {
+    label: "Rejection",
+    subject: "Update on your CircleCat application",
+    body: "Hi {name},\n\nThank you for your interest in CircleCat and for the time you invested. After careful review we won't be moving forward at this time, but we're grateful for your support of our mission.\n\nWarm regards,\nThe CircleCat team",
+  },
+  offer: {
+    label: "Offer",
+    subject: "Your CircleCat offer",
+    body: "Hi {name},\n\nWe're delighted to offer you a place in the CircleCat program! Details are attached — let us know if you have any questions.\n\nCongratulations,\nThe CircleCat team",
+  },
+};
 
 // ---------------------------------------------------------------------------
 // Helper — derive next-stage label/key for a given stage within a job
@@ -346,22 +392,43 @@ function ActivityEntry({ entry }) {
  *   activity: object[];
  *   stage: string;
  *   inPipeline: boolean;
+ *   applicantName: string;
+ *   applicantEmail: string;
  *   onAddComment: (text: string) => void;
  *   onAddEvaluation: (payload: { criteria: object[], overall: number }) => void;
+ *   onAddEmail: (payload: { direction: string, subject: string, snippet: string }) => void;
  * }} props
  */
 function ActivityPanel({
   activity,
   stage,
   inPipeline,
+  applicantName,
+  applicantEmail,
   onAddComment,
   onAddEvaluation,
+  onAddEmail,
 }) {
   const [filter, setFilter] = useState("all");
   const [mode, setMode] = useState("comment");
   const [commentText, setCommentText] = useState("");
   const [scores, setScores] = useState({});
   const [notes, setNotes] = useState({});
+  const [tmplKey, setTmplKey] = useState("invite");
+  const [emailDir, setEmailDir] = useState("out");
+  const [emailSubject, setEmailSubject] = useState("");
+  const [emailFile, setEmailFile] = useState("");
+
+  const mailtoHref = () => {
+    const t = EMAIL_TEMPLATES[tmplKey];
+    const body = t.body.replaceAll(
+      "{name}",
+      applicantName?.split(" ")[0] ?? "",
+    );
+    return `mailto:${applicantEmail}?subject=${encodeURIComponent(
+      t.subject,
+    )}&body=${encodeURIComponent(body)}`;
+  };
 
   const criteria = SCORECARD_TEMPLATES[stage] ?? ["Overall"];
 
@@ -387,6 +454,16 @@ function ActivityPanel({
     onAddEvaluation({ criteria: results, overall });
     setScores({});
     setNotes({});
+  };
+  const submitEmail = () => {
+    const subject = emailSubject.trim() || emailFile || "(no subject)";
+    onAddEmail({
+      direction: emailDir,
+      subject,
+      snippet: emailFile ? `Uploaded ${emailFile}` : "",
+    });
+    setEmailSubject("");
+    setEmailFile("");
   };
 
   return (
@@ -445,9 +522,20 @@ function ActivityPanel({
                 Evaluation
               </button>
             )}
+            <button
+              type="button"
+              onClick={() => setMode("email")}
+              className={`text-xs px-2 py-1 rounded-md ${
+                mode === "email"
+                  ? "bg-slate-100 font-medium text-slate-800"
+                  : "text-slate-500"
+              }`}
+            >
+              Email
+            </button>
           </div>
 
-          {mode === "comment" ? (
+          {mode === "comment" && (
             <>
               <textarea
                 rows={2}
@@ -464,7 +552,8 @@ function ActivityPanel({
                 <Send size={13} /> Add comment
               </Button>
             </>
-          ) : (
+          )}
+          {mode === "evaluation" && (
             <>
               <p className="text-xs text-slate-500">
                 {STAGES[stage]?.label ?? stage} scorecard
@@ -514,6 +603,88 @@ function ActivityPanel({
               </Button>
             </>
           )}
+          {mode === "email" && (
+            <>
+              {/* Compose & send via the user's own mail client (mailto) */}
+              <p className="text-xs text-slate-500">Compose &amp; send</p>
+              <select
+                value={tmplKey}
+                onChange={(e) => setTmplKey(e.target.value)}
+                className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              >
+                {Object.entries(EMAIL_TEMPLATES).map(([k, t]) => (
+                  <option key={k} value={k}>
+                    {t.label}
+                  </option>
+                ))}
+              </select>
+              <a
+                href={mailtoHref()}
+                className="flex w-full items-center justify-center gap-1 rounded-md bg-violet-600 px-2 py-1.5 text-sm font-medium text-white hover:bg-violet-700"
+              >
+                <Send size={13} /> Open in email client
+              </a>
+              <p className="text-[11px] text-slate-400 leading-snug">
+                Opens your mail app with the template pre-filled. After sending,
+                upload the message below to log it on the timeline.
+              </p>
+
+              <div className="border-t border-slate-100 pt-2 space-y-2">
+                {/* Manual upload → timeline record (Sent or Received) */}
+                <p className="text-xs text-slate-500">Log to timeline</p>
+                <div className="flex gap-1">
+                  {["out", "in"].map((d) => (
+                    <button
+                      key={d}
+                      type="button"
+                      onClick={() => setEmailDir(d)}
+                      className={`text-xs px-2 py-1 rounded-md border ${
+                        emailDir === d
+                          ? "bg-slate-800 text-white border-slate-800"
+                          : "bg-white text-slate-600 border-slate-200"
+                      }`}
+                    >
+                      {d === "out" ? "Sent" : "Received"}
+                    </button>
+                  ))}
+                </div>
+                <input
+                  type="text"
+                  value={emailSubject}
+                  onChange={(e) => setEmailSubject(e.target.value)}
+                  placeholder="Subject"
+                  className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                />
+                <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer rounded-md border border-dashed border-slate-300 px-2 py-2 hover:border-slate-400">
+                  <Upload size={14} className="text-slate-400 shrink-0" />
+                  <span className="truncate">
+                    {emailFile || "Upload email (.eml)"}
+                  </span>
+                  <input
+                    type="file"
+                    accept=".eml,.msg,message/rfc822"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (!f) return;
+                      setEmailFile(f.name);
+                      if (!emailSubject.trim()) {
+                        setEmailSubject(f.name.replace(/\.(eml|msg)$/i, ""));
+                      }
+                    }}
+                  />
+                </label>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="w-full gap-1"
+                  onClick={submitEmail}
+                >
+                  <Mail size={13} /> Add to timeline
+                </Button>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
@@ -528,6 +699,71 @@ function ActivityPanel({
             <ActivityEntry key={entry.id} entry={entry} />
           ))
         )}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// HistoryDetail — drill-in for one of the candidate's other applications
+// ---------------------------------------------------------------------------
+/**
+ * Read-only detail for one of the candidate's other applications: the posting,
+ * its overall status, and a per-attempt history.
+ *
+ * @param {{ item: object; onBack: () => void }} props
+ */
+function HistoryDetail({ item, onBack }) {
+  const status = APP_STATUS[item.status] ?? APP_STATUS.in_progress;
+  return (
+    <div>
+      <div className="bg-gradient-to-r from-slate-800 to-slate-700 px-6 pt-5 pb-5 rounded-t-2xl">
+        <button
+          type="button"
+          onClick={onBack}
+          className="flex items-center gap-1 text-slate-300 hover:text-white text-sm mb-2"
+        >
+          <ChevronLeft size={15} /> Back
+        </button>
+        <DialogHeader>
+          <DialogTitle className="text-white text-lg font-bold leading-tight">
+            {item.jobTitle}
+          </DialogTitle>
+        </DialogHeader>
+        <div className="mt-2 flex items-center gap-2">
+          <Badge className={`text-xs ${status.className}`} variant="outline">
+            {status.label}
+          </Badge>
+          <span className="text-slate-300 text-xs">
+            {item.attempts} attempt{item.attempts > 1 ? "s" : ""} · last{" "}
+            {item.lastAt}
+          </span>
+        </div>
+      </div>
+      <div className="px-6 py-5">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-3">
+          Attempt history
+        </h3>
+        <ol className="space-y-3">
+          {item.attemptsDetail.map((a) => (
+            <li key={a.attempt} className="flex gap-3">
+              <span className="shrink-0 h-6 w-6 rounded-full bg-slate-100 text-slate-600 text-xs font-medium flex items-center justify-center">
+                {a.attempt}
+              </span>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="font-medium text-slate-800">
+                    {a.outcome}
+                  </span>
+                  <span className="text-xs text-slate-400">{a.at}</span>
+                </div>
+                {a.note ? (
+                  <p className="text-sm text-slate-600 mt-0.5">{a.note}</p>
+                ) : null}
+              </div>
+            </li>
+          ))}
+        </ol>
       </div>
     </div>
   );
@@ -549,6 +785,7 @@ function ActivityPanel({
  *   onSetStatus: (appId: number, status: string) => void;
  *   onAddComment: (appId: number, text: string) => void;
  *   onAddEvaluation: (appId: number, stage: string, payload: object) => void;
+ *   onAddEmail: (appId: number, payload: object) => void;
  * }} props
  */
 function ApplicantDetail({
@@ -561,14 +798,17 @@ function ApplicantDetail({
   onSetStatus,
   onAddComment,
   onAddEvaluation,
+  onAddEmail,
 }) {
   const [rejecting, setRejecting] = useState(false);
   const [rejectReason, setRejectReason] = useState(REJECT_REASONS[0]);
   const [rejectNote, setRejectNote] = useState("");
+  const [historyView, setHistoryView] = useState(null);
 
   const closeDetail = () => {
     setRejecting(false);
     setRejectNote("");
+    setHistoryView(null);
     onClose();
   };
 
@@ -578,6 +818,7 @@ function ApplicantDetail({
   const fullName = `${applicant.firstName} ${applicant.lastName}`;
   const inPipeline = job.stages.includes(stage);
   const target = advanceTarget(job, stage);
+  const otherApps = APPLICATION_HISTORY[applicant.email] ?? [];
 
   return (
     <Dialog
@@ -585,236 +826,302 @@ function ApplicantDetail({
       onOpenChange={(open) => !open && closeDetail()}
     >
       <DialogContent className="z-[1100] sm:max-w-5xl max-h-[90vh] overflow-y-auto rounded-2xl p-0">
-        {/* ---- Header band ---- */}
-        <div className="bg-gradient-to-r from-slate-800 to-slate-700 px-6 pt-6 pb-5 rounded-t-2xl">
-          <DialogHeader>
-            <DialogTitle className="text-white text-xl font-bold leading-tight">
-              {fullName}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1">
-            <div className="flex items-center gap-1.5 text-slate-300 text-sm">
-              <Mail size={13} />
-              <span>{applicant.email}</span>
-            </div>
-            <div className="flex items-center gap-1.5 text-slate-300 text-sm">
-              <Phone size={13} />
-              <span>{applicant.phone}</span>
-            </div>
-            {resumeUrl && (
-              <a
-                href={resumeUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1.5 text-sky-300 hover:text-sky-200 text-sm underline underline-offset-2 transition-colors"
-              >
-                <FileText size={13} />
-                <span>Resume</span>
-              </a>
-            )}
-          </div>
-
-          {/* Per-stage evaluation status selector */}
-          {inPipeline && (
-            <div className="mt-3 flex items-center gap-1.5">
-              <span className="text-xs text-slate-400 mr-1">Status</span>
-              {CARD_STATUS_ORDER.map((s) => {
-                const isActive = (application.status ?? "pending") === s;
-                return (
-                  <button
-                    key={s}
-                    type="button"
-                    onClick={() => onSetStatus(application.id, s)}
-                    className={`text-xs px-2 py-1 rounded-md border transition-colors ${
-                      isActive
-                        ? "bg-white text-slate-800 border-white font-medium"
-                        : "bg-transparent text-slate-300 border-slate-600 hover:border-slate-400"
-                    }`}
-                  >
-                    {CARD_STATUS[s].label}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        <div className="flex flex-col md:flex-row">
-          <div className="flex-1 px-6 py-5 space-y-5 md:border-r border-slate-100 min-w-0">
-            {/* ---- Experience ---- */}
-            {experience?.length > 0 && (
-              <section>
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">
-                  Experience
-                </h3>
-                <ul className="space-y-1.5">
-                  {experience.map((exp, i) => (
-                    <li key={i} className="text-sm text-slate-700">
-                      <span className="font-medium">{exp.title}</span>
-                      <span className="text-slate-400"> · </span>
-                      <span>{exp.company}</span>
-                      <span className="text-slate-400 text-xs ml-2">
-                        {exp.years}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            )}
-
-            {/* ---- Education ---- */}
-            {education?.length > 0 && (
-              <>
-                <Separator />
-                <section>
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">
-                    Education
-                  </h3>
-                  <ul className="space-y-1.5">
-                    {education.map((edu, i) => (
-                      <li key={i} className="text-sm text-slate-700">
-                        <span className="font-medium">{edu.degree}</span>
-                        <span className="text-slate-400"> · </span>
-                        <span>{edu.school}</span>
-                        <span className="text-slate-400 text-xs ml-2">
-                          {edu.years}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              </>
-            )}
-
-            {/* ---- Form answers ---- */}
-            {formAnswers && Object.keys(formAnswers).length > 0 && (
-              <>
-                <Separator />
-                <section>
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-3">
-                    Application Answers
-                  </h3>
-                  <dl className="space-y-3">
-                    {Object.entries(formAnswers).map(([label, value]) => (
-                      <div key={label}>
-                        <dt className="text-xs font-medium text-slate-500 mb-0.5">
-                          {label}
-                        </dt>
-                        <dd className="text-sm text-slate-800 leading-relaxed">
-                          {value}
-                        </dd>
-                      </div>
-                    ))}
-                  </dl>
-                </section>
-              </>
-            )}
-          </div>
-
-          <ActivityPanel
-            key={application.id}
-            activity={application.activity ?? []}
-            stage={stage}
-            inPipeline={inPipeline}
-            onAddComment={(text) => onAddComment(application.id, text)}
-            onAddEvaluation={(payload) =>
-              onAddEvaluation(application.id, stage, payload)
-            }
+        {historyView ? (
+          <HistoryDetail
+            item={historyView}
+            onBack={() => setHistoryView(null)}
           />
-        </div>
-
-        {/* ---- Action footer ---- */}
-        <DialogFooter className="px-6 py-4 border-t border-slate-100 bg-slate-50 rounded-b-2xl flex flex-row flex-wrap gap-2 justify-end">
-          {rejecting ? (
-            <div className="w-full space-y-2">
-              <div className="space-y-1">
-                <label className="text-xs font-medium text-slate-600">
-                  Rejection reason
-                </label>
-                <select
-                  value={rejectReason}
-                  onChange={(e) => setRejectReason(e.target.value)}
-                  className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                >
-                  {REJECT_REASONS.map((r) => (
-                    <option key={r} value={r}>
-                      {r}
-                    </option>
-                  ))}
-                </select>
+        ) : (
+          <>
+            {/* ---- Header band ---- */}
+            <div className="bg-gradient-to-r from-slate-800 to-slate-700 px-6 pt-6 pb-5 rounded-t-2xl">
+              <DialogHeader>
+                <DialogTitle className="text-white text-xl font-bold leading-tight">
+                  {fullName}
+                </DialogTitle>
+              </DialogHeader>
+              <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1">
+                <div className="flex items-center gap-1.5 text-slate-300 text-sm">
+                  <Mail size={13} />
+                  <span>{applicant.email}</span>
+                </div>
+                <div className="flex items-center gap-1.5 text-slate-300 text-sm">
+                  <Phone size={13} />
+                  <span>{applicant.phone}</span>
+                </div>
+                {resumeUrl && (
+                  <a
+                    href={resumeUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 text-sky-300 hover:text-sky-200 text-sm underline underline-offset-2 transition-colors"
+                  >
+                    <FileText size={13} />
+                    <span>Resume</span>
+                  </a>
+                )}
               </div>
-              <textarea
-                rows={2}
-                value={rejectNote}
-                onChange={(e) => setRejectNote(e.target.value)}
-                placeholder="Optional note for the hiring team…"
-                className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm resize-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              />
-              <div className="flex justify-end gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setRejecting(false)}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  onClick={() => {
-                    onReject(application.id, rejectReason, rejectNote.trim());
-                    closeDetail();
-                  }}
-                >
-                  Confirm reject
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <>
-              {/* Blacklist (拉黑) — always available; removes from board entirely */}
-              <Button
-                variant="outline"
-                size="sm"
-                className="mr-auto text-slate-700 border-slate-300 hover:bg-slate-800 hover:text-white"
-                onClick={() => {
-                  onBlacklist(application);
-                  closeDetail();
-                }}
-              >
-                <Ban size={14} className="mr-1" />
-                Blacklist
-              </Button>
 
-              {/* Reject — opens the reason form (a reason is required) */}
+              {/* Per-stage evaluation status selector */}
               {inPipeline && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="text-rose-600 border-rose-200 hover:bg-rose-50 hover:border-rose-300"
-                  onClick={() => setRejecting(true)}
-                >
-                  Reject
-                </Button>
+                <div className="mt-3 flex items-center gap-1.5">
+                  <span className="text-xs text-slate-400 mr-1">Status</span>
+                  {CARD_STATUS_ORDER.map((s) => {
+                    const isActive = (application.status ?? "pending") === s;
+                    return (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => onSetStatus(application.id, s)}
+                        className={`text-xs px-2 py-1 rounded-md border transition-colors ${
+                          isActive
+                            ? "bg-white text-slate-800 border-white font-medium"
+                            : "bg-transparent text-slate-300 border-slate-600 hover:border-slate-400"
+                        }`}
+                      >
+                        {CARD_STATUS[s].label}
+                      </button>
+                    );
+                  })}
+                </div>
               )}
+            </div>
 
-              {/* Advance — next stage, or Hired when leaving the final stage */}
-              {inPipeline && target && (
-                <Button
-                  size="sm"
-                  className="bg-slate-800 hover:bg-slate-700 text-white gap-1"
-                  onClick={() => {
-                    onAdvance(application.id, target.key);
-                    closeDetail();
-                  }}
-                >
-                  <span>Advance to {target.label}</span>
-                  <ChevronRight size={14} />
-                </Button>
+            <div className="flex flex-col md:flex-row">
+              <div className="flex-1 px-6 py-5 space-y-5 md:border-r border-slate-100 min-w-0">
+                {/* ---- Experience ---- */}
+                {experience?.length > 0 && (
+                  <section>
+                    <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">
+                      Experience
+                    </h3>
+                    <ul className="space-y-1.5">
+                      {experience.map((exp, i) => (
+                        <li key={i} className="text-sm text-slate-700">
+                          <span className="font-medium">{exp.title}</span>
+                          <span className="text-slate-400"> · </span>
+                          <span>{exp.company}</span>
+                          <span className="text-slate-400 text-xs ml-2">
+                            {exp.years}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                )}
+
+                {/* ---- Education ---- */}
+                {education?.length > 0 && (
+                  <>
+                    <Separator />
+                    <section>
+                      <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">
+                        Education
+                      </h3>
+                      <ul className="space-y-1.5">
+                        {education.map((edu, i) => (
+                          <li key={i} className="text-sm text-slate-700">
+                            <span className="font-medium">{edu.degree}</span>
+                            <span className="text-slate-400"> · </span>
+                            <span>{edu.school}</span>
+                            <span className="text-slate-400 text-xs ml-2">
+                              {edu.years}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </section>
+                  </>
+                )}
+
+                {/* ---- Form answers ---- */}
+                {formAnswers && Object.keys(formAnswers).length > 0 && (
+                  <>
+                    <Separator />
+                    <section>
+                      <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-3">
+                        Application Answers
+                      </h3>
+                      <dl className="space-y-3">
+                        {Object.entries(formAnswers).map(([label, value]) => (
+                          <div key={label}>
+                            <dt className="text-xs font-medium text-slate-500 mb-0.5">
+                              {label}
+                            </dt>
+                            <dd className="text-sm text-slate-800 leading-relaxed">
+                              {value}
+                            </dd>
+                          </div>
+                        ))}
+                      </dl>
+                    </section>
+                  </>
+                )}
+
+                {/* ---- Other applications (across postings) ---- */}
+                {otherApps.length > 0 && (
+                  <>
+                    <Separator />
+                    <section>
+                      <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">
+                        Other applications
+                      </h3>
+                      <ul className="space-y-2">
+                        {otherApps.map((appn) => {
+                          const st =
+                            APP_STATUS[appn.status] ?? APP_STATUS.in_progress;
+                          return (
+                            <li key={appn.id}>
+                              <button
+                                type="button"
+                                onClick={() => setHistoryView(appn)}
+                                className="w-full flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-left hover:border-slate-400 transition-colors"
+                              >
+                                <div className="min-w-0">
+                                  <p className="text-sm font-medium text-slate-800 truncate">
+                                    {appn.jobTitle}
+                                  </p>
+                                  <p className="text-xs text-slate-400">
+                                    {appn.attempts} attempt
+                                    {appn.attempts > 1 ? "s" : ""} · last{" "}
+                                    {appn.lastAt}
+                                  </p>
+                                </div>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <Badge
+                                    variant="outline"
+                                    className={`text-xs ${st.className}`}
+                                  >
+                                    {st.label}
+                                  </Badge>
+                                  <ChevronRight
+                                    size={15}
+                                    className="text-slate-400"
+                                  />
+                                </div>
+                              </button>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </section>
+                  </>
+                )}
+              </div>
+
+              <ActivityPanel
+                key={application.id}
+                activity={application.activity ?? []}
+                stage={stage}
+                inPipeline={inPipeline}
+                applicantName={fullName}
+                applicantEmail={applicant.email}
+                onAddComment={(text) => onAddComment(application.id, text)}
+                onAddEvaluation={(payload) =>
+                  onAddEvaluation(application.id, stage, payload)
+                }
+                onAddEmail={(payload) => onAddEmail(application.id, payload)}
+              />
+            </div>
+
+            {/* ---- Action footer ---- */}
+            <DialogFooter className="px-6 py-4 border-t border-slate-100 bg-slate-50 rounded-b-2xl flex flex-row flex-wrap gap-2 justify-end">
+              {rejecting ? (
+                <div className="w-full space-y-2">
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-slate-600">
+                      Rejection reason
+                    </label>
+                    <select
+                      value={rejectReason}
+                      onChange={(e) => setRejectReason(e.target.value)}
+                      className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    >
+                      {REJECT_REASONS.map((r) => (
+                        <option key={r} value={r}>
+                          {r}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <textarea
+                    rows={2}
+                    value={rejectNote}
+                    onChange={(e) => setRejectNote(e.target.value)}
+                    placeholder="Optional note for the hiring team…"
+                    className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm resize-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  />
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setRejecting(false)}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => {
+                        onReject(
+                          application.id,
+                          rejectReason,
+                          rejectNote.trim(),
+                        );
+                        closeDetail();
+                      }}
+                    >
+                      Confirm reject
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {/* Blacklist (拉黑) — always available; removes from board entirely */}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="mr-auto text-slate-700 border-slate-300 hover:bg-slate-800 hover:text-white"
+                    onClick={() => {
+                      onBlacklist(application);
+                      closeDetail();
+                    }}
+                  >
+                    <Ban size={14} className="mr-1" />
+                    Blacklist
+                  </Button>
+
+                  {/* Reject — opens the reason form (a reason is required) */}
+                  {inPipeline && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-rose-600 border-rose-200 hover:bg-rose-50 hover:border-rose-300"
+                      onClick={() => setRejecting(true)}
+                    >
+                      Reject
+                    </Button>
+                  )}
+
+                  {/* Advance — next stage, or Hired when leaving the final stage */}
+                  {inPipeline && target && (
+                    <Button
+                      size="sm"
+                      className="bg-slate-800 hover:bg-slate-700 text-white gap-1"
+                      onClick={() => {
+                        onAdvance(application.id, target.key);
+                        closeDetail();
+                      }}
+                    >
+                      <span>Advance to {target.label}</span>
+                      <ChevronRight size={14} />
+                    </Button>
+                  )}
+                </>
               )}
-            </>
-          )}
-        </DialogFooter>
+            </DialogFooter>
+          </>
+        )}
       </DialogContent>
     </Dialog>
   );
@@ -986,6 +1293,16 @@ export default function ScreeningBoardPrototype({ onBlacklist }) {
       overall: payload.overall,
     });
     handleSetStatus(appId, "evaluated");
+  }
+
+  // Log an email onto the timeline (HR manually uploads Sent/Received messages).
+  function handleAddEmail(appId, payload) {
+    appendActivity(appId, {
+      type: "email",
+      direction: payload.direction,
+      subject: payload.subject,
+      snippet: payload.snippet,
+    });
   }
 
   // Reject a candidate with a reason: record it on the trail, then move to the
@@ -1174,6 +1491,7 @@ export default function ScreeningBoardPrototype({ onBlacklist }) {
         onSetStatus={handleSetStatus}
         onAddComment={handleAddComment}
         onAddEvaluation={handleAddEvaluation}
+        onAddEmail={handleAddEmail}
       />
     </div>
   );
