@@ -18,7 +18,6 @@ import {
   confirmUnlink,
 } from "@/api/emailApi";
 import { useEmailSettings } from "@/pages/SignInSecurity/hooks/useEmailSettings";
-import EmailAddressList from "@/pages/SignInSecurity/components/EmailAddressList";
 import SignInMethodList from "@/pages/SignInSecurity/components/SignInMethodList";
 import AddSignInMethodDialog from "@/pages/SignInSecurity/components/AddSignInMethodDialog";
 import StepUpConfirmDialog from "@/pages/SignInSecurity/components/StepUpConfirmDialog";
@@ -42,10 +41,11 @@ const identityLabel = (identity) => {
 /**
  * Sign in & security settings page.
  *
- * Sign-in methods are the management subject; contact emails are synced from
- * them. Backed by `GET /auth/emails`: add a sign-in method (email OTP), switch
- * the primary contact email (step-up OTP), and unlink a sign-in method (step-up
- * OTP, which also drops its synced contact email). Cards span the full width.
+ * Sign-in methods are the management subject; each method's email is a contact
+ * address synced from it, and the primary one receives notifications. Backed by
+ * `GET /auth/emails`: add a sign-in method (email OTP), set a method's email as
+ * the primary contact (step-up OTP), and unlink a sign-in method (step-up OTP,
+ * which also drops its synced contact email). A single full-width card.
  *
  * @component
  */
@@ -122,26 +122,11 @@ const SignInSecurity = () => {
     <div className="flex flex-col gap-4 py-8">
       <Card>
         <CardHeader>
-          <CardTitle>Email addresses</CardTitle>
-          <CardDescription>
-            Your contact email addresses, synced from your sign-in methods. Your
-            primary address receives account notifications.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <EmailAddressList
-            emails={emails}
-            isLoading={isLoading}
-            onSetPrimary={handleSetPrimary}
-          />
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
           <CardTitle>Sign-in methods</CardTitle>
           <CardDescription>
-            The accounts you can use to sign in to Purrf.
+            The accounts you can use to sign in to Purrf. Each method&apos;s
+            email is a contact address; your primary one receives account
+            notifications.
           </CardDescription>
           <CardAction>
             <Button
@@ -155,10 +140,12 @@ const SignInSecurity = () => {
         </CardHeader>
         <CardContent>
           <SignInMethodList
+            emails={emails}
             internalIdentities={internalIdentities}
             externalIdentities={externalIdentities}
             isLoading={isLoading}
             onUnlink={handleUnlink}
+            onSetPrimary={handleSetPrimary}
           />
         </CardContent>
       </Card>
