@@ -24,9 +24,9 @@ vi.mock("@/constants/LdapStatus", () => ({
 
 const importSelectorOnce = async () => {
   try {
-    return await import("@/components/common/MemberSelector.jsx");
+    return await import("@/pages/DataSearch/components/MemberSelector.jsx");
   } catch {
-    return await import("@/components/common/MemberSelector");
+    return await import("@/pages/DataSearch/components/MemberSelector");
   }
 };
 

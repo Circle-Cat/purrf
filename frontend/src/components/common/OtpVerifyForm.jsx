@@ -111,22 +111,24 @@ const OtpVerifyForm = ({ initialEmail = "", onVerified, idPrefix = "otp" }) => {
         {busy ? "Verifying…" : "Verify"}
       </Button>
       <div className="flex justify-between text-sm">
-        <button
+        <Button
           type="button"
-          className="text-muted-foreground hover:underline"
+          variant="link"
+          className="h-auto p-0 text-muted-foreground"
           onClick={sendCode}
           disabled={busy}
         >
           Resend code
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
-          className="text-muted-foreground hover:underline"
+          variant="link"
+          className="h-auto p-0 text-muted-foreground"
           onClick={useDifferentEmail}
           disabled={busy}
         >
           Use a different email
-        </button>
+        </Button>
       </div>
     </div>
   );

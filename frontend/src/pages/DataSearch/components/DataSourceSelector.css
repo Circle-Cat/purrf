@@ -105,22 +105,4 @@
   background: var(--bg-color-light);
 }
 
-.dss-footer button {
-  min-width: 80px;
-  border-radius: 8px;
-  padding: 0.6em 1.2em;
-  font-weight: 500;
-  cursor: pointer;
-  border: none; /* Remove default button border */
-}
-
-.dss-footer .ok-button {
-  background-color: var(--primary-color);
-  color: var(--text-color-white);
-}
-
-.dss-footer .cancel-button {
-  background-color: var(--bg-color-light);
-  color: var(--text-color-dark);
-  border: 1px solid var(--border-color-medium);
-}
+/* Footer buttons are now rendered via the shared <Button> component. */

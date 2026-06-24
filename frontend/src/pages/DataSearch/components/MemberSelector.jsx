@@ -2,8 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Group } from "@/constants/Groups";
 import { LdapStatus } from "@/constants/LdapStatus";
 import { getLdapsAndDisplayNames } from "@/api/dashboardApi";
-import "@/components/common/MemberSelector.css";
-import "@/pages/DataSearch.css";
+import { Button } from "@/components/ui/button";
+import "@/pages/DataSearch/components/MemberSelector.css";
+import "@/pages/DataSearch/DataSearch.css";
 
 function MsModal({ open, onClose, children }) {
   if (!open) return null;
@@ -420,20 +421,18 @@ export function MemberSelectorPanel({
 
       {/* Footer */}
       <div className="ms-footer">
-        <button
-          className="ms-btn-flat"
+        <Button
+          variant="outline"
           onClick={() => {
             setSelectedSet(new Set());
             onCancel?.();
           }}
         >
           Cancel
-        </button>
+        </Button>
         <div className="ms-spacer" />
         <div className="ms-count">{totalSelected} selected</div>
-        <button className="ms-btn-primary" onClick={handleConfirm}>
-          OK
-        </button>
+        <Button onClick={handleConfirm}>OK</Button>
       </div>
     </div>
   );

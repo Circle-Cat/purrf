@@ -1,9 +1,9 @@
 import { useMemo, useState, useEffect, useCallback } from "react";
-import "./Tab.css";
-import { CalendarReportTable } from "@/components/common/CalendarReportTable";
-import { ChatReportTable } from "@/components/common/ChatReportTable";
-import JiraReportTable from "@/components/common/JiraReportTable";
-import GerritReportTable from "@/components/common/GerritReportTable";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { CalendarReportTable } from "@/pages/DataSearch/components/CalendarReportTable";
+import { ChatReportTable } from "@/pages/DataSearch/components/ChatReportTable";
+import JiraReportTable from "@/pages/DataSearch/components/JiraReportTable";
+import GerritReportTable from "@/pages/DataSearch/components/GerritReportTable";
 import {
   ChatProvider,
   DataSourceNames,
@@ -185,11 +185,11 @@ const getReportTableProps = (sourceName, committedSearchParams) => {
  * - Tabs are disabled if the corresponding data source configuration in
  * `committedSearchParams.selectedDataSources` is incomplete or missing.
  */
-export default function Tab({ committedSearchParams }) {
+export default function DataSourceReportTabs({ committedSearchParams }) {
   // Default to empty object to avoid null errors
   committedSearchParams = committedSearchParams || {};
 
-  const [active, setActive] = useState(0);
+  const [active, setActive] = useState(DataSourceNames.CHAT);
 
   /** Define tabs */
   const tabs = useMemo(
@@ -248,74 +248,60 @@ export default function Tab({ committedSearchParams }) {
 
   /** Adjust active tab if current becomes invalid */
   useEffect(() => {
-    const currentActiveTab = tabs[active];
-    if (
-      currentActiveTab &&
-      !isDataSourceSelected(currentActiveTab.sourceName)
-    ) {
-      const firstValidTabIndex = tabs.findIndex((t) =>
+    if (!isDataSourceSelected(active)) {
+      const firstValidTab = tabs.find((t) =>
         isDataSourceSelected(t.sourceName),
       );
-      setActive(firstValidTabIndex !== -1 ? firstValidTabIndex : 0);
+      setActive(firstValidTab ? firstValidTab.sourceName : tabs[0].sourceName);
     }
   }, [committedSearchParams, active, tabs, isDataSourceSelected]);
 
   /** Memoized props for active tab */
-  const activeTab = tabs[active];
-  const activeTabReportProps = useMemo(() => {
-    if (!activeTab) return null;
-    return getReportTableProps(activeTab.sourceName, committedSearchParams);
-  }, [activeTab, committedSearchParams]);
+  const activeTabReportProps = useMemo(
+    () => getReportTableProps(active, committedSearchParams),
+    [active, committedSearchParams],
+  );
 
   if (!areCoreSearchParamsValidStrict(committedSearchParams)) {
     return null;
   }
 
   return (
-    <div className="purrf-tabs" data-testid="tab-component">
-      <div className="tablist" role="tablist" aria-label="Purrf Data Sources">
-        {tabs.map((t, idx) => {
-          const isDisabled = !isDataSourceSelected(t.sourceName);
-          return (
-            <button
-              key={t.id}
-              id={t.id}
-              role="tab"
-              className={`tab-pill ${active === idx ? "active" : ""} ${isDisabled ? "disabled-tab" : ""}`}
-              aria-selected={active === idx}
-              aria-controls={`panel-${idx}`}
-              tabIndex={active === idx ? 0 : -1}
-              onClick={() => !isDisabled && setActive(idx)}
-              data-testid={`tab-button-${idx}`}
-              type="button"
-              disabled={isDisabled}
-            >
-              <span className="tab-icon" aria-hidden="true">
-                {t.icon}
-              </span>
-              {t.label}
-              {active === idx && (
-                <span className="active-underline" aria-hidden="true" />
-              )}
-            </button>
-          );
-        })}
-      </div>
+    <Tabs
+      value={active}
+      onValueChange={setActive}
+      className="flex flex-1 flex-col"
+      data-testid="tab-component"
+    >
+      <TabsList aria-label="Purrf Data Sources" className="gap-1">
+        {tabs.map((t) => (
+          <TabsTrigger
+            key={t.id}
+            id={t.id}
+            value={t.sourceName}
+            disabled={!isDataSourceSelected(t.sourceName)}
+            data-testid={`tab-button-${t.sourceName}`}
+            className="gap-1.5 px-4 data-[state=active]:bg-background data-[state=active]:font-medium data-[state=active]:shadow-sm"
+          >
+            <span className="inline-flex leading-none" aria-hidden="true">
+              {t.icon}
+            </span>
+            {t.label}
+          </TabsTrigger>
+        ))}
+      </TabsList>
 
-      {tabs.map((t, idx) => (
-        <div
-          key={`panel-${idx}`}
-          id={`panel-${idx}`}
-          role="tabpanel"
-          aria-labelledby={t.id}
-          hidden={active !== idx}
-          className="tabpanel"
+      {tabs.map((t) => (
+        <TabsContent
+          key={t.id}
+          value={t.sourceName}
+          className="flex flex-1 flex-col overflow-auto"
         >
-          {active === idx && activeTabReportProps && (
+          {active === t.sourceName && activeTabReportProps && (
             <t.component {...activeTabReportProps} />
           )}
-        </div>
+        </TabsContent>
       ))}
-    </div>
+    </Tabs>
   );
 }
