@@ -71,7 +71,7 @@ export const APPLICATIONS = [
     id: 101,
     jobId: 1,
     stage: "recruiter_screening",
-    isViewed: false,
+    status: "pending",
     freezeUntil: null,
     applicant: {
       firstName: "Ann",
@@ -107,7 +107,7 @@ export const APPLICATIONS = [
     id: 102,
     jobId: 1,
     stage: "recruiter_screening",
-    isViewed: true,
+    status: "in_progress",
     freezeUntil: null,
     applicant: {
       firstName: "Wei",
@@ -139,7 +139,7 @@ export const APPLICATIONS = [
     id: 103,
     jobId: 1,
     stage: "behavioral",
-    isViewed: true,
+    status: "in_progress",
     freezeUntil: null,
     applicant: {
       firstName: "Bob",
@@ -169,7 +169,7 @@ export const APPLICATIONS = [
     id: 104,
     jobId: 1,
     stage: "tech",
-    isViewed: true,
+    status: "evaluated",
     freezeUntil: null,
     applicant: {
       firstName: "Cara",
@@ -202,7 +202,7 @@ export const APPLICATIONS = [
     id: 105,
     jobId: 1,
     stage: "board_review",
-    isViewed: true,
+    status: "pending",
     freezeUntil: null,
     applicant: {
       firstName: "Dana",

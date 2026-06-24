@@ -96,6 +96,32 @@ const TERMINAL_KEYS = ["hired", "rejected"];
 const STAGE_META = { ...STAGES, ...TERMINAL_STAGES };
 
 // ---------------------------------------------------------------------------
+// Per-stage evaluation status (replaces the old viewed/unviewed flag)
+// ---------------------------------------------------------------------------
+/**
+ * A candidate's status *within* the current stage: Pending on entering the
+ * stage (not started), In Progress while being assessed, Evaluated once the
+ * assessment is done. Class strings are literal so Tailwind picks them up.
+ */
+const CARD_STATUS = {
+  pending: {
+    label: "Pending",
+    className: "bg-slate-100 text-slate-600 border-slate-200",
+  },
+  in_progress: {
+    label: "In Progress",
+    className: "bg-amber-50 text-amber-700 border-amber-200",
+  },
+  evaluated: {
+    label: "Evaluated",
+    className: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  },
+};
+
+/** Lifecycle order, for the detail-view status selector. */
+const CARD_STATUS_ORDER = ["pending", "in_progress", "evaluated"];
+
+// ---------------------------------------------------------------------------
 // Helper — derive next-stage label/key for a given stage within a job
 // ---------------------------------------------------------------------------
 /**
@@ -125,11 +151,12 @@ function advanceTarget(job, stageKey) {
  * A compact card summarising one applicant. Hire / Reject are intentionally
  * absent — those actions live inside the detail Dialog.
  *
- * @param {{ application: object; onClick: () => void }} props
+ * @param {{ application: object; showStatus: boolean; onClick: () => void }} props
  */
-function ApplicantCard({ application, onClick }) {
-  const { applicant, isViewed } = application;
+function ApplicantCard({ application, showStatus, onClick }) {
+  const { applicant, status } = application;
   const fullName = `${applicant.firstName} ${applicant.lastName}`;
+  const statusMeta = CARD_STATUS[status] ?? CARD_STATUS.pending;
 
   return (
     <Card
@@ -145,16 +172,14 @@ function ApplicantCard({ application, onClick }) {
             {fullName}
           </span>
         </div>
-        <Badge
-          className={
-            isViewed
-              ? "text-xs bg-slate-100 text-slate-500 border-slate-200 shrink-0"
-              : "text-xs bg-amber-50 text-amber-700 border-amber-200 shrink-0"
-          }
-          variant="outline"
-        >
-          {isViewed ? "Viewed" : "Unviewed"}
-        </Badge>
+        {showStatus && (
+          <Badge
+            className={`text-xs shrink-0 ${statusMeta.className}`}
+            variant="outline"
+          >
+            {statusMeta.label}
+          </Badge>
+        )}
       </div>
 
       <div className="space-y-1">
@@ -184,6 +209,7 @@ function ApplicantCard({ application, onClick }) {
  *   onAdvance: (appId: number, nextKey: string) => void;
  *   onReject: (appId: number) => void;
  *   onBlacklist: (app: object) => void;
+ *   onSetStatus: (appId: number, status: string) => void;
  * }} props
  */
 function ApplicantDetail({
@@ -193,6 +219,7 @@ function ApplicantDetail({
   onAdvance,
   onReject,
   onBlacklist,
+  onSetStatus,
 }) {
   if (!application) return null;
   const { applicant, resumeUrl, experience, education, formAnswers, stage } =
@@ -232,6 +259,30 @@ function ApplicantDetail({
               </a>
             )}
           </div>
+
+          {/* Per-stage evaluation status selector */}
+          {inPipeline && (
+            <div className="mt-3 flex items-center gap-1.5">
+              <span className="text-xs text-slate-400 mr-1">Status</span>
+              {CARD_STATUS_ORDER.map((s) => {
+                const isActive = (application.status ?? "pending") === s;
+                return (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => onSetStatus(application.id, s)}
+                    className={`text-xs px-2 py-1 rounded-md border transition-colors ${
+                      isActive
+                        ? "bg-white text-slate-800 border-white font-medium"
+                        : "bg-transparent text-slate-300 border-slate-600 hover:border-slate-400"
+                    }`}
+                  >
+                    {CARD_STATUS[s].label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         <div className="px-6 py-5 space-y-5">
@@ -371,6 +422,7 @@ function ApplicantDetail({
 function SwimlaneLane({ stageKey, applications, onCardClick }) {
   const stage = STAGE_META[stageKey];
   const colors = LANE_COLORS[stage?.color] ?? LANE_COLORS.sky;
+  const isPipelineStage = !TERMINAL_KEYS.includes(stageKey);
 
   return (
     <div
@@ -401,6 +453,7 @@ function SwimlaneLane({ stageKey, applications, onCardClick }) {
             <ApplicantCard
               key={app.id}
               application={app}
+              showStatus={isPipelineStage}
               onClick={() => onCardClick(app)}
             />
           ))
@@ -457,8 +510,25 @@ export default function ScreeningBoardPrototype({ onBlacklist }) {
           next[key] = updated;
           next[nextKey] = [
             ...(next[nextKey] ?? []),
-            { ...app, stage: nextKey },
+            { ...app, stage: nextKey, status: "pending" },
           ];
+          break;
+        }
+      }
+      return next;
+    });
+  }
+
+  // Update a card's per-stage evaluation status (Pending/In Progress/Evaluated).
+  function handleSetStatus(appId, status) {
+    setBoardState((prev) => {
+      const next = { ...prev };
+      for (const [key, apps] of Object.entries(next)) {
+        const idx = apps.findIndex((a) => a.id === appId);
+        if (idx !== -1) {
+          const updated = [...apps];
+          updated[idx] = { ...updated[idx], status };
+          next[key] = updated;
           break;
         }
       }
@@ -628,6 +698,7 @@ export default function ScreeningBoardPrototype({ onBlacklist }) {
         onAdvance={handleAdvance}
         onReject={(appId) => handleAdvance(appId, "rejected")}
         onBlacklist={handleBlacklist}
+        onSetStatus={handleSetStatus}
       />
     </div>
   );
