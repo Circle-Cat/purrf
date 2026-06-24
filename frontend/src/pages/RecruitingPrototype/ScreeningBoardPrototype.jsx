@@ -14,7 +14,17 @@
  */
 
 import { useState, useMemo } from "react";
-import { Mail, Phone, FileText, ChevronRight, Ban } from "lucide-react";
+import {
+  Mail,
+  Phone,
+  FileText,
+  ChevronRight,
+  Ban,
+  Star,
+  MessageSquare,
+  ArrowRight,
+  Send,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -121,6 +131,37 @@ const CARD_STATUS = {
 /** Lifecycle order, for the detail-view status selector. */
 const CARD_STATUS_ORDER = ["pending", "in_progress", "evaluated"];
 
+/** Monotonic id source for activity entries added during the session. */
+let activitySeq = 0;
+const nextActivityId = () => `act-new-${(activitySeq += 1)}`;
+
+/**
+ * Per-stage scorecard template: the criteria scored at each stage. Each
+ * criterion is rated 1–5 with an optional multi-line note.
+ */
+const SCORECARD_TEMPLATES = {
+  recruiter_screening: [
+    "Basic qualifications",
+    "Mandarin fluency",
+    "Communication",
+  ],
+  behavioral: ["Motivation & alignment", "Teamwork", "Ownership"],
+  tech: ["Coding", "System design", "Problem solving"],
+  board_review: ["Overall recommendation"],
+  offer: ["Offer fit"],
+};
+
+/** Predefined rejection reasons (a reason is required to reject). */
+const REJECT_REASONS = [
+  "Insufficient experience",
+  "Did not meet the technical bar",
+  "Communication concerns",
+  "Not aligned with our mission",
+  "Accepted another offer",
+  "Incomplete application",
+  "Other",
+];
+
 // ---------------------------------------------------------------------------
 // Helper — derive next-stage label/key for a given stage within a job
 // ---------------------------------------------------------------------------
@@ -194,6 +235,305 @@ function ApplicantCard({ application, showStatus, onClick }) {
 }
 
 // ---------------------------------------------------------------------------
+// Activity feed (Evaluations / Comments / Emails / Stage changes)
+// ---------------------------------------------------------------------------
+/** Per-entry-type icon + accent for the activity feed and filter chips. */
+const ACTIVITY_META = {
+  evaluation: { label: "Evaluations", Icon: Star, color: "text-amber-500" },
+  comment: { label: "Comments", Icon: MessageSquare, color: "text-sky-500" },
+  email: { label: "Emails", Icon: Mail, color: "text-violet-500" },
+  stage: { label: "Stage", Icon: ArrowRight, color: "text-slate-400" },
+};
+
+/** Filter chip order. */
+const ACTIVITY_FILTERS = ["all", "evaluation", "comment", "email", "stage"];
+
+/** Highlights @mentions inside a comment string. */
+function renderMentions(text) {
+  return text.split(/(\s+)/).map((tok, i) =>
+    tok.startsWith("@") ? (
+      <span key={i} className="text-sky-600 font-medium">
+        {tok}
+      </span>
+    ) : (
+      tok
+    ),
+  );
+}
+
+/**
+ * One activity entry, rendered by type.
+ *
+ * @param {{ entry: object }} props
+ */
+function ActivityEntry({ entry }) {
+  const meta = ACTIVITY_META[entry.type] ?? ACTIVITY_META.stage;
+  const Icon = meta.Icon;
+  return (
+    <div className="flex gap-2.5">
+      <Icon size={15} className={`mt-0.5 shrink-0 ${meta.color}`} />
+      <div className="min-w-0 flex-1">
+        {entry.type === "evaluation" && (
+          <>
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-slate-500">
+              <span className="font-medium text-slate-700">{entry.author}</span>
+              <Badge variant="secondary" className="text-xs">
+                {STAGES[entry.stage]?.label ?? entry.stage}
+                {entry.overall ? ` · ${entry.overall}/5 avg` : ""}
+              </Badge>
+              <span>{entry.at}</span>
+            </div>
+            <ul className="mt-1 space-y-0.5">
+              {(entry.criteria ?? []).map((c, i) => (
+                <li key={i} className="text-sm text-slate-700">
+                  <span className="text-slate-500">{c.label}:</span>{" "}
+                  <span className="font-medium">{c.score}/5</span>
+                  {c.note ? (
+                    <span className="text-slate-600"> — {c.note}</span>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+        {entry.type === "comment" && (
+          <>
+            <div className="flex items-center gap-2 text-xs text-slate-500">
+              <span className="font-medium text-slate-700">{entry.author}</span>
+              <span>{entry.at}</span>
+            </div>
+            <p className="text-sm text-slate-700 mt-0.5">
+              {renderMentions(entry.text)}
+            </p>
+          </>
+        )}
+        {entry.type === "email" && (
+          <>
+            <div className="flex items-center gap-2 text-xs text-slate-500">
+              <span className="font-medium text-slate-700">
+                {entry.direction === "out" ? "Sent" : "Received"}
+              </span>
+              <span>{entry.at}</span>
+            </div>
+            <p className="text-sm text-slate-700 mt-0.5">
+              <span className="font-medium">{entry.subject}</span>
+              {entry.snippet ? ` — ${entry.snippet}` : ""}
+            </p>
+          </>
+        )}
+        {entry.type === "stage" && (
+          <div className="text-xs text-slate-500">
+            <span className="font-medium text-slate-700">{entry.author}</span>{" "}
+            moved {entry.from} → {entry.to} · {entry.at}
+            {entry.reason ? (
+              <span className="block text-slate-600">
+                Reason: {entry.reason}
+              </span>
+            ) : null}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Right-hand activity panel: one chronological feed of evaluations, comments,
+ * emails, and stage changes, with filter chips and inline composers for adding
+ * a comment or submitting an evaluation. Emails are read-only.
+ *
+ * @param {{
+ *   activity: object[];
+ *   stage: string;
+ *   inPipeline: boolean;
+ *   onAddComment: (text: string) => void;
+ *   onAddEvaluation: (payload: { criteria: object[], overall: number }) => void;
+ * }} props
+ */
+function ActivityPanel({
+  activity,
+  stage,
+  inPipeline,
+  onAddComment,
+  onAddEvaluation,
+}) {
+  const [filter, setFilter] = useState("all");
+  const [mode, setMode] = useState("comment");
+  const [commentText, setCommentText] = useState("");
+  const [scores, setScores] = useState({});
+  const [notes, setNotes] = useState({});
+
+  const criteria = SCORECARD_TEMPLATES[stage] ?? ["Overall"];
+
+  const filtered =
+    filter === "all" ? activity : activity.filter((a) => a.type === filter);
+
+  const submitComment = () => {
+    if (!commentText.trim()) return;
+    onAddComment(commentText.trim());
+    setCommentText("");
+  };
+  const submitEvaluation = () => {
+    const results = criteria.map((label) => ({
+      label,
+      score: scores[label] ?? 0,
+      note: (notes[label] ?? "").trim(),
+    }));
+    const rated = results.filter((r) => r.score > 0);
+    if (!rated.length) return;
+    const overall =
+      Math.round((rated.reduce((s, r) => s + r.score, 0) / rated.length) * 10) /
+      10;
+    onAddEvaluation({ criteria: results, overall });
+    setScores({});
+    setNotes({});
+  };
+
+  return (
+    <div className="md:w-[340px] shrink-0 bg-slate-50 flex flex-col">
+      <div className="px-4 pt-4 pb-3 border-b border-slate-100 space-y-3">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+          Activity
+        </h3>
+
+        {/* Filter chips */}
+        <div className="flex flex-wrap gap-1.5">
+          {ACTIVITY_FILTERS.map((f) => {
+            const isActive = filter === f;
+            const label = f === "all" ? "All" : ACTIVITY_META[f].label;
+            return (
+              <button
+                key={f}
+                type="button"
+                onClick={() => setFilter(f)}
+                className={`text-xs px-2 py-0.5 rounded-full border transition-colors ${
+                  isActive
+                    ? "bg-slate-800 text-white border-slate-800"
+                    : "bg-white text-slate-600 border-slate-200 hover:border-slate-400"
+                }`}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Composer */}
+        <div className="rounded-lg border border-slate-200 bg-white p-2 space-y-2">
+          <div className="flex gap-1">
+            <button
+              type="button"
+              onClick={() => setMode("comment")}
+              className={`text-xs px-2 py-1 rounded-md ${
+                mode === "comment"
+                  ? "bg-slate-100 font-medium text-slate-800"
+                  : "text-slate-500"
+              }`}
+            >
+              Comment
+            </button>
+            {inPipeline && (
+              <button
+                type="button"
+                onClick={() => setMode("evaluation")}
+                className={`text-xs px-2 py-1 rounded-md ${
+                  mode === "evaluation"
+                    ? "bg-slate-100 font-medium text-slate-800"
+                    : "text-slate-500"
+                }`}
+              >
+                Evaluation
+              </button>
+            )}
+          </div>
+
+          {mode === "comment" ? (
+            <>
+              <textarea
+                rows={2}
+                value={commentText}
+                onChange={(e) => setCommentText(e.target.value)}
+                placeholder="Add a comment… use @ to mention a teammate"
+                className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm resize-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              />
+              <Button
+                size="sm"
+                className="w-full gap-1"
+                onClick={submitComment}
+              >
+                <Send size={13} /> Add comment
+              </Button>
+            </>
+          ) : (
+            <>
+              <p className="text-xs text-slate-500">
+                {STAGES[stage]?.label ?? stage} scorecard
+              </p>
+              {criteria.map((label) => (
+                <div key={label} className="space-y-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-medium text-slate-700">
+                      {label}
+                    </span>
+                    <div className="flex items-center gap-1">
+                      {[1, 2, 3, 4, 5].map((n) => (
+                        <button
+                          key={n}
+                          type="button"
+                          onClick={() =>
+                            setScores((s) => ({ ...s, [label]: n }))
+                          }
+                          className={`h-5 w-5 rounded text-xs border ${
+                            scores[label] === n
+                              ? "bg-amber-500 text-white border-amber-500"
+                              : "bg-white text-slate-600 border-slate-200"
+                          }`}
+                        >
+                          {n}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <textarea
+                    rows={2}
+                    value={notes[label] ?? ""}
+                    onChange={(e) =>
+                      setNotes((nn) => ({ ...nn, [label]: e.target.value }))
+                    }
+                    placeholder={`Notes on ${label.toLowerCase()}…`}
+                    className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm resize-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  />
+                </div>
+              ))}
+              <Button
+                size="sm"
+                className="w-full gap-1 bg-amber-600 hover:bg-amber-700"
+                onClick={submitEvaluation}
+              >
+                <Star size={13} /> Submit scorecard
+              </Button>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Feed */}
+      <div className="p-4 space-y-4 overflow-y-auto">
+        {filtered.length === 0 ? (
+          <p className="text-xs text-slate-400 text-center mt-4">
+            No activity yet.
+          </p>
+        ) : (
+          filtered.map((entry) => (
+            <ActivityEntry key={entry.id} entry={entry} />
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // ApplicantDetail Dialog
 // ---------------------------------------------------------------------------
 /**
@@ -204,9 +544,11 @@ function ApplicantCard({ application, showStatus, onClick }) {
  *   job: object;
  *   onClose: () => void;
  *   onAdvance: (appId: number, nextKey: string) => void;
- *   onReject: (appId: number) => void;
+ *   onReject: (appId: number, reason: string, note: string) => void;
  *   onBlacklist: (app: object) => void;
  *   onSetStatus: (appId: number, status: string) => void;
+ *   onAddComment: (appId: number, text: string) => void;
+ *   onAddEvaluation: (appId: number, stage: string, payload: object) => void;
  * }} props
  */
 function ApplicantDetail({
@@ -217,7 +559,19 @@ function ApplicantDetail({
   onReject,
   onBlacklist,
   onSetStatus,
+  onAddComment,
+  onAddEvaluation,
 }) {
+  const [rejecting, setRejecting] = useState(false);
+  const [rejectReason, setRejectReason] = useState(REJECT_REASONS[0]);
+  const [rejectNote, setRejectNote] = useState("");
+
+  const closeDetail = () => {
+    setRejecting(false);
+    setRejectNote("");
+    onClose();
+  };
+
   if (!application) return null;
   const { applicant, resumeUrl, experience, education, formAnswers, stage } =
     application;
@@ -226,8 +580,11 @@ function ApplicantDetail({
   const target = advanceTarget(job, stage);
 
   return (
-    <Dialog open={!!application} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl p-0">
+    <Dialog
+      open={!!application}
+      onOpenChange={(open) => !open && closeDetail()}
+    >
+      <DialogContent className="z-[1100] sm:max-w-5xl max-h-[90vh] overflow-y-auto rounded-2xl p-0">
         {/* ---- Header band ---- */}
         <div className="bg-gradient-to-r from-slate-800 to-slate-700 px-6 pt-6 pb-5 rounded-t-2xl">
           <DialogHeader>
@@ -282,121 +639,180 @@ function ApplicantDetail({
           )}
         </div>
 
-        <div className="px-6 py-5 space-y-5">
-          {/* ---- Experience ---- */}
-          {experience?.length > 0 && (
-            <section>
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">
-                Experience
-              </h3>
-              <ul className="space-y-1.5">
-                {experience.map((exp, i) => (
-                  <li key={i} className="text-sm text-slate-700">
-                    <span className="font-medium">{exp.title}</span>
-                    <span className="text-slate-400"> · </span>
-                    <span>{exp.company}</span>
-                    <span className="text-slate-400 text-xs ml-2">
-                      {exp.years}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
-
-          {/* ---- Education ---- */}
-          {education?.length > 0 && (
-            <>
-              <Separator />
+        <div className="flex flex-col md:flex-row">
+          <div className="flex-1 px-6 py-5 space-y-5 md:border-r border-slate-100 min-w-0">
+            {/* ---- Experience ---- */}
+            {experience?.length > 0 && (
               <section>
                 <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">
-                  Education
+                  Experience
                 </h3>
                 <ul className="space-y-1.5">
-                  {education.map((edu, i) => (
+                  {experience.map((exp, i) => (
                     <li key={i} className="text-sm text-slate-700">
-                      <span className="font-medium">{edu.degree}</span>
+                      <span className="font-medium">{exp.title}</span>
                       <span className="text-slate-400"> · </span>
-                      <span>{edu.school}</span>
+                      <span>{exp.company}</span>
                       <span className="text-slate-400 text-xs ml-2">
-                        {edu.years}
+                        {exp.years}
                       </span>
                     </li>
                   ))}
                 </ul>
               </section>
-            </>
-          )}
+            )}
 
-          {/* ---- Form answers ---- */}
-          {formAnswers && Object.keys(formAnswers).length > 0 && (
-            <>
-              <Separator />
-              <section>
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-3">
-                  Application Answers
-                </h3>
-                <dl className="space-y-3">
-                  {Object.entries(formAnswers).map(([label, value]) => (
-                    <div key={label}>
-                      <dt className="text-xs font-medium text-slate-500 mb-0.5">
-                        {label}
-                      </dt>
-                      <dd className="text-sm text-slate-800 leading-relaxed">
-                        {value}
-                      </dd>
-                    </div>
-                  ))}
-                </dl>
-              </section>
-            </>
-          )}
+            {/* ---- Education ---- */}
+            {education?.length > 0 && (
+              <>
+                <Separator />
+                <section>
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">
+                    Education
+                  </h3>
+                  <ul className="space-y-1.5">
+                    {education.map((edu, i) => (
+                      <li key={i} className="text-sm text-slate-700">
+                        <span className="font-medium">{edu.degree}</span>
+                        <span className="text-slate-400"> · </span>
+                        <span>{edu.school}</span>
+                        <span className="text-slate-400 text-xs ml-2">
+                          {edu.years}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              </>
+            )}
+
+            {/* ---- Form answers ---- */}
+            {formAnswers && Object.keys(formAnswers).length > 0 && (
+              <>
+                <Separator />
+                <section>
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-3">
+                    Application Answers
+                  </h3>
+                  <dl className="space-y-3">
+                    {Object.entries(formAnswers).map(([label, value]) => (
+                      <div key={label}>
+                        <dt className="text-xs font-medium text-slate-500 mb-0.5">
+                          {label}
+                        </dt>
+                        <dd className="text-sm text-slate-800 leading-relaxed">
+                          {value}
+                        </dd>
+                      </div>
+                    ))}
+                  </dl>
+                </section>
+              </>
+            )}
+          </div>
+
+          <ActivityPanel
+            key={application.id}
+            activity={application.activity ?? []}
+            stage={stage}
+            inPipeline={inPipeline}
+            onAddComment={(text) => onAddComment(application.id, text)}
+            onAddEvaluation={(payload) =>
+              onAddEvaluation(application.id, stage, payload)
+            }
+          />
         </div>
 
         {/* ---- Action footer ---- */}
         <DialogFooter className="px-6 py-4 border-t border-slate-100 bg-slate-50 rounded-b-2xl flex flex-row flex-wrap gap-2 justify-end">
-          {/* Blacklist (拉黑) — always available; removes from board entirely */}
-          <Button
-            variant="outline"
-            size="sm"
-            className="mr-auto text-slate-700 border-slate-300 hover:bg-slate-800 hover:text-white"
-            onClick={() => {
-              onBlacklist(application);
-              onClose();
-            }}
-          >
-            <Ban size={14} className="mr-1" />
-            Blacklist
-          </Button>
+          {rejecting ? (
+            <div className="w-full space-y-2">
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-slate-600">
+                  Rejection reason
+                </label>
+                <select
+                  value={rejectReason}
+                  onChange={(e) => setRejectReason(e.target.value)}
+                  className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                >
+                  {REJECT_REASONS.map((r) => (
+                    <option key={r} value={r}>
+                      {r}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <textarea
+                rows={2}
+                value={rejectNote}
+                onChange={(e) => setRejectNote(e.target.value)}
+                placeholder="Optional note for the hiring team…"
+                className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm resize-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              />
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setRejecting(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => {
+                    onReject(application.id, rejectReason, rejectNote.trim());
+                    closeDetail();
+                  }}
+                >
+                  Confirm reject
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <>
+              {/* Blacklist (拉黑) — always available; removes from board entirely */}
+              <Button
+                variant="outline"
+                size="sm"
+                className="mr-auto text-slate-700 border-slate-300 hover:bg-slate-800 hover:text-white"
+                onClick={() => {
+                  onBlacklist(application);
+                  closeDetail();
+                }}
+              >
+                <Ban size={14} className="mr-1" />
+                Blacklist
+              </Button>
 
-          {/* Reject — only for cards still in the pipeline; moves to Rejected lane */}
-          {inPipeline && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="text-rose-600 border-rose-200 hover:bg-rose-50 hover:border-rose-300"
-              onClick={() => {
-                onReject(application.id);
-                onClose();
-              }}
-            >
-              Reject
-            </Button>
-          )}
+              {/* Reject — opens the reason form (a reason is required) */}
+              {inPipeline && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-rose-600 border-rose-200 hover:bg-rose-50 hover:border-rose-300"
+                  onClick={() => setRejecting(true)}
+                >
+                  Reject
+                </Button>
+              )}
 
-          {/* Advance — next stage, or Hired when leaving the final stage */}
-          {inPipeline && target && (
-            <Button
-              size="sm"
-              className="bg-slate-800 hover:bg-slate-700 text-white gap-1"
-              onClick={() => {
-                onAdvance(application.id, target.key);
-                onClose();
-              }}
-            >
-              <span>Advance to {target.label}</span>
-              <ChevronRight size={14} />
-            </Button>
+              {/* Advance — next stage, or Hired when leaving the final stage */}
+              {inPipeline && target && (
+                <Button
+                  size="sm"
+                  className="bg-slate-800 hover:bg-slate-700 text-white gap-1"
+                  onClick={() => {
+                    onAdvance(application.id, target.key);
+                    closeDetail();
+                  }}
+                >
+                  <span>Advance to {target.label}</span>
+                  <ChevronRight size={14} />
+                </Button>
+              )}
+            </>
           )}
         </DialogFooter>
       </DialogContent>
@@ -531,6 +947,66 @@ export default function ScreeningBoardPrototype({ onBlacklist }) {
       }
       return next;
     });
+  }
+
+  // Prepend an activity entry onto a card's trail (newest first).
+  function appendActivity(appId, partial) {
+    setBoardState((prev) => {
+      const next = { ...prev };
+      for (const [key, apps] of Object.entries(next)) {
+        const idx = apps.findIndex((a) => a.id === appId);
+        if (idx !== -1) {
+          const card = apps[idx];
+          const entry = { id: nextActivityId(), at: "just now", ...partial };
+          const updated = [...apps];
+          updated[idx] = {
+            ...card,
+            activity: [entry, ...(card.activity ?? [])],
+          };
+          next[key] = updated;
+          break;
+        }
+      }
+      return next;
+    });
+  }
+
+  // Add a teammate comment to a card's activity.
+  function handleAddComment(appId, text) {
+    appendActivity(appId, { type: "comment", author: "You", text });
+  }
+
+  // Submit a structured scorecard for the card's current stage; marks it Evaluated.
+  function handleAddEvaluation(appId, stageKey, payload) {
+    appendActivity(appId, {
+      type: "evaluation",
+      author: "You",
+      stage: stageKey,
+      criteria: payload.criteria,
+      overall: payload.overall,
+    });
+    handleSetStatus(appId, "evaluated");
+  }
+
+  // Reject a candidate with a reason: record it on the trail, then move to the
+  // Rejected lane.
+  function handleReject(appId, reason, note) {
+    let fromLabel = "Stage";
+    for (const apps of Object.values(boardState)) {
+      const card = apps.find((a) => a.id === appId);
+      if (card) {
+        fromLabel = STAGES[card.stage]?.label ?? card.stage;
+        break;
+      }
+    }
+    appendActivity(appId, {
+      type: "stage",
+      author: "You",
+      from: fromLabel,
+      to: "Rejected",
+      reason: note ? `${reason} — ${note}` : reason,
+    });
+    handleAdvance(appId, "rejected");
   }
 
   // Blacklist (拉黑) — remove from the board entirely and report up to the
@@ -693,9 +1169,11 @@ export default function ScreeningBoardPrototype({ onBlacklist }) {
         job={job}
         onClose={() => setSelected(null)}
         onAdvance={handleAdvance}
-        onReject={(appId) => handleAdvance(appId, "rejected")}
+        onReject={handleReject}
         onBlacklist={handleBlacklist}
         onSetStatus={handleSetStatus}
+        onAddComment={handleAddComment}
+        onAddEvaluation={handleAddEvaluation}
       />
     </div>
   );

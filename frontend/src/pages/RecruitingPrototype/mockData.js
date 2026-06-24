@@ -294,12 +294,141 @@ export const PROFILE_FIELDS = [
 /** The three requirement levels a profile section can take. */
 export const REQ_LEVELS = ["off", "optional", "required"];
 
+/**
+ * Per-application activity trail (evaluations, comments, emails, stage changes),
+ * newest first. Keyed by application id; apps without an entry start empty.
+ */
+export const ACTIVITY = {
+  104: [
+    {
+      id: "a1",
+      type: "evaluation",
+      author: "Alice Chen",
+      at: "2d ago",
+      stage: "tech",
+      overall: 3.7,
+      criteria: [
+        { label: "Coding", score: 4, note: "Clean, idiomatic solutions." },
+        {
+          label: "System design",
+          score: 3,
+          note: "Shaky on scaling, but coachable.",
+        },
+        { label: "Problem solving", score: 4, note: "Methodical approach." },
+      ],
+    },
+    {
+      id: "a2",
+      type: "comment",
+      author: "Bob Lin",
+      at: "2d ago",
+      text: "@Alice agreed — let's advance her to board review.",
+    },
+    {
+      id: "a3",
+      type: "email",
+      direction: "in",
+      at: "3d ago",
+      subject: "Re: Tech interview",
+      snippet: "Thursday 2pm works, thank you!",
+    },
+    {
+      id: "a4",
+      type: "email",
+      direction: "out",
+      at: "4d ago",
+      subject: "Tech interview invite",
+      snippet: "Proposing Thu/Fri this week.",
+    },
+    {
+      id: "a5",
+      type: "stage",
+      author: "Alice Chen",
+      at: "4d ago",
+      from: "Behavioral",
+      to: "Tech",
+    },
+    {
+      id: "a6",
+      type: "evaluation",
+      author: "Carol Ng",
+      at: "5d ago",
+      stage: "behavioral",
+      overall: 5,
+      criteria: [
+        {
+          label: "Motivation & alignment",
+          score: 5,
+          note: "Deeply aligned with the mission.",
+        },
+        { label: "Teamwork", score: 5, note: "Collaborative, generous." },
+        {
+          label: "Ownership",
+          score: 5,
+          note: "Drove past projects end-to-end.",
+        },
+      ],
+    },
+  ],
+  103: [
+    {
+      id: "b1",
+      type: "comment",
+      author: "Alice Chen",
+      at: "1d ago",
+      text: "Behavioral scheduled for tomorrow — @Carol can you take it?",
+    },
+    {
+      id: "b2",
+      type: "email",
+      direction: "out",
+      at: "2d ago",
+      subject: "Behavioral interview invite",
+      snippet: "A few slots this week.",
+    },
+    {
+      id: "b3",
+      type: "stage",
+      author: "Alice Chen",
+      at: "3d ago",
+      from: "Screening",
+      to: "Behavioral",
+    },
+  ],
+  105: [
+    {
+      id: "d1",
+      type: "evaluation",
+      author: "Bob Lin",
+      at: "6d ago",
+      stage: "tech",
+      overall: 4,
+      criteria: [
+        { label: "Coding", score: 4, note: "Solid fundamentals." },
+        { label: "System design", score: 4, note: "Pragmatic trade-offs." },
+        { label: "Problem solving", score: 4, note: "Good fit overall." },
+      ],
+    },
+    {
+      id: "d2",
+      type: "stage",
+      author: "Bob Lin",
+      at: "6d ago",
+      from: "Tech",
+      to: "Board Review",
+    },
+  ],
+};
+
 /** Returns the applications for a given job id, grouped by stage key. */
 export function applicationsByStage(jobId) {
   const grouped = {};
   for (const app of APPLICATIONS) {
     if (app.jobId !== jobId) continue;
-    (grouped[app.stage] ||= []).push(app);
+    (grouped[app.stage] ||= []).push({
+      ...app,
+      activity: ACTIVITY[app.id] ?? [],
+    });
   }
   return grouped;
 }
