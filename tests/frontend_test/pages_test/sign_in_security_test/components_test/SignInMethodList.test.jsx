@@ -510,7 +510,7 @@ describe("SignInMethodList", () => {
         />,
       );
 
-      expect(screen.getByText("Primary email")).toBeInTheDocument();
+      expect(screen.getByText("Contact email")).toBeInTheDocument();
       expect(
         screen.queryByRole("button", { name: "Set as contact email" }),
       ).not.toBeInTheDocument();

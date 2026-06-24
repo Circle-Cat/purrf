@@ -64,7 +64,7 @@ const IdentityRow = ({
         )}
         {internal && <Badge>Internal</Badge>}
         {emailRow?.isPrimary && (
-          <Badge variant="secondary">Primary email</Badge>
+          <Badge variant="secondary">Contact email</Badge>
         )}
         {identity.isCurrentSession && (
           <Badge variant="secondary">Primary sign-in</Badge>
