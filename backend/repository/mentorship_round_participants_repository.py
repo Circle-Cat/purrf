@@ -5,7 +5,7 @@ from backend.entity.mentorship_round_participants_entity import (
 from backend.entity.mentorship_pairs_entity import MentorshipPairsEntity
 from backend.entity.users_entity import UsersEntity
 from backend.entity.user_emails_entity import UserEmailsEntity
-from backend.common.mentorship_enums import ApprovalStatus, ParticipantRole
+from backend.common.mentorship_enums import ParticipantRole
 from backend.dto.participant_search_row_dto import ParticipantSearchRow
 from backend.dto.participant_search_filter_dto import ParticipantSearchFilterDto
 from sqlalchemy import TIMESTAMP, Float, cast, func, select, and_, or_

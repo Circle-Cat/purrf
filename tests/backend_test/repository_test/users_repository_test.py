@@ -441,7 +441,7 @@ class TestUsersRepository(BaseRepositoryTestLib):
                 is_primary=True,
             )
         ])
-        users_map, emails_map = await self.repo.get_users_and_emails_by_ids(
+        _, emails_map = await self.repo.get_users_and_emails_by_ids(
             self.session, [self.users[0].user_id]
         )
         self.assertEqual(
