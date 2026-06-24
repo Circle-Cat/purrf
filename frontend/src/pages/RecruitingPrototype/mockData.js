@@ -420,6 +420,54 @@ export const ACTIVITY = {
   ],
 };
 
+/**
+ * A candidate's other applications across postings, keyed by email (the stable
+ * person identity). Each entry rolls up attempts to one posting, with a
+ * per-attempt history for the drill-in detail.
+ */
+export const APPLICATION_HISTORY = {
+  "cara.singh@gmail.com": [
+    {
+      id: "h-cara-mentee",
+      jobTitle: "Mentorship Program — Mentee",
+      attempts: 2,
+      status: "rejected",
+      lastAt: "2026-03-10",
+      attemptsDetail: [
+        {
+          attempt: 1,
+          outcome: "Rejected",
+          at: "2025-11-02",
+          note: "Strong profile but limited slots; encouraged to reapply.",
+        },
+        {
+          attempt: 2,
+          outcome: "Rejected",
+          at: "2026-03-10",
+          note: "Reapplied after the cooldown; narrowly missed the cohort.",
+        },
+      ],
+    },
+  ],
+  "dana.park@gmail.com": [
+    {
+      id: "h-dana-mentee",
+      jobTitle: "Mentorship Program — Mentee",
+      attempts: 1,
+      status: "hired",
+      lastAt: "2025-08-20",
+      attemptsDetail: [
+        {
+          attempt: 1,
+          outcome: "Hired",
+          at: "2025-08-20",
+          note: "Completed the Summer 2025 mentee round.",
+        },
+      ],
+    },
+  ],
+};
+
 /** Returns the applications for a given job id, grouped by stage key. */
 export function applicationsByStage(jobId) {
   const grouped = {};
