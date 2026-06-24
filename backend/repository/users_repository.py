@@ -1,4 +1,5 @@
 from backend.entity.users_entity import UsersEntity
+from backend.entity.user_emails_entity import UserEmailsEntity
 from backend.entity.user_identities_entity import UserIdentitiesEntity
 from backend.common.identity_type import IdentityType
 from sqlalchemy import exists, func, or_, select, update
@@ -51,6 +52,42 @@ class UsersRepository:
             select(UsersEntity).where(UsersEntity.user_id.in_(user_ids))
         )
         return list(result.scalars().all())
+
+    async def get_users_and_emails_by_ids(
+        self, session: AsyncSession, user_ids: list[int]
+    ) -> tuple[dict[int, UsersEntity], dict[int, list[UserEmailsEntity]]]:
+        """
+        Retrieve users and their confirmed email addresses by a list of user IDs.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            user_ids (list[int]): A list of user IDs to retrieve.
+
+        Returns:
+            tuple[dict[int, UsersEntity], dict[int, list[UserEmailsEntity]]]:
+                A users map and an emails map both keyed by user_id.
+                Returns empty dicts if user_ids is empty.
+        """
+        if not user_ids:
+            return {}, {}
+
+        result = await session.execute(
+            select(UsersEntity, UserEmailsEntity)
+            .outerjoin(
+                UserEmailsEntity,
+                UserEmailsEntity.user_id == UsersEntity.user_id,
+            )
+            .where(UsersEntity.user_id.in_(user_ids))
+        )
+        users_map: dict[int, UsersEntity] = {}
+        emails_map: dict[int, list[UserEmailsEntity]] = {}
+        for user, email in result.all():
+            if user.user_id not in users_map:
+                users_map[user.user_id] = user
+                emails_map[user.user_id] = []
+            if email is not None:
+                emails_map[user.user_id].append(email)
+        return users_map, emails_map
 
     async def get_user_by_subject_identifier(
         self, session: AsyncSession, sub: str
