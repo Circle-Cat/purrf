@@ -33,8 +33,7 @@ const AddSignInMethodDialog = ({ open, onOpenChange, onAdded }) => {
         <DialogHeader>
           <DialogTitle>Add a sign-in method</DialogTitle>
           <DialogDescription>
-            Verify an email address to use it for signing in. It also becomes a
-            contact email for notifications.
+            Verify an email address to use it for signing in.
           </DialogDescription>
         </DialogHeader>
         <OtpVerifyForm idPrefix="add-signin" onVerified={handleVerified} />

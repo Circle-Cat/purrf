@@ -2,32 +2,16 @@ import { useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-
-const PROVIDER_LABELS = {
-  "google-oauth2": "Google",
-  google: "Google",
-  email: "Email",
-  auth0: "Email & password",
-};
+import { providerLabel, isEmailMethod } from "@/pages/SignInSecurity/providers";
 
 /**
- * Human label for an identity's provider, parsed from the `provider|id`
- * prefix of its subject identifier.
- *
- * @param {string} subjectIdentifier
- * @returns {string}
- */
-const providerLabel = (subjectIdentifier) => {
-  const provider = (subjectIdentifier || "").split("|")[0];
-  return PROVIDER_LABELS[provider] || provider || "Unknown";
-};
-
-/**
- * One sign-in method row. When the method's email maps to a synced contact
- * email, the row shows its primary state and — if that email is verified and
- * not already primary — a "Set as contact email" action (the same step-up flow
- * the standalone email card used). An external, non-current-session method can
- * also be unlinked.
+ * One sign-in method row. Only an email sign-in method exposes contact-email
+ * management: when its email maps to a synced contact email, the row shows its
+ * primary state and — if that email is verified and not already primary — a
+ * "Set as primary contact" action (the same step-up flow the standalone email
+ * card used). The caller passes `emailRow` only for email methods, so non-email
+ * methods (SSO, email-and-password) never show either. An external,
+ * non-current-session method can also be removed.
  *
  * @param {Object} props
  * @param {object} props.identity
@@ -64,10 +48,7 @@ const IdentityRow = ({
         )}
         {internal && <Badge>Internal</Badge>}
         {emailRow?.isPrimary && (
-          <Badge variant="secondary">Contact email</Badge>
-        )}
-        {identity.isCurrentSession && (
-          <Badge variant="secondary">Primary sign-in</Badge>
+          <Badge variant="secondary">Primary contact</Badge>
         )}
       </div>
       <div className="flex items-center gap-1">
@@ -80,7 +61,7 @@ const IdentityRow = ({
           >
             {busy?.kind === "primary" && busy.id === emailRow.emailId
               ? "Setting…"
-              : "Set as contact email"}
+              : "Set as primary contact"}
           </Button>
         )}
         {canUnlink && !identity.isCurrentSession && (
@@ -92,7 +73,7 @@ const IdentityRow = ({
           >
             {busy?.kind === "unlink" && busy.id === identity.identityId
               ? "Removing…"
-              : "Unlink"}
+              : "Remove"}
           </Button>
         )}
       </div>
@@ -108,9 +89,10 @@ const IdentityRow = ({
  * the only remaining sign-in method (the backend additionally refuses the
  * current session's identity and an active employee's corp sign-in).
  *
- * Each method whose email is a verified, non-primary contact email can be set
- * as the primary contact from its own row, replacing the standalone email card.
- * A single in-flight action disables every action button on the list.
+ * Only an email sign-in method exposes contact-email management; when such a
+ * method's email is a verified, non-primary contact email it can be set as the
+ * primary contact from its own row, replacing the standalone email card. A
+ * single in-flight action disables every action button on the list.
  *
  * @component
  * @param {Object} props
@@ -131,7 +113,18 @@ const SignInMethodList = ({
 }) => {
   const [busy, setBusy] = useState(null);
 
-  const emailByAddress = new Map(emails.map((email) => [email.email, email]));
+  // Keyed case-insensitively so a contact row matches its identity's email
+  // claim regardless of casing, mirroring the backend's lower-cased join.
+  const emailByAddress = new Map(
+    emails.map((email) => [(email.email || "").toLowerCase(), email]),
+  );
+
+  // The synced contact-email row for an identity, but only for email sign-in
+  // methods — non-email methods do not expose contact-email management.
+  const emailRowFor = (identity) =>
+    isEmailMethod(identity.subjectIdentifier)
+      ? emailByAddress.get((identity.emailClaim || "").toLowerCase())
+      : undefined;
 
   const handleUnlink = async (identity) => {
     setBusy({ kind: "unlink", id: identity.identityId });
@@ -171,7 +164,7 @@ const SignInMethodList = ({
           identity={identity}
           internal
           canUnlink={false}
-          emailRow={emailByAddress.get(identity.emailClaim)}
+          emailRow={emailRowFor(identity)}
           busy={busy}
           onSetPrimary={handleSetPrimary}
         />
@@ -181,7 +174,7 @@ const SignInMethodList = ({
           key={identity.identityId}
           identity={identity}
           canUnlink={canUnlink}
-          emailRow={emailByAddress.get(identity.emailClaim)}
+          emailRow={emailRowFor(identity)}
           busy={busy}
           onUnlink={handleUnlink}
           onSetPrimary={handleSetPrimary}
