@@ -472,4 +472,167 @@ describe("SignInMethodList", () => {
       ).not.toBeInTheDocument();
     });
   });
+
+  describe("Set as contact email", () => {
+    const verifiedNonPrimary = {
+      emailId: 50,
+      email: "alice@gmail.com",
+      isPrimary: false,
+      otpConfirmed: true,
+    };
+
+    it("offers the action for a verified, non-primary contact email", () => {
+      render(
+        <SignInMethodList
+          emails={[verifiedNonPrimary]}
+          internalIdentities={[]}
+          externalIdentities={[makeIdentity({ emailClaim: "alice@gmail.com" })]}
+          isLoading={false}
+          onUnlink={vi.fn()}
+          onSetPrimary={vi.fn()}
+        />,
+      );
+
+      expect(
+        screen.getByRole("button", { name: "Set as contact email" }),
+      ).toBeInTheDocument();
+    });
+
+    it("badges the primary contact email and offers no action for it", () => {
+      render(
+        <SignInMethodList
+          emails={[{ ...verifiedNonPrimary, isPrimary: true }]}
+          internalIdentities={[]}
+          externalIdentities={[makeIdentity({ emailClaim: "alice@gmail.com" })]}
+          isLoading={false}
+          onUnlink={vi.fn()}
+          onSetPrimary={vi.fn()}
+        />,
+      );
+
+      expect(screen.getByText("Primary email")).toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: "Set as contact email" }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("does not offer the action for an unverified contact email", () => {
+      render(
+        <SignInMethodList
+          emails={[{ ...verifiedNonPrimary, otpConfirmed: false }]}
+          internalIdentities={[]}
+          externalIdentities={[makeIdentity({ emailClaim: "alice@gmail.com" })]}
+          isLoading={false}
+          onUnlink={vi.fn()}
+          onSetPrimary={vi.fn()}
+        />,
+      );
+
+      expect(
+        screen.queryByRole("button", { name: "Set as contact email" }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("offers the action on an internal identity whose email qualifies", () => {
+      render(
+        <SignInMethodList
+          emails={[{ ...verifiedNonPrimary, email: "work@circlecat.org" }]}
+          internalIdentities={[
+            makeIdentity({
+              identityId: 99,
+              subjectIdentifier: "auth0|work",
+              emailClaim: "work@circlecat.org",
+            }),
+          ]}
+          externalIdentities={[]}
+          isLoading={false}
+          onSetPrimary={vi.fn()}
+        />,
+      );
+
+      expect(
+        screen.getByRole("button", { name: "Set as contact email" }),
+      ).toBeInTheDocument();
+    });
+
+    it("calls onSetPrimary with the matching contact-email row when clicked", async () => {
+      const user = userEvent.setup();
+      const onSetPrimary = vi.fn().mockResolvedValue();
+
+      render(
+        <SignInMethodList
+          emails={[verifiedNonPrimary]}
+          internalIdentities={[]}
+          externalIdentities={[makeIdentity({ emailClaim: "alice@gmail.com" })]}
+          isLoading={false}
+          onUnlink={vi.fn()}
+          onSetPrimary={onSetPrimary}
+        />,
+      );
+
+      await user.click(
+        screen.getByRole("button", { name: "Set as contact email" }),
+      );
+
+      expect(onSetPrimary).toHaveBeenCalledWith(verifiedNonPrimary);
+    });
+
+    it("shows a busy label and disables actions while setting the contact email", async () => {
+      const user = userEvent.setup();
+      let resolve;
+      const onSetPrimary = vi.fn(
+        () =>
+          new Promise((r) => {
+            resolve = r;
+          }),
+      );
+
+      render(
+        <SignInMethodList
+          emails={[verifiedNonPrimary]}
+          internalIdentities={[]}
+          externalIdentities={[
+            makeIdentity({ identityId: 1, emailClaim: "alice@gmail.com" }),
+            makeIdentity({
+              identityId: 2,
+              subjectIdentifier: "auth0|2",
+              emailClaim: "other@gmail.com",
+            }),
+          ]}
+          isLoading={false}
+          onUnlink={vi.fn()}
+          onSetPrimary={onSetPrimary}
+        />,
+      );
+
+      await user.click(
+        screen.getByRole("button", { name: "Set as contact email" }),
+      );
+
+      expect(screen.getByText("Setting…")).toBeInTheDocument();
+      screen
+        .getAllByRole("button")
+        .forEach((button) => expect(button).toBeDisabled());
+
+      resolve();
+      await waitFor(() =>
+        expect(screen.queryByText("Setting…")).not.toBeInTheDocument(),
+      );
+    });
+
+    it("offers no set-primary action without emails/onSetPrimary", () => {
+      render(
+        <SignInMethodList
+          internalIdentities={[]}
+          externalIdentities={[makeIdentity({ emailClaim: "alice@gmail.com" })]}
+          isLoading={false}
+          onUnlink={vi.fn()}
+        />,
+      );
+
+      expect(
+        screen.queryByRole("button", { name: "Set as contact email" }),
+      ).not.toBeInTheDocument();
+    });
+  });
 });

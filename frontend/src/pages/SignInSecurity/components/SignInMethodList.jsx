@@ -22,34 +22,83 @@ const providerLabel = (subjectIdentifier) => {
   return PROVIDER_LABELS[provider] || provider || "Unknown";
 };
 
-const IdentityRow = ({ identity, internal, canUnlink, busyId, onUnlink }) => (
-  <li className="flex items-center justify-between gap-2 py-3">
-    <div className="flex items-center gap-2">
-      <span className="font-medium">
-        {providerLabel(identity.subjectIdentifier)}
-      </span>
-      {identity.emailClaim && (
-        <span className="text-sm text-muted-foreground">
-          {identity.emailClaim}
+/**
+ * One sign-in method row. When the method's email maps to a synced contact
+ * email, the row shows its primary state and — if that email is verified and
+ * not already primary — a "Set as contact email" action (the same step-up flow
+ * the standalone email card used). An external, non-current-session method can
+ * also be unlinked.
+ *
+ * @param {Object} props
+ * @param {object} props.identity
+ * @param {boolean} props.internal
+ * @param {boolean} props.canUnlink
+ * @param {object|undefined} props.emailRow - matching contact-email row, if any.
+ * @param {{kind: string, id: (number|string)}|null} props.busy - in-flight action.
+ * @param {(identity: object) => void} [props.onUnlink]
+ * @param {(emailRow: object) => void} [props.onSetPrimary]
+ */
+const IdentityRow = ({
+  identity,
+  internal,
+  canUnlink,
+  emailRow,
+  busy,
+  onUnlink,
+  onSetPrimary,
+}) => {
+  const isBusy = busy !== null;
+  const canSetPrimary =
+    !!onSetPrimary && emailRow && emailRow.otpConfirmed && !emailRow.isPrimary;
+
+  return (
+    <li className="flex items-center justify-between gap-2 py-3">
+      <div className="flex items-center gap-2">
+        <span className="font-medium">
+          {providerLabel(identity.subjectIdentifier)}
         </span>
-      )}
-      {internal && <Badge>Internal</Badge>}
-      {identity.isCurrentSession && (
-        <Badge variant="secondary">Primary sign-in</Badge>
-      )}
-    </div>
-    {canUnlink && !identity.isCurrentSession && (
-      <Button
-        size="sm"
-        variant="ghost"
-        disabled={busyId !== null}
-        onClick={() => onUnlink(identity)}
-      >
-        {busyId === identity.identityId ? "Removing…" : "Unlink"}
-      </Button>
-    )}
-  </li>
-);
+        {identity.emailClaim && (
+          <span className="text-sm text-muted-foreground">
+            {identity.emailClaim}
+          </span>
+        )}
+        {internal && <Badge>Internal</Badge>}
+        {emailRow?.isPrimary && (
+          <Badge variant="secondary">Primary email</Badge>
+        )}
+        {identity.isCurrentSession && (
+          <Badge variant="secondary">Primary sign-in</Badge>
+        )}
+      </div>
+      <div className="flex items-center gap-1">
+        {canSetPrimary && (
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={isBusy}
+            onClick={() => onSetPrimary(emailRow)}
+          >
+            {busy?.kind === "primary" && busy.id === emailRow.emailId
+              ? "Setting…"
+              : "Set as contact email"}
+          </Button>
+        )}
+        {canUnlink && !identity.isCurrentSession && (
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={isBusy}
+            onClick={() => onUnlink(identity)}
+          >
+            {busy?.kind === "unlink" && busy.id === identity.identityId
+              ? "Removing…"
+              : "Unlink"}
+          </Button>
+        )}
+      </div>
+    </li>
+  );
+};
 
 /**
  * List of the caller's linked sign-in methods: the internal (work) identities,
@@ -59,27 +108,46 @@ const IdentityRow = ({ identity, internal, canUnlink, busyId, onUnlink }) => (
  * the only remaining sign-in method (the backend additionally refuses the
  * current session's identity and an active employee's corp sign-in).
  *
+ * Each method whose email is a verified, non-primary contact email can be set
+ * as the primary contact from its own row, replacing the standalone email card.
+ * A single in-flight action disables every action button on the list.
+ *
  * @component
  * @param {Object} props
+ * @param {Array<object>} [props.emails] - contact-email rows from `GET /auth/emails`.
  * @param {Array<object>} props.internalIdentities
  * @param {Array<object>} props.externalIdentities
  * @param {boolean} props.isLoading
  * @param {(identity: object) => Promise<void>} props.onUnlink
+ * @param {(emailRow: object) => Promise<void>} [props.onSetPrimary] - start promoting a contact email.
  */
 const SignInMethodList = ({
+  emails = [],
   internalIdentities,
   externalIdentities,
   isLoading,
   onUnlink,
+  onSetPrimary,
 }) => {
-  const [busyId, setBusyId] = useState(null);
+  const [busy, setBusy] = useState(null);
+
+  const emailByAddress = new Map(emails.map((email) => [email.email, email]));
 
   const handleUnlink = async (identity) => {
-    setBusyId(identity.identityId);
+    setBusy({ kind: "unlink", id: identity.identityId });
     try {
       await onUnlink(identity);
     } finally {
-      setBusyId(null);
+      setBusy(null);
+    }
+  };
+
+  const handleSetPrimary = async (emailRow) => {
+    setBusy({ kind: "primary", id: emailRow.emailId });
+    try {
+      await onSetPrimary(emailRow);
+    } finally {
+      setBusy(null);
     }
   };
 
@@ -103,6 +171,9 @@ const SignInMethodList = ({
           identity={identity}
           internal
           canUnlink={false}
+          emailRow={emailByAddress.get(identity.emailClaim)}
+          busy={busy}
+          onSetPrimary={handleSetPrimary}
         />
       ))}
       {externalIdentities.map((identity) => (
@@ -110,8 +181,10 @@ const SignInMethodList = ({
           key={identity.identityId}
           identity={identity}
           canUnlink={canUnlink}
-          busyId={busyId}
+          emailRow={emailByAddress.get(identity.emailClaim)}
+          busy={busy}
           onUnlink={handleUnlink}
+          onSetPrimary={handleSetPrimary}
         />
       ))}
     </ul>
