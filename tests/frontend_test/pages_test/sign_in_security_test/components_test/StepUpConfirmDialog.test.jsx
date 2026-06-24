@@ -84,7 +84,7 @@ describe("StepUpConfirmDialog", () => {
 
     await waitFor(() => expect(onResend).toHaveBeenCalledTimes(1));
     expect(toast.success).toHaveBeenCalledWith(
-      "We sent a new code to your primary email.",
+      "We sent a new code to your primary contact email.",
     );
   });
 

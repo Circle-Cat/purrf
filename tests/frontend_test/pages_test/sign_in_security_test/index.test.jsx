@@ -89,7 +89,7 @@ vi.mock("@/pages/SignInSecurity/components/StepUpConfirmDialog", () => ({
     ) : null,
 }));
 
-const PRIMARY_TITLE = "Switch primary email";
+const PRIMARY_TITLE = "Set primary contact email";
 const UNLINK_TITLE = "Remove sign-in method";
 
 describe("SignInSecurity page", () => {
@@ -115,7 +115,7 @@ describe("SignInSecurity page", () => {
     expect(screen.queryByText("Email addresses")).not.toBeInTheDocument();
     expect(screen.getByText("Sign-in methods")).toBeInTheDocument();
     expect(
-      screen.getByText(/The accounts you can use to sign in to Purrf\./),
+      screen.getByText(/The methods you can use to sign in to Purrf\./),
     ).toBeInTheDocument();
   });
 
@@ -173,7 +173,7 @@ describe("SignInSecurity page", () => {
     });
   });
 
-  describe("Switch primary email", () => {
+  describe("Set primary contact email", () => {
     it("initiates the switch and opens the dialog with the target email", async () => {
       const user = userEvent.setup();
       initiateSetPrimary.mockResolvedValue({ data: { state: "st-1" } });
@@ -225,7 +225,9 @@ describe("SignInSecurity page", () => {
       await waitFor(() =>
         expect(confirmSetPrimary).toHaveBeenCalledWith(2, "st-1", "123456"),
       );
-      expect(toast.success).toHaveBeenCalledWith("Primary email updated.");
+      expect(toast.success).toHaveBeenCalledWith(
+        "Primary contact email updated.",
+      );
       expect(refresh).toHaveBeenCalledTimes(1);
       await waitFor(() =>
         expect(screen.queryByTestId("stepup-dialog")).not.toBeInTheDocument(),
@@ -249,7 +251,7 @@ describe("SignInSecurity page", () => {
 
       await waitFor(() =>
         expect(toast.error).toHaveBeenCalledWith(
-          "Could not switch your primary email.",
+          "Could not set your primary contact email.",
         ),
       );
       expect(refresh).not.toHaveBeenCalled();
