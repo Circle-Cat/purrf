@@ -65,7 +65,7 @@ const StepUpConfirmDialog = ({
     try {
       await onResend();
       setCode("");
-      toast.success("We sent a new code to your primary email.");
+      toast.success("We sent a new code to your primary contact email.");
     } catch (error) {
       toast.error(
         error?.response?.data?.message ||
