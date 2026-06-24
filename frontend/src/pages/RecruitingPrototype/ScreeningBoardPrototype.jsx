@@ -14,7 +14,7 @@
  */
 
 import { useState, useMemo } from "react";
-import { Mail, Phone, FileText, User, ChevronRight, Ban } from "lucide-react";
+import { Mail, Phone, FileText, ChevronRight, Ban } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -165,9 +165,6 @@ function ApplicantCard({ application, showStatus, onClick }) {
     >
       <div className="flex items-start justify-between gap-2 mb-2">
         <div className="flex items-center gap-2 min-w-0">
-          <div className="flex-shrink-0 h-8 w-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-500">
-            <User size={15} />
-          </div>
           <span className="font-semibold text-slate-900 text-sm leading-tight truncate">
             {fullName}
           </span>
@@ -426,7 +423,7 @@ function SwimlaneLane({ stageKey, applications, onCardClick }) {
 
   return (
     <div
-      className={`flex flex-col rounded-2xl border ${colors.border} ${colors.tint} min-w-[272px] w-[272px] flex-shrink-0`}
+      className={`flex flex-col rounded-2xl border ${colors.border} ${colors.tint} min-w-[240px] w-[240px] flex-shrink-0`}
     >
       {/* Lane header */}
       <div
