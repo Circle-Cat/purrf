@@ -7,6 +7,7 @@ from backend.repository.users_repository import UsersRepository
 from backend.entity.users_entity import UsersEntity
 from backend.entity.experience_entity import ExperienceEntity
 from backend.entity.user_identities_entity import UserIdentitiesEntity
+from backend.entity.user_emails_entity import UserEmailsEntity
 from backend.common.mentorship_enums import CommunicationMethod
 from tests.backend_test.repository_test.base_repository_test_lib import (
     BaseRepositoryTestLib,
@@ -381,6 +382,81 @@ class TestUsersRepository(BaseRepositoryTestLib):
     async def test_set_super_admin_missing_user_updates_nothing(self):
         updated = await self.repo.set_super_admin(self.session, 9_999_999, True)
         self.assertEqual(updated, 0)
+
+    async def test_get_users_and_emails_empty_list(self):
+        users_map, emails_map = await self.repo.get_users_and_emails_by_ids(
+            self.session, []
+        )
+        self.assertEqual(users_map, {})
+        self.assertEqual(emails_map, {})
+
+    async def test_get_users_and_emails_unknown_id(self):
+        users_map, emails_map = await self.repo.get_users_and_emails_by_ids(
+            self.session, [999]
+        )
+        self.assertEqual(users_map, {})
+        self.assertEqual(emails_map, {})
+
+    async def test_get_users_and_emails_no_emails(self):
+        users_map, emails_map = await self.repo.get_users_and_emails_by_ids(
+            self.session, [self.users[0].user_id]
+        )
+        self.assertIn(self.users[0].user_id, users_map)
+        self.assertEqual(emails_map[self.users[0].user_id], [])
+
+    async def test_get_users_and_emails_with_email(self):
+        await self.insert_entities([
+            UserEmailsEntity(
+                user_id=self.users[0].user_id,
+                email="alice@work.com",
+                otp_confirmed=True,
+                is_primary=True,
+            )
+        ])
+        users_map, emails_map = await self.repo.get_users_and_emails_by_ids(
+            self.session, [self.users[0].user_id]
+        )
+        self.assertEqual(
+            {e.email for e in emails_map[self.users[0].user_id]},
+            {"alice@work.com"},
+        )
+
+    async def test_get_users_and_emails_multiple_users(self):
+        await self.insert_entities([
+            UserEmailsEntity(
+                user_id=self.users[0].user_id,
+                email="alice1@work.com",
+                otp_confirmed=True,
+                is_primary=True,
+            ),
+            UserEmailsEntity(
+                user_id=self.users[0].user_id,
+                email="alice2@work.com",
+                otp_confirmed=True,
+                is_primary=False,
+            ),
+            UserEmailsEntity(
+                user_id=self.users[1].user_id,
+                email="bob@work.com",
+                otp_confirmed=True,
+                is_primary=True,
+            ),
+        ])
+        user_ids = [self.users[0].user_id, self.users[1].user_id]
+        users_map, emails_map = await self.repo.get_users_and_emails_by_ids(
+            self.session, user_ids
+        )
+        self.assertEqual(
+            set(users_map.keys()), {self.users[0].user_id, self.users[1].user_id}
+        )
+        self.assertEqual(
+            {e.email for e in emails_map[self.users[0].user_id]},
+            {"alice1@work.com", "alice2@work.com"},
+        )
+        self.assertEqual(
+            {e.email for e in emails_map[self.users[1].user_id]},
+            {"bob@work.com"},
+        )
 
     # ------------------------------------------------------------------
     # sort / filter tests
