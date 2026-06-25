@@ -13,6 +13,13 @@ const TITLE_KEYWORDS = [
   "summary",
   "award",
   "honor",
+  "certification",
+  "certificate",
+  "leadership",
+  "activit",
+  "language",
+  "interest",
+  "volunteer",
 ];
 const TITLE_FALLBACK_RE = /^[A-Za-z\s&]+$/;
 
@@ -34,7 +41,9 @@ export function isSectionTitle(line) {
   if (isBold(item) && isAllUpperWithLetter(item)) return true;
 
   const text = item.text.trim();
-  const words = text.split(/\s+/).filter(Boolean);
+  // Count words but ignore a standalone "&" ("Skills & Certifications" is two
+  // words, not three) so multi-word title-case headers still qualify.
+  const words = text.split(/\s+/).filter((w) => w && w !== "&");
   if (
     words.length <= 2 &&
     /^[A-Z]/.test(text) &&

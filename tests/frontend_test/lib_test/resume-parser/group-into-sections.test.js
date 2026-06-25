@@ -26,6 +26,9 @@ describe("isSectionTitle", () => {
   it("true for keyword fallback titles", () => {
     expect(isSectionTitle(line(tok("Education")))).toBe(true);
   });
+  it("treats a standalone & as not a word (Skills & Certifications)", () => {
+    expect(isSectionTitle(line(tok("Skills & Certifications")))).toBe(true);
+  });
   it("false for multi-item lines and contact lines", () => {
     expect(isSectionTitle(line(tok("A"), tok("B")))).toBe(false);
     expect(isSectionTitle(line(tok("jane@example.com")))).toBe(false);
