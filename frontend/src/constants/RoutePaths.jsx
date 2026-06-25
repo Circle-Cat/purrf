@@ -9,4 +9,5 @@ export const ROUTE_PATHS = {
   VERIFY_REQUIRED: "/verify-required",
   SIGN_IN_SECURITY: "/settings/sign-in",
   ADMIN_USERS: "/admin/users",
+  RESUME_PARSER_DEMO: "/resume-parser-demo",
 };

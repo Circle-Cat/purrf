@@ -15,6 +15,7 @@ import HardWallGate from "@/components/common/HardWallGate";
 import Dashboard from "@/pages/Dashboard";
 import DataSearch from "@/pages/DataSearch";
 import Profile from "@/pages/Profile";
+import ResumeParserDemo from "@/pages/ResumeParserDemo";
 import AccessDenied from "@/pages/AccessDenied";
 import PersonalDashboard from "@/pages/PersonalDashboard";
 import MentorshipManagement from "@/pages/MentorshipManagement";
@@ -81,6 +82,10 @@ function App() {
                       }
                     />
                     <Route path={ROUTE_PATHS.PROFILE} element={<Profile />} />
+                    <Route
+                      path={ROUTE_PATHS.RESUME_PARSER_DEMO}
+                      element={<ResumeParserDemo />}
+                    />
                     <Route
                       path={ROUTE_PATHS.SIGN_IN_SECURITY}
                       element={<SignInSecurity />}
