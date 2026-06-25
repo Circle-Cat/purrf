@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import ScreeningBoardPrototype from "@/pages/RecruitingPrototype/ScreeningBoardPrototype";
 import ApplyPrototype from "@/pages/RecruitingPrototype/ApplyPrototype";
 import BlacklistPrototype from "@/pages/RecruitingPrototype/BlacklistPrototype";
+import PostingsListPrototype from "@/pages/RecruitingPrototype/PostingsListPrototype";
 import { INITIAL_POSTINGS, CURRENT_USER_ID } from "@/pages/RecruitingPrototype/mockData";
 
 /** One pre-seeded blocked user so the Blacklist page isn't empty at demo start. */
@@ -173,9 +174,12 @@ const RecruitingPrototype = () => {
           <ScreeningBoardPrototype onBlacklist={handleBlacklist} />
         )}
         {active === "postings" && (
-          <div className="p-6 text-sm text-slate-400">
-            Postings 列表(即将实现)
-          </div>
+          <PostingsListPrototype
+            postings={postings}
+            currentUserId={CURRENT_USER_ID}
+            onSubmitForReview={submitForReview}
+            onCreate={createPosting}
+          />
         )}
         {active === "review" && (
           <div className="p-6 text-sm text-slate-400">
