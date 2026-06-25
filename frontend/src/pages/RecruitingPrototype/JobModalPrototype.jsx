@@ -234,7 +234,12 @@ const JobModalPrototype = ({ initialJob = null, onSave, onClose }) => {
       description,
     };
     if (onSave) onSave(job);
-    else console.log("[prototype] save posting", { ...job, profileReq, formSchema });
+    else
+      console.log("[prototype] save posting", {
+        ...job,
+        profileReq,
+        formSchema,
+      });
     onClose?.();
   };
 

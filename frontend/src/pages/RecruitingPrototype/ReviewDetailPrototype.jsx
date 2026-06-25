@@ -75,7 +75,11 @@ const ReviewDetailPrototype = ({ posting, onBack, onApprove, onSendBack }) => {
           ② 投递表单预览
         </h3>
         <div className="pointer-events-none select-none opacity-90 rounded-lg border border-slate-200 p-4">
-          <JsonSchemaForm schema={SAMPLE_FORM_SCHEMA} value={{}} onChange={noop} />
+          <JsonSchemaForm
+            schema={SAMPLE_FORM_SCHEMA}
+            value={{}}
+            onChange={noop}
+          />
         </div>
       </section>
 

@@ -1,12 +1,21 @@
 import { useState } from "react";
-import { LayoutGrid, FileText, Briefcase, ClipboardCheck, Ban } from "lucide-react";
+import {
+  LayoutGrid,
+  FileText,
+  Briefcase,
+  ClipboardCheck,
+  Ban,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import ScreeningBoardPrototype from "@/pages/RecruitingPrototype/ScreeningBoardPrototype";
 import ApplyPrototype from "@/pages/RecruitingPrototype/ApplyPrototype";
 import BlacklistPrototype from "@/pages/RecruitingPrototype/BlacklistPrototype";
 import PostingsListPrototype from "@/pages/RecruitingPrototype/PostingsListPrototype";
 import ReviewQueuePrototype from "@/pages/RecruitingPrototype/ReviewQueuePrototype";
-import { INITIAL_POSTINGS, CURRENT_USER_ID } from "@/pages/RecruitingPrototype/mockData";
+import {
+  INITIAL_POSTINGS,
+  CURRENT_USER_ID,
+} from "@/pages/RecruitingPrototype/mockData";
 
 /** One pre-seeded blocked user so the Blacklist page isn't empty at demo start. */
 const INITIAL_BLACKLIST = [
