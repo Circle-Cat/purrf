@@ -39,6 +39,8 @@ describe("features predicates", () => {
     expect(F.hasSchool(item("Stanford University"))).toBe(true);
     expect(F.hasDegree(item("Bachelor of Science"))).toBe(true);
     expect(F.hasDegree(item("B.S. Computer Science"))).toBe(true);
+    expect(F.hasDegree(item("Mathematics BSc"))).toBe(true);
+    expect(F.hasDegree(item("MSc Data Science"))).toBe(true);
   });
   it("isContactLine matches email/phone/url/city-state strings", () => {
     expect(F.isContactLine("jane@example.com")).toBe(true);

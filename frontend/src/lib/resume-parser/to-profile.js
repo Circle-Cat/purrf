@@ -47,14 +47,17 @@ export function splitName(name) {
  */
 export function classifyDegree(text) {
   const t = (text ?? "").toLowerCase();
+  // Dot/space-stripped copy so "B.S." / "B.Sc" / "Ph.D" match on word boundaries.
+  const s = t.replace(/\./g, "");
   // Professional doctorates (Juris Doctor, M.D., …) also contain "doctor", so
   // they must be matched before the academic-doctorate check below.
-  if (/\b(?:j\.?d|m\.?d|esq|juris|pharm\.?d|dds)\b/.test(t))
+  if (/juris|esq/.test(t) || /\b(?:jd|md|pharmd|dds|llb|llm)\b/.test(s))
     return "Professional";
-  if (/ph\.?\s?d|doctor/.test(t)) return "Doctorate";
-  if (/master|\bm\.?\s?[sa]\b|mba|m\.?eng/.test(t)) return "Master";
-  if (/bachelor|\bb\.?\s?[sa]\b|b\.?eng/.test(t)) return "Bachelor";
-  if (/associate|\ba\.?\s?[sa]\b/.test(t)) return "Associate";
+  if (/\bphd\b|doctor/.test(s)) return "Doctorate";
+  if (/master|\bmsc?\b|\bma\b|\bmba\b|\bmeng\b|\bmtech\b/.test(s))
+    return "Master";
+  if (/bachelor|\bbsc?\b|\bba\b|\bbeng\b|\bbtech\b/.test(s)) return "Bachelor";
+  if (/associate|\baa\b/.test(s)) return "Associate";
   return undefined;
 }
 

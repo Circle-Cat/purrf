@@ -8,8 +8,10 @@ const URL_WWW_RE = /www\.\S+\.\S+/;
 const GPA_RE = /[0-4]\.\d{1,2}/;
 const EMAIL_RE = /\S+@\S+\.\S+/;
 const PAREN_AREA_RE = /\(\d+\)/; // "(123)"
-const DEGREE_ABBR_RE = /\b[bm]\.?\s?[sa]\.?\b/i;
-const MBA_RE = /\bmba\b/i;
+// Tested against a dot-stripped copy of the text so "B.S." / "B.Sc" / "Ph.D"
+// reduce to "BS" / "BSc" / "PhD" and match cleanly on word boundaries.
+const DEGREE_ABBR_RE =
+  /\b(?:bsc?|msc?|ba|ma|beng|meng|btech|mtech|mba|phd|llb|llm|jd)\b/i;
 
 const SCHOOL_KEYWORDS = [
   "college",
@@ -46,8 +48,7 @@ const DEGREE_KEYWORDS = [
   SCHOOL_KEYWORDS.some((k) => i.text.toLowerCase().includes(k));
 /** @param {TextItem} i */ export const hasDegree = (i) =>
   DEGREE_KEYWORDS.some((k) => i.text.toLowerCase().includes(k)) ||
-  DEGREE_ABBR_RE.test(i.text) ||
-  MBA_RE.test(i.text);
+  DEGREE_ABBR_RE.test(i.text.replace(/\./g, ""));
 
 /** @param {TextItem} i @returns {RegExpMatchArray|null} */
 export const matchName = (i) => i.text.match(NAME_RE);

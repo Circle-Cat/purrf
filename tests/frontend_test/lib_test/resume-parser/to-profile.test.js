@@ -26,6 +26,8 @@ describe("classifyDegree", () => {
     expect(classifyDegree("Bachelor of Science")).toBe("Bachelor");
     expect(classifyDegree("Ph.D. in Physics")).toBe("Doctorate");
     expect(classifyDegree("Juris Doctor")).toBe("Professional");
+    expect(classifyDegree("Mathematics BSc")).toBe("Bachelor");
+    expect(classifyDegree("MSc Data Science")).toBe("Master");
   });
   it("returns undefined for unsupported degrees (High School)", () => {
     expect(classifyDegree("High School Diploma")).toBeUndefined();
