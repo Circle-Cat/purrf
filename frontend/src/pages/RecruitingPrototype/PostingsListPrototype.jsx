@@ -120,6 +120,27 @@ const PostingsListPrototype = ({
                   ))}
                 </div>
               </div>
+
+              {p.status === "published_pending_revision" && (
+                <div className="mt-2 grid gap-1.5 text-xs">
+                  <div className="flex items-center justify-between rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-1.5 text-emerald-800">
+                    <span>🟢 线上版本(候选人正在用)</span>
+                    <span className="text-emerald-600">候选人可见</span>
+                  </div>
+                  <div className="flex items-center justify-between rounded-lg bg-orange-50 border border-orange-200 px-3 py-1.5 text-orange-800">
+                    <span>
+                      🟡 待审版本 · 改了{" "}
+                      {p.pendingRevision?.changedFields.length} 个字段
+                      {p.pendingRevision?.changedFields.length
+                        ? `(${p.pendingRevision.changedFields.join("、")})`
+                        : ""}
+                    </span>
+                    <span className="text-orange-600">
+                      审核中 → {reviewerName(p.reviewerId)}
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
           );
         })}
