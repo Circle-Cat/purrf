@@ -27,6 +27,11 @@ describe("extractFieldOfStudy", () => {
   it("returns '' when no field is found", () => {
     expect(extractFieldOfStudy("Bachelor of Science")).toBe("");
   });
+  it("handles a glued separator and strips a (GPA) parenthetical", () => {
+    expect(
+      extractFieldOfStudy("Bachelor of Arts inComputer Science(GPA:4.0/4.0)"),
+    ).toBe("Computer Science");
+  });
 });
 
 describe("extractEducation", () => {
@@ -41,5 +46,18 @@ describe("extractEducation", () => {
     expect(entry.degree).toMatch(/Bachelor/);
     expect(entry.fieldOfStudy).toBe("Computer Science");
     expect(entry.startDate).toBe("2016-01-01");
+  });
+
+  it("keeps the school when school, degree and GPA share one line", () => {
+    const lines = [
+      [
+        tok("Northeastern University (GPA 3.92)", 700),
+        tok("Master of Computer Software Engineering", 700, { x: 300 }),
+        tok("Sep 2024–Dec 2026", 700, { x: 520 }),
+      ],
+    ];
+    const [entry] = extractEducation(lines);
+    expect(entry.school).toBe("Northeastern University");
+    expect(entry.degree).toMatch(/Master/);
   });
 });
