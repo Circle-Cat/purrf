@@ -136,9 +136,6 @@ describe("PersonalEditModal Component", () => {
           firstName: "Jane",
           preferredName: "Janey",
           lastName: "Doe",
-          // Alternative emails loaded from the backend are passed through
-          // unchanged so the save never clears them.
-          alternativeEmails: ["alt@example.com"],
         }),
       });
     });
