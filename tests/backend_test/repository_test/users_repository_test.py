@@ -149,6 +149,20 @@ class TestUsersRepository(BaseRepositoryTestLib):
 
         self.assertIsNone(user)
 
+    async def test_update_primary_email(self):
+        """update_primary_email overwrites the column for the given user only."""
+        await self.repo.update_primary_email(
+            self.session, self.user_entity.user_id, "alice.new@example.com"
+        )
+
+        updated = await self.repo.get_user_by_user_id(
+            self.session, self.user_entity.user_id
+        )
+        self.assertEqual(updated.primary_email, "alice.new@example.com")
+        # other users untouched
+        other = await self.repo.get_user_by_user_id(self.session, self.users[1].user_id)
+        self.assertEqual(other.primary_email, "bob@example.com")
+
     async def test_upsert_users_insert_user_entity(self):
         """Test insert a new UserEntity"""
         new_user = UsersEntity(
