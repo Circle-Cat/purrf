@@ -36,4 +36,23 @@ describe("getTextWithHighestScore", () => {
     });
     expect(out).toBe("aa 11 bb 22");
   });
+  it("isolates a substring match from the line's negative features", () => {
+    const hasLetter = (i) => /[a-z]/i.test(i.text);
+    const matchPhone = (i) => i.text.match(/\d{3}-\d{4}/);
+    const items = [item("Tel: 555-1234 email a@b.com")];
+    // Without isolation, hasLetter (-4) would cancel matchPhone (+4) -> "".
+    const out = getTextWithHighestScore(items, [
+      [matchPhone, 4, true],
+      [hasLetter, -4],
+    ]);
+    expect(out).toBe("555-1234");
+  });
+  it("allowNonPositive returns the top candidate even at score <= 0", () => {
+    const isBoldFont = (i) => i.fontName === "Bold";
+    const items = [item("Acme Corp"), item("2020")];
+    const out = getTextWithHighestScore(items, [[isBoldFont, 2]], {
+      allowNonPositive: true,
+    });
+    expect(out).toBe("Acme Corp");
+  });
 });
