@@ -111,6 +111,30 @@ class UsersRepository:
 
         return result.scalars().one_or_none()
 
+    async def update_primary_email(
+        self, session: AsyncSession, user_id: int, email: str
+    ) -> None:
+        """
+        Overwrite the legacy ``users.primary_email`` column for one user.
+
+        Write-through used by EmailManagementService to keep the legacy column in
+        sync with the current primary user_emails row (see the TODO on
+        ``UsersEntity.primary_email``). Flushes but does not commit; the caller
+        owns the transaction boundary. The caller is responsible for not passing
+        an email already owned by another user (``uq_users_primary_email``).
+
+        Args:
+            session (AsyncSession): The active async database session.
+            user_id (int): The user whose primary_email to update.
+            email (str): The new primary email value.
+        """
+        await session.execute(
+            update(UsersEntity)
+            .where(UsersEntity.user_id == user_id)
+            .values(primary_email=email)
+        )
+        await session.flush()
+
     async def upsert_users(
         self, session: AsyncSession, entity: UsersEntity
     ) -> UsersEntity:
