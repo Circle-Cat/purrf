@@ -1,6 +1,9 @@
 // Compiled once at module scope (Global Constraint: no per-item regex).
 const NAME_RE = /^[\p{L}\s.'\-]+$/u;
-const PHONE_RE = /\(?\d{3}\)?[\s-]?\d{3}[\s-]?\d{4}/;
+// First alternative: international "+<country> <digits…>" (the leading + keeps
+// false positives low). Second: the common US (xxx) xxx-xxxx form.
+const PHONE_RE =
+  /\+\d{1,3}[\s-]?\d[\d\s-]{5,}\d|\(?\d{3}\)?[\s-]?\d{3}[\s-]?\d{4}/;
 const CITY_STATE_RE = /[A-Z][A-Za-z\s]+,\s(?:[A-Z]{2}|[A-Z][a-z]+)/;
 const URL_RE = /\S+\.[a-z]+\/\S+/;
 const URL_HTTP_RE = /https?:\/\/\S+\.\S+/;

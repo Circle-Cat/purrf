@@ -32,6 +32,10 @@ describe("extractFieldOfStudy", () => {
       extractFieldOfStudy("Bachelor of Arts inComputer Science(GPA:4.0/4.0)"),
     ).toBe("Computer Science");
   });
+  it("reads a field stated before the degree abbreviation", () => {
+    expect(extractFieldOfStudy("Mathematics BSc")).toBe("Mathematics");
+    expect(extractFieldOfStudy("Data Science MSc")).toBe("Data Science");
+  });
 });
 
 describe("extractEducation", () => {

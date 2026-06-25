@@ -31,6 +31,11 @@ describe("features predicates", () => {
   it("matchPhone extracts the phone substring", () => {
     expect(F.matchPhone(item("(123) 456-7890"))[0]).toBe("(123) 456-7890");
   });
+  it("matchPhone extracts an international +country number", () => {
+    expect(F.matchPhone(item("+44 07700900123 | a@b.com"))[0]).toBe(
+      "+44 07700900123",
+    );
+  });
   it("matchCityState accepts code and full state name", () => {
     expect(F.matchCityState(item("New York, NY"))).toBeTruthy();
     expect(F.matchCityState(item("Berkeley, California"))).toBeTruthy();

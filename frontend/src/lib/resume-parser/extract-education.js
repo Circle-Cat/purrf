@@ -37,6 +37,8 @@ const FIELD_RES = [
   /(?:B|M|A)\.?\s?[SA]\.?\s+in\s*(.+)/i,
   /\bin\s*(.+)/i,
   /\bof\s*(.+)/i,
+  // Field stated BEFORE the degree abbreviation, e.g. "Mathematics BSc".
+  /^(.+?)\s+(?:b\.?sc?|m\.?sc?|b\.?a|m\.?a|b\.?eng|m\.?eng|b\.?tech|m\.?tech|phd|mba)\b/i,
 ];
 
 // Generic degree-type nouns the bare "of" fallback can capture (e.g. "Bachelor
