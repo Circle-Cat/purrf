@@ -7,6 +7,7 @@ js_library(
     name = "root_files",
     srcs = [
         "index.html",
+        "resume-demo.html",
     ],
 )
 
