@@ -17,6 +17,9 @@ describe("parseResumeFromPdf (integration)", () => {
       [{ text: "Stanford University", bold: true }],
       [{ text: "Bachelor of Science in Computer Science" }],
       [{ text: "2016 - 2020" }],
+      [{ text: "PROJECTS", bold: true }],
+      [{ text: "Resume Parser", bold: true }],
+      [{ text: "Jan 2024 - Mar 2024" }],
     ]);
     const result = await parseResumeFromPdf(bytes);
 
@@ -27,6 +30,7 @@ describe("parseResumeFromPdf (integration)", () => {
     expect(result.education[0].school).toMatch(/Stanford University/);
     expect(result.education[0].degree).toBe("Bachelor");
     expect(result.workHistory[0].companyOrOrganization).toMatch(/Acme Corp/);
+    expect(result.projects[0].name).toMatch(/Resume Parser/);
     // email is never extracted/mapped:
     expect(JSON.stringify(result)).not.toContain("@");
   });

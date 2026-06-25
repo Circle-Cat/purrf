@@ -8,6 +8,7 @@ import { inferTimezone } from "./lib/timezone";
  *   startDate?: string|null, endDate?: string|null }[]} education
  * @property {{ title: string, companyOrOrganization: string, startDate?: string|null,
  *   endDate?: string|null, isCurrentJob: boolean }[]} workHistory
+ * @property {{ name: string, startDate?: string|null, endDate?: string|null }[]} projects
  * @property {{ summary?: string }} unmapped
  */
 
@@ -73,7 +74,13 @@ export function isLinkedin(url) {
  * @returns {ParsedResume}
  */
 export function toProfile(raw) {
-  const { profile = {}, education = [], workHistory = [], summary } = raw;
+  const {
+    profile = {},
+    education = [],
+    workHistory = [],
+    projects = [],
+    summary,
+  } = raw;
   const { firstName, lastName } = splitName(profile.name ?? "");
   return {
     user: {
@@ -96,6 +103,11 @@ export function toProfile(raw) {
       startDate: w.startDate ?? null,
       endDate: w.endDate ?? null,
       isCurrentJob: Boolean(w.isCurrentJob),
+    })),
+    projects: projects.map((p) => ({
+      name: p.name,
+      startDate: p.startDate ?? null,
+      endDate: p.endDate ?? null,
     })),
     unmapped: { summary: summary || undefined },
   };

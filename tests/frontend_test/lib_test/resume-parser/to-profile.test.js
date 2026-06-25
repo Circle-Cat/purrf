@@ -68,6 +68,9 @@ describe("toProfile", () => {
           isCurrentJob: true,
         },
       ],
+      projects: [
+        { name: "Cool Project", startDate: "2021-01-01", endDate: null },
+      ],
       summary: "A summary line.",
     });
     expect(out.user).toEqual({
@@ -79,6 +82,7 @@ describe("toProfile", () => {
     });
     expect(out.education[0].degree).toBe("Bachelor");
     expect(out.workHistory[0].isCurrentJob).toBe(true);
+    expect(out.projects[0].name).toBe("Cool Project");
     expect(out.unmapped.summary).toBe("A summary line.");
     expect(JSON.stringify(out)).not.toContain("@");
   });

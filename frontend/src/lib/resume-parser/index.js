@@ -1,5 +1,6 @@
 import { extractEducation } from "./extract-education";
 import { extractProfile } from "./extract-profile";
+import { extractProjects } from "./extract-project";
 import { extractWork } from "./extract-work";
 import { groupIntoLines } from "./group-into-lines";
 import { groupIntoSections, lineText } from "./group-into-sections";
@@ -23,6 +24,17 @@ function findSection(sections, keywords) {
     if (keywords.some((k) => lower.includes(k))) return sections[key];
   }
   return [];
+}
+
+/** All sections whose title contains any keyword (profile excluded). */
+function findSections(sections, keywords) {
+  return Object.keys(sections)
+    .filter(
+      (key) =>
+        key !== "profile" &&
+        keywords.some((k) => key.toLowerCase().includes(k)),
+    )
+    .map((key) => sections[key]);
 }
 
 /**
@@ -50,6 +62,20 @@ export async function parseResumeFromPdf(file) {
     [],
   );
 
+  // Projects + leadership/activities — surfaced for resumes whose experience
+  // lives outside a Work section. Each matching section is extracted on its own
+  // so subsections never merge across section boundaries.
+  const projects = safe(
+    () =>
+      findSections(sections, [
+        "project",
+        "leadership",
+        "activit",
+        "extracurricular",
+      ]).flatMap((lines) => extractProjects(lines)),
+    [],
+  );
+
   const summarySection = findSection(sections, ["summary", "objective"]);
   // A dedicated Summary/Objective section takes precedence over the header-derived summary.
   const summary = summarySection.length
@@ -62,6 +88,7 @@ export async function parseResumeFromPdf(file) {
         profile,
         education,
         workHistory,
+        projects,
         summary,
         location: profile.location,
       }),
@@ -69,6 +96,7 @@ export async function parseResumeFromPdf(file) {
       user: { firstName: "", lastName: "" },
       education: [],
       workHistory: [],
+      projects: [],
       unmapped: {},
     },
   );
