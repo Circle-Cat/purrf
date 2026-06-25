@@ -49,6 +49,7 @@ def _make_service(**overrides):
         mentorship_round_repository=MagicMock(),
         users_repository=MagicMock(),
         user_identities_repository=MagicMock(),
+        user_emails_repository=MagicMock(),
     )
     return MeetAttendanceService(**{**defaults, **overrides})
 
@@ -76,6 +77,11 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
             return_value={}
         )
 
+        self.mock_user_emails_repo = MagicMock()
+        self.mock_user_emails_repo.get_non_primary_emails_by_user_ids = AsyncMock(
+            return_value={}
+        )
+
         self.mock_session = AsyncMock()
 
         self.service = _make_service(
@@ -84,6 +90,7 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
             mentorship_round_repository=self.mock_round_repo,
             users_repository=self.mock_users_repo,
             user_identities_repository=self.mock_identities_repo,
+            user_emails_repository=self.mock_user_emails_repo,
         )
 
         self.round_id = 1
@@ -748,8 +755,11 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
         mentor_with_alt = _make_user(
             user_id=self.mentor.user_id,
             primary_email="mentor@example.com",
-            alternative_emails=["mentor-alt@example.com"],
         )
+        # The alternative email now lives in user_emails (a non-primary row).
+        self.mock_user_emails_repo.get_non_primary_emails_by_user_ids.return_value = {
+            self.mentor.user_id: ["mentor-alt@example.com"],
+        }
         pair = self._make_active_pair(
             start="2026-04-07T10:00:00+00:00",
             end="2026-04-07T11:00:00+00:00",

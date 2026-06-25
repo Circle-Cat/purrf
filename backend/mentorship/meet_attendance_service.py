@@ -43,6 +43,7 @@ class MeetAttendanceService:
         mentorship_round_repository,
         users_repository,
         user_identities_repository,
+        user_emails_repository,
     ):
         """
         Args:
@@ -53,6 +54,9 @@ class MeetAttendanceService:
             users_repository: Repository for user profile data.
             user_identities_repository: Repository for user identity rows, used to
                 resolve mentor/mentee Google subject identifiers.
+            user_emails_repository: Repository for user email rows, used to match
+                participants against a mentor/mentee's alternative (non-primary)
+                emails.
         """
         self.logger = logger
         self.google_service = google_service
@@ -60,6 +64,7 @@ class MeetAttendanceService:
         self.mentorship_round_repository = mentorship_round_repository
         self.users_repository = users_repository
         self.user_identities_repository = user_identities_repository
+        self.user_emails_repository = user_emails_repository
 
     async def sync_attendance(self, session: AsyncSession, lookback_hours: int) -> dict:
         """
@@ -132,6 +137,13 @@ class MeetAttendanceService:
         }
         users = await self.users_repository.get_all_by_ids(session, list(active_uids))
         user_by_id = {u.user_id: u for u in users}
+        # Each user's alternative (non-primary) emails, used to match a
+        # participant who signed in with a secondary address.
+        alt_emails_by_id = (
+            await self.user_emails_repository.get_non_primary_emails_by_user_ids(
+                session, list(active_uids)
+            )
+        )
         self.logger.debug(
             "[MeetAttendanceService] Loaded %d users for %d active UIDs",
             len(users),
@@ -234,7 +246,12 @@ class MeetAttendanceService:
 
                 # Map participant logs into Time Interval Trees for overlap calculation
                 role_trees, anon_trees = self._build_attendee_interval_trees(
-                    filtered_conf_list, raw_by_conf, identity_map, mentor, mentee
+                    filtered_conf_list,
+                    raw_by_conf,
+                    identity_map,
+                    mentor,
+                    mentee,
+                    alt_emails_by_id,
                 )
                 self.logger.debug(
                     "[MeetAttendanceService] Space %s: mentor_intervals=%d, mentee_intervals=%d, anon_keys=%s",
@@ -391,6 +408,7 @@ class MeetAttendanceService:
         identity_map: dict[str, str | None],
         mentor: UsersEntity | None,
         mentee: UsersEntity | None,
+        alt_emails_by_id: dict[int, list[str]],
     ) -> tuple[dict[str, IntervalTree], dict[str, IntervalTree]]:
         """
         Converts raw participant session records into merged IntervalTrees grouped by role.
@@ -424,8 +442,8 @@ class MeetAttendanceService:
 
         mentor_names = self._get_user_name_fingerprints(mentor)
         mentee_names = self._get_user_name_fingerprints(mentee)
-        mentor_emails = self._get_user_emails(mentor)
-        mentee_emails = self._get_user_emails(mentee)
+        mentor_emails = self._get_user_emails(mentor, alt_emails_by_id)
+        mentee_emails = self._get_user_emails(mentee, alt_emails_by_id)
 
         for conf in conf_list:
             conf_end = isoparse(conf["end_time"])
@@ -829,12 +847,16 @@ class MeetAttendanceService:
             if gm.get("conference_id") and not gm.get("is_completed")
         }
 
-    def _get_user_emails(self, user: UsersEntity | None) -> set[str]:
+    def _get_user_emails(
+        self, user: UsersEntity | None, alt_emails_by_id: dict[int, list[str]]
+    ) -> set[str]:
         """
         Returns the set of all known email addresses for a user.
 
         Args:
             user: User ORM object, or None.
+            alt_emails_by_id: Map of user_id to that user's alternative
+                (non-primary) emails, from user_emails.
 
         Returns:
             A set of lowercase email strings (primary + alternatives), or an empty set
@@ -843,7 +865,7 @@ class MeetAttendanceService:
         if not user:
             return set()
         return {user.primary_email.lower()} | {
-            e.lower() for e in (user.alternative_emails or [])
+            e.lower() for e in alt_emails_by_id.get(user.user_id, [])
         }
 
     def _get_user_name_fingerprints(self, user: UsersEntity | None) -> set[str]:

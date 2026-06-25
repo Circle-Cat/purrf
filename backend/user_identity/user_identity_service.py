@@ -203,7 +203,6 @@ class UserIdentityService:
             timezone="America/Los_Angeles",
             timezone_updated_at=datetime(1970, 1, 1, tzinfo=timezone.utc),
             communication_channel=CommunicationMethod.EMAIL,
-            alternative_emails=[],
             linkedin_link=None,
             has_mentorship_mentor_experience=None,
             is_active=True,

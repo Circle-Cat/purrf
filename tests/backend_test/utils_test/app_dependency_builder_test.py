@@ -478,6 +478,7 @@ class TestAppDependencyBuilder(TestCase):
             mentorship_round_repository=mock_mentorship_round_repository_cls.return_value,
             users_repository=mock_users_repo_cls.return_value,
             user_identities_repository=mock_user_identities_repo_cls.return_value,
+            user_emails_repository=mock_user_emails_repo_cls.return_value,
         )
         mock_mentorship_controller_cls.assert_called_once_with(
             rounds_service=mock_rounds_service_cls.return_value,

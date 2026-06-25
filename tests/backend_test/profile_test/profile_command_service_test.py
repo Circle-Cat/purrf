@@ -44,7 +44,6 @@ class TestProfileCommandService(unittest.IsolatedAsyncioTestCase):
             timezone=timezone,
             communication_method=communication_method,
             preferred_name="Ali",
-            alternative_emails=["ali@example.com"],
             linkedin_link="https://linkedin.com/in/alice",
         )
 
