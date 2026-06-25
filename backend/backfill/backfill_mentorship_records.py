@@ -173,9 +173,6 @@ class MentorshipImportService:
         user.timezone_updated_at = datetime(1970, 1, 1, tzinfo=timezone.utc)
         user.has_mentorship_mentor_experience = True
 
-        if data.get("alt_emails"):
-            user.alternative_emails = data["alt_emails"]
-
         return await self.user_repo.upsert_users(session, user)
 
     def _parse_timezone(self, tz_string: str) -> UserTimezone:
@@ -571,16 +568,12 @@ class MentorshipImportService:
                 if not email or pd.isna(email):
                     continue
 
-                alt_emails = row.get("mentee_profile.alternative_emails")
                 user_data = {
                     "first_name": row.get("mentee_profile.first_name"),
                     "last_name": row.get("mentee_profile.last_name"),
                     "preferred_name": row.get("mentee_profile.preferred_name"),
                     "linkedin": row.get("mentee_profile.linkedin"),
                     "timezone": row.get("mentee_profile.timezone"),
-                    "alt_emails": [e.strip() for e in str(alt_emails).split(",")]
-                    if pd.notna(alt_emails)
-                    else [],
                     "is_active": row.get("mentee_profile.eligible"),
                 }
                 user = await self._upsert_user_base(session, email, user_data)
