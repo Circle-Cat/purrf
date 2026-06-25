@@ -100,6 +100,8 @@ from backend.repository.mentorship_round_participants_repository import (
 from backend.repository.preferences_repository import PreferencesRepository
 from backend.mentorship.mentorship_mapper import MentorshipMapper
 from backend.mentorship.mentorship_controller import MentorshipController
+from backend.mentorship.mentorship_admin_service import MentorshipAdminService
+from backend.mentorship.mentorship_admin_controller import MentorshipAdminController
 from backend.mentorship.rounds_service import RoundsService
 from backend.mentorship.participation_service import ParticipationService
 from backend.mentorship.registration_service import RegistrationService
@@ -463,6 +465,16 @@ class AppDependencyBuilder:
             database=self.database,
             meet_attendance_sync_service=self.meet_attendance_service,
         )
+        self.mentorship_admin_service = MentorshipAdminService(
+            users_repository=self.users_repository,
+            participants_repository=self.mentorship_round_participants_repo,
+            rounds_repository=self.mentorship_round_repository,
+            training_repository=self.training_repository,
+        )
+        self.mentorship_admin_controller = MentorshipAdminController(
+            mentorship_admin_service=self.mentorship_admin_service,
+            database=self.database,
+        )
         self.experience_repository = ExperienceRepository()
         self.profile_mapper = ProfileMapper()
         self.profile_query_service = ProfileQueryService(
@@ -508,6 +520,7 @@ class AppDependencyBuilder:
             internal_activity_controller=self.internal_activity_controller,
             profile_controller=self.profile_controller,
             mentorship_controller=self.mentorship_controller,
+            mentorship_admin_controller=self.mentorship_admin_controller,
             email_management_controller=self.email_management_controller,
             permission_admin_controller=self.permission_admin_controller,
             launchdarkly_client=self.launchdarkly_client,
