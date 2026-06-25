@@ -60,6 +60,10 @@ export default function ParsedResultView({ data, onReset }) {
               [w.title, w.companyOrOrganization].filter(Boolean).join(" @ "),
             )}
           />
+          <Section
+            title="项目 / 活动"
+            rows={(data?.projects ?? []).map((p) => p.name).filter(Boolean)}
+          />
           {data?.unmapped?.summary && <div>摘要：{data.unmapped.summary}</div>}
         </CardContent>
       </Card>

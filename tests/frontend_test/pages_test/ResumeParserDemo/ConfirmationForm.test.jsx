@@ -42,6 +42,7 @@ const seed = {
       isCurrentJob: true,
     },
   ],
+  projects: [{ name: "Resume Parser", startDate: "2024-01-01", endDate: null }],
   unmapped: { summary: "A summary." },
 };
 
@@ -52,6 +53,7 @@ describe("ConfirmationForm", () => {
     expect(screen.getByLabelText(/Last name/)).toHaveValue("Doe");
     expect(screen.getByDisplayValue("Stanford University")).toBeInTheDocument();
     expect(screen.getByDisplayValue("Acme")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("Resume Parser")).toBeInTheDocument();
   });
 
   it("emits edited data on confirm, with no _key and no email", () => {

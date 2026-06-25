@@ -62,6 +62,15 @@ export default function ConfirmationForm({ initial, onConfirm }) {
       }),
     ),
   );
+  const [projects, setProjects] = useState(
+    (initial?.projects ?? []).map((p) =>
+      withKey({
+        name: p.name ?? "",
+        startDate: p.startDate ?? "",
+        endDate: p.endDate ?? "",
+      }),
+    ),
+  );
   const [summary, setSummary] = useState(initial?.unmapped?.summary ?? "");
 
   const isEmpty =
@@ -84,6 +93,7 @@ export default function ConfirmationForm({ initial, onConfirm }) {
 
   const updateEdu = updateRow(setEducation);
   const updateWork = updateRow(setWorkHistory);
+  const updateProject = updateRow(setProjects);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -97,6 +107,7 @@ export default function ConfirmationForm({ initial, onConfirm }) {
       },
       education: education.map(stripKey),
       workHistory: workHistory.map(stripKey),
+      projects: projects.map(stripKey),
       unmapped: { summary: summary || undefined },
     });
   };
@@ -349,6 +360,77 @@ export default function ConfirmationForm({ initial, onConfirm }) {
                   variant="ghost"
                   size="sm"
                   onClick={() => removeRow(setWorkHistory)(row._key)}
+                >
+                  删除
+                </Button>
+              </div>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle>项目 / 活动</CardTitle>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={addRow(setProjects, {
+              name: "",
+              startDate: "",
+              endDate: "",
+            })}
+          >
+            添加项目
+          </Button>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          {projects.length === 0 && (
+            <p className="text-sm text-muted-foreground">暂无</p>
+          )}
+          {projects.map((row) => (
+            <div
+              key={row._key}
+              className="grid grid-cols-1 gap-3 rounded-md border p-3 sm:grid-cols-2"
+            >
+              <Field label="名称" id={`project-${row._key}`}>
+                <Input
+                  id={`project-${row._key}`}
+                  value={row.name}
+                  onChange={(e) =>
+                    updateProject(row._key, "name", e.target.value)
+                  }
+                />
+              </Field>
+              <div className="grid grid-cols-2 gap-2">
+                <Field label="开始" id={`project-start-${row._key}`}>
+                  <Input
+                    id={`project-start-${row._key}`}
+                    value={row.startDate}
+                    placeholder="YYYY-MM-DD"
+                    onChange={(e) =>
+                      updateProject(row._key, "startDate", e.target.value)
+                    }
+                  />
+                </Field>
+                <Field label="结束" id={`project-end-${row._key}`}>
+                  <Input
+                    id={`project-end-${row._key}`}
+                    value={row.endDate}
+                    placeholder="YYYY-MM-DD"
+                    onChange={(e) =>
+                      updateProject(row._key, "endDate", e.target.value)
+                    }
+                  />
+                </Field>
+              </div>
+              <div className="sm:col-span-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => removeRow(setProjects)(row._key)}
                 >
                   删除
                 </Button>

@@ -17,6 +17,7 @@ const data = {
   workHistory: [
     { title: "Engineer", companyOrOrganization: "Acme", isCurrentJob: true },
   ],
+  projects: [{ name: "Resume Parser", startDate: "2024-01-01", endDate: null }],
   unmapped: { summary: "A summary." },
 };
 
@@ -29,6 +30,7 @@ describe("ParsedResultView", () => {
       screen.getByText("Stanford University · Bachelor · CS"),
     ).toBeInTheDocument();
     expect(screen.getByText("Engineer @ Acme")).toBeInTheDocument();
+    expect(screen.getByText("Resume Parser")).toBeInTheDocument();
     expect(screen.getByTestId("result-json")).toHaveTextContent(
       "Stanford University",
     );

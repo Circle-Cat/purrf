@@ -8,6 +8,7 @@ const EMPTY = {
   user: { firstName: "", lastName: "" },
   education: [],
   workHistory: [],
+  projects: [],
   unmapped: {},
 };
 
