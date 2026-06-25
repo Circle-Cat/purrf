@@ -14,6 +14,7 @@ js_library(
     srcs = glob([
         "**/*test.js",
         "**/*test.jsx",
+        "**/*.helper.js",
     ]),
 )
 
