@@ -33,11 +33,10 @@ def _make_pair(pair_id, mentor_id, mentee_id, google_meetings):
     return pair
 
 
-def _make_user(user_id, primary_email, alternative_emails=None):
+def _make_user(user_id, primary_email):
     user = MagicMock()
     user.user_id = user_id
     user.primary_email = primary_email
-    user.alternative_emails = alternative_emails or []
     return user
 
 

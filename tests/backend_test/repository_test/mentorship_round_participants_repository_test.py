@@ -1,5 +1,4 @@
 import unittest
-import uuid
 from datetime import datetime, timezone
 
 from backend.entity.mentorship_round_participants_entity import (
@@ -40,7 +39,6 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
             primary_email="alice@example.com",
             is_active=True,
             updated_timestamp=datetime.now(timezone.utc),
-            subject_identifier=str(uuid.uuid4()),
         )
 
         await self.insert_entities([self.user])
@@ -85,7 +83,6 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
             primary_email=email,
             is_active=True,
             updated_timestamp=datetime.now(timezone.utc),
-            subject_identifier=str(uuid.uuid4()),
         )
 
     async def test_get_by_user_id_and_round_id(self):

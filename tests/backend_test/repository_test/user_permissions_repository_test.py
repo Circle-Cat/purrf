@@ -31,7 +31,6 @@ class TestUserPermissionsRepository(BaseRepositoryTestLib):
             primary_email=f"{tag}-{uuid.uuid4().hex[:8]}@example.com",
             is_active=True,
             updated_timestamp=datetime.now(timezone.utc),
-            subject_identifier=str(uuid.uuid4()),
         )
 
     async def test_get_grants_for_user_includes_and_excludes_revoked(self):
