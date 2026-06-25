@@ -5,6 +5,10 @@ const MAX_CHAR_WIDTH = 20;
 const BULLET_GLYPHS = "•‣◦▪";
 const NEEDS_SPACE_LEFT = new RegExp(`[:,|.${BULLET_GLYPHS}]$`);
 const NEEDS_SPACE_RIGHT = new RegExp(`^[|${BULLET_GLYPHS}]`);
+// When two merged items sit more than this fraction of a char width apart, the
+// gap is a real (space-sized) separator whose space glyph pdf.js dropped — so a
+// space is re-inserted. Tight intra-word fragments sit at ~0 gap and stay glued.
+const SPACE_GAP_RATIO = 0.3;
 
 /** @param {number[]} arr */
 function median(arr) {
@@ -89,10 +93,13 @@ function mergeLine(line, tcw) {
     if (left) {
       const gap = item.x - (left.x + left.width);
       if (gap <= tcw) {
-        const space =
-          NEEDS_SPACE_LEFT.test(left.text) || NEEDS_SPACE_RIGHT.test(item.text)
-            ? " "
-            : "";
+        const needsSpace =
+          NEEDS_SPACE_LEFT.test(left.text) ||
+          NEEDS_SPACE_RIGHT.test(item.text) ||
+          gap > tcw * SPACE_GAP_RATIO;
+        const alreadySpaced =
+          left.text.endsWith(" ") || item.text.startsWith(" ");
+        const space = needsSpace && !alreadySpaced ? " " : "";
         left.text = left.text + space + item.text;
         left.width = item.x + item.width - left.x;
         continue;

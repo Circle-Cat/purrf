@@ -34,6 +34,12 @@ describe("groupIntoLines", () => {
     const lines = groupIntoLines(items);
     expect(lines[0][0].text).toBe("Skills: Python");
   });
+  it("re-inserts a space for a space-sized gap between two words", () => {
+    // "of"(w12,end 72) and "Wisconsin"(x78) sit 6 apart ~ a dropped space.
+    const items = [it_("of", 60), it_("Wisconsin", 78, { hasEOL: true })];
+    const lines = groupIntoLines(items);
+    expect(lines[0][0].text).toBe("of Wisconsin");
+  });
 });
 
 describe("typicalCharWidth", () => {
