@@ -1,10 +1,10 @@
 import { useState } from "react";
-import { LayoutGrid, FileText, SquarePlus, Ban } from "lucide-react";
+import { LayoutGrid, FileText, Briefcase, ClipboardCheck, Ban } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import ScreeningBoardPrototype from "@/pages/RecruitingPrototype/ScreeningBoardPrototype";
 import ApplyPrototype from "@/pages/RecruitingPrototype/ApplyPrototype";
-import JobModalPrototype from "@/pages/RecruitingPrototype/JobModalPrototype";
 import BlacklistPrototype from "@/pages/RecruitingPrototype/BlacklistPrototype";
+import { INITIAL_POSTINGS, CURRENT_USER_ID } from "@/pages/RecruitingPrototype/mockData";
 
 /** One pre-seeded blocked user so the Blacklist page isn't empty at demo start. */
 const INITIAL_BLACKLIST = [
@@ -18,25 +18,30 @@ const INITIAL_BLACKLIST = [
   },
 ];
 
-/** Left-nav sections. */
+/** Left-nav sections. Flat list (Create Posting now lives inside Postings). */
 const NAV = [
-  { key: "board", label: "Screening Board", icon: LayoutGrid },
-  { key: "apply", label: "Apply Form", icon: FileText },
-  { key: "create", label: "Create Posting", icon: SquarePlus },
-  { key: "blacklist", label: "Blacklist", icon: Ban },
+  { key: "board", label: "Screening 看板", icon: LayoutGrid },
+  { key: "postings", label: "Postings", icon: Briefcase },
+  { key: "review", label: "待我审核", icon: ClipboardCheck },
+  { key: "apply", label: "申请表单", icon: FileText },
+  { key: "blacklist", label: "黑名单", icon: Ban },
 ];
+
+/** The reviewer whose queue "待我审核" shows (demo: Alice Kim, id 1). */
+const DEMO_REVIEWER_ID = 1;
 
 /**
  * RecruitingPrototype
  *
- * A self-contained, mock-data prototype of the Recruiting v2 design, built for a
- * stakeholder demo. No backend calls — everything renders from
- * `@/pages/RecruitingPrototype/mockData`. A left sidebar navigates the four
- * sections: the screening swimlane board (with Hired/Rejected terminal lanes),
- * the candidate apply form, the job-creation modal, and the org-wide blacklist.
+ * Self-contained, mock-data prototype of the Recruiting v2 design. A left
+ * sidebar navigates the sections: the screening swimlane board, the postings
+ * list (job lifecycle + review gate), the reviewer's "待我审核" queue, the
+ * candidate apply form, and the org-wide blacklist.
  *
- * The blacklist is lifted here so blacklisting a candidate on the board shows
- * up immediately on the Blacklist section.
+ * Two slices of state are lifted here so they stay consistent across sections:
+ * the blacklist (board → Blacklist page) and the postings (Postings list →
+ * 待我审核 queue share the same posting objects, so approving in the queue
+ * updates the list).
  *
  * Route: /recruiting/prototype (no permission gate, for demo convenience)
  *
@@ -45,6 +50,7 @@ const NAV = [
 const RecruitingPrototype = () => {
   const [active, setActive] = useState("board");
   const [blacklist, setBlacklist] = useState(INITIAL_BLACKLIST);
+  const [postings, setPostings] = useState(INITIAL_POSTINGS);
 
   /** Add a blacklisted applicant (from the board) to the shared list. */
   const handleBlacklist = (application) => {
@@ -64,6 +70,64 @@ const RecruitingPrototype = () => {
   const handleUnblock = (id) => {
     setBlacklist((prev) => prev.filter((e) => e.id !== id));
   };
+
+  /** Move a draft posting into review, recording reviewer + optional message. */
+  const submitForReview = (id, reviewerId, message) =>
+    setPostings((prev) =>
+      prev.map((p) =>
+        p.id === id
+          ? {
+              ...p,
+              status: "pending_review",
+              reviewerId,
+              submitMessage: message,
+              rejectComment: "",
+              rejectedBy: null,
+            }
+          : p,
+      ),
+    );
+
+  /** Approve a posting (or its pending revision) → published. */
+  const approve = (id) =>
+    setPostings((prev) =>
+      prev.map((p) =>
+        p.id === id ? { ...p, status: "published", pendingRevision: null } : p,
+      ),
+    );
+
+  /** Send a posting back to draft with a required reviewer comment. */
+  const sendBack = (id, comment) =>
+    setPostings((prev) =>
+      prev.map((p) =>
+        p.id === id
+          ? {
+              ...p,
+              status: "draft",
+              rejectComment: comment,
+              rejectedBy: p.reviewerId,
+              reviewerId: null,
+              pendingRevision: null,
+            }
+          : p,
+      ),
+    );
+
+  /** Append a newly created posting (always starts as draft). */
+  const createPosting = (jobLike) =>
+    setPostings((prev) => [
+      {
+        id: Math.max(0, ...prev.map((p) => p.id)) + 1,
+        status: "draft",
+        reviewerId: null,
+        submitMessage: "",
+        rejectComment: "",
+        rejectedBy: null,
+        pendingRevision: null,
+        ...jobLike,
+      },
+      ...prev,
+    ]);
 
   return (
     <div className="flex min-h-screen bg-slate-50">
@@ -108,12 +172,17 @@ const RecruitingPrototype = () => {
         {active === "board" && (
           <ScreeningBoardPrototype onBlacklist={handleBlacklist} />
         )}
-        {active === "apply" && <ApplyPrototype />}
-        {active === "create" && (
-          <div className="p-6">
-            <JobModalPrototype />
+        {active === "postings" && (
+          <div className="p-6 text-sm text-slate-400">
+            Postings 列表(即将实现)
           </div>
         )}
+        {active === "review" && (
+          <div className="p-6 text-sm text-slate-400">
+            待我审核(即将实现) · reviewer #{DEMO_REVIEWER_ID}
+          </div>
+        )}
+        {active === "apply" && <ApplyPrototype />}
         {active === "blacklist" && (
           <div className="p-6">
             <BlacklistPrototype entries={blacklist} onRemove={handleUnblock} />
