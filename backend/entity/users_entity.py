@@ -36,10 +36,10 @@ class UsersEntity(Base):
 
     linkedin_link: Mapped[str | None] = mapped_column(String)
 
-    subject_identifier: Mapped[str] = mapped_column(
-        String,
-        unique=True,
-    )
+    # Retired legacy column: the live sub now lives on user_identities. No longer
+    # written or read by application code; kept nullable here only until the
+    # follow-up migration drops the column outright.
+    subject_identifier: Mapped[str | None] = mapped_column(String)
 
     is_active: Mapped[bool] = mapped_column(Boolean)
 

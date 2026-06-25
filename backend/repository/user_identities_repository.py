@@ -210,6 +210,45 @@ class UserIdentitiesRepository:
         )
         await session.flush()
 
+    async def get_google_subs_by_user_ids(
+        self, session: AsyncSession, user_ids: list[int]
+    ) -> dict[int, list[str]]:
+        """
+        Map each user_id to all of its google-oauth2 subject_identifiers.
+
+        Backs Meet attendance's local UID->email cache: the Google participant
+        log keys on the numeric Google user id, which is the suffix of a
+        ``google-oauth2|<id>`` sub. A user who has linked more than one Google
+        account has several such subs, and every one must resolve from the cache,
+        so the value is a list. Only google-oauth2 identities are returned; a
+        user without one is omitted. An empty input short-circuits without a
+        query.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            user_ids (list[int]): user_ids whose Google subs to fetch.
+
+        Returns:
+            dict[int, list[str]]: {user_id: [google-oauth2 subject_identifier, ...]}
+            for users that have at least one Google identity; users without one
+            are omitted.
+        """
+        if not user_ids:
+            return {}
+        result = await session.execute(
+            select(
+                UserIdentitiesEntity.user_id,
+                UserIdentitiesEntity.subject_identifier,
+            ).where(
+                UserIdentitiesEntity.user_id.in_(user_ids),
+                UserIdentitiesEntity.subject_identifier.like("google-oauth2|%"),
+            )
+        )
+        subs_by_user_id: dict[int, list[str]] = {}
+        for user_id, sub in result.all():
+            subs_by_user_id.setdefault(user_id, []).append(sub)
+        return subs_by_user_id
+
     async def get_by_subject_identifier(
         self, session: AsyncSession, subject_identifier: str
     ) -> UserIdentitiesEntity | None:

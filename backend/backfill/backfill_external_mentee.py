@@ -208,7 +208,6 @@ async def main():
                 if user is None:
                     user = UsersEntity(
                         primary_email=email,
-                        subject_identifier=f"manual|{email}",
                     )
                     session.add(user)
 

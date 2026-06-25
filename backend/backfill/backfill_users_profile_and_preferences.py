@@ -246,7 +246,6 @@ async def upsert_user(
             return None
     else:
         user = UsersEntity()
-        user.subject_identifier = f"manual|{email}"
 
     user.primary_email = email
     user.alternative_emails = data.get("alt_emails") or []
