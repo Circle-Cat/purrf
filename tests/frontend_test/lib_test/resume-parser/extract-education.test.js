@@ -49,7 +49,7 @@ describe("extractEducation", () => {
     expect(entry.school).toMatch(/Stanford University/);
     expect(entry.degree).toMatch(/Bachelor/);
     expect(entry.fieldOfStudy).toBe("Computer Science");
-    expect(entry.startDate).toBe("2016-01-01");
+    expect(entry.startDate).toBe("2016-01");
   });
 
   it("keeps the school when school, degree and GPA share one line", () => {

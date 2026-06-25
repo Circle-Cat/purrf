@@ -29,7 +29,7 @@ describe("extractProjects", () => {
     const projects = extractProjects(lines);
     expect(projects).toHaveLength(2);
     expect(projects[0].name).toBe("DocuMind: RAG Prototype");
-    expect(projects[0].startDate).toBe("2025-04-01");
+    expect(projects[0].startDate).toBe("2025-04");
     expect(projects[1].name).toBe("Kernel Benchmark");
   });
 

@@ -39,13 +39,14 @@ function empty() {
   };
 }
 
-function toIso(year, month) {
-  return `${year}-${String(month ?? 1).padStart(2, "0")}-01`;
+/** Month precision is enough for resumes; emit "YYYY-MM" (no day). */
+function toYearMonth(year, month) {
+  return `${year}-${String(month ?? 1).padStart(2, "0")}`;
 }
 
 /**
- * Normalize a free-text date range to ISO start/end + an is-current flag.
- * Never throws.
+ * Normalize a free-text date range to "YYYY-MM" start/end + an is-current flag.
+ * Month precision only (no day). Never throws.
  * @param {string} text
  */
 export function parseDates(text) {
@@ -71,21 +72,21 @@ export function parseDates(text) {
   // Single token.
   if (!end) {
     if (start.present) return { ...empty(), isCurrentJob: true };
-    return { ...empty(), startDate: toIso(start.year, start.month) };
+    return { ...empty(), startDate: toYearMonth(start.year, start.month) };
   }
 
   // Range. A present end means current job.
   if (end.present) {
     return {
-      startDate: start.present ? null : toIso(start.year, start.month),
+      startDate: start.present ? null : toYearMonth(start.year, start.month),
       endDate: null,
       isCurrentJob: true,
       lowConfidence: false,
     };
   }
 
-  let startDate = start.present ? null : toIso(start.year, start.month);
-  let endDate = toIso(end.year, end.month);
+  let startDate = start.present ? null : toYearMonth(start.year, start.month);
+  let endDate = toYearMonth(end.year, end.month);
   let lowConfidence = false;
   if (startDate && endDate && endDate < startDate) {
     [startDate, endDate] = [endDate, startDate];

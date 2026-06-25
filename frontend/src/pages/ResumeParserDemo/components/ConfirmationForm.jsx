@@ -241,7 +241,7 @@ export default function ConfirmationForm({ initial, onConfirm }) {
                   <Input
                     id={`edu-start-${row._key}`}
                     value={row.startDate}
-                    placeholder="YYYY-MM-DD"
+                    placeholder="YYYY-MM"
                     onChange={(e) =>
                       updateEdu(row._key, "startDate", e.target.value)
                     }
@@ -251,7 +251,7 @@ export default function ConfirmationForm({ initial, onConfirm }) {
                   <Input
                     id={`edu-end-${row._key}`}
                     value={row.endDate}
-                    placeholder="YYYY-MM-DD"
+                    placeholder="YYYY-MM"
                     onChange={(e) =>
                       updateEdu(row._key, "endDate", e.target.value)
                     }
@@ -327,7 +327,7 @@ export default function ConfirmationForm({ initial, onConfirm }) {
                   <Input
                     id={`work-start-${row._key}`}
                     value={row.startDate}
-                    placeholder="YYYY-MM-DD"
+                    placeholder="YYYY-MM"
                     onChange={(e) =>
                       updateWork(row._key, "startDate", e.target.value)
                     }
@@ -337,7 +337,7 @@ export default function ConfirmationForm({ initial, onConfirm }) {
                   <Input
                     id={`work-end-${row._key}`}
                     value={row.endDate}
-                    placeholder="YYYY-MM-DD"
+                    placeholder="YYYY-MM"
                     disabled={row.isCurrentJob}
                     onChange={(e) =>
                       updateWork(row._key, "endDate", e.target.value)
@@ -408,7 +408,7 @@ export default function ConfirmationForm({ initial, onConfirm }) {
                   <Input
                     id={`project-start-${row._key}`}
                     value={row.startDate}
-                    placeholder="YYYY-MM-DD"
+                    placeholder="YYYY-MM"
                     onChange={(e) =>
                       updateProject(row._key, "startDate", e.target.value)
                     }
@@ -418,7 +418,7 @@ export default function ConfirmationForm({ initial, onConfirm }) {
                   <Input
                     id={`project-end-${row._key}`}
                     value={row.endDate}
-                    placeholder="YYYY-MM-DD"
+                    placeholder="YYYY-MM"
                     onChange={(e) =>
                       updateProject(row._key, "endDate", e.target.value)
                     }
