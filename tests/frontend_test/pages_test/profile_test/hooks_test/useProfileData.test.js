@@ -42,7 +42,6 @@ describe("useProfileData Hook", () => {
         firstName: "John",
         lastName: "Doe",
         primaryEmail: "john@primary.com",
-        alternativeEmails: ["john@alt.com"],
         communicationMethod: "google_chat",
         timezone: "America/Los_Angeles",
         timezoneUpdatedAt: "2023-01-01T00:00:00Z",
@@ -123,17 +122,14 @@ describe("useProfileData Hook", () => {
     expect(personalInfo.title).toBe("Senior Dev");
 
     /**
-     * Verify email merging logic (primary + alternative).
+     * Verify email list holds only the primary email; alternative emails are
+     * no longer surfaced on the profile.
      */
-    expect(personalInfo.emails).toHaveLength(2);
+    expect(personalInfo.emails).toHaveLength(1);
     expect(personalInfo.emails[0]).toEqual({
       id: "primary",
       email: "john@primary.com",
       isPrimary: true,
-    });
-    expect(personalInfo.emails[1]).toMatchObject({
-      email: "john@alt.com",
-      isPrimary: false,
     });
 
     /**

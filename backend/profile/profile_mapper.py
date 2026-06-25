@@ -43,7 +43,6 @@ class ProfileMapper:
             timezone_updated_at=entity.timezone_updated_at,
             communication_method=entity.communication_channel,
             primary_email=entity.primary_email,
-            alternative_emails=entity.alternative_emails or [],
             linkedin_link=entity.linkedin_link,
             updated_timestamp=entity.updated_timestamp,
         )

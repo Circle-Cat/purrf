@@ -189,6 +189,72 @@ class TestUserEmailsRepository(BaseRepositoryTestLib):
         # Deleting a row that does not exist should not raise.
         await self.repo.delete(self.session, 99999999)
 
+    # get_non_primary_emails_by_user_ids — backs Meet attendance alt-email matching
+    async def test_get_non_primary_emails_by_user_ids(self):
+        other = _make_user()
+        await self.insert_entities([other])
+        await self.insert_entities([
+            UserEmailsEntity(
+                user_id=self.user.user_id,
+                email="primary@example.com",
+                otp_confirmed=True,
+                is_primary=True,
+            ),
+            UserEmailsEntity(
+                user_id=self.user.user_id,
+                email="alt1@example.com",
+                otp_confirmed=False,
+                is_primary=False,
+            ),
+            UserEmailsEntity(
+                user_id=self.user.user_id,
+                email="alt2@example.com",
+                otp_confirmed=True,
+                is_primary=False,
+            ),
+            UserEmailsEntity(
+                user_id=other.user_id,
+                email="otheralt@example.com",
+                otp_confirmed=False,
+                is_primary=False,
+            ),
+        ])
+
+        result = await self.repo.get_non_primary_emails_by_user_ids(
+            self.session, [self.user.user_id, other.user_id]
+        )
+
+        self.assertEqual(
+            {
+                self.user.user_id: sorted(result[self.user.user_id]),
+                other.user_id: result[other.user_id],
+            },
+            {
+                self.user.user_id: ["alt1@example.com", "alt2@example.com"],
+                other.user_id: ["otheralt@example.com"],
+            },
+        )
+
+    async def test_get_non_primary_emails_by_user_ids_empty_input(self):
+        result = await self.repo.get_non_primary_emails_by_user_ids(self.session, [])
+        self.assertEqual(result, {})
+
+    async def test_get_non_primary_emails_by_user_ids_only_primary(self):
+        await self.insert_entities([
+            UserEmailsEntity(
+                user_id=self.user.user_id,
+                email="onlyprimary@example.com",
+                otp_confirmed=True,
+                is_primary=True,
+            )
+        ])
+
+        result = await self.repo.get_non_primary_emails_by_user_ids(
+            self.session, [self.user.user_id]
+        )
+
+        self.assertEqual(result, {})
+
 
 if __name__ == "__main__":
     unittest.main()

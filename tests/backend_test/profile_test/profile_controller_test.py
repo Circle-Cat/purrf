@@ -77,7 +77,6 @@ class TestProfileController(unittest.TestCase):
             updated_timestamp=datetime.now(),
             primary_email="alice@example.com",
             preferred_name="Ally",
-            alternative_emails=[],
             linkedin_link=None,
         )
 

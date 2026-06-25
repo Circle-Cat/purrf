@@ -81,7 +81,6 @@ class ProfileCommandService:
         users.last_name = latest_users_data.last_name
         users.communication_method = latest_users_data.communication_method
         users.preferred_name = latest_users_data.preferred_name
-        users.alternative_emails = latest_users_data.alternative_emails
         users.linkedin_link = latest_users_data.linkedin_link
         users.updated_timestamp = datetime.now(timezone.utc)
 

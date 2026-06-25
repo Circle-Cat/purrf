@@ -46,7 +46,6 @@ class TestProfileService(unittest.IsolatedAsyncioTestCase):
             timezone_updated_at=datetime.now(),
             updated_timestamp=datetime.now(),
             primary_email="alice@example.com",
-            alternative_emails=[],
             linkedin_link=None,
         )
 
