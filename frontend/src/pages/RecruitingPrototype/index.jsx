@@ -5,6 +5,7 @@ import ScreeningBoardPrototype from "@/pages/RecruitingPrototype/ScreeningBoardP
 import ApplyPrototype from "@/pages/RecruitingPrototype/ApplyPrototype";
 import BlacklistPrototype from "@/pages/RecruitingPrototype/BlacklistPrototype";
 import PostingsListPrototype from "@/pages/RecruitingPrototype/PostingsListPrototype";
+import ReviewQueuePrototype from "@/pages/RecruitingPrototype/ReviewQueuePrototype";
 import { INITIAL_POSTINGS, CURRENT_USER_ID } from "@/pages/RecruitingPrototype/mockData";
 
 /** One pre-seeded blocked user so the Blacklist page isn't empty at demo start. */
@@ -182,9 +183,12 @@ const RecruitingPrototype = () => {
           />
         )}
         {active === "review" && (
-          <div className="p-6 text-sm text-slate-400">
-            待我审核(即将实现) · reviewer #{DEMO_REVIEWER_ID}
-          </div>
+          <ReviewQueuePrototype
+            postings={postings}
+            reviewerId={DEMO_REVIEWER_ID}
+            onApprove={approve}
+            onSendBack={sendBack}
+          />
         )}
         {active === "apply" && <ApplyPrototype />}
         {active === "blacklist" && (
