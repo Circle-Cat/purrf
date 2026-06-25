@@ -137,7 +137,6 @@ MENTEE_COLUMNS = [
     "timezone",
     "communication_channel",
     "primary_email",
-    "alternative_emails",
     "linkedin_link",
     *SKILLSET_COLUMNS,
     "specific_industry",
@@ -269,12 +268,6 @@ def _format_id_list(id_list: list[int] | None) -> str:
     if not id_list:
         return ""
     return ", ".join(map(str, id_list))
-
-
-def _join_emails(emails: list[str] | None) -> str:
-    if not emails:
-        return ""
-    return ", ".join(emails)
 
 
 def _industry_object(specific_industry: dict | None) -> str:
@@ -441,7 +434,6 @@ async def fetch_participants_data(
         else:
             export_mentees.append({
                 **base,
-                "alternative_emails": _join_emails(user.alternative_emails),
                 "transition_type": _encode_mapped_other(
                     survey.get("current_background"),
                     TRANSITION_TYPE_MAP,

@@ -37,7 +37,6 @@ class TestProfileMapper(unittest.TestCase):
             primary_email="alice@example.com",
             updated_timestamp=self.now,
             preferred_name="Alice",
-            alternative_emails=["bob@example.com"],
             linkedin_link="http://linkedin.com/alice",
         )
 

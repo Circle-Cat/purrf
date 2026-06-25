@@ -148,14 +148,6 @@ def _parse_industries_to_fixed_dict(industry_str: str) -> dict:
     return result
 
 
-async def _find_user_by_alternative_email(
-    session: AsyncSession, email: str
-) -> UsersEntity | None:
-    stmt = select(UsersEntity).where(UsersEntity.alternative_emails.any(email))
-    result = await session.execute(stmt)
-    return result.scalar_one_or_none()
-
-
 async def upsert_preference(
     session: AsyncSession, pref_repo, user_id: int, skillset_raw: str, industry_raw: str
 ):
@@ -237,9 +229,6 @@ async def upsert_user(
 ) -> UsersEntity | None:
     user = await users_repo.get_user_by_primary_email(session, email)
 
-    if not user:
-        user = await _find_user_by_alternative_email(session, email)
-
     if user:
         if user.updated_timestamp > BULK_UPDATE_EXECUTED_AT:
             logger.info("Skipping %s, updated after bulk update cutoff", email)
@@ -248,7 +237,6 @@ async def upsert_user(
         user = UsersEntity()
 
     user.primary_email = email
-    user.alternative_emails = data.get("alt_emails") or []
     user.first_name = data.get("first_name")
     user.last_name = data.get("last_name")
     user.preferred_name = data.get("preferred_name")
@@ -351,18 +339,12 @@ async def main():
                 email = str(email_raw).strip().lower()
 
                 try:
-                    alt_emails_raw = row.get("alternative_emails")
                     user_data = {
                         "first_name": row.get("first_name"),
                         "last_name": row.get("last_name"),
                         "preferred_name": row.get("preferred_name"),
                         "linkedin": row.get("linkedin"),
                         "timezone": row.get("timezone"),
-                        "alt_emails": [
-                            e.strip() for e in str(alt_emails_raw).split(",")
-                        ]
-                        if pd.notna(alt_emails_raw)
-                        else [],
                         "is_active": row.get("eligible"),
                     }
                     user = await upsert_user(session, users_repo, email, user_data)
