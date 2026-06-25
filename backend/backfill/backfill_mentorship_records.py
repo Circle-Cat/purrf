@@ -161,7 +161,6 @@ class MentorshipImportService:
 
         if not user:
             user = UsersEntity(primary_email=email)
-            user.subject_identifier = f"manual|{email}"
 
         user.first_name = data.get("first_name")
         user.last_name = data.get("last_name")
