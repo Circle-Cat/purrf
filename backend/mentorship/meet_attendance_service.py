@@ -42,6 +42,7 @@ class MeetAttendanceService:
         mentorship_pairs_repository,
         mentorship_round_repository,
         users_repository,
+        user_identities_repository,
     ):
         """
         Args:
@@ -50,12 +51,15 @@ class MeetAttendanceService:
             mentorship_pairs_repository: Repository for mentorship pair data.
             mentorship_round_repository: Repository for mentorship round data.
             users_repository: Repository for user profile data.
+            user_identities_repository: Repository for user identity rows, used to
+                resolve mentor/mentee Google subject identifiers.
         """
         self.logger = logger
         self.google_service = google_service
         self.mentorship_pairs_repository = mentorship_pairs_repository
         self.mentorship_round_repository = mentorship_round_repository
         self.users_repository = users_repository
+        self.user_identities_repository = user_identities_repository
 
     async def sync_attendance(self, session: AsyncSession, lookback_hours: int) -> dict:
         """
@@ -216,7 +220,7 @@ class MeetAttendanceService:
                     )
 
                 identity_map = await self._resolve_identities(
-                    raw_by_conf, [mentor, mentee]
+                    session, raw_by_conf, [mentor, mentee]
                 )
 
                 target_secs = max((scheduled_end - scheduled_start).total_seconds(), 60)
@@ -301,15 +305,22 @@ class MeetAttendanceService:
         return summary
 
     async def _resolve_identities(
-        self, raw_by_conf: dict[str, list[dict]], user_entities: list[UsersEntity]
+        self,
+        session: AsyncSession,
+        raw_by_conf: dict[str, list[dict]],
+        user_entities: list[UsersEntity],
     ) -> dict[str, str | None]:
         """
         Resolves Google user IDs found in participant logs to their primary email addresses.
 
         Checks the mentor/mentee user objects first (local cache) before falling back
-        to bulk Google API lookups for any unresolved UIDs.
+        to bulk Google API lookups for any unresolved UIDs. The local cache is keyed
+        by the Google UID, which is the suffix of each user's google-oauth2 identity
+        sub fetched from user_identities; users without a Google identity simply do
+        not contribute a cache entry.
 
         Args:
+            session: Active database session used to look up Google identities.
             raw_by_conf: Mapping of conference resource names to their participant log lists.
             user_entities: List of mentor and mentee user objects used as a local identity cache.
 
@@ -334,11 +345,18 @@ class MeetAttendanceService:
         identity_map = {}
         uids_to_query = []
 
-        # Build local lookup from known Mentor/Mentee entities
+        # Build local lookup from known Mentor/Mentee Google identities. The
+        # google-oauth2 sub's suffix is the numeric Google UID the logs key on.
+        known_users = [u for u in user_entities if u]
+        google_subs = await self.user_identities_repository.get_google_subs_by_user_ids(
+            session, [u.user_id for u in known_users]
+        )
+        email_by_user_id = {u.user_id: u.primary_email.lower() for u in known_users}
         local_uid_map = {
-            u.subject_identifier.split("|")[-1]: u.primary_email.lower()
-            for u in user_entities
-            if u and u.subject_identifier
+            sub.split("|")[-1]: email_by_user_id[user_id]
+            for user_id, subs in google_subs.items()
+            if user_id in email_by_user_id
+            for sub in subs
         }
 
         for uid in all_uids:

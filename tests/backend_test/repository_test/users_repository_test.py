@@ -124,32 +124,6 @@ class TestUsersRepository(BaseRepositoryTestLib):
 
         self.assertIsNone(user)
 
-    async def test_get_user_by_subject_identifier(self):
-        """Test retrieving an existing user by subject identifier"""
-        user = await self.repo.get_user_by_subject_identifier(
-            self.session, self.user_entity.subject_identifier
-        )
-
-        self.assertEqual(user, self.user_entity)
-
-    async def test_get_user_by_subject_identifier_not_found(self):
-        """Test retrieving a non-existent subject identifier returns None."""
-        user = await self.repo.get_user_by_subject_identifier(self.session, "Sub1")
-        self.assertIsNone(user)
-
-        user = await self.repo.get_user_by_subject_identifier(
-            self.session, "nonexistent"
-        )
-        self.assertIsNone(user)
-
-    async def test_get_user_by_subject_identifier_is_None(self):
-        """Test passing None as subject identifier returns None."""
-        user = await self.repo.get_user_by_subject_identifier(self.session, None)
-        self.assertIsNone(user)
-
-        user = await self.repo.get_user_by_subject_identifier(self.session, "")
-        self.assertIsNone(user)
-
     async def test_get_user_by_primary_email(self):
         """Test retrieving an existing user by primary email"""
         user = await self.repo.get_user_by_primary_email(
@@ -186,11 +160,10 @@ class TestUsersRepository(BaseRepositoryTestLib):
             primary_email="dave@example.com",
             is_active=True,
             updated_timestamp=datetime.now(timezone.utc),
-            subject_identifier="sub4",
         )
 
-        user_in_db = await self.repo.get_user_by_subject_identifier(
-            self.session, new_user.subject_identifier
+        user_in_db = await self.repo.get_user_by_primary_email(
+            self.session, new_user.primary_email
         )
         self.assertIsNone(user_in_db)
 
