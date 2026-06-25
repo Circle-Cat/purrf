@@ -165,23 +165,40 @@ function CustomPipelineEditor({ value, onChange }) {
   );
 }
 
+/** Derive the job kind from its template (only Intern is employment). */
+const kindForTemplate = (template) =>
+  template === "Intern" ? "employment" : "activity";
+
 /**
- * "Create Posting" inline card for the Recruiting v2 prototype.
+ * "Create / Edit Posting" inline card for the Recruiting v2 prototype.
  *
  * Lets stakeholders see the full posting-creation flow — title, description,
  * template picker with derived pipeline preview, profile-requirement toggles,
- * and a tabbed application-form builder — with no backend dependency.
+ * and a tabbed application-form builder — with no backend dependency. Reused
+ * for both create (initialJob = null) and edit (initialJob = the posting).
  *
  * @component
+ * @param {Object} props
+ * @param {object|null} [props.initialJob] - Posting to prefill when editing; null = create.
+ * @param {(job: object) => void} [props.onSave] - Receives the assembled job-like
+ *   object ({title, kind, template, stages, description}). Falls back to a console
+ *   log if omitted (standalone demo).
+ * @param {() => void} [props.onClose] - Called after save / on cancel; shows a Cancel button.
  * @returns {JSX.Element}
  */
-const JobModalPrototype = () => {
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [template, setTemplate] = useState("Intern");
-  const [customStages, setCustomStages] = useState(["recruiter_screening"]);
+const JobModalPrototype = ({ initialJob = null, onSave, onClose }) => {
+  const [title, setTitle] = useState(initialJob?.title ?? "");
+  const [description, setDescription] = useState(initialJob?.description ?? "");
+  const [template, setTemplate] = useState(initialJob?.template ?? "Intern");
+  const [customStages, setCustomStages] = useState(
+    initialJob?.template === "Custom" && initialJob?.stages?.length
+      ? initialJob.stages
+      : ["recruiter_screening"],
+  );
 
-  const [profileReq, setProfileReq] = useState(TEMPLATE_DEFAULTS.Intern);
+  const [profileReq, setProfileReq] = useState(
+    TEMPLATE_DEFAULTS[initialJob?.template] ?? TEMPLATE_DEFAULTS.Intern,
+  );
 
   /** Returns a setter that updates one profile section's requirement level. */
   const setFieldLevel = (key) => (level) =>
@@ -201,24 +218,33 @@ const JobModalPrototype = () => {
     if (defaults) setProfileReq(defaults);
   };
 
-  /** Mock save handler — wires up to nothing in the prototype. */
+  /**
+   * Assemble the posting and hand it to onSave (or log it when standalone),
+   * then close. Stages come from the Custom composer or the template preset;
+   * Mentor's null preset collapses to an empty pipeline.
+   */
   const handleSave = () => {
-    console.log("[prototype] save posting", {
+    const stages =
+      template === "Custom" ? customStages : (TEMPLATE_STAGES[template] ?? []);
+    const job = {
       title,
-      description,
+      kind: kindForTemplate(template),
       template,
-      pipeline:
-        template === "Custom" ? customStages : TEMPLATE_STAGES[template],
-      profileReq,
-      formSchema,
-    });
+      stages,
+      description,
+    };
+    if (onSave) onSave(job);
+    else console.log("[prototype] save posting", { ...job, profileReq, formSchema });
+    onClose?.();
   };
 
   return (
     <Card className="max-w-2xl mx-auto p-6 space-y-6">
       {/* Header */}
       <div>
-        <h2 className="text-xl font-semibold">Create Posting</h2>
+        <h2 className="text-xl font-semibold">
+          {initialJob ? "Edit Posting" : "Create Posting"}
+        </h2>
         <p className="text-sm text-muted-foreground mt-1">
           Define the role, pipeline, and application form for this posting.
         </p>
@@ -338,6 +364,11 @@ const JobModalPrototype = () => {
 
       {/* Actions — Preview is a peer of Save: it reviews the whole posting */}
       <div className="flex justify-end gap-2">
+        {onClose && (
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+        )}
         <Button variant="outline" onClick={() => setShowPreview(true)}>
           Preview
         </Button>
