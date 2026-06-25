@@ -211,6 +211,7 @@ lerna-debug.log*
 
 node_modules
 dist
+dist-pages
 dist-ssr
 *.local
 
