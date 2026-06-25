@@ -480,3 +480,154 @@ export function applicationsByStage(jobId) {
   }
   return grouped;
 }
+
+// ---------------------------------------------------------------------------
+// Job review gate (the posting-lifecycle / approval flow)
+// ---------------------------------------------------------------------------
+
+/**
+ * Current signed-in admin (the submitter). Deliberately NOT in REVIEWERS so the
+ * "no self-review" rule is demonstrable.
+ */
+export const CURRENT_USER_ID = 100;
+
+/** Holders of recruiting.job.approve — the approver pool (≥2 so submit is allowed). */
+export const REVIEWERS = [
+  { id: 1, name: "Alice Kim", email: "alice@circlecat.org" },
+  { id: 2, name: "Bob Lee", email: "bob@circlecat.org" },
+  { id: 3, name: "Chen Hua", email: "chen@circlecat.org" },
+];
+
+/** Posting status → badge label + Tailwind classes. */
+export const POSTING_STATUS = {
+  draft: {
+    label: "草稿",
+    badge: "bg-slate-100 text-slate-600 border-slate-200",
+  },
+  pending_review: {
+    label: "待审核",
+    badge: "bg-amber-100 text-amber-700 border-amber-200",
+  },
+  published: {
+    label: "已发布",
+    badge: "bg-emerald-100 text-emerald-700 border-emerald-200",
+  },
+  closed: {
+    label: "已关闭",
+    badge: "bg-slate-100 text-slate-400 border-slate-200",
+  },
+  published_pending_revision: {
+    label: "已发布 · 改动待重审",
+    badge: "bg-orange-100 text-orange-700 border-orange-200",
+  },
+};
+
+/**
+ * Seed postings covering every status for the review-gate demo. Shapes mirror a
+ * JOBS row plus the review-gate fields (status / reviewerId / submitMessage /
+ * rejectComment / rejectedBy / pendingRevision).
+ */
+export const INITIAL_POSTINGS = [
+  {
+    id: 201,
+    title: "Mentorship Program — Mentee",
+    kind: "activity",
+    template: "Mentee",
+    stages: ["recruiter_screening"],
+    description:
+      "1:1 career mentorship with an experienced tech mentor over a 3-4 month round.",
+    status: "draft",
+    reviewerId: null,
+    submitMessage: "",
+    rejectComment: "",
+    rejectedBy: null,
+    pendingRevision: null,
+  },
+  {
+    id: 202,
+    title: "Software Engineer Intern",
+    kind: "employment",
+    template: "Intern",
+    stages: [
+      "recruiter_screening",
+      "behavioral",
+      "tech",
+      "board_review",
+      "offer",
+    ],
+    description:
+      "Volunteer residency: build real non-profit projects mentored by industry engineers.",
+    status: "pending_review",
+    reviewerId: 1,
+    submitMessage: "按春招流程配的,麻烦看下 Tech 轮表单。",
+    rejectComment: "",
+    rejectedBy: null,
+    pendingRevision: null,
+  },
+  {
+    id: 203,
+    title: "Mentorship Program — Mentor",
+    kind: "activity",
+    template: "Mentor",
+    stages: [],
+    description: "Guide a mentee 1:1 over a 3-4 month round.",
+    status: "published",
+    reviewerId: 2,
+    submitMessage: "",
+    rejectComment: "",
+    rejectedBy: null,
+    pendingRevision: null,
+  },
+  {
+    id: 204,
+    title: "2025 Spring Camp",
+    kind: "activity",
+    template: "Custom",
+    stages: ["recruiter_screening", "board_review"],
+    description: "Seasonal camp cohort (archived).",
+    status: "closed",
+    reviewerId: 3,
+    submitMessage: "",
+    rejectComment: "",
+    rejectedBy: null,
+    pendingRevision: null,
+  },
+  {
+    id: 205,
+    title: "Frontend Engineer Intern",
+    kind: "employment",
+    template: "Intern",
+    stages: [
+      "recruiter_screening",
+      "behavioral",
+      "tech",
+      "board_review",
+      "offer",
+    ],
+    description: "Frontend-focused residency.",
+    status: "published_pending_revision",
+    reviewerId: 1,
+    submitMessage: "改了 2 个字段,请重审。",
+    rejectComment: "",
+    rejectedBy: null,
+    pendingRevision: {
+      changedFields: ["Tech 轮:字数上限题", "反 AI 声明题"],
+      note: "新增字数上限 + 逐字校验。",
+    },
+  },
+];
+
+/** Postings awaiting review by the given reviewer id (initial + revision reviews). */
+export function reviewsForUser(postings, userId) {
+  return postings.filter(
+    (p) =>
+      (p.status === "pending_review" ||
+        p.status === "published_pending_revision") &&
+      p.reviewerId === userId,
+  );
+}
+
+/** Reviewer display name by id, or "—" if unknown. */
+export function reviewerName(id) {
+  return REVIEWERS.find((r) => r.id === id)?.name ?? "—";
+}
