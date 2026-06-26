@@ -34,7 +34,10 @@ function ReqMark({ level }) {
   if (level === "required") return <span className="text-red-500"> *</span>;
   if (level === "optional")
     return (
-      <span className="text-sm font-normal text-muted-foreground"> (optional)</span>
+      <span className="text-sm font-normal text-muted-foreground">
+        {" "}
+        (optional)
+      </span>
     );
   return null;
 }
@@ -81,7 +84,12 @@ export default function ProfileSection({
       experience: experience.map((row) => {
         if (row.id !== id) return row;
         if (field === "isCurrentlyWorking" && v === true) {
-          return { ...row, isCurrentlyWorking: true, endMonth: "", endYear: "" };
+          return {
+            ...row,
+            isCurrentlyWorking: true,
+            endMonth: "",
+            endYear: "",
+          };
         }
         return { ...row, [field]: v };
       }),

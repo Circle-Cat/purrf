@@ -1,10 +1,5 @@
 import { Button } from "@/components/ui/button";
-import {
-  months,
-  years,
-  years60Range,
-  DegreeEnum,
-} from "@/pages/Profile/utils";
+import { months, years, years60Range, DegreeEnum } from "@/pages/Profile/utils";
 import "@/pages/Profile/modals/Modal.css";
 
 /**
@@ -19,7 +14,12 @@ import "@/pages/Profile/modals/Modal.css";
  * @param {(id: string|number) => void} props.onDelete
  * @returns {JSX.Element}
  */
-export default function EducationFormItem({ item, errors, onChange, onDelete }) {
+export default function EducationFormItem({
+  item,
+  errors,
+  onChange,
+  onDelete,
+}) {
   const hasError = (field) => errors[`${item.id}-${field}`];
 
   return (
