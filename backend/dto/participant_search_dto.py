@@ -9,7 +9,9 @@ class ParticipantRowDto(BaseDto):
     round_id: int | None
     round_name: str | None
     pair_id: int | None
-    name: str
+    first_name: str | None
+    last_name: str | None
+    preferred_name: str | None
     primary_email: str | None
     alternative_emails: list[str]
     matched_user: PartnerDto | None
@@ -17,7 +19,7 @@ class ParticipantRowDto(BaseDto):
     approval_status: ApprovalStatus | None
     onboarding_status: Literal["completed", "incomplete"] | None
     completed_meeting_count: int | None
-    required_meeting_count: int | None
+    required_meetings: int | None
 
 
 class ParticipantSearchDto(BaseDto):

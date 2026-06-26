@@ -32,14 +32,14 @@ class TrainingRepository:
         return result.scalars().one_or_none()
 
     async def get_training_by_user_ids(
-        self, session: AsyncSession, user_ids: list[int]
+        self, session: AsyncSession, user_ids: set[int]
     ) -> dict[int, list[TrainingEntity]]:
         """
         Batch-fetch all training records for a set of user IDs.
 
         Args:
             session (AsyncSession): The active async database session.
-            user_ids (list[int]): A list of user IDs to retrieve training records for.
+            user_ids (set[int]): A set of user IDs to retrieve training records for.
 
         Returns:
             dict[int, list[TrainingEntity]]: Training records grouped by user_id.
