@@ -31,7 +31,6 @@ class TestUsersRepository(BaseRepositoryTestLib):
                 primary_email="alice@example.com",
                 is_active=True,
                 updated_timestamp=datetime.now(timezone.utc),
-                subject_identifier=str(uuid.uuid4()),
             ),
             UsersEntity(
                 first_name="Bob",
@@ -40,10 +39,8 @@ class TestUsersRepository(BaseRepositoryTestLib):
                 timezone_updated_at=datetime.now(timezone.utc),
                 communication_channel=CommunicationMethod.EMAIL,
                 primary_email="bob@example.com",
-                alternative_emails=["b1@example.com", "b2@example.com"],
                 is_active=True,
                 updated_timestamp=datetime.now(timezone.utc),
-                subject_identifier=str(uuid.uuid4()),
             ),
             UsersEntity(
                 first_name="Charlie",
@@ -54,7 +51,6 @@ class TestUsersRepository(BaseRepositoryTestLib):
                 primary_email="charlie@example.com",
                 is_active=False,
                 updated_timestamp=datetime.now(timezone.utc),
-                subject_identifier=str(uuid.uuid4()),
             ),
         ]
 
@@ -194,7 +190,6 @@ class TestUsersRepository(BaseRepositoryTestLib):
         user = await self.repo.upsert_users(self.session, updated_entity)
 
         self.assertFalse(user.is_active)
-        self.assertEqual(user.subject_identifier, self.user_entity.subject_identifier)
 
     def _make_user(self, *, first_name="T", last_name="U", email):
         return UsersEntity(
@@ -206,7 +201,6 @@ class TestUsersRepository(BaseRepositoryTestLib):
             primary_email=email,
             is_active=True,
             updated_timestamp=datetime.now(timezone.utc),
-            subject_identifier=str(uuid.uuid4()),
         )
 
     async def test_list_users_search_matches_and_paginates(self):

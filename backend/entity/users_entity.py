@@ -1,6 +1,5 @@
 from datetime import datetime
 from sqlalchemy import Boolean, String, DateTime, func, text, Enum as SAEnum
-from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column
 from backend.common.base import Base
 from backend.common.mentorship_enums import CommunicationMethod
@@ -37,15 +36,7 @@ class UsersEntity(Base):
     # the remaining reads over to user_emails and remove the sync.
     primary_email: Mapped[str] = mapped_column(String, unique=True)
 
-    # text[] array
-    alternative_emails: Mapped[list[str] | None] = mapped_column(ARRAY(String))
-
     linkedin_link: Mapped[str | None] = mapped_column(String)
-
-    # Retired legacy column: the live sub now lives on user_identities. No longer
-    # written or read by application code; kept nullable here only until the
-    # follow-up migration drops the column outright.
-    subject_identifier: Mapped[str | None] = mapped_column(String)
 
     is_active: Mapped[bool] = mapped_column(Boolean)
 

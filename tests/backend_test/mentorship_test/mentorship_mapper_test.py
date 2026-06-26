@@ -170,7 +170,6 @@ class TestMentorshipMapper(unittest.TestCase):
                 primary_email="alice@example.com",
                 is_active=True,
                 updated_timestamp=datetime.now(timezone.utc),
-                subject_identifier=str(uuid.uuid4()),
             )
         ]
 

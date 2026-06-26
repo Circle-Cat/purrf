@@ -21,7 +21,6 @@ def _make_user(is_active: bool = True) -> UsersEntity:
         primary_email=f"{uuid.uuid4()}@example.com",
         is_active=is_active,
         updated_timestamp=datetime.now(timezone.utc),
-        subject_identifier=str(uuid.uuid4()),
     )
 
 
