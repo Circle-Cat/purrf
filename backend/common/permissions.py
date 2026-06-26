@@ -23,6 +23,8 @@ class Permission(StrEnum):
     MENTORSHIP_ROUND_READ = "mentorship.round.read"
     MENTORSHIP_ROUND_WRITE = "mentorship.round.write"
     MENTORSHIP_APPLICATION_REVIEW = "mentorship.application.review"
+    MENTORSHIP_PARTICIPANT_READ = "mentorship.participant.read"
+    MENTORSHIP_PARTICIPANT_WRITE = "mentorship.participant.write"
     PERMISSION_MANAGE = "permission.manage"
     SUPER_ADMIN_REVOKE = "super_admin.revoke"
 
