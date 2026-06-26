@@ -22,8 +22,19 @@ export default function ResumePrefilledProfileSection({
   onChange,
   requirements,
 }) {
-  const handleParsed = (parsed) =>
-    onChange(mergeParsedIntoProfile(value, parsedResumeToProfile(parsed)));
+  const withRowIds = (rows) =>
+    rows.map((row, i) =>
+      row.id == null ? { ...row, id: `prefill-${Date.now()}-${i}` } : row,
+    );
+
+  const handleParsed = (parsed) => {
+    const merged = mergeParsedIntoProfile(value, parsedResumeToProfile(parsed));
+    onChange({
+      ...merged,
+      education: withRowIds(merged.education),
+      experience: withRowIds(merged.experience),
+    });
+  };
 
   return (
     <div className="space-y-6">

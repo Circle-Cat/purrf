@@ -1,4 +1,3 @@
-// tests/frontend_test/pages_test/profile_test/components_test/ResumePrefilledProfileSection.test.jsx
 import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 import ResumePrefilledProfileSection from "@/pages/Profile/components/ResumePrefilledProfileSection";
@@ -11,7 +10,15 @@ const PARSED = {
     linkedinLink: "https://linkedin.com/in/annliu",
     timezoneSuggestion: "",
   },
-  education: [],
+  education: [
+    {
+      school: "UC Berkeley",
+      degree: "Bachelor",
+      fieldOfStudy: "Computer Science",
+      startDate: "2022-08",
+      endDate: "2026-05",
+    },
+  ],
   workHistory: [],
   projects: [],
   unmapped: {},
@@ -62,5 +69,17 @@ describe("ResumePrefilledProfileSection", () => {
       <ResumePrefilledProfileSection value={baseValue()} onChange={vi.fn()} />,
     );
     expect(screen.getByLabelText("First name")).toBeInTheDocument();
+  });
+
+  it("stamps an id on prefilled education rows so they render with stable keys", () => {
+    const onChange = vi.fn();
+    render(
+      <ResumePrefilledProfileSection value={baseValue()} onChange={onChange} />,
+    );
+    fireEvent.click(screen.getByText("mock-upload"));
+    const next = onChange.mock.calls[0][0];
+    expect(next.education).toHaveLength(1);
+    expect(next.education[0].institution).toBe("UC Berkeley");
+    expect(next.education[0].id).toBeTruthy();
   });
 });
