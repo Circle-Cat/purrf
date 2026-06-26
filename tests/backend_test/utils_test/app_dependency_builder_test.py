@@ -7,6 +7,8 @@ from backend.common.environment_constants import (
 )
 
 
+@patch("backend.utils.app_dependency_builder.MentorshipAdminController")
+@patch("backend.utils.app_dependency_builder.MentorshipAdminService")
 @patch("backend.utils.app_dependency_builder.PermissionAdminController")
 @patch("backend.utils.app_dependency_builder.PermissionAdminService")
 @patch("backend.utils.app_dependency_builder.EmailManagementController")
@@ -162,6 +164,8 @@ class TestAppDependencyBuilder(TestCase):
         mock_email_management_controller_cls,
         mock_permission_admin_service_cls,
         mock_permission_admin_controller_cls,
+        mock_mentorship_admin_service_cls,
+        mock_mentorship_admin_controller_cls,
     ):
         """
         Tests that the AppDependencyBuilder correctly instantiates and wires all its dependencies.
@@ -489,6 +493,16 @@ class TestAppDependencyBuilder(TestCase):
             database=mock_database_cls.return_value,
             meet_attendance_sync_service=mock_meet_attendance_service_cls.return_value,
         )
+        mock_mentorship_admin_service_cls.assert_called_once_with(
+            users_repository=mock_users_repo_cls.return_value,
+            participants_repository=mock_mentorship_round_participants_repo_cls.return_value,
+            rounds_repository=mock_mentorship_round_repository_cls.return_value,
+            training_repository=mock_training_repo_cls.return_value,
+        )
+        mock_mentorship_admin_controller_cls.assert_called_once_with(
+            mentorship_admin_service=mock_mentorship_admin_service_cls.return_value,
+            database=mock_database_cls.return_value,
+        )
         mock_rounds_service_cls.assert_called_once_with(
             mentorship_round_repository=mock_mentorship_round_repository_cls.return_value,
             mentorship_mapper=mock_mentorship_mapper_cls.return_value,
@@ -530,6 +544,7 @@ class TestAppDependencyBuilder(TestCase):
             internal_activity_controller=mock_internal_activity_controller_cls.return_value,
             profile_controller=mock_profile_controller_cls.return_value,
             mentorship_controller=mock_mentorship_controller_cls.return_value,
+            mentorship_admin_controller=mock_mentorship_admin_controller_cls.return_value,
             email_management_controller=mock_email_management_controller_cls.return_value,
             permission_admin_controller=mock_permission_admin_controller_cls.return_value,
             launchdarkly_client=mock_launchdarkly_client_cls.return_value,
