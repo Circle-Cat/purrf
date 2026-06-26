@@ -3,6 +3,7 @@ import { describe, it, expect } from "vitest";
 import {
   yearMonthToParts,
   parsedResumeToProfile,
+  mergeParsedIntoProfile,
 } from "@/pages/Profile/parsedResumeToProfile";
 
 describe("yearMonthToParts", () => {
@@ -132,5 +133,162 @@ describe("parsedResumeToProfile", () => {
       education: [],
       experience: [],
     });
+  });
+});
+
+describe("mergeParsedIntoProfile", () => {
+  const emptyProfile = () => ({
+    personal: { firstName: "", lastName: "", linkedin: "", timezone: "" },
+    education: [],
+    experience: [],
+  });
+
+  it("fills empty existing scalar fields from the incoming values", () => {
+    const existing = emptyProfile();
+    const incoming = {
+      ...emptyProfile(),
+      personal: {
+        firstName: "Ann",
+        lastName: "Liu",
+        linkedin: "",
+        timezone: "",
+      },
+    };
+
+    expect(mergeParsedIntoProfile(existing, incoming).personal).toEqual({
+      firstName: "Ann",
+      lastName: "Liu",
+      linkedin: "",
+      timezone: "",
+    });
+  });
+
+  it("overwrites an existing scalar when incoming differs, but keeps it when incoming is empty", () => {
+    const existing = {
+      ...emptyProfile(),
+      personal: {
+        firstName: "Annie",
+        lastName: "Liu",
+        linkedin: "old-url",
+        timezone: "America/Los_Angeles",
+      },
+    };
+    const incoming = {
+      ...emptyProfile(),
+      personal: {
+        firstName: "Ann",
+        lastName: "",
+        linkedin: "new-url",
+        timezone: "",
+      },
+    };
+
+    // firstName differs+non-empty -> overwrite; lastName/timezone empty -> keep.
+    expect(mergeParsedIntoProfile(existing, incoming).personal).toEqual({
+      firstName: "Ann",
+      lastName: "Liu",
+      linkedin: "new-url",
+      timezone: "America/Los_Angeles",
+    });
+  });
+
+  it("replaces the whole education array when incoming has entries", () => {
+    const existing = {
+      ...emptyProfile(),
+      education: [
+        {
+          institution: "Old School",
+          degree: "",
+          field: "",
+          startMonth: "",
+          startYear: "",
+          endMonth: "",
+          endYear: "",
+        },
+      ],
+    };
+    const incoming = {
+      ...emptyProfile(),
+      education: [
+        {
+          institution: "UC Berkeley",
+          degree: "Bachelor",
+          field: "CS",
+          startMonth: "August",
+          startYear: "2022",
+          endMonth: "",
+          endYear: "",
+        },
+      ],
+    };
+
+    expect(mergeParsedIntoProfile(existing, incoming).education).toEqual(
+      incoming.education,
+    );
+  });
+
+  it("keeps the existing education array when incoming has none", () => {
+    const existing = {
+      ...emptyProfile(),
+      education: [
+        {
+          institution: "Old School",
+          degree: "",
+          field: "",
+          startMonth: "",
+          startYear: "",
+          endMonth: "",
+          endYear: "",
+        },
+      ],
+    };
+
+    expect(mergeParsedIntoProfile(existing, emptyProfile()).education).toEqual(
+      existing.education,
+    );
+  });
+
+  it("replaces experience wholesale the same way", () => {
+    const existing = {
+      ...emptyProfile(),
+      experience: [
+        {
+          title: "Old",
+          company: "X",
+          isCurrentlyWorking: false,
+          startMonth: "",
+          startYear: "",
+          endMonth: "",
+          endYear: "",
+        },
+      ],
+    };
+    const incoming = {
+      ...emptyProfile(),
+      experience: [
+        {
+          title: "New",
+          company: "Y",
+          isCurrentlyWorking: true,
+          startMonth: "",
+          startYear: "",
+          endMonth: "",
+          endYear: "",
+        },
+      ],
+    };
+
+    expect(mergeParsedIntoProfile(existing, incoming).experience).toEqual(
+      incoming.experience,
+    );
+  });
+
+  it("is graceful when existing is undefined (treats it as an empty profile)", () => {
+    const incoming = {
+      ...emptyProfile(),
+      personal: { firstName: "Ann", lastName: "", linkedin: "", timezone: "" },
+    };
+
+    expect(mergeParsedIntoProfile(undefined, incoming)).toEqual(incoming);
   });
 });

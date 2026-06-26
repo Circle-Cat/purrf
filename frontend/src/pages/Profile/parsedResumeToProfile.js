@@ -9,11 +9,21 @@ import { months } from "@/pages/Profile/utils";
  * here. Fields the Profile model has no home for — `phone`, `projects`, and the
  * free-text `summary` — are intentionally dropped (recovered later if needed).
  *
- * This is a pure mapping only: merging the result onto an existing profile
- * ("existing is the base, overwrite on difference") is a separate concern.
+ * `parsedResumeToProfile` is a pure mapping. `mergeParsedIntoProfile` then
+ * overlays that result onto whatever profile the form already holds: existing
+ * is the base, the incoming value wins per scalar field only when it is
+ * non-empty, and each list is replaced wholesale only when incoming has entries.
  *
  * @module parsedResumeToProfile
  */
+
+/** A blank profile-form value, used to default missing inputs. */
+const EMPTY_PERSONAL = {
+  firstName: "",
+  lastName: "",
+  linkedin: "",
+  timezone: "",
+};
 
 /**
  * Split a parser "YYYY-MM" date into the Profile model's separate month-name
@@ -79,5 +89,43 @@ export function parsedResumeToProfile(parsed) {
         endYear: end.year,
       };
     }),
+  };
+}
+
+/**
+ * Overlay an `incoming` profile (typically `parsedResumeToProfile`'s output)
+ * onto an `existing` profile that the form already holds. Existing is the base:
+ *
+ * - personal: per field, the incoming value wins only when it is non-empty;
+ *   an empty incoming value leaves the existing one untouched.
+ * - education / experience: the incoming list replaces the existing one
+ *   wholesale, but only when it has at least one entry; an empty incoming list
+ *   leaves the existing list untouched.
+ *
+ * Pure — neither argument is mutated. Missing arguments/fields degrade to empty.
+ *
+ * @param {object|undefined} existing - The profile currently in the form.
+ * @param {object|undefined} incoming - The profile to overlay (e.g. parsed resume).
+ * @returns {{ personal: object, education: object[], experience: object[] }}
+ */
+export function mergeParsedIntoProfile(existing, incoming) {
+  const base = existing ?? {};
+  const overlay = incoming ?? {};
+  const basePersonal = { ...EMPTY_PERSONAL, ...(base.personal ?? {}) };
+  const overlayPersonal = overlay.personal ?? {};
+
+  const personal = {};
+  for (const key of Object.keys(EMPTY_PERSONAL)) {
+    personal[key] = overlayPersonal[key] || basePersonal[key] || "";
+  }
+
+  return {
+    personal,
+    education: overlay.education?.length
+      ? overlay.education
+      : (base.education ?? []),
+    experience: overlay.experience?.length
+      ? overlay.experience
+      : (base.experience ?? []),
   };
 }
