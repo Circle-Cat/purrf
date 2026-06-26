@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import Select from "react-select";
 import {
   CalendarIcon,
   Clock,
@@ -38,7 +39,8 @@ const DURATION_OPTIONS = [
 const TIME_SLOTS = Array.from({ length: 48 }, (_, i) => {
   const hour = String(Math.floor(i / 2)).padStart(2, "0");
   const min = i % 2 === 0 ? "00" : "30";
-  return `${hour}:${min}`;
+  const timeStr = `${hour}:${min}`;
+  return { value: timeStr, label: timeStr };
 });
 
 export default function MeetingManagementDialog({ roundId }) {
@@ -113,9 +115,11 @@ export default function MeetingManagementDialog({ roundId }) {
     }
 
     try {
-      const localDatetimeStr = `${format(selectedDate, "yyyy-MM-dd")}T${selectedTime}`;
-
-      const startUtc = localToUtcIso(localDatetimeStr, formData.timezone);
+      const startUtc = localToUtcIso(
+        selectedDate,
+        selectedTime,
+        formData.timezone,
+      );
       const startDateObj = new Date(startUtc);
       const endDateObj = new Date(
         startDateObj.getTime() + Number(formData.duration) * 60 * 1000,
@@ -155,7 +159,7 @@ export default function MeetingManagementDialog({ roundId }) {
         </DialogTrigger>
       </div>
 
-      <DialogContent className="w-full max-w-2xl rounded-xl bg-white shadow-2xl p-0 animate-in fade-in zoom-in-95 duration-200">
+      <DialogContent className="w-full max-w-2xl rounded-xl bg-white shadow-2xl p-0 animate-in fade-in zoom-in-95 duration-200 overflow-visible">
         {/* Header */}
         <div className="flex items-center justify-between bg-gray-50/50 px-6 py-4 border-b rounded-t-xl">
           <DialogTitle className="text-xl font-semibold text-gray-900 flex items-center gap-2">
@@ -219,6 +223,21 @@ export default function MeetingManagementDialog({ roundId }) {
                 </div>
 
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  {/* Timezone */}
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium text-gray-700">
+                      Timezone
+                    </label>
+                    <div className="w-full min-w-0 overflow-visible">
+                      <TimezoneSelector
+                        value={formData.timezone}
+                        onChange={handleTimezoneChange}
+                        labelSource="value"
+                        menuPlacement="auto"
+                      />
+                    </div>
+                  </div>
+
                   {/* Date Picker (Popover + Calendar) */}
                   <div className="space-y-1.5">
                     <label className="text-sm font-medium text-gray-700">
@@ -252,36 +271,46 @@ export default function MeetingManagementDialog({ roundId }) {
                       </PopoverContent>
                     </Popover>
                   </div>
+                </div>
 
-                  {/* Time Picker (Pure text/numeric dropdown to prevent mixed-language locale formatting bugs) */}
+                {/* Time Picker and Meeting Duration*/}
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div className="space-y-1.5">
                     <label className="text-sm font-medium text-gray-700">
                       Start Time *
                     </label>
-                    <div className="relative">
-                      <Clock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                      <select
-                        aria-label="Start Time"
-                        value={selectedTime}
-                        onChange={(e) => setSelectedTime(e.target.value)}
-                        className="w-full appearance-none rounded-lg border border-gray-300 bg-white pl-10 pr-4 py-2.5 text-gray-900 focus:border-[#6035F3] focus:ring-2 focus:ring-[#6035F3]/20 outline-none transition-all"
-                        required
-                      >
-                        {TIME_SLOTS.map((slot) => (
-                          <option key={slot} value={slot}>
-                            {slot}
-                          </option>
-                        ))}
-                      </select>
-                      <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-400">
-                        <ChevronDown className="w-4 h-4" />
-                      </div>
+                    <div className="w-full min-w-0 relative">
+                      <Clock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 z-10 pointer-events-none" />
+                      <Select
+                        options={TIME_SLOTS}
+                        value={TIME_SLOTS.find(
+                          (opt) => opt.value === selectedTime,
+                        )}
+                        onChange={(opt) => setSelectedTime(opt.value)}
+                        menuPlacement="auto"
+                        styles={{
+                          control: (provided) => ({
+                            ...provided,
+                            height: "42px",
+                            borderRadius: "8px",
+                            borderColor: "#d1d5db",
+                            boxShadow: "none",
+                            paddingLeft: "26px",
+                            "&:hover": { borderColor: "#d1d5db" },
+                          }),
+                          menu: (provided) => ({
+                            ...provided,
+                            zIndex: 50,
+                          }),
+                          menuList: (provided) => ({
+                            ...provided,
+                            maxHeight: "180px",
+                          }),
+                        }}
+                      />
                     </div>
                   </div>
-                </div>
 
-                {/* Meeting Duration and Timezone */}
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div className="space-y-1.5">
                     <label className="text-sm font-medium text-gray-700">
                       Duration *
@@ -304,19 +333,6 @@ export default function MeetingManagementDialog({ roundId }) {
                       <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-400">
                         <ChevronDown className="w-4 h-4" />
                       </div>
-                    </div>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-sm font-medium text-gray-700">
-                      Timezone
-                    </label>
-                    <div className="w-full min-w-0 [&_[data-radix-select-content]]:max-h-[200px] [&_[data-radix-select-content]]:overflow-y-auto [&_[class*=-menu]]:max-h-[200px] [&_[class*=-menu]]:overflow-y-auto">
-                      <TimezoneSelector
-                        value={formData.timezone}
-                        onChange={handleTimezoneChange}
-                        labelSource="value"
-                      />
                     </div>
                   </div>
                 </div>
