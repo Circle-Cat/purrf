@@ -20,6 +20,8 @@ import MentorshipManagement from "@/pages/MentorshipManagement";
 import VerifyRequired from "@/pages/VerifyRequired";
 import SignInSecurity from "@/pages/SignInSecurity";
 import AdminPermissions from "@/pages/AdminPermissions";
+import Postings from "@/pages/Recruiting/Postings";
+import MyReviews from "@/pages/Recruiting/MyReviews";
 import { AuthProvider } from "@/context/auth";
 import { FlagsProvider, LDIdentifier } from "@/context/flags";
 import { PERMISSIONS } from "@/constants/Permissions";
@@ -108,6 +110,30 @@ function App() {
                           requiredPermissions={[PERMISSIONS.PERMISSION_MANAGE]}
                         >
                           <AdminPermissions />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path={ROUTE_PATHS.RECRUITING_POSTINGS}
+                      element={
+                        <ProtectedRoute
+                          requiredPermissions={[
+                            PERMISSIONS.RECRUITING_JOB_WRITE,
+                          ]}
+                        >
+                          <Postings />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path={ROUTE_PATHS.RECRUITING_REVIEWS}
+                      element={
+                        <ProtectedRoute
+                          requiredPermissions={[
+                            PERMISSIONS.RECRUITING_JOB_APPROVE,
+                          ]}
+                        >
+                          <MyReviews />
                         </ProtectedRoute>
                       }
                     />
