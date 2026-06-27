@@ -50,6 +50,46 @@ describe("PermissionHoldersTab render", () => {
     expect(screen.getByText("7")).toBeInTheDocument();
   });
 
+  it("badges a super-admin-derived holder", () => {
+    usePermissionHolders.mockReturnValue({
+      ...base,
+      permissionName: "permission.manage",
+      hasSearched: true,
+      grants: [
+        {
+          userId: 7,
+          grantedSource: "super_admin",
+          grantedBy: null,
+          grantedTimestamp: null,
+          isActive: true,
+          isSuperAdmin: true,
+        },
+      ],
+    });
+    render(<PermissionHoldersTab catalog={["permission.manage"]} />);
+    expect(screen.getByText("super admin")).toBeInTheDocument();
+  });
+
+  it("does not badge a normal holder", () => {
+    usePermissionHolders.mockReturnValue({
+      ...base,
+      permissionName: "permission.manage",
+      hasSearched: true,
+      grants: [
+        {
+          userId: 7,
+          grantedSource: "admin",
+          grantedBy: 1,
+          grantedTimestamp: "2026-01-01T00:00:00Z",
+          isActive: true,
+          isSuperAdmin: false,
+        },
+      ],
+    });
+    render(<PermissionHoldersTab catalog={["permission.manage"]} />);
+    expect(screen.queryByText("super admin")).not.toBeInTheDocument();
+  });
+
   it("calls submitSearch when Search is clicked", async () => {
     const submitSearch = vi.fn();
     usePermissionHolders.mockReturnValue({

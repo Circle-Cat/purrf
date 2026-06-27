@@ -19,6 +19,10 @@ _VALID_PERMISSION_VALUES = frozenset(str(p) for p in Permission)
 _ADMIN_SOURCE = "admin"
 _SUPER_ADMIN_SOURCE = "super_admin_set"
 _SUPER_ADMIN_MARKER = "*"
+# granted_source value stamped on synthesized rows for a super admin who holds a
+# permission purely by derivation (no real grant row). Distinct from the
+# audit-marker source above.
+_SUPER_ADMIN_DERIVED_SOURCE = "super_admin"
 
 
 class PermissionAdminService:
@@ -139,7 +143,11 @@ class PermissionAdminService:
             granted_source (str | None): Restrict to one source, or None for any.
 
         Returns:
-            list[GrantDto]: Matching grant rows, newest first.
+            list[GrantDto]: Matching grant rows, newest first. Current super
+            admins are included as synthesized "derived" holders (real grant
+            rows for a super admin are instead flagged ``is_super_admin``), since
+            they hold every permission via the ``is_super_admin`` flag rather
+            than per-permission grant rows.
 
         Raises:
             ValueError: If ``permission_name`` is not a known permission
@@ -153,7 +161,46 @@ class PermissionAdminService:
             include_revoked=include_revoked,
             granted_source=granted_source,
         )
-        return [self._to_grant_dto(r) for r in rows]
+
+        # A source filter for anything other than the derived source must not
+        # surface super-admin-derived holders.
+        include_derived = (
+            granted_source is None or granted_source == _SUPER_ADMIN_DERIVED_SOURCE
+        )
+        super_admins = (
+            await self._users.get_super_admins(session) if include_derived else []
+        )
+        super_admin_ids = {u.user_id for u in super_admins}
+
+        # Flag real grant rows held by a current super admin (shown as their real
+        # grant, plus the super-admin annotation — not duplicated as a derived row).
+        result = [
+            self._to_grant_dto(r, is_super_admin=r.user_id in super_admin_ids)
+            for r in rows
+        ]
+
+        if super_admins:
+            markers = await self._perms.get_users_with_permission(
+                session,
+                _SUPER_ADMIN_MARKER,
+                granted_source=_SUPER_ADMIN_SOURCE,
+            )
+            marker_by_user = {m.user_id: m for m in markers}
+            active_holder_ids = {r.user_id for r in rows if r.revoked_timestamp is None}
+            for sa in super_admins:
+                if sa.user_id in active_holder_ids:
+                    continue
+                result.append(
+                    self._to_super_admin_grant_dto(
+                        sa.user_id, permission_name, marker_by_user.get(sa.user_id)
+                    )
+                )
+
+        # Newest first; derived rows without a marker timestamp sort last.
+        dated = [g for g in result if g.granted_timestamp is not None]
+        undated = [g for g in result if g.granted_timestamp is None]
+        dated.sort(key=lambda g: g.granted_timestamp, reverse=True)
+        return dated + undated
 
     async def list_audit(
         self,
@@ -380,13 +427,16 @@ class PermissionAdminService:
         )
 
     @staticmethod
-    def _to_grant_dto(row) -> GrantDto:
+    def _to_grant_dto(row, *, is_super_admin: bool = False) -> GrantDto:
         """
         Map a UserPermissionsEntity row to a GrantDto, deriving ``is_active``
         from whether the row has been revoked.
 
         Args:
             row (UserPermissionsEntity): The grant row to map.
+            is_super_admin (bool): Whether the holder is currently a super admin
+                (annotates a real grant row that the user also derives via
+                super-admin status). Defaults to False.
 
         Returns:
             GrantDto: The serializable view of the grant.
@@ -401,4 +451,40 @@ class PermissionAdminService:
             revoked_by=row.revoked_by,
             revoked_timestamp=row.revoked_timestamp,
             is_active=row.revoked_timestamp is None,
+            is_super_admin=is_super_admin,
+        )
+
+    @staticmethod
+    def _to_super_admin_grant_dto(
+        user_id: int, permission_name: str, marker
+    ) -> GrantDto:
+        """
+        Synthesize a derived holder row for a super admin who holds a permission
+        purely via the ``is_super_admin`` flag (no real grant row).
+
+        Args:
+            user_id (int): The super admin's user id.
+            permission_name (str): The permission being looked up.
+            marker (UserPermissionsEntity | None): The user's active
+                ``super_admin_set`` audit-marker row, used to source the
+                promotion metadata (id / granted_by / granted_timestamp) when
+                present. None for a super admin seeded without a marker.
+
+        Returns:
+            GrantDto: An active, super-admin-derived holder view. When no marker
+            exists, ``id`` falls back to ``-user_id`` (a unique negative sentinel
+            that never collides with real positive ids) and ``granted_by`` /
+            ``granted_timestamp`` are None.
+        """
+        return GrantDto(
+            id=marker.id if marker else -user_id,
+            user_id=user_id,
+            permission_name=str(permission_name),
+            granted_source=_SUPER_ADMIN_DERIVED_SOURCE,
+            granted_by=marker.granted_by if marker else None,
+            granted_timestamp=marker.granted_timestamp if marker else None,
+            revoked_by=None,
+            revoked_timestamp=None,
+            is_active=True,
+            is_super_admin=True,
         )
