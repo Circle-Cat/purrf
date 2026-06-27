@@ -15,7 +15,8 @@ const MIN_APPROVERS = 2;
 
 /**
  * Dialog to submit a posting for review: pick a reviewer (excluding self) and
- * an optional message. Submit is disabled when the approver pool is too small.
+ * an optional message. Submit is disabled when the TOTAL active-approver pool
+ * (before self-exclusion) is below MIN_APPROVER_POOL=2, matching the backend floor.
  *
  * @param {{open: boolean, approvers: object[], currentUserId: number,
  *          onSubmit: Function, onOpenChange: Function}} props
@@ -28,7 +29,9 @@ const SubmitReviewDialog = ({
   onOpenChange,
 }) => {
   const options = (approvers ?? []).filter((a) => a.userId !== currentUserId);
-  const poolTooSmall = options.length < MIN_APPROVERS;
+  // Gate mirrors backend MIN_APPROVER_POOL check: total active-approver-pool size,
+  // NOT the self-excluded selectable list (self-review is a separate backend check).
+  const poolTooSmall = (approvers ?? []).length < MIN_APPROVERS;
   const [reviewerId, setReviewerId] = useState("");
   const [message, setMessage] = useState("");
 

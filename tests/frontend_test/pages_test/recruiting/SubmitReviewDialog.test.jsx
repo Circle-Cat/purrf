@@ -25,10 +25,11 @@ describe("SubmitReviewDialog", () => {
   });
 
   it("disables submit when fewer than 2 approvers are available", () => {
+    // Total pool = 1 (below MIN_APPROVER_POOL=2); gate uses total, not self-excluded count.
     render(
       <SubmitReviewDialog
         open
-        approvers={[approvers[0], approvers[1]]}
+        approvers={[{ userId: 2, name: "Bob", email: "bob@x.com" }]}
         currentUserId={1}
         onSubmit={() => {}}
         onOpenChange={() => {}}
