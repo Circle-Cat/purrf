@@ -180,7 +180,7 @@ const ExperienceEditModal = ({ isOpen, onClose, initialData, onSave }) => {
   return (
     <div className="modal-overlay">
       <div className="modal-content">
-        <div className="section-header">
+        <div className="mb-5 flex items-center justify-between">
           <h3>Edit Experience</h3>
           <Button size="sm" onClick={handleAdd}>
             +

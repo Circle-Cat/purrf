@@ -120,10 +120,10 @@ describe("JiraReportTable", () => {
     });
 
     expect(
-      container.querySelector(".jira-table-container"),
+      container.querySelector('[data-testid="jira-table-container"]'),
     ).toBeInTheDocument();
     expect(
-      container.querySelector(".jira-table-container"),
+      container.querySelector('[data-testid="jira-table-container"]'),
     ).toBeEmptyDOMElement();
   });
 
@@ -137,8 +137,10 @@ describe("JiraReportTable", () => {
 
     const user1Table = screen
       .getByText("user1 (Test User 1)")
-      .closest(".user-table");
-    const user2Table = screen.getByText("user2").closest(".user-table");
+      .closest('[data-testid="user-table"]');
+    const user2Table = screen
+      .getByText("user2")
+      .closest('[data-testid="user-table"]');
 
     expect(user1Table).toBeInTheDocument();
     expect(user2Table).toBeInTheDocument();
@@ -192,8 +194,10 @@ describe("JiraReportTable", () => {
 
     const user1Table = screen
       .getByText("user1 (Test User 1)")
-      .closest(".user-table");
-    const user2Table = screen.getByText("user2").closest(".user-table");
+      .closest('[data-testid="user-table"]');
+    const user2Table = screen
+      .getByText("user2")
+      .closest('[data-testid="user-table"]');
 
     const user1Scope = within(user1Table);
     const user2Scope = within(user2Table);
@@ -222,7 +226,9 @@ describe("JiraReportTable", () => {
       expect(screen.getByText("user2")).toBeInTheDocument();
     });
 
-    const user2Table = screen.getByText("user2").closest(".user-table");
+    const user2Table = screen
+      .getByText("user2")
+      .closest('[data-testid="user-table"]');
     const user2Scope = within(user2Table);
 
     const todoRowUser2 = user2Scope.getByText("To Do").closest("tr");
@@ -247,7 +253,7 @@ describe("JiraReportTable", () => {
 
     const user1Table = screen
       .getByText("user1 (Test User 1)")
-      .closest(".user-table");
+      .closest('[data-testid="user-table"]');
     const user1Scope = within(user1Table);
 
     const todoRowUser1 = user1Scope.getByText("To Do").closest("tr");
@@ -285,7 +291,7 @@ describe("JiraReportTable", () => {
 
     const user1Table = screen
       .getByText("user1 (Test User 1)")
-      .closest(".user-table");
+      .closest('[data-testid="user-table"]');
     const user1Scope = within(user1Table);
 
     const todoRowUser1 = user1Scope.getByText("To Do").closest("tr");
@@ -310,7 +316,7 @@ describe("JiraReportTable", () => {
 
     const user1Table = screen
       .getByText("user1 (Test User 1)")
-      .closest(".user-table");
+      .closest('[data-testid="user-table"]');
     const user1Scope = within(user1Table);
 
     const doneRowUser1 = user1Scope.getByText("Done").closest("tr");

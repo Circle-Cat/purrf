@@ -1,6 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
 import { formatLocalYmd } from "@/utils/dateTime";
-import "@/pages/Dashboard.css";
 import { Group } from "@/constants/Groups";
 import { LdapStatus } from "@/constants/LdapStatus";
 import DateRangePicker from "@/components/common/DateRangePicker";
@@ -329,7 +328,7 @@ const Dashboard = () => {
   }, []);
 
   return (
-    <div className="dashboard-page">
+    <div className="flex flex-col p-5">
       <div className="flex flex-row gap-3 overflow-x-auto pb-2">
         {[
           { title: "Members", value: summaryData.totalMembers },
@@ -359,49 +358,58 @@ const Dashboard = () => {
         ))}
       </div>
 
-      <div className="search-filter-row">
+      <div className="relative mb-5 flex flex-wrap items-center gap-2.5">
         <DateRangePicker
           defaultStartDate={defaultStart}
           defaultEndDate={defaultEnd}
           onChange={handleDateChange}
         />
 
-        <div className="checkbox-container">
+        <div className="flex items-center gap-[30px]">
           {groupsData.map((group) => {
             const isRequired = [
               Group.Interns,
               Group.Employees,
               Group.Volunteers,
             ].includes(group);
-            const errorClass = error ? "error" : "";
 
             return (
-              <div key={group} className="checkbox-item">
+              <div key={group} className="mr-[5px]">
                 <label
-                  className={`group-label ${errorClass} ${isRequired ? "required" : ""}`}
+                  className={`flex h-8 items-center whitespace-nowrap text-[0.9em]${
+                    isRequired && error
+                      ? " after:ml-[2px] after:text-red-500 after:content-['*']"
+                      : ""
+                  }`}
                 >
                   <input
                     type="checkbox"
+                    className="mr-[5px] h-4 w-4"
                     checked={groups.includes(group)}
                     onChange={() => handleGroupChange(group)}
                   />
-                  <span>{group}</span>
+                  <span className="text-black">{group}</span>
                 </label>
               </div>
             );
           })}
 
-          <label className="checkbox-item">
+          <label className="mr-[5px] flex h-8 items-center whitespace-nowrap text-[0.9em]">
             <input
               type="checkbox"
+              className="mr-[5px] h-4 w-4"
               checked={includeTerminated}
               onChange={(e) => setIncludeTerminated(e.target.checked)}
             />
-            <span>Include Terminated Members</span>
+            <span className="text-black">Include Terminated Members</span>
           </label>
         </div>
 
-        {error && <div className="error-message">{error}</div>}
+        {error && (
+          <div className="absolute left-[23.5%] top-[60%] mt-1 block text-xs text-destructive">
+            {error}
+          </div>
+        )}
 
         <Button size="sm" onClick={handleSearchClick}>
           Search
@@ -409,7 +417,6 @@ const Dashboard = () => {
       </div>
 
       <Table
-        className="table-container"
         columns={tableColumns}
         data={sortedTableData}
         onSort={handleSort}

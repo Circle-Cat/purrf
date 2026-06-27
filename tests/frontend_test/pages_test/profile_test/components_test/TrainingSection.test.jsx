@@ -122,7 +122,7 @@ describe("TrainingSection Component", () => {
     );
 
     expect(screen.getByTestId("training-row-required")).toHaveClass(
-      "training-row-required",
+      "bg-accent",
     );
   });
 
@@ -171,11 +171,11 @@ describe("TrainingSection Component", () => {
 
     const completedTag = screen.getByText("Completed");
     expect(completedTag).toBeInTheDocument();
-    expect(completedTag).toHaveClass("training-status-completed");
+    expect(completedTag).toHaveClass("bg-accent", "text-primary");
 
     const pendingTag = screen.getByText("Not Completed");
     expect(pendingTag).toBeInTheDocument();
-    expect(pendingTag).toHaveClass("training-status-not-completed");
+    expect(pendingTag).toHaveClass("bg-primary", "text-primary-foreground");
   });
 
   it("renders the timestamp in the user's profile timezone when provided", () => {
