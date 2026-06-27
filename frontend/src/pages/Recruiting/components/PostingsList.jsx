@@ -22,9 +22,16 @@ const VARIANT = {
  * Read-only table of postings with status-driven action buttons.
  *
  * @param {{jobs: object[], onEdit?: Function, onSubmit?: Function,
- *          onClose?: Function, onReopen?: Function}} props
+ *          onClose?: Function, onReopen?: Function, onView?: Function}} props
  */
-const PostingsList = ({ jobs, onEdit, onSubmit, onClose, onReopen }) => (
+const PostingsList = ({
+  jobs,
+  onEdit,
+  onSubmit,
+  onClose,
+  onReopen,
+  onView,
+}) => (
   <div className="divide-y divide-slate-200 rounded-lg border border-slate-200 bg-white">
     {jobs.length === 0 && (
       <p className="p-6 text-sm text-slate-500">No postings yet.</p>
@@ -48,6 +55,9 @@ const PostingsList = ({ jobs, onEdit, onSubmit, onClose, onReopen }) => (
             {STATUS_LABELS[job.status]}
           </Badge>
           <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => onView?.(job)}>
+              View
+            </Button>
             {canEdit && (
               <Button variant="outline" size="sm" onClick={() => onEdit?.(job)}>
                 Edit

@@ -56,11 +56,37 @@ describe("PostingsList", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("shows no actions while pending_review", () => {
-    render(<PostingsList jobs={[job({ status: "pending_review" })]} />);
+  it("shows no Edit/Submit while pending_review but shows View", () => {
+    const onView = vi.fn();
+    render(
+      <PostingsList
+        jobs={[job({ status: "pending_review" })]}
+        onView={onView}
+      />,
+    );
     expect(screen.getByText("Pending review")).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Edit" }),
     ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Submit for review" }),
+    ).not.toBeInTheDocument();
+    const viewBtn = screen.getByRole("button", { name: "View" });
+    expect(viewBtn).toBeInTheDocument();
+    fireEvent.click(viewBtn);
+    expect(onView).toHaveBeenCalledWith(expect.objectContaining({ id: 1 }));
+  });
+
+  it("shows View button for every status and calls onView", () => {
+    const onView = vi.fn();
+    render(
+      <PostingsList
+        jobs={[job({ id: 7, status: "published" })]}
+        onView={onView}
+      />,
+    );
+    const viewBtn = screen.getByRole("button", { name: "View" });
+    fireEvent.click(viewBtn);
+    expect(onView).toHaveBeenCalledWith(expect.objectContaining({ id: 7 }));
   });
 });

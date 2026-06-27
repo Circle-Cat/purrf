@@ -13,6 +13,7 @@ import {
 } from "@/api/recruitingApi";
 import PostingsList from "@/pages/Recruiting/components/PostingsList";
 import PostingForm from "@/pages/Recruiting/components/PostingForm";
+import PostingPreview from "@/pages/Recruiting/components/PostingPreview";
 import SubmitReviewDialog from "@/pages/Recruiting/components/SubmitReviewDialog";
 
 /** Postings management page: lifecycle + review submission. */
@@ -24,6 +25,7 @@ const Postings = () => {
   const [submitOpen, setSubmitOpen] = useState(false);
   const [submitJobId, setSubmitJobId] = useState(null);
   const [approvers, setApprovers] = useState([]);
+  const [previewJob, setPreviewJob] = useState(null);
 
   const refresh = useCallback(async () => {
     const { data } = await listJobs();
@@ -89,12 +91,18 @@ const Postings = () => {
         onSubmit={openSubmit}
         onClose={(id) => run(() => closeJob(id), "Posting closed.")}
         onReopen={(id) => run(() => reopenJob(id), "Posting reopened.")}
+        onView={(job) => setPreviewJob(job)}
       />
       <PostingForm
         open={formOpen}
         job={editing}
         onSubmit={handleFormSubmit}
         onOpenChange={setFormOpen}
+      />
+      <PostingPreview
+        open={!!previewJob}
+        job={previewJob}
+        onOpenChange={(o) => !o && setPreviewJob(null)}
       />
       <SubmitReviewDialog
         open={submitOpen}
