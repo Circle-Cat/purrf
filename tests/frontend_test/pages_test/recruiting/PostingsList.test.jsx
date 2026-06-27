@@ -105,4 +105,21 @@ describe("PostingsList", () => {
     expect(screen.getByText("Draft")).toBeInTheDocument();
     expect(screen.queryByText("Sent back")).not.toBeInTheDocument();
   });
+
+  it("clicking 'Sent back' badge opens a popover with the rejection comment", async () => {
+    render(
+      <PostingsList
+        jobs={[job({ status: "draft", lastRejectComment: "fix the form" })]}
+      />,
+    );
+    const sentBackBadge = screen.getByText("Sent back");
+    expect(sentBackBadge).toBeInTheDocument();
+    // The popover content is not yet visible
+    expect(screen.queryByText("fix the form")).not.toBeInTheDocument();
+    // Click the trigger to open the popover
+    fireEvent.click(sentBackBadge);
+    // Now the rejection comment should be visible
+    expect(await screen.findByText("fix the form")).toBeInTheDocument();
+    expect(screen.getByText("Rejection comment")).toBeInTheDocument();
+  });
 });

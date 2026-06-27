@@ -1,5 +1,10 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 
 /** Human labels + badge variants per JobStatus. */
 const STATUS_LABELS = {
@@ -52,7 +57,19 @@ const PostingsList = ({
             <p className="text-xs text-slate-500">{job.kind}</p>
           </div>
           {job.status === "draft" && job.lastRejectComment ? (
-            <Badge variant="destructive">Sent back</Badge>
+            <Popover>
+              <PopoverTrigger asChild>
+                <button type="button" className="cursor-pointer">
+                  <Badge variant="destructive">Sent back</Badge>
+                </button>
+              </PopoverTrigger>
+              <PopoverContent className="w-72">
+                <p className="text-sm font-medium text-slate-700">
+                  Rejection comment
+                </p>
+                <p className="text-sm text-red-600">{job.lastRejectComment}</p>
+              </PopoverContent>
+            </Popover>
           ) : (
             <Badge variant={VARIANT[job.status]}>
               {STATUS_LABELS[job.status]}
