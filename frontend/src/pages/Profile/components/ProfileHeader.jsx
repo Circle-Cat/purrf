@@ -1,17 +1,16 @@
-import "@/pages/Profile/components/ProfileHeader.css";
 import { formatTimezoneLabel } from "@/utils/dateTime";
 import { Button } from "@/components/ui/button";
 
 const ProfileHeader = ({ info, onEditClick }) => {
   return (
-    <div className="user-details">
-      <h1 className="user-name">
+    <div className="grow">
+      <h1 className="m-0 flex items-center justify-between text-4xl font-bold leading-tight tracking-tight text-foreground">
         <span>
           {info.firstName}
           {info.preferredName ? ` (${info.preferredName})` : ""}
           {` ${info.lastName}`}
           {info.timezone && (
-            <span className="user-timezone">
+            <span className="ml-3 whitespace-nowrap rounded-md bg-muted px-3 py-1 text-[0.35em] font-medium text-muted-foreground">
               {formatTimezoneLabel(info.timezone)}
             </span>
           )}
