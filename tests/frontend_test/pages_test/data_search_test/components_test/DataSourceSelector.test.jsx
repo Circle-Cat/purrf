@@ -101,7 +101,7 @@ describe("DataSourceSelector", () => {
     const chatSidebarButton = screen
       .getByText(DataSourceNames.CHAT)
       .closest('[role="button"]');
-    expect(chatSidebarButton).toHaveClass("active");
+    expect(chatSidebarButton).toHaveAttribute("data-active", "true");
   });
 
   it("should switch active source when a sidebar item is clicked", async () => {
@@ -123,7 +123,7 @@ describe("DataSourceSelector", () => {
     const jiraSidebarButton = screen
       .getByText(DataSourceNames.JIRA)
       .closest('[role="button"]');
-    expect(jiraSidebarButton).toHaveClass("active");
+    expect(jiraSidebarButton).toHaveAttribute("data-active", "true");
   });
 
   it("should allow selecting and deselecting individual items", async () => {
