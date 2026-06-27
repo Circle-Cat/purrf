@@ -64,4 +64,16 @@ describe("PostingPreview", () => {
     );
     expect(container.querySelector("[data-slot='dialog-title']")).toBeNull();
   });
+
+  it("shows rejection comment block when lastRejectComment is present", () => {
+    const job = { ...baseJob, lastRejectComment: "needs work" };
+    render(<PostingPreview open={true} job={job} onOpenChange={vi.fn()} />);
+    expect(screen.getByText("Rejection comment")).toBeInTheDocument();
+    expect(screen.getByText("needs work")).toBeInTheDocument();
+  });
+
+  it("does not show rejection comment block when lastRejectComment is absent", () => {
+    render(<PostingPreview open={true} job={baseJob} onOpenChange={vi.fn()} />);
+    expect(screen.queryByText("Rejection comment")).not.toBeInTheDocument();
+  });
 });

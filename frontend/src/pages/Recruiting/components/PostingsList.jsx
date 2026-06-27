@@ -51,9 +51,13 @@ const PostingsList = ({
             <p className="truncate font-medium text-slate-900">{job.title}</p>
             <p className="text-xs text-slate-500">{job.kind}</p>
           </div>
-          <Badge variant={VARIANT[job.status]}>
-            {STATUS_LABELS[job.status]}
-          </Badge>
+          {job.status === "draft" && job.lastRejectComment ? (
+            <Badge variant="destructive">Sent back</Badge>
+          ) : (
+            <Badge variant={VARIANT[job.status]}>
+              {STATUS_LABELS[job.status]}
+            </Badge>
+          )}
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={() => onView?.(job)}>
               View

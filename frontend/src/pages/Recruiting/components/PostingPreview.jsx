@@ -28,6 +28,14 @@ const PostingPreview = ({ open, job, onOpenChange }) => (
             <DialogTitle>{job.title}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
+            {job.lastRejectComment && (
+              <div className="space-y-1">
+                <p className="text-sm font-medium text-slate-700">
+                  Rejection comment
+                </p>
+                <p className="text-sm text-red-600">{job.lastRejectComment}</p>
+              </div>
+            )}
             <p className="text-sm text-slate-600">{job.kind}</p>
             {job.description && (
               <p className="text-sm text-slate-700">{job.description}</p>

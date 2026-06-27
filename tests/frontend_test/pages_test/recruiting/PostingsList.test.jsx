@@ -89,4 +89,20 @@ describe("PostingsList", () => {
     fireEvent.click(viewBtn);
     expect(onView).toHaveBeenCalledWith(expect.objectContaining({ id: 7 }));
   });
+
+  it("shows 'Sent back' badge (not 'Draft') for a draft with lastRejectComment", () => {
+    render(
+      <PostingsList
+        jobs={[job({ status: "draft", lastRejectComment: "fix the form" })]}
+      />,
+    );
+    expect(screen.getByText("Sent back")).toBeInTheDocument();
+    expect(screen.queryByText("Draft")).not.toBeInTheDocument();
+  });
+
+  it("shows 'Draft' badge for a draft without lastRejectComment", () => {
+    render(<PostingsList jobs={[job({ status: "draft" })]} />);
+    expect(screen.getByText("Draft")).toBeInTheDocument();
+    expect(screen.queryByText("Sent back")).not.toBeInTheDocument();
+  });
 });
