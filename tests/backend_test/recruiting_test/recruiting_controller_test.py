@@ -16,7 +16,10 @@ class TestRecruitingController(unittest.IsolatedAsyncioTestCase):
         self.service.reject = AsyncMock(return_value="rejected")
         self.service.list_active_approvers = AsyncMock(return_value=[])
         self.service.list_reviews_for_reviewer = AsyncMock(return_value=[])
-        self.service.reopen_job = AsyncMock(return_value="reopened")
+        self.service.close_job = AsyncMock(return_value="closed")
+        self.service.request_close = AsyncMock(return_value="close-requested")
+        self.service.request_reopen = AsyncMock(return_value="reopen-requested")
+        self.service.delete_job = AsyncMock(return_value=None)
 
         self.session = AsyncMock()
         self.database = MagicMock()
@@ -78,9 +81,31 @@ class TestRecruitingController(unittest.IsolatedAsyncioTestCase):
             self.session, 42
         )
 
-    async def test_reopen(self):
-        await self.controller.reopen_job(current_user=self.user, job_id=8)
-        self.service.reopen_job.assert_awaited_once_with(self.session, 8)
+    async def test_close_job_direct(self):
+        await self.controller.close_job(current_user=self.user, job_id=8)
+        self.service.close_job.assert_awaited_once_with(self.session, 8)
+
+    async def test_request_close_passes_current_user_as_submitter(self):
+        body = JobSubmitDto(reviewer_id=7, message="please close")
+        await self.controller.request_close(
+            current_user=self.user, job_id=3, submit_data=body
+        )
+        self.service.request_close.assert_awaited_once_with(
+            self.session, 3, 7, 42, "please close"
+        )
+
+    async def test_request_reopen_passes_current_user_as_submitter(self):
+        body = JobSubmitDto(reviewer_id=7, message="please reopen")
+        await self.controller.request_reopen(
+            current_user=self.user, job_id=4, submit_data=body
+        )
+        self.service.request_reopen.assert_awaited_once_with(
+            self.session, 4, 7, 42, "please reopen"
+        )
+
+    async def test_delete_job(self):
+        await self.controller.delete_job(current_user=self.user, job_id=9)
+        self.service.delete_job.assert_awaited_once_with(self.session, 9)
 
 
 if __name__ == "__main__":
