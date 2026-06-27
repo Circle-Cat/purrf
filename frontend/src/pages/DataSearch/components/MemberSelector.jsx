@@ -1,17 +1,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Check, Minus, Search } from "lucide-react";
 import { Group } from "@/constants/Groups";
 import { LdapStatus } from "@/constants/LdapStatus";
 import { getLdapsAndDisplayNames } from "@/api/dashboardApi";
 import { Button } from "@/components/ui/button";
-import "@/pages/DataSearch/components/MemberSelector.css";
+import { cn } from "@/lib/utils";
 import "@/pages/DataSearch/DataSearch.css";
 
 function MsModal({ open, onClose, children }) {
   if (!open) return null;
   return (
-    <div className="ds-modal-backdrop" onClick={onClose} role="presentation">
+    <div
+      className="fixed inset-0 z-[9999] grid h-screen w-screen place-items-center bg-black/25"
+      onClick={onClose}
+      role="presentation"
+    >
       <div
-        className="ds-modal"
+        className="flex max-h-[calc(100vh-40px)] w-[min(900px,92vw)] max-w-[calc(100vw-40px)] flex-col items-stretch justify-start overflow-auto rounded-xl border bg-background shadow-[0_10px_35px_rgba(0,0,0,0.25)]"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
@@ -305,20 +310,20 @@ export function MemberSelectorPanel({
   const totalSelected = selectedSet.size;
 
   return (
-    <div className="ms-panel">
+    <div className="flex h-full max-h-[80vh] min-h-0 flex-col bg-background text-foreground">
       {/* Header */}
-      <div className="ms-header-row">
-        <div className="ms-searchbar">
-          <span className="ms-search-ico" aria-hidden />
+      <div className="sticky top-0 z-[2] flex items-center gap-4 border-b bg-muted p-4 shadow-[0_1px_0_rgba(17,24,39,0.04)]">
+        <div className="flex flex-1 items-center gap-2 rounded-xl border bg-white px-3 py-2.5 transition-colors focus-within:border-primary">
+          <Search className="size-4 shrink-0 opacity-70" aria-hidden />
           <input
-            className="ms-input"
+            className="flex-1 border-0 bg-transparent text-[15px] text-foreground outline-none placeholder:text-gray-400"
             placeholder="Search by LDAP or full name"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
         </div>
 
-        <label className="ms-toggle">
+        <label className="flex select-none items-center gap-2.5 text-sm text-muted-foreground">
           <input
             type="checkbox"
             checked={includeTerminated}
@@ -329,7 +334,11 @@ export function MemberSelectorPanel({
       </div>
 
       {/* Status */}
-      <div className="ms-status" role="status" aria-live="polite">
+      <div
+        className="min-h-[18px] px-5 py-1.5 text-xs text-muted-foreground"
+        role="status"
+        aria-live="polite"
+      >
         {loading
           ? "Loading members…"
           : err
@@ -342,7 +351,7 @@ export function MemberSelectorPanel({
       </div>
 
       {/* List */}
-      <div className="ms-list">
+      <div className="min-h-0 flex-auto overflow-auto pb-1 pt-2.5">
         {UI_GROUPS.filter((g) => groupsMap[g]).map((groupName, gi, arr) => {
           const list = groupsMap[groupName] || [];
           const state = getGroupState(groupName);
@@ -352,11 +361,11 @@ export function MemberSelectorPanel({
           );
 
           return (
-            <div key={groupName} className="ms-section">
+            <div key={groupName} className="px-5">
               {/* Group row */}
               <button
                 type="button"
-                className="ms-row ms-row-group"
+                className="flex min-h-[44px] w-full cursor-pointer items-center gap-4 rounded-[10px] border-0 bg-white px-1 py-[18px] text-left transition-colors hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary max-sm:py-3.5"
                 onClick={() =>
                   setGroupSelection(groupName, state !== "checked")
                 }
@@ -372,9 +381,10 @@ export function MemberSelectorPanel({
               >
                 <CheckCircle
                   state={state === "checked" ? "checked" : "unchecked"}
+                  size="group"
                 />
-                <div className="ms-text">
-                  <div className="ms-label-main">
+                <div className="flex min-w-0 flex-col">
+                  <div className="text-[22px] font-extrabold leading-[1.25] text-foreground max-sm:text-[20px]">
                     {groupName} ({selectedCount}/{list.length})
                   </div>
                 </div>
@@ -386,7 +396,7 @@ export function MemberSelectorPanel({
                   <button
                     key={m.id}
                     type="button"
-                    className="ms-row"
+                    className="flex min-h-[44px] w-full cursor-pointer items-center gap-4 rounded-[10px] border-0 bg-white py-3.5 pl-11 pr-1 text-left transition-colors hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary max-sm:py-3 max-sm:pl-2.5"
                     onClick={() => toggleMember(m.id)}
                     role="checkbox"
                     aria-checked={selectedSet.has(m.id)}
@@ -395,32 +405,36 @@ export function MemberSelectorPanel({
                     <CheckCircle
                       state={selectedSet.has(m.id) ? "checked" : "unchecked"}
                     />
-                    <div className="ms-text">
-                      <div className="ms-label-main">
+                    <div className="flex min-w-0 flex-nowrap flex-row items-center gap-1.5">
+                      <div className="whitespace-nowrap text-base font-bold text-foreground max-sm:text-[15px]">
                         <strong>{m.fullName}</strong>
                       </div>
-                      <div className="ms-sub">
+                      <div className="overflow-hidden text-ellipsis whitespace-nowrap text-base font-normal text-muted-foreground max-sm:text-[15px]">
                         {m.ldap}
                         {m.terminated && (
-                          <span className="ms-chip">terminated</span>
+                          <span className="ml-2 rounded-full bg-gray-100 px-2 py-0.5 text-xs text-foreground">
+                            terminated
+                          </span>
                         )}
                       </div>
                     </div>
                   </button>
                 ))
               ) : (
-                <div className="ms-empty">No matches</div>
+                <div className="px-1 pb-4 pt-2 text-gray-400">No matches</div>
               )}
 
               {/* Divider */}
-              {gi < arr.length - 1 && <div className="ms-divider" />}
+              {gi < arr.length - 1 && (
+                <div className="mb-1.5 mt-2.5 h-px bg-border" />
+              )}
             </div>
           );
         })}
       </div>
 
       {/* Footer */}
-      <div className="ms-footer">
+      <div className="flex h-[60px] flex-none items-center gap-3 border-t bg-background px-5 pb-2.5 pt-2 shadow-[0_-1px_0_rgba(17,24,39,0.04)]">
         <Button
           variant="outline"
           onClick={() => {
@@ -430,27 +444,36 @@ export function MemberSelectorPanel({
         >
           Cancel
         </Button>
-        <div className="ms-spacer" />
-        <div className="ms-count">{totalSelected} selected</div>
+        <div className="flex-1" />
+        <div className="text-sm text-muted-foreground">
+          {totalSelected} selected
+        </div>
         <Button onClick={handleConfirm}>OK</Button>
       </div>
     </div>
   );
 }
 
-/** Small visual state dot */
-function CheckCircle({ state }) {
+/** Small visual selection circle: filled check when selected, dash when mixed. */
+function CheckCircle({ state, size = "member" }) {
+  const checked = state === "checked";
+  const mixed = state === "indeterminate";
   return (
     <span
-      className={
-        state === "checked"
-          ? "ms-check ms-check-on"
-          : state === "indeterminate"
-            ? "ms-check ms-check-mixed"
-            : "ms-check"
-      }
       aria-hidden
-    />
+      className={cn(
+        "relative flex shrink-0 items-center justify-center rounded-full border-2",
+        size === "group" ? "size-7" : "size-6",
+        checked
+          ? "border-primary bg-primary"
+          : mixed
+            ? "border-primary bg-white"
+            : "border-[#cdd3df] bg-white",
+      )}
+    >
+      {checked && <Check className="size-4 text-white" strokeWidth={3} />}
+      {mixed && <Minus className="size-4 text-primary" strokeWidth={3} />}
+    </span>
   );
 }
 
@@ -482,10 +505,10 @@ export default function MemberSelector({
 }) {
   return (
     <MsModal open={open} onClose={onClose}>
-      <div className="ds-modal-header">
-        <h3 style={{ margin: 0 }}>{title}</h3>
+      <div className="border-b px-4 py-3.5">
+        <h3 className="m-0">{title}</h3>
       </div>
-      <div className="ds-modal-body">
+      <div className="min-h-0 flex-auto overflow-hidden">
         <MemberSelectorPanel
           isOpen={open}
           selectedIds={selectedIds}
