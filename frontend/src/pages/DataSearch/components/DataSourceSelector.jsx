@@ -1,5 +1,4 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
-import "@/pages/DataSearch/components/DataSourceSelector.css";
 import {
   getMicrosoftChatTopics,
   getGoogleChatSpaces,
@@ -333,10 +332,11 @@ export const DataSourceSelector = ({ isOpen, onConfirm, onCancel }) => {
       {error && <div>{error}</div>}
       {!loading && !error && (
         <>
-          <div className="dss-global-header">
-            <label className="dss-global-select-all">
+          <div className="border-b bg-background px-4 py-3">
+            <label className="inline-flex select-none items-center gap-1.5 text-foreground">
               <input
                 type="checkbox"
+                className="scale-110"
                 checked={globalAllChecked}
                 onChange={handleToggleGlobalAll}
                 aria-label="Select all items across all sources"
@@ -345,8 +345,8 @@ export const DataSourceSelector = ({ isOpen, onConfirm, onCancel }) => {
             </label>
           </div>
 
-          <div className="dss-body">
-            <aside className="dss-sidebar">
+          <div className="flex min-h-0 flex-auto">
+            <aside className="w-[200px] overflow-y-auto border-r bg-muted">
               {Object.keys(dataSources).map((source) => {
                 const allSourceItems = dataSources[source] || [];
                 const currentSourceSelected = selectedItems[source] || [];
@@ -356,13 +356,15 @@ export const DataSourceSelector = ({ isOpen, onConfirm, onCancel }) => {
                 return (
                   <div
                     key={source}
-                    className={`dss-sidebar-item ${activeSource === source ? "active" : ""}`}
+                    className="flex cursor-pointer select-none items-center gap-2 p-3 transition-colors hover:bg-muted data-[active=true]:bg-accent data-[active=true]:font-semibold data-[active=true]:text-primary"
+                    data-active={activeSource === source}
                     onClick={() => setActiveSource(source)}
                     role="button"
                     tabIndex={0}
                   >
                     <input
                       type="checkbox"
+                      className="mr-1"
                       checked={sourceAllChecked}
                       onChange={(e) => {
                         e.stopPropagation();
@@ -376,10 +378,13 @@ export const DataSourceSelector = ({ isOpen, onConfirm, onCancel }) => {
               })}
             </aside>
 
-            <main className="dss-main">
+            <main className="flex-1 overflow-y-auto p-4">
               {currentActiveSourceItems.map((item) => (
-                <div key={item.id} className={`dss-item`}>
-                  <label>
+                <div
+                  key={item.id}
+                  className="mb-2 flex items-center text-foreground"
+                >
+                  <label className="flex w-full cursor-pointer items-center gap-2">
                     <input
                       type="checkbox"
                       checked={currentActiveSourceSelectedItems.some(
@@ -394,7 +399,7 @@ export const DataSourceSelector = ({ isOpen, onConfirm, onCancel }) => {
             </main>
           </div>
 
-          <footer className="dss-footer">
+          <footer className="flex justify-end gap-2 border-t bg-background px-4 py-3">
             <Button variant="outline" onClick={handleCancelAction}>
               Cancel
             </Button>
@@ -407,7 +412,9 @@ export const DataSourceSelector = ({ isOpen, onConfirm, onCancel }) => {
 
   return (
     <Modal isOpen={isOpen} onClose={onCancel} title="Select Data Sources">
-      <div className="dss-container">{content}</div>
+      <div className="flex h-full flex-col overflow-hidden rounded-lg border bg-background">
+        {content}
+      </div>
     </Modal>
   );
 };
