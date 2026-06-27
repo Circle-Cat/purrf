@@ -85,4 +85,63 @@ describe("ReviewDetail", () => {
     expect(screen.getByText("Live")).toBeInTheDocument();
     expect(screen.getByText("Pending")).toBeInTheDocument();
   });
+
+  it("shows 'Request to close this posting.' for kind=close and hides pipeline/form blocks", () => {
+    render(
+      <ReviewDetail
+        review={{ ...review, kind: "close" }}
+        job={job}
+        onApprove={() => {}}
+        onReject={() => {}}
+        onBack={() => {}}
+      />,
+    );
+    expect(
+      screen.getByText("Request to close this posting."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Pipeline")).not.toBeInTheDocument();
+    expect(screen.queryByText("Form schema")).not.toBeInTheDocument();
+  });
+
+  it("shows 'Request to reopen this posting.' for kind=reopen and hides pipeline/form blocks", () => {
+    render(
+      <ReviewDetail
+        review={{ ...review, kind: "reopen" }}
+        job={job}
+        onApprove={() => {}}
+        onReject={() => {}}
+        onBack={() => {}}
+      />,
+    );
+    expect(
+      screen.getByText("Request to reopen this posting."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Pipeline")).not.toBeInTheDocument();
+    expect(screen.queryByText("Form schema")).not.toBeInTheDocument();
+  });
+
+  it("approve/reject still work for kind=close", () => {
+    const onApprove = vi.fn();
+    const onReject = vi.fn();
+    render(
+      <ReviewDetail
+        review={{ ...review, kind: "close" }}
+        job={job}
+        onApprove={onApprove}
+        onReject={onReject}
+        onBack={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    expect(onApprove).toHaveBeenCalled();
+
+    const rejectBtn = screen.getByRole("button", { name: "Reject" });
+    expect(rejectBtn).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Rejection comment"), {
+      target: { value: "no" },
+    });
+    expect(rejectBtn).not.toBeDisabled();
+    fireEvent.click(rejectBtn);
+    expect(onReject).toHaveBeenCalledWith("no");
+  });
 });

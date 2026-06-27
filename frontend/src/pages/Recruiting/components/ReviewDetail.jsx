@@ -19,6 +19,7 @@ const Json = ({ value }) => (
 const ReviewDetail = ({ review, job, onApprove, onReject, onBack }) => {
   const [comment, setComment] = useState("");
   const isRevision = review.kind === "revision";
+  const isCloseOrReopen = review.kind === "close" || review.kind === "reopen";
 
   return (
     <div className="space-y-4 p-6">
@@ -34,27 +35,37 @@ const ReviewDetail = ({ review, job, onApprove, onReject, onBack }) => {
           {review.submitMessage}
         </p>
       )}
-      <div className="space-y-1">
-        <p className="text-sm font-medium text-slate-700">Pipeline</p>
-        <Json value={job.pipelineConfig} />
-      </div>
-      <div className="space-y-1">
-        <p className="text-sm font-medium text-slate-700">Form schema</p>
-        {isRevision ? (
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <p className="text-xs text-slate-500">Live</p>
-              <Json value={job.formSchema} />
-            </div>
-            <div>
-              <p className="text-xs text-slate-500">Pending</p>
-              <Json value={job.pendingFormSchema} />
-            </div>
+      {isCloseOrReopen ? (
+        <p className="text-base font-medium text-slate-800">
+          {review.kind === "close"
+            ? "Request to close this posting."
+            : "Request to reopen this posting."}
+        </p>
+      ) : (
+        <>
+          <div className="space-y-1">
+            <p className="text-sm font-medium text-slate-700">Pipeline</p>
+            <Json value={job.pipelineConfig} />
           </div>
-        ) : (
-          <Json value={job.formSchema} />
-        )}
-      </div>
+          <div className="space-y-1">
+            <p className="text-sm font-medium text-slate-700">Form schema</p>
+            {isRevision ? (
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <p className="text-xs text-slate-500">Live</p>
+                  <Json value={job.formSchema} />
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">Pending</p>
+                  <Json value={job.pendingFormSchema} />
+                </div>
+              </div>
+            ) : (
+              <Json value={job.formSchema} />
+            )}
+          </div>
+        </>
+      )}
       <div className="space-y-2 border-t border-slate-200 pt-4">
         <div className="space-y-1">
           <Label htmlFor="comment">Rejection comment</Label>

@@ -1,20 +1,48 @@
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { useAuth } from "@/context/auth/AuthContext";
 import {
   listJobs,
   createJob,
   updateJob,
   closeJob,
-  reopenJob,
   listApprovers,
   submitForReview,
+  requestClose,
+  requestReopen,
+  deleteJob,
 } from "@/api/recruitingApi";
 import PostingsList from "@/pages/Recruiting/components/PostingsList";
 import PostingForm from "@/pages/Recruiting/components/PostingForm";
 import PostingPreview from "@/pages/Recruiting/components/PostingPreview";
 import SubmitReviewDialog from "@/pages/Recruiting/components/SubmitReviewDialog";
+
+/** Title and dispatch fn per review action kind. */
+const REVIEW_ACTION = {
+  submit: {
+    title: "Submit for review",
+    dispatch: (jobId, body) => submitForReview(jobId, body),
+    successMsg: "Submitted for review.",
+  },
+  close: {
+    title: "Request close",
+    dispatch: (jobId, body) => requestClose(jobId, body),
+    successMsg: "Close requested.",
+  },
+  reopen: {
+    title: "Request reopen",
+    dispatch: (jobId, body) => requestReopen(jobId, body),
+    successMsg: "Reopen requested.",
+  },
+};
 
 /** Postings management page: lifecycle + review submission. */
 const Postings = () => {
@@ -23,9 +51,10 @@ const Postings = () => {
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [submitOpen, setSubmitOpen] = useState(false);
-  const [submitJobId, setSubmitJobId] = useState(null);
+  const [reviewAction, setReviewAction] = useState(null); // { kind, jobId }
   const [approvers, setApprovers] = useState([]);
   const [previewJob, setPreviewJob] = useState(null);
+  const [deleteId, setDeleteId] = useState(null);
 
   const refresh = useCallback(async () => {
     const { data } = await listJobs();
@@ -36,6 +65,13 @@ const Postings = () => {
     refresh().catch((e) => toast.error(e.message));
   }, [refresh]);
 
+  /**
+   * Generic helper: run an async fn, refresh the list, show a success toast.
+   * On error, shows an error toast.
+   *
+   * @param {() => Promise<unknown>} fn
+   * @param {string} ok  Success message
+   */
   const run = async (fn, ok) => {
     try {
       await fn();
@@ -63,21 +99,43 @@ const Postings = () => {
     );
   };
 
-  const openSubmit = async (jobId) => {
+  /**
+   * Open the review dialog for a given kind (submit | close | reopen).
+   * Fetches the approver list first so the dialog is always current.
+   *
+   * @param {number} jobId
+   * @param {"submit"|"close"|"reopen"} kind
+   */
+  const openReview = async (jobId, kind) => {
     try {
       const { data } = await listApprovers();
       setApprovers(data ?? []);
-      setSubmitJobId(jobId);
+      setReviewAction({ kind, jobId });
       setSubmitOpen(true);
     } catch (e) {
       toast.error(e.message);
     }
   };
 
-  const handleSubmitReview = (body) => {
+  const handleReviewSubmit = (body) => {
     setSubmitOpen(false);
-    run(() => submitForReview(submitJobId, body), "Submitted for review.");
+    if (!reviewAction) return;
+    const { kind, jobId } = reviewAction;
+    const action = REVIEW_ACTION[kind];
+    run(() => action.dispatch(jobId, body), action.successMsg);
   };
+
+  const askDelete = (id) => setDeleteId(id);
+
+  const confirmDelete = () => {
+    const id = deleteId;
+    setDeleteId(null);
+    run(() => deleteJob(id), "Posting deleted.");
+  };
+
+  const currentTitle = reviewAction
+    ? REVIEW_ACTION[reviewAction.kind].title
+    : "Submit for review";
 
   return (
     <div className="space-y-4 p-6">
@@ -88,9 +146,11 @@ const Postings = () => {
       <PostingsList
         jobs={jobs}
         onEdit={openEdit}
-        onSubmit={openSubmit}
+        onSubmit={(id) => openReview(id, "submit")}
         onClose={(id) => run(() => closeJob(id), "Posting closed.")}
-        onReopen={(id) => run(() => reopenJob(id), "Posting reopened.")}
+        onRequestClose={(id) => openReview(id, "close")}
+        onRequestReopen={(id) => openReview(id, "reopen")}
+        onDelete={askDelete}
         onView={(job) => setPreviewJob(job)}
       />
       <PostingForm
@@ -108,9 +168,26 @@ const Postings = () => {
         open={submitOpen}
         approvers={approvers}
         currentUserId={user?.userId}
-        onSubmit={handleSubmitReview}
+        title={currentTitle}
+        onSubmit={handleReviewSubmit}
         onOpenChange={setSubmitOpen}
       />
+      <Dialog open={!!deleteId} onOpenChange={(o) => !o && setDeleteId(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete this posting?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-slate-600">This cannot be undone.</p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteId(null)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={confirmDelete}>
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

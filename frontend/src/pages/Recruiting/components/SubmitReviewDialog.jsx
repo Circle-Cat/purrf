@@ -19,12 +19,13 @@ const MIN_APPROVERS = 2;
  * (before self-exclusion) is below MIN_APPROVER_POOL=2, matching the backend floor.
  *
  * @param {{open: boolean, approvers: object[], currentUserId: number,
- *          onSubmit: Function, onOpenChange: Function}} props
+ *          title?: string, onSubmit: Function, onOpenChange: Function}} props
  */
 const SubmitReviewDialog = ({
   open,
   approvers,
   currentUserId,
+  title = "Submit for review",
   onSubmit,
   onOpenChange,
 }) => {
@@ -54,7 +55,7 @@ const SubmitReviewDialog = ({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Submit for review</DialogTitle>
+          <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
         {poolTooSmall ? (
           <p className="text-sm text-red-600">

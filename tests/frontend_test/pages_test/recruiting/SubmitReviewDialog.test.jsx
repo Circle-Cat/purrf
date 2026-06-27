@@ -9,6 +9,36 @@ const approvers = [
 ];
 
 describe("SubmitReviewDialog", () => {
+  it("renders default title 'Submit for review' when no title prop passed", () => {
+    render(
+      <SubmitReviewDialog
+        open
+        approvers={approvers}
+        currentUserId={1}
+        onSubmit={() => {}}
+        onOpenChange={() => {}}
+      />,
+    );
+    expect(
+      screen.getByRole("heading", { name: "Submit for review" }),
+    ).toBeInTheDocument();
+  });
+
+  it("renders custom title when title prop is passed", () => {
+    render(
+      <SubmitReviewDialog
+        open
+        approvers={approvers}
+        currentUserId={1}
+        title="Request close"
+        onSubmit={() => {}}
+        onOpenChange={() => {}}
+      />,
+    );
+    expect(
+      screen.getByRole("heading", { name: "Request close" }),
+    ).toBeInTheDocument();
+  });
   it("excludes the current user from the reviewer options", () => {
     render(
       <SubmitReviewDialog
