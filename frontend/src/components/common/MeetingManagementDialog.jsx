@@ -43,7 +43,7 @@ const TIME_SLOTS = Array.from({ length: 48 }, (_, i) => {
   return { value: timeStr, label: timeStr };
 });
 
-export default function MeetingManagementDialog({ roundId }) {
+export default function MeetingManagementDialog({ roundId, onBooked }) {
   const { partners, bookMeeting, isLoading } = useMeetingManagement(roundId);
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("schedule");
@@ -134,6 +134,7 @@ export default function MeetingManagementDialog({ roundId }) {
       };
 
       await bookMeeting(cleanedPayload);
+      await onBooked?.();
 
       if (isOpen) {
         toast.success("Meeting booked successfully!");
