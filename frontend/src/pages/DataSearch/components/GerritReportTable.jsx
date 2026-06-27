@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { getGerritStats } from "@/api/dataSearchApi";
-import "@/pages/DataSearch/components/GerritReportTable.css";
 import Table from "@/components/common/Table";
 
 const COLUMNS = [
