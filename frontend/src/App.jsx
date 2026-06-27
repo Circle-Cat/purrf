@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   BrowserRouter as Router,
   Routes,
@@ -19,6 +20,7 @@ import PersonalDashboard from "@/pages/PersonalDashboard";
 import MentorshipManagement from "@/pages/MentorshipManagement";
 import VerifyRequired from "@/pages/VerifyRequired";
 import SignInSecurity from "@/pages/SignInSecurity";
+import AdminPermissions from "@/pages/AdminPermissions";
 import { AuthProvider } from "@/context/auth";
 import { FlagsProvider, LDIdentifier } from "@/context/flags";
 import { PERMISSIONS } from "@/constants/Permissions";
@@ -28,17 +30,22 @@ import { Toaster } from "@/components/ui/sonner";
 function App() {
   const deployEnv = import.meta.env.VITE_DEPLOY_ENV;
 
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
   const showEnvBanner = isBannerEnv(deployEnv);
   const containerClassName = `app-container legacy-styles${
     showEnvBanner ? " has-env-banner" : ""
-  }`;
+  }${sidebarCollapsed ? " sidebar-collapsed" : ""}`;
   return (
     <FlagsProvider>
       <AuthProvider>
         <LDIdentifier />
         <Router>
           <div className={containerClassName}>
-            <Header />
+            <Header
+              onToggleSidebar={() => setSidebarCollapsed((prev) => !prev)}
+              sidebarCollapsed={sidebarCollapsed}
+            />
             {showEnvBanner && <EnvironmentBanner env={deployEnv} />}
             <div className="app-body">
               <Sidebar />
@@ -91,6 +98,16 @@ function App() {
                           ]}
                         >
                           <MentorshipManagement />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path={ROUTE_PATHS.ADMIN_USERS}
+                      element={
+                        <ProtectedRoute
+                          requiredPermissions={[PERMISSIONS.PERMISSION_MANAGE]}
+                        >
+                          <AdminPermissions />
                         </ProtectedRoute>
                       }
                     />

@@ -100,6 +100,8 @@ from backend.repository.mentorship_round_participants_repository import (
 from backend.repository.preferences_repository import PreferencesRepository
 from backend.mentorship.mentorship_mapper import MentorshipMapper
 from backend.mentorship.mentorship_controller import MentorshipController
+from backend.mentorship.mentorship_admin_service import MentorshipAdminService
+from backend.mentorship.mentorship_admin_controller import MentorshipAdminController
 from backend.mentorship.rounds_service import RoundsService
 from backend.mentorship.participation_service import ParticipationService
 from backend.mentorship.registration_service import RegistrationService
@@ -407,6 +409,7 @@ class AppDependencyBuilder:
             auth0_client=self.auth0_client,
             user_emails_repository=self.user_emails_repository,
             user_identities_repository=self.user_identities_repository,
+            users_repository=self.users_repository,
             logger=self.logger,
         )
         self.mentorship_round_repository = MentorshipRoundRepository()
@@ -451,6 +454,8 @@ class AppDependencyBuilder:
             mentorship_pairs_repository=self.mentorship_pairs_repository,
             mentorship_round_repository=self.mentorship_round_repository,
             users_repository=self.users_repository,
+            user_identities_repository=self.user_identities_repository,
+            user_emails_repository=self.user_emails_repository,
         )
         self.mentorship_controller = MentorshipController(
             rounds_service=self.rounds_service,
@@ -460,6 +465,16 @@ class AppDependencyBuilder:
             launchdarkly_service=self.launchdarkly_service,
             database=self.database,
             meet_attendance_sync_service=self.meet_attendance_service,
+        )
+        self.mentorship_admin_service = MentorshipAdminService(
+            users_repository=self.users_repository,
+            participants_repository=self.mentorship_round_participants_repo,
+            rounds_repository=self.mentorship_round_repository,
+            training_repository=self.training_repository,
+        )
+        self.mentorship_admin_controller = MentorshipAdminController(
+            mentorship_admin_service=self.mentorship_admin_service,
+            database=self.database,
         )
         self.experience_repository = ExperienceRepository()
         self.profile_mapper = ProfileMapper()
@@ -506,6 +521,7 @@ class AppDependencyBuilder:
             internal_activity_controller=self.internal_activity_controller,
             profile_controller=self.profile_controller,
             mentorship_controller=self.mentorship_controller,
+            mentorship_admin_controller=self.mentorship_admin_controller,
             email_management_controller=self.email_management_controller,
             permission_admin_controller=self.permission_admin_controller,
             launchdarkly_client=self.launchdarkly_client,

@@ -18,7 +18,7 @@ import {
   confirmUnlink,
 } from "@/api/emailApi";
 import { useEmailSettings } from "@/pages/SignInSecurity/hooks/useEmailSettings";
-import EmailAddressList from "@/pages/SignInSecurity/components/EmailAddressList";
+import { identityLabel } from "@/pages/SignInSecurity/providers";
 import SignInMethodList from "@/pages/SignInSecurity/components/SignInMethodList";
 import AddSignInMethodDialog from "@/pages/SignInSecurity/components/AddSignInMethodDialog";
 import StepUpConfirmDialog from "@/pages/SignInSecurity/components/StepUpConfirmDialog";
@@ -26,26 +26,15 @@ import StepUpConfirmDialog from "@/pages/SignInSecurity/components/StepUpConfirm
 const errorMessage = (error, fallback) =>
   error?.response?.data?.message || fallback;
 
-const PROVIDER_LABELS = {
-  "google-oauth2": "Google",
-  google: "Google",
-  email: "Email",
-  auth0: "Email & password",
-};
-
-const identityLabel = (identity) => {
-  const provider = (identity.subjectIdentifier || "").split("|")[0];
-  const name = PROVIDER_LABELS[provider] || provider || "this sign-in method";
-  return identity.emailClaim ? `${name} (${identity.emailClaim})` : name;
-};
-
 /**
  * Sign in & security settings page.
  *
- * Sign-in methods are the management subject; contact emails are synced from
- * them. Backed by `GET /auth/emails`: add a sign-in method (email OTP), switch
- * the primary contact email (step-up OTP), and unlink a sign-in method (step-up
- * OTP, which also drops its synced contact email). Cards span the full width.
+ * Sign-in methods are the management subject; each method's email is a contact
+ * address synced from it, and the primary contact email receives notifications.
+ * Backed by `GET /auth/emails`: add a sign-in method (email OTP), set a method's
+ * email as the primary contact (step-up OTP), and remove a sign-in method
+ * (step-up OTP, which also drops its synced contact email). A single full-width
+ * card.
  *
  * @component
  */
@@ -66,7 +55,10 @@ const SignInSecurity = () => {
       });
     } catch (error) {
       toast.error(
-        errorMessage(error, "Could not start switching your primary email."),
+        errorMessage(
+          error,
+          "Could not start setting your primary contact email.",
+        ),
       );
     }
   };
@@ -75,10 +67,12 @@ const SignInSecurity = () => {
     try {
       await confirmSetPrimary(primaryTarget.emailId, primaryTarget.state, code);
       setPrimaryTarget(null);
-      toast.success("Primary email updated.");
+      toast.success("Primary contact email updated.");
       await refresh();
     } catch (error) {
-      toast.error(errorMessage(error, "Could not switch your primary email."));
+      toast.error(
+        errorMessage(error, "Could not set your primary contact email."),
+      );
     }
   };
 
@@ -122,26 +116,10 @@ const SignInSecurity = () => {
     <div className="flex flex-col gap-4 py-8">
       <Card>
         <CardHeader>
-          <CardTitle>Email addresses</CardTitle>
-          <CardDescription>
-            Your contact email addresses, synced from your sign-in methods. Your
-            primary address receives account notifications.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <EmailAddressList
-            emails={emails}
-            isLoading={isLoading}
-            onSetPrimary={handleSetPrimary}
-          />
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
           <CardTitle>Sign-in methods</CardTitle>
           <CardDescription>
-            The accounts you can use to sign in to Purrf.
+            The methods you can use to sign in to Purrf. Your primary contact
+            email receives account notifications.
           </CardDescription>
           <CardAction>
             <Button
@@ -155,10 +133,12 @@ const SignInSecurity = () => {
         </CardHeader>
         <CardContent>
           <SignInMethodList
+            emails={emails}
             internalIdentities={internalIdentities}
             externalIdentities={externalIdentities}
             isLoading={isLoading}
             onUnlink={handleUnlink}
+            onSetPrimary={handleSetPrimary}
           />
         </CardContent>
       </Card>
@@ -174,9 +154,9 @@ const SignInSecurity = () => {
         onOpenChange={(o) => {
           if (!o) setPrimaryTarget(null);
         }}
-        title="Switch primary email"
-        description={`Enter the 6-digit code we sent to your current primary email to make ${primaryTarget?.email} your primary contact address.`}
-        confirmLabel="Switch primary"
+        title="Set primary contact email"
+        description={`Enter the 6-digit code we sent to your current primary contact email to make ${primaryTarget?.email} your primary contact email.`}
+        confirmLabel="Set as primary"
         onConfirm={handleConfirmSetPrimary}
         onResend={handleResendSetPrimary}
       />
@@ -187,7 +167,7 @@ const SignInSecurity = () => {
           if (!o) setUnlinkTarget(null);
         }}
         title="Remove sign-in method"
-        description={`Enter the 6-digit code we sent to your primary email to confirm removing ${unlinkTarget?.label}. Its contact email is removed too unless another sign-in method uses it.`}
+        description={`Enter the 6-digit code we sent to your primary contact email to confirm removing ${unlinkTarget?.label}. Its contact email is removed too unless another sign-in method uses it.`}
         confirmLabel="Remove sign-in method"
         confirmVariant="destructive"
         onConfirm={handleConfirmUnlink}

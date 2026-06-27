@@ -57,16 +57,6 @@ export const useProfileData = () => {
       });
     }
 
-    if (Array.isArray(user.alternativeEmails)) {
-      user.alternativeEmails.forEach((email, idx) => {
-        emailList.push({
-          id: `alt-${idx}`,
-          email,
-          isPrimary: false,
-        });
-      });
-    }
-
     setPersonalInfo((prev) => ({
       ...prev,
       id: user.id,

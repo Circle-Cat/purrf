@@ -37,7 +37,6 @@ class TestProfileMapper(unittest.TestCase):
             primary_email="alice@example.com",
             updated_timestamp=self.now,
             preferred_name="Alice",
-            alternative_emails=["bob@example.com"],
             linkedin_link="http://linkedin.com/alice",
         )
 
@@ -95,7 +94,6 @@ class TestProfileMapper(unittest.TestCase):
         self.assertEqual(
             dto.communication_method, self.users_entity.communication_channel
         )
-        self.assertEqual(dto.alternative_emails, ["bob@example.com"])
         self.assertEqual(dto.timezone, "Asia/Shanghai")
 
     def test_map_experience_to_work_history_dto(self):
@@ -162,12 +160,6 @@ class TestProfileMapper(unittest.TestCase):
         """Verify defensive handling when experience is None."""
         self.assertEqual(self.mapper._map_work_history(None), [])
         self.assertEqual(self.mapper._map_education(None), [])
-
-    def test_users_entity_alternative_emails_none(self):
-        """Verify that alternative_emails is normalized to an empty list when None."""
-        self.users_entity.alternative_emails = None
-        dto = self.mapper._map_user(self.users_entity)
-        self.assertEqual(dto.alternative_emails, [])
 
     def test_pydantic_serialization_alias(self):
         """Verify Pydantic serialization uses camelCase aliases for API output."""

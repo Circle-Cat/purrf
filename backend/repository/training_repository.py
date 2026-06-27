@@ -31,6 +31,31 @@ class TrainingRepository:
         )
         return result.scalars().one_or_none()
 
+    async def get_training_by_user_ids(
+        self, session: AsyncSession, user_ids: set[int]
+    ) -> dict[int, list[TrainingEntity]]:
+        """
+        Batch-fetch all training records for a set of user IDs.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            user_ids (set[int]): A set of user IDs to retrieve training records for.
+
+        Returns:
+            dict[int, list[TrainingEntity]]: Training records grouped by user_id.
+                Users with no training records are omitted from the dict.
+                Returns an empty dict if user_ids is empty.
+        """
+        if not user_ids:
+            return {}
+        result = await session.execute(
+            select(TrainingEntity).where(TrainingEntity.user_id.in_(user_ids))
+        )
+        trainings_map: dict[int, list[TrainingEntity]] = {}
+        for training in result.scalars().all():
+            trainings_map.setdefault(training.user_id, []).append(training)
+        return trainings_map
+
     async def upsert_training(
         self, session: AsyncSession, entity: TrainingEntity
     ) -> TrainingEntity:

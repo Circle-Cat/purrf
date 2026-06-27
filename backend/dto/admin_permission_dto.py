@@ -10,6 +10,8 @@ class AdminUserDto(BaseDto):
     last_name: str
     is_active: bool
     is_super_admin: bool
+    preferred_name: str | None = None
+    user_type: str
 
 
 class UserListDto(BaseDto):

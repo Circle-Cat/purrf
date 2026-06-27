@@ -75,13 +75,16 @@ class TestPermissionAdminService(unittest.IsolatedAsyncioTestCase):
     async def test_list_users_wraps_repo_result(self):
         self.users.list_users.return_value = (
             [
-                UsersEntity(
-                    user_id=1,
-                    primary_email="a@x.com",
-                    first_name="A",
-                    last_name="B",
-                    is_active=True,
-                    is_super_admin=False,
+                (
+                    UsersEntity(
+                        user_id=1,
+                        primary_email="a@x.com",
+                        first_name="A",
+                        last_name="B",
+                        is_active=True,
+                        is_super_admin=False,
+                    ),
+                    False,  # is_internal
                 )
             ],
             1,
@@ -91,6 +94,65 @@ class TestPermissionAdminService(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(out.total, 1)
         self.assertEqual(out.users[0].primary_email, "a@x.com")
+        self.assertEqual(out.users[0].user_type, "external")
+        self.assertIsNone(out.users[0].preferred_name)
+
+    async def test_list_users_internal_user_gets_internal_type(self):
+        self.users.list_users.return_value = (
+            [
+                (
+                    UsersEntity(
+                        user_id=2,
+                        primary_email="b@circlecat.org",
+                        first_name="B",
+                        last_name="C",
+                        is_active=True,
+                        is_super_admin=False,
+                        preferred_name="Bee",
+                    ),
+                    True,  # is_internal
+                )
+            ],
+            1,
+        )
+        out = await self.service.list_users(
+            self.session, search=None, limit=20, offset=0
+        )
+        self.assertEqual(out.users[0].user_type, "internal")
+        self.assertEqual(out.users[0].preferred_name, "Bee")
+
+    async def test_list_users_forwards_sort_and_filter_params(self):
+        """Service passes sort_by, order, is_super_admin, user_type through to repo."""
+        self.users.list_users.return_value = ([], 0)
+        await self.service.list_users(
+            self.session,
+            search="q",
+            limit=10,
+            offset=5,
+            sort_by="last_name",
+            order="desc",
+            is_super_admin=True,
+            user_type="internal",
+        )
+        self.users.list_users.assert_awaited_once()
+        kwargs = self.users.list_users.await_args.kwargs
+        self.assertEqual(kwargs["sort_by"], "last_name")
+        self.assertEqual(kwargs["order"], "desc")
+        self.assertEqual(kwargs["is_super_admin"], True)
+        self.assertEqual(kwargs["user_type"], "internal")
+        self.assertEqual(kwargs["search"], "q")
+        self.assertEqual(kwargs["limit"], 10)
+        self.assertEqual(kwargs["offset"], 5)
+
+    async def test_list_users_defaults_sort_and_filter_params(self):
+        """Service passes None defaults when sort/filter params are omitted."""
+        self.users.list_users.return_value = ([], 0)
+        await self.service.list_users(self.session, search=None, limit=20, offset=0)
+        kwargs = self.users.list_users.await_args.kwargs
+        self.assertIsNone(kwargs["sort_by"])
+        self.assertEqual(kwargs["order"], "asc")
+        self.assertIsNone(kwargs["is_super_admin"])
+        self.assertIsNone(kwargs["user_type"])
 
     async def test_list_audit_wraps_repo_result(self):
         self.perms.list_audit.return_value = ([_grant(1, 1, "system.sync")], 1)
@@ -178,6 +240,7 @@ class TestPermissionAdminService(unittest.IsolatedAsyncioTestCase):
             is_super_admin=False,
         )
         self.users.set_super_admin.return_value = 1
+        self.users.is_internal = AsyncMock(return_value=False)
         dto = await self.service.set_super_admin(self.session, 2, granted_by=9)
         self.users.set_super_admin.assert_awaited_once_with(self.session, 2, True)
         self.perms.grant.assert_awaited_once()
@@ -186,6 +249,7 @@ class TestPermissionAdminService(unittest.IsolatedAsyncioTestCase):
         names = args[2] if len(args) > 2 else kwargs["permission_names"]
         self.assertEqual(list(names), ["*"])
         self.assertTrue(dto.is_super_admin)
+        self.assertEqual(dto.user_type, "external")
         self.session.commit.assert_awaited_once()
 
     async def test_set_super_admin_missing_user_raises(self):
@@ -211,6 +275,7 @@ class TestPermissionAdminService(unittest.IsolatedAsyncioTestCase):
             is_super_admin=True,
         )
         self.users.set_super_admin.return_value = 1
+        self.users.is_internal = AsyncMock(return_value=False)
         dto = await self.service.revoke_super_admin(
             self.session, 2, caller_user_id=9, revoked_by=9
         )
@@ -219,6 +284,7 @@ class TestPermissionAdminService(unittest.IsolatedAsyncioTestCase):
             self.session, 2, "super_admin_set", revoked_by=9
         )
         self.assertFalse(dto.is_super_admin)
+        self.assertEqual(dto.user_type, "external")
         self.session.commit.assert_awaited_once()
 
 

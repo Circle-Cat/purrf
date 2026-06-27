@@ -65,7 +65,7 @@ const StepUpConfirmDialog = ({
     try {
       await onResend();
       setCode("");
-      toast.success("We sent a new code to your primary email.");
+      toast.success("We sent a new code to your primary contact email.");
     } catch (error) {
       toast.error(
         error?.response?.data?.message ||
@@ -103,14 +103,15 @@ const StepUpConfirmDialog = ({
             {busy ? "Verifying…" : confirmLabel}
           </Button>
           {onResend && (
-            <button
+            <Button
               type="button"
-              className="text-sm text-muted-foreground hover:underline"
+              variant="link"
+              className="h-auto p-0 text-muted-foreground"
               onClick={handleResend}
               disabled={busy}
             >
               Resend code
-            </button>
+            </Button>
           )}
         </div>
       </DialogContent>

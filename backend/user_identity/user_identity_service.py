@@ -188,15 +188,14 @@ class UserIdentityService:
         Google first-login leaves user_emails empty; the user is then sent
         through the hard-wall /verify-required flow (PR5).
 
-        Legacy users.subject_identifier and users.primary_email are still
-        populated for dual-write compatibility; these columns are removed in
-        PR8/P6.
+        Legacy users.primary_email is still populated for dual-write
+        compatibility; it is removed in a later cleanup. users.subject_identifier
+        is no longer written — the real sub lives only on the user_identities row.
         """
         sub = user_info.sub
         email = user_info.primary_email.lower()
 
         new_user = UsersEntity(
-            subject_identifier=sub,
             primary_email=email,
             first_name=user_info.first_name or "",
             last_name=user_info.last_name or "",
@@ -204,7 +203,6 @@ class UserIdentityService:
             timezone="America/Los_Angeles",
             timezone_updated_at=datetime(1970, 1, 1, tzinfo=timezone.utc),
             communication_channel=CommunicationMethod.EMAIL,
-            alternative_emails=[],
             linkedin_link=None,
             has_mentorship_mentor_experience=None,
             is_active=True,

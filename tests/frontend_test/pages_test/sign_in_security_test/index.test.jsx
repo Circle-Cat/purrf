@@ -28,31 +28,26 @@ vi.mock("@/api/emailApi", () => ({
 vi.spyOn(toast, "success").mockImplementation(() => {});
 vi.spyOn(toast, "error").mockImplementation(() => {});
 
-// Child list mocks expose buttons that drive the page's action callbacks.
-vi.mock("@/pages/SignInSecurity/components/EmailAddressList", () => ({
-  default: ({ emails, isLoading, onSetPrimary }) => (
-    <div data-testid="email-address-list">
-      EmailAddressList:{isLoading ? "loading" : "ready"}:{emails.length}
+// Child list mock exposes buttons that drive the page's action callbacks.
+// Both the set-primary and unlink actions are now triggered from this list.
+vi.mock("@/pages/SignInSecurity/components/SignInMethodList", () => ({
+  default: ({
+    emails,
+    internalIdentities,
+    externalIdentities,
+    isLoading,
+    onUnlink,
+    onSetPrimary,
+  }) => (
+    <div data-testid="sign-in-method-list">
+      SignInMethodList:{isLoading ? "loading" : "ready"}:
+      {internalIdentities.length ? "internal" : "none"}:
+      {externalIdentities.length}:{emails.length}
       <button
         onClick={() => onSetPrimary({ emailId: 2, email: "bob@gmail.com" })}
       >
         trigger-set-primary
       </button>
-    </div>
-  ),
-}));
-
-vi.mock("@/pages/SignInSecurity/components/SignInMethodList", () => ({
-  default: ({
-    internalIdentities,
-    externalIdentities,
-    isLoading,
-    onUnlink,
-  }) => (
-    <div data-testid="sign-in-method-list">
-      SignInMethodList:{isLoading ? "loading" : "ready"}:
-      {internalIdentities.length ? "internal" : "none"}:
-      {externalIdentities.length}
       <button
         onClick={() =>
           onUnlink({
@@ -94,7 +89,7 @@ vi.mock("@/pages/SignInSecurity/components/StepUpConfirmDialog", () => ({
     ) : null,
 }));
 
-const PRIMARY_TITLE = "Switch primary email";
+const PRIMARY_TITLE = "Set primary contact email";
 const UNLINK_TITLE = "Remove sign-in method";
 
 describe("SignInSecurity page", () => {
@@ -114,29 +109,24 @@ describe("SignInSecurity page", () => {
 
   afterEach(cleanup);
 
-  it("renders both section cards with titles and descriptions", () => {
+  it("renders only the sign-in methods card and no email-address card", () => {
     render(<SignInSecurity />);
 
-    expect(screen.getByText("Email addresses")).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "Your contact email addresses, synced from your sign-in methods. Your primary address receives account notifications.",
-      ),
-    ).toBeInTheDocument();
+    expect(screen.queryByText("Email addresses")).not.toBeInTheDocument();
     expect(screen.getByText("Sign-in methods")).toBeInTheDocument();
     expect(
-      screen.getByText("The accounts you can use to sign in to Purrf."),
+      screen.getByText(/The methods you can use to sign in to Purrf\./),
     ).toBeInTheDocument();
   });
 
-  it("renders both child lists", () => {
+  it("renders the sign-in method list and no email-address list", () => {
     render(<SignInSecurity />);
 
-    expect(screen.getByTestId("email-address-list")).toBeInTheDocument();
+    expect(screen.queryByTestId("email-address-list")).not.toBeInTheDocument();
     expect(screen.getByTestId("sign-in-method-list")).toBeInTheDocument();
   });
 
-  it("passes hook data through to the child lists", () => {
+  it("passes hook data (including emails) through to the sign-in method list", () => {
     useEmailSettings.mockReturnValue({
       ...defaultHookValue,
       emails: [{ emailId: 1 }, { emailId: 2 }],
@@ -146,22 +136,16 @@ describe("SignInSecurity page", () => {
 
     render(<SignInSecurity />);
 
-    expect(screen.getByTestId("email-address-list")).toHaveTextContent(
-      "EmailAddressList:ready:2",
-    );
     expect(screen.getByTestId("sign-in-method-list")).toHaveTextContent(
-      "SignInMethodList:ready:internal:1",
+      "SignInMethodList:ready:internal:1:2",
     );
   });
 
-  it("propagates the loading state to both child lists", () => {
+  it("propagates the loading state to the sign-in method list", () => {
     useEmailSettings.mockReturnValue({ ...defaultHookValue, isLoading: true });
 
     render(<SignInSecurity />);
 
-    expect(screen.getByTestId("email-address-list")).toHaveTextContent(
-      "loading",
-    );
     expect(screen.getByTestId("sign-in-method-list")).toHaveTextContent(
       "loading",
     );
@@ -189,7 +173,7 @@ describe("SignInSecurity page", () => {
     });
   });
 
-  describe("Switch primary email", () => {
+  describe("Set primary contact email", () => {
     it("initiates the switch and opens the dialog with the target email", async () => {
       const user = userEvent.setup();
       initiateSetPrimary.mockResolvedValue({ data: { state: "st-1" } });
@@ -241,7 +225,9 @@ describe("SignInSecurity page", () => {
       await waitFor(() =>
         expect(confirmSetPrimary).toHaveBeenCalledWith(2, "st-1", "123456"),
       );
-      expect(toast.success).toHaveBeenCalledWith("Primary email updated.");
+      expect(toast.success).toHaveBeenCalledWith(
+        "Primary contact email updated.",
+      );
       expect(refresh).toHaveBeenCalledTimes(1);
       await waitFor(() =>
         expect(screen.queryByTestId("stepup-dialog")).not.toBeInTheDocument(),
@@ -265,7 +251,7 @@ describe("SignInSecurity page", () => {
 
       await waitFor(() =>
         expect(toast.error).toHaveBeenCalledWith(
-          "Could not switch your primary email.",
+          "Could not set your primary contact email.",
         ),
       );
       expect(refresh).not.toHaveBeenCalled();

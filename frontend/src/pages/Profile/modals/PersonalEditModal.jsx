@@ -6,9 +6,7 @@ import { Button } from "@/components/ui/button";
 /**
  * PersonalEditModal allows editing personal profile information including
  * name, timezone, and LinkedIn. Email addresses are not editable here — they
- * are managed on the Sign in & security settings page; this modal only passes
- * the existing alternative emails through unchanged so a save never clears
- * them.
+ * are managed on the Sign in & security settings page.
  *
  * @param {boolean} isOpen - Controls modal visibility
  * @param {function} onClose - Callback to close the modal
@@ -71,13 +69,7 @@ const PersonalEditModal = ({
 
     setIsSaving(true);
     try {
-      // Email is managed in Settings, not here. Pass the alternative emails
-      // loaded from the backend through unchanged so this save (a full
-      // overwrite server-side) never clears them.
-      const validAltEmails = (formData.emails || [])
-        .filter((e) => !e.isPrimary && e.email?.trim())
-        .map((e) => e.email.trim());
-
+      // Email is managed in Settings (via sign-in methods), not here.
       const payload = {
         user: {
           firstName: formData.firstName,
@@ -85,7 +77,6 @@ const PersonalEditModal = ({
           preferredName: formData.preferredName,
           timezone: formData.timezone,
           linkedinLink: formData.linkedin,
-          alternativeEmails: validAltEmails,
           communicationMethod: formData.communicationMethod,
         },
       };
@@ -156,7 +147,7 @@ const PersonalEditModal = ({
             </label>
             <TimezoneSelector
               value={formData.timezone || ""}
-              onChange={(opt) => handleChange("timezone", opt.value)}
+              onChange={(opt) => handleChange("timezone", opt?.value ?? "")}
               isDisabled={!canEditTimezone}
             />
             {errors.timezone && (

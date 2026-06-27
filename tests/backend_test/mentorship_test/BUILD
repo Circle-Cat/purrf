@@ -47,3 +47,15 @@ py_test(
     srcs = ["meet_attendance_service_test.py"],
     deps = ["//backend/mentorship"],
 )
+
+py_test(
+    name = "mentorship_admin_service_test",
+    srcs = ["mentorship_admin_service_test.py"],
+    deps = ["//backend/mentorship"],
+)
+
+py_test(
+    name = "mentorship_admin_controller_test",
+    srcs = ["mentorship_admin_controller_test.py"],
+    deps = ["//backend/mentorship"],
+)

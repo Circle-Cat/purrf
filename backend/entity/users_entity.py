@@ -1,6 +1,5 @@
 from datetime import datetime
 from sqlalchemy import Boolean, String, DateTime, func, text, Enum as SAEnum
-from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column
 from backend.common.base import Base
 from backend.common.mentorship_enums import CommunicationMethod
@@ -29,17 +28,15 @@ class UsersEntity(Base):
 
     has_mentorship_mentor_experience: Mapped[bool | None] = mapped_column(Boolean)
 
+    # TODO(PUR-496): retire this column. The live "primary contact" is the
+    # user_emails is_primary row; this legacy column is kept only as a fallback
+    # for users who have not yet verified (no is_primary row yet) and is
+    # write-through synced by EmailManagementService so reads stay current. Drop
+    # it once tools/primary_email_readiness.py reports the gap is ~0, then cut
+    # the remaining reads over to user_emails and remove the sync.
     primary_email: Mapped[str] = mapped_column(String, unique=True)
 
-    # text[] array
-    alternative_emails: Mapped[list[str] | None] = mapped_column(ARRAY(String))
-
     linkedin_link: Mapped[str | None] = mapped_column(String)
-
-    subject_identifier: Mapped[str] = mapped_column(
-        String,
-        unique=True,
-    )
 
     is_active: Mapped[bool] = mapped_column(Boolean)
 

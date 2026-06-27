@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import RoundsManagementCard from "@/pages/MentorshipManagement/components/RoundsManagementCard";
 import AllRoundsTable from "@/pages/MentorshipManagement/components/AllRoundsTable";
+import RoundModal from "@/pages/MentorshipManagement/components/RoundModal";
 
 vi.mock("@/pages/MentorshipManagement/components/AllRoundsTable", () => ({
   default: vi.fn(({ rounds, onEdit }) => (
@@ -134,5 +135,10 @@ describe("RoundsManagementCard", () => {
     const tableMock = AllRoundsTable;
     expect(tableMock).toHaveBeenCalled();
     expect(tableMock.mock.calls[0][0].canEdit).toBe(false);
+  });
+
+  it("passes readOnly=true to RoundModal when canWriteRounds is false", () => {
+    renderCard({ canWriteRounds: false });
+    expect(RoundModal.mock.lastCall[0]).toMatchObject({ readOnly: true });
   });
 });

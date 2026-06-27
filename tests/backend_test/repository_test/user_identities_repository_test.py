@@ -21,7 +21,6 @@ def _make_user(is_active: bool = True) -> UsersEntity:
         primary_email=f"{uuid.uuid4()}@example.com",
         is_active=is_active,
         updated_timestamp=datetime.now(timezone.utc),
-        subject_identifier=str(uuid.uuid4()),
     )
 
 
@@ -364,6 +363,85 @@ class TestUserIdentitiesRepository(BaseRepositoryTestLib):
         self.assertEqual(
             {r.subject_identifier for r in remaining}, {"google-oauth2|keep"}
         )
+
+    # get_google_subs_by_user_ids — backs Meet attendance's local UID->email cache
+    async def test_get_google_subs_by_user_ids_returns_only_google(self):
+        other_user = _make_user()
+        await self.insert_entities([other_user])
+        google = UserIdentitiesEntity(
+            user_id=self.user.user_id,
+            subject_identifier="google-oauth2|12345",
+            identity_type="external",
+            email_claim="alice@example.com",
+        )
+        email = UserIdentitiesEntity(
+            user_id=self.user.user_id,
+            subject_identifier="email|abc",
+            identity_type="external",
+            email_claim="alice@example.com",
+        )
+        other_google = UserIdentitiesEntity(
+            user_id=other_user.user_id,
+            subject_identifier="google-oauth2|99999",
+            identity_type="external",
+            email_claim="bob@example.com",
+        )
+        await self.insert_entities([google, email, other_google])
+
+        result = await self.repo.get_google_subs_by_user_ids(
+            self.session, [self.user.user_id, other_user.user_id]
+        )
+
+        self.assertEqual(
+            result,
+            {
+                self.user.user_id: ["google-oauth2|12345"],
+                other_user.user_id: ["google-oauth2|99999"],
+            },
+        )
+
+    async def test_get_google_subs_by_user_ids_returns_all_google_for_user(self):
+        google_one = UserIdentitiesEntity(
+            user_id=self.user.user_id,
+            subject_identifier="google-oauth2|first",
+            identity_type="external",
+            email_claim="alice@example.com",
+        )
+        google_two = UserIdentitiesEntity(
+            user_id=self.user.user_id,
+            subject_identifier="google-oauth2|second",
+            identity_type="external",
+            email_claim="alice@work.com",
+        )
+        await self.insert_entities([google_one, google_two])
+
+        result = await self.repo.get_google_subs_by_user_ids(
+            self.session, [self.user.user_id]
+        )
+
+        self.assertEqual(
+            {self.user.user_id: sorted(result[self.user.user_id])},
+            {self.user.user_id: ["google-oauth2|first", "google-oauth2|second"]},
+        )
+
+    async def test_get_google_subs_by_user_ids_empty_input(self):
+        result = await self.repo.get_google_subs_by_user_ids(self.session, [])
+        self.assertEqual(result, {})
+
+    async def test_get_google_subs_by_user_ids_no_google_identity(self):
+        email = UserIdentitiesEntity(
+            user_id=self.user.user_id,
+            subject_identifier="email|onlyemail",
+            identity_type="external",
+            email_claim="alice@example.com",
+        )
+        await self.insert_entities([email])
+
+        result = await self.repo.get_google_subs_by_user_ids(
+            self.session, [self.user.user_id]
+        )
+
+        self.assertEqual(result, {})
 
 
 if __name__ == "__main__":

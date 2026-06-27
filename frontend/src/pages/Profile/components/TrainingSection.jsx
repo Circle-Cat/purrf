@@ -7,6 +7,7 @@ import {
   TrainingCategoryLabel,
 } from "@/pages/Profile/utils";
 import { formatInTz } from "@/utils/dateTime";
+import { safeHttpUrl } from "@/utils/url";
 
 /**
  * Format an API timestamp (ISO 8601) as a calendar date in en-US,
@@ -46,6 +47,7 @@ const TrainingSection = ({ list, timezone }) => {
           <tbody>
             {list.map((training) => {
               const required = isIncompleteOnboarding(training);
+              const safeLink = safeHttpUrl(training.link);
               return (
                 <tr
                   key={training.id}
@@ -76,9 +78,9 @@ const TrainingSection = ({ list, timezone }) => {
                   </td>
                   <td>{formatTrainingDate(training.deadline, timezone)}</td>
                   <td>
-                    {training.link ? (
+                    {safeLink ? (
                       <a
-                        href={training.link}
+                        href={safeLink}
                         target="_blank"
                         rel="noopener noreferrer"
                       >

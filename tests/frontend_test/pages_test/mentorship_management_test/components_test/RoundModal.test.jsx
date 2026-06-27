@@ -108,4 +108,32 @@ describe("RoundModal", () => {
       expect(screen.getByText("Server error")).toBeInTheDocument(),
     );
   });
+
+  it("shows 'View Round' title in read-only mode", () => {
+    renderModal({ round: fullEditRound, readOnly: true });
+    expect(screen.getByText("View Round")).toBeInTheDocument();
+  });
+
+  it("shows Close instead of Cancel in read-only mode", () => {
+    renderModal({ round: fullEditRound, readOnly: true });
+    expect(screen.getAllByRole("button", { name: /close/i })).toHaveLength(2);
+    expect(
+      screen.queryByRole("button", { name: /cancel/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not show Save and Reset buttons in read-only mode", () => {
+    renderModal({ round: fullEditRound, readOnly: true });
+    expect(
+      screen.queryByRole("button", { name: /^save$/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /reset/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("disables the name input in read-only mode", () => {
+    renderModal({ round: fullEditRound, readOnly: true });
+    expect(screen.getByDisplayValue("Mentorship 2026 Spring")).toBeDisabled();
+  });
 });

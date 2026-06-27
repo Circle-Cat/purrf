@@ -94,11 +94,14 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         self.user_identities.get_by_subject_identifier.return_value = None
         self.user_identities.list_by_user.return_value = []
         self.user_identities.exists_active_internal.return_value = False
+        self.users = AsyncMock()
+        self.users.get_user_by_primary_email.return_value = None
         self.session = AsyncMock()
         self.service = EmailManagementService(
             self.auth0,
             self.user_emails,
             self.user_identities,
+            self.users,
             MagicMock(),
         )
 
@@ -150,9 +153,31 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
             "entity"
         ]
         self.assertEqual(identity_entity.subject_identifier, _NEW_SUB)
+        # Becoming the user's primary contact also write-through syncs the legacy
+        # users.primary_email column so reads that still hit it stay current.
+        self.users.update_primary_email.assert_awaited_once_with(
+            self.session, _USER_ID, _TARGET_EMAIL
+        )
         self.session.commit.assert_awaited_once()
         self.auth0.add_alias_email_to_account_root.assert_called_once()
         self.assertEqual(result["linked_sub"], _NEW_SUB)
+
+    async def test_verify_skips_legacy_primary_sync_on_collision(self):
+        """If the confirmed email is already another user's users.primary_email,
+        the legacy write-through is skipped (uq_users_primary_email) rather than
+        aborting the confirmed primary change."""
+        self.users.get_user_by_primary_email.return_value = MagicMock(
+            user_id=_USER_ID + 1
+        )
+
+        await self.service.verify(
+            self.session, _USER_ID, _CURRENT_SUB, _state(), "123456"
+        )
+
+        # user_emails primary still set; only the legacy column sync is skipped.
+        self.user_emails.upsert_email.assert_awaited()
+        self.users.update_primary_email.assert_not_awaited()
+        self.session.commit.assert_awaited_once()
 
     async def test_verify_marks_external_identity_for_outside_email(self):
         """A non-company address (the default alice@gmail.com) yields an
@@ -919,7 +944,7 @@ class TestSignState(unittest.TestCase):
     def setUp(self):
         os.environ["EMAIL_OTP_STATE_JWT_SECRET"] = _SECRET
         self.service = EmailManagementService(
-            MagicMock(), AsyncMock(), AsyncMock(), MagicMock()
+            MagicMock(), AsyncMock(), AsyncMock(), AsyncMock(), MagicMock()
         )
 
     def test_sign_state_stamps_envelope_and_roundtrips(self):
@@ -961,7 +986,7 @@ class TestConsumeStepUpOtp(unittest.IsolatedAsyncioTestCase):
         self.user_emails = AsyncMock()
         self.session = AsyncMock()
         self.service = EmailManagementService(
-            self.auth0, self.user_emails, AsyncMock(), MagicMock()
+            self.auth0, self.user_emails, AsyncMock(), AsyncMock(), MagicMock()
         )
 
     def _primary(self, email):

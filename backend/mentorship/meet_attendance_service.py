@@ -42,6 +42,8 @@ class MeetAttendanceService:
         mentorship_pairs_repository,
         mentorship_round_repository,
         users_repository,
+        user_identities_repository,
+        user_emails_repository,
     ):
         """
         Args:
@@ -50,12 +52,19 @@ class MeetAttendanceService:
             mentorship_pairs_repository: Repository for mentorship pair data.
             mentorship_round_repository: Repository for mentorship round data.
             users_repository: Repository for user profile data.
+            user_identities_repository: Repository for user identity rows, used to
+                resolve mentor/mentee Google subject identifiers.
+            user_emails_repository: Repository for user email rows, used to match
+                participants against a mentor/mentee's alternative (non-primary)
+                emails.
         """
         self.logger = logger
         self.google_service = google_service
         self.mentorship_pairs_repository = mentorship_pairs_repository
         self.mentorship_round_repository = mentorship_round_repository
         self.users_repository = users_repository
+        self.user_identities_repository = user_identities_repository
+        self.user_emails_repository = user_emails_repository
 
     async def sync_attendance(self, session: AsyncSession, lookback_hours: int) -> dict:
         """
@@ -128,6 +137,13 @@ class MeetAttendanceService:
         }
         users = await self.users_repository.get_all_by_ids(session, list(active_uids))
         user_by_id = {u.user_id: u for u in users}
+        # Each user's alternative (non-primary) emails, used to match a
+        # participant who signed in with a secondary address.
+        alt_emails_by_id = (
+            await self.user_emails_repository.get_non_primary_emails_by_user_ids(
+                session, list(active_uids)
+            )
+        )
         self.logger.debug(
             "[MeetAttendanceService] Loaded %d users for %d active UIDs",
             len(users),
@@ -216,7 +232,7 @@ class MeetAttendanceService:
                     )
 
                 identity_map = await self._resolve_identities(
-                    raw_by_conf, [mentor, mentee]
+                    session, raw_by_conf, [mentor, mentee]
                 )
 
                 target_secs = max((scheduled_end - scheduled_start).total_seconds(), 60)
@@ -230,7 +246,12 @@ class MeetAttendanceService:
 
                 # Map participant logs into Time Interval Trees for overlap calculation
                 role_trees, anon_trees = self._build_attendee_interval_trees(
-                    filtered_conf_list, raw_by_conf, identity_map, mentor, mentee
+                    filtered_conf_list,
+                    raw_by_conf,
+                    identity_map,
+                    mentor,
+                    mentee,
+                    alt_emails_by_id,
                 )
                 self.logger.debug(
                     "[MeetAttendanceService] Space %s: mentor_intervals=%d, mentee_intervals=%d, anon_keys=%s",
@@ -301,15 +322,22 @@ class MeetAttendanceService:
         return summary
 
     async def _resolve_identities(
-        self, raw_by_conf: dict[str, list[dict]], user_entities: list[UsersEntity]
+        self,
+        session: AsyncSession,
+        raw_by_conf: dict[str, list[dict]],
+        user_entities: list[UsersEntity],
     ) -> dict[str, str | None]:
         """
         Resolves Google user IDs found in participant logs to their primary email addresses.
 
         Checks the mentor/mentee user objects first (local cache) before falling back
-        to bulk Google API lookups for any unresolved UIDs.
+        to bulk Google API lookups for any unresolved UIDs. The local cache is keyed
+        by the Google UID, which is the suffix of each user's google-oauth2 identity
+        sub fetched from user_identities; users without a Google identity simply do
+        not contribute a cache entry.
 
         Args:
+            session: Active database session used to look up Google identities.
             raw_by_conf: Mapping of conference resource names to their participant log lists.
             user_entities: List of mentor and mentee user objects used as a local identity cache.
 
@@ -334,11 +362,18 @@ class MeetAttendanceService:
         identity_map = {}
         uids_to_query = []
 
-        # Build local lookup from known Mentor/Mentee entities
+        # Build local lookup from known Mentor/Mentee Google identities. The
+        # google-oauth2 sub's suffix is the numeric Google UID the logs key on.
+        known_users = [u for u in user_entities if u]
+        google_subs = await self.user_identities_repository.get_google_subs_by_user_ids(
+            session, [u.user_id for u in known_users]
+        )
+        email_by_user_id = {u.user_id: u.primary_email.lower() for u in known_users}
         local_uid_map = {
-            u.subject_identifier.split("|")[-1]: u.primary_email.lower()
-            for u in user_entities
-            if u and u.subject_identifier
+            sub.split("|")[-1]: email_by_user_id[user_id]
+            for user_id, subs in google_subs.items()
+            if user_id in email_by_user_id
+            for sub in subs
         }
 
         for uid in all_uids:
@@ -373,6 +408,7 @@ class MeetAttendanceService:
         identity_map: dict[str, str | None],
         mentor: UsersEntity | None,
         mentee: UsersEntity | None,
+        alt_emails_by_id: dict[int, list[str]],
     ) -> tuple[dict[str, IntervalTree], dict[str, IntervalTree]]:
         """
         Converts raw participant session records into merged IntervalTrees grouped by role.
@@ -406,8 +442,8 @@ class MeetAttendanceService:
 
         mentor_names = self._get_user_name_fingerprints(mentor)
         mentee_names = self._get_user_name_fingerprints(mentee)
-        mentor_emails = self._get_user_emails(mentor)
-        mentee_emails = self._get_user_emails(mentee)
+        mentor_emails = self._get_user_emails(mentor, alt_emails_by_id)
+        mentee_emails = self._get_user_emails(mentee, alt_emails_by_id)
 
         for conf in conf_list:
             conf_end = isoparse(conf["end_time"])
@@ -811,12 +847,16 @@ class MeetAttendanceService:
             if gm.get("conference_id") and not gm.get("is_completed")
         }
 
-    def _get_user_emails(self, user: UsersEntity | None) -> set[str]:
+    def _get_user_emails(
+        self, user: UsersEntity | None, alt_emails_by_id: dict[int, list[str]]
+    ) -> set[str]:
         """
         Returns the set of all known email addresses for a user.
 
         Args:
             user: User ORM object, or None.
+            alt_emails_by_id: Map of user_id to that user's alternative
+                (non-primary) emails, from user_emails.
 
         Returns:
             A set of lowercase email strings (primary + alternatives), or an empty set
@@ -825,7 +865,7 @@ class MeetAttendanceService:
         if not user:
             return set()
         return {user.primary_email.lower()} | {
-            e.lower() for e in (user.alternative_emails or [])
+            e.lower() for e in alt_emails_by_id.get(user.user_id, [])
         }
 
     def _get_user_name_fingerprints(self, user: UsersEntity | None) -> set[str]:

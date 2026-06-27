@@ -1,5 +1,4 @@
 import unittest
-import uuid
 from datetime import datetime, timezone
 from backend.entity.mentorship_pairs_entity import MentorshipPairsEntity
 from backend.entity.mentorship_round_entity import MentorshipRoundEntity
@@ -34,7 +33,6 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
                 primary_email="alice@example.com",
                 is_active=True,
                 updated_timestamp=self.now,
-                subject_identifier=str(uuid.uuid4()),
             ),
             UsersEntity(
                 first_name="Bob",
@@ -45,7 +43,6 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
                 primary_email="bob@example.com",
                 is_active=True,
                 updated_timestamp=self.now,
-                subject_identifier=str(uuid.uuid4()),
             ),
             UsersEntity(
                 first_name="Charlie",
@@ -56,7 +53,6 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
                 primary_email="charlie@example.com",
                 is_active=False,
                 updated_timestamp=self.now,
-                subject_identifier=str(uuid.uuid4()),
             ),
         ]
 
@@ -158,7 +154,6 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
             primary_email="mentor@example.com",
             is_active=True,
             updated_timestamp=self.now,
-            subject_identifier="mentor-subject",
         )
         self.user_partner = UsersEntity(
             first_name="P",
@@ -169,7 +164,6 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
             primary_email="partner@example.com",
             is_active=True,
             updated_timestamp=self.now,
-            subject_identifier="partner-subject",
         )
 
         self.round = MentorshipRoundEntity(

@@ -49,6 +49,42 @@ class UserEmailsRepository:
         )
         return list(result.scalars().all())
 
+    async def get_non_primary_emails_by_user_ids(
+        self, session: AsyncSession, user_ids: list[int]
+    ) -> dict[int, list[str]]:
+        """
+        Map each user_id to its non-primary email addresses (its "alternative"
+        emails), regardless of otp_confirmed.
+
+        Backs Meet attendance matching, which matches a meeting participant
+        against any of a mentor/mentee's known addresses. A user with no
+        non-primary email is omitted from the map. An empty input
+        short-circuits without a query.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            user_ids (list[int]): user_ids whose alternative emails to fetch.
+
+        Returns:
+            dict[int, list[str]]: {user_id: [non-primary email, ...]} for users
+            that have at least one; users with only a primary email are omitted.
+        """
+        if not user_ids:
+            return {}
+        result = await session.execute(
+            select(
+                UserEmailsEntity.user_id,
+                UserEmailsEntity.email,
+            ).where(
+                UserEmailsEntity.user_id.in_(user_ids),
+                UserEmailsEntity.is_primary.is_(False),
+            )
+        )
+        emails_by_user_id: dict[int, list[str]] = {}
+        for user_id, email in result.all():
+            emails_by_user_id.setdefault(user_id, []).append(email)
+        return emails_by_user_id
+
     async def exists_confirmed_on_other_user(
         self, session: AsyncSession, email: str, user_id: int
     ) -> bool:

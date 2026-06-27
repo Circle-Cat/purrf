@@ -88,4 +88,14 @@ describe("Sidebar Component", () => {
     expect(dashBoardLink).toHaveClass("active-link");
     expect(dataSearchLink).toBeNull();
   });
+
+  test("renders User Permissions for a user with permission.manage", () => {
+    renderSidebar([PERMISSIONS.PERMISSION_MANAGE]);
+    expect(screen.getByText("User Permissions")).toBeInTheDocument();
+  });
+
+  test("does not render User Permissions without permission.manage", () => {
+    renderSidebar([PERMISSIONS.DASHBOARD_ACTIVITY_SUMMARY_READ]);
+    expect(screen.queryByText("User Permissions")).not.toBeInTheDocument();
+  });
 });

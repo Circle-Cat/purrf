@@ -45,6 +45,7 @@ class EmailManagementService:
         auth0_client,
         user_emails_repository,
         user_identities_repository,
+        users_repository,
         logger,
     ):
         """
@@ -54,11 +55,14 @@ class EmailManagementService:
             auth0_client (Auth0Client): Client driving Auth0 passwordless OTP and identity linking.
             user_emails_repository (UserEmailsRepository): Repository handling UserEmailsEntity.
             user_identities_repository (UserIdentitiesRepository): Repository handling UserIdentitiesEntity.
+            users_repository (UsersRepository): Repository handling UsersEntity; used to
+                write-through sync the legacy users.primary_email column.
             logger: Application logger.
         """
         self._auth0 = auth0_client
         self._user_emails = user_emails_repository
         self._user_identities = user_identities_repository
+        self._users = users_repository
         self._state_secret = os.getenv(EMAIL_OTP_STATE_JWT_SECRET)
         self._logger = logger
 
@@ -342,6 +346,7 @@ class EmailManagementService:
         await self._validate_promotable(session, current_user_id, target)
 
         await self._user_emails.set_primary(session, current_user_id, email_id)
+        await self._sync_legacy_primary_email(session, current_user_id, target.email)
         await session.commit()
         return {"ok": True}
 
@@ -444,13 +449,17 @@ class EmailManagementService:
             # A migration-backfilled row starts unconfirmed and non-primary;
             # confirming the user's first usable address must also make it
             # primary so they always have a notification target.
+            became_primary = False
             if not existing.is_primary and not await self._user_emails.has_primary(
                 session, user_id
             ):
                 existing.is_primary = True
                 changed = True
+                became_primary = True
             if changed:
                 await self._user_emails.upsert_email(session=session, entity=existing)
+            if became_primary:
+                await self._sync_legacy_primary_email(session, user_id, email)
             return
 
         # First confirmed address becomes primary so the user has a notification
@@ -465,6 +474,35 @@ class EmailManagementService:
                 is_primary=is_primary,
             ),
         )
+        if is_primary:
+            await self._sync_legacy_primary_email(session, user_id, email)
+
+    async def _sync_legacy_primary_email(
+        self, session, user_id: int, email: str
+    ) -> None:
+        """
+        Write-through the legacy ``users.primary_email`` column whenever the
+        user's primary contact in user_emails changes, so the ~76 reads that
+        still hit the column stay current (see the TODO on
+        ``UsersEntity.primary_email``).
+
+        Best-effort: ``users.primary_email`` is globally unique, so if ``email``
+        is already another user's primary the sync is skipped (that user's legacy
+        column stays stale until the column is retired) rather than aborting the
+        OTP-confirmed primary change. The column is being retired, so this
+        residual staleness is acceptable.
+        """
+        owner = await self._users.get_user_by_primary_email(session, email)
+        if owner is not None and owner.user_id != user_id:
+            self._logger.warning(
+                "[EmailManagementService] Skipping users.primary_email sync for "
+                "user_id=%s: %r is already user_id=%s's primary",
+                user_id,
+                email,
+                owner.user_id,
+            )
+            return
+        await self._users.update_primary_email(session, user_id, email)
 
     def _sync_alias_best_effort(
         self, account_root_sub: str, email: str, user_id: int

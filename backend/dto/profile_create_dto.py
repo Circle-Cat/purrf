@@ -1,4 +1,4 @@
-from pydantic import Field, field_validator
+from pydantic import field_validator
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from backend.dto.base_request_dto import BaseRequestDto
 from datetime import date
@@ -11,7 +11,6 @@ class UsersRequestDto(BaseRequestDto):
     timezone: str
     communication_method: CommunicationMethod
     preferred_name: str | None = None
-    alternative_emails: list[str] = Field(default_factory=list)
     linkedin_link: str | None = None
 
     @field_validator("timezone")
