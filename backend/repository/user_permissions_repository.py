@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from collections.abc import Iterable
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.entity.user_permissions_entity import UserPermissionsEntity
@@ -130,29 +130,30 @@ class UserPermissionsRepository:
         """
         Active users who currently hold the given permission, deduped.
 
-        Joins users to their grant rows, keeping only active users with at
-        least one non-revoked grant of ``permission_name``. A user with several
-        grant rows for the permission appears once.
+        Returns active users who EITHER have at least one non-revoked explicit
+        grant of ``permission_name`` OR are super-admins (who implicitly hold
+        every permission regardless of grant rows). A user with multiple grant
+        rows appears only once.
 
         Args:
             session (AsyncSession): The active async database session.
             permission_name (str): The permission to find holders of.
 
         Returns:
-            list[UsersEntity]: Distinct active holders.
+            list[UsersEntity]: Distinct active holders, including super-admins.
         """
-        stmt = (
-            select(UsersEntity)
-            .join(
-                UserPermissionsEntity,
-                UserPermissionsEntity.user_id == UsersEntity.user_id,
-            )
+        grant_exists = (
+            select(UserPermissionsEntity.user_id)
             .where(
+                UserPermissionsEntity.user_id == UsersEntity.user_id,
                 UserPermissionsEntity.permission_name == str(permission_name),
                 UserPermissionsEntity.revoked_timestamp.is_(None),
-                UsersEntity.is_active.is_(True),
             )
-            .distinct()
+            .exists()
+        )
+        stmt = select(UsersEntity).where(
+            UsersEntity.is_active.is_(True),
+            or_(UsersEntity.is_super_admin.is_(True), grant_exists),
         )
         return list((await session.execute(stmt)).scalars().all())
 
