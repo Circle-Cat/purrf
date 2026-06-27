@@ -148,8 +148,6 @@ const EducationEditModal = ({ isOpen, onClose, initialData, onSave }) => {
     }
   };
 
-  if (!isOpen) return null;
-
   return (
     <div className="modal-overlay">
       <div className="modal-content">
