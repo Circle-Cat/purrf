@@ -27,6 +27,7 @@ class FastAppFactory:
         mentorship_admin_controller,
         email_management_controller,
         permission_admin_controller,
+        recruiting_controller,
         launchdarkly_client,
         database,
         logger,
@@ -62,6 +63,7 @@ class FastAppFactory:
         self.mentorship_admin_controller = mentorship_admin_controller
         self.email_management_controller = email_management_controller
         self.permission_admin_controller = permission_admin_controller
+        self.recruiting_controller = recruiting_controller
         self.launchdarkly_client = launchdarkly_client
         self.database = database
         self.logger = logger
@@ -135,6 +137,7 @@ class FastAppFactory:
         app.include_router(self.mentorship_admin_controller.router, prefix="/api")
         app.include_router(self.email_management_controller.router, prefix="/api")
         app.include_router(self.permission_admin_controller.router, prefix="/api")
+        app.include_router(self.recruiting_controller.router, prefix="/api")
 
         @app.get("/fastapi/health")
         def health_check():

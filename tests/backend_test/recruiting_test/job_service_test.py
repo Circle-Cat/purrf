@@ -1,0 +1,725 @@
+import unittest
+from unittest.mock import AsyncMock, MagicMock
+
+from backend.recruiting.job_service import JobService
+from backend.recruiting.recruiting_mapper import RecruitingMapper
+from backend.dto.job_dto import JobCreateDto
+from backend.entity.job_entity import JobEntity
+from backend.entity.job_review_entity import JobReviewEntity
+from backend.entity.users_entity import UsersEntity
+from backend.common.recruiting_enums import (
+    JobKind,
+    JobReviewKind,
+    JobReviewStatus,
+    JobStatus,
+)
+
+
+class TestJobService(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        def _create(session, entity):
+            entity.job_id = 1
+            return entity
+
+        self.repo = MagicMock()
+        self.repo.get_by_job_id = AsyncMock()
+        self.repo.create_job = AsyncMock(side_effect=_create)
+        self.repo.update_job = AsyncMock(side_effect=lambda session, entity: entity)
+        self.repo.list_all = AsyncMock(return_value=[])
+        self.repo.delete_job = AsyncMock()
+        self.perms = MagicMock()
+        self.perms.get_active_users_with_permission = AsyncMock(return_value=[])
+        self.review_repo = MagicMock()
+        self.review_repo.create = AsyncMock(side_effect=lambda session, entity: entity)
+        self.review_repo.get = AsyncMock()
+        self.review_repo.list_by_reviewer = AsyncMock(return_value=[])
+        self.review_repo.get_latest_reviews = AsyncMock(return_value={})
+        self.session = AsyncMock()
+        self.service = JobService(
+            self.repo, RecruitingMapper(), self.perms, self.review_repo
+        )
+
+    def _job(self, **kw):
+        defaults = {"kind": JobKind.ACTIVITY, "title": "T", "status": JobStatus.DRAFT}
+        defaults.update(kw)
+        job = JobEntity(**defaults)
+        job.job_id = 1
+        return job
+
+    def _approver(self, uid):
+        u = UsersEntity(
+            first_name=f"A{uid}", last_name="X", primary_email=f"a{uid}@x.com"
+        )
+        u.user_id = uid
+        return u
+
+    def _two_approvers(self):
+        """Make reviewer id 2 a valid approver alongside id 3."""
+        self.perms.get_active_users_with_permission.return_value = [
+            self._approver(2),
+            self._approver(3),
+        ]
+
+    async def test_create_stores_pipeline_config(self):
+        """create_job persists pipeline_config and starts in DRAFT."""
+        dto = JobCreateDto(
+            title="SWE", kind=JobKind.EMPLOYMENT, pipeline_config=[{"stage": "tech"}]
+        )
+        result = await self.service.create_job(self.session, dto)
+
+        self.assertEqual(result.pipeline_config, [{"stage": "tech"}])
+        self.assertEqual(result.status, JobStatus.DRAFT)
+
+    async def test_update_published_writes_pending_and_flips_status(self):
+        """Editing a PUBLISHED posting parks the change as a pending revision."""
+        job = self._job(status=JobStatus.PUBLISHED, form_schema={"a": 1})
+        self.repo.get_by_job_id.return_value = job
+        dto = JobCreateDto(title=job.title, kind=job.kind, form_schema={"a": 2})
+
+        result = await self.service.update_job(self.session, job.job_id, dto)
+
+        self.assertEqual(result.status, JobStatus.PUBLISHED_PENDING_REVISION)
+        self.assertEqual(result.pending_form_schema, {"a": 2})
+        self.assertEqual(result.form_schema, {"a": 1})
+
+    async def test_update_draft_changes_live_directly(self):
+        """Editing a DRAFT posting mutates the live fields with no review gate."""
+        job = self._job(status=JobStatus.DRAFT, title="old")
+        self.repo.get_by_job_id.return_value = job
+        dto = JobCreateDto(title="new", kind=job.kind)
+
+        result = await self.service.update_job(self.session, job.job_id, dto)
+
+        self.assertEqual(result.title, "new")
+        self.assertEqual(result.status, JobStatus.DRAFT)
+
+    async def test_list_active_approvers_maps_users(self):
+        """list_active_approvers maps active job.approve holders to ApproverDto."""
+        u1 = UsersEntity(first_name="Ann", last_name="Lee", primary_email="ann@x.com")
+        u1.user_id = 7
+        u2 = UsersEntity(first_name="Bo", last_name="Ng", primary_email="bo@x.com")
+        u2.user_id = 8
+        self.perms.get_active_users_with_permission.return_value = [u1, u2]
+
+        result = await self.service.list_active_approvers(self.session)
+
+        self.assertEqual([a.user_id for a in result], [7, 8])
+        self.assertEqual(result[0].name, "Ann Lee")
+        self.assertEqual(result[0].email, "ann@x.com")
+
+    async def test_submit_rejects_self_review(self):
+        """A submitter cannot pick themselves as the reviewer."""
+        job = self._job(status=JobStatus.DRAFT)
+        self.repo.get_by_job_id.return_value = job
+        self._two_approvers()
+
+        with self.assertRaisesRegex(ValueError, "self"):
+            await self.service.submit_for_review(
+                self.session, job.job_id, reviewer_id=1, submitted_by=1, message=None
+            )
+
+    async def test_submit_requires_two_approvers(self):
+        """Submission needs an approver pool of at least two."""
+        job = self._job(status=JobStatus.DRAFT)
+        self.repo.get_by_job_id.return_value = job
+        self.perms.get_active_users_with_permission.return_value = [self._approver(2)]
+
+        with self.assertRaisesRegex(ValueError, "pool"):
+            await self.service.submit_for_review(
+                self.session, job.job_id, reviewer_id=2, submitted_by=1, message=None
+            )
+
+    async def test_submit_rejects_reviewer_outside_pool(self):
+        """The chosen reviewer must hold the approve permission."""
+        job = self._job(status=JobStatus.DRAFT)
+        self.repo.get_by_job_id.return_value = job
+        self._two_approvers()  # ids 2 and 3
+
+        with self.assertRaisesRegex(ValueError, "approver"):
+            await self.service.submit_for_review(
+                self.session, job.job_id, reviewer_id=9, submitted_by=1, message=None
+            )
+
+    async def test_submit_draft_creates_initial_review_and_flips_status(self):
+        """Submitting a DRAFT opens an INITIAL review and moves to PENDING_REVIEW."""
+        job = self._job(status=JobStatus.DRAFT)
+        self.repo.get_by_job_id.return_value = job
+        self._two_approvers()
+
+        result = await self.service.submit_for_review(
+            self.session, job.job_id, reviewer_id=2, submitted_by=1, message="hi"
+        )
+
+        self.assertEqual(result.status, JobStatus.PENDING_REVIEW)
+        self.review_repo.create.assert_awaited_once()
+        created = self.review_repo.create.await_args.args[1]
+        self.assertEqual(created.kind, JobReviewKind.INITIAL)
+        self.assertEqual(created.status, JobReviewStatus.PENDING)
+        self.assertEqual(created.reviewer_id, 2)
+
+    async def test_submit_revision_keeps_published_pending(self):
+        """Submitting a parked revision opens a REVISION review, status unchanged."""
+        job = self._job(status=JobStatus.PUBLISHED_PENDING_REVISION)
+        self.repo.get_by_job_id.return_value = job
+        self._two_approvers()
+
+        result = await self.service.submit_for_review(
+            self.session, job.job_id, reviewer_id=2, submitted_by=1, message=None
+        )
+
+        self.assertEqual(result.status, JobStatus.PUBLISHED_PENDING_REVISION)
+        created = self.review_repo.create.await_args.args[1]
+        self.assertEqual(created.kind, JobReviewKind.REVISION)
+
+    async def test_approve_publishes_and_swaps_pending(self):
+        """Approving a revision swaps pending into live and publishes."""
+        job = self._job(
+            status=JobStatus.PUBLISHED_PENDING_REVISION,
+            form_schema={"a": 1},
+            pending_form_schema={"a": 2},
+        )
+        self.repo.get_by_job_id.return_value = job
+        review = JobReviewEntity(
+            review_id=5,
+            job_id=job.job_id,
+            submitted_by=1,
+            reviewer_id=2,
+            status=JobReviewStatus.PENDING,
+            kind=JobReviewKind.REVISION,
+        )
+        self.review_repo.get.return_value = review
+
+        result = await self.service.approve(self.session, review.review_id)
+
+        self.assertEqual(result.status, JobStatus.PUBLISHED)
+        self.assertEqual(result.form_schema, {"a": 2})
+        self.assertIsNone(result.pending_form_schema)
+        self.assertEqual(review.status, JobReviewStatus.APPROVED)
+        self.assertIsNotNone(review.decided_at)
+
+    async def test_approve_initial_publishes(self):
+        """Approving an INITIAL review publishes the draft."""
+        job = self._job(status=JobStatus.PENDING_REVIEW)
+        self.repo.get_by_job_id.return_value = job
+        review = JobReviewEntity(
+            review_id=6,
+            job_id=job.job_id,
+            submitted_by=1,
+            reviewer_id=2,
+            status=JobReviewStatus.PENDING,
+            kind=JobReviewKind.INITIAL,
+        )
+        self.review_repo.get.return_value = review
+
+        result = await self.service.approve(self.session, review.review_id)
+
+        self.assertEqual(result.status, JobStatus.PUBLISHED)
+
+    async def test_approve_requires_pending_review(self):
+        """An already-decided review cannot be approved again."""
+        review = JobReviewEntity(
+            review_id=7,
+            job_id=1,
+            submitted_by=1,
+            reviewer_id=2,
+            status=JobReviewStatus.APPROVED,
+            kind=JobReviewKind.INITIAL,
+        )
+        self.review_repo.get.return_value = review
+
+        with self.assertRaises(ValueError):
+            await self.service.approve(self.session, review.review_id)
+
+    async def test_reject_requires_comment(self):
+        """Rejection requires a non-empty comment."""
+        job = self._job(status=JobStatus.PENDING_REVIEW)
+        self.repo.get_by_job_id.return_value = job
+        review = JobReviewEntity(
+            review_id=8,
+            job_id=job.job_id,
+            submitted_by=1,
+            reviewer_id=2,
+            status=JobReviewStatus.PENDING,
+            kind=JobReviewKind.INITIAL,
+        )
+        self.review_repo.get.return_value = review
+
+        with self.assertRaisesRegex(ValueError, "comment"):
+            await self.service.reject(self.session, review.review_id, comment="")
+
+    async def test_reject_initial_returns_to_draft(self):
+        """Rejecting an INITIAL review sends the posting back to DRAFT."""
+        job = self._job(status=JobStatus.PENDING_REVIEW)
+        self.repo.get_by_job_id.return_value = job
+        review = JobReviewEntity(
+            review_id=9,
+            job_id=job.job_id,
+            submitted_by=1,
+            reviewer_id=2,
+            status=JobReviewStatus.PENDING,
+            kind=JobReviewKind.INITIAL,
+        )
+        self.review_repo.get.return_value = review
+
+        result = await self.service.reject(
+            self.session, review.review_id, comment="fix the form"
+        )
+
+        self.assertEqual(result.status, JobStatus.DRAFT)
+        self.assertEqual(review.status, JobReviewStatus.REJECTED)
+        self.assertEqual(review.reject_comment, "fix the form")
+
+    async def test_reject_revision_keeps_published_and_discards_pending(self):
+        """Rejecting a REVISION discards the parked change and stays PUBLISHED."""
+        job = self._job(
+            status=JobStatus.PUBLISHED_PENDING_REVISION,
+            form_schema={"a": 1},
+            pending_form_schema={"a": 2},
+        )
+        self.repo.get_by_job_id.return_value = job
+        review = JobReviewEntity(
+            review_id=10,
+            job_id=job.job_id,
+            submitted_by=1,
+            reviewer_id=2,
+            status=JobReviewStatus.PENDING,
+            kind=JobReviewKind.REVISION,
+        )
+        self.review_repo.get.return_value = review
+
+        result = await self.service.reject(self.session, review.review_id, comment="no")
+
+        self.assertEqual(result.status, JobStatus.PUBLISHED)
+        self.assertEqual(result.form_schema, {"a": 1})
+        self.assertIsNone(result.pending_form_schema)
+
+    async def test_publish_job_is_removed(self):
+        """Direct publish is gone; publishing only happens through approval."""
+        self.assertFalse(hasattr(self.service, "publish_job"))
+
+    async def test_list_all_jobs_returns_every_status(self):
+        """list_all_jobs maps every posting the repository returns."""
+        self.repo.list_all.return_value = [
+            self._job(status=JobStatus.DRAFT),
+            self._job(status=JobStatus.CLOSED),
+        ]
+
+        result = await self.service.list_all_jobs(self.session)
+
+        self.assertEqual(len(result), 2)
+        self.assertEqual(
+            {r.status for r in result}, {JobStatus.DRAFT, JobStatus.CLOSED}
+        )
+
+    async def test_list_all_jobs_surfaces_latest_rejection_comment(self):
+        """list_all_jobs populates last_reject_comment for jobs whose latest review is REJECTED."""
+        job_with_reject = self._job(status=JobStatus.DRAFT)
+        job_with_reject.job_id = 1
+        job_no_reject = self._job(status=JobStatus.PUBLISHED)
+        job_no_reject.job_id = 2
+        self.repo.list_all.return_value = [job_with_reject, job_no_reject]
+
+        rejected_review = JobReviewEntity(
+            review_id=99,
+            job_id=1,
+            submitted_by=1,
+            reviewer_id=2,
+            status=JobReviewStatus.REJECTED,
+            kind=JobReviewKind.INITIAL,
+            reject_comment="fix the form",
+        )
+        self.review_repo.get_latest_reviews = AsyncMock(
+            return_value={1: rejected_review}
+        )
+
+        result = await self.service.list_all_jobs(self.session)
+
+        dto_1 = next(r for r in result if r.id == 1)
+        dto_2 = next(r for r in result if r.id == 2)
+        self.assertEqual(dto_1.last_reject_comment, "fix the form")
+        self.assertIsNone(dto_2.last_reject_comment)
+
+    async def test_list_all_jobs_no_comment_when_latest_is_approved(self):
+        """last_reject_comment is None when the latest review was approved."""
+        job = self._job(status=JobStatus.PUBLISHED)
+        job.job_id = 1
+        self.repo.list_all.return_value = [job]
+
+        approved_review = JobReviewEntity(
+            review_id=100,
+            job_id=1,
+            submitted_by=1,
+            reviewer_id=2,
+            status=JobReviewStatus.APPROVED,
+            kind=JobReviewKind.INITIAL,
+        )
+        self.review_repo.get_latest_reviews = AsyncMock(
+            return_value={1: approved_review}
+        )
+
+        result = await self.service.list_all_jobs(self.session)
+
+        self.assertIsNone(result[0].last_reject_comment)
+
+    async def test_list_reviews_for_reviewer_returns_pending(self):
+        """list_reviews_for_reviewer maps the reviewer's pending reviews with job title."""
+        review = JobReviewEntity(
+            review_id=11,
+            job_id=1,
+            submitted_by=1,
+            reviewer_id=2,
+            status=JobReviewStatus.PENDING,
+            kind=JobReviewKind.INITIAL,
+        )
+        self.review_repo.list_by_reviewer.return_value = [review]
+        job = self._job(title="Senior Engineer")
+        self.repo.get_by_job_id.return_value = job
+
+        result = await self.service.list_reviews_for_reviewer(self.session, 2)
+
+        self.assertEqual([r.review_id for r in result], [11])
+        self.assertEqual(result[0].job_title, "Senior Engineer")
+        self.review_repo.list_by_reviewer.assert_awaited_once_with(
+            self.session, 2, [JobReviewStatus.PENDING]
+        )
+
+    # ---------------------------------------------------------------------------
+    # close_job
+    # ---------------------------------------------------------------------------
+
+    async def test_close_job_draft_succeeds(self):
+        """close_job transitions a DRAFT posting to CLOSED."""
+        job = self._job(status=JobStatus.DRAFT)
+        self.repo.get_by_job_id.return_value = job
+
+        result = await self.service.close_job(self.session, job.job_id)
+
+        self.assertEqual(result.status, JobStatus.CLOSED)
+
+    async def test_close_job_published_raises(self):
+        """close_job rejects a PUBLISHED posting; must use request_close instead."""
+        job = self._job(status=JobStatus.PUBLISHED)
+        self.repo.get_by_job_id.return_value = job
+
+        with self.assertRaisesRegex(ValueError, "request_close"):
+            await self.service.close_job(self.session, job.job_id)
+
+    # ---------------------------------------------------------------------------
+    # reopen_job removed
+    # ---------------------------------------------------------------------------
+
+    async def test_reopen_job_removed(self):
+        """reopen_job no longer exists; callers must use request_reopen."""
+        self.assertFalse(hasattr(self.service, "reopen_job"))
+
+    # ---------------------------------------------------------------------------
+    # request_close
+    # ---------------------------------------------------------------------------
+
+    async def test_request_close_published_creates_review(self):
+        """request_close from PUBLISHED creates a CLOSE review and sets PENDING_CLOSE."""
+        job = self._job(status=JobStatus.PUBLISHED)
+        self.repo.get_by_job_id.return_value = job
+        self._two_approvers()
+
+        result = await self.service.request_close(
+            self.session, job.job_id, reviewer_id=2, submitted_by=1, message="closing"
+        )
+
+        self.assertEqual(result.status, JobStatus.PENDING_CLOSE)
+        self.review_repo.create.assert_awaited_once()
+        created = self.review_repo.create.await_args.args[1]
+        self.assertEqual(created.kind, JobReviewKind.CLOSE)
+        self.assertEqual(created.status, JobReviewStatus.PENDING)
+        self.assertEqual(created.reviewer_id, 2)
+        self.assertEqual(created.submit_message, "closing")
+
+    async def test_request_close_non_published_raises(self):
+        """request_close from a non-PUBLISHED status raises ValueError."""
+        job = self._job(status=JobStatus.DRAFT)
+        self.repo.get_by_job_id.return_value = job
+        self._two_approvers()
+
+        with self.assertRaises(ValueError):
+            await self.service.request_close(
+                self.session, job.job_id, reviewer_id=2, submitted_by=1, message=None
+            )
+
+    async def test_request_close_self_review_raises(self):
+        """request_close blocks self-review."""
+        job = self._job(status=JobStatus.PUBLISHED)
+        self.repo.get_by_job_id.return_value = job
+        self._two_approvers()
+
+        with self.assertRaisesRegex(ValueError, "self"):
+            await self.service.request_close(
+                self.session, job.job_id, reviewer_id=1, submitted_by=1, message=None
+            )
+
+    async def test_request_close_pool_too_small_raises(self):
+        """request_close blocks when the approver pool is fewer than two."""
+        job = self._job(status=JobStatus.PUBLISHED)
+        self.repo.get_by_job_id.return_value = job
+        self.perms.get_active_users_with_permission.return_value = [self._approver(2)]
+
+        with self.assertRaisesRegex(ValueError, "pool"):
+            await self.service.request_close(
+                self.session, job.job_id, reviewer_id=2, submitted_by=1, message=None
+            )
+
+    async def test_request_close_reviewer_not_in_pool_raises(self):
+        """request_close blocks a reviewer outside the active approver pool."""
+        job = self._job(status=JobStatus.PUBLISHED)
+        self.repo.get_by_job_id.return_value = job
+        self._two_approvers()
+
+        with self.assertRaisesRegex(ValueError, "approver"):
+            await self.service.request_close(
+                self.session, job.job_id, reviewer_id=9, submitted_by=1, message=None
+            )
+
+    # ---------------------------------------------------------------------------
+    # request_reopen
+    # ---------------------------------------------------------------------------
+
+    async def test_request_reopen_closed_creates_review(self):
+        """request_reopen from CLOSED creates a REOPEN review and sets PENDING_REOPEN."""
+        job = self._job(status=JobStatus.CLOSED)
+        self.repo.get_by_job_id.return_value = job
+        self._two_approvers()
+
+        result = await self.service.request_reopen(
+            self.session, job.job_id, reviewer_id=2, submitted_by=1, message="reopening"
+        )
+
+        self.assertEqual(result.status, JobStatus.PENDING_REOPEN)
+        self.review_repo.create.assert_awaited_once()
+        created = self.review_repo.create.await_args.args[1]
+        self.assertEqual(created.kind, JobReviewKind.REOPEN)
+        self.assertEqual(created.status, JobReviewStatus.PENDING)
+
+    async def test_request_reopen_non_closed_raises(self):
+        """request_reopen from a non-CLOSED status raises ValueError."""
+        job = self._job(status=JobStatus.PUBLISHED)
+        self.repo.get_by_job_id.return_value = job
+        self._two_approvers()
+
+        with self.assertRaises(ValueError):
+            await self.service.request_reopen(
+                self.session, job.job_id, reviewer_id=2, submitted_by=1, message=None
+            )
+
+    # ---------------------------------------------------------------------------
+    # approve — CLOSE and REOPEN kinds
+    # ---------------------------------------------------------------------------
+
+    async def test_approve_close_review_closes_job(self):
+        """Approving a CLOSE review transitions the posting to CLOSED."""
+        job = self._job(status=JobStatus.PENDING_CLOSE)
+        self.repo.get_by_job_id.return_value = job
+        review = JobReviewEntity(
+            review_id=20,
+            job_id=job.job_id,
+            submitted_by=1,
+            reviewer_id=2,
+            status=JobReviewStatus.PENDING,
+            kind=JobReviewKind.CLOSE,
+        )
+        self.review_repo.get.return_value = review
+
+        result = await self.service.approve(self.session, review.review_id)
+
+        self.assertEqual(result.status, JobStatus.CLOSED)
+        self.assertEqual(review.status, JobReviewStatus.APPROVED)
+        self.assertIsNotNone(review.decided_at)
+
+    async def test_approve_reopen_review_publishes_job(self):
+        """Approving a REOPEN review transitions the posting to PUBLISHED."""
+        job = self._job(status=JobStatus.PENDING_REOPEN)
+        self.repo.get_by_job_id.return_value = job
+        review = JobReviewEntity(
+            review_id=21,
+            job_id=job.job_id,
+            submitted_by=1,
+            reviewer_id=2,
+            status=JobReviewStatus.PENDING,
+            kind=JobReviewKind.REOPEN,
+        )
+        self.review_repo.get.return_value = review
+
+        result = await self.service.approve(self.session, review.review_id)
+
+        self.assertEqual(result.status, JobStatus.PUBLISHED)
+        self.assertEqual(review.status, JobReviewStatus.APPROVED)
+
+    # ---------------------------------------------------------------------------
+    # reject — CLOSE and REOPEN kinds
+    # ---------------------------------------------------------------------------
+
+    async def test_reject_close_review_restores_published(self):
+        """Rejecting a CLOSE review aborts the close and returns the posting to PUBLISHED."""
+        job = self._job(status=JobStatus.PENDING_CLOSE)
+        self.repo.get_by_job_id.return_value = job
+        review = JobReviewEntity(
+            review_id=22,
+            job_id=job.job_id,
+            submitted_by=1,
+            reviewer_id=2,
+            status=JobReviewStatus.PENDING,
+            kind=JobReviewKind.CLOSE,
+        )
+        self.review_repo.get.return_value = review
+
+        result = await self.service.reject(
+            self.session, review.review_id, comment="keep it open"
+        )
+
+        self.assertEqual(result.status, JobStatus.PUBLISHED)
+        self.assertEqual(review.status, JobReviewStatus.REJECTED)
+        self.assertEqual(review.reject_comment, "keep it open")
+
+    async def test_reject_reopen_review_keeps_closed(self):
+        """Rejecting a REOPEN review aborts the reopen and leaves the posting CLOSED."""
+        job = self._job(status=JobStatus.PENDING_REOPEN)
+        self.repo.get_by_job_id.return_value = job
+        review = JobReviewEntity(
+            review_id=23,
+            job_id=job.job_id,
+            submitted_by=1,
+            reviewer_id=2,
+            status=JobReviewStatus.PENDING,
+            kind=JobReviewKind.REOPEN,
+        )
+        self.review_repo.get.return_value = review
+
+        result = await self.service.reject(
+            self.session, review.review_id, comment="stay closed"
+        )
+
+        self.assertEqual(result.status, JobStatus.CLOSED)
+        self.assertEqual(review.status, JobReviewStatus.REJECTED)
+
+    # ---------------------------------------------------------------------------
+    # approve — was_published flag
+    # ---------------------------------------------------------------------------
+
+    async def test_approve_initial_sets_was_published(self):
+        """Approving an INITIAL review marks the posting as was_published=True."""
+        job = self._job(status=JobStatus.PENDING_REVIEW)
+        self.repo.get_by_job_id.return_value = job
+        review = JobReviewEntity(
+            review_id=30,
+            job_id=job.job_id,
+            submitted_by=1,
+            reviewer_id=2,
+            status=JobReviewStatus.PENDING,
+            kind=JobReviewKind.INITIAL,
+        )
+        self.review_repo.get.return_value = review
+
+        await self.service.approve(self.session, review.review_id)
+
+        self.assertTrue(job.was_published)
+
+    async def test_approve_close_does_not_change_was_published(self):
+        """Approving a CLOSE review does not set was_published (it was already True)."""
+        job = self._job(status=JobStatus.PENDING_CLOSE)
+        job.was_published = True
+        self.repo.get_by_job_id.return_value = job
+        review = JobReviewEntity(
+            review_id=31,
+            job_id=job.job_id,
+            submitted_by=1,
+            reviewer_id=2,
+            status=JobReviewStatus.PENDING,
+            kind=JobReviewKind.CLOSE,
+        )
+        self.review_repo.get.return_value = review
+
+        await self.service.approve(self.session, review.review_id)
+
+        # Posting is now CLOSED; was_published must remain True.
+        self.assertTrue(job.was_published)
+        self.assertEqual(job.status, JobStatus.CLOSED)
+
+    # ---------------------------------------------------------------------------
+    # delete_job
+    # ---------------------------------------------------------------------------
+
+    async def test_delete_job_closed_never_published_calls_repo(self):
+        """delete_job on a CLOSED, never-published posting calls repo.delete_job."""
+        job = self._job(status=JobStatus.CLOSED)
+        job.was_published = False
+        self.repo.get_by_job_id.return_value = job
+
+        await self.service.delete_job(self.session, job.job_id)
+
+        self.repo.delete_job.assert_awaited_once_with(self.session, job)
+
+    async def test_delete_job_ever_published_raises(self):
+        """delete_job on a CLOSED posting that was_published raises ValueError."""
+        job = self._job(status=JobStatus.CLOSED)
+        job.was_published = True
+        self.repo.get_by_job_id.return_value = job
+
+        with self.assertRaises(ValueError):
+            await self.service.delete_job(self.session, job.job_id)
+
+    async def test_delete_job_non_closed_raises(self):
+        """delete_job on a non-CLOSED posting raises ValueError."""
+        job = self._job(status=JobStatus.DRAFT)
+        job.was_published = False
+        self.repo.get_by_job_id.return_value = job
+
+        with self.assertRaises(ValueError):
+            await self.service.delete_job(self.session, job.job_id)
+
+    async def test_delete_job_published_raises(self):
+        """delete_job on a PUBLISHED posting raises ValueError."""
+        job = self._job(status=JobStatus.PUBLISHED)
+        job.was_published = True
+        self.repo.get_by_job_id.return_value = job
+
+        with self.assertRaises(ValueError):
+            await self.service.delete_job(self.session, job.job_id)
+
+    # ---------------------------------------------------------------------------
+    # update_job — non-editable status guard
+    # ---------------------------------------------------------------------------
+
+    async def test_update_published_pending_revision_raises(self):
+        """update_job raises ValueError and does not call repo when status is PUBLISHED_PENDING_REVISION."""
+        job = self._job(status=JobStatus.PUBLISHED_PENDING_REVISION)
+        self.repo.get_by_job_id.return_value = job
+        dto = JobCreateDto(title="new title", kind=job.kind)
+
+        with self.assertRaisesRegex(ValueError, "cannot be edited"):
+            await self.service.update_job(self.session, job.job_id, dto)
+
+        self.repo.update_job.assert_not_awaited()
+
+    async def test_update_pending_review_raises(self):
+        """update_job raises ValueError and does not call repo when status is PENDING_REVIEW."""
+        job = self._job(status=JobStatus.PENDING_REVIEW)
+        self.repo.get_by_job_id.return_value = job
+        dto = JobCreateDto(title="new title", kind=job.kind)
+
+        with self.assertRaisesRegex(ValueError, "cannot be edited"):
+            await self.service.update_job(self.session, job.job_id, dto)
+
+        self.repo.update_job.assert_not_awaited()
+
+    async def test_update_closed_raises(self):
+        """update_job raises ValueError and does not call repo when status is CLOSED."""
+        job = self._job(status=JobStatus.CLOSED)
+        self.repo.get_by_job_id.return_value = job
+        dto = JobCreateDto(title="new title", kind=job.kind)
+
+        with self.assertRaisesRegex(ValueError, "cannot be edited"):
+            await self.service.update_job(self.session, job.job_id, dto)
+
+        self.repo.update_job.assert_not_awaited()
+
+
+if __name__ == "__main__":
+    unittest.main()
