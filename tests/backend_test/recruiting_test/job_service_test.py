@@ -25,11 +25,13 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         self.repo.get_by_job_id = AsyncMock()
         self.repo.create_job = AsyncMock(side_effect=_create)
         self.repo.update_job = AsyncMock(side_effect=lambda session, entity: entity)
+        self.repo.list_all = AsyncMock(return_value=[])
         self.perms = MagicMock()
         self.perms.get_active_users_with_permission = AsyncMock(return_value=[])
         self.review_repo = MagicMock()
         self.review_repo.create = AsyncMock(side_effect=lambda session, entity: entity)
         self.review_repo.get = AsyncMock()
+        self.review_repo.list_by_reviewer = AsyncMock(return_value=[])
         self.session = AsyncMock()
         self.service = JobService(
             self.repo, RecruitingMapper(), self.perms, self.review_repo
@@ -100,13 +102,9 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
 
     async def test_list_active_approvers_maps_users(self):
         """list_active_approvers maps active job.approve holders to ApproverDto."""
-        u1 = UsersEntity(
-            first_name="Ann", last_name="Lee", primary_email="ann@x.com"
-        )
+        u1 = UsersEntity(first_name="Ann", last_name="Lee", primary_email="ann@x.com")
         u1.user_id = 7
-        u2 = UsersEntity(
-            first_name="Bo", last_name="Ng", primary_email="bo@x.com"
-        )
+        u2 = UsersEntity(first_name="Bo", last_name="Ng", primary_email="bo@x.com")
         u2.user_id = 8
         self.perms.get_active_users_with_permission.return_value = [u1, u2]
 
@@ -123,7 +121,6 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaises(ValueError):
             await self.service.reopen_job(self.session, job.job_id)
-
 
     async def test_submit_rejects_self_review(self):
         """A submitter cannot pick themselves as the reviewer."""
@@ -305,9 +302,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         )
         self.review_repo.get.return_value = review
 
-        result = await self.service.reject(
-            self.session, review.review_id, comment="no"
-        )
+        result = await self.service.reject(self.session, review.review_id, comment="no")
 
         self.assertEqual(result.status, JobStatus.PUBLISHED)
         self.assertEqual(result.form_schema, {"a": 1})
@@ -316,6 +311,39 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
     async def test_publish_job_is_removed(self):
         """Direct publish is gone; publishing only happens through approval."""
         self.assertFalse(hasattr(self.service, "publish_job"))
+
+    async def test_list_all_jobs_returns_every_status(self):
+        """list_all_jobs maps every posting the repository returns."""
+        self.repo.list_all.return_value = [
+            self._job(status=JobStatus.DRAFT),
+            self._job(status=JobStatus.CLOSED),
+        ]
+
+        result = await self.service.list_all_jobs(self.session)
+
+        self.assertEqual(len(result), 2)
+        self.assertEqual(
+            {r.status for r in result}, {JobStatus.DRAFT, JobStatus.CLOSED}
+        )
+
+    async def test_list_reviews_for_reviewer_returns_pending(self):
+        """list_reviews_for_reviewer maps the reviewer's pending reviews."""
+        review = JobReviewEntity(
+            review_id=11,
+            job_id=1,
+            submitted_by=1,
+            reviewer_id=2,
+            status=JobReviewStatus.PENDING,
+            kind=JobReviewKind.INITIAL,
+        )
+        self.review_repo.list_by_reviewer.return_value = [review]
+
+        result = await self.service.list_reviews_for_reviewer(self.session, 2)
+
+        self.assertEqual([r.review_id for r in result], [11])
+        self.review_repo.list_by_reviewer.assert_awaited_once_with(
+            self.session, 2, [JobReviewStatus.PENDING]
+        )
 
 
 if __name__ == "__main__":

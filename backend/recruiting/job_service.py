@@ -7,7 +7,7 @@ from backend.repository.job_review_repository import JobReviewRepository
 from backend.repository.user_permissions_repository import UserPermissionsRepository
 from backend.recruiting.recruiting_mapper import RecruitingMapper
 from backend.dto.job_dto import JobCreateDto, JobDto
-from backend.dto.job_review_dto import ApproverDto
+from backend.dto.job_review_dto import ApproverDto, JobReviewDto
 from backend.common.permissions import Permission
 from backend.common.recruiting_enums import (
     JobReviewKind,
@@ -45,9 +45,7 @@ class JobService:
         self.user_permissions_repository = user_permissions_repository
         self.job_review_repository = job_review_repository
 
-    async def list_active_approvers(
-        self, session: AsyncSession
-    ) -> list[ApproverDto]:
+    async def list_active_approvers(self, session: AsyncSession) -> list[ApproverDto]:
         """List active users who may approve postings (hold job.approve).
 
         Args:
@@ -215,9 +213,7 @@ class JobService:
         if job.status == JobStatus.PUBLISHED_PENDING_REVISION:
             if review.kind == JobReviewKind.REVISION:
                 job.form_schema = job.pending_form_schema or job.form_schema
-                job.pipeline_config = (
-                    job.pending_pipeline_config or job.pipeline_config
-                )
+                job.pipeline_config = job.pending_pipeline_config or job.pipeline_config
             job.pending_form_schema = None
             job.pending_pipeline_config = None
         job.status = JobStatus.PUBLISHED
@@ -335,6 +331,35 @@ class JobService:
         """
         jobs = await self.job_repository.list_published(session)
         return [self.recruiting_mapper.to_job_dto(j) for j in jobs]
+
+    async def list_all_jobs(self, session: AsyncSession) -> list[JobDto]:
+        """List postings of every status (internal/admin view).
+
+        Args:
+            session (AsyncSession): Active database async session.
+
+        Returns:
+            list[JobDto]: All postings regardless of status.
+        """
+        jobs = await self.job_repository.list_all(session)
+        return [self.recruiting_mapper.to_job_dto(j) for j in jobs]
+
+    async def list_reviews_for_reviewer(
+        self, session: AsyncSession, reviewer_id: int
+    ) -> list[JobReviewDto]:
+        """List a reviewer's still-pending review requests.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            reviewer_id (int): The reviewer whose queue to fetch.
+
+        Returns:
+            list[JobReviewDto]: The reviewer's pending reviews.
+        """
+        reviews = await self.job_review_repository.list_by_reviewer(
+            session, reviewer_id, [JobReviewStatus.PENDING]
+        )
+        return [self.recruiting_mapper.to_job_review_dto(r) for r in reviews]
 
     async def get_job(self, session: AsyncSession, job_id: int) -> JobDto:
         """Fetch one posting by id.

@@ -4,10 +4,16 @@ from backend.utils.permission_decorators import authenticate
 from backend.common.permissions import Permission
 from backend.dto.user_context_dto import UserContextDto
 from backend.dto.job_dto import JobCreateDto
+from backend.dto.job_review_dto import JobReviewDecisionDto, JobSubmitDto
 from backend.common.api_endpoints import (
     RECRUITING_JOBS_ENDPOINT,
     RECRUITING_JOB_ENDPOINT,
+    RECRUITING_JOB_SUBMIT_ENDPOINT,
     RECRUITING_JOB_CLOSE_ENDPOINT,
+    RECRUITING_JOB_REOPEN_ENDPOINT,
+    RECRUITING_APPROVERS_ENDPOINT,
+    RECRUITING_REVIEWS_ENDPOINT,
+    RECRUITING_REVIEW_ENDPOINT,
 )
 
 
@@ -59,6 +65,46 @@ class RecruitingController:
             response_model=None,
         )
         self.router.add_api_route(
+            RECRUITING_JOB_REOPEN_ENDPOINT,
+            endpoint=authenticate(permissions=[Permission.RECRUITING_JOB_WRITE])(
+                self.reopen_job
+            ),
+            methods=["POST"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            RECRUITING_JOB_SUBMIT_ENDPOINT,
+            endpoint=authenticate(permissions=[Permission.RECRUITING_JOB_WRITE])(
+                self.submit_job
+            ),
+            methods=["POST"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            RECRUITING_APPROVERS_ENDPOINT,
+            endpoint=authenticate(permissions=[Permission.RECRUITING_JOB_WRITE])(
+                self.list_approvers
+            ),
+            methods=["GET"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            RECRUITING_REVIEWS_ENDPOINT,
+            endpoint=authenticate(permissions=[Permission.RECRUITING_JOB_APPROVE])(
+                self.list_my_reviews
+            ),
+            methods=["GET"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            RECRUITING_REVIEW_ENDPOINT,
+            endpoint=authenticate(permissions=[Permission.RECRUITING_JOB_APPROVE])(
+                self.review_decision
+            ),
+            methods=["PATCH"],
+            response_model=None,
+        )
+        self.router.add_api_route(
             RECRUITING_JOB_ENDPOINT,
             endpoint=authenticate()(self.get_job),
             methods=["GET"],
@@ -72,9 +118,9 @@ class RecruitingController:
         return api_response(message="Job created.", data=result)
 
     async def list_jobs(self, current_user: UserContextDto):
-        """List postings."""
+        """List postings of every status (internal view)."""
         async with self.database.session() as session:
-            result = await self.job_service.list_published(session)
+            result = await self.job_service.list_all_jobs(session)
         return api_response(message="Jobs fetched.", data=result)
 
     async def update_job(
@@ -90,6 +136,61 @@ class RecruitingController:
         async with self.database.session() as session:
             result = await self.job_service.close_job(session, job_id)
         return api_response(message="Job closed.", data=result)
+
+    async def reopen_job(self, current_user: UserContextDto, job_id: int):
+        """Reopen a CLOSED posting."""
+        async with self.database.session() as session:
+            result = await self.job_service.reopen_job(session, job_id)
+        return api_response(message="Job reopened.", data=result)
+
+    async def submit_job(
+        self,
+        current_user: UserContextDto,
+        job_id: int,
+        submit_data: JobSubmitDto,
+    ):
+        """Submit a posting for review."""
+        async with self.database.session() as session:
+            result = await self.job_service.submit_for_review(
+                session,
+                job_id,
+                submit_data.reviewer_id,
+                current_user.user_id,
+                submit_data.message,
+            )
+        return api_response(message="Job submitted for review.", data=result)
+
+    async def list_approvers(self, current_user: UserContextDto):
+        """List active users who may approve postings."""
+        async with self.database.session() as session:
+            result = await self.job_service.list_active_approvers(session)
+        return api_response(message="Approvers fetched.", data=result)
+
+    async def list_my_reviews(self, current_user: UserContextDto):
+        """List the current reviewer's pending reviews."""
+        async with self.database.session() as session:
+            result = await self.job_service.list_reviews_for_reviewer(
+                session, current_user.user_id
+            )
+        return api_response(message="Reviews fetched.", data=result)
+
+    async def review_decision(
+        self,
+        current_user: UserContextDto,
+        review_id: int,
+        decision_data: JobReviewDecisionDto,
+    ):
+        """Approve or reject a pending review."""
+        async with self.database.session() as session:
+            if decision_data.decision == "approve":
+                result = await self.job_service.approve(session, review_id)
+                message = "Review approved."
+            else:
+                result = await self.job_service.reject(
+                    session, review_id, decision_data.comment
+                )
+                message = "Review rejected."
+        return api_response(message=message, data=result)
 
     async def get_job(self, current_user: UserContextDto, job_id: int):
         """Fetch one posting."""

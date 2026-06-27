@@ -1,7 +1,8 @@
 from backend.entity.job_entity import JobEntity
+from backend.entity.job_review_entity import JobReviewEntity
 from backend.entity.users_entity import UsersEntity
 from backend.dto.job_dto import JobDto
-from backend.dto.job_review_dto import ApproverDto
+from backend.dto.job_review_dto import ApproverDto, JobReviewDto
 
 
 class RecruitingMapper:
@@ -14,6 +15,10 @@ class RecruitingMapper:
             name=f"{user.first_name} {user.last_name}",
             email=user.primary_email,
         )
+
+    def to_job_review_dto(self, review: JobReviewEntity) -> JobReviewDto:
+        """Map a JobReviewEntity to a JobReviewDto."""
+        return JobReviewDto.model_validate(review)
 
     def to_job_dto(self, job: JobEntity) -> JobDto:
         """Map a JobEntity to a JobDto."""
