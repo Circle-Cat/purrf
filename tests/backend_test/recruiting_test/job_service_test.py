@@ -26,6 +26,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         self.repo.create_job = AsyncMock(side_effect=_create)
         self.repo.update_job = AsyncMock(side_effect=lambda session, entity: entity)
         self.repo.list_all = AsyncMock(return_value=[])
+        self.repo.delete_job = AsyncMock()
         self.perms = MagicMock()
         self.perms.get_active_users_with_permission = AsyncMock(return_value=[])
         self.review_repo = MagicMock()
@@ -597,6 +598,90 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result.status, JobStatus.CLOSED)
         self.assertEqual(review.status, JobReviewStatus.REJECTED)
+
+    # ---------------------------------------------------------------------------
+    # approve — was_published flag
+    # ---------------------------------------------------------------------------
+
+    async def test_approve_initial_sets_was_published(self):
+        """Approving an INITIAL review marks the posting as was_published=True."""
+        job = self._job(status=JobStatus.PENDING_REVIEW)
+        self.repo.get_by_job_id.return_value = job
+        review = JobReviewEntity(
+            review_id=30,
+            job_id=job.job_id,
+            submitted_by=1,
+            reviewer_id=2,
+            status=JobReviewStatus.PENDING,
+            kind=JobReviewKind.INITIAL,
+        )
+        self.review_repo.get.return_value = review
+
+        await self.service.approve(self.session, review.review_id)
+
+        self.assertTrue(job.was_published)
+
+    async def test_approve_close_does_not_change_was_published(self):
+        """Approving a CLOSE review does not set was_published (it was already True)."""
+        job = self._job(status=JobStatus.PENDING_CLOSE)
+        job.was_published = True
+        self.repo.get_by_job_id.return_value = job
+        review = JobReviewEntity(
+            review_id=31,
+            job_id=job.job_id,
+            submitted_by=1,
+            reviewer_id=2,
+            status=JobReviewStatus.PENDING,
+            kind=JobReviewKind.CLOSE,
+        )
+        self.review_repo.get.return_value = review
+
+        await self.service.approve(self.session, review.review_id)
+
+        # Posting is now CLOSED; was_published must remain True.
+        self.assertTrue(job.was_published)
+        self.assertEqual(job.status, JobStatus.CLOSED)
+
+    # ---------------------------------------------------------------------------
+    # delete_job
+    # ---------------------------------------------------------------------------
+
+    async def test_delete_job_closed_never_published_calls_repo(self):
+        """delete_job on a CLOSED, never-published posting calls repo.delete_job."""
+        job = self._job(status=JobStatus.CLOSED)
+        job.was_published = False
+        self.repo.get_by_job_id.return_value = job
+
+        await self.service.delete_job(self.session, job.job_id)
+
+        self.repo.delete_job.assert_awaited_once_with(self.session, job)
+
+    async def test_delete_job_ever_published_raises(self):
+        """delete_job on a CLOSED posting that was_published raises ValueError."""
+        job = self._job(status=JobStatus.CLOSED)
+        job.was_published = True
+        self.repo.get_by_job_id.return_value = job
+
+        with self.assertRaises(ValueError):
+            await self.service.delete_job(self.session, job.job_id)
+
+    async def test_delete_job_non_closed_raises(self):
+        """delete_job on a non-CLOSED posting raises ValueError."""
+        job = self._job(status=JobStatus.DRAFT)
+        job.was_published = False
+        self.repo.get_by_job_id.return_value = job
+
+        with self.assertRaises(ValueError):
+            await self.service.delete_job(self.session, job.job_id)
+
+    async def test_delete_job_published_raises(self):
+        """delete_job on a PUBLISHED posting raises ValueError."""
+        job = self._job(status=JobStatus.PUBLISHED)
+        job.was_published = True
+        self.repo.get_by_job_id.return_value = job
+
+        with self.assertRaises(ValueError):
+            await self.service.delete_job(self.session, job.job_id)
 
 
 if __name__ == "__main__":

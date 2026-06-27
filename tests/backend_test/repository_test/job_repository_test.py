@@ -45,6 +45,22 @@ class TestJobRepository(BaseRepositoryTestLib):
         self.assertIn("A", titles)
         self.assertIn("B", titles)
 
+    async def test_delete_job_removes_entity(self):
+        """delete_job removes the posting so get_by_job_id returns None afterward."""
+        job = await self.repo.create_job(
+            self.session,
+            JobEntity(
+                kind=JobKind.ACTIVITY, title="To Delete", status=JobStatus.CLOSED
+            ),
+        )
+        job_id = job.job_id
+        self.assertIsNotNone(job_id)
+
+        await self.repo.delete_job(self.session, job)
+
+        fetched = await self.repo.get_by_job_id(self.session, job_id)
+        self.assertIsNone(fetched)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -59,4 +59,5 @@ class RecruitingMapper:
             pending_form_schema=job.pending_form_schema,
             pending_pipeline_config=job.pending_pipeline_config,
             last_reject_comment=last_reject_comment,
+            was_published=job.was_published or False,
         )

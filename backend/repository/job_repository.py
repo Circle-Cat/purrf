@@ -41,3 +41,13 @@ class JobRepository:
         merged = await session.merge(entity)
         await session.flush()
         return merged
+
+    async def delete_job(self, session: AsyncSession, entity: JobEntity) -> None:
+        """Delete a job entity and flush so the deletion is visible within the transaction.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            entity (JobEntity): The entity to delete.
+        """
+        await session.delete(entity)
+        await session.flush()

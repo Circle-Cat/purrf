@@ -357,6 +357,7 @@ class JobService:
             job.status = JobStatus.CLOSED
         elif review.kind == JobReviewKind.REOPEN:
             job.status = JobStatus.PUBLISHED
+            job.was_published = True
         else:
             # INITIAL or REVISION
             if job.status == JobStatus.PUBLISHED_PENDING_REVISION:
@@ -368,6 +369,7 @@ class JobService:
                 job.pending_form_schema = None
                 job.pending_pipeline_config = None
             job.status = JobStatus.PUBLISHED
+            job.was_published = True
         job = await self.job_repository.update_job(session, job)
         await session.commit()
         return self.recruiting_mapper.to_job_dto(job)
@@ -468,6 +470,29 @@ class JobService:
         job = await self.job_repository.update_job(session, job)
         await session.commit()
         return self.recruiting_mapper.to_job_dto(job)
+
+    async def delete_job(self, session: AsyncSession, job_id: int) -> None:
+        """Delete a posting that was never published.
+
+        Only a CLOSED posting that was never published (``was_published`` is
+        ``False``) may be deleted. Once a posting has ever been published it
+        cannot be deleted regardless of its current status.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            job_id (int): Identifier of the posting to delete.
+
+        Raises:
+            ValueError: If the posting does not exist, is not CLOSED, or has
+                ever been published.
+        """
+        job = await self._require_job(session, job_id)
+        if job.status != JobStatus.CLOSED or job.was_published:
+            raise ValueError(
+                f"Job {job_id} cannot be deleted: only never-published CLOSED postings may be deleted"
+            )
+        await self.job_repository.delete_job(session, job)
+        await session.commit()
 
     async def list_published(self, session: AsyncSession) -> list[JobDto]:
         """List all PUBLISHED postings.

@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import String, Integer, Enum, DateTime, func
+from sqlalchemy import Boolean, String, Integer, Enum, DateTime, func, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from backend.common.base import Base
@@ -43,6 +43,9 @@ class JobEntity(Base):
     pipeline_config: Mapped[list | None] = mapped_column(JSONB)
     pending_form_schema: Mapped[dict | None] = mapped_column(JSONB)
     pending_pipeline_config: Mapped[list | None] = mapped_column(JSONB)
+    was_published: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false"), default=False
+    )
     created_datetime: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

@@ -29,3 +29,4 @@ class JobDto(BaseDto):
     pending_form_schema: dict | None = None
     pending_pipeline_config: list | None = None
     last_reject_comment: str | None = None
+    was_published: bool = False

@@ -10,7 +10,8 @@ from backend.common.api_endpoints import (
     RECRUITING_JOB_ENDPOINT,
     RECRUITING_JOB_SUBMIT_ENDPOINT,
     RECRUITING_JOB_CLOSE_ENDPOINT,
-    RECRUITING_JOB_REOPEN_ENDPOINT,
+    RECRUITING_JOB_REQUEST_CLOSE_ENDPOINT,
+    RECRUITING_JOB_REQUEST_REOPEN_ENDPOINT,
     RECRUITING_APPROVERS_ENDPOINT,
     RECRUITING_REVIEWS_ENDPOINT,
     RECRUITING_REVIEW_ENDPOINT,
@@ -65,11 +66,27 @@ class RecruitingController:
             response_model=None,
         )
         self.router.add_api_route(
-            RECRUITING_JOB_REOPEN_ENDPOINT,
+            RECRUITING_JOB_REQUEST_CLOSE_ENDPOINT,
             endpoint=authenticate(permissions=[Permission.RECRUITING_JOB_WRITE])(
-                self.reopen_job
+                self.request_close
             ),
             methods=["POST"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            RECRUITING_JOB_REQUEST_REOPEN_ENDPOINT,
+            endpoint=authenticate(permissions=[Permission.RECRUITING_JOB_WRITE])(
+                self.request_reopen
+            ),
+            methods=["POST"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            RECRUITING_JOB_ENDPOINT,
+            endpoint=authenticate(permissions=[Permission.RECRUITING_JOB_WRITE])(
+                self.delete_job
+            ),
+            methods=["DELETE"],
             response_model=None,
         )
         self.router.add_api_route(
@@ -137,11 +154,45 @@ class RecruitingController:
             result = await self.job_service.close_job(session, job_id)
         return api_response(message="Job closed.", data=result)
 
-    async def reopen_job(self, current_user: UserContextDto, job_id: int):
-        """Reopen a CLOSED posting."""
+    async def request_close(
+        self,
+        current_user: UserContextDto,
+        job_id: int,
+        submit_data: JobSubmitDto,
+    ):
+        """Request to close a PUBLISHED posting through the review gate."""
         async with self.database.session() as session:
-            result = await self.job_service.reopen_job(session, job_id)
-        return api_response(message="Job reopened.", data=result)
+            result = await self.job_service.request_close(
+                session,
+                job_id,
+                submit_data.reviewer_id,
+                current_user.user_id,
+                submit_data.message,
+            )
+        return api_response(message="Close requested.", data=result)
+
+    async def request_reopen(
+        self,
+        current_user: UserContextDto,
+        job_id: int,
+        submit_data: JobSubmitDto,
+    ):
+        """Request to reopen a CLOSED posting through the review gate."""
+        async with self.database.session() as session:
+            result = await self.job_service.request_reopen(
+                session,
+                job_id,
+                submit_data.reviewer_id,
+                current_user.user_id,
+                submit_data.message,
+            )
+        return api_response(message="Reopen requested.", data=result)
+
+    async def delete_job(self, current_user: UserContextDto, job_id: int):
+        """Delete a never-published CLOSED posting."""
+        async with self.database.session() as session:
+            await self.job_service.delete_job(session, job_id)
+        return api_response(message="Job deleted.")
 
     async def submit_job(
         self,
