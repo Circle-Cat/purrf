@@ -32,6 +32,14 @@ export const API_ENDPOINTS = {
   ADMIN_USER_GRANT: (userId) => `/admin/users/${userId}/permissions/grant`,
   ADMIN_USER_REVOKE: (userId) => `/admin/users/${userId}/permissions/revoke`,
   ADMIN_USER_SUPER_ADMIN: (userId) => `/admin/users/${userId}/super-admin`,
+  RECRUITING_JOBS: "/recruiting/jobs",
+  RECRUITING_JOB: (jobId) => `/recruiting/jobs/${jobId}`,
+  RECRUITING_JOB_SUBMIT: (jobId) => `/recruiting/jobs/${jobId}/submit`,
+  RECRUITING_JOB_CLOSE: (jobId) => `/recruiting/jobs/${jobId}/close`,
+  RECRUITING_JOB_REOPEN: (jobId) => `/recruiting/jobs/${jobId}/reopen`,
+  RECRUITING_APPROVERS: "/recruiting/approvers",
+  RECRUITING_REVIEWS: "/recruiting/reviews",
+  RECRUITING_REVIEW: (reviewId) => `/recruiting/reviews/${reviewId}`,
 };
 
 /**
