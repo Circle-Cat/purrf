@@ -14,7 +14,9 @@ const ReviewQueue = ({ reviews, onOpen }) => (
     {reviews.map((r) => (
       <div key={r.reviewId} className="flex items-center gap-3 p-4">
         <div className="min-w-0 flex-1">
-          <p className="font-medium text-slate-900">Job #{r.jobId}</p>
+          <p className="font-medium text-slate-900">
+            {r.jobTitle || `Job #${r.jobId}`}
+          </p>
           {r.submitMessage && (
             <p className="truncate text-xs text-slate-500">{r.submitMessage}</p>
           )}
