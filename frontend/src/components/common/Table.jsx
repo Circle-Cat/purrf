@@ -35,7 +35,7 @@ import { ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
  */
 const Table = ({ columns, data, onSort, sortColumn, sortDirection }) => {
   return (
-    <div className="overflow-auto border">
+    <div className="overflow-auto rounded-lg border">
       <table className="w-full min-w-fit border-collapse text-sm leading-normal [&_tbody_tr:hover]:bg-muted [&_tbody_tr:nth-child(even)]:bg-muted [&_td]:whitespace-nowrap [&_td]:border-b [&_td]:px-[15px] [&_td]:py-3 [&_td]:text-left [&_th]:sticky [&_th]:top-0 [&_th]:z-[1] [&_th]:whitespace-nowrap [&_th]:border-b [&_th]:bg-muted [&_th]:py-3 [&_th]:pl-[15px] [&_th]:pr-[25px] [&_th]:text-left [&_th]:font-bold [&_th]:text-foreground">
         <thead>
           <tr>
