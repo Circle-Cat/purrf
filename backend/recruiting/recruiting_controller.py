@@ -7,7 +7,6 @@ from backend.dto.job_dto import JobCreateDto
 from backend.common.api_endpoints import (
     RECRUITING_JOBS_ENDPOINT,
     RECRUITING_JOB_ENDPOINT,
-    RECRUITING_JOB_PUBLISH_ENDPOINT,
     RECRUITING_JOB_CLOSE_ENDPOINT,
 )
 
@@ -52,14 +51,6 @@ class RecruitingController:
             response_model=None,
         )
         self.router.add_api_route(
-            RECRUITING_JOB_PUBLISH_ENDPOINT,
-            endpoint=authenticate(permissions=[Permission.RECRUITING_JOB_WRITE])(
-                self.publish_job
-            ),
-            methods=["POST"],
-            response_model=None,
-        )
-        self.router.add_api_route(
             RECRUITING_JOB_CLOSE_ENDPOINT,
             endpoint=authenticate(permissions=[Permission.RECRUITING_JOB_WRITE])(
                 self.close_job
@@ -93,12 +84,6 @@ class RecruitingController:
         async with self.database.session() as session:
             result = await self.job_service.update_job(session, job_id, job_data)
         return api_response(message="Job updated.", data=result)
-
-    async def publish_job(self, current_user: UserContextDto, job_id: int):
-        """Publish a posting."""
-        async with self.database.session() as session:
-            result = await self.job_service.publish_job(session, job_id)
-        return api_response(message="Job published.", data=result)
 
     async def close_job(self, current_user: UserContextDto, job_id: int):
         """Close a posting."""
