@@ -9,9 +9,11 @@ const EmailSection = ({ info }) => {
   const primaryEmail = info.emails?.find((emailItem) => emailItem.isPrimary);
 
   return (
-    <div className="section">
-      <div className="section-header">
-        <h3>Contact Email</h3>
+    <div className="mb-12">
+      <div className="mb-5 flex items-center justify-between">
+        <h3 className="mb-5 mt-0 text-xl font-semibold tracking-[-0.015em] text-foreground">
+          Contact Email
+        </h3>
         <Button size="sm" asChild>
           <Link to={ROUTE_PATHS.SIGN_IN_SECURITY}>
             Manage in Settings
@@ -20,9 +22,13 @@ const EmailSection = ({ info }) => {
         </Button>
       </div>
       {primaryEmail ? (
-        <p className="section-text">{primaryEmail.email}</p>
+        <p className="mb-3 text-base leading-relaxed text-foreground">
+          {primaryEmail.email}
+        </p>
       ) : (
-        <p className="section-text">Not provided</p>
+        <p className="mb-3 text-base leading-relaxed text-foreground">
+          Not provided
+        </p>
       )}
     </div>
   );
