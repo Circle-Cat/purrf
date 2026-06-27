@@ -16,13 +16,21 @@ export const createJob = (body) =>
 export const updateJob = (jobId, body) =>
   request.put(API_ENDPOINTS.RECRUITING_JOB(jobId), body);
 
-/** Close a posting. */
+/** Close a draft posting directly (no review required). */
 export const closeJob = (jobId) =>
   request.post(API_ENDPOINTS.RECRUITING_JOB_CLOSE(jobId));
 
-/** Reopen a CLOSED posting. */
-export const reopenJob = (jobId) =>
-  request.post(API_ENDPOINTS.RECRUITING_JOB_REOPEN(jobId));
+/** Request close of a published posting via review. body: {reviewerId, message}. */
+export const requestClose = (jobId, body) =>
+  request.post(API_ENDPOINTS.RECRUITING_JOB_REQUEST_CLOSE(jobId), body);
+
+/** Request reopen of a closed posting via review. body: {reviewerId, message}. */
+export const requestReopen = (jobId, body) =>
+  request.post(API_ENDPOINTS.RECRUITING_JOB_REQUEST_REOPEN(jobId), body);
+
+/** Delete a posting (only for never-published closed postings). */
+export const deleteJob = (jobId) =>
+  request.delete(API_ENDPOINTS.RECRUITING_JOB(jobId));
 
 /** List active users who may approve postings. */
 export const listApprovers = () =>

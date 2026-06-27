@@ -6,7 +6,9 @@ import {
   createJob,
   updateJob,
   closeJob,
-  reopenJob,
+  requestClose,
+  requestReopen,
+  deleteJob,
   listApprovers,
   submitForReview,
   listMyReviews,
@@ -14,7 +16,13 @@ import {
 } from "@/api/recruitingApi";
 
 vi.mock("@/utils/request", () => ({
-  default: { get: vi.fn(), post: vi.fn(), put: vi.fn(), patch: vi.fn() },
+  default: {
+    get: vi.fn(),
+    post: vi.fn(),
+    put: vi.fn(),
+    patch: vi.fn(),
+    delete: vi.fn(),
+  },
 }));
 
 describe("recruitingApi", () => {
@@ -52,10 +60,28 @@ describe("recruitingApi", () => {
     expect(request.post).toHaveBeenCalledWith("/recruiting/jobs/7/close");
   });
 
-  it("reopenJob POSTs the reopen endpoint", async () => {
+  it("requestClose POSTs the request-close endpoint with body", async () => {
     request.post.mockResolvedValue({ data: {} });
-    await reopenJob(7);
-    expect(request.post).toHaveBeenCalledWith("/recruiting/jobs/7/reopen");
+    await requestClose(7, { reviewerId: 2, message: "please close" });
+    expect(request.post).toHaveBeenCalledWith(
+      "/recruiting/jobs/7/request-close",
+      { reviewerId: 2, message: "please close" },
+    );
+  });
+
+  it("requestReopen POSTs the request-reopen endpoint with body", async () => {
+    request.post.mockResolvedValue({ data: {} });
+    await requestReopen(7, { reviewerId: 3, message: "reopen please" });
+    expect(request.post).toHaveBeenCalledWith(
+      "/recruiting/jobs/7/request-reopen",
+      { reviewerId: 3, message: "reopen please" },
+    );
+  });
+
+  it("deleteJob DELETEs /recruiting/jobs/{id}", async () => {
+    request.delete.mockResolvedValue({ data: {} });
+    await deleteJob(7);
+    expect(request.delete).toHaveBeenCalledWith("/recruiting/jobs/7");
   });
 
   it("listApprovers GETs /recruiting/approvers", async () => {

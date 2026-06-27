@@ -36,7 +36,10 @@ export const API_ENDPOINTS = {
   RECRUITING_JOB: (jobId) => `/recruiting/jobs/${jobId}`,
   RECRUITING_JOB_SUBMIT: (jobId) => `/recruiting/jobs/${jobId}/submit`,
   RECRUITING_JOB_CLOSE: (jobId) => `/recruiting/jobs/${jobId}/close`,
-  RECRUITING_JOB_REOPEN: (jobId) => `/recruiting/jobs/${jobId}/reopen`,
+  RECRUITING_JOB_REQUEST_CLOSE: (jobId) =>
+    `/recruiting/jobs/${jobId}/request-close`,
+  RECRUITING_JOB_REQUEST_REOPEN: (jobId) =>
+    `/recruiting/jobs/${jobId}/request-reopen`,
   RECRUITING_APPROVERS: "/recruiting/approvers",
   RECRUITING_REVIEWS: "/recruiting/reviews",
   RECRUITING_REVIEW: (reviewId) => `/recruiting/reviews/${reviewId}`,
