@@ -26,6 +26,7 @@ class TestFastAppFactory(unittest.TestCase):
             mentorship_admin_controller=self.mock_controller,
             email_management_controller=self.mock_controller,
             permission_admin_controller=self.mock_controller,
+            recruiting_controller=self.mock_controller,
             launchdarkly_client=MagicMock(),
             database=MagicMock(),
             logger=MagicMock(),
@@ -43,11 +44,46 @@ class TestFastAppFactory(unittest.TestCase):
             self.factory.internal_activity_controller, self.mock_controller
         )
         self.assertEqual(self.factory.mentorship_controller, self.mock_controller)
+        self.assertEqual(self.factory.recruiting_controller, self.mock_controller)
 
     def test_create_app_returns_fastapi_instance(self):
         """Test that create_app returns a FastAPI application instance."""
         app = self.factory.create_app()
         self.assertIsInstance(app, FastAPI)
+
+    def test_recruiting_routes_are_mounted(self):
+        """The recruiting controller's router is mounted under /api."""
+        recruiting = MagicMock()
+        router = APIRouter()
+
+        @router.get("/recruiting/ping")
+        def _ping():
+            return {}
+
+        recruiting.router = router
+        factory = FastAppFactory(
+            authentication_controller=self.mock_controller,
+            authentication_service=self.mock_service,
+            user_identity_service=MagicMock(),
+            user_permissions_repository=MagicMock(),
+            notification_controller=self.mock_controller,
+            historical_controller=self.mock_controller,
+            consumer_controller=self.mock_controller,
+            internal_activity_controller=self.mock_controller,
+            profile_controller=self.mock_profile_controller,
+            mentorship_controller=self.mock_controller,
+            mentorship_admin_controller=self.mock_controller,
+            email_management_controller=self.mock_controller,
+            permission_admin_controller=self.mock_controller,
+            recruiting_controller=recruiting,
+            launchdarkly_client=MagicMock(),
+            database=MagicMock(),
+            logger=MagicMock(),
+        )
+
+        app = factory.create_app()
+
+        self.assertIn("/api/recruiting/ping", {route.path for route in app.routes})
 
     @patch("backend.utils.fast_app_factory.register_exception_handlers")
     def test_exception_handler_registration_called(self, mock_register):
@@ -100,6 +136,7 @@ class TestFastAppFactoryLifespan(unittest.IsolatedAsyncioTestCase):
             mentorship_admin_controller=self.mock_controller,
             email_management_controller=self.mock_controller,
             permission_admin_controller=self.mock_controller,
+            recruiting_controller=self.mock_controller,
             launchdarkly_client=self.mock_launchdarkly_client,
             database=self.mock_database,
             logger=MagicMock(),

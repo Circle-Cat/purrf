@@ -185,6 +185,11 @@ py_library(
 )
 
 py_library(
+    name = "recruiting_enums",
+    srcs = ["recruiting_enums.py"],
+)
+
+py_library(
     name = "identity_type",
     srcs = [
         "identity_type.py",

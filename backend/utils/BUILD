@@ -138,6 +138,7 @@ py_library(
         "//backend/notification_management:microsoft_chat_subscription_service",
         "//backend/notification_management:notification_controller",
         "//backend/profile",
+        "//backend/recruiting",
         "//backend/repository:repositories",
         "//backend/service:google_service",
         "//backend/service:jira_search_service",

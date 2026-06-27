@@ -69,6 +69,48 @@ class TestUserPermissionsRepository(BaseRepositoryTestLib):
         )
         self.assertEqual({r.user_id for r in admin_only}, {self.u1.user_id})
 
+    async def test_get_active_users_with_permission_dedups_and_skips_inactive(self):
+        perm = f"approve.{uuid.uuid4().hex[:8]}"
+        # u1 holds two active grants -> must appear exactly once.
+        await self.repo.grant(self.session, self.u1.user_id, [perm], "admin")
+        await self.repo.grant(self.session, self.u1.user_id, [perm], "system_internal")
+        # u2 holds it but is inactive -> excluded (u2 is not a super-admin).
+        await self.repo.grant(self.session, self.u2.user_id, [perm], "admin")
+        self.u2.is_active = False
+        await self.session.flush()
+        # admin's only grant is revoked -> excluded (admin is not a super-admin).
+        await self.repo.grant(self.session, self.admin.user_id, [perm], "admin")
+        await self.repo.revoke(self.session, self.admin.user_id, [perm])
+
+        users = await self.repo.get_active_users_with_permission(self.session, perm)
+        user_ids = {u.user_id for u in users}
+
+        # u1 must be present and deduplicated.
+        self.assertIn(self.u1.user_id, user_ids)
+        self.assertEqual(sum(1 for u in users if u.user_id == self.u1.user_id), 1)
+        # inactive u2 and revoked-only admin must not appear via explicit grants.
+        self.assertNotIn(self.u2.user_id, user_ids)
+        self.assertNotIn(self.admin.user_id, user_ids)
+
+    async def test_get_active_users_with_permission_includes_active_super_admin(self):
+        """An active super-admin with no explicit grant must be included; an
+        inactive super-admin must not."""
+        perm = f"approve.{uuid.uuid4().hex[:8]}"
+        # Create an active super-admin with no explicit grant for this perm.
+        active_sa = self._make_user("sa_active")
+        active_sa.is_super_admin = True
+        # Create an inactive super-admin (also no explicit grant) -> must be excluded.
+        inactive_sa = self._make_user("sa_inactive")
+        inactive_sa.is_super_admin = True
+        inactive_sa.is_active = False
+        await self.insert_entities([active_sa, inactive_sa])
+
+        users = await self.repo.get_active_users_with_permission(self.session, perm)
+        user_ids = {u.user_id for u in users}
+
+        self.assertIn(active_sa.user_id, user_ids)
+        self.assertNotIn(inactive_sa.user_id, user_ids)
+
     async def test_list_audit_filters_and_paginates(self):
         await self.repo.grant(
             self.session, self.u1.user_id, ["a.read", "b.read", "c.read"], "admin"

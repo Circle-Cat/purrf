@@ -25,6 +25,9 @@ class Permission(StrEnum):
     MENTORSHIP_APPLICATION_REVIEW = "mentorship.application.review"
     MENTORSHIP_PARTICIPANT_READ = "mentorship.participant.read"
     MENTORSHIP_PARTICIPANT_WRITE = "mentorship.participant.write"
+    RECRUITING_JOB_READ = "recruiting.job.read"
+    RECRUITING_JOB_WRITE = "recruiting.job.write"
+    RECRUITING_JOB_APPROVE = "recruiting.job.approve"
     PERMISSION_MANAGE = "permission.manage"
     SUPER_ADMIN_REVOKE = "super_admin.revoke"
 

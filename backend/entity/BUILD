@@ -8,6 +8,7 @@ py_library(
     deps = [
         "//backend/common:base",
         "//backend/common:mentorship_enums",
+        "//backend/common:recruiting_enums",
         "@pypi//sqlalchemy",
     ],
 )
