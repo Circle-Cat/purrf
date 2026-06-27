@@ -27,6 +27,7 @@ class FastAppFactory:
         mentorship_admin_controller,
         email_management_controller,
         permission_admin_controller,
+        recruiting_controller,
         launchdarkly_client,
         database,
         logger,

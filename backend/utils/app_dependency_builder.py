@@ -85,6 +85,10 @@ from backend.authentication.email_management_controller import (
 )
 from backend.admin.permission_admin_service import PermissionAdminService
 from backend.admin.permission_admin_controller import PermissionAdminController
+from backend.repository.job_repository import JobRepository
+from backend.recruiting.recruiting_mapper import RecruitingMapper
+from backend.recruiting.job_service import JobService
+from backend.recruiting.recruiting_controller import RecruitingController
 from backend.common.auth0_client import Auth0Client
 from backend.repository.users_repository import UsersRepository
 from backend.repository.user_identities_repository import UserIdentitiesRepository
@@ -510,6 +514,13 @@ class AppDependencyBuilder:
             self.permission_admin_service,
             database=self.database,
         )
+        self.job_repository = JobRepository()
+        self.recruiting_mapper = RecruitingMapper()
+        self.job_service = JobService(self.job_repository, self.recruiting_mapper)
+        self.recruiting_controller = RecruitingController(
+            job_service=self.job_service,
+            database=self.database,
+        )
         self.fast_app_factory = FastAppFactory(
             authentication_controller=self.authentication_controller,
             authentication_service=self.authentication_service,
@@ -524,6 +535,7 @@ class AppDependencyBuilder:
             mentorship_admin_controller=self.mentorship_admin_controller,
             email_management_controller=self.email_management_controller,
             permission_admin_controller=self.permission_admin_controller,
+            recruiting_controller=self.recruiting_controller,
             launchdarkly_client=self.launchdarkly_client,
             database=self.database,
             logger=self.logger,

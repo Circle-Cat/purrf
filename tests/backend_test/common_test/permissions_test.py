@@ -9,8 +9,8 @@ from backend.common.permissions import (
 
 
 class TestPermissions(unittest.TestCase):
-    def test_catalog_has_fifteen_unique_dotted_values(self):
-        self.assertEqual(len(Permission), 15)
+    def test_catalog_has_seventeen_unique_dotted_values(self):
+        self.assertEqual(len(Permission), 17)
         values = [p.value for p in Permission]
         self.assertEqual(len(values), len(set(values)))
         for value in values:
