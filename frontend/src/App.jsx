@@ -38,7 +38,7 @@ function App() {
         <LDIdentifier />
         <Router>
           <div
-            className="group flex flex-col legacy-styles"
+            className="group flex flex-col"
             data-env-banner={showEnvBanner ? "true" : "false"}
             data-collapsed={sidebarCollapsed ? "true" : "false"}
           >
