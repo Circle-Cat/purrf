@@ -61,10 +61,6 @@ const PostingsList = ({
       const isDraft = job.status === "draft";
       const isPublished = job.status === "published";
       const isPendingRevision = job.status === "published_pending_revision";
-      const isInFlight =
-        job.status === "pending_review" ||
-        job.status === "pending_close" ||
-        job.status === "pending_reopen";
       const isClosed = job.status === "closed";
 
       return (
@@ -158,7 +154,6 @@ const PostingsList = ({
                 Delete
               </Button>
             )}
-            {isInFlight && null}
           </div>
         </div>
       );
