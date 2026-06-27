@@ -1,8 +1,4 @@
-@layer legacy, base, components, utilities;
-
-@layer legacy {
-  @import "./legacy.css";
-}
+@layer base, components, utilities;
 
 @import "tailwindcss";
 @import "tw-animate-css";
@@ -124,6 +120,8 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased;
+    font-family: "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    line-height: 1.6;
   }
 }
