@@ -147,7 +147,7 @@ const PersonalEditModal = ({
             </label>
             <TimezoneSelector
               value={formData.timezone || ""}
-              onChange={(opt) => handleChange("timezone", opt.value)}
+              onChange={(opt) => handleChange("timezone", opt?.value ?? "")}
               isDisabled={!canEditTimezone}
             />
             {errors.timezone && (

@@ -14,13 +14,19 @@ vi.mock("@/pages/Profile/utils", () => ({
 
 vi.mock("@/components/common/TimezoneSelector", () => ({
   default: ({ value, onChange, isDisabled }) => (
-    <select
-      value={value}
-      onChange={(e) => onChange({ value: e.target.value })}
-      disabled={isDisabled}
-    >
-      <option value="America/New_York">Eastern Time (US & Canada)</option>
-    </select>
+    <>
+      <select
+        value={value}
+        onChange={(e) => onChange({ value: e.target.value })}
+        disabled={isDisabled}
+      >
+        <option value="America/New_York">Eastern Time (US & Canada)</option>
+      </select>
+      {/* react-select fires onChange(null) when the value is cleared. */}
+      <button type="button" onClick={() => onChange(null)}>
+        clear-timezone
+      </button>
+    </>
   ),
 }));
 
@@ -161,6 +167,27 @@ describe("PersonalEditModal Component", () => {
     await user.click(saveBtn);
 
     expect(screen.getByText("Last name is required")).toBeInTheDocument();
+    expect(mockOnSave).not.toHaveBeenCalled();
+  });
+
+  it("handles the timezone being cleared (onChange null) without crashing", async () => {
+    const user = userEvent.setup();
+    render(
+      <PersonalEditModal
+        isOpen={true}
+        onClose={mockOnClose}
+        initialData={initialData}
+        onSave={mockOnSave}
+        canEditTimezone={true}
+      />,
+    );
+
+    // Clearing the selector fires onChange(null); the modal must not crash and
+    // should treat the timezone as empty, surfacing the required-field error.
+    await user.click(screen.getByRole("button", { name: "clear-timezone" }));
+    await user.click(screen.getByRole("button", { name: /Save/i }));
+
+    expect(screen.getByText("Timezone is required")).toBeInTheDocument();
     expect(mockOnSave).not.toHaveBeenCalled();
   });
 
