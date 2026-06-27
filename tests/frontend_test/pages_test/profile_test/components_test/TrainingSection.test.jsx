@@ -265,4 +265,25 @@ describe("TrainingSection Component", () => {
       .closest("tr");
     expect(noLinkRow).toHaveTextContent("-");
   });
+
+  it('renders "-" instead of a clickable link for a javascript: link', () => {
+    render(
+      <TrainingSection
+        list={[
+          {
+            id: 1,
+            category: "corporate_culture_course",
+            status: "done",
+            link: "javascript:alert(1)",
+            ...BASE_TIMESTAMPS,
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
+    expect(
+      screen.getByText("Corporate Culture Course").closest("tr"),
+    ).toHaveTextContent("-");
+  });
 });

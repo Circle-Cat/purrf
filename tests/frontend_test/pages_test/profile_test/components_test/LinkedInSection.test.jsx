@@ -32,4 +32,25 @@ describe("LinkedInSection Component", () => {
 
     expect(screen.getByText("Not provided")).toBeInTheDocument();
   });
+
+  it("does not render a javascript: URL as a clickable link", () => {
+    render(
+      <LinkedInSection
+        info={{ linkedin: "javascript:alert(document.domain)" }}
+      />,
+    );
+
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
+  });
+
+  it("upgrades a bare host to an https link", () => {
+    render(
+      <LinkedInSection info={{ linkedin: "linkedin.com/in/test-user" }} />,
+    );
+
+    const link = screen.getByRole("link", {
+      name: "linkedin.com/in/test-user",
+    });
+    expect(link).toHaveAttribute("href", "https://linkedin.com/in/test-user");
+  });
 });
