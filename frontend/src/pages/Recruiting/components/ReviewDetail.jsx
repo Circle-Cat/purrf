@@ -22,7 +22,9 @@ const ReviewDetail = ({ review, job, onApprove, onReject, onBack }) => {
 
   return (
     <div className="space-y-4 p-6">
-      <Button variant="outline" size="sm" onClick={onBack}>← Back</Button>
+      <Button variant="outline" size="sm" onClick={onBack}>
+        ← Back
+      </Button>
       <div>
         <h1 className="text-xl font-semibold text-slate-900">{job.title}</h1>
         <p className="text-sm text-slate-600">{job.description}</p>

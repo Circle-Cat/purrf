@@ -3,8 +3,13 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/context/auth/AuthContext";
 import {
-  listJobs, createJob, updateJob, closeJob, reopenJob,
-  listApprovers, submitForReview,
+  listJobs,
+  createJob,
+  updateJob,
+  closeJob,
+  reopenJob,
+  listApprovers,
+  submitForReview,
 } from "@/api/recruitingApi";
 import PostingsList from "@/pages/Recruiting/components/PostingsList";
 import PostingForm from "@/pages/Recruiting/components/PostingForm";
@@ -39,8 +44,14 @@ const Postings = () => {
     }
   };
 
-  const openCreate = () => { setEditing(null); setFormOpen(true); };
-  const openEdit = (job) => { setEditing(job); setFormOpen(true); };
+  const openCreate = () => {
+    setEditing(null);
+    setFormOpen(true);
+  };
+  const openEdit = (job) => {
+    setEditing(job);
+    setFormOpen(true);
+  };
 
   const handleFormSubmit = (body) => {
     setFormOpen(false);
