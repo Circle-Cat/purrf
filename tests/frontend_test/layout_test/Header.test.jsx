@@ -58,7 +58,7 @@ describe("Header Component", () => {
       </MemoryRouter>,
     );
 
-    const userNameElement = screen.getByText("", { selector: ".user-name" });
+    const userNameElement = screen.getByRole("button", { name: "User menu" });
     expect(userNameElement).toBeInTheDocument();
     expect(userNameElement.textContent).toBe("");
     expect(extractCloudflareUserName).not.toHaveBeenCalled();
@@ -75,7 +75,10 @@ describe("Header Component", () => {
 
     const spanElement = screen.getByText("A");
     expect(spanElement).toBeInTheDocument();
-    expect(spanElement.closest("button")).toHaveClass("user-name");
+    expect(spanElement.closest("button")).toHaveAttribute(
+      "aria-label",
+      "User menu",
+    );
   });
 
   test("handles lowercase names and correctly uppercases the initial", () => {
@@ -89,7 +92,10 @@ describe("Header Component", () => {
 
     const spanElement = screen.getByText("M");
     expect(spanElement).toBeInTheDocument();
-    expect(spanElement.closest("button")).toHaveClass("user-name");
+    expect(spanElement.closest("button")).toHaveAttribute(
+      "aria-label",
+      "User menu",
+    );
   });
 
   test("displays an empty user initial if the extracted name is null or empty", () => {
@@ -101,7 +107,7 @@ describe("Header Component", () => {
       </MemoryRouter>,
     );
 
-    let userNameElement = screen.getByText("", { selector: ".user-name" });
+    let userNameElement = screen.getByRole("button", { name: "User menu" });
     expect(userNameElement.textContent).toBe("");
 
     extractCloudflareUserName.mockReturnValue(null);
@@ -110,7 +116,7 @@ describe("Header Component", () => {
         <Header />
       </MemoryRouter>,
     );
-    userNameElement = screen.getByText("", { selector: ".user-name" });
+    userNameElement = screen.getByRole("button", { name: "User menu" });
     expect(userNameElement.textContent).toBe("");
   });
 
