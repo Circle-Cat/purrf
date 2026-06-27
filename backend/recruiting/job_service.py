@@ -87,10 +87,18 @@ class JobService:
     ) -> JobDto:
         """Update a posting's editable fields.
 
-        A DRAFT posting is edited in place. Editing the form schema or pipeline
-        of a PUBLISHED posting does not touch the live version: the change is
-        parked in pending_form_schema/pending_pipeline_config and the status
-        flips to PUBLISHED_PENDING_REVISION until a reviewer approves it.
+        Only DRAFT and PUBLISHED postings are editable:
+        - DRAFT: all live fields (title, description, kind, mentorship_role,
+          form_schema, pipeline_config) are written directly.
+        - PUBLISHED: if form_schema or pipeline_config changed, the new values
+          are parked in pending_form_schema/pending_pipeline_config and the
+          status flips to PUBLISHED_PENDING_REVISION; otherwise the remaining
+          live fields (title/description/kind/mentorship_role) are written
+          directly.
+
+        Any other status (PENDING_REVIEW, PUBLISHED_PENDING_REVISION,
+        PENDING_CLOSE, PENDING_REOPEN, CLOSED) raises ValueError immediately
+        without touching the entity.
 
         Args:
             session (AsyncSession): Active database async session.
@@ -101,23 +109,34 @@ class JobService:
             JobDto: The updated posting.
 
         Raises:
-            ValueError: If no posting with the given id exists.
+            ValueError: If no posting with the given id exists, or if the
+                posting's current status is not DRAFT or PUBLISHED.
         """
         job = await self._require_job(session, job_id)
-        if job.status == JobStatus.PUBLISHED and (
-            dto.form_schema != job.form_schema
-            or dto.pipeline_config != job.pipeline_config
-        ):
-            job.pending_form_schema = dto.form_schema
-            job.pending_pipeline_config = dto.pipeline_config
-            job.status = JobStatus.PUBLISHED_PENDING_REVISION
-        else:
+        if job.status == JobStatus.DRAFT:
             job.title = dto.title
             job.description = dto.description
             job.kind = dto.kind
             job.mentorship_role = dto.mentorship_role
             job.form_schema = dto.form_schema
             job.pipeline_config = dto.pipeline_config
+        elif job.status == JobStatus.PUBLISHED:
+            if (
+                dto.form_schema != job.form_schema
+                or dto.pipeline_config != job.pipeline_config
+            ):
+                job.pending_form_schema = dto.form_schema
+                job.pending_pipeline_config = dto.pipeline_config
+                job.status = JobStatus.PUBLISHED_PENDING_REVISION
+            else:
+                job.title = dto.title
+                job.description = dto.description
+                job.kind = dto.kind
+                job.mentorship_role = dto.mentorship_role
+                job.form_schema = dto.form_schema
+                job.pipeline_config = dto.pipeline_config
+        else:
+            raise ValueError(f"Job {job_id} cannot be edited from {job.status}")
         job = await self.job_repository.update_job(session, job)
         await session.commit()
         return self.recruiting_mapper.to_job_dto(job)

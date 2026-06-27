@@ -683,6 +683,43 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             await self.service.delete_job(self.session, job.job_id)
 
+    # ---------------------------------------------------------------------------
+    # update_job — non-editable status guard
+    # ---------------------------------------------------------------------------
+
+    async def test_update_published_pending_revision_raises(self):
+        """update_job raises ValueError and does not call repo when status is PUBLISHED_PENDING_REVISION."""
+        job = self._job(status=JobStatus.PUBLISHED_PENDING_REVISION)
+        self.repo.get_by_job_id.return_value = job
+        dto = JobCreateDto(title="new title", kind=job.kind)
+
+        with self.assertRaisesRegex(ValueError, "cannot be edited"):
+            await self.service.update_job(self.session, job.job_id, dto)
+
+        self.repo.update_job.assert_not_awaited()
+
+    async def test_update_pending_review_raises(self):
+        """update_job raises ValueError and does not call repo when status is PENDING_REVIEW."""
+        job = self._job(status=JobStatus.PENDING_REVIEW)
+        self.repo.get_by_job_id.return_value = job
+        dto = JobCreateDto(title="new title", kind=job.kind)
+
+        with self.assertRaisesRegex(ValueError, "cannot be edited"):
+            await self.service.update_job(self.session, job.job_id, dto)
+
+        self.repo.update_job.assert_not_awaited()
+
+    async def test_update_closed_raises(self):
+        """update_job raises ValueError and does not call repo when status is CLOSED."""
+        job = self._job(status=JobStatus.CLOSED)
+        self.repo.get_by_job_id.return_value = job
+        dto = JobCreateDto(title="new title", kind=job.kind)
+
+        with self.assertRaisesRegex(ValueError, "cannot be edited"):
+            await self.service.update_job(self.session, job.job_id, dto)
+
+        self.repo.update_job.assert_not_awaited()
+
 
 if __name__ == "__main__":
     unittest.main()
