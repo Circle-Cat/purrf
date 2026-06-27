@@ -1,0 +1,64 @@
+name: Deploy Recruiting Prototype to Pages
+
+# Publishes the self-contained Recruiting v2 prototype (mock data, no backend)
+# as a static GitHub Pages site at https://circle-cat.github.io/purrf/ so the
+# team can preview the design without running anything locally.
+#
+# One-time repo setup (Settings -> Pages): set "Source" to "GitHub Actions".
+# If the github-pages environment restricts deployment branches, allow
+# "recruiting-v2-prototype-standalone" there too.
+
+on:
+  push:
+    branches: [recruiting-v2-prototype-standalone]
+  workflow_dispatch:
+
+# Least-privilege tokens required by actions/deploy-pages.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never run two Pages deploys at once; let an in-flight one finish.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build prototype
+        run: pnpm exec vite build --config frontend/vite.config.pages.mjs
+
+      # GitHub Pages serves index.html at the site root; our entry is prototype.html.
+      - name: Promote entry to index.html
+        run: mv frontend/dist-pages/prototype.html frontend/dist-pages/index.html
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: frontend/dist-pages
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

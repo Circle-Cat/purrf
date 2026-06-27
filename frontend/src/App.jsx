@@ -21,6 +21,9 @@ import MentorshipManagement from "@/pages/MentorshipManagement";
 import VerifyRequired from "@/pages/VerifyRequired";
 import SignInSecurity from "@/pages/SignInSecurity";
 import AdminPermissions from "@/pages/AdminPermissions";
+// Standalone mock-data prototype — self-contained under @/pages/RecruitingPrototype,
+// no coupling to business code. Remove this import + the route below to fully revert.
+import RecruitingPrototype from "@/pages/RecruitingPrototype";
 import { AuthProvider } from "@/context/auth";
 import { FlagsProvider, LDIdentifier } from "@/context/flags";
 import { PERMISSIONS } from "@/constants/Permissions";
@@ -114,6 +117,11 @@ function App() {
                     <Route
                       path={ROUTE_PATHS.ACCESS_DENIED}
                       element={<AccessDenied />}
+                    />
+                    {/* Standalone prototype (mock data, no auth gate) — revert by deleting this route + its import */}
+                    <Route
+                      path="/recruiting/prototype"
+                      element={<RecruitingPrototype />}
                     />
                     <Route
                       path={ROUTE_PATHS.ROOT}
