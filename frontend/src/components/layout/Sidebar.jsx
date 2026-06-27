@@ -47,6 +47,16 @@ const Sidebar = () => {
       to: ROUTE_PATHS.ADMIN_USERS,
       permissions: [PERMISSIONS.PERMISSION_MANAGE],
     },
+    {
+      label: "Recruiting",
+      to: ROUTE_PATHS.RECRUITING_POSTINGS,
+      permissions: [PERMISSIONS.RECRUITING_JOB_WRITE],
+    },
+    {
+      label: "My Reviews",
+      to: ROUTE_PATHS.RECRUITING_REVIEWS,
+      permissions: [PERMISSIONS.RECRUITING_JOB_APPROVE],
+    },
   ];
 
   return (
