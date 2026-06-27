@@ -5,7 +5,6 @@ import { LdapStatus } from "@/constants/LdapStatus";
 import { getLdapsAndDisplayNames } from "@/api/dashboardApi";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import "@/pages/DataSearch/DataSearch.css";
 
 function MsModal({ open, onClose, children }) {
   if (!open) return null;
