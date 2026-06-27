@@ -33,8 +33,20 @@ class RecruitingMapper:
         dto.job_title = job_title
         return dto
 
-    def to_job_dto(self, job: JobEntity) -> JobDto:
-        """Map a JobEntity to a JobDto."""
+    def to_job_dto(
+        self, job: JobEntity, last_reject_comment: str | None = None
+    ) -> JobDto:
+        """Map a JobEntity to a JobDto.
+
+        Args:
+            job (JobEntity): The posting entity to convert.
+            last_reject_comment (str | None): The reject_comment from that
+                job's most-recent review if it was a rejection, otherwise
+                ``None``. Serialised as ``lastRejectComment`` in API responses.
+
+        Returns:
+            JobDto: The mapped DTO.
+        """
         return JobDto(
             id=job.job_id,
             title=job.title,
@@ -46,4 +58,5 @@ class RecruitingMapper:
             pipeline_config=job.pipeline_config,
             pending_form_schema=job.pending_form_schema,
             pending_pipeline_config=job.pending_pipeline_config,
+            last_reject_comment=last_reject_comment,
         )

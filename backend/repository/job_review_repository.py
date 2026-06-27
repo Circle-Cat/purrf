@@ -57,3 +57,38 @@ class JobReviewRepository:
             )
         )
         return result.scalar_one_or_none()
+
+    async def get_latest_reviews(
+        self, session: AsyncSession, job_ids: list[int]
+    ) -> dict[int, JobReviewEntity]:
+        """Return the most-recent review for each job in job_ids.
+
+        Fetches all reviews whose ``job_id`` is in ``job_ids``, ordered by
+        ``created_at`` descending, and keeps only the first-seen entry per
+        ``job_id`` (i.e. the newest review).
+
+        Args:
+            session (AsyncSession): Active database async session.
+            job_ids (list[int]): Posting identifiers to query. An empty list
+                short-circuits and returns ``{}`` without hitting the database.
+
+        Returns:
+            dict[int, JobReviewEntity]: Maps each job_id that has at least one
+            review to that job's most-recent ``JobReviewEntity``. Job ids with
+            no reviews are absent from the result.
+        """
+        if not job_ids:
+            return {}
+        result = await session.execute(
+            select(JobReviewEntity)
+            .where(JobReviewEntity.job_id.in_(job_ids))
+            .order_by(
+                JobReviewEntity.created_at.desc(), JobReviewEntity.review_id.desc()
+            )
+        )
+        rows = result.scalars().all()
+        latest: dict[int, JobReviewEntity] = {}
+        for row in rows:
+            if row.job_id not in latest:
+                latest[row.job_id] = row
+        return latest

@@ -123,6 +123,42 @@ class TestJobReviewRepository(BaseRepositoryTestLib):
             )
         )
 
+    async def test_get_latest_reviews_returns_newest_per_job(self):
+        """get_latest_reviews returns the most-recent review per job_id (REJECTED wins over older APPROVED)."""
+        await self.repo.create(
+            self.session,
+            JobReviewEntity(
+                job_id=self.job.job_id,
+                submitted_by=self.submitter_id,
+                reviewer_id=self.reviewer_id,
+                status=JobReviewStatus.APPROVED,
+                kind=JobReviewKind.INITIAL,
+            ),
+        )
+        newer = await self.repo.create(
+            self.session,
+            JobReviewEntity(
+                job_id=self.job.job_id,
+                submitted_by=self.submitter_id,
+                reviewer_id=self.reviewer_id,
+                status=JobReviewStatus.REJECTED,
+                kind=JobReviewKind.REVISION,
+                reject_comment="needs work",
+            ),
+        )
+
+        result = await self.repo.get_latest_reviews(self.session, [self.job.job_id])
+
+        self.assertIn(self.job.job_id, result)
+        self.assertEqual(result[self.job.job_id].review_id, newer.review_id)
+        self.assertEqual(result[self.job.job_id].status, JobReviewStatus.REJECTED)
+
+    async def test_get_latest_reviews_empty_job_ids_returns_empty(self):
+        """get_latest_reviews with no job_ids returns {} without querying."""
+        result = await self.repo.get_latest_reviews(self.session, [])
+
+        self.assertEqual(result, {})
+
 
 if __name__ == "__main__":
     unittest.main()

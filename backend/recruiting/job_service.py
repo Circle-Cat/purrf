@@ -335,14 +335,35 @@ class JobService:
     async def list_all_jobs(self, session: AsyncSession) -> list[JobDto]:
         """List postings of every status (internal/admin view).
 
+        Each posting is annotated with the reject_comment from its most-recent
+        review when that review was a rejection, so the creator can see the
+        posting was sent back and why. The field self-clears once a newer
+        (non-rejected) review becomes the latest.
+
         Args:
             session (AsyncSession): Active database async session.
 
         Returns:
-            list[JobDto]: All postings regardless of status.
+            list[JobDto]: All postings regardless of status, each carrying
+            ``last_reject_comment`` if the posting's latest review was a
+            rejection, otherwise ``None``.
         """
         jobs = await self.job_repository.list_all(session)
-        return [self.recruiting_mapper.to_job_dto(j) for j in jobs]
+        latest_reviews = await self.job_review_repository.get_latest_reviews(
+            session, [j.job_id for j in jobs]
+        )
+        dtos = []
+        for j in jobs:
+            latest = latest_reviews.get(j.job_id)
+            comment = (
+                latest.reject_comment
+                if latest is not None and latest.status == JobReviewStatus.REJECTED
+                else None
+            )
+            dtos.append(
+                self.recruiting_mapper.to_job_dto(j, last_reject_comment=comment)
+            )
+        return dtos
 
     async def list_reviews_for_reviewer(
         self, session: AsyncSession, reviewer_id: int
