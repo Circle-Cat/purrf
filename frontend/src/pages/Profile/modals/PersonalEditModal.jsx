@@ -1,7 +1,11 @@
 import React, { useState, useEffect } from "react";
-import "@/pages/Profile/modals/Modal.css";
 import TimezoneSelector from "@/components/common/TimezoneSelector";
 import { Button } from "@/components/ui/button";
+
+const LABEL = "mb-2 block text-sm font-semibold text-foreground";
+const FIELD =
+  "w-full rounded-[10px] border-2 bg-background px-4 py-3 text-[0.9375rem] text-foreground transition-all focus:border-primary focus:shadow-sm focus:outline-none";
+const ERROR_TEXT = "mt-1 block text-xs text-destructive";
 
 /**
  * PersonalEditModal allows editing personal profile information including
@@ -91,59 +95,60 @@ const PersonalEditModal = ({
   };
 
   return (
-    <div className="modal-overlay">
-      <div className="modal-content">
+    <div className="fixed inset-0 z-[1000] flex h-full w-full items-center justify-center bg-black/40 backdrop-blur-[4px] animate-in fade-in duration-200">
+      <div className="max-h-[90vh] w-[90%] max-w-[700px] overflow-y-auto rounded-2xl border bg-background p-10 animate-in slide-in-from-bottom-4 duration-300">
         <div className="mb-5 flex items-center justify-between">
           <h3>Edit Personal Information</h3>
         </div>
 
-        <div className="scrollable-form-area">
+        <div>
           {/* First Name */}
-          <div className="form-group">
-            <label>
-              First Name <span className="required">*</span>
+          <div className="mb-5">
+            <label className={LABEL}>
+              First Name <span className="ml-1 text-destructive">*</span>
             </label>
             <input
               type="text"
-              className={errors.firstName ? "input-error" : ""}
+              className={`${FIELD}${errors.firstName ? " border-destructive" : ""}`}
               value={formData.firstName || ""}
               onChange={(e) => handleChange("firstName", e.target.value)}
             />
             {errors.firstName && (
-              <span className="error-text">{errors.firstName}</span>
+              <span className={ERROR_TEXT}>{errors.firstName}</span>
             )}
           </div>
 
           {/* Last Name */}
-          <div className="form-group">
-            <label>
-              Last Name <span className="required">*</span>
+          <div className="mb-5">
+            <label className={LABEL}>
+              Last Name <span className="ml-1 text-destructive">*</span>
             </label>
             <input
               type="text"
-              className={errors.lastName ? "input-error" : ""}
+              className={`${FIELD}${errors.lastName ? " border-destructive" : ""}`}
               value={formData.lastName || ""}
               onChange={(e) => handleChange("lastName", e.target.value)}
             />
             {errors.lastName && (
-              <span className="error-text">{errors.lastName}</span>
+              <span className={ERROR_TEXT}>{errors.lastName}</span>
             )}
           </div>
 
           {/* Preferred Name */}
-          <div className="form-group">
-            <label>Preferred Name</label>
+          <div className="mb-5">
+            <label className={LABEL}>Preferred Name</label>
             <input
               type="text"
+              className={FIELD}
               value={formData.preferredName || ""}
               onChange={(e) => handleChange("preferredName", e.target.value)}
             />
           </div>
 
           {/* Timezone */}
-          <div className="form-group">
-            <label>
-              Current Timezone <span className="required">*</span>
+          <div className="mb-5">
+            <label className={LABEL}>
+              Current Timezone <span className="ml-1 text-destructive">*</span>
             </label>
             <TimezoneSelector
               value={formData.timezone || ""}
@@ -151,9 +156,9 @@ const PersonalEditModal = ({
               isDisabled={!canEditTimezone}
             />
             {errors.timezone && (
-              <span className="error-text">{errors.timezone}</span>
+              <span className={ERROR_TEXT}>{errors.timezone}</span>
             )}
-            <span className="timezone-info-text">
+            <span className="text-xs">
               Timezone can only be updated once every 30 days.
               <br />
               {!canEditTimezone && `Next editable date: ${nextEditableDate}.`}
@@ -161,10 +166,11 @@ const PersonalEditModal = ({
           </div>
 
           {/* LinkedIn */}
-          <div className="form-group">
-            <label>LinkedIn</label>
+          <div className="mb-5">
+            <label className={LABEL}>LinkedIn</label>
             <input
               type="text"
+              className={FIELD}
               value={formData.linkedin || ""}
               onChange={(e) => handleChange("linkedin", e.target.value)}
             />
@@ -172,7 +178,7 @@ const PersonalEditModal = ({
         </div>
 
         {/* Modal Actions */}
-        <div className="modal-actions">
+        <div className="mt-10 flex justify-end gap-3 border-t-2 pt-6">
           <Button variant="outline" onClick={onClose} disabled={isSaving}>
             Cancel
           </Button>
