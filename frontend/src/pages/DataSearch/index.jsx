@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import "@/pages/DataSearch/DataSearch.css";
 import MemberSelector from "@/pages/DataSearch/components/MemberSelector";
 import DateRangePicker from "@/components/common/DateRangePicker";
 import { DataSourceSelector } from "@/pages/DataSearch/components/DataSourceSelector";
@@ -100,12 +99,12 @@ export default function DataSearch() {
     setShowTab(true);
   };
   return (
-    <div className="datesearch-page ds-page" data-testid="data-search-page">
-      <div className="ds-topbar-row">
-        <div className="ds-left-group">
+    <div className="relative flex flex-col p-5" data-testid="data-search-page">
+      <div className="mb-3.5 flex items-center justify-between gap-4 rounded-[10px] bg-background px-3.5 py-2.5">
+        <div className="flex items-center gap-3">
           <Button
             size="sm"
-            className="ldap-chip"
+            className="h-8 rounded border bg-background px-3 py-1.5 text-[0.9em] font-medium text-foreground shadow-sm hover:border-primary hover:bg-muted"
             onClick={() => setLdapModalOpen(true)}
             title="Pick members"
           >
@@ -114,7 +113,7 @@ export default function DataSearch() {
 
           <Button
             size="sm"
-            className="ldap-chip"
+            className="h-8 rounded border bg-background px-3 py-1.5 text-[0.9em] font-medium text-foreground shadow-sm hover:border-primary hover:bg-muted"
             onClick={() => setShowSelector(true)}
           >
             Data Source
