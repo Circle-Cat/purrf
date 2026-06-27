@@ -5,6 +5,7 @@ from backend.recruiting.job_service import JobService
 from backend.recruiting.recruiting_mapper import RecruitingMapper
 from backend.dto.job_dto import JobCreateDto
 from backend.entity.job_entity import JobEntity
+from backend.entity.users_entity import UsersEntity
 from backend.common.recruiting_enums import JobKind, JobStatus
 
 
@@ -18,8 +19,10 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         self.repo.get_by_job_id = AsyncMock()
         self.repo.create_job = AsyncMock(side_effect=_create)
         self.repo.update_job = AsyncMock(side_effect=lambda session, entity: entity)
+        self.perms = MagicMock()
+        self.perms.get_active_users_with_permission = AsyncMock(return_value=[])
         self.session = AsyncMock()
-        self.service = JobService(self.repo, RecruitingMapper())
+        self.service = JobService(self.repo, RecruitingMapper(), self.perms)
 
     def _job(self, **kw):
         defaults = {"kind": JobKind.ACTIVITY, "title": "T", "status": JobStatus.DRAFT}
@@ -69,6 +72,24 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         result = await self.service.reopen_job(self.session, job.job_id)
 
         self.assertEqual(result.status, JobStatus.PUBLISHED)
+
+    async def test_list_active_approvers_maps_users(self):
+        """list_active_approvers maps active job.approve holders to ApproverDto."""
+        u1 = UsersEntity(
+            first_name="Ann", last_name="Lee", primary_email="ann@x.com"
+        )
+        u1.user_id = 7
+        u2 = UsersEntity(
+            first_name="Bo", last_name="Ng", primary_email="bo@x.com"
+        )
+        u2.user_id = 8
+        self.perms.get_active_users_with_permission.return_value = [u1, u2]
+
+        result = await self.service.list_active_approvers(self.session)
+
+        self.assertEqual([a.user_id for a in result], [7, 8])
+        self.assertEqual(result[0].name, "Ann Lee")
+        self.assertEqual(result[0].email, "ann@x.com")
 
     async def test_reopen_non_closed_raises(self):
         """reopen_job rejects a posting that is not CLOSED."""

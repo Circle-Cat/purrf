@@ -1,7 +1,10 @@
 from backend.entity.job_entity import JobEntity
 from backend.repository.job_repository import JobRepository
+from backend.repository.user_permissions_repository import UserPermissionsRepository
 from backend.recruiting.recruiting_mapper import RecruitingMapper
 from backend.dto.job_dto import JobCreateDto, JobDto
+from backend.dto.job_review_dto import ApproverDto
+from backend.common.permissions import Permission
 from backend.common.recruiting_enums import JobStatus
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -10,17 +13,39 @@ class JobService:
     """Manages recruiting postings (create/edit/publish/close)."""
 
     def __init__(
-        self, job_repository: JobRepository, recruiting_mapper: RecruitingMapper
+        self,
+        job_repository: JobRepository,
+        recruiting_mapper: RecruitingMapper,
+        user_permissions_repository: UserPermissionsRepository,
     ):
         """
-        Initialise the service with its repository and mapper.
+        Initialise the service with its repositories and mapper.
 
         Args:
             job_repository (JobRepository): Data-access layer for JobEntity.
             recruiting_mapper (RecruitingMapper): Entity-to-DTO converter.
+            user_permissions_repository (UserPermissionsRepository): Used to
+                resolve who may approve postings.
         """
         self.job_repository = job_repository
         self.recruiting_mapper = recruiting_mapper
+        self.user_permissions_repository = user_permissions_repository
+
+    async def list_active_approvers(
+        self, session: AsyncSession
+    ) -> list[ApproverDto]:
+        """List active users who may approve postings (hold job.approve).
+
+        Args:
+            session (AsyncSession): Active database async session.
+
+        Returns:
+            list[ApproverDto]: One entry per active approver.
+        """
+        users = await self.user_permissions_repository.get_active_users_with_permission(
+            session, Permission.RECRUITING_JOB_APPROVE.value
+        )
+        return [self.recruiting_mapper.to_approver_dto(u) for u in users]
 
     async def create_job(self, session: AsyncSession, dto: JobCreateDto) -> JobDto:
         """Create a DRAFT posting from a JobCreateDto.

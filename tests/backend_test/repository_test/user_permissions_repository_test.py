@@ -69,6 +69,23 @@ class TestUserPermissionsRepository(BaseRepositoryTestLib):
         )
         self.assertEqual({r.user_id for r in admin_only}, {self.u1.user_id})
 
+    async def test_get_active_users_with_permission_dedups_and_skips_inactive(self):
+        perm = f"approve.{uuid.uuid4().hex[:8]}"
+        # u1 holds two active grants -> must appear exactly once.
+        await self.repo.grant(self.session, self.u1.user_id, [perm], "admin")
+        await self.repo.grant(self.session, self.u1.user_id, [perm], "system_internal")
+        # u2 holds it but is inactive -> excluded.
+        await self.repo.grant(self.session, self.u2.user_id, [perm], "admin")
+        self.u2.is_active = False
+        await self.session.flush()
+        # admin's only grant is revoked -> excluded.
+        await self.repo.grant(self.session, self.admin.user_id, [perm], "admin")
+        await self.repo.revoke(self.session, self.admin.user_id, [perm])
+
+        users = await self.repo.get_active_users_with_permission(self.session, perm)
+
+        self.assertEqual([u.user_id for u in users], [self.u1.user_id])
+
     async def test_list_audit_filters_and_paginates(self):
         await self.repo.grant(
             self.session, self.u1.user_id, ["a.read", "b.read", "c.read"], "admin"

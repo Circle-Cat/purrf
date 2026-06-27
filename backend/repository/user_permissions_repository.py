@@ -5,6 +5,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.entity.user_permissions_entity import UserPermissionsEntity
+from backend.entity.users_entity import UsersEntity
 
 
 class UserPermissionsRepository:
@@ -121,6 +122,38 @@ class UserPermissionsRepository:
         if granted_source is not None:
             stmt = stmt.where(UserPermissionsEntity.granted_source == granted_source)
         stmt = stmt.order_by(UserPermissionsEntity.granted_timestamp.desc())
+        return list((await session.execute(stmt)).scalars().all())
+
+    async def get_active_users_with_permission(
+        self, session: AsyncSession, permission_name: str
+    ) -> list[UsersEntity]:
+        """
+        Active users who currently hold the given permission, deduped.
+
+        Joins users to their grant rows, keeping only active users with at
+        least one non-revoked grant of ``permission_name``. A user with several
+        grant rows for the permission appears once.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            permission_name (str): The permission to find holders of.
+
+        Returns:
+            list[UsersEntity]: Distinct active holders.
+        """
+        stmt = (
+            select(UsersEntity)
+            .join(
+                UserPermissionsEntity,
+                UserPermissionsEntity.user_id == UsersEntity.user_id,
+            )
+            .where(
+                UserPermissionsEntity.permission_name == str(permission_name),
+                UserPermissionsEntity.revoked_timestamp.is_(None),
+                UsersEntity.is_active.is_(True),
+            )
+            .distinct()
+        )
         return list((await session.execute(stmt)).scalars().all())
 
     async def list_audit(

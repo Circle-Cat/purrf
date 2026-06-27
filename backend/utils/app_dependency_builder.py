@@ -516,7 +516,11 @@ class AppDependencyBuilder:
         )
         self.job_repository = JobRepository()
         self.recruiting_mapper = RecruitingMapper()
-        self.job_service = JobService(self.job_repository, self.recruiting_mapper)
+        self.job_service = JobService(
+            self.job_repository,
+            self.recruiting_mapper,
+            self.user_permissions_repository,
+        )
         self.recruiting_controller = RecruitingController(
             job_service=self.job_service,
             database=self.database,
