@@ -347,19 +347,29 @@ class JobService:
     async def list_reviews_for_reviewer(
         self, session: AsyncSession, reviewer_id: int
     ) -> list[JobReviewDto]:
-        """List a reviewer's still-pending review requests.
+        """List a reviewer's still-pending review requests, each with its job title.
 
         Args:
             session (AsyncSession): Active database async session.
             reviewer_id (int): The reviewer whose queue to fetch.
 
         Returns:
-            list[JobReviewDto]: The reviewer's pending reviews.
+            list[JobReviewDto]: The reviewer's pending reviews. Each entry
+            includes ``job_title`` sourced from the associated posting so the
+            UI can display the title without a second request.
         """
         reviews = await self.job_review_repository.list_by_reviewer(
             session, reviewer_id, [JobReviewStatus.PENDING]
         )
-        return [self.recruiting_mapper.to_job_review_dto(r) for r in reviews]
+        dtos = []
+        for r in reviews:
+            job = await self.job_repository.get_by_job_id(session, r.job_id)
+            dtos.append(
+                self.recruiting_mapper.to_job_review_dto(
+                    r, job_title=job.title if job else None
+                )
+            )
+        return dtos
 
     async def get_job(self, session: AsyncSession, job_id: int) -> JobDto:
         """Fetch one posting by id.

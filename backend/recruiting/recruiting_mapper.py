@@ -16,9 +16,22 @@ class RecruitingMapper:
             email=user.primary_email,
         )
 
-    def to_job_review_dto(self, review: JobReviewEntity) -> JobReviewDto:
-        """Map a JobReviewEntity to a JobReviewDto."""
-        return JobReviewDto.model_validate(review)
+    def to_job_review_dto(
+        self, review: JobReviewEntity, job_title: str | None = None
+    ) -> JobReviewDto:
+        """Map a JobReviewEntity to a JobReviewDto, optionally including the posting title.
+
+        Args:
+            review (JobReviewEntity): The review entity to convert.
+            job_title (str | None): Title of the associated job posting, when
+                available. Serialised as ``jobTitle`` in API responses.
+
+        Returns:
+            JobReviewDto: The mapped DTO with ``job_title`` set if provided.
+        """
+        dto = JobReviewDto.model_validate(review)
+        dto.job_title = job_title
+        return dto
 
     def to_job_dto(self, job: JobEntity) -> JobDto:
         """Map a JobEntity to a JobDto."""

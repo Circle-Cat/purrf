@@ -33,6 +33,7 @@ class JobReviewDto(BaseDto):
     reject_comment: str | None = None
     created_at: datetime | None = None
     decided_at: datetime | None = None
+    job_title: str | None = None
 
 
 class ApproverDto(BaseDto):

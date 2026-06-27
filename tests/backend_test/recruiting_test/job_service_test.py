@@ -327,7 +327,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_list_reviews_for_reviewer_returns_pending(self):
-        """list_reviews_for_reviewer maps the reviewer's pending reviews."""
+        """list_reviews_for_reviewer maps the reviewer's pending reviews with job title."""
         review = JobReviewEntity(
             review_id=11,
             job_id=1,
@@ -337,10 +337,13 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
             kind=JobReviewKind.INITIAL,
         )
         self.review_repo.list_by_reviewer.return_value = [review]
+        job = self._job(title="Senior Engineer")
+        self.repo.get_by_job_id.return_value = job
 
         result = await self.service.list_reviews_for_reviewer(self.session, 2)
 
         self.assertEqual([r.review_id for r in result], [11])
+        self.assertEqual(result[0].job_title, "Senior Engineer")
         self.review_repo.list_by_reviewer.assert_awaited_once_with(
             self.session, 2, [JobReviewStatus.PENDING]
         )
