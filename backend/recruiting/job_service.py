@@ -39,6 +39,7 @@ class JobService:
             title=dto.title,
             description=dto.description,
             form_schema=dto.form_schema,
+            pipeline_config=dto.pipeline_config,
         )
         job = await self.job_repository.create_job(session, job)
         await session.commit()
@@ -47,7 +48,12 @@ class JobService:
     async def update_job(
         self, session: AsyncSession, job_id: int, dto: JobCreateDto
     ) -> JobDto:
-        """Update a posting's editable fields (incl. form_schema). No re-review gate.
+        """Update a posting's editable fields.
+
+        A DRAFT posting is edited in place. Editing the form schema or pipeline
+        of a PUBLISHED posting does not touch the live version: the change is
+        parked in pending_form_schema/pending_pipeline_config and the status
+        flips to PUBLISHED_PENDING_REVISION until a reviewer approves it.
 
         Args:
             session (AsyncSession): Active database async session.
@@ -61,11 +67,20 @@ class JobService:
             ValueError: If no posting with the given id exists.
         """
         job = await self._require_job(session, job_id)
-        job.title = dto.title
-        job.description = dto.description
-        job.kind = dto.kind
-        job.mentorship_role = dto.mentorship_role
-        job.form_schema = dto.form_schema
+        if job.status == JobStatus.PUBLISHED and (
+            dto.form_schema != job.form_schema
+            or dto.pipeline_config != job.pipeline_config
+        ):
+            job.pending_form_schema = dto.form_schema
+            job.pending_pipeline_config = dto.pipeline_config
+            job.status = JobStatus.PUBLISHED_PENDING_REVISION
+        else:
+            job.title = dto.title
+            job.description = dto.description
+            job.kind = dto.kind
+            job.mentorship_role = dto.mentorship_role
+            job.form_schema = dto.form_schema
+            job.pipeline_config = dto.pipeline_config
         job = await self.job_repository.update_job(session, job)
         await session.commit()
         return self.recruiting_mapper.to_job_dto(job)
@@ -104,6 +119,27 @@ class JobService:
         """
         job = await self._require_job(session, job_id)
         job.status = JobStatus.CLOSED
+        job = await self.job_repository.update_job(session, job)
+        await session.commit()
+        return self.recruiting_mapper.to_job_dto(job)
+
+    async def reopen_job(self, session: AsyncSession, job_id: int) -> JobDto:
+        """Reopen a CLOSED posting, returning it to PUBLISHED.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            job_id (int): Identifier of the posting to reopen.
+
+        Returns:
+            JobDto: The posting with status PUBLISHED.
+
+        Raises:
+            ValueError: If the posting does not exist or is not CLOSED.
+        """
+        job = await self._require_job(session, job_id)
+        if job.status != JobStatus.CLOSED:
+            raise ValueError(f"Job {job_id} is not closed; cannot reopen")
+        job.status = JobStatus.PUBLISHED
         job = await self.job_repository.update_job(session, job)
         await session.commit()
         return self.recruiting_mapper.to_job_dto(job)
