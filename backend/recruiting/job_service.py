@@ -122,6 +122,79 @@ class JobService:
         await session.commit()
         return self.recruiting_mapper.to_job_dto(job)
 
+    async def _open_review(
+        self,
+        session: AsyncSession,
+        job: "JobEntity",
+        kind: JobReviewKind,
+        reviewer_id: int,
+        submitted_by: int,
+        message: str | None,
+        *,
+        allowed_from: set,
+        pending_status: JobStatus | None,
+    ) -> JobDto:
+        """Shared validation and creation logic for any review gate.
+
+        Validates that the job's current status is in ``allowed_from``, that
+        the submitter is not also the reviewer, that the active approver pool
+        has at least ``MIN_APPROVER_POOL`` members, and that the chosen reviewer
+        is in that pool. Then creates a PENDING ``JobReviewEntity`` of ``kind``,
+        optionally flips ``job.status`` to ``pending_status`` (when not None),
+        persists, commits, and returns the updated JobDto.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            job (JobEntity): The posting being submitted for review.
+            kind (JobReviewKind): The review gate type (INITIAL, REVISION, CLOSE,
+                or REOPEN).
+            reviewer_id (int): User who will review the posting; must hold the
+                approve permission and differ from the submitter.
+            submitted_by (int): User opening the review.
+            message (str | None): Optional note to the reviewer.
+            allowed_from (set): Set of JobStatus values the job must be in for
+                the review to be valid.
+            pending_status (JobStatus | None): Status to set on the job while
+                the review is pending, or None to leave the status unchanged.
+
+        Returns:
+            JobDto: The posting after the review was opened.
+
+        Raises:
+            ValueError: If the job status is not in ``allowed_from``, the
+                submitter picks themselves, the pool is too small, or the
+                reviewer is not an active approver.
+        """
+        if job.status not in allowed_from:
+            raise ValueError(
+                f"Job {job.job_id} cannot open a {kind} review from {job.status}"
+            )
+        if reviewer_id == submitted_by:
+            raise ValueError("Submitter cannot self-review the posting")
+
+        approvers = await self.list_active_approvers(session)
+        if len(approvers) < MIN_APPROVER_POOL:
+            raise ValueError("Approver pool too small to submit for review")
+        if reviewer_id not in {a.user_id for a in approvers}:
+            raise ValueError("Reviewer is not an active approver")
+
+        await self.job_review_repository.create(
+            session,
+            JobReviewEntity(
+                job_id=job.job_id,
+                submitted_by=submitted_by,
+                reviewer_id=reviewer_id,
+                status=JobReviewStatus.PENDING,
+                kind=kind,
+                submit_message=message,
+            ),
+        )
+        if pending_status is not None:
+            job.status = pending_status
+            job = await self.job_repository.update_job(session, job)
+        await session.commit()
+        return self.recruiting_mapper.to_job_dto(job)
+
     async def submit_for_review(
         self,
         session: AsyncSession,
@@ -153,54 +226,124 @@ class JobService:
                 too small, or the reviewer is not an active approver.
         """
         job = await self._require_job(session, job_id)
-        if job.status not in (
-            JobStatus.DRAFT,
-            JobStatus.PUBLISHED_PENDING_REVISION,
-        ):
-            raise ValueError(f"Job {job_id} cannot be submitted from {job.status}")
-        if reviewer_id == submitted_by:
-            raise ValueError("Submitter cannot self-review the posting")
-
-        approvers = await self.list_active_approvers(session)
-        if len(approvers) < MIN_APPROVER_POOL:
-            raise ValueError("Approver pool too small to submit for review")
-        if reviewer_id not in {a.user_id for a in approvers}:
-            raise ValueError("Reviewer is not an active approver")
-
-        kind = (
-            JobReviewKind.INITIAL
-            if job.status == JobStatus.DRAFT
-            else JobReviewKind.REVISION
-        )
-        await self.job_review_repository.create(
-            session,
-            JobReviewEntity(
-                job_id=job.job_id,
-                submitted_by=submitted_by,
-                reviewer_id=reviewer_id,
-                status=JobReviewStatus.PENDING,
-                kind=kind,
-                submit_message=message,
-            ),
-        )
         if job.status == JobStatus.DRAFT:
-            job.status = JobStatus.PENDING_REVIEW
-            job = await self.job_repository.update_job(session, job)
-        await session.commit()
-        return self.recruiting_mapper.to_job_dto(job)
+            kind = JobReviewKind.INITIAL
+            pending_status: JobStatus | None = JobStatus.PENDING_REVIEW
+        elif job.status == JobStatus.PUBLISHED_PENDING_REVISION:
+            kind = JobReviewKind.REVISION
+            pending_status = None  # live version stays public; status unchanged
+        else:
+            raise ValueError(f"Job {job_id} cannot be submitted from {job.status}")
+        return await self._open_review(
+            session,
+            job,
+            kind,
+            reviewer_id,
+            submitted_by,
+            message,
+            allowed_from={job.status},
+            pending_status=pending_status,
+        )
+
+    async def request_close(
+        self,
+        session: AsyncSession,
+        job_id: int,
+        reviewer_id: int,
+        submitted_by: int,
+        message: str | None,
+    ) -> JobDto:
+        """Open a close-review for a PUBLISHED posting.
+
+        The posting moves to PENDING_CLOSE while the review is pending. Only a
+        PUBLISHED posting may be closed via review; drafts may be closed
+        directly via ``close_job``.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            job_id (int): Posting to close.
+            reviewer_id (int): Chosen approver; must hold the approve permission
+                and differ from the submitter.
+            submitted_by (int): User requesting the close.
+            message (str | None): Optional note to the reviewer.
+
+        Returns:
+            JobDto: The posting with status PENDING_CLOSE.
+
+        Raises:
+            ValueError: If the posting is not PUBLISHED, the submitter picks
+                themselves, the pool is too small, or the reviewer is not an
+                active approver.
+        """
+        job = await self._require_job(session, job_id)
+        return await self._open_review(
+            session,
+            job,
+            JobReviewKind.CLOSE,
+            reviewer_id,
+            submitted_by,
+            message,
+            allowed_from={JobStatus.PUBLISHED},
+            pending_status=JobStatus.PENDING_CLOSE,
+        )
+
+    async def request_reopen(
+        self,
+        session: AsyncSession,
+        job_id: int,
+        reviewer_id: int,
+        submitted_by: int,
+        message: str | None,
+    ) -> JobDto:
+        """Open a reopen-review for a CLOSED posting.
+
+        The posting moves to PENDING_REOPEN while the review is pending. On
+        approval it becomes PUBLISHED; on rejection it stays CLOSED.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            job_id (int): Posting to reopen.
+            reviewer_id (int): Chosen approver; must hold the approve permission
+                and differ from the submitter.
+            submitted_by (int): User requesting the reopen.
+            message (str | None): Optional note to the reviewer.
+
+        Returns:
+            JobDto: The posting with status PENDING_REOPEN.
+
+        Raises:
+            ValueError: If the posting is not CLOSED, the submitter picks
+                themselves, the pool is too small, or the reviewer is not an
+                active approver.
+        """
+        job = await self._require_job(session, job_id)
+        return await self._open_review(
+            session,
+            job,
+            JobReviewKind.REOPEN,
+            reviewer_id,
+            submitted_by,
+            message,
+            allowed_from={JobStatus.CLOSED},
+            pending_status=JobStatus.PENDING_REOPEN,
+        )
 
     async def approve(self, session: AsyncSession, review_id: int) -> JobDto:
-        """Approve a pending review, publishing the posting.
+        """Approve a pending review, advancing the posting to its next state.
 
-        For a REVISION the parked pending_* values are swapped into the live
-        fields and cleared; the posting becomes PUBLISHED either way.
+        Review-kind state machine on approval:
+        - INITIAL: posting moves to PUBLISHED.
+        - REVISION: pending_* values are swapped into live fields, cleared, and
+          the posting moves to PUBLISHED.
+        - CLOSE: posting moves to CLOSED.
+        - REOPEN: posting moves to PUBLISHED.
 
         Args:
             session (AsyncSession): Active database async session.
             review_id (int): The review to approve.
 
         Returns:
-            JobDto: The published posting.
+            JobDto: The posting after approval.
 
         Raises:
             ValueError: If the review is missing or not pending.
@@ -210,13 +353,21 @@ class JobService:
         review.decided_at = datetime.now(timezone.utc)
 
         job = await self._require_job(session, review.job_id)
-        if job.status == JobStatus.PUBLISHED_PENDING_REVISION:
-            if review.kind == JobReviewKind.REVISION:
-                job.form_schema = job.pending_form_schema or job.form_schema
-                job.pipeline_config = job.pending_pipeline_config or job.pipeline_config
-            job.pending_form_schema = None
-            job.pending_pipeline_config = None
-        job.status = JobStatus.PUBLISHED
+        if review.kind == JobReviewKind.CLOSE:
+            job.status = JobStatus.CLOSED
+        elif review.kind == JobReviewKind.REOPEN:
+            job.status = JobStatus.PUBLISHED
+        else:
+            # INITIAL or REVISION
+            if job.status == JobStatus.PUBLISHED_PENDING_REVISION:
+                if review.kind == JobReviewKind.REVISION:
+                    job.form_schema = job.pending_form_schema or job.form_schema
+                    job.pipeline_config = (
+                        job.pending_pipeline_config or job.pipeline_config
+                    )
+                job.pending_form_schema = None
+                job.pending_pipeline_config = None
+            job.status = JobStatus.PUBLISHED
         job = await self.job_repository.update_job(session, job)
         await session.commit()
         return self.recruiting_mapper.to_job_dto(job)
@@ -226,8 +377,11 @@ class JobService:
     ) -> JobDto:
         """Reject a pending review.
 
-        An INITIAL rejection returns the posting to DRAFT. A REVISION rejection
-        discards the parked change and leaves the live posting PUBLISHED.
+        Review-kind state machine on rejection:
+        - INITIAL: posting returns to DRAFT.
+        - REVISION: pending_* values are discarded and the posting stays PUBLISHED.
+        - CLOSE: the close is aborted and the posting returns to PUBLISHED.
+        - REOPEN: the reopen is aborted and the posting remains CLOSED.
 
         Args:
             session (AsyncSession): Active database async session.
@@ -252,7 +406,14 @@ class JobService:
             job.pending_form_schema = None
             job.pending_pipeline_config = None
             job.status = JobStatus.PUBLISHED
+        elif review.kind == JobReviewKind.CLOSE:
+            # Abort the close — posting goes back to PUBLISHED.
+            job.status = JobStatus.PUBLISHED
+        elif review.kind == JobReviewKind.REOPEN:
+            # Abort the reopen — posting stays CLOSED.
+            job.status = JobStatus.CLOSED
         else:
+            # INITIAL rejection sends the posting back to DRAFT.
             job.status = JobStatus.DRAFT
         job = await self.job_repository.update_job(session, job)
         await session.commit()
@@ -281,7 +442,11 @@ class JobService:
         return review
 
     async def close_job(self, session: AsyncSession, job_id: int) -> JobDto:
-        """Transition a posting to CLOSED.
+        """Directly close a DRAFT posting without a review cycle.
+
+        Only DRAFT postings may be closed directly. Published postings must go
+        through the review gate via ``request_close``; this restriction prevents
+        accidentally bypassing approver oversight for live postings.
 
         Args:
             session (AsyncSession): Active database async session.
@@ -291,31 +456,15 @@ class JobService:
             JobDto: The posting with status CLOSED.
 
         Raises:
-            ValueError: If no posting with the given id exists.
+            ValueError: If the posting does not exist or is not a DRAFT (use
+                ``request_close`` instead).
         """
         job = await self._require_job(session, job_id)
+        if job.status != JobStatus.DRAFT:
+            raise ValueError(
+                f"Job {job_id} is not a draft; use request_close to close a published posting"
+            )
         job.status = JobStatus.CLOSED
-        job = await self.job_repository.update_job(session, job)
-        await session.commit()
-        return self.recruiting_mapper.to_job_dto(job)
-
-    async def reopen_job(self, session: AsyncSession, job_id: int) -> JobDto:
-        """Reopen a CLOSED posting, returning it to PUBLISHED.
-
-        Args:
-            session (AsyncSession): Active database async session.
-            job_id (int): Identifier of the posting to reopen.
-
-        Returns:
-            JobDto: The posting with status PUBLISHED.
-
-        Raises:
-            ValueError: If the posting does not exist or is not CLOSED.
-        """
-        job = await self._require_job(session, job_id)
-        if job.status != JobStatus.CLOSED:
-            raise ValueError(f"Job {job_id} is not closed; cannot reopen")
-        job.status = JobStatus.PUBLISHED
         job = await self.job_repository.update_job(session, job)
         await session.commit()
         return self.recruiting_mapper.to_job_dto(job)
