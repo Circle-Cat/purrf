@@ -1,5 +1,4 @@
 import React from "react";
-import "@/pages/Profile/components/TrainingSection.css";
 
 import { Badge } from "@/components/ui/badge";
 import {
@@ -28,13 +27,15 @@ const formatTrainingDate = (iso, timezone) => {
 
 const TrainingSection = ({ list, timezone }) => {
   return (
-    <div className="section">
-      <div className="section-header">
-        <h3>Training</h3>
+    <div className="mb-12">
+      <div className="mb-5 flex items-center justify-between">
+        <h3 className="mb-5 mt-0 text-xl font-semibold tracking-[-0.015em] text-foreground">
+          Training
+        </h3>
       </div>
 
       {list && list.length > 0 ? (
-        <table className="training-table">
+        <table className="mt-5 w-full border-separate border-spacing-0 overflow-hidden rounded-xl border text-[0.9375rem] text-foreground [&_a:hover]:underline [&_a]:font-medium [&_a]:text-primary [&_a]:no-underline [&_td]:border-b [&_td]:px-5 [&_td]:py-4 [&_td]:text-left [&_th]:border-b [&_th]:bg-muted [&_th]:px-5 [&_th]:py-4 [&_th]:text-left [&_th]:text-sm [&_th]:font-semibold [&_th]:uppercase [&_th]:tracking-[0.05em] [&_th]:text-foreground">
           <thead>
             <tr>
               <th>Name</th>
@@ -51,7 +52,11 @@ const TrainingSection = ({ list, timezone }) => {
               return (
                 <tr
                   key={training.id}
-                  className={required ? "training-row-required" : undefined}
+                  className={
+                    required
+                      ? "bg-accent transition-colors hover:bg-[#D6CCFB] [&:last-child>td]:border-b-0"
+                      : "bg-white transition-colors hover:bg-muted [&:last-child>td]:border-b-0"
+                  }
                   data-testid={
                     required ? "training-row-required" : "training-row"
                   }
@@ -64,8 +69,8 @@ const TrainingSection = ({ list, timezone }) => {
                     <Badge
                       className={
                         training.status === "done"
-                          ? "training-status-completed"
-                          : "training-status-not-completed"
+                          ? "bg-accent text-primary"
+                          : "bg-primary text-primary-foreground"
                       }
                     >
                       {training.status === "done"
@@ -96,7 +101,9 @@ const TrainingSection = ({ list, timezone }) => {
           </tbody>
         </table>
       ) : (
-        <p className="section-text">No training records found.</p>
+        <p className="mb-3 text-base leading-relaxed text-foreground">
+          No training records found.
+        </p>
       )}
     </div>
   );
