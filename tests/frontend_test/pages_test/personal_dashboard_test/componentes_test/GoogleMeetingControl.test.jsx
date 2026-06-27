@@ -9,12 +9,23 @@ vi.mock("@/hooks/useFeatureFlags", () => ({
   useFeatureFlags: vi.fn(),
 }));
 
-vi.mock("@/components/ui/button", () => ({
-  Button: ({ children, disabled, onClick }) => (
-    <button disabled={disabled} onClick={onClick}>
-      {children}
-    </button>
-  ),
+vi.mock("@/components/common/MeetingManagementDialog", () => ({
+  default: ({ roundId }) => {
+    const isDisabled = roundId === null || roundId === undefined;
+    const tooltipText = isDisabled ? "No active mentorship round" : undefined;
+
+    const handleButtonClick = () => {
+      console.log("Current meetingRoundId:", roundId);
+    };
+
+    return (
+      <div title={tooltipText}>
+        <button disabled={isDisabled} onClick={handleButtonClick}>
+          Manage Meetings
+        </button>
+      </div>
+    );
+  },
 }));
 
 describe("GoogleMeetingControl", () => {
