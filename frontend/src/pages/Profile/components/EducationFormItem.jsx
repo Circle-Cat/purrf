@@ -1,6 +1,10 @@
 import { Button } from "@/components/ui/button";
 import { months, years, years60Range, DegreeEnum } from "@/pages/Profile/utils";
-import "@/pages/Profile/modals/Modal.css";
+
+const LABEL = "mb-2 block text-sm font-semibold text-foreground";
+const FIELD_BASE =
+  "rounded-[10px] border-2 bg-background px-4 py-3 text-[0.9375rem] text-foreground transition-all focus:border-primary focus:shadow-sm focus:outline-none";
+const ERROR_TEXT = "mt-1 block text-xs text-destructive";
 
 /**
  * Controlled form body for a single education entry. Pure presentation: the
@@ -21,33 +25,35 @@ export default function EducationFormItem({
   onDelete,
 }) {
   const hasError = (field) => errors[`${item.id}-${field}`];
+  const fieldClass = (field, width = "w-full") =>
+    `${width} ${FIELD_BASE}${hasError(field) ? " border-destructive" : ""}`;
 
   return (
-    <div className="edit-item-form">
+    <div className="relative mb-5 rounded-xl border-2 bg-muted p-6 transition-all hover:border-accent hover:shadow-sm">
       {/* School */}
-      <div className="form-group">
-        <label>
-          School <span className="required">*</span>
+      <div className="mb-5">
+        <label className={LABEL}>
+          School <span className="ml-1 text-destructive">*</span>
         </label>
         <input
           type="text"
-          className={hasError("institution") ? "input-error" : ""}
+          className={fieldClass("institution")}
           value={item.institution || ""}
           onChange={(e) => onChange(item.id, "institution", e.target.value)}
         />
         {hasError("institution") && (
-          <span className="error-text">{hasError("institution")}</span>
+          <span className={ERROR_TEXT}>{hasError("institution")}</span>
         )}
       </div>
 
       {/* Degree */}
-      <div className="form-group">
-        <label>
-          Degree <span className="required">*</span>
+      <div className="mb-5">
+        <label className={LABEL}>
+          Degree <span className="ml-1 text-destructive">*</span>
         </label>
         <select
           value={item.degree || ""}
-          className={hasError("degree") ? "input-error" : ""}
+          className={fieldClass("degree")}
           onChange={(e) => onChange(item.id, "degree", e.target.value)}
         >
           <option value="">Select Degree</option>
@@ -58,35 +64,35 @@ export default function EducationFormItem({
           ))}
         </select>
         {hasError("degree") && (
-          <span className="error-text">{hasError("degree")}</span>
+          <span className={ERROR_TEXT}>{hasError("degree")}</span>
         )}
       </div>
 
       {/* Field of study */}
-      <div className="form-group">
-        <label>
-          Field of study <span className="required">*</span>
+      <div className="mb-5">
+        <label className={LABEL}>
+          Field of study <span className="ml-1 text-destructive">*</span>
         </label>
         <input
           type="text"
-          className={hasError("field") ? "input-error" : ""}
+          className={fieldClass("field")}
           value={item.field || ""}
           onChange={(e) => onChange(item.id, "field", e.target.value)}
         />
         {hasError("field") && (
-          <span className="error-text">{hasError("field")}</span>
+          <span className={ERROR_TEXT}>{hasError("field")}</span>
         )}
       </div>
 
       {/* Start date */}
-      <div className="form-group date-group">
-        <label>
-          Start date <span className="required">*</span>
+      <div className="mb-5">
+        <label className={LABEL}>
+          Start date <span className="ml-1 text-destructive">*</span>
         </label>
-        <div className="date-inputs">
+        <div className="mt-2 flex gap-3">
           <select
             value={item.startMonth || ""}
-            className={hasError("startDate") ? "input-error" : ""}
+            className={fieldClass("startDate", "flex-1")}
             onChange={(e) => onChange(item.id, "startMonth", e.target.value)}
           >
             <option value="">Month</option>
@@ -98,7 +104,7 @@ export default function EducationFormItem({
           </select>
           <select
             value={item.startYear || ""}
-            className={hasError("startDate") ? "input-error" : ""}
+            className={fieldClass("startDate", "flex-1")}
             onChange={(e) => onChange(item.id, "startYear", e.target.value)}
           >
             <option value="">Year</option>
@@ -110,19 +116,19 @@ export default function EducationFormItem({
           </select>
         </div>
         {hasError("startDate") && (
-          <span className="error-text">{hasError("startDate")}</span>
+          <span className={ERROR_TEXT}>{hasError("startDate")}</span>
         )}
       </div>
 
       {/* End date */}
-      <div className="form-group date-group">
-        <label>
-          End date <span className="required">*</span>
+      <div className="mb-5">
+        <label className={LABEL}>
+          End date <span className="ml-1 text-destructive">*</span>
         </label>
-        <div className="date-inputs">
+        <div className="mt-2 flex gap-3">
           <select
             value={item.endMonth || ""}
-            className={hasError("endDate") ? "input-error" : ""}
+            className={fieldClass("endDate", "flex-1")}
             onChange={(e) => onChange(item.id, "endMonth", e.target.value)}
           >
             <option value="">Month</option>
@@ -134,7 +140,7 @@ export default function EducationFormItem({
           </select>
           <select
             value={item.endYear || ""}
-            className={hasError("endDate") ? "input-error" : ""}
+            className={fieldClass("endDate", "flex-1")}
             onChange={(e) => onChange(item.id, "endYear", e.target.value)}
           >
             <option value="">Year</option>
@@ -146,14 +152,14 @@ export default function EducationFormItem({
           </select>
         </div>
         {hasError("endDate") && (
-          <span className="error-text">{hasError("endDate")}</span>
+          <span className={ERROR_TEXT}>{hasError("endDate")}</span>
         )}
       </div>
 
       <Button
         variant="destructive"
         size="sm"
-        className="delete-btn"
+        className="absolute right-3 top-3 z-[1]"
         onClick={() => onDelete(item.id)}
       >
         -

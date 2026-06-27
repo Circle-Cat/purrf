@@ -1,6 +1,10 @@
 import { Button } from "@/components/ui/button";
 import { months, years } from "@/pages/Profile/utils";
-import "@/pages/Profile/modals/Modal.css";
+
+const LABEL = "mb-2 block text-sm font-semibold text-foreground";
+const FIELD_BASE =
+  "rounded-[10px] border-2 bg-background px-4 py-3 text-[0.9375rem] text-foreground transition-all focus:border-primary focus:shadow-sm focus:outline-none";
+const ERROR_TEXT = "mt-1 block text-xs text-destructive";
 
 /**
  * Controlled form body for a single experience entry. Pure presentation: the
@@ -21,65 +25,72 @@ export default function ExperienceFormItem({
   onDelete,
 }) {
   const hasError = (field) => errors[`${item.id}-${field}`];
+  const fieldClass = (field, width = "w-full") =>
+    `${width} ${FIELD_BASE}${hasError(field) ? " border-destructive" : ""}`;
 
   return (
-    <div className="edit-item-form">
+    <div className="relative mb-5 rounded-xl border-2 bg-muted p-6 transition-all hover:border-accent hover:shadow-sm">
       {/* Title */}
-      <div className="form-group">
-        <label>
-          Title <span className="required">*</span>
+      <div className="mb-5">
+        <label className={LABEL}>
+          Title <span className="ml-1 text-destructive">*</span>
         </label>
         <input
           type="text"
-          className={hasError("title") ? "input-error" : ""}
+          className={fieldClass("title")}
           value={item.title || ""}
           onChange={(e) => onChange(item.id, "title", e.target.value)}
         />
         {hasError("title") && (
-          <span className="error-text">{hasError("title")}</span>
+          <span className={ERROR_TEXT}>{hasError("title")}</span>
         )}
       </div>
 
       {/* Company or organization */}
-      <div className="form-group">
-        <label>
-          Company or organization <span className="required">*</span>
+      <div className="mb-5">
+        <label className={LABEL}>
+          Company or organization{" "}
+          <span className="ml-1 text-destructive">*</span>
         </label>
         <input
           type="text"
-          className={hasError("company") ? "input-error" : ""}
+          className={fieldClass("company")}
           value={item.company || ""}
           onChange={(e) => onChange(item.id, "company", e.target.value)}
         />
         {hasError("company") && (
-          <span className="error-text">{hasError("company")}</span>
+          <span className={ERROR_TEXT}>{hasError("company")}</span>
         )}
       </div>
 
       {/* Currently working checkbox */}
-      <div className="form-group-checkbox">
+      <div className="mb-5 flex items-center rounded-lg bg-accent px-4 py-3">
         <input
           type="checkbox"
           id={`current-role-${item.id}`}
+          className="mr-2.5 scale-[1.2] accent-primary"
           checked={!!item.isCurrentlyWorking}
           onChange={(e) =>
             onChange(item.id, "isCurrentlyWorking", e.target.checked)
           }
         />
-        <label htmlFor={`current-role-${item.id}`}>
+        <label
+          htmlFor={`current-role-${item.id}`}
+          className="mb-0 cursor-pointer text-[0.9375rem] font-medium text-foreground"
+        >
           I am currently working in this role
         </label>
       </div>
 
       {/* Start date */}
-      <div className="form-group date-group">
-        <label>
-          Start date <span className="required">*</span>
+      <div className="mb-5">
+        <label className={LABEL}>
+          Start date <span className="ml-1 text-destructive">*</span>
         </label>
-        <div className="date-inputs">
+        <div className="mt-2 flex gap-3">
           <select
             value={item.startMonth || ""}
-            className={hasError("startDate") ? "input-error" : ""}
+            className={fieldClass("startDate", "flex-1")}
             onChange={(e) => onChange(item.id, "startMonth", e.target.value)}
           >
             <option value="">Month</option>
@@ -91,7 +102,7 @@ export default function ExperienceFormItem({
           </select>
           <select
             value={item.startYear || ""}
-            className={hasError("startDate") ? "input-error" : ""}
+            className={fieldClass("startDate", "flex-1")}
             onChange={(e) => onChange(item.id, "startYear", e.target.value)}
           >
             <option value="">Year</option>
@@ -103,21 +114,23 @@ export default function ExperienceFormItem({
           </select>
         </div>
         {hasError("startDate") && (
-          <span className="error-text">{hasError("startDate")}</span>
+          <span className={ERROR_TEXT}>{hasError("startDate")}</span>
         )}
       </div>
 
       {/* End date */}
-      <div className="form-group date-group">
-        <label>
+      <div className="mb-5">
+        <label className={LABEL}>
           End date{" "}
-          {!item.isCurrentlyWorking && <span className="required">*</span>}
+          {!item.isCurrentlyWorking && (
+            <span className="ml-1 text-destructive">*</span>
+          )}
         </label>
-        <div className="date-inputs">
+        <div className="mt-2 flex gap-3">
           <select
             value={item.endMonth || ""}
             disabled={item.isCurrentlyWorking}
-            className={hasError("endDate") ? "input-error" : ""}
+            className={fieldClass("endDate", "flex-1")}
             onChange={(e) => onChange(item.id, "endMonth", e.target.value)}
           >
             <option value="">Month</option>
@@ -130,7 +143,7 @@ export default function ExperienceFormItem({
           <select
             value={item.endYear || ""}
             disabled={item.isCurrentlyWorking}
-            className={hasError("endDate") ? "input-error" : ""}
+            className={fieldClass("endDate", "flex-1")}
             onChange={(e) => onChange(item.id, "endYear", e.target.value)}
           >
             <option value="">Year</option>
@@ -142,14 +155,14 @@ export default function ExperienceFormItem({
           </select>
         </div>
         {hasError("endDate") && (
-          <span className="error-text">{hasError("endDate")}</span>
+          <span className={ERROR_TEXT}>{hasError("endDate")}</span>
         )}
       </div>
 
       <Button
         variant="destructive"
         size="sm"
-        className="delete-btn"
+        className="absolute right-3 top-3 z-[1]"
         onClick={() => onDelete(item.id)}
       >
         -
