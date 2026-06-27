@@ -61,6 +61,17 @@ py_test(
 )
 
 py_test(
+    name = "job_review_repository_test",
+    srcs = ["job_review_repository_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        ":base_repository_test_lib",
+        "//backend/common:mentorship_enums",
+        "//backend/common:recruiting_enums",
+    ],
+)
+
+py_test(
     name = "preferences_repository_test",
     srcs = ["preferences_repository_test.py"],
     env_inherit = ["DATABASE_URL"],
