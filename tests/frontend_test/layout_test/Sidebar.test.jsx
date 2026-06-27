@@ -85,7 +85,7 @@ describe("Sidebar Component", () => {
     const dashBoardLink = screen.getByText("Dashboard");
     const dataSearchLink = screen.queryByText("DataSearch");
 
-    expect(dashBoardLink).toHaveClass("active-link");
+    expect(dashBoardLink).toHaveAttribute("aria-current", "page");
     expect(dataSearchLink).toBeNull();
   });
 

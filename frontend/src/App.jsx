@@ -5,7 +5,6 @@ import {
   Route,
   Navigate,
 } from "react-router-dom";
-import "@/App.css";
 import Header from "@/components/layout/Header";
 import EnvironmentBanner from "@/components/layout/EnvironmentBanner";
 import { isBannerEnv } from "@/utils/deployEnv";
@@ -33,23 +32,24 @@ function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const showEnvBanner = isBannerEnv(deployEnv);
-  const containerClassName = `app-container legacy-styles${
-    showEnvBanner ? " has-env-banner" : ""
-  }${sidebarCollapsed ? " sidebar-collapsed" : ""}`;
   return (
     <FlagsProvider>
       <AuthProvider>
         <LDIdentifier />
         <Router>
-          <div className={containerClassName}>
+          <div
+            className="group flex flex-col legacy-styles"
+            data-env-banner={showEnvBanner ? "true" : "false"}
+            data-collapsed={sidebarCollapsed ? "true" : "false"}
+          >
             <Header
               onToggleSidebar={() => setSidebarCollapsed((prev) => !prev)}
               sidebarCollapsed={sidebarCollapsed}
             />
             {showEnvBanner && <EnvironmentBanner env={deployEnv} />}
-            <div className="app-body">
+            <div className="flex flex-1">
               <Sidebar />
-              <main className="main-content">
+              <main className="ml-64 mt-16 flex min-h-[calc(100vh-64px)] flex-1 flex-col overflow-y-auto p-[30px] transition-[margin] duration-200 group-data-[collapsed=true]:ml-0 group-data-[env-banner=true]:mt-[104px] group-data-[env-banner=true]:min-h-[calc(100vh-104px)]">
                 <HardWallGate>
                   <Routes>
                     <Route
