@@ -1,5 +1,4 @@
 import React from "react";
-import "@/components/common/Modal.css";
 
 /**
  * A reusable Modal component.
@@ -22,9 +21,13 @@ const Modal = ({ isOpen, onClose, children }) => {
   if (!isOpen) return null;
 
   return (
-    <div className="modal-backdrop" onClick={onClose} role="presentation">
+    <div
+      className="fixed inset-0 z-[9999] grid place-items-center bg-black/25"
+      onClick={onClose}
+      role="presentation"
+    >
       <div
-        className="modal"
+        className="flex max-h-[85vh] w-[min(900px,92vw)] flex-col items-stretch justify-start overflow-hidden rounded-xl border bg-background shadow-[0_10px_35px_rgba(0,0,0,0.25)]"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
