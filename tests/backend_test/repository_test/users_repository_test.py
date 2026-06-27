@@ -687,6 +687,29 @@ class TestUsersRepository(BaseRepositoryTestLib):
             msg="desc should list internal before external",
         )
 
+    async def test_get_super_admins_returns_only_flagged_users(self):
+        """get_super_admins returns exactly the users with is_super_admin True."""
+        super_admin = UsersEntity(
+            first_name="Sa",
+            last_name="Admin",
+            timezone="UTC",
+            timezone_updated_at=datetime.now(timezone.utc),
+            communication_channel=CommunicationMethod.EMAIL,
+            primary_email=f"superadmin-{uuid.uuid4().hex}@example.com",
+            is_active=True,
+            is_super_admin=True,
+            updated_timestamp=datetime.now(timezone.utc),
+        )
+        await self.insert_entities([super_admin])
+
+        result = await self.repo.get_super_admins(self.session)
+
+        ids = {u.user_id for u in result}
+        self.assertIn(super_admin.user_id, ids)
+        # The non-super-admin users from setUp must not be returned.
+        self.assertNotIn(self.users[0].user_id, ids)
+        self.assertTrue(all(u.is_super_admin for u in result))
+
 
 if __name__ == "__main__":
     unittest.main()
