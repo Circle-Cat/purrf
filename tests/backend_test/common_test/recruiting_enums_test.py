@@ -17,7 +17,24 @@ def test_job_status_has_review_states():
 def test_job_review_enums():
     """JobReviewStatus and JobReviewKind expose exactly their MVP members."""
     assert {s.value for s in JobReviewStatus} == {"pending", "approved", "rejected"}
-    assert {k.value for k in JobReviewKind} == {"initial", "revision"}
+    assert {k.value for k in JobReviewKind} == {
+        "initial",
+        "revision",
+        "close",
+        "reopen",
+    }
+
+
+def test_job_status_close_reopen_states():
+    """JobStatus carries the two gated lifecycle-transition states."""
+    assert JobStatus.PENDING_CLOSE.value == "pending_close"
+    assert JobStatus.PENDING_REOPEN.value == "pending_reopen"
+
+
+def test_job_review_kind_close_reopen():
+    """JobReviewKind carries close and reopen gates."""
+    assert JobReviewKind.CLOSE.value == "close"
+    assert JobReviewKind.REOPEN.value == "reopen"
 
 
 def test_job_approve_permission():

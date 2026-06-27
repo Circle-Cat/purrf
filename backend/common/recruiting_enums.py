@@ -21,6 +21,10 @@ class JobStatus(StrEnum):
     Lifecycle: draft -> pending_review -> published (-> closed). An edit to a
     published posting's form/pipeline parks it in published_pending_revision
     (the live version stays public) until the revision is approved.
+
+    Closing a published posting requires a review: published -> pending_close ->
+    closed. Reopening a closed posting also requires a review: closed ->
+    pending_reopen -> published.
     """
 
     DRAFT = "draft"
@@ -28,6 +32,8 @@ class JobStatus(StrEnum):
     PUBLISHED = "published"
     CLOSED = "closed"
     PUBLISHED_PENDING_REVISION = "published_pending_revision"
+    PENDING_CLOSE = "pending_close"
+    PENDING_REOPEN = "pending_reopen"
 
 
 class JobReviewStatus(StrEnum):
@@ -39,10 +45,12 @@ class JobReviewStatus(StrEnum):
 
 
 class JobReviewKind(StrEnum):
-    """Whether a review gates first publication or a later revision."""
+    """The gate a review covers: first publication, a later revision, or lifecycle transitions."""
 
     INITIAL = "initial"
     REVISION = "revision"
+    CLOSE = "close"
+    REOPEN = "reopen"
 
 
 class ApplicationStage(StrEnum):
