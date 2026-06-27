@@ -1,5 +1,4 @@
 import React, { useState } from "react";
-import "@/pages/Profile/Profile.css";
 
 import { useProfileData } from "@/pages/Profile/hooks/useProfileData";
 import { useProfileCompletenessReminder } from "@/pages/Profile/hooks/useProfileCompletenessReminder";
@@ -61,12 +60,12 @@ const Profile = () => {
 
   /** Display loading state while fetching profile data */
   if (isLoading) {
-    return <div className="profile-page-container">Loading profile...</div>;
+    return <div className="min-h-screen px-6 py-8">Loading profile...</div>;
   }
 
   return (
-    <div className="profile-page-container">
-      <div className="profile-content-area">
+    <div className="min-h-screen px-6 py-8">
+      <div className="mx-auto flex max-w-[1000px] flex-col gap-4">
         {/** Top section with personal info */}
         <Card>
           <CardHeader>
