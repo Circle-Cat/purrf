@@ -40,6 +40,9 @@ class JobEntity(Base):
     title: Mapped[str] = mapped_column(String, nullable=False)
     description: Mapped[str | None] = mapped_column(String)
     form_schema: Mapped[dict | None] = mapped_column(JSONB)
+    pipeline_config: Mapped[list | None] = mapped_column(JSONB)
+    pending_form_schema: Mapped[dict | None] = mapped_column(JSONB)
+    pending_pipeline_config: Mapped[list | None] = mapped_column(JSONB)
     created_datetime: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

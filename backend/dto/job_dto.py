@@ -12,6 +12,7 @@ class JobCreateDto(BaseRequestDto):
     kind: JobKind = JobKind.ACTIVITY
     mentorship_role: ParticipantRole | None = None
     form_schema: dict | None = None
+    pipeline_config: list | None = None
 
 
 class JobDto(BaseDto):
@@ -24,3 +25,6 @@ class JobDto(BaseDto):
     mentorship_role: ParticipantRole | None = None
     status: JobStatus
     form_schema: dict | None = None
+    pipeline_config: list | None = None
+    pending_form_schema: dict | None = None
+    pending_pipeline_config: list | None = None

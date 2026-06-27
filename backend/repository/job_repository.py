@@ -31,6 +31,11 @@ class JobRepository:
         )
         return list(result.scalars().all())
 
+    async def list_all(self, session: AsyncSession) -> list[JobEntity]:
+        """Return every job regardless of status (for internal review/admin views)."""
+        result = await session.execute(select(JobEntity))
+        return list(result.scalars().all())
+
     async def update_job(self, session: AsyncSession, entity: JobEntity) -> JobEntity:
         """Persist mutations to an attached/merged job entity."""
         merged = await session.merge(entity)
