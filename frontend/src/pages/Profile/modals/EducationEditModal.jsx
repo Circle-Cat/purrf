@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import "@/pages/Profile/modals/Modal.css";
 import {
   months,
   formatDateFromParts,
@@ -149,8 +148,8 @@ const EducationEditModal = ({ isOpen, onClose, initialData, onSave }) => {
   };
 
   return (
-    <div className="modal-overlay">
-      <div className="modal-content">
+    <div className="fixed inset-0 z-[1000] flex h-full w-full items-center justify-center bg-black/40 backdrop-blur-[4px] animate-in fade-in duration-200">
+      <div className="max-h-[90vh] w-[90%] max-w-[700px] overflow-y-auto rounded-2xl border bg-background p-10 animate-in slide-in-from-bottom-4 duration-300">
         <div className="mb-5 flex items-center justify-between">
           <h3>Edit Education</h3>
           <Button size="sm" onClick={handleAdd}>
@@ -170,7 +169,7 @@ const EducationEditModal = ({ isOpen, onClose, initialData, onSave }) => {
           ))}
         </div>
 
-        <div className="modal-actions">
+        <div className="mt-10 flex justify-end gap-3 border-t-2 pt-6">
           <Button variant="outline" onClick={onClose} disabled={isSaving}>
             Cancel
           </Button>
