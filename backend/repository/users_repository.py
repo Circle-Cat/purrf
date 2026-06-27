@@ -261,6 +261,25 @@ class UsersRepository:
         )
         return list(result.tuples().all()), int(total or 0)
 
+    async def get_super_admins(self, session: AsyncSession) -> list[UsersEntity]:
+        """
+        All users currently flagged as super admins.
+
+        Super admins hold every permission via the ``is_super_admin`` flag rather
+        than per-permission grant rows, so the permission-holders reverse lookup
+        needs this authoritative set to synthesize derived holders.
+
+        Args:
+            session (AsyncSession): The active async database session.
+
+        Returns:
+            list[UsersEntity]: User rows whose ``is_super_admin`` flag is True.
+        """
+        result = await session.execute(
+            select(UsersEntity).where(UsersEntity.is_super_admin.is_(True))
+        )
+        return list(result.scalars().all())
+
     async def is_internal(self, session: AsyncSession, user_id: int) -> bool:
         """
         Returns True if the user has at least one identity_type='internal' row

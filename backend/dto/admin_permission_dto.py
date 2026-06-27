@@ -25,10 +25,14 @@ class GrantDto(BaseDto):
     permission_name: str
     granted_source: str
     granted_by: int | None = None
-    granted_timestamp: datetime
+    # Nullable: super admins derived without a promotion marker have no timestamp.
+    granted_timestamp: datetime | None = None
     revoked_by: int | None = None
     revoked_timestamp: datetime | None = None
     is_active: bool
+    # True when the holder is currently a super admin (so they hold this
+    # permission by super-admin derivation, in addition to any real grant).
+    is_super_admin: bool = False
 
 
 class UserPermissionsViewDto(BaseDto):

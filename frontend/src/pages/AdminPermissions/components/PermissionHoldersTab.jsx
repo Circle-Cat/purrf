@@ -38,9 +38,20 @@ const PermissionHoldersTab = ({ catalog }) => {
 
   const data = (grants ?? []).map((g) => ({
     userId: g.userId,
-    grantedSource: g.grantedSource,
+    // Super admins hold every permission by derivation (no real grant row, or a
+    // real grant they also derive); badge the Source cell so it's unmistakable.
+    grantedSource: g.isSuperAdmin ? (
+      <span className="inline-flex items-center gap-1.5">
+        <span>{g.grantedSource}</span>
+        <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800">
+          super admin
+        </span>
+      </span>
+    ) : (
+      g.grantedSource
+    ),
     grantedBy: g.grantedBy ?? "—",
-    grantedTimestamp: g.grantedTimestamp,
+    grantedTimestamp: g.grantedTimestamp ?? "—",
     status: g.isActive ? "active" : "revoked",
   }));
 
