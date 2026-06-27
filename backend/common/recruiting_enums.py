@@ -16,11 +16,33 @@ class JobKind(StrEnum):
 
 
 class JobStatus(StrEnum):
-    """Posting publish state. MVP: draft -> published (-> closed). No review gate."""
+    """Posting publish state, gated by review.
+
+    Lifecycle: draft -> pending_review -> published (-> closed). An edit to a
+    published posting's form/pipeline parks it in published_pending_revision
+    (the live version stays public) until the revision is approved.
+    """
 
     DRAFT = "draft"
+    PENDING_REVIEW = "pending_review"
     PUBLISHED = "published"
     CLOSED = "closed"
+    PUBLISHED_PENDING_REVISION = "published_pending_revision"
+
+
+class JobReviewStatus(StrEnum):
+    """State of a single job-review request."""
+
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
+class JobReviewKind(StrEnum):
+    """Whether a review gates first publication or a later revision."""
+
+    INITIAL = "initial"
+    REVISION = "revision"
 
 
 class ApplicationStage(StrEnum):

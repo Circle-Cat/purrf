@@ -17,6 +17,15 @@ py_test(
 )
 
 py_test(
+    name = "recruiting_enums_test",
+    srcs = ["recruiting_enums_test.py"],
+    deps = [
+        "//backend/common:permissions",
+        "//backend/common:recruiting_enums",
+    ],
+)
+
+py_test(
     name = "auth0_client_test",
     srcs = ["auth0_client_test.py"],
     deps = [
