@@ -70,6 +70,7 @@ describe("PersonalDashboard", () => {
     isPartnersLoading: false,
     loadPastPartners: vi.fn(),
     isLoading: false,
+    selectedRoundId: null,
     roundSelectionData: {
       sortedRounds: [{ id: 1, status: MentorshipRoundStatus.COMPLETED }],
     },
@@ -212,6 +213,7 @@ describe("PersonalDashboard", () => {
     it("calculates active meetingRoundId using enum and passes it to the button", () => {
       useMentorshipData.mockReturnValue({
         ...mockHookData,
+        selectedRoundId: 20,
         roundSelectionData: {
           sortedRounds: [
             { id: 10, status: MentorshipRoundStatus.COMPLETED },
@@ -227,9 +229,47 @@ describe("PersonalDashboard", () => {
       expect(btn.innerHTML).toContain("Round: 20");
     });
 
+    it("successfully activates and casts ID when selectedRoundId is a string from select dropdown", () => {
+      useMentorshipData.mockReturnValue({
+        ...mockHookData,
+        selectedRoundId: "20",
+        roundSelectionData: {
+          sortedRounds: [
+            { id: 10, status: MentorshipRoundStatus.COMPLETED },
+            { id: 20, status: MentorshipRoundStatus.ACTIVE },
+          ],
+        },
+      });
+
+      render(<PersonalDashboard />);
+
+      const btn = screen.getByTestId("mock-manage-meetings-btn");
+      expect(btn).toBeInTheDocument();
+      expect(btn.innerHTML).toContain("Round: 20");
+    });
+
+    it("passes null to the button when the user selects a completed / inactive round", () => {
+      useMentorshipData.mockReturnValue({
+        ...mockHookData,
+        selectedRoundId: 10,
+        roundSelectionData: {
+          sortedRounds: [
+            { id: 10, status: MentorshipRoundStatus.COMPLETED },
+            { id: 20, status: MentorshipRoundStatus.ACTIVE },
+          ],
+        },
+      });
+
+      render(<PersonalDashboard />);
+
+      const btn = screen.getByTestId("mock-manage-meetings-btn");
+      expect(btn.innerHTML).toContain("Round: null");
+    });
+
     it("passes null to the button when there is no active round", () => {
       useMentorshipData.mockReturnValue({
         ...mockHookData,
+        selectedRoundId: 10,
         roundSelectionData: {
           sortedRounds: [{ id: 10, status: MentorshipRoundStatus.COMPLETED }],
         },
