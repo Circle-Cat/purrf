@@ -41,6 +41,19 @@ describe("EducationEditModal", () => {
     vi.clearAllMocks();
   });
 
+  it("renders nothing when isOpen is false", () => {
+    const { container } = render(
+      <EducationEditModal
+        isOpen={false}
+        onClose={mockOnClose}
+        initialData={mockInitialData}
+        onSave={mockOnSave}
+      />,
+    );
+
+    expect(container.firstChild).toBeNull();
+  });
+
   it("should render initial data correctly", () => {
     render(
       <EducationEditModal
