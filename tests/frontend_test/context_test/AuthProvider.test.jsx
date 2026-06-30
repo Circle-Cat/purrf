@@ -93,6 +93,68 @@ describe("AuthProvider", () => {
     expect(result.current.accessDenied).toBe(false);
   });
 
+  it("flags a transient load failure as authError without sessionExpired", async () => {
+    getUserPermissions.mockRejectedValue(new Error("Network Error"));
+
+    const { result } = renderHook(() => useAuth(), {
+      wrapper: AuthProvider,
+    });
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    // A network/timeout/5xx failure must NOT masquerade as an unverified user.
+    expect(result.current.authError).toBe(true);
+    expect(result.current.sessionExpired).toBe(false);
+    expect(result.current.accessDenied).toBe(false);
+  });
+
+  it("flags a 401 as a session expiry, not a verify-wall case", async () => {
+    getUserPermissions.mockRejectedValue({ response: { status: 401 } });
+
+    const { result } = renderHook(() => useAuth(), {
+      wrapper: AuthProvider,
+    });
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.authError).toBe(true);
+    expect(result.current.sessionExpired).toBe(true);
+    expect(result.current.accessDenied).toBe(false);
+  });
+
+  it("does not set authError on a 403 (that path is accessDenied)", async () => {
+    getUserPermissions.mockRejectedValue({ response: { status: 403 } });
+
+    const { result } = renderHook(() => useAuth(), {
+      wrapper: AuthProvider,
+    });
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.accessDenied).toBe(true);
+    expect(result.current.authError).toBe(false);
+  });
+
+  it("clears authError once a retry succeeds", async () => {
+    getUserPermissions
+      .mockRejectedValueOnce({ response: { status: 401 } })
+      .mockResolvedValueOnce({
+        data: { permissions: [], has_verified_email: true },
+      });
+
+    const { result } = renderHook(() => useAuth(), {
+      wrapper: AuthProvider,
+    });
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.authError).toBe(true);
+
+    await act(async () => {
+      await result.current.refreshAuth();
+    });
+
+    expect(result.current.authError).toBe(false);
+    expect(result.current.sessionExpired).toBe(false);
+    expect(result.current.hasVerifiedEmail).toBe(true);
+  });
+
   it("flags accessDenied with the message on a 403 (e.g. deactivated account)", async () => {
     const message =
       "Your account has been deactivated. Contact an administrator to restore access.";

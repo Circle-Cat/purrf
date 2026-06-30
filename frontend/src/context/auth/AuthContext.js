@@ -17,9 +17,13 @@ export const AuthContext = createContext(null);
  *   hasVerifiedEmail: boolean,
  *   accessDenied: boolean,
  *   accessDeniedMessage: string,
+ *   authError: boolean,
+ *   sessionExpired: boolean,
  *   loading: boolean,
  *   refreshAuth: () => Promise<void>
  * }} The current authentication state plus a refresher to re-pull it.
+ *   `authError` is true when the auth pull failed for a non-403 reason (401,
+ *   network, timeout, 5xx); `sessionExpired` narrows that to a 401.
  *
  * @example
  * const { permissions, loading } = useAuth();
