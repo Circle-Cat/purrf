@@ -152,4 +152,46 @@ describe("QuestionEditor", () => {
       maxLength: undefined,
     });
   });
+
+  it("designates an other-specify option", () => {
+    const onChange = vi.fn();
+    render(
+      <QuestionEditor
+        question={{ id: "q1", type: "single_choice", label: "Src", options: ["A", "Others"] }}
+        allQuestions={[]}
+        onChange={onChange}
+        onRemove={() => {}}
+        onMoveUp={() => {}}
+        onMoveDown={() => {}}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("Other option"), {
+      target: { value: "Others" },
+    });
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ otherOption: "Others" }),
+    );
+  });
+
+  it("clears otherOption when its option is removed", () => {
+    const onChange = vi.fn();
+    render(
+      <QuestionEditor
+        question={{
+          id: "q1", type: "single_choice", label: "Src",
+          options: ["A", "Others"], otherOption: "Others",
+        }}
+        allQuestions={[]}
+        onChange={onChange}
+        onRemove={() => {}}
+        onMoveUp={() => {}}
+        onMoveDown={() => {}}
+      />,
+    );
+    // Remove the 2nd option ("Others") via OptionsEditor.
+    fireEvent.click(screen.getAllByRole("button", { name: "Remove option" })[1]);
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ options: ["A"], otherOption: undefined }),
+    );
+  });
 });

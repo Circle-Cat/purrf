@@ -94,8 +94,38 @@ const QuestionEditor = ({
       {CHOICE_TYPES.has(question.type) && (
         <OptionsEditor
           options={question.options ?? []}
-          onChange={(options) => patch({ options })}
+          onChange={(options) =>
+            patch({
+              options,
+              ...(question.otherOption && !options.includes(question.otherOption)
+                ? { otherOption: undefined }
+                : {}),
+            })
+          }
         />
+      )}
+      {CHOICE_TYPES.has(question.type) && (
+        <div className="space-y-1">
+          <Label htmlFor={`${question.id}-other`}>
+            Reveal a text box when this option is selected
+          </Label>
+          <select
+            id={`${question.id}-other`}
+            aria-label="Other option"
+            className="h-9 rounded-md border border-slate-300 px-2 text-sm"
+            value={question.otherOption ?? ""}
+            onChange={(e) => patch({ otherOption: e.target.value || undefined })}
+          >
+            <option value="">— none —</option>
+            {(question.options ?? [])
+              .filter((o) => o && o.trim() !== "")
+              .map((o) => (
+                <option key={o} value={o}>
+                  {o}
+                </option>
+              ))}
+          </select>
+        </div>
       )}
       {question.type === "multi_choice" && (
         <div className="space-y-1">
