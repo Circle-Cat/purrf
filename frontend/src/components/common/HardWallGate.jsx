@@ -1,6 +1,7 @@
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/context/auth";
 import AccessDenied from "@/pages/AccessDenied";
+import AuthLoadError from "@/components/common/AuthLoadError";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
 
 /**
@@ -18,8 +19,15 @@ import { ROUTE_PATHS } from "@/constants/RoutePaths";
  * @param {React.ReactNode} props.children - the route tree to guard.
  */
 const HardWallGate = ({ children }) => {
-  const { loading, hasVerifiedEmail, accessDenied, accessDeniedMessage } =
-    useAuth();
+  const {
+    loading,
+    hasVerifiedEmail,
+    accessDenied,
+    accessDeniedMessage,
+    authError,
+    sessionExpired,
+    refreshAuth,
+  } = useAuth();
   const location = useLocation();
 
   if (loading) return null;
@@ -28,6 +36,15 @@ const HardWallGate = ({ children }) => {
   // leaves hasVerifiedEmail false. Show the 403 page instead of mistaking it
   // for an unverified user and redirecting to the verify wall.
   if (accessDenied) return <AccessDenied message={accessDeniedMessage} />;
+
+  // A 401 / network error / timeout means we never learned the auth state.
+  // Show a retry / re-login screen rather than treating it as "unverified" and
+  // trapping the user at the verify wall (where OTP calls would also fail).
+  if (authError) {
+    return (
+      <AuthLoadError sessionExpired={sessionExpired} onRetry={refreshAuth} />
+    );
+  }
 
   const onWall = location.pathname === ROUTE_PATHS.VERIFY_REQUIRED;
 

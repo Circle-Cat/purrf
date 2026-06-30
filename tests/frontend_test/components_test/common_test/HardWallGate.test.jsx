@@ -31,6 +31,8 @@ describe("HardWallGate Component", () => {
     loading = false,
     accessDenied = false,
     accessDeniedMessage = "",
+    authError = false,
+    sessionExpired = false,
     initialPath,
   }) => {
     useAuth.mockReturnValue({
@@ -38,6 +40,9 @@ describe("HardWallGate Component", () => {
       hasVerifiedEmail,
       accessDenied,
       accessDeniedMessage,
+      authError,
+      sessionExpired,
+      refreshAuth: vi.fn(),
     });
     return render(
       <MemoryRouter initialEntries={[initialPath]}>
@@ -146,5 +151,43 @@ describe("HardWallGate Component", () => {
     expect(screen.getByText("403 Forbidden")).toBeInTheDocument();
     expect(screen.getByText("Access revoked.")).toBeInTheDocument();
     expect(screen.queryByText("Verify Wall")).not.toBeInTheDocument();
+  });
+
+  test("shows a retry screen (not the verify wall) on a transient auth load failure", () => {
+    renderGate({
+      hasVerifiedEmail: false,
+      authError: true,
+      initialPath: ROUTE_PATHS.DASHBOARD,
+    });
+
+    expect(screen.getByRole("button", { name: /retry/i })).toBeInTheDocument();
+    expect(screen.queryByText("Verify Wall")).not.toBeInTheDocument();
+    expect(screen.queryByText("Dashboard Page")).not.toBeInTheDocument();
+  });
+
+  test("shows a session-expired screen (not the verify wall) on a 401", () => {
+    renderGate({
+      hasVerifiedEmail: false,
+      authError: true,
+      sessionExpired: true,
+      initialPath: ROUTE_PATHS.DASHBOARD,
+    });
+
+    expect(screen.getByText(/session has expired/i)).toBeInTheDocument();
+    expect(screen.queryByText("Verify Wall")).not.toBeInTheDocument();
+  });
+
+  test("prefers the 403 page over the auth-error screen", () => {
+    renderGate({
+      accessDenied: true,
+      accessDeniedMessage: "Access revoked.",
+      authError: true,
+      initialPath: ROUTE_PATHS.DASHBOARD,
+    });
+
+    expect(screen.getByText("403 Forbidden")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /retry/i }),
+    ).not.toBeInTheDocument();
   });
 });
