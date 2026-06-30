@@ -10,6 +10,8 @@ import {
   requestReopen,
   deleteJob,
   listApprovers,
+  listInterviewPool,
+  listJobOwners,
   submitForReview,
   listMyReviews,
   decideReview,
@@ -88,6 +90,18 @@ describe("recruitingApi", () => {
     request.get.mockResolvedValue({ data: [] });
     await listApprovers();
     expect(request.get).toHaveBeenCalledWith("/recruiting/approvers");
+  });
+
+  it("listInterviewPool GETs the interview-pool endpoint", async () => {
+    request.get.mockResolvedValue({ data: [] });
+    await listInterviewPool();
+    expect(request.get).toHaveBeenCalledWith("/recruiting/interview-pool");
+  });
+
+  it("listJobOwners GETs the job-owners endpoint", async () => {
+    request.get.mockResolvedValue({ data: [] });
+    await listJobOwners();
+    expect(request.get).toHaveBeenCalledWith("/recruiting/job-owners");
   });
 
   it("submitForReview POSTs reviewer + message", async () => {

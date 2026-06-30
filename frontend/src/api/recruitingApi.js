@@ -47,3 +47,11 @@ export const listMyReviews = () =>
 /** Approve or reject a review. body: {decision: "approve"|"reject", comment}. */
 export const decideReview = (reviewId, body) =>
   request.patch(API_ENDPOINTS.RECRUITING_REVIEW(reviewId), body);
+
+/** List active users assignable as interview evaluators (ApproverDto[]). */
+export const listInterviewPool = () =>
+  request.get(API_ENDPOINTS.RECRUITING_INTERVIEW_POOL);
+
+/** List active users eligible to own a posting (ApproverDto[]). */
+export const listJobOwners = () =>
+  request.get(API_ENDPOINTS.RECRUITING_JOB_OWNERS);
