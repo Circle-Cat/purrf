@@ -113,7 +113,7 @@ const QuestionEditor = ({
           <select
             id={`${question.id}-other`}
             aria-label="Other option"
-            className="h-9 rounded-md border border-slate-300 px-2 text-sm"
+            className="h-9 max-w-xs rounded-md border border-slate-300 px-2 text-sm"
             value={question.otherOption ?? ""}
             onChange={(e) =>
               patch({ otherOption: e.target.value || undefined })
@@ -200,7 +200,7 @@ const QuestionEditor = ({
           <select
             id={`${question.id}-dep`}
             aria-label="Depends on"
-            className="h-9 rounded-md border border-slate-300 px-2 text-sm"
+            className="h-9 max-w-xs rounded-md border border-slate-300 px-2 text-sm"
             value={depId}
             onChange={(e) => setDep(e.target.value)}
           >
