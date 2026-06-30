@@ -130,7 +130,7 @@ class ParticipationService:
                     id=u.user_id,
                     first_name=u.first_name,
                     last_name=u.last_name,
-                    preferred_name=u.preferred_name or u.first_name,
+                    preferred_name=u.preferred_name,
                     primary_email=None,
                 )
                 for u in users
@@ -157,7 +157,7 @@ class ParticipationService:
                 id=p_user.user_id,
                 first_name=p_user.first_name,
                 last_name=p_user.last_name,
-                preferred_name=p_user.preferred_name or p_user.first_name,
+                preferred_name=p_user.preferred_name,
                 primary_email=(
                     p_user.primary_email
                     if participant

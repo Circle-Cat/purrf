@@ -112,7 +112,7 @@ class MentorshipAdminService:
                         id=partner.user_id,
                         first_name=partner.first_name or "",
                         last_name=partner.last_name or "",
-                        preferred_name=partner.preferred_name or "",
+                        preferred_name=partner.preferred_name,
                         primary_email=None,
                         participant_role=None,
                         recommendation_reason=None,

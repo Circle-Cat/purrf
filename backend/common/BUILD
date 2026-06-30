@@ -202,6 +202,11 @@ py_library(
 )
 
 py_library(
+    name = "name_utils",
+    srcs = ["name_utils.py"],
+)
+
+py_library(
     name = "launchdarkly_client",
     srcs = ["launchdarkly_client.py"],
     deps = [

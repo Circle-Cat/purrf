@@ -15,6 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import MeetingSubmissionModal from "@/pages/PersonalDashboard/components/MeetingSubmissionModal";
+import { partnerDisplayName } from "@/utils/partnerName";
 import MeetingOverviewCard from "@/pages/PersonalDashboard/components/MeetingOverviewCard";
 import { MentorshipParticipantRoles } from "@/constants/MentorshipParticipantRoles";
 import { MentorshipRoundStatus } from "@/constants/MentorshipRoundStatus";
@@ -190,10 +191,10 @@ export default function MentorshipParticipantsCard({
                         href={`mailto:${overview.partnerEmail}`}
                         className="text-primary underline hover:opacity-80"
                       >
-                        {overview.preferredName}
+                        {partnerDisplayName(overview)}
                       </a>
                     ) : (
-                      overview.preferredName
+                      partnerDisplayName(overview)
                     )}
                   </p>
                   <MeetingOverviewCard
