@@ -84,6 +84,33 @@ class TestQuestionDto(unittest.TestCase):
                 expected_value="x",
             )
 
+    def test_other_option_valid_on_single_choice(self):
+        q = QuestionDto(
+            id="q1", type="single_choice", label="Source",
+            options=["Friend", "Others"], other_option="Others",
+        )
+        self.assertEqual(q.other_option, "Others")
+
+    def test_other_option_valid_on_multi_choice(self):
+        q = QuestionDto(
+            id="q1", type="multi_choice", label="Source",
+            options=["A", "Others"], other_option="Others",
+        )
+        self.assertEqual(q.other_option, "Others")
+
+    def test_other_option_must_be_in_options(self):
+        with self.assertRaises(ValidationError):
+            QuestionDto(
+                id="q1", type="single_choice", label="Source",
+                options=["Friend", "LinkedIn"], other_option="Others",
+            )
+
+    def test_other_option_rejected_on_non_choice(self):
+        with self.assertRaises(ValidationError):
+            QuestionDto(
+                id="q1", type="short_text", label="Name", other_option="Others",
+            )
+
 
 class TestFormSchemaDto(unittest.TestCase):
     def test_empty_questions_allowed(self):

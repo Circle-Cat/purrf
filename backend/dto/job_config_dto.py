@@ -12,8 +12,8 @@ QuestionType = Literal[
 _ALLOWED_FIELDS: dict[str, set[str]] = {
     "short_text": set(),
     "long_text": {"max_length", "max_words"},
-    "single_choice": {"options"},
-    "multi_choice": {"options", "max_selections"},
+    "single_choice": {"options", "other_option"},
+    "multi_choice": {"options", "max_selections", "other_option"},
     "exact_text": {"expected_value"},
 }
 
@@ -43,6 +43,7 @@ class QuestionDto(BaseRequestDto):
     max_length: int | None = None
     max_words: int | None = None
     expected_value: str | None = None
+    other_option: str | None = None
 
     @field_validator("label")
     @classmethod
@@ -82,6 +83,7 @@ class QuestionDto(BaseRequestDto):
                 "max_length",
                 "max_words",
                 "expected_value",
+                "other_option",
             )
             if getattr(self, name) is not None
         }
@@ -105,6 +107,10 @@ class QuestionDto(BaseRequestDto):
         if self.type == "exact_text":
             if not self.expected_value or not self.expected_value.strip():
                 raise ValueError("exact_text requires a non-empty expected_value")
+        if self.other_option is not None and self.other_option not in (
+            self.options or []
+        ):
+            raise ValueError("other_option must be one of options")
         return self
 
 
