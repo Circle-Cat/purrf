@@ -88,6 +88,17 @@ export const useMentorshipData = () => {
   const [isMeetingsLoading, setIsMeetingsLoading] = useState(false);
   // Cache for partners data per round, reset on page mount
   const partnersCacheRef = useRef({});
+  // Monotonic id per refreshMeetings call. A response only writes state when its
+  // id is still the latest, so a slow earlier round can't clobber a newer one
+  // (e.g. fast round switching).
+  const requestSeqRef = useRef(0);
+  // Guards against state updates after the component unmounts.
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   /**
    * refreshRegistration
@@ -227,6 +238,7 @@ export const useMentorshipData = () => {
 
   const refreshMeetings = useCallback(async () => {
     if (!selectedRoundId) return;
+    const seq = ++requestSeqRef.current;
     setIsMeetingsLoading(true);
 
     try {
@@ -241,6 +253,10 @@ export const useMentorshipData = () => {
           ? Promise.resolve({ data: partnersCacheRef.current[selectedRoundId] })
           : getMyMentorshipPartners(selectedRoundId),
       ]);
+
+      // A newer round was selected while this request was in flight — drop the
+      // stale response so it can't overwrite the current round's data.
+      if (!isMountedRef.current || seq !== requestSeqRef.current) return;
 
       partnersCacheRef.current[selectedRoundId] ??= partnersInfo;
       setUserTimezone((prev) => prev ?? meetingLog?.userTimezone ?? null);
@@ -298,7 +314,10 @@ export const useMentorshipData = () => {
     } catch (MeetingErr) {
       console.error("Failed to fetch meeting log", MeetingErr);
     } finally {
-      setIsMeetingsLoading(false);
+      // Only the latest in-flight request controls the loading flag.
+      if (isMountedRef.current && seq === requestSeqRef.current) {
+        setIsMeetingsLoading(false);
+      }
     }
   }, [
     selectedRoundId,
