@@ -56,8 +56,11 @@ class RecruitingMapper:
             status=job.status,
             form_schema=job.form_schema,
             pipeline_config=job.pipeline_config,
+            screen_rules=job.screen_rules,
+            profile_config=job.profile_config,
             pending_form_schema=job.pending_form_schema,
             pending_pipeline_config=job.pending_pipeline_config,
+            pending_profile_config=job.pending_profile_config,
             last_reject_comment=last_reject_comment,
             was_published=job.was_published or False,
         )
