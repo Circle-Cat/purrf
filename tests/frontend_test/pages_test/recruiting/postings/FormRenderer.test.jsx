@@ -170,4 +170,37 @@ describe("FormRenderer", () => {
     );
     expect(screen.getAllByRole("checkbox")).toHaveLength(2);
   });
+
+  it("reveals an inline specify input when the designated single_choice option is selected", () => {
+    const onAnswerChange = vi.fn();
+    const q = {
+      id: "q1", type: "single_choice", label: "Src",
+      options: ["Friend", "Others"], otherOption: "Others",
+    };
+    const { rerender } = render(
+      <FormRenderer questions={[q]} answers={{ q1: "Friend" }} onAnswerChange={onAnswerChange} />,
+    );
+    expect(screen.queryByLabelText("Others (please specify)")).not.toBeInTheDocument();
+    rerender(
+      <FormRenderer questions={[q]} answers={{ q1: "Others" }} onAnswerChange={onAnswerChange} />,
+    );
+    const input = screen.getByLabelText("Others (please specify)");
+    fireEvent.change(input, { target: { value: "Hackathon" } });
+    expect(onAnswerChange).toHaveBeenCalledWith("q1__other", "Hackathon");
+  });
+
+  it("reveals the specify input for multi_choice only when the designated option is among the selected", () => {
+    const q = {
+      id: "q1", type: "multi_choice", label: "Src",
+      options: ["A", "Others"], otherOption: "Others",
+    };
+    const { rerender } = render(
+      <FormRenderer questions={[q]} answers={{ q1: ["A"] }} onAnswerChange={() => {}} />,
+    );
+    expect(screen.queryByLabelText("Others (please specify)")).not.toBeInTheDocument();
+    rerender(
+      <FormRenderer questions={[q]} answers={{ q1: ["A", "Others"] }} onAnswerChange={() => {}} />,
+    );
+    expect(screen.getByLabelText("Others (please specify)")).toBeInTheDocument();
+  });
 });

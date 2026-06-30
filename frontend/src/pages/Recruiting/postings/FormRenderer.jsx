@@ -20,11 +20,32 @@ const isVisible = (question, answers) => {
  * Renders a single question's control based on its type.
  *
  * @param {{question: object, value: string|string[]|undefined,
+ *          otherValue: string|undefined,
  *          onAnswerChange: (id: string, value: string|string[]) => void}} props
  */
-const QuestionControl = ({ question, value, onAnswerChange }) => {
+const QuestionControl = ({ question, value, otherValue, onAnswerChange }) => {
   const { id, type, label, options = [] } = question;
   const set = (v) => onAnswerChange(id, v);
+
+  const otherSelected =
+    question.otherOption != null &&
+    (type === "multi_choice"
+      ? Array.isArray(value) && value.includes(question.otherOption)
+      : value === question.otherOption);
+  const specifyInput = otherSelected ? (
+    <div className="space-y-1">
+      <Label htmlFor={`${id}__other`}>
+        {question.otherOption}
+        <span className="ml-1 text-red-500">*</span>
+      </Label>
+      <Input
+        id={`${id}__other`}
+        aria-label={`${question.otherOption} (please specify)`}
+        value={otherValue ?? ""}
+        onChange={(e) => onAnswerChange(`${id}__other`, e.target.value)}
+      />
+    </div>
+  ) : null;
 
   if (type === "long_text") {
     return (
@@ -38,21 +59,24 @@ const QuestionControl = ({ question, value, onAnswerChange }) => {
   }
   if (type === "single_choice") {
     return (
-      <div role="radiogroup" aria-label={label} className="space-y-1">
-        {options
-          .filter((opt) => opt && opt.trim() !== "")
-          .map((opt) => (
-            <label key={opt} className="flex items-center gap-2 text-sm">
-              <input
-                type="radio"
-                name={id}
-                value={opt}
-                checked={value === opt}
-                onChange={() => set(opt)}
-              />
-              {opt}
-            </label>
-          ))}
+      <div className="space-y-2">
+        <div role="radiogroup" aria-label={label} className="space-y-1">
+          {options
+            .filter((opt) => opt && opt.trim() !== "")
+            .map((opt) => (
+              <label key={opt} className="flex items-center gap-2 text-sm">
+                <input
+                  type="radio"
+                  name={id}
+                  value={opt}
+                  checked={value === opt}
+                  onChange={() => set(opt)}
+                />
+                {opt}
+              </label>
+            ))}
+        </div>
+        {specifyInput}
       </div>
     );
   }
@@ -65,20 +89,23 @@ const QuestionControl = ({ question, value, onAnswerChange }) => {
           : [...selected, opt],
       );
     return (
-      <div role="group" aria-label={label} className="space-y-1">
-        {options
-          .filter((opt) => opt && opt.trim() !== "")
-          .map((opt) => (
-            <label key={opt} className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                value={opt}
-                checked={selected.includes(opt)}
-                onChange={() => toggle(opt)}
-              />
-              {opt}
-            </label>
-          ))}
+      <div className="space-y-2">
+        <div role="group" aria-label={label} className="space-y-1">
+          {options
+            .filter((opt) => opt && opt.trim() !== "")
+            .map((opt) => (
+              <label key={opt} className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  value={opt}
+                  checked={selected.includes(opt)}
+                  onChange={() => toggle(opt)}
+                />
+                {opt}
+              </label>
+            ))}
+        </div>
+        {specifyInput}
       </div>
     );
   }
@@ -119,6 +146,7 @@ const FormRenderer = ({ questions = [], answers = {}, onAnswerChange }) => (
           <QuestionControl
             question={q}
             value={answers[q.id]}
+            otherValue={answers[`${q.id}__other`]}
             onAnswerChange={onAnswerChange}
           />
         </div>
