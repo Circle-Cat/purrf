@@ -126,4 +126,38 @@ describe("useUserPermissions", () => {
       "Cannot revoke a super-admin grant",
     );
   });
+
+  it("ignores a previous user's late response so saveDiff uses the current baseline", async () => {
+    // Control resolution order per user id.
+    const resolvers = {};
+    api.getUserPermissions.mockImplementation(
+      (id) =>
+        new Promise((resolve) => {
+          resolvers[id] = resolve;
+        }),
+    );
+
+    const { result, rerender } = renderHook(
+      ({ id }) => useUserPermissions(id),
+      {
+        initialProps: { id: 1 },
+      },
+    );
+    await waitFor(() => expect(resolvers[1]).toBeDefined());
+
+    // Switch to user 2 before user 1's permissions come back.
+    rerender({ id: 2 });
+    await waitFor(() => expect(resolvers[2]).toBeDefined());
+
+    // Newer user (2) resolves first.
+    await act(async () => {
+      resolvers[2]({ data: { active: ["perm.b"], history: [] } });
+    });
+    // Stale user (1) resolves last — must NOT overwrite user 2's baseline.
+    await act(async () => {
+      resolvers[1]({ data: { active: ["perm.a"], history: [] } });
+    });
+
+    expect(result.current.active).toEqual(["perm.b"]);
+  });
 });

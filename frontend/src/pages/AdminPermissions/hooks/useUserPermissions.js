@@ -5,6 +5,7 @@ import {
   grantPermissions,
   revokePermissions,
 } from "@/api/adminPermissionsApi";
+import { useRequestGuard } from "@/hooks/useRequestGuard";
 
 /**
  * Owns the selected user's active permissions + history and the grant/revoke
@@ -17,20 +18,29 @@ export const useUserPermissions = (userId) => {
   const [active, setActive] = useState([]);
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(false);
+  const { begin, isCurrent } = useRequestGuard();
 
   const fetchView = useCallback(async () => {
     if (userId == null) return;
+    const seq = begin();
     setLoading(true);
     try {
       const { data } = await getUserPermissions(userId);
+      // Drop a stale response (e.g. the admin already clicked another user) so
+      // it can't overwrite the baseline saveDiff diffs against.
+      if (!isCurrent(seq)) return;
       setActive(data.active ?? []);
       setHistory(data.history ?? []);
     } catch (err) {
-      toast.error(err?.response?.data?.message ?? "Failed to load permissions");
+      if (isCurrent(seq)) {
+        toast.error(
+          err?.response?.data?.message ?? "Failed to load permissions",
+        );
+      }
     } finally {
-      setLoading(false);
+      if (isCurrent(seq)) setLoading(false);
     }
-  }, [userId]);
+  }, [userId, begin, isCurrent]);
 
   useEffect(() => {
     if (userId == null) {
