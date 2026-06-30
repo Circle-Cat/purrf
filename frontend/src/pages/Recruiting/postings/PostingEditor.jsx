@@ -112,13 +112,19 @@ const PostingEditor = () => {
         </div>
         <div className="space-y-2">
           <p className="text-sm font-medium text-slate-700">Preview</p>
-          <FormRenderer
-            questions={draft.formSchema.questions}
-            answers={previewAnswers}
-            onAnswerChange={(qid, v) =>
-              setPreviewAnswers((a) => ({ ...a, [qid]: v }))
-            }
-          />
+          <div className="min-h-24 rounded-md border border-slate-200 bg-slate-50 p-4">
+            {draft.formSchema.questions.length === 0 ? (
+              <p className="text-sm text-slate-400">Nothing to preview yet.</p>
+            ) : (
+              <FormRenderer
+                questions={draft.formSchema.questions}
+                answers={previewAnswers}
+                onAnswerChange={(qid, v) =>
+                  setPreviewAnswers((a) => ({ ...a, [qid]: v }))
+                }
+              />
+            )}
+          </div>
         </div>
       </div>
     </div>
