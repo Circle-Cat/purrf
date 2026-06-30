@@ -1,6 +1,13 @@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 /**
  * Title / description / kind fields for a posting.
@@ -30,16 +37,15 @@ const JobBasicsSection = ({ title, description, kind, onChange }) => (
     </div>
     <div className="space-y-1">
       <Label htmlFor="posting-kind">Kind</Label>
-      <select
-        id="posting-kind"
-        aria-label="Kind"
-        className="h-9 rounded-md border border-slate-300 px-2 text-sm"
-        value={kind}
-        onChange={(e) => onChange({ kind: e.target.value })}
-      >
-        <option value="activity">Activity</option>
-        <option value="employment">Employment</option>
-      </select>
+      <Select value={kind} onValueChange={(v) => onChange({ kind: v })}>
+        <SelectTrigger id="posting-kind" aria-label="Kind" className="w-full max-w-xs">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="activity">Activity</SelectItem>
+          <SelectItem value="employment">Employment</SelectItem>
+        </SelectContent>
+      </Select>
     </div>
   </div>
 );

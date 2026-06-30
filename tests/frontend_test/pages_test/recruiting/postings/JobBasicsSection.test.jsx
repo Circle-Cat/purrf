@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import JobBasicsSection from "@/pages/Recruiting/postings/JobBasicsSection";
 
 describe("JobBasicsSection", () => {
@@ -14,12 +15,12 @@ describe("JobBasicsSection", () => {
     expect(onChange).toHaveBeenCalledWith({ title: "SWE" });
   });
 
-  it("emits kind changes via native select", () => {
+  it("emits kind changes via the Select", async () => {
+    const user = userEvent.setup();
     const onChange = vi.fn();
     render(<JobBasicsSection {...props} onChange={onChange} />);
-    fireEvent.change(screen.getByLabelText("Kind"), {
-      target: { value: "employment" },
-    });
+    await user.click(screen.getByRole("combobox", { name: "Kind" }));
+    await user.click(screen.getByRole("option", { name: "Employment" }));
     expect(onChange).toHaveBeenCalledWith({ kind: "employment" });
   });
 
