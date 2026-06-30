@@ -139,3 +139,141 @@ class FormSchemaDto(BaseRequestDto):
                     f"question {q.id} showWhen references unknown question {target}"
                 )
         return self
+
+
+PipelineStage = Literal["recruiter_screening", "behavioral", "tech", "board_review"]
+_ASSIGNABLE_DEFAULT_STAGES = {"recruiter_screening", "behavioral"}
+
+
+class PipelineStageDto(BaseRequestDto):
+    """One stage selected into a posting's pipeline."""
+
+    stage: PipelineStage
+    rounds: int
+    referral_skippable: bool = False
+    default_assignee_id: int | None = None
+
+    @field_validator("rounds")
+    @classmethod
+    def rounds_positive(cls, v: int) -> int:
+        """Require at least one round.
+
+        Args:
+            v (int): The candidate round count.
+
+        Returns:
+            int: The validated round count.
+
+        Raises:
+            ValueError: If fewer than one round.
+        """
+        if v < 1:
+            raise ValueError("rounds must be >= 1")
+        return v
+
+    @model_validator(mode="after")
+    def assignee_stage_restriction(self) -> "PipelineStageDto":
+        """default_assignee_id may only be pre-set on screening/behavioral.
+
+        Returns:
+            PipelineStageDto: self, when valid.
+
+        Raises:
+            ValueError: If default_assignee_id is set on tech/board_review.
+        """
+        if (
+            self.default_assignee_id is not None
+            and self.stage not in _ASSIGNABLE_DEFAULT_STAGES
+        ):
+            raise ValueError(
+                "default_assignee_id is only allowed on recruiter_screening/behavioral"
+            )
+        return self
+
+
+class PipelineConfigDto(BaseRequestDto):
+    """A posting's interview pipeline: an owner plus ordered selected stages."""
+
+    owner_id: int | None = None
+    stages: list[PipelineStageDto] = []
+
+    @model_validator(mode="after")
+    def no_duplicate_stages(self) -> "PipelineConfigDto":
+        """Reject the same stage selected twice.
+
+        Returns:
+            PipelineConfigDto: self, when valid.
+
+        Raises:
+            ValueError: On a duplicate stage.
+        """
+        seen = [s.stage for s in self.stages]
+        if len(seen) != len(set(seen)):
+            raise ValueError("a stage may appear at most once in the pipeline")
+        return self
+
+
+class ScreenRuleConditionDto(BaseRequestDto):
+    """The matching condition of a machine-screening rule."""
+
+    source: Literal["email_domain", "answer"]
+    operator: Literal["equals", "in", "not_in"]
+    value: str | list[str]
+    question_id: str | None = None
+
+    @model_validator(mode="after")
+    def validate_source_shape(self) -> "ScreenRuleConditionDto":
+        """email_domain forbids question_id and not_in; answer requires question_id.
+
+        Returns:
+            ScreenRuleConditionDto: self, when valid.
+
+        Raises:
+            ValueError: On an illegal source/operator/question_id combination.
+        """
+        if self.source == "email_domain":
+            if self.question_id is not None:
+                raise ValueError("email_domain condition must not set question_id")
+            if self.operator not in ("equals", "in"):
+                raise ValueError("email_domain operator must be equals or in")
+        else:  # answer
+            if not self.question_id:
+                raise ValueError("answer condition requires question_id")
+        return self
+
+
+class ScreenRuleDto(BaseRequestDto):
+    """A single machine-screening rule (condition -> action)."""
+
+    id: str
+    condition: ScreenRuleConditionDto
+    action: Literal["reject", "qualify"]
+
+
+class ScreenRulesDto(BaseRequestDto):
+    """The configurable machine-screening rule set (pre-screening gate)."""
+
+    rules: list[ScreenRuleDto] = []
+
+    @model_validator(mode="after")
+    def unique_ids(self) -> "ScreenRulesDto":
+        """Reject duplicate rule ids.
+
+        Returns:
+            ScreenRulesDto: self, when valid.
+
+        Raises:
+            ValueError: On a duplicate rule id.
+        """
+        ids = [r.id for r in self.rules]
+        if len(ids) != len(set(ids)):
+            raise ValueError("screen-rule ids must be unique")
+        return self
+
+
+class ProfileConfigDto(BaseRequestDto):
+    """Per-posting profile-section requirement levels."""
+
+    education: Literal["required", "optional", "off"] = "optional"
+    work_experience: Literal["required", "optional", "off"] = "optional"
+    resume: Literal["required", "optional", "off"] = "optional"

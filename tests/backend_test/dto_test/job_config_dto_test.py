@@ -2,7 +2,17 @@ import unittest
 
 from pydantic import ValidationError
 
-from backend.dto.job_config_dto import FormSchemaDto, QuestionDto, ShowWhenDto
+from backend.dto.job_config_dto import (
+    FormSchemaDto,
+    PipelineConfigDto,
+    PipelineStageDto,
+    ProfileConfigDto,
+    QuestionDto,
+    ScreenRuleConditionDto,
+    ScreenRuleDto,
+    ScreenRulesDto,
+    ShowWhenDto,
+)
 
 
 class TestQuestionDto(unittest.TestCase):
@@ -116,6 +126,110 @@ class TestFormSchemaDto(unittest.TestCase):
                     ),
                 ]
             )
+
+
+class TestPipelineConfigDto(unittest.TestCase):
+    def test_minimal_stage(self):
+        cfg = PipelineConfigDto(stages=[PipelineStageDto(stage="tech", rounds=2)])
+        self.assertEqual(cfg.stages[0].rounds, 2)
+        self.assertFalse(cfg.stages[0].referral_skippable)
+
+    def test_rounds_must_be_positive(self):
+        with self.assertRaises(ValidationError):
+            PipelineStageDto(stage="tech", rounds=0)
+
+    def test_duplicate_stage_rejected(self):
+        with self.assertRaises(ValidationError):
+            PipelineConfigDto(
+                stages=[
+                    PipelineStageDto(stage="tech", rounds=1),
+                    PipelineStageDto(stage="tech", rounds=1),
+                ]
+            )
+
+    def test_default_assignee_only_on_screening_or_behavioral(self):
+        PipelineConfigDto(
+            stages=[
+                PipelineStageDto(stage="behavioral", rounds=1, default_assignee_id=9)
+            ]
+        )
+        with self.assertRaises(ValidationError):
+            PipelineConfigDto(
+                stages=[
+                    PipelineStageDto(stage="tech", rounds=1, default_assignee_id=9)
+                ]
+            )
+
+
+class TestScreenRulesDto(unittest.TestCase):
+    def test_email_domain_qualify(self):
+        ScreenRulesDto(
+            rules=[
+                ScreenRuleDto(
+                    id="r1",
+                    condition=ScreenRuleConditionDto(
+                        source="email_domain", operator="in", value=["google.com"]
+                    ),
+                    action="qualify",
+                )
+            ]
+        )
+
+    def test_answer_rule_requires_question_id(self):
+        with self.assertRaises(ValidationError):
+            ScreenRuleDto(
+                id="r1",
+                condition=ScreenRuleConditionDto(
+                    source="answer", operator="equals", value="no"
+                ),
+                action="reject",
+            )
+
+    def test_email_domain_rejects_question_id(self):
+        with self.assertRaises(ValidationError):
+            ScreenRuleConditionDto(
+                source="email_domain", operator="in", value=["g.com"], question_id="q1"
+            )
+
+    def test_duplicate_rule_id_rejected(self):
+        with self.assertRaises(ValidationError):
+            ScreenRulesDto(
+                rules=[
+                    ScreenRuleDto(
+                        id="r1",
+                        condition=ScreenRuleConditionDto(
+                            source="email_domain", operator="equals", value="g.com"
+                        ),
+                        action="reject",
+                    ),
+                    ScreenRuleDto(
+                        id="r1",
+                        condition=ScreenRuleConditionDto(
+                            source="email_domain", operator="equals", value="h.com"
+                        ),
+                        action="reject",
+                    ),
+                ]
+            )
+
+    def test_email_domain_operator_restricted(self):
+        with self.assertRaises(ValidationError):
+            ScreenRuleConditionDto(
+                source="email_domain", operator="not_in", value=["g.com"]
+            )
+
+
+class TestProfileConfigDto(unittest.TestCase):
+    def test_defaults_optional(self):
+        c = ProfileConfigDto()
+        self.assertEqual(
+            (c.education, c.work_experience, c.resume),
+            ("optional", "optional", "optional"),
+        )
+
+    def test_rejects_bad_level(self):
+        with self.assertRaises(ValidationError):
+            ProfileConfigDto(education="mandatory")
 
 
 if __name__ == "__main__":
