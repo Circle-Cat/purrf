@@ -35,12 +35,15 @@ const TRAINING_TOAST_BODY =
  */
 export const useProfileCompletenessReminder = ({
   isLoading,
+  loadError,
   personalInfo,
   experienceList,
   educationList,
 }) => {
   useEffect(() => {
-    if (isLoading) return;
+    // Don't nag while loading, or when the data failed to load — empty state
+    // from a fetch failure must not be mistaken for a genuinely empty profile.
+    if (isLoading || loadError) return;
 
     // Fire training first, then profile, so the profile toast — which
     // is more often actionable for new users — ends up on top of the
@@ -80,6 +83,7 @@ export const useProfileCompletenessReminder = ({
     }
   }, [
     isLoading,
+    loadError,
     personalInfo.firstName,
     personalInfo.lastName,
     experienceList.length,

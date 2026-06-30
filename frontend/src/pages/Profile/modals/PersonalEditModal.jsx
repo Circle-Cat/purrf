@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { toast } from "sonner";
 import TimezoneSelector from "@/components/common/TimezoneSelector";
 import { Button } from "@/components/ui/button";
 
@@ -89,6 +90,7 @@ const PersonalEditModal = ({
       onClose();
     } catch (e) {
       console.error("Save failed", e);
+      toast.error("Couldn't save your changes. Please try again.");
     } finally {
       setIsSaving(false);
     }
