@@ -165,4 +165,32 @@ describe("useUserAdmin", () => {
       ),
     );
   });
+
+  it("ignores a superseded query's late response", async () => {
+    // Control resolution order across the two fetches.
+    const resolvers = [];
+    api.getUsers.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolvers.push(resolve);
+        }),
+    );
+
+    const { result } = renderHook(() => useUserAdmin());
+    act(() => result.current.submitSearch()); // fetch #1
+    await waitFor(() => expect(resolvers).toHaveLength(1));
+    act(() => result.current.toggleSort("last_name")); // fetch #2
+    await waitFor(() => expect(resolvers).toHaveLength(2));
+
+    // Newer query (#2) resolves first and renders.
+    await act(async () => {
+      resolvers[1]({ data: { users: [{ userId: 2 }], total: 1 } });
+    });
+    // Stale query (#1) resolves last — it must NOT overwrite the table.
+    await act(async () => {
+      resolvers[0]({ data: { users: [{ userId: 1 }], total: 1 } });
+    });
+
+    expect(result.current.users).toEqual([{ userId: 2 }]);
+  });
 });

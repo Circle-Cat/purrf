@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { getPermissionHolders } from "@/api/adminPermissionsApi";
+import { useRequestGuard } from "@/hooks/useRequestGuard";
 
 /**
  * Reverse lookup: choose a permission, see who holds it. The permission and
@@ -17,25 +18,29 @@ export const usePermissionHolders = () => {
   const [query, setQuery] = useState(null);
   const [grants, setGrants] = useState([]);
   const [loading, setLoading] = useState(false);
+  const { begin, isCurrent } = useRequestGuard();
 
   const fetchHolders = useCallback(async () => {
     if (!query || !query.permissionName) {
       setGrants([]);
       return;
     }
+    const seq = begin();
     setLoading(true);
     try {
       const { data } = await getPermissionHolders(query.permissionName, {
         includeRevoked: query.includeRevoked,
       });
+      if (!isCurrent(seq)) return;
       setGrants(data.grants ?? []);
     } catch (err) {
+      if (!isCurrent(seq)) return;
       toast.error(err?.response?.data?.message ?? "Failed to load holders");
       setGrants([]);
     } finally {
-      setLoading(false);
+      if (isCurrent(seq)) setLoading(false);
     }
-  }, [query]);
+  }, [query, begin, isCurrent]);
 
   // Refetch only when the committed query changes — never on mount.
   useEffect(() => {
