@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, act } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import QuestionEditor from "@/pages/Recruiting/postings/QuestionEditor";
 
@@ -70,24 +71,8 @@ describe("QuestionEditor", () => {
     ).toBeInTheDocument();
   });
 
-  it("lists only OTHER questions in the showWhen dependency dropdown", () => {
-    const q1 = { id: "q1", type: "short_text", label: "First" };
-    render(
-      <QuestionEditor
-        question={base}
-        allQuestions={[q1, base]}
-        onChange={() => {}}
-        onRemove={() => {}}
-        onMoveUp={() => {}}
-        onMoveDown={() => {}}
-      />,
-    );
-    const select = screen.getByLabelText("Depends on");
-    const values = Array.from(select.options).map((o) => o.value);
-    expect(values).toEqual(["", "q1"]); // "none" + the other question, not q2 itself
-  });
-
-  it("sets showWhen when a dependency and value are chosen", () => {
+  it("sets showWhen when a dependency is chosen", async () => {
+    const user = userEvent.setup();
     const q1 = { id: "q1", type: "short_text", label: "First" };
     const onChange = vi.fn();
     render(
@@ -100,13 +85,31 @@ describe("QuestionEditor", () => {
         onMoveDown={() => {}}
       />,
     );
-    fireEvent.change(screen.getByLabelText("Depends on"), {
-      target: { value: "q1" },
-    });
+    await user.click(screen.getByRole("combobox", { name: "Depends on" }));
+    await user.click(screen.getByRole("option", { name: "First" }));
     expect(onChange).toHaveBeenCalledWith({
       ...base,
       showWhen: { questionId: "q1", equals: "" },
     });
+  });
+
+  it("lists only OTHER questions as showWhen dependencies", async () => {
+    const user = userEvent.setup();
+    const q1 = { id: "q1", type: "short_text", label: "First" };
+    render(
+      <QuestionEditor
+        question={base}
+        allQuestions={[q1, base]}
+        onChange={() => {}}
+        onRemove={() => {}}
+        onMoveUp={() => {}}
+        onMoveDown={() => {}}
+      />,
+    );
+    await user.click(screen.getByRole("combobox", { name: "Depends on" }));
+    expect(screen.getByRole("option", { name: "First" })).toBeInTheDocument();
+    // base's own label ("Why") must not be selectable as its own dependency
+    expect(screen.queryByRole("option", { name: "Why" })).not.toBeInTheDocument();
   });
 
   it("calls onRemove when the Remove question button is clicked", () => {
@@ -153,16 +156,12 @@ describe("QuestionEditor", () => {
     });
   });
 
-  it("designates an other-specify option", () => {
+  it("designates an other-specify option", async () => {
+    const user = userEvent.setup();
     const onChange = vi.fn();
     render(
       <QuestionEditor
-        question={{
-          id: "q1",
-          type: "single_choice",
-          label: "Src",
-          options: ["A", "Others"],
-        }}
+        question={{ id: "q1", type: "single_choice", label: "Src", options: ["A", "Others"] }}
         allQuestions={[]}
         onChange={onChange}
         onRemove={() => {}}
@@ -170,9 +169,8 @@ describe("QuestionEditor", () => {
         onMoveDown={() => {}}
       />,
     );
-    fireEvent.change(screen.getByLabelText("Other option"), {
-      target: { value: "Others" },
-    });
+    await user.click(screen.getByRole("combobox", { name: "Other option" }));
+    await user.click(screen.getByRole("option", { name: "Others" }));
     expect(onChange).toHaveBeenCalledWith(
       expect.objectContaining({ otherOption: "Others" }),
     );

@@ -2,9 +2,17 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import OptionsEditor from "@/pages/Recruiting/postings/OptionsEditor";
 
 const CHOICE_TYPES = new Set(["single_choice", "multi_choice"]);
+const NONE = "__none__";
 
 /**
  * Editor for a single submission-form question: label, required flag,
@@ -110,24 +118,30 @@ const QuestionEditor = ({
           <Label htmlFor={`${question.id}-other`}>
             Reveal a text box when this option is selected
           </Label>
-          <select
-            id={`${question.id}-other`}
-            aria-label="Other option"
-            className="h-9 max-w-xs rounded-md border border-slate-300 px-2 text-sm"
-            value={question.otherOption ?? ""}
-            onChange={(e) =>
-              patch({ otherOption: e.target.value || undefined })
+          <Select
+            value={question.otherOption ?? NONE}
+            onValueChange={(v) =>
+              patch({ otherOption: v === NONE ? undefined : v })
             }
           >
-            <option value="">— none —</option>
-            {(question.options ?? [])
-              .filter((o) => o && o.trim() !== "")
-              .map((o) => (
-                <option key={o} value={o}>
-                  {o}
-                </option>
-              ))}
-          </select>
+            <SelectTrigger
+              id={`${question.id}-other`}
+              aria-label="Other option"
+              className="max-w-xs"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NONE}>— none —</SelectItem>
+              {(question.options ?? [])
+                .filter((o) => o && o.trim() !== "")
+                .map((o) => (
+                  <SelectItem key={o} value={o}>
+                    {o}
+                  </SelectItem>
+                ))}
+            </SelectContent>
+          </Select>
         </div>
       )}
       {question.type === "multi_choice" && (
@@ -197,20 +211,26 @@ const QuestionEditor = ({
       <div className="flex gap-3">
         <div className="space-y-1">
           <Label htmlFor={`${question.id}-dep`}>Depends on</Label>
-          <select
-            id={`${question.id}-dep`}
-            aria-label="Depends on"
-            className="h-9 max-w-xs rounded-md border border-slate-300 px-2 text-sm"
-            value={depId}
-            onChange={(e) => setDep(e.target.value)}
+          <Select
+            value={depId || NONE}
+            onValueChange={(v) => setDep(v === NONE ? "" : v)}
           >
-            <option value="">— none —</option>
-            {others.map((q) => (
-              <option key={q.id} value={q.id}>
-                {q.label || q.id}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger
+              id={`${question.id}-dep`}
+              aria-label="Depends on"
+              className="max-w-xs"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NONE}>— none —</SelectItem>
+              {others.map((q) => (
+                <SelectItem key={q.id} value={q.id}>
+                  {q.label || q.id}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         {depId && (
           <div className="space-y-1">
