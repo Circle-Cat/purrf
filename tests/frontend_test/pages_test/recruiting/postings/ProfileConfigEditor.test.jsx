@@ -7,7 +7,9 @@ describe("ProfileConfigEditor", () => {
   it("defaults missing fields to optional", () => {
     render(<ProfileConfigEditor value={{}} onChange={() => {}} />);
     // the 'optional' radio of each row is checked by default
-    expect(screen.getByRole("radio", { name: "Education optional" })).toBeChecked();
+    expect(
+      screen.getByRole("radio", { name: "Education optional" }),
+    ).toBeChecked();
   });
 
   it("emits a changed requirement level", async () => {
@@ -15,7 +17,11 @@ describe("ProfileConfigEditor", () => {
     const onChange = vi.fn();
     render(
       <ProfileConfigEditor
-        value={{ education: "optional", workExperience: "optional", resume: "optional" }}
+        value={{
+          education: "optional",
+          workExperience: "optional",
+          resume: "optional",
+        }}
         onChange={onChange}
       />,
     );

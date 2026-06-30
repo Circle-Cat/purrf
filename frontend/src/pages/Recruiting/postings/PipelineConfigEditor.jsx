@@ -87,7 +87,10 @@ const PipelineConfigEditor = ({
       {STAGES.map((name) => {
         const s = stageOf(name);
         return (
-          <div key={name} className="space-y-2 rounded-md border border-slate-200 p-3">
+          <div
+            key={name}
+            className="space-y-2 rounded-md border border-slate-200 p-3"
+          >
             <Label className="flex items-center gap-2">
               <Checkbox
                 checked={!!s}

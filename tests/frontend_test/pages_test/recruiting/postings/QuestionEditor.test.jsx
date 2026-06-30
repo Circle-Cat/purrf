@@ -109,7 +109,9 @@ describe("QuestionEditor", () => {
     await user.click(screen.getByRole("combobox", { name: "Depends on" }));
     expect(screen.getByRole("option", { name: "First" })).toBeInTheDocument();
     // base's own label ("Why") must not be selectable as its own dependency
-    expect(screen.queryByRole("option", { name: "Why" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("option", { name: "Why" }),
+    ).not.toBeInTheDocument();
   });
 
   it("calls onRemove when the Remove question button is clicked", () => {
@@ -161,7 +163,12 @@ describe("QuestionEditor", () => {
     const onChange = vi.fn();
     render(
       <QuestionEditor
-        question={{ id: "q1", type: "single_choice", label: "Src", options: ["A", "Others"] }}
+        question={{
+          id: "q1",
+          type: "single_choice",
+          label: "Src",
+          options: ["A", "Others"],
+        }}
         allQuestions={[]}
         onChange={onChange}
         onRemove={() => {}}

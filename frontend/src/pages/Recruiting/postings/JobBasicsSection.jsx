@@ -38,7 +38,11 @@ const JobBasicsSection = ({ title, description, kind, onChange }) => (
     <div className="space-y-1">
       <Label htmlFor="posting-kind">Kind</Label>
       <Select value={kind} onValueChange={(v) => onChange({ kind: v })}>
-        <SelectTrigger id="posting-kind" aria-label="Kind" className="w-full max-w-xs">
+        <SelectTrigger
+          id="posting-kind"
+          aria-label="Kind"
+          className="w-full max-w-xs"
+        >
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
