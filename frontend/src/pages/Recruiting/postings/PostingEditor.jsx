@@ -42,6 +42,7 @@ const PostingEditor = () => {
   const navigate = useNavigate();
   const [draft, setDraft] = useState(BLANK);
   const [previewAnswers, setPreviewAnswers] = useState({});
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -70,6 +71,8 @@ const PostingEditor = () => {
   );
 
   const save = async () => {
+    if (saving) return;
+    setSaving(true);
     try {
       const body = toBody(draft);
       if (id) await updateJob(id, body);
@@ -78,6 +81,7 @@ const PostingEditor = () => {
       navigate(ROUTE_PATHS.RECRUITING_POSTINGS);
     } catch (e) {
       toast.error(e.message);
+      setSaving(false);
     }
   };
 
@@ -94,7 +98,9 @@ const PostingEditor = () => {
           >
             Cancel
           </Button>
-          <Button onClick={save}>Save</Button>
+          <Button onClick={save} disabled={saving}>
+            {saving ? "Saving…" : "Save"}
+          </Button>
         </div>
       </div>
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">

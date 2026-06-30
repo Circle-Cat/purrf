@@ -102,4 +102,28 @@ describe("PostingEditor", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith("bad form"));
   });
+
+  it("disables Save and shows Saving… while the create request is in flight", async () => {
+    let resolveCreate;
+    api.createJob.mockReturnValue(
+      new Promise((resolve) => {
+        resolveCreate = resolve;
+      }),
+    );
+    const { router } = renderAt("/postings/new");
+    fireEvent.change(screen.getByLabelText("Title"), {
+      target: { value: "SWE" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    const savingBtn = await screen.findByRole("button", { name: "Saving…" });
+    expect(savingBtn).toBeDisabled();
+
+    resolveCreate({ data: { id: 1 } });
+    await waitFor(() =>
+      expect(router.state.location.pathname).toBe(
+        ROUTE_PATHS.RECRUITING_POSTINGS,
+      ),
+    );
+  });
 });
