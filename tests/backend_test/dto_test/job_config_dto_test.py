@@ -39,7 +39,11 @@ class TestQuestionDto(unittest.TestCase):
 
     def test_multi_choice_max_selections_bounds(self):
         QuestionDto(
-            id="q1", type="multi_choice", label="L", options=["a", "b"], max_selections=2
+            id="q1",
+            type="multi_choice",
+            label="L",
+            options=["a", "b"],
+            max_selections=2,
         )
         with self.assertRaises(ValidationError):
             QuestionDto(
@@ -59,9 +63,13 @@ class TestQuestionDto(unittest.TestCase):
             )
 
     def test_exact_text_requires_expected_value(self):
-        QuestionDto(id="q1", type="exact_text", label="Declare", expected_value="I confirm")
+        QuestionDto(
+            id="q1", type="exact_text", label="Declare", expected_value="I confirm"
+        )
         with self.assertRaises(ValidationError):
-            QuestionDto(id="q1", type="exact_text", label="Declare", expected_value="  ")
+            QuestionDto(
+                id="q1", type="exact_text", label="Declare", expected_value="  "
+            )
 
     def test_field_must_match_type(self):
         # options only on choice types; expected_value only on exact_text
@@ -93,7 +101,9 @@ class TestFormSchemaDto(unittest.TestCase):
     def test_showwhen_must_reference_existing_other_question(self):
         FormSchemaDto(
             questions=[
-                QuestionDto(id="q1", type="single_choice", label="Pick", options=["Other", "X"]),
+                QuestionDto(
+                    id="q1", type="single_choice", label="Pick", options=["Other", "X"]
+                ),
                 QuestionDto(
                     id="q2",
                     type="short_text",
@@ -155,9 +165,7 @@ class TestPipelineConfigDto(unittest.TestCase):
         )
         with self.assertRaises(ValidationError):
             PipelineConfigDto(
-                stages=[
-                    PipelineStageDto(stage="tech", rounds=1, default_assignee_id=9)
-                ]
+                stages=[PipelineStageDto(stage="tech", rounds=1, default_assignee_id=9)]
             )
 
 

@@ -89,7 +89,9 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         dto = JobCreateDto(
             title=job.title,
             kind=job.kind,
-            formSchema={"questions": [{"id": "q1", "type": "short_text", "label": "New"}]},
+            formSchema={
+                "questions": [{"id": "q1", "type": "short_text", "label": "New"}]
+            },
         )
 
         result = await self.service.update_job(self.session, job.job_id, dto)
@@ -125,7 +127,11 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
             title="T",
             pipelineConfig={
                 "stages": [
-                    {"stage": "recruiter_screening", "rounds": 1, "defaultAssigneeId": 7}
+                    {
+                        "stage": "recruiter_screening",
+                        "rounds": 1,
+                        "defaultAssigneeId": 7,
+                    }
                 ]
             },
         )
@@ -148,7 +154,11 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
             pipelineConfig={
                 "ownerId": 42,
                 "stages": [
-                    {"stage": "recruiter_screening", "rounds": 1, "defaultAssigneeId": 7}
+                    {
+                        "stage": "recruiter_screening",
+                        "rounds": 1,
+                        "defaultAssigneeId": 7,
+                    }
                 ],
             },
         )
@@ -164,9 +174,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
             return []  # no advancers
 
         self.perms.get_active_users_with_permission = AsyncMock(side_effect=pool)
-        dto = JobCreateDto(
-            title="T", pipelineConfig={"ownerId": 99, "stages": []}
-        )
+        dto = JobCreateDto(title="T", pipelineConfig={"ownerId": 99, "stages": []})
         with self.assertRaises(ValueError):
             await self.service.create_job(self.session, dto)
 
@@ -821,7 +829,11 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         job.pipeline_config = {
             "ownerId": 42,
             "stages": [
-                {"stage": "recruiter_screening", "rounds": 1, "referralSkippable": False}
+                {
+                    "stage": "recruiter_screening",
+                    "rounds": 1,
+                    "referralSkippable": False,
+                }
             ],
         }
         job.screen_rules = {"rules": []}
@@ -856,7 +868,11 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
             pipelineConfig={
                 "ownerId": 42,
                 "stages": [
-                    {"stage": "recruiter_screening", "rounds": 1, "referralSkippable": False}
+                    {
+                        "stage": "recruiter_screening",
+                        "rounds": 1,
+                        "referralSkippable": False,
+                    }
                 ],
             },
             screenRules={
@@ -884,7 +900,9 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         self.repo.get_by_job_id = AsyncMock(return_value=job)
         dto = JobCreateDto(
             title="T",
-            formSchema={"questions": [{"id": "q1", "type": "short_text", "label": "New"}]},
+            formSchema={
+                "questions": [{"id": "q1", "type": "short_text", "label": "New"}]
+            },
         )
         result = await self.service.update_job(self.session, 1, dto)
         self.assertEqual(result.status, JobStatus.PUBLISHED_PENDING_REVISION)
@@ -904,7 +922,11 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
             pipelineConfig={
                 "ownerId": 50,
                 "stages": [
-                    {"stage": "recruiter_screening", "rounds": 1, "referralSkippable": False}
+                    {
+                        "stage": "recruiter_screening",
+                        "rounds": 1,
+                        "referralSkippable": False,
+                    }
                 ],
             },
         )
@@ -921,7 +943,11 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
             pipelineConfig={
                 "ownerId": 42,
                 "stages": [
-                    {"stage": "recruiter_screening", "rounds": 3, "referralSkippable": False}
+                    {
+                        "stage": "recruiter_screening",
+                        "rounds": 3,
+                        "referralSkippable": False,
+                    }
                 ],
             },
         )

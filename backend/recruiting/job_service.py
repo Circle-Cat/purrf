@@ -142,8 +142,10 @@ class JobService:
             if s.default_assignee_id is not None
         }
         if assignee_ids:
-            pool = await self.user_permissions_repository.get_active_users_with_permission(
-                session, Permission.RECRUITING_INTERVIEW_EVALUATE.value
+            pool = (
+                await self.user_permissions_repository.get_active_users_with_permission(
+                    session, Permission.RECRUITING_INTERVIEW_EVALUATE.value
+                )
             )
             valid = {u.user_id for u in pool}
             missing = assignee_ids - valid
@@ -152,8 +154,10 @@ class JobService:
                     f"default_assignee_id {sorted(missing)} are not active interview evaluators"
                 )
         if dto.pipeline_config.owner_id is not None:
-            pool = await self.user_permissions_repository.get_active_users_with_permission(
-                session, Permission.RECRUITING_APPLICATION_ADVANCE.value
+            pool = (
+                await self.user_permissions_repository.get_active_users_with_permission(
+                    session, Permission.RECRUITING_APPLICATION_ADVANCE.value
+                )
             )
             if dto.pipeline_config.owner_id not in {u.user_id for u in pool}:
                 raise ValueError(
@@ -179,16 +183,20 @@ class JobService:
             if s.get("defaultAssigneeId") is not None
         }
         if assignee_ids:
-            pool = await self.user_permissions_repository.get_active_users_with_permission(
-                session, Permission.RECRUITING_INTERVIEW_EVALUATE.value
+            pool = (
+                await self.user_permissions_repository.get_active_users_with_permission(
+                    session, Permission.RECRUITING_INTERVIEW_EVALUATE.value
+                )
             )
             missing = assignee_ids - {u.user_id for u in pool}
             if missing:
                 raise ValueError(f"assignees {sorted(missing)} no longer qualify")
         owner_id = cfg.get("ownerId")
         if owner_id is not None:
-            pool = await self.user_permissions_repository.get_active_users_with_permission(
-                session, Permission.RECRUITING_APPLICATION_ADVANCE.value
+            pool = (
+                await self.user_permissions_repository.get_active_users_with_permission(
+                    session, Permission.RECRUITING_APPLICATION_ADVANCE.value
+                )
             )
             if owner_id not in {u.user_id for u in pool}:
                 raise ValueError(f"owner {owner_id} no longer qualifies")

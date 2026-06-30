@@ -41,8 +41,7 @@ class JobCreateDto(BaseRequestDto):
         if not self.screen_rules:
             return self
         questions = {
-            q.id: q
-            for q in (self.form_schema.questions if self.form_schema else [])
+            q.id: q for q in (self.form_schema.questions if self.form_schema else [])
         }
         for rule in self.screen_rules.rules:
             cond = rule.condition
