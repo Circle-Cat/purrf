@@ -21,6 +21,7 @@ import VerifyRequired from "@/pages/VerifyRequired";
 import SignInSecurity from "@/pages/SignInSecurity";
 import AdminPermissions from "@/pages/AdminPermissions";
 import Postings from "@/pages/Recruiting/Postings";
+import PostingEditor from "@/pages/Recruiting/postings/PostingEditor";
 import MyReviews from "@/pages/Recruiting/MyReviews";
 import { AuthProvider } from "@/context/auth";
 import { FlagsProvider, LDIdentifier } from "@/context/flags";
@@ -122,6 +123,26 @@ function App() {
                           ]}
                         >
                           <Postings />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path={ROUTE_PATHS.RECRUITING_POSTING_NEW}
+                      element={
+                        <ProtectedRoute
+                          requiredPermissions={[PERMISSIONS.RECRUITING_JOB_WRITE]}
+                        >
+                          <PostingEditor />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/recruiting/postings/:id/edit"
+                      element={
+                        <ProtectedRoute
+                          requiredPermissions={[PERMISSIONS.RECRUITING_JOB_WRITE]}
+                        >
+                          <PostingEditor />
                         </ProtectedRoute>
                       }
                     />
