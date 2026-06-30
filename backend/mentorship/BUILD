@@ -11,6 +11,7 @@ py_library(
         "//backend/common:fast_api_response_wrapper",
         "//backend/common:identity_type",
         "//backend/common:mentorship_enums",
+        "//backend/common:name_utils",
         "//backend/common:permissions",
         "//backend/dto",
         "//backend/entity:entities",

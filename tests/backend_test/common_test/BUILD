@@ -135,3 +135,11 @@ py_test(
         "//backend/common:database",
     ],
 )
+
+py_test(
+    name = "name_utils_test",
+    srcs = ["name_utils_test.py"],
+    deps = [
+        "//backend/common:name_utils",
+    ],
+)
