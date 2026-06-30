@@ -37,7 +37,7 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
         self.mock_rounds_repo.get_all_rounds = AsyncMock()
 
         self.mock_training_repo = MagicMock()
-        self.mock_training_repo.get_training_by_user_ids = AsyncMock()
+        self.mock_training_repo.get_training_by_user_ids_and_categories = AsyncMock()
 
         self.mock_session = AsyncMock()
 
@@ -60,7 +60,7 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.total, 0)
         self.mock_users_repo.get_users_and_emails_by_ids.assert_not_awaited()
         self.mock_rounds_repo.get_all_rounds.assert_not_awaited()
-        self.mock_training_repo.get_training_by_user_ids.assert_not_awaited()
+        self.mock_training_repo.get_training_by_user_ids_and_categories.assert_not_awaited()
 
     async def test_partner_ids_included_in_user_fetch(self):
         """users repo receives both the participant's and the partner's user_id."""
@@ -86,7 +86,7 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
             {},
         )
         self.mock_rounds_repo.get_all_rounds.return_value = []
-        self.mock_training_repo.get_training_by_user_ids.return_value = {}
+        self.mock_training_repo.get_training_by_user_ids_and_categories.return_value = []
 
         await self.service.search_participants(
             self.mock_session, ParticipantSearchFilterDto()
@@ -134,7 +134,7 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
             {},
         )
         self.mock_rounds_repo.get_all_rounds.return_value = []
-        self.mock_training_repo.get_training_by_user_ids.return_value = {}
+        self.mock_training_repo.get_training_by_user_ids_and_categories.return_value = []
 
         result = await self.service.search_participants(
             self.mock_session, ParticipantSearchFilterDto()
@@ -145,7 +145,7 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(rows[2].matched_user.id, 1)
 
     async def test_onboarding_status_requires_done_training(self):
-        """onboarding_status is 'completed' only when training status is DONE; otherwise 'incomplete'."""
+        """mentor/mentee_onboarding_status returns the raw TrainingStatus from the training record."""
         self.mock_participants_repo.search_participants_for_admin.return_value = (
             [
                 _make_row(user_id=1, participant_role=ParticipantRole.MENTEE),
@@ -178,35 +178,35 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
             {},
         )
         self.mock_rounds_repo.get_all_rounds.return_value = []
-        self.mock_training_repo.get_training_by_user_ids.return_value = {
-            1: [
-                MagicMock(
-                    category=TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING,
-                    status=TrainingStatus.DONE,
-                )
-            ],
-            2: [
-                MagicMock(
-                    category=TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING,
-                    status=TrainingStatus.IN_PROGRESS,
-                )
-            ],
-            3: [
-                MagicMock(
-                    category=TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING,
-                    status=TrainingStatus.TO_DO,
-                )
-            ],
-        }
+        self.mock_training_repo.get_training_by_user_ids_and_categories.return_value = [
+            MagicMock(
+                user_id=1,
+                category=TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING,
+                status=TrainingStatus.DONE,
+            ),
+            MagicMock(
+                user_id=2,
+                category=TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING,
+                status=TrainingStatus.IN_PROGRESS,
+            ),
+            MagicMock(
+                user_id=3,
+                category=TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING,
+                status=TrainingStatus.TO_DO,
+            ),
+        ]
 
         result = await self.service.search_participants(
             self.mock_session, ParticipantSearchFilterDto()
         )
 
         rows = {r.user_id: r for r in result.participant_rows}
-        self.assertEqual(rows[1].onboarding_status, "completed")
-        self.assertEqual(rows[2].onboarding_status, "incomplete")
-        self.assertEqual(rows[3].onboarding_status, "incomplete")
+        self.assertEqual(rows[1].mentee_onboarding_status, TrainingStatus.DONE)
+        self.assertIsNone(rows[1].mentor_onboarding_status)
+        self.assertEqual(rows[2].mentee_onboarding_status, TrainingStatus.IN_PROGRESS)
+        self.assertIsNone(rows[2].mentor_onboarding_status)
+        self.assertEqual(rows[3].mentor_onboarding_status, TrainingStatus.TO_DO)
+        self.assertIsNone(rows[3].mentee_onboarding_status)
 
     async def test_post_filter_onboarding_status(self):
         """Rows not matching filters.onboarding_status are excluded; total reflects the repo count."""
@@ -235,20 +235,18 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
             {},
         )
         self.mock_rounds_repo.get_all_rounds.return_value = []
-        self.mock_training_repo.get_training_by_user_ids.return_value = {
-            1: [
-                MagicMock(
-                    category=TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING,
-                    status=TrainingStatus.DONE,
-                )
-            ],
-            2: [
-                MagicMock(
-                    category=TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING,
-                    status=TrainingStatus.IN_PROGRESS,
-                )
-            ],
-        }
+        self.mock_training_repo.get_training_by_user_ids_and_categories.return_value = [
+            MagicMock(
+                user_id=1,
+                category=TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING,
+                status=TrainingStatus.DONE,
+            ),
+            MagicMock(
+                user_id=2,
+                category=TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING,
+                status=TrainingStatus.IN_PROGRESS,
+            ),
+        ]
 
         result = await self.service.search_participants(
             self.mock_session, ParticipantSearchFilterDto(onboarding_status="completed")

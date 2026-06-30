@@ -146,29 +146,37 @@ class TestTrainingRepository(BaseRepositoryTestLib):
         self.assertEqual(updated.status, TrainingStatus.DONE)
         self.assertIsNotNone(updated.completed_timestamp)
 
-    async def test_get_training_by_user_ids_empty_list(self):
-        result = await self.repo.get_training_by_user_ids(self.session, [])
-        self.assertEqual(result, {})
-
-    async def test_get_training_by_user_ids_existing(self):
-        result = await self.repo.get_training_by_user_ids(
-            self.session, [self.user1.user_id, self.user2.user_id]
+    async def test_get_training_by_user_ids_and_categories_empty_list(self):
+        result = await self.repo.get_training_by_user_ids_and_categories(
+            self.session, [], [TrainingCategory.CORPORATE_CULTURE_COURSE]
         )
-        self.assertIn(self.user1.user_id, result)
-        self.assertIn(self.user2.user_id, result)
-        self.assertEqual(len(result[self.user1.user_id]), 2)
-        self.assertEqual(len(result[self.user2.user_id]), 1)
+        self.assertEqual(result, [])
 
-    async def test_get_training_by_user_ids_partial_ids(self):
-        result = await self.repo.get_training_by_user_ids(
-            self.session, [self.user1.user_id]
+    async def test_get_training_by_user_ids_and_categories_filters_by_category(self):
+        result = await self.repo.get_training_by_user_ids_and_categories(
+            self.session,
+            [self.user1.user_id],
+            [TrainingCategory.CORPORATE_CULTURE_COURSE],
         )
-        self.assertIn(self.user1.user_id, result)
-        self.assertNotIn(self.user2.user_id, result)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].category, TrainingCategory.CORPORATE_CULTURE_COURSE)
 
-    async def test_get_training_by_user_ids_unknown_id_excluded(self):
-        result = await self.repo.get_training_by_user_ids(self.session, [999])
-        self.assertEqual(result, {})
+    async def test_get_training_by_user_ids_and_categories_multiple_users(self):
+        result = await self.repo.get_training_by_user_ids_and_categories(
+            self.session,
+            [self.user1.user_id, self.user2.user_id],
+            [TrainingCategory.CORPORATE_CULTURE_COURSE],
+        )
+        self.assertEqual(len(result), 2)
+        self.assertTrue(
+            all(t.category == TrainingCategory.CORPORATE_CULTURE_COURSE for t in result)
+        )
+
+    async def test_get_training_by_user_ids_and_categories_unknown_id_excluded(self):
+        result = await self.repo.get_training_by_user_ids_and_categories(
+            self.session, [999], [TrainingCategory.CORPORATE_CULTURE_COURSE]
+        )
+        self.assertEqual(result, [])
 
 
 if __name__ == "__main__":

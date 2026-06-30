@@ -1,7 +1,10 @@
-from typing import Literal
 from backend.dto.base_dto import BaseDto
 from backend.dto.partner_dto import PartnerDto
-from backend.common.mentorship_enums import ApprovalStatus, ParticipantRole
+from backend.common.mentorship_enums import (
+    ApprovalStatus,
+    ParticipantRole,
+    TrainingStatus,
+)
 
 
 class ParticipantRowDto(BaseDto):
@@ -17,7 +20,8 @@ class ParticipantRowDto(BaseDto):
     matched_user: PartnerDto | None
     participant_role: ParticipantRole | None
     approval_status: ApprovalStatus | None
-    onboarding_status: Literal["completed", "incomplete"] | None
+    mentor_onboarding_status: TrainingStatus | None
+    mentee_onboarding_status: TrainingStatus | None
     completed_meeting_count: int | None
     required_meetings: int | None
 
