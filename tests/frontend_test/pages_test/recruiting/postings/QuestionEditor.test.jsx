@@ -157,7 +157,12 @@ describe("QuestionEditor", () => {
     const onChange = vi.fn();
     render(
       <QuestionEditor
-        question={{ id: "q1", type: "single_choice", label: "Src", options: ["A", "Others"] }}
+        question={{
+          id: "q1",
+          type: "single_choice",
+          label: "Src",
+          options: ["A", "Others"],
+        }}
         allQuestions={[]}
         onChange={onChange}
         onRemove={() => {}}
@@ -178,8 +183,11 @@ describe("QuestionEditor", () => {
     render(
       <QuestionEditor
         question={{
-          id: "q1", type: "single_choice", label: "Src",
-          options: ["A", "Others"], otherOption: "Others",
+          id: "q1",
+          type: "single_choice",
+          label: "Src",
+          options: ["A", "Others"],
+          otherOption: "Others",
         }}
         allQuestions={[]}
         onChange={onChange}
@@ -189,7 +197,9 @@ describe("QuestionEditor", () => {
       />,
     );
     // Remove the 2nd option ("Others") via OptionsEditor.
-    fireEvent.click(screen.getAllByRole("button", { name: "Remove option" })[1]);
+    fireEvent.click(
+      screen.getAllByRole("button", { name: "Remove option" })[1],
+    );
     expect(onChange).toHaveBeenCalledWith(
       expect.objectContaining({ options: ["A"], otherOption: undefined }),
     );
