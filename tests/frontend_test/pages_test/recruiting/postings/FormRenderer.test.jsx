@@ -133,4 +133,41 @@ describe("FormRenderer", () => {
     const input = screen.getByRole("textbox", { name: "Code" });
     expect(input.tagName.toLowerCase()).toBe("input");
   });
+
+  it("does not render blank/whitespace options in a single_choice preview", () => {
+    render(
+      <FormRenderer
+        questions={[
+          {
+            id: "q1",
+            type: "single_choice",
+            label: "Pick",
+            options: ["Yes", "", "  "],
+          },
+        ]}
+        answers={{}}
+        onAnswerChange={() => {}}
+      />,
+    );
+    expect(screen.getAllByRole("radio")).toHaveLength(1);
+    expect(screen.getByRole("radio", { name: "Yes" })).toBeInTheDocument();
+  });
+
+  it("does not render blank/whitespace options in a multi_choice preview", () => {
+    render(
+      <FormRenderer
+        questions={[
+          {
+            id: "q1",
+            type: "multi_choice",
+            label: "Pick",
+            options: ["A", "", "B"],
+          },
+        ]}
+        answers={{}}
+        onAnswerChange={() => {}}
+      />,
+    );
+    expect(screen.getAllByRole("checkbox")).toHaveLength(2);
+  });
 });

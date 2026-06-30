@@ -39,18 +39,20 @@ const QuestionControl = ({ question, value, onAnswerChange }) => {
   if (type === "single_choice") {
     return (
       <div role="radiogroup" aria-label={label} className="space-y-1">
-        {options.map((opt) => (
-          <label key={opt} className="flex items-center gap-2 text-sm">
-            <input
-              type="radio"
-              name={id}
-              value={opt}
-              checked={value === opt}
-              onChange={() => set(opt)}
-            />
-            {opt}
-          </label>
-        ))}
+        {options
+          .filter((opt) => opt && opt.trim() !== "")
+          .map((opt) => (
+            <label key={opt} className="flex items-center gap-2 text-sm">
+              <input
+                type="radio"
+                name={id}
+                value={opt}
+                checked={value === opt}
+                onChange={() => set(opt)}
+              />
+              {opt}
+            </label>
+          ))}
       </div>
     );
   }
@@ -64,17 +66,19 @@ const QuestionControl = ({ question, value, onAnswerChange }) => {
       );
     return (
       <div role="group" aria-label={label} className="space-y-1">
-        {options.map((opt) => (
-          <label key={opt} className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              value={opt}
-              checked={selected.includes(opt)}
-              onChange={() => toggle(opt)}
-            />
-            {opt}
-          </label>
-        ))}
+        {options
+          .filter((opt) => opt && opt.trim() !== "")
+          .map((opt) => (
+            <label key={opt} className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                value={opt}
+                checked={selected.includes(opt)}
+                onChange={() => toggle(opt)}
+              />
+              {opt}
+            </label>
+          ))}
       </div>
     );
   }
