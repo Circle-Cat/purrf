@@ -49,17 +49,39 @@ export const useUserPermissions = (userId) => {
       const added = checked.filter((p) => !activeSet.has(p));
       const removed = active.filter((p) => !checkedSet.has(p));
       if (added.length === 0 && removed.length === 0) return;
-      try {
-        if (added.length) await grantPermissions(userId, added);
-        if (removed.length) await revokePermissions(userId, removed);
-        toast.success("Permissions updated");
-      } catch (err) {
-        toast.error(
-          err?.response?.data?.message ?? "Failed to update permissions",
-        );
-      } finally {
-        await fetchView();
+
+      // Grant and revoke are independent backend calls. Attempt BOTH even if
+      // one throws — otherwise a failed grant would silently skip an intended
+      // revoke (a security-relevant action the admin believes they made).
+      const failures = [];
+      if (added.length) {
+        try {
+          await grantPermissions(userId, added);
+        } catch (err) {
+          failures.push({ op: "grant", err });
+        }
       }
+      if (removed.length) {
+        try {
+          await revokePermissions(userId, removed);
+        } catch (err) {
+          failures.push({ op: "revoke", err });
+        }
+      }
+
+      if (failures.length === 0) {
+        toast.success("Permissions updated");
+      } else {
+        // Prefer a specific backend reason; otherwise name which half failed so
+        // the admin knows what did and did not apply.
+        const serverMessage = failures.find(
+          (f) => f.err?.response?.data?.message,
+        )?.err.response.data.message;
+        const failedOps = failures.map((f) => f.op).join(" and ");
+        toast.error(serverMessage ?? `Failed to ${failedOps} permissions`);
+      }
+
+      await fetchView();
     },
     [userId, active, fetchView],
   );

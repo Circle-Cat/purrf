@@ -1,9 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
+import { toast } from "sonner";
 import { useUserPermissions } from "@/pages/AdminPermissions/hooks/useUserPermissions";
 import * as api from "@/api/adminPermissionsApi";
 
 vi.mock("@/api/adminPermissionsApi");
+vi.spyOn(toast, "success").mockImplementation(() => {});
+vi.spyOn(toast, "error").mockImplementation(() => {});
 
 const view = (active) => ({ data: { userId: 7, active, history: [] } });
 
@@ -71,5 +74,56 @@ describe("useUserPermissions", () => {
     });
     // getUserPermissions called once on mount + once in the post-save refetch
     expect(api.getUserPermissions).toHaveBeenCalledTimes(2);
+  });
+
+  it("still attempts the revoke even when the grant call fails", async () => {
+    const { result } = renderHook(() => useUserPermissions(7));
+    await waitFor(() => expect(result.current.active).toHaveLength(1));
+    api.grantPermissions.mockRejectedValueOnce(new Error("grant boom"));
+    // checked = [x] : add "x" (fails), remove "mentorship.round.read"
+    await act(async () => {
+      await result.current.saveDiff(["x"]);
+    });
+    expect(api.grantPermissions).toHaveBeenCalledWith(7, ["x"]);
+    // The revoke must NOT be skipped just because the grant threw.
+    expect(api.revokePermissions).toHaveBeenCalledWith(7, [
+      "mentorship.round.read",
+    ]);
+  });
+
+  it("reports an error naming the failed half on a partial failure", async () => {
+    const { result } = renderHook(() => useUserPermissions(7));
+    await waitFor(() => expect(result.current.active).toHaveLength(1));
+    api.grantPermissions.mockRejectedValueOnce(new Error("grant boom"));
+    await act(async () => {
+      await result.current.saveDiff(["x"]);
+    });
+    expect(toast.error).toHaveBeenCalledTimes(1);
+    expect(toast.error.mock.calls[0][0]).toMatch(/grant/i);
+    expect(toast.success).not.toHaveBeenCalled();
+  });
+
+  it("reports success only when both grant and revoke succeed", async () => {
+    const { result } = renderHook(() => useUserPermissions(7));
+    await waitFor(() => expect(result.current.active).toHaveLength(1));
+    await act(async () => {
+      await result.current.saveDiff(["x"]);
+    });
+    expect(toast.success).toHaveBeenCalledWith("Permissions updated");
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it("surfaces the backend message when a permission call fails", async () => {
+    const { result } = renderHook(() => useUserPermissions(7));
+    await waitFor(() => expect(result.current.active).toHaveLength(1));
+    api.revokePermissions.mockRejectedValueOnce({
+      response: { data: { message: "Cannot revoke a super-admin grant" } },
+    });
+    await act(async () => {
+      await result.current.saveDiff(["x"]);
+    });
+    expect(toast.error).toHaveBeenCalledWith(
+      "Cannot revoke a super-admin grant",
+    );
   });
 });
