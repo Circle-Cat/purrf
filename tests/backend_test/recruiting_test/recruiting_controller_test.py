@@ -107,6 +107,16 @@ class TestRecruitingController(unittest.IsolatedAsyncioTestCase):
         await self.controller.delete_job(current_user=self.user, job_id=9)
         self.service.delete_job.assert_awaited_once_with(self.session, 9)
 
+    async def test_list_interview_pool_route(self):
+        self.service.list_interview_pool = AsyncMock(return_value=["x"])
+        result = await self.controller.list_interview_pool(self.user)
+        self.assertEqual(result["data"], ["x"])
+
+    async def test_list_job_owners_route(self):
+        self.service.list_job_owners = AsyncMock(return_value=["y"])
+        result = await self.controller.list_job_owners(self.user)
+        self.assertEqual(result["data"], ["y"])
+
 
 if __name__ == "__main__":
     unittest.main()

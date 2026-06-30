@@ -59,6 +59,34 @@ class JobService:
         )
         return [self.recruiting_mapper.to_approver_dto(u) for u in users]
 
+    async def list_interview_pool(self, session: AsyncSession) -> list[ApproverDto]:
+        """List active users assignable as Screening/Behavioral/Tech evaluators.
+
+        Args:
+            session (AsyncSession): Active database async session.
+
+        Returns:
+            list[ApproverDto]: Holders of recruiting.interview.evaluate.
+        """
+        users = await self.user_permissions_repository.get_active_users_with_permission(
+            session, Permission.RECRUITING_INTERVIEW_EVALUATE.value
+        )
+        return [self.recruiting_mapper.to_approver_dto(u) for u in users]
+
+    async def list_job_owners(self, session: AsyncSession) -> list[ApproverDto]:
+        """List active users eligible to own a posting (advance applications).
+
+        Args:
+            session (AsyncSession): Active database async session.
+
+        Returns:
+            list[ApproverDto]: Holders of recruiting.application.advance.
+        """
+        users = await self.user_permissions_repository.get_active_users_with_permission(
+            session, Permission.RECRUITING_APPLICATION_ADVANCE.value
+        )
+        return [self.recruiting_mapper.to_approver_dto(u) for u in users]
+
     @staticmethod
     def _serialize(model) -> dict | None:
         """Dump a config sub-DTO to a camelCase JSONB dict, or None.

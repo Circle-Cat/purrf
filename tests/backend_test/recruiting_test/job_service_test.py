@@ -951,6 +951,28 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(job.profile_config["education"], "required")
         self.assertIsNone(job.pending_profile_config)
 
+    async def test_list_interview_pool(self):
+        users = self._make_users(7, 8)
+        for u in users:
+            u.first_name, u.last_name, u.primary_email = "A", "B", "a@b.com"
+
+        async def pool(session, perm):
+            if perm == Permission.RECRUITING_INTERVIEW_EVALUATE.value:
+                return users
+            return []
+
+        self.perms.get_active_users_with_permission = AsyncMock(side_effect=pool)
+        result = await self.service.list_interview_pool(self.session)
+        self.assertEqual({a.user_id for a in result}, {7, 8})
+
+    async def test_list_job_owners(self):
+        users = self._make_users(42)
+        for u in users:
+            u.first_name, u.last_name, u.primary_email = "O", "W", "o@w.com"
+        self.perms.get_active_users_with_permission = AsyncMock(return_value=users)
+        result = await self.service.list_job_owners(self.session)
+        self.assertEqual(result[0].user_id, 42)
+
 
 if __name__ == "__main__":
     unittest.main()

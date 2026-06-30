@@ -15,6 +15,8 @@ from backend.common.api_endpoints import (
     RECRUITING_APPROVERS_ENDPOINT,
     RECRUITING_REVIEWS_ENDPOINT,
     RECRUITING_REVIEW_ENDPOINT,
+    RECRUITING_INTERVIEW_POOL_ENDPOINT,
+    RECRUITING_JOB_OWNERS_ENDPOINT,
 )
 
 
@@ -101,6 +103,22 @@ class RecruitingController:
             RECRUITING_APPROVERS_ENDPOINT,
             endpoint=authenticate(permissions=[Permission.RECRUITING_JOB_WRITE])(
                 self.list_approvers
+            ),
+            methods=["GET"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            RECRUITING_INTERVIEW_POOL_ENDPOINT,
+            endpoint=authenticate(permissions=[Permission.RECRUITING_JOB_WRITE])(
+                self.list_interview_pool
+            ),
+            methods=["GET"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            RECRUITING_JOB_OWNERS_ENDPOINT,
+            endpoint=authenticate(permissions=[Permission.RECRUITING_JOB_WRITE])(
+                self.list_job_owners
             ),
             methods=["GET"],
             response_model=None,
@@ -216,6 +234,18 @@ class RecruitingController:
         async with self.database.session() as session:
             result = await self.job_service.list_active_approvers(session)
         return api_response(message="Approvers fetched.", data=result)
+
+    async def list_interview_pool(self, current_user: UserContextDto):
+        """List users assignable as interview evaluators."""
+        async with self.database.session() as session:
+            result = await self.job_service.list_interview_pool(session)
+        return api_response(message="Interview pool fetched.", data=result)
+
+    async def list_job_owners(self, current_user: UserContextDto):
+        """List users eligible to own a posting."""
+        async with self.database.session() as session:
+            result = await self.job_service.list_job_owners(session)
+        return api_response(message="Job owners fetched.", data=result)
 
     async def list_my_reviews(self, current_user: UserContextDto):
         """List the current reviewer's pending reviews."""
