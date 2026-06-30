@@ -21,6 +21,8 @@ export const AuthProvider = ({ children }) => {
   const [hasVerifiedEmail, setHasVerifiedEmail] = useState(false);
   const [accessDenied, setAccessDenied] = useState(false);
   const [accessDeniedMessage, setAccessDeniedMessage] = useState("");
+  const [authError, setAuthError] = useState(false);
+  const [sessionExpired, setSessionExpired] = useState(false);
   const [loading, setLoading] = useState(true);
 
   /**
@@ -41,17 +43,26 @@ export const AuthProvider = ({ children }) => {
       setHasVerifiedEmail(Boolean(data.has_verified_email));
       setAccessDenied(false);
       setAccessDeniedMessage("");
+      setAuthError(false);
+      setSessionExpired(false);
     } catch (error) {
       console.error("Auth initialization failed", error);
       setPermissions([]);
+      const status = error?.response?.status;
       // A 403 from /permissions/me means the account is forbidden (e.g.
       // deactivated), not unverified — flag it so the app shows the 403 page
       // instead of bouncing the user to the email verify wall.
-      const forbidden = error?.response?.status === 403;
+      const forbidden = status === 403;
       setAccessDenied(forbidden);
       setAccessDeniedMessage(
         forbidden ? (error.response?.data?.message ?? "") : "",
       );
+      // Any other failure (401 session expiry, network error, timeout, 5xx)
+      // means we could not determine auth state at all. Flag it as authError so
+      // the gate shows a retry / re-login screen rather than mistaking the user
+      // for one with an unverified email and trapping them at the verify wall.
+      setAuthError(!forbidden);
+      setSessionExpired(status === 401);
     } finally {
       setLoading(false);
     }
@@ -72,6 +83,8 @@ export const AuthProvider = ({ children }) => {
       hasVerifiedEmail,
       accessDenied,
       accessDeniedMessage,
+      authError,
+      sessionExpired,
       loading,
       refreshAuth: loadAuth,
     }),
@@ -82,6 +95,8 @@ export const AuthProvider = ({ children }) => {
       hasVerifiedEmail,
       accessDenied,
       accessDeniedMessage,
+      authError,
+      sessionExpired,
       loading,
       loadAuth,
     ],
