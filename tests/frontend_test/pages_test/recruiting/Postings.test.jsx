@@ -23,8 +23,14 @@ const renderPostings = () => {
   const router = createMemoryRouter(
     [
       { path: ROUTE_PATHS.RECRUITING_POSTINGS, element: <Postings /> },
-      { path: ROUTE_PATHS.RECRUITING_POSTING_NEW, element: <div data-testid="new-posting-page" /> },
-      { path: "/recruiting/postings/:id/edit", element: <div data-testid="edit-posting-page" /> },
+      {
+        path: ROUTE_PATHS.RECRUITING_POSTING_NEW,
+        element: <div data-testid="new-posting-page" />,
+      },
+      {
+        path: "/recruiting/postings/:id/edit",
+        element: <div data-testid="edit-posting-page" />,
+      },
     ],
     { initialEntries: [ROUTE_PATHS.RECRUITING_POSTINGS] },
   );

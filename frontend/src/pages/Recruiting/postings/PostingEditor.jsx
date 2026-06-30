@@ -60,7 +60,10 @@ const PostingEditor = () => {
       .catch((e) => toast.error(e.message));
   }, [id]);
 
-  const patch = useCallback((fields) => setDraft((d) => ({ ...d, ...fields })), []);
+  const patch = useCallback(
+    (fields) => setDraft((d) => ({ ...d, ...fields })),
+    [],
+  );
   const setQuestions = useCallback(
     (questions) => setDraft((d) => ({ ...d, formSchema: { questions } })),
     [],
@@ -85,7 +88,10 @@ const PostingEditor = () => {
           {id ? "Edit posting" : "New posting"}
         </h1>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => navigate(ROUTE_PATHS.RECRUITING_POSTINGS)}>
+          <Button
+            variant="outline"
+            onClick={() => navigate(ROUTE_PATHS.RECRUITING_POSTINGS)}
+          >
             Cancel
           </Button>
           <Button onClick={save}>Save</Button>

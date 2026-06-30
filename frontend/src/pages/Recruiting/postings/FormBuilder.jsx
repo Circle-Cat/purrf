@@ -1,6 +1,9 @@
 import { Button } from "@/components/ui/button";
 import QuestionEditor from "@/pages/Recruiting/postings/QuestionEditor";
-import { QUESTION_TYPES, blankQuestion } from "@/pages/Recruiting/postings/questionTypes";
+import {
+  QUESTION_TYPES,
+  blankQuestion,
+} from "@/pages/Recruiting/postings/questionTypes";
 
 /**
  * Ordered submission-form builder: add (per type), remove, reorder questions.
@@ -8,7 +11,8 @@ import { QUESTION_TYPES, blankQuestion } from "@/pages/Recruiting/postings/quest
  * @param {{questions: object[], onChange: (next: object[]) => void}} props
  */
 const FormBuilder = ({ questions = [], onChange }) => {
-  const add = (type) => onChange([...questions, blankQuestion(type, questions)]);
+  const add = (type) =>
+    onChange([...questions, blankQuestion(type, questions)]);
   const updateAt = (i, q) =>
     onChange(questions.map((cur, idx) => (idx === i ? q : cur)));
   const removeAt = (i) => onChange(questions.filter((_, idx) => idx !== i));

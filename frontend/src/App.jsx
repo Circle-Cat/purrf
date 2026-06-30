@@ -130,7 +130,9 @@ function App() {
                       path={ROUTE_PATHS.RECRUITING_POSTING_NEW}
                       element={
                         <ProtectedRoute
-                          requiredPermissions={[PERMISSIONS.RECRUITING_JOB_WRITE]}
+                          requiredPermissions={[
+                            PERMISSIONS.RECRUITING_JOB_WRITE,
+                          ]}
                         >
                           <PostingEditor />
                         </ProtectedRoute>
@@ -140,7 +142,9 @@ function App() {
                       path="/recruiting/postings/:id/edit"
                       element={
                         <ProtectedRoute
-                          requiredPermissions={[PERMISSIONS.RECRUITING_JOB_WRITE]}
+                          requiredPermissions={[
+                            PERMISSIONS.RECRUITING_JOB_WRITE,
+                          ]}
                         >
                           <PostingEditor />
                         </ProtectedRoute>

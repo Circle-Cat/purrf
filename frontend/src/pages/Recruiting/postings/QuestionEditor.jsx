@@ -42,13 +42,31 @@ const QuestionEditor = ({
           {question.type}
         </span>
         <div className="flex gap-1">
-          <Button type="button" variant="outline" size="sm" aria-label="Move up" onClick={onMoveUp}>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            aria-label="Move up"
+            onClick={onMoveUp}
+          >
             ↑
           </Button>
-          <Button type="button" variant="outline" size="sm" aria-label="Move down" onClick={onMoveDown}>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            aria-label="Move down"
+            onClick={onMoveDown}
+          >
             ↓
           </Button>
-          <Button type="button" variant="outline" size="sm" aria-label="Remove question" onClick={onRemove}>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            aria-label="Remove question"
+            onClick={onRemove}
+          >
             Remove
           </Button>
         </div>
@@ -108,7 +126,9 @@ const QuestionEditor = ({
               value={question.maxLength ?? ""}
               onChange={(e) =>
                 patch({
-                  maxLength: e.target.value ? Number(e.target.value) : undefined,
+                  maxLength: e.target.value
+                    ? Number(e.target.value)
+                    : undefined,
                 })
               }
             />

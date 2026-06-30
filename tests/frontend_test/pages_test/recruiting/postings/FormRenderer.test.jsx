@@ -14,7 +14,9 @@ const QS = [
 
 describe("FormRenderer", () => {
   it("renders a labelled control per question", () => {
-    render(<FormRenderer questions={QS} answers={{}} onAnswerChange={() => {}} />);
+    render(
+      <FormRenderer questions={QS} answers={{}} onAnswerChange={() => {}} />,
+    );
     expect(screen.getByText("Fluent?")).toBeInTheDocument();
   });
 

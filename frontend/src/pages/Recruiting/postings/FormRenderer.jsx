@@ -100,23 +100,25 @@ const QuestionControl = ({ question, value, onAnswerChange }) => {
  */
 const FormRenderer = ({ questions = [], answers = {}, onAnswerChange }) => (
   <div className="space-y-4">
-    {questions.filter((q) => isVisible(q, answers)).map((q) => (
-      <div key={q.id} className="space-y-1">
-        <Label
-          {...(["short_text", "long_text", "exact_text"].includes(q.type)
-            ? { htmlFor: q.id }
-            : {})}
-        >
-          {q.label}
-          {q.required && <span className="ml-1 text-red-500">*</span>}
-        </Label>
-        <QuestionControl
-          question={q}
-          value={answers[q.id]}
-          onAnswerChange={onAnswerChange}
-        />
-      </div>
-    ))}
+    {questions
+      .filter((q) => isVisible(q, answers))
+      .map((q) => (
+        <div key={q.id} className="space-y-1">
+          <Label
+            {...(["short_text", "long_text", "exact_text"].includes(q.type)
+              ? { htmlFor: q.id }
+              : {})}
+          >
+            {q.label}
+            {q.required && <span className="ml-1 text-red-500">*</span>}
+          </Label>
+          <QuestionControl
+            question={q}
+            value={answers[q.id]}
+            onAnswerChange={onAnswerChange}
+          />
+        </div>
+      ))}
   </div>
 );
 

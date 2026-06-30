@@ -22,7 +22,9 @@ describe("OptionsEditor", () => {
   it("removes an option by index", () => {
     const onChange = vi.fn();
     render(<OptionsEditor options={["a", "b"]} onChange={onChange} />);
-    fireEvent.click(screen.getAllByRole("button", { name: "Remove option" })[0]);
+    fireEvent.click(
+      screen.getAllByRole("button", { name: "Remove option" })[0],
+    );
     expect(onChange).toHaveBeenCalledWith(["b"]);
   });
 });

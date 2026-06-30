@@ -15,7 +15,11 @@ describe("questionTypes", () => {
       "exact_text",
     ]);
     expect(QUESTION_TYPES.map((t) => t.label)).toEqual([
-      "Short text", "Long text", "Single choice", "Multi choice", "Exact text",
+      "Short text",
+      "Long text",
+      "Single choice",
+      "Multi choice",
+      "Exact text",
     ]);
   });
 

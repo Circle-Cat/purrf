@@ -4,7 +4,13 @@ import { useState } from "react";
 import QuestionEditor from "@/pages/Recruiting/postings/QuestionEditor";
 
 /** Stateful wrapper so onChange updates actually re-render the editor. */
-function ControlledEditor({ initialQuestion, onChange, onRemove, onMoveUp, onMoveDown }) {
+function ControlledEditor({
+  initialQuestion,
+  onChange,
+  onRemove,
+  onMoveUp,
+  onMoveDown,
+}) {
   const [question, setQuestion] = useState(initialQuestion);
   const handleChange = (q) => {
     setQuestion(q);
@@ -46,7 +52,12 @@ describe("QuestionEditor", () => {
   it("shows OptionsEditor for choice types", () => {
     render(
       <QuestionEditor
-        question={{ id: "q1", type: "single_choice", label: "Pick", options: ["a"] }}
+        question={{
+          id: "q1",
+          type: "single_choice",
+          label: "Pick",
+          options: ["a"],
+        }}
         allQuestions={[]}
         onChange={() => {}}
         onRemove={() => {}}
@@ -54,7 +65,9 @@ describe("QuestionEditor", () => {
         onMoveDown={() => {}}
       />,
     );
-    expect(screen.getByRole("button", { name: "Add option" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Add option" }),
+    ).toBeInTheDocument();
   });
 
   it("lists only OTHER questions in the showWhen dependency dropdown", () => {
@@ -114,8 +127,15 @@ describe("QuestionEditor", () => {
 
   it("coerces Max length to number and undefined when cleared", () => {
     const onChange = vi.fn();
-    const longTextQ = { id: "q3", type: "long_text", label: "Essay", required: false };
-    render(<ControlledEditor initialQuestion={longTextQ} onChange={onChange} />);
+    const longTextQ = {
+      id: "q3",
+      type: "long_text",
+      label: "Essay",
+      required: false,
+    };
+    render(
+      <ControlledEditor initialQuestion={longTextQ} onChange={onChange} />,
+    );
 
     const maxLenInput = screen.getByLabelText("Max length");
 
@@ -127,6 +147,9 @@ describe("QuestionEditor", () => {
     act(() => {
       fireEvent.change(maxLenInput, { target: { value: "" } });
     });
-    expect(onChange).toHaveBeenLastCalledWith({ ...longTextQ, maxLength: undefined });
+    expect(onChange).toHaveBeenLastCalledWith({
+      ...longTextQ,
+      maxLength: undefined,
+    });
   });
 });
