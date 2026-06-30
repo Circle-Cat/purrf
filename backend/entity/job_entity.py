@@ -40,9 +40,12 @@ class JobEntity(Base):
     title: Mapped[str] = mapped_column(String, nullable=False)
     description: Mapped[str | None] = mapped_column(String)
     form_schema: Mapped[dict | None] = mapped_column(JSONB)
-    pipeline_config: Mapped[list | None] = mapped_column(JSONB)
+    pipeline_config: Mapped[dict | None] = mapped_column(JSONB)
     pending_form_schema: Mapped[dict | None] = mapped_column(JSONB)
-    pending_pipeline_config: Mapped[list | None] = mapped_column(JSONB)
+    pending_pipeline_config: Mapped[dict | None] = mapped_column(JSONB)
+    screen_rules: Mapped[dict | None] = mapped_column(JSONB)
+    profile_config: Mapped[dict | None] = mapped_column(JSONB)
+    pending_profile_config: Mapped[dict | None] = mapped_column(JSONB)
     was_published: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("false"), default=False
     )
