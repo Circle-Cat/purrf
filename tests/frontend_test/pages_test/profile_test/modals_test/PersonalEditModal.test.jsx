@@ -3,6 +3,9 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import React from "react";
 import PersonalEditModal from "@/pages/Profile/modals/PersonalEditModal";
+import { toast } from "sonner";
+
+vi.spyOn(toast, "error").mockImplementation(() => {});
 
 vi.mock("@/pages/Profile/utils", () => ({
   CommunicationMethodEnum: {
@@ -146,6 +149,25 @@ describe("PersonalEditModal Component", () => {
       });
     });
     expect(mockOnClose).toHaveBeenCalled();
+  });
+
+  it("shows an error toast and stays open when the save fails", async () => {
+    const user = userEvent.setup();
+    mockOnSave.mockRejectedValueOnce(new Error("boom"));
+    render(
+      <PersonalEditModal
+        isOpen={true}
+        onClose={mockOnClose}
+        initialData={initialData}
+        onSave={mockOnSave}
+        canEditTimezone={true}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /Save/i }));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+    expect(mockOnClose).not.toHaveBeenCalled();
   });
 
   it("should validate and show errors when required fields are cleared", async () => {
