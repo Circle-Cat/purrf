@@ -4,6 +4,7 @@ import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { toast } from "sonner";
 import PostingEditor from "@/pages/Recruiting/postings/PostingEditor";
 import * as api from "@/api/recruitingApi";
+import { ROUTE_PATHS } from "@/constants/RoutePaths";
 
 vi.mock("@/api/recruitingApi");
 
@@ -34,18 +35,24 @@ beforeEach(() => {
   });
 });
 
-/** Render PostingEditor inside a MemoryRouter at the given path. */
+/** Render PostingEditor inside a MemoryRouter at the given path.
+ * Returns both the render result and a handle to the router so tests can
+ * inspect router.state.location after navigation. */
 const renderAt = (path) => {
   const router = createMemoryRouter(
-    [{ path: "*", element: <PostingEditor /> }],
+    [
+      { path: "*", element: <PostingEditor /> },
+      { path: ROUTE_PATHS.RECRUITING_POSTINGS, element: <div /> },
+    ],
     { initialEntries: [path] },
   );
-  return render(<RouterProvider router={router} />);
+  const result = render(<RouterProvider router={router} />);
+  return { ...result, router };
 };
 
 describe("PostingEditor", () => {
   it("creates a new posting from the typed draft", async () => {
-    renderAt("/postings/new");
+    const { router } = renderAt("/postings/new");
     fireEvent.change(screen.getByLabelText("Title"), {
       target: { value: "SWE" },
     });
@@ -57,11 +64,19 @@ describe("PostingEditor", () => {
       formSchema: { questions: [] },
     });
     expect(toast.success).toHaveBeenCalled();
+    await waitFor(() =>
+      expect(router.state.location.pathname).toBe(
+        ROUTE_PATHS.RECRUITING_POSTINGS,
+      ),
+    );
   });
 
   it("loads an existing posting and updates it, preserving untouched config", async () => {
     const router = createMemoryRouter(
-      [{ path: "/postings/:id/edit", element: <PostingEditor /> }],
+      [
+        { path: "/postings/:id/edit", element: <PostingEditor /> },
+        { path: ROUTE_PATHS.RECRUITING_POSTINGS, element: <div /> },
+      ],
       { initialEntries: ["/postings/5/edit"] },
     );
     render(<RouterProvider router={router} />);
@@ -71,6 +86,11 @@ describe("PostingEditor", () => {
     const [jobId, body] = api.updateJob.mock.calls[0];
     expect(jobId).toBe("5");
     expect(body.pipelineConfig).toEqual({ ownerId: 9, stages: [] });
+    await waitFor(() =>
+      expect(router.state.location.pathname).toBe(
+        ROUTE_PATHS.RECRUITING_POSTINGS,
+      ),
+    );
   });
 
   it("shows the backend error message on save failure", async () => {
