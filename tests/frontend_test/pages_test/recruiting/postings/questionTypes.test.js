@@ -14,6 +14,9 @@ describe("questionTypes", () => {
       "multi_choice",
       "exact_text",
     ]);
+    expect(QUESTION_TYPES.map((t) => t.label)).toEqual([
+      "Short text", "Long text", "Single choice", "Multi choice", "Exact text",
+    ]);
   });
 
   it("generates a unique id past the max existing suffix", () => {
@@ -35,5 +38,6 @@ describe("questionTypes", () => {
       required: false,
       options: [],
     });
+    expect(blankQuestion("multi_choice", []).options).toEqual([]);
   });
 });
