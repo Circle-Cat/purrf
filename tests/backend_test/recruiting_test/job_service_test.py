@@ -929,6 +929,28 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.status, JobStatus.PUBLISHED_PENDING_REVISION)
         self.assertEqual(job.pending_pipeline_config["stages"][0]["rounds"], 3)
 
+    async def test_approve_revision_merges_pending_profile_config(self):
+        review = MagicMock()
+        review.status = JobReviewStatus.PENDING
+        review.kind = JobReviewKind.REVISION
+        review.job_id = 1
+        self.review_repo.get = AsyncMock(return_value=review)
+        job = self._published_job(
+            status=JobStatus.PUBLISHED_PENDING_REVISION,
+            pending_profile_config={
+                "education": "required",
+                "workExperience": "off",
+                "resume": "required",
+            },
+            pending_form_schema={"questions": []},
+            pending_pipeline_config={"ownerId": 42, "stages": []},
+        )
+        self.repo.get_by_job_id = AsyncMock(return_value=job)
+        result = await self.service.approve(self.session, 10)
+        self.assertEqual(result.status, JobStatus.PUBLISHED)
+        self.assertEqual(job.profile_config["education"], "required")
+        self.assertIsNone(job.pending_profile_config)
+
 
 if __name__ == "__main__":
     unittest.main()

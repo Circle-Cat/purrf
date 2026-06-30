@@ -523,8 +523,12 @@ class JobService:
                     job.pipeline_config = (
                         job.pending_pipeline_config or job.pipeline_config
                     )
+                    job.profile_config = (
+                        job.pending_profile_config or job.profile_config
+                    )
                 job.pending_form_schema = None
                 job.pending_pipeline_config = None
+                job.pending_profile_config = None
             job.status = JobStatus.PUBLISHED
             job.was_published = True
         job = await self.job_repository.update_job(session, job)
@@ -564,6 +568,7 @@ class JobService:
         if review.kind == JobReviewKind.REVISION:
             job.pending_form_schema = None
             job.pending_pipeline_config = None
+            job.pending_profile_config = None
             job.status = JobStatus.PUBLISHED
         elif review.kind == JobReviewKind.CLOSE:
             # Abort the close — posting goes back to PUBLISHED.
