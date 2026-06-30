@@ -41,6 +41,20 @@ describe("PipelineConfigEditor", () => {
     });
   });
 
+  it("clamps rounds to >= 1 when user enters 0 or negative", () => {
+    const onChange = vi.fn();
+    renderEditor(
+      { stages: [{ stage: "tech", rounds: 1, referralSkippable: false }] },
+      onChange,
+    );
+    fireEvent.change(screen.getByLabelText("tech rounds"), {
+      target: { value: "0" },
+    });
+    expect(onChange).toHaveBeenCalledWith({
+      stages: [{ stage: "tech", rounds: 1, referralSkippable: false }],
+    });
+  });
+
   it("shows defaultAssignee only for screening/behavioral and sets it from the pool", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();

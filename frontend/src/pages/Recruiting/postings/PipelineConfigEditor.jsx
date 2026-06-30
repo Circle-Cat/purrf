@@ -104,12 +104,13 @@ const PipelineConfigEditor = ({
                   Rounds
                   <Input
                     type="number"
+                    min={1}
                     aria-label={`${name} rounds`}
                     className="w-20"
                     value={s.rounds}
                     onChange={(e) =>
                       patchStage(name, {
-                        rounds: e.target.value ? Number(e.target.value) : 1,
+                        rounds: Math.max(1, Number(e.target.value) || 1),
                       })
                     }
                   />
