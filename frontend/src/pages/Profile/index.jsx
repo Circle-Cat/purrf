@@ -14,6 +14,7 @@ import PersonalEditModal from "@/pages/Profile/modals/PersonalEditModal";
 import ExperienceEditModal from "@/pages/Profile/modals/ExperienceEditModal";
 import EducationEditModal from "@/pages/Profile/modals/EducationEditModal";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 
 /**
  * Profile page component.
@@ -25,16 +26,19 @@ const Profile = () => {
   /** Fetch profile data and core logic from the hook */
   const {
     isLoading,
+    loadError,
     personalInfo,
     experienceList,
     educationList,
     canEditTimezone,
     nextEditableDate,
     handleUpdateProfile,
+    refresh,
   } = useProfileData();
 
   useProfileCompletenessReminder({
     isLoading,
+    loadError,
     personalInfo,
     experienceList,
     educationList,
@@ -61,6 +65,23 @@ const Profile = () => {
   /** Display loading state while fetching profile data */
   if (isLoading) {
     return <div className="min-h-screen px-6 py-8">Loading profile...</div>;
+  }
+
+  /**
+   * Display a retry state on load failure, so a failed fetch is not mistaken
+   * for an empty profile.
+   */
+  if (loadError) {
+    return (
+      <div className="min-h-screen px-6 py-8">
+        <div className="mx-auto flex max-w-[1000px] flex-col items-center gap-4 py-16 text-center">
+          <p className="text-muted-foreground">
+            We couldn&apos;t load your profile. Please try again.
+          </p>
+          <Button onClick={refresh}>Retry</Button>
+        </div>
+      </div>
+    );
   }
 
   return (

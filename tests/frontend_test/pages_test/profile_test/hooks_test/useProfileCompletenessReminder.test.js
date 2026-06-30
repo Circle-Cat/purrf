@@ -53,6 +53,21 @@ describe("useProfileCompletenessReminder", () => {
     expect(toast.info).not.toHaveBeenCalled();
   });
 
+  it("does not nag when the profile failed to load", () => {
+    // Empty data that WOULD normally fire the profile reminder, but the
+    // emptiness is a load failure — not a genuinely incomplete profile.
+    renderHook(() =>
+      useProfileCompletenessReminder({
+        isLoading: false,
+        loadError: true,
+        personalInfo: { completedTraining: [] },
+        experienceList: [],
+        educationList: [],
+      }),
+    );
+    expect(toast.info).not.toHaveBeenCalled();
+  });
+
   it("does nothing when nothing is missing", () => {
     renderHook(() => useProfileCompletenessReminder(completeProfile));
     expect(toast.info).not.toHaveBeenCalled();

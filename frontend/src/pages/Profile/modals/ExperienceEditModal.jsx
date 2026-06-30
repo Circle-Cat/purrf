@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { toast } from "sonner";
 import {
   months,
   formatDateFromParts,
@@ -171,6 +172,7 @@ const ExperienceEditModal = ({ isOpen, onClose, initialData, onSave }) => {
       onClose();
     } catch (e) {
       console.error("Save failed", e);
+      toast.error("Couldn't save your changes. Please try again.");
     } finally {
       setIsSaving(false);
     }

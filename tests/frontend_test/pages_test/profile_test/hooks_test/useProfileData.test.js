@@ -221,6 +221,34 @@ describe("useProfileData Hook", () => {
     consoleSpy.mockRestore();
   });
 
+  it("exposes loadError when the initial fetch fails", async () => {
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    getMyProfile.mockRejectedValue(new Error("Network Error"));
+
+    const { result } = renderHook(() => useProfileData());
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.loadError).toBe(true);
+
+    consoleSpy.mockRestore();
+  });
+
+  it("clears loadError on a successful retry", async () => {
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    getMyProfile.mockRejectedValueOnce(new Error("Network Error"));
+    getMyProfile.mockResolvedValue({ data: mockProfileResponse });
+
+    const { result } = renderHook(() => useProfileData());
+    await waitFor(() => expect(result.current.loadError).toBe(true));
+
+    await act(async () => {
+      await result.current.refresh();
+    });
+
+    expect(result.current.loadError).toBe(false);
+    consoleSpy.mockRestore();
+  });
+
   describe("handleUpdateProfile", () => {
     it("should call update API and update local state on success", async () => {
       getMyProfile.mockResolvedValue({ data: mockProfileResponse });

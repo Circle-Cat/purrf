@@ -2,6 +2,9 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import EducationEditModal from "@/pages/Profile/modals/EducationEditModal";
+import { toast } from "sonner";
+
+vi.spyOn(toast, "error").mockImplementation(() => {});
 
 vi.mock("@/pages/Profile/utils", () => ({
   months: ["January", "February", "March"],
@@ -220,5 +223,23 @@ describe("EducationEditModal", () => {
     });
 
     expect(mockOnClose).toHaveBeenCalled();
+  });
+
+  it("shows an error toast and stays open when the save fails", async () => {
+    const user = userEvent.setup();
+    mockOnSave.mockRejectedValueOnce(new Error("boom"));
+    render(
+      <EducationEditModal
+        isOpen
+        onClose={mockOnClose}
+        initialData={mockInitialData}
+        onSave={mockOnSave}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+    expect(mockOnClose).not.toHaveBeenCalled();
   });
 });

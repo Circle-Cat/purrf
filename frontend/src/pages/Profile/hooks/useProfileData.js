@@ -12,6 +12,9 @@ import { useRequestGuard } from "@/hooks/useRequestGuard";
 
 export const useProfileData = () => {
   const [isLoading, setIsLoading] = useState(true);
+  // True when the profile fetch failed, so the page can show a retry state
+  // instead of rendering as an empty (but successfully loaded) profile.
+  const [loadError, setLoadError] = useState(false);
 
   /**
    * Personal information state.
@@ -140,6 +143,7 @@ export const useProfileData = () => {
    */
   const fetchProfileData = useCallback(async () => {
     const seq = begin();
+    setLoadError(false);
     setIsLoading(true);
     try {
       const {
@@ -162,6 +166,7 @@ export const useProfileData = () => {
       }
     } catch (error) {
       console.error("Failed to fetch profile:", error);
+      if (isCurrent(seq)) setLoadError(true);
     } finally {
       if (isCurrent(seq)) setIsLoading(false);
     }
@@ -219,6 +224,7 @@ export const useProfileData = () => {
    */
   return {
     isLoading,
+    loadError,
     personalInfo,
     experienceList,
     educationList,
