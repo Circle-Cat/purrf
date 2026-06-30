@@ -7,6 +7,7 @@ from backend.common.mentorship_enums import (
     TrainingCategory,
     TrainingStatus,
 )
+from backend.entity.user_emails_entity import UserEmailsEntity
 
 
 class MentorshipAdminService:
@@ -24,21 +25,56 @@ class MentorshipAdminService:
         self.rounds_repository = rounds_repository
         self.training_repository = training_repository
 
-    _ROLE_ONBOARDING_CATEGORY: dict[ParticipantRole, TrainingCategory] = {
-        ParticipantRole.MENTOR: TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING,
-        ParticipantRole.MENTEE: TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING,
-    }
+    def _extract_emails(
+        self, emails: list[UserEmailsEntity]
+    ) -> tuple[str | None, list[str]]:
+        """
+        Split email records into a primary address and a list of alternatives.
 
-    @staticmethod
-    def _derive_onboarding_status(role: ParticipantRole, user_trainings: list) -> str:
-        required = MentorshipAdminService._ROLE_ONBOARDING_CATEGORY[role]
+        Args:
+            emails (list[UserEmailsEntity]): Email records for a single user.
+
+        Returns:
+            tuple[str | None, list[str]]: Primary email (None if absent) and
+            alternative emails.
+        """
+        primary_email = None
+        alternative_emails = []
+        for e in emails:
+            if e.is_primary:
+                primary_email = e.email
+            else:
+                alternative_emails.append(e.email)
+        return primary_email, alternative_emails
+
+    def _is_onboarding_completed(
+        self,
+        participant_role: ParticipantRole | None,
+        mentor_status: TrainingStatus | None,
+        mentee_status: TrainingStatus | None,
+    ) -> bool:
+        """
+        Return True if onboarding is completed for the given role and training statuses.
+
+        For participants, only the training category matching their role is checked.
+        For non-participants (no role), either category being DONE counts as completed;
+        no records yields False.
+
+        Args:
+            participant_role (ParticipantRole | None): The user's role, or None for
+                non-participants.
+            mentor_status (TrainingStatus | None): Mentor onboarding training status.
+            mentee_status (TrainingStatus | None): Mentee onboarding training status.
+
+        Returns:
+            bool: True if onboarding is completed, False otherwise.
+        """
+        if participant_role == ParticipantRole.MENTOR:
+            return mentor_status == TrainingStatus.DONE
+        if participant_role == ParticipantRole.MENTEE:
+            return mentee_status == TrainingStatus.DONE
         return (
-            "completed"
-            if any(
-                t.category == required and t.status == TrainingStatus.DONE
-                for t in user_trainings
-            )
-            else "incomplete"
+            mentor_status == TrainingStatus.DONE or mentee_status == TrainingStatus.DONE
         )
 
     async def search_participants(
@@ -49,13 +85,13 @@ class MentorshipAdminService:
         offset: int = 0,
     ) -> ParticipantSearchDto:
         """
-        Search mentorship participants for admin with pagination.
+        Search mentorship participants and non-participants for admin with pagination.
 
         Executes the main participant query, batch-fetches user/email/round/training
         data, and assembles each row into a ParticipantRowDto. If onboarding_status
-        is specified, it is applied after assembly on the already-paginated result set.
-        This means total always reflects the repository count before onboarding_status
-        filtering.
+        is specified, it is applied during row processing on the already-paginated
+        result set. This means total always reflects the repository count before
+        onboarding_status filtering.
 
         Args:
             session (AsyncSession): Active database async session.
@@ -72,8 +108,8 @@ class MentorshipAdminService:
         if not rows:
             return ParticipantSearchDto(participant_rows=[], total=total)
 
-        all_user_ids = set()
-        participant_user_ids = set()
+        all_user_ids: set[int] = set()
+        participant_user_ids: set[int] = set()
         for row in rows:
             all_user_ids.add(row.user_id)
             if row.mentor_id is not None:
@@ -83,25 +119,49 @@ class MentorshipAdminService:
             participant_user_ids.add(row.user_id)
 
         users_map, emails_map = await self.users_repository.get_users_and_emails_by_ids(
-            session, all_user_ids
+            session, list(all_user_ids)
         )
 
         rounds = await self.rounds_repository.get_all_rounds(session)
         rounds_map = {r.round_id: r for r in rounds}
 
-        trainings_map = await self.training_repository.get_training_by_user_ids(
-            session, participant_user_ids
+        trainings = (
+            await self.training_repository.get_training_by_user_ids_and_categories(
+                session,
+                list(participant_user_ids),
+                categories=[
+                    TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING,
+                    TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING,
+                ],
+            )
         )
+        trainings_map: dict[int, dict[TrainingCategory, TrainingStatus]] = {}
+        for t in trainings:
+            trainings_map.setdefault(t.user_id, {})[t.category] = t.status
+
+        is_completed = None
+        if filters.onboarding_status:
+            is_completed = filters.onboarding_status == "completed"
 
         participant_rows: list[ParticipantRowDto] = []
         for row in rows:
+            statuses = trainings_map.get(row.user_id, {})
+            mentor_status = statuses.get(TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING)
+            mentee_status = statuses.get(TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING)
+
+            result = self._is_onboarding_completed(
+                row.participant_role, mentor_status, mentee_status
+            )
+            if is_completed is not None and result != is_completed:
+                continue
+
             user = users_map[row.user_id]
-            user_emails = emails_map.get(row.user_id, [])
-            primary_email = next((e.email for e in user_emails if e.is_primary), None)
-            alternative_emails = [e.email for e in user_emails if not e.is_primary]
+            primary_email, alternative_emails = self._extract_emails(
+                emails_map.get(row.user_id, [])
+            )
 
             matched_user = None
-            if row.mentor_id is not None and row.mentee_id is not None:
+            if row.pair_id is not None:
                 if row.user_id == row.mentor_id:
                     partner_id = row.mentee_id
                 else:
@@ -112,7 +172,7 @@ class MentorshipAdminService:
                         id=partner.user_id,
                         first_name=partner.first_name or "",
                         last_name=partner.last_name or "",
-                        preferred_name=partner.preferred_name,
+                        preferred_name=partner.preferred_name or "",
                         primary_email=None,
                         participant_role=None,
                         recommendation_reason=None,
@@ -134,25 +194,13 @@ class MentorshipAdminService:
                     matched_user=matched_user,
                     participant_role=row.participant_role,
                     approval_status=row.approval_status,
-                    onboarding_status=(
-                        self._derive_onboarding_status(
-                            row.participant_role, trainings_map.get(row.user_id, [])
-                        )
-                        if row.participant_role is not None
-                        else None
-                    ),
+                    mentor_onboarding_status=mentor_status,
+                    mentee_onboarding_status=mentee_status,
                     completed_meeting_count=row.completed_count,
-                    required_meetings=(
-                        round_entity.required_meetings if round_entity else None
-                    ),
+                    required_meetings=round_entity.required_meetings
+                    if round_entity
+                    else None,
                 )
             )
-
-        if filters.onboarding_status:
-            participant_rows = [
-                r
-                for r in participant_rows
-                if r.onboarding_status == filters.onboarding_status
-            ]
 
         return ParticipantSearchDto(participant_rows=participant_rows, total=total)

@@ -54,14 +54,14 @@ class UsersRepository:
         return list(result.scalars().all())
 
     async def get_users_and_emails_by_ids(
-        self, session: AsyncSession, user_ids: set[int]
+        self, session: AsyncSession, user_ids: list[int]
     ) -> tuple[dict[int, UsersEntity], dict[int, list[UserEmailsEntity]]]:
         """
-        Retrieve users and their confirmed email addresses by a set of user IDs.
+        Retrieve users and their confirmed email addresses by a list of user IDs.
 
         Args:
             session (AsyncSession): The active async database session.
-            user_ids (set[int]): A set of user IDs to retrieve.
+            user_ids (list[int]): A list of user IDs to retrieve.
 
         Returns:
             tuple[dict[int, UsersEntity], dict[int, list[UserEmailsEntity]]]:
