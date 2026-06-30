@@ -22,4 +22,21 @@ describe("JobBasicsSection", () => {
     });
     expect(onChange).toHaveBeenCalledWith({ kind: "employment" });
   });
+
+  it("emits description changes", () => {
+    const onChange = vi.fn();
+    render(<JobBasicsSection {...props} onChange={onChange} />);
+    fireEvent.change(screen.getByLabelText("Description"), {
+      target: { value: "Test description" },
+    });
+    expect(onChange).toHaveBeenCalledWith({ description: "Test description" });
+  });
+
+  it("renders description field empty when description is undefined", () => {
+    const onChange = vi.fn();
+    const propsWithUndef = { ...props, description: undefined };
+    render(<JobBasicsSection {...propsWithUndef} onChange={onChange} />);
+    const descField = screen.getByLabelText("Description");
+    expect(descField.value).toBe("");
+  });
 });

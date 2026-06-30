@@ -15,7 +15,7 @@ const JobBasicsSection = ({ title, description, kind, onChange }) => (
       <Input
         id="posting-title"
         aria-label="Title"
-        value={title}
+        value={title ?? ""}
         onChange={(e) => onChange({ title: e.target.value })}
       />
     </div>
