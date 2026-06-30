@@ -513,6 +513,46 @@ describe("refreshMeetings", () => {
     });
     expect(getMyMentorshipMeetingLog).not.toHaveBeenCalled();
   });
+
+  it("ignores a stale round's late response after switching rounds", async () => {
+    const round1 = { id: "round-1", name: "R1", requiredMeetings: 5 };
+    const round2 = { id: "round-2", name: "R2", requiredMeetings: 5 };
+    calculateRoundStatus.mockReturnValue({
+      sortedRounds: [round1, round2],
+      activeRoundId: "round-1",
+    });
+    getAllMentorshipRounds.mockResolvedValue({ data: [round1, round2] });
+    getMyMentorshipMeetingLog.mockResolvedValue({ data: { meetingInfo: [] } });
+
+    // Control partner resolution per round so round-1 (the round we leave)
+    // resolves AFTER round-2 (the round we switch to).
+    const resolvers = {};
+    getMyMentorshipPartners.mockImplementation((roundId) => {
+      return new Promise((resolve) => {
+        resolvers[roundId] = resolve;
+      });
+    });
+
+    const { result } = renderHook(() => useMentorshipData());
+    await waitFor(() => expect(resolvers["round-1"]).toBeDefined());
+
+    // Switch to round-2 before round-1's partners come back.
+    act(() => result.current.handleRoundChange("round-2"));
+    await waitFor(() => expect(resolvers["round-2"]).toBeDefined());
+
+    // Newer round (round-2) resolves first and renders.
+    await act(async () => {
+      resolvers["round-2"]({ data: [{ id: 2, preferredName: "Bob" }] });
+    });
+    // Stale round (round-1) resolves last — it must NOT overwrite round-2.
+    await act(async () => {
+      resolvers["round-1"]({ data: [{ id: 1, preferredName: "Alice" }] });
+    });
+
+    const overview = result.current.participantDetails.partnerMeetingOverview;
+    expect(overview).toHaveLength(1);
+    expect(overview[0].preferredName).toBe("Bob");
+  });
 });
 
 describe("handleRoundChange", () => {
