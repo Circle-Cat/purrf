@@ -5,6 +5,7 @@ import {
   setSuperAdmin,
   revokeSuperAdmin,
 } from "@/api/adminPermissionsApi";
+import { useRequestGuard } from "@/hooks/useRequestGuard";
 
 const LIMIT = 20;
 
@@ -35,9 +36,11 @@ export const useUserAdmin = () => {
   // Sort state (applies to the committed query).
   const [sortBy, setSortBy] = useState(null);
   const [order, setOrder] = useState("asc");
+  const { begin, isCurrent } = useRequestGuard();
 
   const fetchUsers = useCallback(async () => {
     if (!query) return;
+    const seq = begin();
     setLoading(true);
     try {
       const { data } = await getUsers({
@@ -50,16 +53,20 @@ export const useUserAdmin = () => {
         isSuperAdmin: query.isSuperAdmin || undefined,
         userType: query.userType || undefined,
       });
+      // Ignore a superseded response so rapid sort/page changes can't land an
+      // earlier query's rows under the newer query's sort/page state.
+      if (!isCurrent(seq)) return;
       setUsers(data.users ?? []);
       setTotal(data.total ?? 0);
     } catch (err) {
+      if (!isCurrent(seq)) return;
       toast.error(err?.response?.data?.message ?? "Failed to load users");
       setUsers([]);
       setTotal(0);
     } finally {
-      setLoading(false);
+      if (isCurrent(seq)) setLoading(false);
     }
-  }, [query, offset, sortBy, order]);
+  }, [query, offset, sortBy, order, begin, isCurrent]);
 
   // Refetch when the committed query, sort, or page changes — never on mount.
   useEffect(() => {

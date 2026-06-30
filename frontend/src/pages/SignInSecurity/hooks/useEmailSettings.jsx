@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { listEmails } from "@/api/emailApi";
+import { useRequestGuard } from "@/hooks/useRequestGuard";
 
 /**
  * Load the caller's email addresses and sign-in identities for the
@@ -23,23 +24,27 @@ export function useEmailSettings() {
   const [emails, setEmails] = useState([]);
   const [internalIdentities, setInternalIdentities] = useState([]);
   const [externalIdentities, setExternalIdentities] = useState([]);
+  const { begin, isCurrent } = useRequestGuard();
 
   const load = useCallback(async () => {
+    const seq = begin();
     setIsLoading(true);
     try {
       const { data } = await listEmails();
+      if (!isCurrent(seq)) return;
       setEmails(data?.emails ?? []);
       setInternalIdentities(data?.internalIdentities ?? []);
       setExternalIdentities(data?.externalIdentities ?? []);
     } catch (error) {
+      if (!isCurrent(seq)) return;
       toast.error(
         error?.response?.data?.message ||
           "Could not load your email settings. Please try again.",
       );
     } finally {
-      setIsLoading(false);
+      if (isCurrent(seq)) setIsLoading(false);
     }
-  }, []);
+  }, [begin, isCurrent]);
 
   useEffect(() => {
     load();

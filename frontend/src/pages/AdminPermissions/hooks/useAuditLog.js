@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { getAuditLog } from "@/api/adminPermissionsApi";
+import { useRequestGuard } from "@/hooks/useRequestGuard";
 
 const LIMIT = 50;
 
@@ -27,9 +28,11 @@ export const useAuditLog = () => {
   // Committed filters: null until the user runs a search.
   const [query, setQuery] = useState(null);
   const [offset, setOffset] = useState(0);
+  const { begin, isCurrent } = useRequestGuard();
 
   const fetchAudit = useCallback(async () => {
     if (!query) return;
+    const seq = begin();
     setLoading(true);
     try {
       const { data } = await getAuditLog({
@@ -39,16 +42,18 @@ export const useAuditLog = () => {
         limit: LIMIT,
         offset,
       });
+      if (!isCurrent(seq)) return;
       setEntries(data.entries ?? []);
       setTotal(data.total ?? 0);
     } catch (err) {
+      if (!isCurrent(seq)) return;
       toast.error(err?.response?.data?.message ?? "Failed to load audit log");
       setEntries([]);
       setTotal(0);
     } finally {
-      setLoading(false);
+      if (isCurrent(seq)) setLoading(false);
     }
-  }, [query, offset]);
+  }, [query, offset, begin, isCurrent]);
 
   // Refetch when the committed filters or page change — never on mount.
   useEffect(() => {
