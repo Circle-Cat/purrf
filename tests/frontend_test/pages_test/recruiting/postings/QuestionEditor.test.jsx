@@ -1,6 +1,26 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, act } from "@testing-library/react";
+import { useState } from "react";
 import QuestionEditor from "@/pages/Recruiting/postings/QuestionEditor";
+
+/** Stateful wrapper so onChange updates actually re-render the editor. */
+function ControlledEditor({ initialQuestion, onChange, onRemove, onMoveUp, onMoveDown }) {
+  const [question, setQuestion] = useState(initialQuestion);
+  const handleChange = (q) => {
+    setQuestion(q);
+    onChange(q);
+  };
+  return (
+    <QuestionEditor
+      question={question}
+      allQuestions={[question]}
+      onChange={handleChange}
+      onRemove={onRemove ?? (() => {})}
+      onMoveUp={onMoveUp ?? (() => {})}
+      onMoveDown={onMoveDown ?? (() => {})}
+    />
+  );
+}
 
 const base = { id: "q2", type: "short_text", label: "Why", required: false };
 
@@ -74,5 +94,39 @@ describe("QuestionEditor", () => {
       ...base,
       showWhen: { questionId: "q1", equals: "" },
     });
+  });
+
+  it("calls onRemove when the Remove question button is clicked", () => {
+    const onRemove = vi.fn();
+    render(
+      <QuestionEditor
+        question={base}
+        allQuestions={[base]}
+        onChange={() => {}}
+        onRemove={onRemove}
+        onMoveUp={() => {}}
+        onMoveDown={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Remove question" }));
+    expect(onRemove).toHaveBeenCalledTimes(1);
+  });
+
+  it("coerces Max length to number and undefined when cleared", () => {
+    const onChange = vi.fn();
+    const longTextQ = { id: "q3", type: "long_text", label: "Essay", required: false };
+    render(<ControlledEditor initialQuestion={longTextQ} onChange={onChange} />);
+
+    const maxLenInput = screen.getByLabelText("Max length");
+
+    act(() => {
+      fireEvent.change(maxLenInput, { target: { value: "10" } });
+    });
+    expect(onChange).toHaveBeenCalledWith({ ...longTextQ, maxLength: 10 });
+
+    act(() => {
+      fireEvent.change(maxLenInput, { target: { value: "" } });
+    });
+    expect(onChange).toHaveBeenLastCalledWith({ ...longTextQ, maxLength: undefined });
   });
 });

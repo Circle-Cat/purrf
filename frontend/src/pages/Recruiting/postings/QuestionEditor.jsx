@@ -64,13 +64,14 @@ const QuestionEditor = ({
         />
       </div>
 
-      <label className="flex items-center gap-2 text-sm">
+      <div className="flex items-center gap-2">
         <Checkbox
+          id={`${question.id}-required`}
           checked={question.required}
           onCheckedChange={(v) => patch({ required: !!v })}
         />
-        Required
-      </label>
+        <Label htmlFor={`${question.id}-required`}>Required</Label>
+      </div>
 
       {CHOICE_TYPES.has(question.type) && (
         <OptionsEditor
