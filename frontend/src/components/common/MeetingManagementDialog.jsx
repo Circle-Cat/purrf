@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Calendar } from "@/components/ui/calendar";
+import { partnerDisplayName } from "@/utils/partnerName";
 import {
   Popover,
   PopoverContent,
@@ -213,7 +214,7 @@ export default function MeetingManagementDialog({ roundId, onBooked }) {
                       <option value="">Choose a partner</option>
                       {partnerList.map((partner) => (
                         <option key={partner.id} value={partner.id}>
-                          {partner.preferredName || partner.name}
+                          {partnerDisplayName(partner)}
                         </option>
                       ))}
                     </select>

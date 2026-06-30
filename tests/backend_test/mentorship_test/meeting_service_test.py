@@ -455,18 +455,20 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
         self.mock_google_service.update_meet_space_type_to_open.assert_not_awaited()
 
     @patch("backend.mentorship.meeting_service.uuid")
-    async def test_create_google_meeting_uses_first_name_when_no_preferred_name(
+    async def test_create_google_meeting_uses_full_name_when_no_preferred_name(
         self, mock_uuid
     ):
-        """Test fallback to first_name when preferred_name is None."""
+        """Test fallback to the full 'first last' name when preferred_name is None."""
         mock_uuid.uuid4.return_value = MagicMock(
             hex="abcdef1234567890abcdef1234567890",
             __str__=lambda _: "request-id-123",
         )
         self.mock_current_user.preferred_name = None
         self.mock_current_user.first_name = "AliceFirst"
+        self.mock_current_user.last_name = "AliceLast"
         self.mock_partner.preferred_name = None
         self.mock_partner.first_name = "BobFirst"
+        self.mock_partner.last_name = "BobLast"
 
         await self.service.create_google_meeting(
             session=self.mock_session,
@@ -480,7 +482,7 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
         call_kwargs = self.mock_google_service.insert_google_meeting.call_args.kwargs
         self.assertEqual(
             call_kwargs["summary"],
-            "Circlecat Mentorship - AliceFirst / BobFirst",
+            "Circlecat Mentorship - AliceFirst AliceLast / BobFirst BobLast",
         )
 
     async def test_get_meetings_by_user_and_round_v2_success(self):

@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.constants import DATETIME_UTC_FORMAT
 from backend.common.mentorship_enums import MEETING_SUMMARY_TEMPLATE, PairStatus
+from backend.common.name_utils import partner_display_name
 from backend.dto.meeting_dto import MeetingDto
 from backend.dto.meeting_create_dto import MeetingCreateDto
 from backend.dto.google_meeting_detail_dto import GoogleMeetingDetailDto
@@ -234,8 +235,16 @@ class MeetingService:
         pair, partner = pair_result
 
         # Build summary
-        current_user_name = current_user.preferred_name or current_user.first_name
-        partner_name = partner.preferred_name or partner.first_name
+        current_user_name = partner_display_name(
+            first_name=current_user.first_name,
+            last_name=current_user.last_name,
+            preferred_name=current_user.preferred_name,
+        )
+        partner_name = partner_display_name(
+            first_name=partner.first_name,
+            last_name=partner.last_name,
+            preferred_name=partner.preferred_name,
+        )
         summary = MEETING_SUMMARY_TEMPLATE.format(
             current_user_name=current_user_name,
             partner_name=partner_name,

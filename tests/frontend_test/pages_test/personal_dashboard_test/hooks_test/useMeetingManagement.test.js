@@ -27,11 +27,18 @@ describe("useMeetingManagement Hook Unit Tests", () => {
     data: [
       {
         id: 99,
-        name: "Zhang San",
+        firstName: "Zhang",
+        lastName: "San",
         preferredName: "San",
         email: "zhangsan@example.com",
       },
-      { id: 100, name: "Li Si", preferredName: "", email: "lisi@example.com" },
+      {
+        id: 100,
+        firstName: "Li",
+        lastName: "Si",
+        preferredName: "",
+        email: "lisi@example.com",
+      },
     ],
   };
 

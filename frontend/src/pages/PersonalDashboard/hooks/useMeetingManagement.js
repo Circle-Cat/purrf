@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { getMyMentorshipPartners } from "@/api/mentorshipApi";
+import { partnerDisplayName } from "@/utils/partnerName";
 import {
   getMyMentorshipMeetingsV2,
   postMyMentorshipMeetingV2,
@@ -92,7 +93,7 @@ export function useMeetingManagement(roundId) {
             meetingId: m.meetingId,
             partnerId: partnerEntry.partnerId,
             partnerRole: partnerEntry.participantRole,
-            partnerName: pInfo.preferredName || pInfo.name || "Unknown",
+            partnerName: partnerDisplayName(pInfo) || "Unknown",
             partnerEmail: pInfo.email || "",
             startDatetime: m.startDatetime,
             endDatetime: m.endDatetime,

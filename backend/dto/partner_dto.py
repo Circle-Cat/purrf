@@ -6,7 +6,7 @@ class PartnerDto(BaseDto):
     id: int
     first_name: str
     last_name: str
-    preferred_name: str
+    preferred_name: str | None = None
     primary_email: str | None = None
     participant_role: ParticipantRole | None = None
     recommendation_reason: str | None = None
