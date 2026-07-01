@@ -1109,6 +1109,29 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         result = await self.service.list_job_owners(self.session)
         self.assertEqual(result[0].user_id, 42)
 
+    # ---------------------------------------------------------------------------
+    # cooldown_days plumbing + get_published_job
+    # ---------------------------------------------------------------------------
+
+    async def test_create_job_persists_cooldown_days(self):
+        dto = JobCreateDto.model_validate(
+            {"title": "T", "kind": "employment", "cooldownDays": 90}
+        )
+        result = await self.service.create_job(self.session, dto)
+        self.assertEqual(result.cooldown_days, 90)
+
+    async def test_get_published_job_rejects_unpublished(self):
+        self.repo.get_by_job_id = AsyncMock(return_value=self._job(status=JobStatus.DRAFT))
+        with self.assertRaises(ValueError):
+            await self.service.get_published_job(self.session, 1)
+
+    async def test_get_published_job_returns_published(self):
+        self.repo.get_by_job_id = AsyncMock(
+            return_value=self._job(status=JobStatus.PUBLISHED)
+        )
+        result = await self.service.get_published_job(self.session, 1)
+        self.assertEqual(result.status, JobStatus.PUBLISHED)
+
 
 if __name__ == "__main__":
     unittest.main()

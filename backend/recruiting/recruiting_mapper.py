@@ -63,4 +63,5 @@ class RecruitingMapper:
             pending_profile_config=job.pending_profile_config,
             last_reject_comment=last_reject_comment,
             was_published=job.was_published or False,
+            cooldown_days=job.cooldown_days,
         )

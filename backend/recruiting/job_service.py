@@ -225,6 +225,7 @@ class JobService:
             pipeline_config=self._serialize(dto.pipeline_config),
             screen_rules=self._serialize(dto.screen_rules),
             profile_config=self._serialize(dto.profile_config),
+            cooldown_days=dto.cooldown_days,
         )
         job = await self.job_repository.create_job(session, job)
         await session.commit()
@@ -237,16 +238,16 @@ class JobService:
 
         Only DRAFT and PUBLISHED postings are editable:
         - DRAFT: every field (title, description, kind, mentorship_role,
-          form_schema, pipeline_config, screen_rules, profile_config) is
-          written live directly.
+          form_schema, pipeline_config, screen_rules, profile_config,
+          cooldown_days) is written live directly.
         - PUBLISHED: changes are split into "contract" vs "operational".
           Contract changes (form_schema, profile_config, or the pipeline's
           structure = each stage's stage/rounds/referralSkippable) are parked
           in pending_form_schema/pending_pipeline_config/pending_profile_config
           and the status flips to PUBLISHED_PENDING_REVISION for re-review.
-          Operational changes (title, description, screen_rules, and the
-          pipeline's ownerId/defaultAssigneeId) are written live immediately.
-          kind/mentorship_role are not editable once published.
+          Operational changes (title, description, cooldown_days, screen_rules,
+          and the pipeline's ownerId/defaultAssigneeId) are written live
+          immediately. kind/mentorship_role are not editable once published.
 
         Any other status (PENDING_REVIEW, PUBLISHED_PENDING_REVISION,
         PENDING_CLOSE, PENDING_REOPEN, CLOSED) raises ValueError immediately
@@ -281,6 +282,7 @@ class JobService:
             job.pipeline_config = new_pipeline
             job.screen_rules = new_screen
             job.profile_config = new_profile
+            job.cooldown_days = dto.cooldown_days
         elif job.status == JobStatus.PUBLISHED:
             # A None config field means "not provided / leave unchanged"
             # (JobCreateDto is a full-replacement body and the editor always
@@ -298,6 +300,7 @@ class JobService:
             # Operational levers apply live immediately.
             job.title = dto.title
             job.description = dto.description
+            job.cooldown_days = dto.cooldown_days
             if new_screen is not None:
                 job.screen_rules = new_screen
             if structural:
@@ -826,3 +829,21 @@ class JobService:
         if job is None:
             raise ValueError(f"Job {job_id} not found")
         return job
+
+    async def get_published_job(self, session: AsyncSession, job_id: int) -> JobDto:
+        """Return a posting only when it is PUBLISHED (candidate-facing view).
+
+        Args:
+            session (AsyncSession): Active database async session.
+            job_id (int): The posting id.
+
+        Returns:
+            JobDto: The published posting.
+
+        Raises:
+            ValueError: If the posting is missing or not PUBLISHED.
+        """
+        job = await self.job_repository.get_by_job_id(session, job_id)
+        if job is None or job.status != JobStatus.PUBLISHED:
+            raise ValueError(f"Published job {job_id} not found")
+        return self.recruiting_mapper.to_job_dto(job)
