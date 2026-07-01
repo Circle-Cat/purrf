@@ -7,7 +7,6 @@ import {
   parsedResumeToProfile,
   mergeParsedIntoProfile,
 } from "@/pages/Profile/parsedResumeToProfile";
-import { useAuth } from "@/context/auth";
 
 let uid = 0;
 /** Monotonic local row id (unique across this module's lifetime). */
@@ -55,16 +54,18 @@ const ReqMark = ({ level }) => {
 
 /**
  * Applicant-facing profile block for a posting. Renders a read-only contact
- * email (auto-filled from the logged-in account), an always-shown basic-info +
+ * email (auto-filled from the applicant's account on submission — shown as an
+ * empty placeholder in this preview-only view), an always-shown basic-info +
  * education + experience editor (reusing ProfileSection, gated by the posting's
- * profileConfig), and a resume upload entry when resume is not "off". Owns
- * throwaway state; nothing is submitted.
+ * profileConfig), and a resume upload that always shows as a quick-fill helper
+ * (auto-fills the fields below); profileConfig.resume only drives the
+ * required/optional marker on the resume-as-deliverable. Owns throwaway state;
+ * nothing is submitted.
  *
  * @param {{profileConfig?: {education?: string, workExperience?: string, resume?: string}}} props
  * @returns {JSX.Element}
  */
 const RecruitingProfileForm = ({ profileConfig }) => {
-  const { user } = useAuth() ?? {};
   const [value, setValue] = useState({
     personal: {},
     education: [emptyEducation()],
@@ -92,19 +93,30 @@ const RecruitingProfileForm = ({ profileConfig }) => {
 
       <div className="max-w-md space-y-1.5">
         <Label htmlFor="rpf-email">Contact email</Label>
-        <Input id="rpf-email" readOnly value={user?.email ?? ""} />
-        <p className="text-xs text-muted-foreground">From your account.</p>
+        <Input
+          id="rpf-email"
+          readOnly
+          value=""
+          placeholder="Auto-filled from the applicant's account"
+        />
+        <p className="text-xs text-muted-foreground">
+          Auto-filled from the applicant&apos;s account on submission.
+        </p>
       </div>
 
-      {resumeLevel !== "off" && (
-        <section className="space-y-3">
-          <h3 className="text-base font-semibold">
-            Resume
-            <ReqMark level={resumeLevel} />
-          </h3>
-          <ResumeUpload onParsed={handleParsed} />
-        </section>
-      )}
+      <section className="space-y-2">
+        <h3 className="text-base font-semibold">
+          Resume
+          <ReqMark level={resumeLevel} />
+        </h3>
+        <p className="text-sm text-muted-foreground">
+          Have a resume? Upload it to auto-fill the sections below — you can
+          edit everything afterward.
+          {resumeLevel === "off" &&
+            " This posting doesn't collect a resume; uploading only saves you time."}
+        </p>
+        <ResumeUpload onParsed={handleParsed} />
+      </section>
 
       <ProfileSection
         value={value}

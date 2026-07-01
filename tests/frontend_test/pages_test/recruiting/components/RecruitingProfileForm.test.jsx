@@ -1,28 +1,20 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { AuthContext } from "@/context/auth";
 import RecruitingProfileForm from "@/pages/Recruiting/components/RecruitingProfileForm";
 
-const renderForm = (profileConfig, email = "applicant@example.com") =>
-  render(
-    <AuthContext.Provider value={{ user: email ? { email } : null }}>
-      <RecruitingProfileForm profileConfig={profileConfig} />
-    </AuthContext.Provider>,
-  );
+const renderForm = (profileConfig) =>
+  render(<RecruitingProfileForm profileConfig={profileConfig} />);
 
 describe("RecruitingProfileForm", () => {
-  it("renders a read-only contact email from the logged-in account", () => {
+  it("renders a read-only, empty contact email placeholder (filled from the applicant's account on submission)", () => {
     renderForm({});
     const email = screen.getByLabelText("Contact email");
-    expect(email).toHaveValue("applicant@example.com");
+    expect(email).toHaveValue("");
     expect(email).toHaveAttribute("readonly");
-  });
-
-  it("renders an empty contact email when there is no AuthProvider", () => {
-    // No AuthContext.Provider: useAuth() returns null; the `?? {}` guard must
-    // keep the component from crashing and leave the email blank.
-    render(<RecruitingProfileForm profileConfig={{}} />);
-    expect(screen.getByLabelText("Contact email")).toHaveValue("");
+    expect(email).toHaveAttribute(
+      "placeholder",
+      "Auto-filled from the applicant's account",
+    );
   });
 
   it("always renders basic info even when every section is off", () => {
@@ -30,18 +22,30 @@ describe("RecruitingProfileForm", () => {
     expect(screen.getByLabelText("First name")).toBeInTheDocument();
   });
 
-  it("hides the resume upload when resume is off", () => {
+  it("shows the resume quick-fill upload with prefill copy even when resume is off", () => {
     renderForm({ resume: "off" });
+    // Upload is always offered as a prefill helper, regardless of config.
     expect(
-      screen.queryByRole("heading", { name: /resume/i }),
-    ).not.toBeInTheDocument();
+      screen.getByRole("heading", { name: /resume/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/upload it to auto-fill the sections below/i),
+    ).toBeInTheDocument();
+    // When off, it's flagged as a time-saver that isn't collected.
+    expect(screen.getByText(/doesn't collect a resume/i)).toBeInTheDocument();
   });
 
-  it("shows the resume upload with a required marker when resume is required", () => {
+  it("shows the resume upload (no off-note) when resume is required", () => {
     renderForm({ resume: "required" });
     expect(
       screen.getByRole("heading", { name: /resume/i }),
     ).toBeInTheDocument();
+    expect(
+      screen.getByText(/upload it to auto-fill the sections below/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/doesn't collect a resume/i),
+    ).not.toBeInTheDocument();
   });
 
   it("renders the education block with an entry and add control when required", () => {
