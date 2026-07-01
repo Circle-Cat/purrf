@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import ScreenRulesEditor from "@/pages/Recruiting/postings/ScreenRulesEditor";
 
 const QUESTIONS = [
@@ -8,17 +9,70 @@ const QUESTIONS = [
   { id: "q2", type: "short_text", label: "Name" },
 ];
 
+/**
+ * Stateful wrapper so onChange feeds the next value back into the (controlled)
+ * editor — mirroring how PostingEditor owns the draft.
+ */
+function ControlledScreenRules({
+  initialRules = [],
+  questions = [],
+  onChange,
+}) {
+  const [value, setValue] = useState({ rules: initialRules });
+  return (
+    <ScreenRulesEditor
+      value={value}
+      questions={questions}
+      onChange={(next) => {
+        setValue(next);
+        onChange?.(next);
+      }}
+    />
+  );
+}
+
 describe("ScreenRulesEditor", () => {
-  it("emits an email_domain=equals rule for a single domain", async () => {
-    const user = userEvent.setup();
-    const onChange = vi.fn();
-    render(
+  it("reflects rules supplied via the value prop after mount (no stale wipe)", () => {
+    // Regression: the editor used to snapshot value.rules into local state at
+    // mount and never resync, so rules that arrived after mount (an edited
+    // posting loading async) were invisible and wiped on the next edit.
+    const rule = {
+      id: "r1",
+      condition: {
+        source: "email_domain",
+        operator: "equals",
+        value: "google.com",
+      },
+      action: "qualify",
+    };
+    const { rerender } = render(
       <ScreenRulesEditor
         value={{ rules: [] }}
         questions={[]}
-        onChange={onChange}
+        onChange={vi.fn()}
       />,
     );
+    expect(
+      screen.getByRole("checkbox", { name: "Screen by email domain" }),
+    ).not.toBeChecked();
+
+    rerender(
+      <ScreenRulesEditor
+        value={{ rules: [rule] }}
+        questions={[]}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByRole("checkbox", { name: "Screen by email domain" }),
+    ).toBeChecked();
+    expect(screen.getByLabelText("Email domains")).toHaveValue("google.com");
+  });
+
+  it("emits an email_domain=equals rule for a single domain", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(<ControlledScreenRules initialRules={[]} onChange={onChange} />);
     await user.click(
       screen.getByRole("checkbox", { name: "Screen by email domain" }),
     );
@@ -46,21 +100,18 @@ describe("ScreenRulesEditor", () => {
   it("emits an email_domain=in rule for multiple comma-separated domains", () => {
     const onChange = vi.fn();
     render(
-      <ScreenRulesEditor
-        value={{
-          rules: [
-            {
-              id: "r1",
-              condition: {
-                source: "email_domain",
-                operator: "equals",
-                value: "google.com",
-              },
-              action: "qualify",
+      <ControlledScreenRules
+        initialRules={[
+          {
+            id: "r1",
+            condition: {
+              source: "email_domain",
+              operator: "equals",
+              value: "google.com",
             },
-          ],
-        }}
-        questions={[]}
+            action: "qualify",
+          },
+        ]}
         onChange={onChange}
       />,
     );
@@ -79,8 +130,8 @@ describe("ScreenRulesEditor", () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
     render(
-      <ScreenRulesEditor
-        value={{ rules: [] }}
+      <ControlledScreenRules
+        initialRules={[]}
         questions={QUESTIONS}
         onChange={onChange}
       />,

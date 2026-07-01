@@ -88,7 +88,14 @@ request.interceptors.response.use(
         message: errorMessage,
       });
     }
-    return Promise.reject(error);
+    // Surface the resolved message to callers (many do `toast.error(e.message)`)
+    // while preserving the original error object so response/status/config stay
+    // available for auth and session-expiry handling.
+    if (error && typeof error === "object") {
+      error.message = errorMessage;
+      return Promise.reject(error);
+    }
+    return Promise.reject(new Error(errorMessage));
   },
 );
 

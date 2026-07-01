@@ -102,6 +102,33 @@ describe("request Axios instance", () => {
     });
   });
 
+  it("rejects with the backend message while preserving the error object", async () => {
+    import.meta.env.DEV = false;
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const errorHandler = request.interceptors.response.use.mock.calls[0][1];
+    const mockError = {
+      response: {
+        status: 400,
+        data: { message: "Question label must be non-empty" },
+      },
+      config: { url: "/recruiting/jobs" },
+      message: "Request failed with status code 400",
+    };
+
+    await expect(errorHandler(mockError)).rejects.toMatchObject({
+      message: "Question label must be non-empty",
+      response: { status: 400 },
+    });
+  });
+
+  it("wraps a non-object rejection in an Error", async () => {
+    import.meta.env.DEV = false;
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const errorHandler = request.interceptors.response.use.mock.calls[0][1];
+
+    await expect(errorHandler("boom")).rejects.toBeInstanceOf(Error);
+  });
+
   it("should use error.message when response data has no message field", () => {
     import.meta.env.DEV = true;
     vi.spyOn(console, "error").mockImplementation(() => {});
