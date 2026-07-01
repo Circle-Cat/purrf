@@ -84,3 +84,5 @@ RECRUITING_JOB_REQUEST_REOPEN_ENDPOINT = "/recruiting/jobs/{job_id}/request-reop
 RECRUITING_APPROVERS_ENDPOINT = "/recruiting/approvers"
 RECRUITING_REVIEWS_ENDPOINT = "/recruiting/reviews"
 RECRUITING_REVIEW_ENDPOINT = "/recruiting/reviews/{review_id}"
+RECRUITING_INTERVIEW_POOL_ENDPOINT = "/recruiting/interview-pool"
+RECRUITING_JOB_OWNERS_ENDPOINT = "/recruiting/job-owners"
