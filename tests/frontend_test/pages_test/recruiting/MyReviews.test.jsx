@@ -28,7 +28,7 @@ describe("MyReviews page", () => {
     render(<MyReviews />);
     fireEvent.click(await screen.findByRole("button", { name: "Review" }));
     expect(
-      await screen.findByRole("heading", { level: 1, name: "SWE" }),
+      await screen.findByRole("heading", { level: 2, name: "SWE" }),
     ).toBeInTheDocument();
     expect(api.getJob).toHaveBeenCalledWith(1);
   });

@@ -31,7 +31,7 @@ describe("ReviewDetail", () => {
       />,
     );
     expect(
-      screen.getByRole("heading", { level: 1, name: "SWE" }),
+      screen.getByRole("heading", { level: 2, name: "SWE" }),
     ).toBeInTheDocument();
     expect(screen.getByText("look")).toBeInTheDocument();
   });
@@ -120,6 +120,9 @@ describe("ReviewDetail", () => {
     );
     expect(
       screen.getByText("Request to close this posting."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { level: 1, name: "SWE" }),
     ).toBeInTheDocument();
     expect(screen.queryByText("Interview pipeline")).not.toBeInTheDocument();
   });

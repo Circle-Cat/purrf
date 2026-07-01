@@ -20,21 +20,25 @@ const ReviewDetail = ({ review, job, onApprove, onReject, onBack }) => {
       <Button variant="outline" size="sm" onClick={onBack}>
         ← Back
       </Button>
-      <div>
-        <h1 className="text-xl font-semibold text-slate-900">{job.title}</h1>
-        <p className="text-sm text-slate-600">{job.description}</p>
-      </div>
       {review.submitMessage && (
         <p className="rounded-md bg-blue-50 p-3 text-sm text-slate-700">
           {review.submitMessage}
         </p>
       )}
       {isCloseOrReopen ? (
-        <p className="text-base font-medium text-slate-800">
-          {review.kind === "close"
-            ? "Request to close this posting."
-            : "Request to reopen this posting."}
-        </p>
+        <div className="space-y-2">
+          <div>
+            <h1 className="text-xl font-semibold text-slate-900">
+              {job.title}
+            </h1>
+            <p className="text-sm text-slate-600">{job.description}</p>
+          </div>
+          <p className="text-base font-medium text-slate-800">
+            {review.kind === "close"
+              ? "Request to close this posting."
+              : "Request to reopen this posting."}
+          </p>
+        </div>
       ) : (
         <PostingReviewView job={job} isRevision={isRevision} />
       )}
