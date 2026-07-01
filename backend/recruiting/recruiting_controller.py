@@ -141,7 +141,13 @@ class RecruitingController:
         )
         self.router.add_api_route(
             RECRUITING_JOB_ENDPOINT,
-            endpoint=authenticate()(self.get_job),
+            endpoint=authenticate(
+                permissions=[
+                    Permission.RECRUITING_JOB_READ,
+                    Permission.RECRUITING_JOB_WRITE,
+                    Permission.RECRUITING_JOB_APPROVE,
+                ]
+            )(self.get_job),
             methods=["GET"],
             response_model=None,
         )
@@ -264,11 +270,13 @@ class RecruitingController:
         """Approve or reject a pending review."""
         async with self.database.session() as session:
             if decision_data.decision == "approve":
-                result = await self.job_service.approve(session, review_id)
+                result = await self.job_service.approve(
+                    session, review_id, current_user.user_id
+                )
                 message = "Review approved."
             else:
                 result = await self.job_service.reject(
-                    session, review_id, decision_data.comment
+                    session, review_id, decision_data.comment, current_user.user_id
                 )
                 message = "Review rejected."
         return api_response(message=message, data=result)

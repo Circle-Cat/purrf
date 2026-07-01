@@ -64,7 +64,7 @@ class TestRecruitingController(unittest.IsolatedAsyncioTestCase):
         await self.controller.review_decision(
             current_user=self.user, review_id=5, decision_data=body
         )
-        self.service.approve.assert_awaited_once_with(self.session, 5)
+        self.service.approve.assert_awaited_once_with(self.session, 5, 42)
         self.service.reject.assert_not_awaited()
 
     async def test_review_decision_reject_dispatches_with_comment(self):
@@ -72,7 +72,7 @@ class TestRecruitingController(unittest.IsolatedAsyncioTestCase):
         await self.controller.review_decision(
             current_user=self.user, review_id=5, decision_data=body
         )
-        self.service.reject.assert_awaited_once_with(self.session, 5, "fix it")
+        self.service.reject.assert_awaited_once_with(self.session, 5, "fix it", 42)
         self.service.approve.assert_not_awaited()
 
     async def test_my_reviews_uses_current_user(self):
