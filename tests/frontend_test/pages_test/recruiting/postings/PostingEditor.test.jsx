@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { toast } from "sonner";
 import PostingEditor from "@/pages/Recruiting/postings/PostingEditor";
@@ -33,6 +34,8 @@ beforeEach(() => {
       pipelineConfig: { ownerId: 9, stages: [] },
     },
   });
+  api.listInterviewPool.mockResolvedValue({ data: [] });
+  api.listJobOwners.mockResolvedValue({ data: [] });
 });
 
 /** Render PostingEditor inside a MemoryRouter at the given path.
@@ -101,6 +104,29 @@ describe("PostingEditor", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith("bad form"));
+  });
+
+  it("fetches both pools on mount and saves edited config", async () => {
+    api.listInterviewPool.mockResolvedValue({
+      data: [{ userId: 7, name: "Ann", email: "ann@x.com" }],
+    });
+    api.listJobOwners.mockResolvedValue({
+      data: [{ userId: 42, name: "Bo", email: "bo@x.com" }],
+    });
+    const user = userEvent.setup();
+    renderAt("/postings/new");
+    await waitFor(() => expect(api.listInterviewPool).toHaveBeenCalled());
+    expect(api.listJobOwners).toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText("Title"), {
+      target: { value: "T" },
+    });
+    // tick a pipeline stage so the saved payload carries pipelineConfig
+    await user.click(screen.getByRole("checkbox", { name: "Tech" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(api.createJob).toHaveBeenCalled());
+    expect(api.createJob.mock.calls[0][0].pipelineConfig.stages).toEqual([
+      { stage: "tech", rounds: 1, referralSkippable: false },
+    ]);
   });
 
   it("disables Save and shows Saving… while the create request is in flight", async () => {

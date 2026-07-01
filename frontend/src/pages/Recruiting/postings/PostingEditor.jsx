@@ -2,11 +2,20 @@ import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { getJob, createJob, updateJob } from "@/api/recruitingApi";
+import {
+  getJob,
+  createJob,
+  updateJob,
+  listInterviewPool,
+  listJobOwners,
+} from "@/api/recruitingApi";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
 import JobBasicsSection from "@/pages/Recruiting/postings/JobBasicsSection";
 import FormBuilder from "@/pages/Recruiting/postings/FormBuilder";
 import FormRenderer from "@/pages/Recruiting/postings/FormRenderer";
+import PipelineConfigEditor from "@/pages/Recruiting/postings/PipelineConfigEditor";
+import ScreenRulesEditor from "@/pages/Recruiting/postings/ScreenRulesEditor";
+import ProfileConfigEditor from "@/pages/Recruiting/postings/ProfileConfigEditor";
 
 /** A blank posting draft. */
 const BLANK = {
@@ -43,6 +52,17 @@ const PostingEditor = () => {
   const [draft, setDraft] = useState(BLANK);
   const [previewAnswers, setPreviewAnswers] = useState({});
   const [saving, setSaving] = useState(false);
+  const [interviewPool, setInterviewPool] = useState([]);
+  const [jobOwners, setJobOwners] = useState([]);
+
+  useEffect(() => {
+    listInterviewPool()
+      .then(({ data }) => setInterviewPool(data ?? []))
+      .catch((e) => toast.error(e.message));
+    listJobOwners()
+      .then(({ data }) => setJobOwners(data ?? []))
+      .catch((e) => toast.error(e.message));
+  }, []);
 
   useEffect(() => {
     if (!id) return;
@@ -114,6 +134,21 @@ const PostingEditor = () => {
           <FormBuilder
             questions={draft.formSchema.questions}
             onChange={setQuestions}
+          />
+          <PipelineConfigEditor
+            value={draft.pipelineConfig ?? { stages: [] }}
+            onChange={(pipelineConfig) => patch({ pipelineConfig })}
+            interviewPool={interviewPool}
+            jobOwners={jobOwners}
+          />
+          <ScreenRulesEditor
+            value={draft.screenRules ?? { rules: [] }}
+            onChange={(screenRules) => patch({ screenRules })}
+            questions={draft.formSchema.questions}
+          />
+          <ProfileConfigEditor
+            value={draft.profileConfig ?? {}}
+            onChange={(profileConfig) => patch({ profileConfig })}
           />
         </div>
         <div className="space-y-2">
