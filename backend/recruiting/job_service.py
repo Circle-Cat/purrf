@@ -59,24 +59,172 @@ class JobService:
         )
         return [self.recruiting_mapper.to_approver_dto(u) for u in users]
 
+    async def list_interview_pool(self, session: AsyncSession) -> list[ApproverDto]:
+        """List active users assignable as Screening/Behavioral/Tech evaluators.
+
+        Args:
+            session (AsyncSession): Active database async session.
+
+        Returns:
+            list[ApproverDto]: Holders of recruiting.interview.evaluate.
+        """
+        users = await self.user_permissions_repository.get_active_users_with_permission(
+            session, Permission.RECRUITING_INTERVIEW_EVALUATE.value
+        )
+        return [self.recruiting_mapper.to_approver_dto(u) for u in users]
+
+    async def list_job_owners(self, session: AsyncSession) -> list[ApproverDto]:
+        """List active users eligible to own a posting (advance applications).
+
+        Args:
+            session (AsyncSession): Active database async session.
+
+        Returns:
+            list[ApproverDto]: Holders of recruiting.application.advance.
+        """
+        users = await self.user_permissions_repository.get_active_users_with_permission(
+            session, Permission.RECRUITING_APPLICATION_ADVANCE.value
+        )
+        return [self.recruiting_mapper.to_approver_dto(u) for u in users]
+
+    @staticmethod
+    def _serialize(model) -> dict | None:
+        """Dump a config sub-DTO to a camelCase JSONB dict, or None.
+
+        Args:
+            model: A BaseRequestDto config model (or None).
+
+        Returns:
+            dict | None: camelCase dict with unset optionals omitted, or None.
+        """
+        if model is None:
+            return None
+        return model.model_dump(mode="json", by_alias=True, exclude_none=True)
+
+    @staticmethod
+    def _pipeline_structure(cfg: dict | None) -> list:
+        """Extract the re-reviewable structure of a pipeline (ignores owner/assignees).
+
+        Args:
+            cfg (dict | None): A serialized pipeline_config, or None.
+
+        Returns:
+            list: Ordered [(stage, rounds, referralSkippable)] tuples; [] if None.
+        """
+        if not cfg:
+            return []
+        return [
+            (s.get("stage"), s.get("rounds"), s.get("referralSkippable", False))
+            for s in cfg.get("stages", [])
+        ]
+
+    async def _validate_assignees_and_owner(
+        self, session: AsyncSession, dto: JobCreateDto
+    ) -> None:
+        """Validate pre-configured assignees/owner hold the required permission.
+
+        Each stage ``default_assignee_id`` must be an active holder of
+        ``recruiting.interview.evaluate``; ``owner_id`` must be an active holder
+        of ``recruiting.application.advance``. No-op when pipeline_config is unset.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            dto (JobCreateDto): The posting payload.
+
+        Raises:
+            ValueError: If any assignee/owner lacks the required permission.
+        """
+        if dto.pipeline_config is None:
+            return
+        assignee_ids = {
+            s.default_assignee_id
+            for s in dto.pipeline_config.stages
+            if s.default_assignee_id is not None
+        }
+        if assignee_ids:
+            pool = (
+                await self.user_permissions_repository.get_active_users_with_permission(
+                    session, Permission.RECRUITING_INTERVIEW_EVALUATE.value
+                )
+            )
+            valid = {u.user_id for u in pool}
+            missing = assignee_ids - valid
+            if missing:
+                raise ValueError(
+                    f"default_assignee_id {sorted(missing)} are not active interview evaluators"
+                )
+        if dto.pipeline_config.owner_id is not None:
+            pool = (
+                await self.user_permissions_repository.get_active_users_with_permission(
+                    session, Permission.RECRUITING_APPLICATION_ADVANCE.value
+                )
+            )
+            if dto.pipeline_config.owner_id not in {u.user_id for u in pool}:
+                raise ValueError(
+                    f"owner_id {dto.pipeline_config.owner_id} cannot advance applications"
+                )
+
+    async def _revalidate_job_config(
+        self, session: AsyncSession, job: "JobEntity"
+    ) -> None:
+        """Re-check the stored pipeline's assignees/owner before submission.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            job (JobEntity): The posting about to be submitted.
+
+        Raises:
+            ValueError: If a stored assignee/owner no longer holds its permission.
+        """
+        cfg = job.pipeline_config or {}
+        assignee_ids = {
+            s.get("defaultAssigneeId")
+            for s in cfg.get("stages", [])
+            if s.get("defaultAssigneeId") is not None
+        }
+        if assignee_ids:
+            pool = (
+                await self.user_permissions_repository.get_active_users_with_permission(
+                    session, Permission.RECRUITING_INTERVIEW_EVALUATE.value
+                )
+            )
+            missing = assignee_ids - {u.user_id for u in pool}
+            if missing:
+                raise ValueError(f"assignees {sorted(missing)} no longer qualify")
+        owner_id = cfg.get("ownerId")
+        if owner_id is not None:
+            pool = (
+                await self.user_permissions_repository.get_active_users_with_permission(
+                    session, Permission.RECRUITING_APPLICATION_ADVANCE.value
+                )
+            )
+            if owner_id not in {u.user_id for u in pool}:
+                raise ValueError(f"owner {owner_id} no longer qualifies")
+
     async def create_job(self, session: AsyncSession, dto: JobCreateDto) -> JobDto:
         """Create a DRAFT posting from a JobCreateDto.
 
         Args:
             session (AsyncSession): Active database async session.
-            dto (JobCreateDto): Payload with posting fields.
+            dto (JobCreateDto): Payload with posting fields and config.
 
         Returns:
             JobDto: The newly created posting, including its assigned id.
+
+        Raises:
+            ValueError: If a pre-configured assignee/owner lacks its permission.
         """
+        await self._validate_assignees_and_owner(session, dto)
         job = JobEntity(
             kind=dto.kind,
             mentorship_role=dto.mentorship_role,
             status=JobStatus.DRAFT,
             title=dto.title,
             description=dto.description,
-            form_schema=dto.form_schema,
-            pipeline_config=dto.pipeline_config,
+            form_schema=self._serialize(dto.form_schema),
+            pipeline_config=self._serialize(dto.pipeline_config),
+            screen_rules=self._serialize(dto.screen_rules),
+            profile_config=self._serialize(dto.profile_config),
         )
         job = await self.job_repository.create_job(session, job)
         await session.commit()
@@ -88,13 +236,17 @@ class JobService:
         """Update a posting's editable fields.
 
         Only DRAFT and PUBLISHED postings are editable:
-        - DRAFT: all live fields (title, description, kind, mentorship_role,
-          form_schema, pipeline_config) are written directly.
-        - PUBLISHED: if form_schema or pipeline_config changed, the new values
-          are parked in pending_form_schema/pending_pipeline_config and the
-          status flips to PUBLISHED_PENDING_REVISION; otherwise the remaining
-          live fields (title/description/kind/mentorship_role) are written
-          directly.
+        - DRAFT: every field (title, description, kind, mentorship_role,
+          form_schema, pipeline_config, screen_rules, profile_config) is
+          written live directly.
+        - PUBLISHED: changes are split into "contract" vs "operational".
+          Contract changes (form_schema, profile_config, or the pipeline's
+          structure = each stage's stage/rounds/referralSkippable) are parked
+          in pending_form_schema/pending_pipeline_config/pending_profile_config
+          and the status flips to PUBLISHED_PENDING_REVISION for re-review.
+          Operational changes (title, description, screen_rules, and the
+          pipeline's ownerId/defaultAssigneeId) are written live immediately.
+          kind/mentorship_role are not editable once published.
 
         Any other status (PENDING_REVIEW, PUBLISHED_PENDING_REVISION,
         PENDING_CLOSE, PENDING_REOPEN, CLOSED) raises ValueError immediately
@@ -109,32 +261,53 @@ class JobService:
             JobDto: The updated posting.
 
         Raises:
-            ValueError: If no posting with the given id exists, or if the
-                posting's current status is not DRAFT or PUBLISHED.
+            ValueError: If no posting with the given id exists, the posting's
+                current status is not DRAFT or PUBLISHED, or a pre-configured
+                assignee/owner lacks its required permission.
         """
         job = await self._require_job(session, job_id)
+        await self._validate_assignees_and_owner(session, dto)
+        new_form = self._serialize(dto.form_schema)
+        new_pipeline = self._serialize(dto.pipeline_config)
+        new_screen = self._serialize(dto.screen_rules)
+        new_profile = self._serialize(dto.profile_config)
+
         if job.status == JobStatus.DRAFT:
             job.title = dto.title
             job.description = dto.description
             job.kind = dto.kind
             job.mentorship_role = dto.mentorship_role
-            job.form_schema = dto.form_schema
-            job.pipeline_config = dto.pipeline_config
+            job.form_schema = new_form
+            job.pipeline_config = new_pipeline
+            job.screen_rules = new_screen
+            job.profile_config = new_profile
         elif job.status == JobStatus.PUBLISHED:
-            if (
-                dto.form_schema != job.form_schema
-                or dto.pipeline_config != job.pipeline_config
-            ):
-                job.pending_form_schema = dto.form_schema
-                job.pending_pipeline_config = dto.pipeline_config
+            # A None config field means "not provided / leave unchanged"
+            # (JobCreateDto is a full-replacement body and the editor always
+            # echoes the live config it is not editing). Only a provided field
+            # whose contract differs triggers re-review.
+            structural = (
+                (new_form is not None and new_form != job.form_schema)
+                or (new_profile is not None and new_profile != job.profile_config)
+                or (
+                    new_pipeline is not None
+                    and self._pipeline_structure(new_pipeline)
+                    != self._pipeline_structure(job.pipeline_config)
+                )
+            )
+            # Operational levers apply live immediately.
+            job.title = dto.title
+            job.description = dto.description
+            if new_screen is not None:
+                job.screen_rules = new_screen
+            if structural:
+                job.pending_form_schema = new_form
+                job.pending_pipeline_config = new_pipeline
+                job.pending_profile_config = new_profile
                 job.status = JobStatus.PUBLISHED_PENDING_REVISION
-            else:
-                job.title = dto.title
-                job.description = dto.description
-                job.kind = dto.kind
-                job.mentorship_role = dto.mentorship_role
-                job.form_schema = dto.form_schema
-                job.pipeline_config = dto.pipeline_config
+            elif new_pipeline is not None:
+                # only owner/assignee (or title/desc/screen_rules) changed
+                job.pipeline_config = new_pipeline
         else:
             raise ValueError(f"Job {job_id} cannot be edited from {job.status}")
         job = await self.job_repository.update_job(session, job)
@@ -245,6 +418,7 @@ class JobService:
                 too small, or the reviewer is not an active approver.
         """
         job = await self._require_job(session, job_id)
+        await self._revalidate_job_config(session, job)
         if job.status == JobStatus.DRAFT:
             kind = JobReviewKind.INITIAL
             pending_status: JobStatus | None = JobStatus.PENDING_REVIEW
@@ -385,8 +559,12 @@ class JobService:
                     job.pipeline_config = (
                         job.pending_pipeline_config or job.pipeline_config
                     )
+                    job.profile_config = (
+                        job.pending_profile_config or job.profile_config
+                    )
                 job.pending_form_schema = None
                 job.pending_pipeline_config = None
+                job.pending_profile_config = None
             job.status = JobStatus.PUBLISHED
             job.was_published = True
         job = await self.job_repository.update_job(session, job)
@@ -426,6 +604,7 @@ class JobService:
         if review.kind == JobReviewKind.REVISION:
             job.pending_form_schema = None
             job.pending_pipeline_config = None
+            job.pending_profile_config = None
             job.status = JobStatus.PUBLISHED
         elif review.kind == JobReviewKind.CLOSE:
             # Abort the close — posting goes back to PUBLISHED.

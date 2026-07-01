@@ -28,6 +28,8 @@ class Permission(StrEnum):
     RECRUITING_JOB_READ = "recruiting.job.read"
     RECRUITING_JOB_WRITE = "recruiting.job.write"
     RECRUITING_JOB_APPROVE = "recruiting.job.approve"
+    RECRUITING_INTERVIEW_EVALUATE = "recruiting.interview.evaluate"
+    RECRUITING_APPLICATION_ADVANCE = "recruiting.application.advance"
     PERMISSION_MANAGE = "permission.manage"
     SUPER_ADMIN_REVOKE = "super_admin.revoke"
 

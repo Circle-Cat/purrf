@@ -7,6 +7,7 @@ from backend.dto.job_dto import JobCreateDto
 from backend.entity.job_entity import JobEntity
 from backend.entity.job_review_entity import JobReviewEntity
 from backend.entity.users_entity import UsersEntity
+from backend.common.permissions import Permission
 from backend.common.recruiting_enums import (
     JobKind,
     JobReviewKind,
@@ -60,27 +61,122 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
             self._approver(3),
         ]
 
+    def _make_users(self, *ids):
+        """Build lightweight user mocks exposing only ``user_id``."""
+        users = []
+        for uid in ids:
+            u = MagicMock()
+            u.user_id = uid
+            users.append(u)
+        return users
+
     async def test_create_stores_pipeline_config(self):
         """create_job persists pipeline_config and starts in DRAFT."""
         dto = JobCreateDto(
-            title="SWE", kind=JobKind.EMPLOYMENT, pipeline_config=[{"stage": "tech"}]
+            title="SWE",
+            kind=JobKind.EMPLOYMENT,
+            pipelineConfig={"stages": [{"stage": "tech", "rounds": 1}]},
         )
         result = await self.service.create_job(self.session, dto)
 
-        self.assertEqual(result.pipeline_config, [{"stage": "tech"}])
+        self.assertEqual(result.pipeline_config["stages"][0]["stage"], "tech")
         self.assertEqual(result.status, JobStatus.DRAFT)
 
     async def test_update_published_writes_pending_and_flips_status(self):
-        """Editing a PUBLISHED posting parks the change as a pending revision."""
-        job = self._job(status=JobStatus.PUBLISHED, form_schema={"a": 1})
+        """Editing a PUBLISHED posting's form parks the change as a pending revision."""
+        job = self._job(status=JobStatus.PUBLISHED, form_schema={"questions": []})
         self.repo.get_by_job_id.return_value = job
-        dto = JobCreateDto(title=job.title, kind=job.kind, form_schema={"a": 2})
+        dto = JobCreateDto(
+            title=job.title,
+            kind=job.kind,
+            formSchema={
+                "questions": [{"id": "q1", "type": "short_text", "label": "New"}]
+            },
+        )
 
         result = await self.service.update_job(self.session, job.job_id, dto)
 
         self.assertEqual(result.status, JobStatus.PUBLISHED_PENDING_REVISION)
-        self.assertEqual(result.pending_form_schema, {"a": 2})
-        self.assertEqual(result.form_schema, {"a": 1})
+        self.assertEqual(result.pending_form_schema["questions"][0]["id"], "q1")
+        self.assertEqual(result.form_schema, {"questions": []})
+
+    async def test_create_job_stores_config_as_camelcase(self):
+        """create_job serialises typed config to camelCase JSONB dicts."""
+        dto = JobCreateDto(
+            title="T",
+            formSchema={
+                "questions": [
+                    {"id": "q1", "type": "long_text", "label": "Why", "maxWords": 300}
+                ]
+            },
+            profileConfig={
+                "education": "required",
+                "workExperience": "optional",
+                "resume": "off",
+            },
+        )
+        await self.service.create_job(self.session, dto)
+        entity = self.repo.create_job.call_args.args[1]
+        self.assertEqual(entity.form_schema["questions"][0]["maxWords"], 300)
+        self.assertEqual(entity.profile_config["education"], "required")
+
+    async def test_create_job_rejects_unqualified_assignee(self):
+        """A pre-set assignee who is not an interview evaluator is rejected."""
+        self.perms.get_active_users_with_permission = AsyncMock(return_value=[])
+        dto = JobCreateDto(
+            title="T",
+            pipelineConfig={
+                "stages": [
+                    {
+                        "stage": "recruiter_screening",
+                        "rounds": 1,
+                        "defaultAssigneeId": 7,
+                    }
+                ]
+            },
+        )
+        with self.assertRaises(ValueError):
+            await self.service.create_job(self.session, dto)
+
+    async def test_create_job_accepts_qualified_assignee_and_owner(self):
+        """create_job succeeds when assignee/owner hold the right permissions."""
+
+        async def pool(session, perm):
+            if perm == Permission.RECRUITING_INTERVIEW_EVALUATE.value:
+                return self._make_users(7)
+            if perm == Permission.RECRUITING_APPLICATION_ADVANCE.value:
+                return self._make_users(42)
+            return []
+
+        self.perms.get_active_users_with_permission = AsyncMock(side_effect=pool)
+        dto = JobCreateDto(
+            title="T",
+            pipelineConfig={
+                "ownerId": 42,
+                "stages": [
+                    {
+                        "stage": "recruiter_screening",
+                        "rounds": 1,
+                        "defaultAssigneeId": 7,
+                    }
+                ],
+            },
+        )
+        result = await self.service.create_job(self.session, dto)
+        self.assertEqual(result.title, "T")
+
+    async def test_create_job_rejects_unqualified_owner(self):
+        """An owner who cannot advance applications is rejected."""
+
+        async def pool(session, perm):
+            if perm == Permission.RECRUITING_INTERVIEW_EVALUATE.value:
+                return self._make_users(7)
+            return []  # no advancers
+
+        self.perms.get_active_users_with_permission = AsyncMock(side_effect=pool)
+        dto = JobCreateDto(title="T", pipelineConfig={"ownerId": 99, "stages": []})
+        with self.assertRaises(ValueError):
+            await self.service.create_job(self.session, dto)
 
     async def test_update_draft_changes_live_directly(self):
         """Editing a DRAFT posting mutates the live fields with no review gate."""
@@ -719,6 +815,189 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
             await self.service.update_job(self.session, job.job_id, dto)
 
         self.repo.update_job.assert_not_awaited()
+
+    def _published_job(self, **over):
+        job = MagicMock()
+        job.job_id = 1
+        job.title = "T"
+        job.description = None
+        job.kind = JobKind.ACTIVITY
+        job.mentorship_role = None
+        job.was_published = True
+        job.status = JobStatus.PUBLISHED
+        job.form_schema = {"questions": []}
+        job.pipeline_config = {
+            "ownerId": 42,
+            "stages": [
+                {
+                    "stage": "recruiter_screening",
+                    "rounds": 1,
+                    "referralSkippable": False,
+                }
+            ],
+        }
+        job.screen_rules = {"rules": []}
+        job.profile_config = {
+            "education": "optional",
+            "workExperience": "optional",
+            "resume": "optional",
+        }
+        job.pending_form_schema = None
+        job.pending_pipeline_config = None
+        job.pending_profile_config = None
+        for k, v in over.items():
+            setattr(job, k, v)
+        return job
+
+    async def _qualified_pools(self):
+        async def pool(session, perm):
+            if perm == Permission.RECRUITING_INTERVIEW_EVALUATE.value:
+                return self._make_users(7)
+            if perm == Permission.RECRUITING_APPLICATION_ADVANCE.value:
+                return self._make_users(42)
+            return []
+
+        self.perms.get_active_users_with_permission = AsyncMock(side_effect=pool)
+
+    async def test_published_screen_rules_change_is_immediate(self):
+        await self._qualified_pools()
+        job = self._published_job()
+        self.repo.get_by_job_id = AsyncMock(return_value=job)
+        dto = JobCreateDto(
+            title="T",
+            pipelineConfig={
+                "ownerId": 42,
+                "stages": [
+                    {
+                        "stage": "recruiter_screening",
+                        "rounds": 1,
+                        "referralSkippable": False,
+                    }
+                ],
+            },
+            screenRules={
+                "rules": [
+                    {
+                        "id": "r1",
+                        "condition": {
+                            "source": "email_domain",
+                            "operator": "in",
+                            "value": ["google.com"],
+                        },
+                        "action": "qualify",
+                    }
+                ]
+            },
+        )
+        result = await self.service.update_job(self.session, 1, dto)
+        self.assertEqual(result.status, JobStatus.PUBLISHED)
+        self.assertEqual(job.screen_rules["rules"][0]["id"], "r1")
+        self.assertIsNone(job.pending_form_schema)
+
+    async def test_published_form_change_goes_pending(self):
+        await self._qualified_pools()
+        job = self._published_job()
+        self.repo.get_by_job_id = AsyncMock(return_value=job)
+        dto = JobCreateDto(
+            title="T",
+            formSchema={
+                "questions": [{"id": "q1", "type": "short_text", "label": "New"}]
+            },
+        )
+        result = await self.service.update_job(self.session, 1, dto)
+        self.assertEqual(result.status, JobStatus.PUBLISHED_PENDING_REVISION)
+        self.assertEqual(job.pending_form_schema["questions"][0]["id"], "q1")
+
+    async def test_published_owner_only_change_is_immediate(self):
+        async def pool(session, perm):
+            if perm == Permission.RECRUITING_APPLICATION_ADVANCE.value:
+                return self._make_users(42, 50)
+            return self._make_users(7)
+
+        self.perms.get_active_users_with_permission = AsyncMock(side_effect=pool)
+        job = self._published_job()
+        self.repo.get_by_job_id = AsyncMock(return_value=job)
+        dto = JobCreateDto(
+            title="T",
+            pipelineConfig={
+                "ownerId": 50,
+                "stages": [
+                    {
+                        "stage": "recruiter_screening",
+                        "rounds": 1,
+                        "referralSkippable": False,
+                    }
+                ],
+            },
+        )
+        result = await self.service.update_job(self.session, 1, dto)
+        self.assertEqual(result.status, JobStatus.PUBLISHED)
+        self.assertEqual(job.pipeline_config["ownerId"], 50)
+
+    async def test_published_rounds_change_goes_pending(self):
+        await self._qualified_pools()
+        job = self._published_job()
+        self.repo.get_by_job_id = AsyncMock(return_value=job)
+        dto = JobCreateDto(
+            title="T",
+            pipelineConfig={
+                "ownerId": 42,
+                "stages": [
+                    {
+                        "stage": "recruiter_screening",
+                        "rounds": 3,
+                        "referralSkippable": False,
+                    }
+                ],
+            },
+        )
+        result = await self.service.update_job(self.session, 1, dto)
+        self.assertEqual(result.status, JobStatus.PUBLISHED_PENDING_REVISION)
+        self.assertEqual(job.pending_pipeline_config["stages"][0]["rounds"], 3)
+
+    async def test_approve_revision_merges_pending_profile_config(self):
+        review = MagicMock()
+        review.status = JobReviewStatus.PENDING
+        review.kind = JobReviewKind.REVISION
+        review.job_id = 1
+        self.review_repo.get = AsyncMock(return_value=review)
+        job = self._published_job(
+            status=JobStatus.PUBLISHED_PENDING_REVISION,
+            pending_profile_config={
+                "education": "required",
+                "workExperience": "off",
+                "resume": "required",
+            },
+            pending_form_schema={"questions": []},
+            pending_pipeline_config={"ownerId": 42, "stages": []},
+        )
+        self.repo.get_by_job_id = AsyncMock(return_value=job)
+        result = await self.service.approve(self.session, 10)
+        self.assertEqual(result.status, JobStatus.PUBLISHED)
+        self.assertEqual(job.profile_config["education"], "required")
+        self.assertIsNone(job.pending_profile_config)
+
+    async def test_list_interview_pool(self):
+        users = self._make_users(7, 8)
+        for u in users:
+            u.first_name, u.last_name, u.primary_email = "A", "B", "a@b.com"
+
+        async def pool(session, perm):
+            if perm == Permission.RECRUITING_INTERVIEW_EVALUATE.value:
+                return users
+            return []
+
+        self.perms.get_active_users_with_permission = AsyncMock(side_effect=pool)
+        result = await self.service.list_interview_pool(self.session)
+        self.assertEqual({a.user_id for a in result}, {7, 8})
+
+    async def test_list_job_owners(self):
+        users = self._make_users(42)
+        for u in users:
+            u.first_name, u.last_name, u.primary_email = "O", "W", "o@w.com"
+        self.perms.get_active_users_with_permission = AsyncMock(return_value=users)
+        result = await self.service.list_job_owners(self.session)
+        self.assertEqual(result[0].user_id, 42)
 
 
 if __name__ == "__main__":

@@ -61,6 +61,38 @@ class TestJobRepository(BaseRepositoryTestLib):
         fetched = await self.repo.get_by_job_id(self.session, job_id)
         self.assertIsNone(fetched)
 
+    async def test_config_columns_round_trip(self):
+        """create_job round-trips screen_rules/profile_config/pipeline_config."""
+        repo = JobRepository()
+        job = JobEntity(
+            kind=JobKind.ACTIVITY,
+            status=JobStatus.DRAFT,
+            title="Config columns",
+            screen_rules={"rules": []},
+            profile_config={
+                "education": "required",
+                "workExperience": "optional",
+                "resume": "off",
+            },
+            pending_profile_config=None,
+            pipeline_config={
+                "stages": [
+                    {
+                        "stage": "recruiter_screening",
+                        "rounds": 1,
+                        "referralSkippable": False,
+                    }
+                ]
+            },
+        )
+        created = await repo.create_job(self.session, job)
+        fetched = await repo.get_by_job_id(self.session, created.job_id)
+        self.assertEqual(fetched.screen_rules, {"rules": []})
+        self.assertEqual(fetched.profile_config["education"], "required")
+        self.assertEqual(
+            fetched.pipeline_config["stages"][0]["stage"], "recruiter_screening"
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
