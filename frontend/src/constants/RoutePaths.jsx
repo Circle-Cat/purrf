@@ -10,5 +10,7 @@ export const ROUTE_PATHS = {
   SIGN_IN_SECURITY: "/settings/sign-in",
   ADMIN_USERS: "/admin/users",
   RECRUITING_POSTINGS: "/recruiting/postings",
+  RECRUITING_POSTING_NEW: "/recruiting/postings/new",
+  RECRUITING_POSTING_EDIT: (jobId) => `/recruiting/postings/${jobId}/edit`,
   RECRUITING_REVIEWS: "/recruiting/reviews",
 };

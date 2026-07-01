@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import Postings from "@/pages/Recruiting/Postings";
 import * as api from "@/api/recruitingApi";
+import { ROUTE_PATHS } from "@/constants/RoutePaths";
 
 vi.mock("@/api/recruitingApi");
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
@@ -13,6 +15,28 @@ const approvers = [
   { userId: 2, name: "Bob", email: "bob@x.com" },
   { userId: 3, name: "Cara", email: "cara@x.com" },
 ];
+
+/** Render Postings inside a MemoryRouter at the postings list path.
+ * Returns both the render result and a handle to the router so tests can
+ * inspect router.state.location after navigation. */
+const renderPostings = () => {
+  const router = createMemoryRouter(
+    [
+      { path: ROUTE_PATHS.RECRUITING_POSTINGS, element: <Postings /> },
+      {
+        path: ROUTE_PATHS.RECRUITING_POSTING_NEW,
+        element: <div data-testid="new-posting-page" />,
+      },
+      {
+        path: "/recruiting/postings/:id/edit",
+        element: <div data-testid="edit-posting-page" />,
+      },
+    ],
+    { initialEntries: [ROUTE_PATHS.RECRUITING_POSTINGS] },
+  );
+  const result = render(<RouterProvider router={router} />);
+  return { ...result, router };
+};
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -28,13 +52,35 @@ beforeEach(() => {
 
 describe("Postings page", () => {
   it("loads and lists jobs on mount", async () => {
-    render(<Postings />);
+    renderPostings();
     expect(await screen.findByText("SWE")).toBeInTheDocument();
     expect(api.listJobs).toHaveBeenCalled();
   });
 
+  it("New posting button navigates to the new-posting route", async () => {
+    const { router } = renderPostings();
+    await screen.findByText("SWE");
+    fireEvent.click(screen.getByRole("button", { name: "New posting" }));
+    await waitFor(() =>
+      expect(router.state.location.pathname).toBe(
+        ROUTE_PATHS.RECRUITING_POSTING_NEW,
+      ),
+    );
+  });
+
+  it("Edit button navigates to the edit route for that job", async () => {
+    const { router } = renderPostings();
+    await screen.findByText("SWE");
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    await waitFor(() =>
+      expect(router.state.location.pathname).toBe(
+        ROUTE_PATHS.RECRUITING_POSTING_EDIT(1),
+      ),
+    );
+  });
+
   it("closes a draft job directly then refetches", async () => {
-    render(<Postings />);
+    renderPostings();
     await screen.findByText("SWE");
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
     await waitFor(() => expect(api.closeJob).toHaveBeenCalledWith(1));
@@ -54,7 +100,7 @@ describe("Postings page", () => {
     });
     api.requestClose.mockResolvedValue({ data: {} });
 
-    render(<Postings />);
+    renderPostings();
     await screen.findByText("PM");
 
     fireEvent.click(screen.getByRole("button", { name: "Request close" }));
@@ -92,7 +138,7 @@ describe("Postings page", () => {
     });
     api.deleteJob.mockResolvedValue({ data: {} });
 
-    render(<Postings />);
+    renderPostings();
     await screen.findByText("Old Draft");
 
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));

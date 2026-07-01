@@ -43,6 +43,8 @@ export const API_ENDPOINTS = {
   RECRUITING_APPROVERS: "/recruiting/approvers",
   RECRUITING_REVIEWS: "/recruiting/reviews",
   RECRUITING_REVIEW: (reviewId) => `/recruiting/reviews/${reviewId}`,
+  RECRUITING_INTERVIEW_POOL: "/recruiting/interview-pool",
+  RECRUITING_JOB_OWNERS: "/recruiting/job-owners",
 };
 
 /**
