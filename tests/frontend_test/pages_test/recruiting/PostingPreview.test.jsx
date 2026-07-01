@@ -8,45 +8,48 @@ const baseJob = {
   kind: "employment",
   description: "A great role.",
   status: "pending_review",
-  pipelineConfig: { stages: ["screen"] },
-  formSchema: { fields: ["name"] },
+  pipelineConfig: { stages: [{ stage: "tech", rounds: 1 }] },
+  formSchema: {
+    questions: [{ id: "q1", type: "short_text", label: "Full name" }],
+  },
   pendingFormSchema: null,
 };
 
 describe("PostingPreview", () => {
   it("renders title and description", () => {
     render(<PostingPreview open={true} job={baseJob} onOpenChange={vi.fn()} />);
-    expect(screen.getByText("SWE Intern")).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "SWE Intern" }),
+    ).toBeInTheDocument();
     expect(screen.getByText("A great role.")).toBeInTheDocument();
   });
 
-  it("renders formSchema as pretty-printed JSON", () => {
+  it("renders the applicant form and pipeline, not JSON", () => {
     render(<PostingPreview open={true} job={baseJob} onOpenChange={vi.fn()} />);
-    const expected = JSON.stringify(baseJob.formSchema, null, 2);
-    const pres = document.querySelectorAll("pre");
-    const formPre = Array.from(pres).find((p) => p.textContent === expected);
-    expect(formPre).toBeTruthy();
+    expect(screen.getByLabelText("Full name")).toBeInTheDocument();
+    expect(screen.getByText("1. Tech — 1 round(s)")).toBeInTheDocument();
+    expect(document.querySelector("pre")).toBeNull();
   });
 
-  it("does NOT show pending block for pending_review status", () => {
+  it("does NOT show the Pending|Live toggle for pending_review status", () => {
     render(<PostingPreview open={true} job={baseJob} onOpenChange={vi.fn()} />);
-    expect(screen.queryByText("Pending revision")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Live" }),
+    ).not.toBeInTheDocument();
   });
 
-  it("shows pending block for published_pending_revision", () => {
+  it("shows a Pending|Live toggle for published_pending_revision", () => {
     const job = {
       ...baseJob,
       status: "published_pending_revision",
-      pendingFormSchema: { fields: ["name", "email"] },
+      pendingFormSchema: {
+        questions: [{ id: "q1", type: "short_text", label: "Pending name" }],
+      },
     };
     render(<PostingPreview open={true} job={job} onOpenChange={vi.fn()} />);
-    expect(screen.getByText("Pending revision")).toBeInTheDocument();
-    const expectedPending = JSON.stringify(job.pendingFormSchema, null, 2);
-    const pres = document.querySelectorAll("pre");
-    const pendingPre = Array.from(pres).find(
-      (p) => p.textContent === expectedPending,
-    );
-    expect(pendingPre).toBeTruthy();
+    expect(screen.getByLabelText("Pending name")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Live" }));
+    expect(screen.getByLabelText("Full name")).toBeInTheDocument();
   });
 
   it("Close button calls onOpenChange(false)", () => {
