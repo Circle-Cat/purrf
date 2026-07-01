@@ -33,6 +33,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         self.review_repo = MagicMock()
         self.review_repo.create = AsyncMock(side_effect=lambda session, entity: entity)
         self.review_repo.get = AsyncMock()
+        self.review_repo.get_open_for_job = AsyncMock(return_value=None)
         self.review_repo.list_by_reviewer = AsyncMock(return_value=[])
         self.review_repo.get_latest_reviews = AsyncMock(return_value={})
         self.session = AsyncMock()
@@ -235,6 +236,46 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
             await self.service.submit_for_review(
                 self.session, job.job_id, reviewer_id=9, submitted_by=1, message=None
             )
+
+    async def test_submit_rejects_when_review_already_open(self):
+        """A posting with a pending review cannot open a second one."""
+        job = self._job(status=JobStatus.DRAFT)
+        self.repo.get_by_job_id.return_value = job
+        self._two_approvers()
+        self.review_repo.get_open_for_job.return_value = JobReviewEntity(
+            review_id=99,
+            job_id=job.job_id,
+            submitted_by=1,
+            reviewer_id=2,
+            status=JobReviewStatus.PENDING,
+            kind=JobReviewKind.INITIAL,
+        )
+
+        with self.assertRaisesRegex(ValueError, "already has an open review"):
+            await self.service.submit_for_review(
+                self.session, job.job_id, reviewer_id=2, submitted_by=1, message=None
+            )
+        self.review_repo.create.assert_not_awaited()
+
+    async def test_decision_locks_the_review_row(self):
+        """approve fetches the review FOR UPDATE so deciders serialise."""
+        job = self._job(status=JobStatus.PENDING_REVIEW)
+        self.repo.get_by_job_id.return_value = job
+        review = JobReviewEntity(
+            review_id=50,
+            job_id=job.job_id,
+            submitted_by=1,
+            reviewer_id=2,
+            status=JobReviewStatus.PENDING,
+            kind=JobReviewKind.INITIAL,
+        )
+        self.review_repo.get.return_value = review
+
+        await self.service.approve(self.session, review.review_id, acting_user_id=2)
+
+        self.review_repo.get.assert_awaited_once_with(
+            self.session, review.review_id, for_update=True
+        )
 
     async def test_submit_draft_creates_initial_review_and_flips_status(self):
         """Submitting a DRAFT opens an INITIAL review and moves to PENDING_REVIEW."""

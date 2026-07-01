@@ -19,14 +19,20 @@ class JobReviewRepository:
         return entity
 
     async def get(
-        self, session: AsyncSession, review_id: int
+        self, session: AsyncSession, review_id: int, *, for_update: bool = False
     ) -> JobReviewEntity | None:
-        """Return the review with the given id, or None."""
+        """Return the review with the given id, or None.
+
+        When ``for_update`` is True the row is selected ``FOR UPDATE`` so a
+        concurrent decision on the same review blocks until this transaction
+        commits, then re-reads the (now decided) status — serialising deciders.
+        """
         if not review_id:
             return None
-        result = await session.execute(
-            select(JobReviewEntity).where(JobReviewEntity.review_id == review_id)
-        )
+        stmt = select(JobReviewEntity).where(JobReviewEntity.review_id == review_id)
+        if for_update:
+            stmt = stmt.with_for_update()
+        result = await session.execute(stmt)
         return result.scalar_one_or_none()
 
     async def list_by_reviewer(
