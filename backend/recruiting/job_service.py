@@ -328,10 +328,11 @@ class JobService:
     ) -> JobDto:
         """Shared validation and creation logic for any review gate.
 
-        Validates that the job's current status is in ``allowed_from``, that
-        the submitter is not also the reviewer, that the active approver pool
-        has at least ``MIN_APPROVER_POOL`` members, and that the chosen reviewer
-        is in that pool. Then creates a PENDING ``JobReviewEntity`` of ``kind``,
+        Validates that the job's current status is in ``allowed_from``, that the
+        job has no already-open review, that the submitter is not also the
+        reviewer, that the active approver pool has at least ``MIN_APPROVER_POOL``
+        members, and that the chosen reviewer is in that pool. Then creates a
+        PENDING ``JobReviewEntity`` of ``kind``,
         optionally flips ``job.status`` to ``pending_status`` (when not None),
         persists, commits, and returns the updated JobDto.
 
@@ -353,14 +354,19 @@ class JobService:
             JobDto: The posting after the review was opened.
 
         Raises:
-            ValueError: If the job status is not in ``allowed_from``, the
-                submitter picks themselves, the pool is too small, or the
-                reviewer is not an active approver.
+            ValueError: If the job status is not in ``allowed_from``, the job
+                already has an open review, the submitter picks themselves, the
+                pool is too small, or the reviewer is not an active approver.
         """
         if job.status not in allowed_from:
             raise ValueError(
                 f"Job {job.job_id} cannot open a {kind} review from {job.status}"
             )
+        existing = await self.job_review_repository.get_open_for_job(
+            session, job.job_id
+        )
+        if existing is not None:
+            raise ValueError(f"Job {job.job_id} already has an open review")
         if reviewer_id == submitted_by:
             raise ValueError("Submitter cannot self-review the posting")
 
@@ -645,7 +651,12 @@ class JobService:
             ValueError: If the review is missing, already decided, or the acting
                 user is not the assigned reviewer.
         """
-        review = await self.job_review_repository.get(session, review_id)
+        # Lock the row so two concurrent decisions on the same review serialise:
+        # the second blocks until the first commits, then sees a non-pending
+        # status below and is rejected.
+        review = await self.job_review_repository.get(
+            session, review_id, for_update=True
+        )
         if review is None:
             raise ValueError(f"Review {review_id} not found")
         if review.status != JobReviewStatus.PENDING:
