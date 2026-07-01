@@ -15,7 +15,7 @@ const PostingReviewView = ({ job, isRevision = false }) => {
   const showPending = isRevision && version === "pending";
 
   const questions = showPending
-    ? (job.pendingFormSchema?.questions ?? [])
+    ? (job.pendingFormSchema?.questions ?? job.formSchema?.questions ?? [])
     : (job.formSchema?.questions ?? []);
   const profileConfig = showPending
     ? (job.pendingProfileConfig ?? job.profileConfig)

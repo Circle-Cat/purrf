@@ -38,4 +38,22 @@ describe("PostingReviewView", () => {
     expect(screen.getByLabelText("Live question")).toBeInTheDocument();
     expect(screen.getByText("1. Tech — 1 round(s)")).toBeInTheDocument();
   });
+
+  it("falls back to live form and pipeline when a revision omits pending fields", () => {
+    const partial = {
+      title: "SWE",
+      kind: "employment",
+      description: "JD",
+      formSchema: {
+        questions: [{ id: "q1", type: "short_text", label: "Live question" }],
+      },
+      profileConfig: { resume: "required" },
+      pipelineConfig: { stages: [{ stage: "tech", rounds: 1 }] },
+      // no pendingFormSchema / pendingProfileConfig / pendingPipelineConfig
+    };
+    render(<PostingReviewView job={partial} isRevision />);
+    // Pending is the default view; with no pending fields it shows live content.
+    expect(screen.getByLabelText("Live question")).toBeInTheDocument();
+    expect(screen.getByText("1. Tech — 1 round(s)")).toBeInTheDocument();
+  });
 });
