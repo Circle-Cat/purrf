@@ -70,6 +70,16 @@ describe("Postings page", () => {
     );
   });
 
+  it("shows the How it works guide with author statuses", async () => {
+    renderPostings();
+    await screen.findByText("SWE");
+    fireEvent.click(screen.getByRole("button", { name: "How it works" }));
+    expect(
+      await screen.findByRole("heading", { name: "How postings work" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Revision pending review")).toBeInTheDocument();
+  });
+
   it("Edit button navigates to the edit route for that job", async () => {
     const { router } = renderPostings();
     await screen.findByText("SWE");
