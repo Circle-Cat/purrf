@@ -48,6 +48,8 @@ beforeEach(() => {
   api.requestClose.mockResolvedValue({ data: {} });
   api.requestReopen.mockResolvedValue({ data: {} });
   api.deleteJob.mockResolvedValue({ data: {} });
+  api.listInterviewPool.mockResolvedValue({ data: [] });
+  api.listJobOwners.mockResolvedValue({ data: [] });
 });
 
 describe("Postings page", () => {
@@ -153,5 +155,22 @@ describe("Postings page", () => {
 
     await waitFor(() => expect(api.deleteJob).toHaveBeenCalledWith(3));
     expect(api.listJobs).toHaveBeenCalledTimes(2);
+  });
+
+  it("View swaps to a full-page preview and Back returns to the list", async () => {
+    renderPostings();
+    await screen.findByText("SWE");
+    fireEvent.click(screen.getByRole("button", { name: "View" }));
+    // full-page preview: Back button present, list chrome gone
+    await waitFor(() => expect(api.listInterviewPool).toHaveBeenCalled());
+    expect(screen.getByRole("button", { name: /Back/ })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "New posting" }),
+    ).not.toBeInTheDocument();
+    // Back returns to the list
+    fireEvent.click(screen.getByRole("button", { name: /Back/ }));
+    expect(
+      await screen.findByRole("button", { name: "New posting" }),
+    ).toBeInTheDocument();
   });
 });

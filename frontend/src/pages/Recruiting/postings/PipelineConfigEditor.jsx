@@ -22,7 +22,7 @@ const PeoplePicker = ({ label, pool, value, onChange }) => (
     <SelectTrigger aria-label={label} className="max-w-xs">
       <SelectValue placeholder="— none —" />
     </SelectTrigger>
-    <SelectContent>
+    <SelectContent className="z-[110]">
       <SelectItem value={NONE}>— none —</SelectItem>
       {pool.map((u) => (
         <SelectItem key={u.userId} value={String(u.userId)}>
