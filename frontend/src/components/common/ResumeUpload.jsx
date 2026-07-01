@@ -79,13 +79,13 @@ export default function ResumeUpload({ onParsed }) {
       >
         {isParsing ? (
           <>
-            <Loader2 className="h-8 w-8 animate-spin" aria-hidden />
+            <Loader2 className="h-6 w-6 animate-spin" aria-hidden />
             <span>Parsing…</span>
           </>
         ) : (
           <>
             <UploadCloud
-              className="h-8 w-8 text-muted-foreground"
+              className="h-6 w-6 text-muted-foreground"
               aria-hidden
             />
             <span className="font-medium">Click or drag a resume PDF here</span>
