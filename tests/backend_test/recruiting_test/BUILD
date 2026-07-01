@@ -25,3 +25,9 @@ py_test(
     srcs = ["cooldown_test.py"],
     deps = ["//backend/common:recruiting_enums", "//backend/recruiting"],
 )
+
+py_test(
+    name = "resume_storage_test",
+    srcs = ["resume_storage_test.py"],
+    deps = ["//backend/recruiting", "@pypi//google_api_core"],
+)
