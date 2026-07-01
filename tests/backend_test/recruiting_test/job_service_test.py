@@ -1109,6 +1109,77 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         result = await self.service.list_job_owners(self.session)
         self.assertEqual(result[0].user_id, 42)
 
+    # ---------------------------------------------------------------------------
+    # cooldown_days plumbing + get_published_job
+    # ---------------------------------------------------------------------------
+
+    async def test_create_job_persists_cooldown_days(self):
+        dto = JobCreateDto.model_validate({
+            "title": "T",
+            "kind": "employment",
+            "cooldownDays": 90,
+        })
+        result = await self.service.create_job(self.session, dto)
+        self.assertEqual(result.cooldown_days, 90)
+
+    async def test_get_published_job_rejects_unpublished(self):
+        self.repo.get_by_job_id = AsyncMock(
+            return_value=self._job(status=JobStatus.DRAFT)
+        )
+        with self.assertRaises(ValueError):
+            await self.service.get_published_job(self.session, 1)
+
+    async def test_get_published_job_returns_published(self):
+        self.repo.get_by_job_id = AsyncMock(
+            return_value=self._job(status=JobStatus.PUBLISHED)
+        )
+        result = await self.service.get_published_job(self.session, 1)
+        self.assertEqual(result.status, JobStatus.PUBLISHED)
+
+    async def test_get_published_job_public_excludes_internal_config(self):
+        """The candidate-facing projection must never leak internal config."""
+        job = self._job(
+            status=JobStatus.PUBLISHED,
+            form_schema={"questions": []},
+            profile_config={"resume": "required"},
+        )
+        job.screen_rules = {"rules": [{"id": "r1"}]}
+        job.pipeline_config = {"stages": [{"stage": "tech", "ownerId": 9}]}
+        job.pending_form_schema = {"questions": [{"id": "leak"}]}
+        job.pending_pipeline_config = {"stages": []}
+        job.pending_profile_config = {"resume": "optional"}
+        self.repo.get_by_job_id = AsyncMock(return_value=job)
+
+        dto = await self.service.get_published_job_public(self.session, 1)
+
+        self.assertEqual(dto.title, "T")
+        self.assertEqual(dto.form_schema, {"questions": []})
+        self.assertEqual(dto.profile_config, {"resume": "required"})
+        self.assertFalse(hasattr(dto, "screen_rules"))
+        self.assertFalse(hasattr(dto, "pipeline_config"))
+        self.assertFalse(hasattr(dto, "pending_form_schema"))
+        self.assertFalse(hasattr(dto, "pending_pipeline_config"))
+        self.assertFalse(hasattr(dto, "pending_profile_config"))
+        self.assertFalse(hasattr(dto, "last_reject_comment"))
+
+        dumped = dto.model_dump()
+        for leaked_field in (
+            "screen_rules",
+            "pipeline_config",
+            "pending_form_schema",
+            "pending_pipeline_config",
+            "pending_profile_config",
+            "last_reject_comment",
+        ):
+            self.assertNotIn(leaked_field, dumped)
+
+    async def test_get_published_job_public_rejects_unpublished(self):
+        self.repo.get_by_job_id = AsyncMock(
+            return_value=self._job(status=JobStatus.DRAFT)
+        )
+        with self.assertRaises(ValueError):
+            await self.service.get_published_job_public(self.session, 1)
+
 
 if __name__ == "__main__":
     unittest.main()

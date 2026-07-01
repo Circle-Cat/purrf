@@ -48,6 +48,8 @@ TAILSCALE_PROXY = "TAILSCALE_PROXY"
 MENTORSHIP_MENTOR_ONBOARDING_LINK = "MENTORSHIP_MENTOR_ONBOARDING_LINK"
 MENTORSHIP_MENTEE_ONBOARDING_LINK = "MENTORSHIP_MENTEE_ONBOARDING_LINK"
 
+RESUME_BUCKET = "RESUME_BUCKET"
+
 # Auth0 multi-IdP email OTP / account-link flow.
 # Passwordless app drives the OTP send + verify; the M2M app holds Management
 # API credentials for identity linking and app_metadata writes.

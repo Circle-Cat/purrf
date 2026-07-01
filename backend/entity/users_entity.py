@@ -46,6 +46,10 @@ class UsersEntity(Base):
         Boolean, nullable=False, server_default=text("false")
     )
 
+    is_blocked: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false"), default=False
+    )
+
     updated_timestamp: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=func.now(), onupdate=func.now()
     )
