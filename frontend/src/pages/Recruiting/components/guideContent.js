@@ -52,7 +52,7 @@ export const POSTINGS_GUIDE = {
     },
     { name: "Published", description: "Live and accepting applications." },
     {
-      name: "Published pending revision",
+      name: "Revision pending review",
       description: "An edit to a live posting is awaiting review.",
     },
     {

@@ -42,4 +42,10 @@ describe("HowItWorksDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "How it works" }));
     expect(screen.queryByText("Good to know")).not.toBeInTheDocument();
   });
+
+  it("omits the notes section when notes is not provided", () => {
+    render(<HowItWorksDialog {...guide} notes={undefined} />);
+    fireEvent.click(screen.getByRole("button", { name: "How it works" }));
+    expect(screen.queryByText("Good to know")).not.toBeInTheDocument();
+  });
 });

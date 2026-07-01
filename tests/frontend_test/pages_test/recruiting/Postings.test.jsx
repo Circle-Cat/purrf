@@ -77,7 +77,7 @@ describe("Postings page", () => {
     expect(
       await screen.findByRole("heading", { name: "How postings work" }),
     ).toBeInTheDocument();
-    expect(screen.getByText("Published pending revision")).toBeInTheDocument();
+    expect(screen.getByText("Revision pending review")).toBeInTheDocument();
   });
 
   it("Edit button navigates to the edit route for that job", async () => {
