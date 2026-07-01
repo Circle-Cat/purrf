@@ -23,6 +23,8 @@ import { ROUTE_PATHS } from "@/constants/RoutePaths";
 import PostingsList from "@/pages/Recruiting/components/PostingsList";
 import PostingPreviewPage from "@/pages/Recruiting/components/PostingPreviewPage";
 import SubmitReviewDialog from "@/pages/Recruiting/components/SubmitReviewDialog";
+import HowItWorksDialog from "@/pages/Recruiting/components/HowItWorksDialog";
+import { POSTINGS_GUIDE } from "@/pages/Recruiting/components/guideContent";
 
 /** Title and dispatch fn per review action kind. */
 const REVIEW_ACTION = {
@@ -128,9 +130,12 @@ const Postings = () => {
     <div className="space-y-4 p-6">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold text-slate-900">Postings</h1>
-        <Button onClick={() => navigate(ROUTE_PATHS.RECRUITING_POSTING_NEW)}>
-          New posting
-        </Button>
+        <div className="flex items-center gap-2">
+          <HowItWorksDialog {...POSTINGS_GUIDE} />
+          <Button onClick={() => navigate(ROUTE_PATHS.RECRUITING_POSTING_NEW)}>
+            New posting
+          </Button>
+        </div>
       </div>
       <PostingsList
         jobs={jobs}
