@@ -152,4 +152,12 @@ describe("PostingEditor", () => {
       ),
     );
   });
+
+  it("previews the applicant-facing view as the draft changes", () => {
+    renderAt("/postings/new");
+    fireEvent.change(screen.getByLabelText("Title"), {
+      target: { value: "SWE" },
+    });
+    expect(screen.getByRole("heading", { name: "SWE" })).toBeInTheDocument();
+  });
 });

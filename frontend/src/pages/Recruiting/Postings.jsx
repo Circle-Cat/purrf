@@ -21,7 +21,7 @@ import {
 } from "@/api/recruitingApi";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
 import PostingsList from "@/pages/Recruiting/components/PostingsList";
-import PostingPreview from "@/pages/Recruiting/components/PostingPreview";
+import PostingPreviewPage from "@/pages/Recruiting/components/PostingPreviewPage";
 import SubmitReviewDialog from "@/pages/Recruiting/components/SubmitReviewDialog";
 
 /** Title and dispatch fn per review action kind. */
@@ -118,6 +118,12 @@ const Postings = () => {
     ? REVIEW_ACTION[reviewAction.kind].title
     : "Submit for review";
 
+  if (previewJob) {
+    return (
+      <PostingPreviewPage job={previewJob} onBack={() => setPreviewJob(null)} />
+    );
+  }
+
   return (
     <div className="space-y-4 p-6">
       <div className="flex items-center justify-between">
@@ -135,11 +141,6 @@ const Postings = () => {
         onRequestReopen={(id) => openReview(id, "reopen")}
         onDelete={askDelete}
         onView={(job) => setPreviewJob(job)}
-      />
-      <PostingPreview
-        open={!!previewJob}
-        job={previewJob}
-        onOpenChange={(o) => !o && setPreviewJob(null)}
       />
       <SubmitReviewDialog
         open={submitOpen}

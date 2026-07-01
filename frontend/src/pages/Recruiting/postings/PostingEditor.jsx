@@ -12,7 +12,7 @@ import {
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
 import JobBasicsSection from "@/pages/Recruiting/postings/JobBasicsSection";
 import FormBuilder from "@/pages/Recruiting/postings/FormBuilder";
-import FormRenderer from "@/pages/Recruiting/postings/FormRenderer";
+import PostingApplicantView from "@/pages/Recruiting/components/PostingApplicantView";
 import PipelineConfigEditor from "@/pages/Recruiting/postings/PipelineConfigEditor";
 import ScreenRulesEditor from "@/pages/Recruiting/postings/ScreenRulesEditor";
 import ProfileConfigEditor from "@/pages/Recruiting/postings/ProfileConfigEditor";
@@ -50,7 +50,6 @@ const PostingEditor = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const [draft, setDraft] = useState(BLANK);
-  const [previewAnswers, setPreviewAnswers] = useState({});
   const [saving, setSaving] = useState(false);
   const [interviewPool, setInterviewPool] = useState([]);
   const [jobOwners, setJobOwners] = useState([]);
@@ -154,15 +153,17 @@ const PostingEditor = () => {
         <div className="space-y-2">
           <p className="text-sm font-medium text-slate-700">Preview</p>
           <div className="min-h-24 rounded-md border border-slate-200 bg-slate-50 p-4">
-            {draft.formSchema.questions.length === 0 ? (
+            {!draft.title &&
+            !draft.description &&
+            draft.formSchema.questions.length === 0 ? (
               <p className="text-sm text-slate-400">Nothing to preview yet.</p>
             ) : (
-              <FormRenderer
+              <PostingApplicantView
+                title={draft.title}
+                kind={draft.kind}
+                description={draft.description}
                 questions={draft.formSchema.questions}
-                answers={previewAnswers}
-                onAnswerChange={(qid, v) =>
-                  setPreviewAnswers((a) => ({ ...a, [qid]: v }))
-                }
+                profileConfig={draft.profileConfig}
               />
             )}
           </div>
