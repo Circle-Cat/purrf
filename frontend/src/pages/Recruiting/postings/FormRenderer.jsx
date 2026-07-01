@@ -143,6 +143,9 @@ const FormRenderer = ({ questions = [], answers = {}, onAnswerChange }) => (
             {q.label}
             {q.required && <span className="ml-1 text-red-500">*</span>}
           </Label>
+          {q.description && (
+            <p className="text-sm text-slate-500">{q.description}</p>
+          )}
           <QuestionControl
             question={q}
             value={answers[q.id]}

@@ -9,6 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import OptionsEditor from "@/pages/Recruiting/postings/OptionsEditor";
 
 const CHOICE_TYPES = new Set(["single_choice", "multi_choice"]);
@@ -87,6 +88,19 @@ const QuestionEditor = ({
           aria-label="Label"
           value={question.label}
           onChange={(e) => patch({ label: e.target.value })}
+        />
+      </div>
+
+      <div className="space-y-1">
+        <Label htmlFor={`${question.id}-description`}>
+          Description (optional)
+        </Label>
+        <Textarea
+          id={`${question.id}-description`}
+          aria-label="Description"
+          rows={2}
+          value={question.description ?? ""}
+          onChange={(e) => patch({ description: e.target.value || undefined })}
         />
       </div>
 
