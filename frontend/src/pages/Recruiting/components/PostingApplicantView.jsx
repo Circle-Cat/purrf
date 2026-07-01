@@ -1,6 +1,6 @@
 import { useState } from "react";
 import FormRenderer from "@/pages/Recruiting/postings/FormRenderer";
-import ProfileRequirements from "@/pages/Recruiting/components/ProfileRequirements";
+import RecruitingProfileForm from "@/pages/Recruiting/components/RecruitingProfileForm";
 
 /**
  * Read-only, applicant-facing rendering of one version of a posting: title,
@@ -33,7 +33,7 @@ const PostingApplicantView = ({
           {description}
         </p>
       )}
-      <ProfileRequirements profileConfig={profileConfig} />
+      <RecruitingProfileForm profileConfig={profileConfig} />
       <FormRenderer
         questions={questions}
         answers={answers}
