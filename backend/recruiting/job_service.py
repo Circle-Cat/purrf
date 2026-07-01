@@ -521,7 +521,9 @@ class JobService:
             pending_status=JobStatus.PENDING_REOPEN,
         )
 
-    async def approve(self, session: AsyncSession, review_id: int) -> JobDto:
+    async def approve(
+        self, session: AsyncSession, review_id: int, acting_user_id: int
+    ) -> JobDto:
         """Approve a pending review, advancing the posting to its next state.
 
         Review-kind state machine on approval:
@@ -534,14 +536,17 @@ class JobService:
         Args:
             session (AsyncSession): Active database async session.
             review_id (int): The review to approve.
+            acting_user_id (int): The authenticated user making the decision;
+                must be the review's assigned reviewer.
 
         Returns:
             JobDto: The posting after approval.
 
         Raises:
-            ValueError: If the review is missing or not pending.
+            ValueError: If the review is missing, not pending, or the acting
+                user is not the assigned reviewer.
         """
-        review = await self._require_pending_review(session, review_id)
+        review = await self._require_pending_review(session, review_id, acting_user_id)
         review.status = JobReviewStatus.APPROVED
         review.decided_at = datetime.now(timezone.utc)
 
@@ -572,7 +577,7 @@ class JobService:
         return self.recruiting_mapper.to_job_dto(job)
 
     async def reject(
-        self, session: AsyncSession, review_id: int, comment: str
+        self, session: AsyncSession, review_id: int, comment: str, acting_user_id: int
     ) -> JobDto:
         """Reject a pending review.
 
@@ -586,16 +591,19 @@ class JobService:
             session (AsyncSession): Active database async session.
             review_id (int): The review to reject.
             comment (str): Required reviewer feedback.
+            acting_user_id (int): The authenticated user making the decision;
+                must be the review's assigned reviewer.
 
         Returns:
             JobDto: The posting after rejection.
 
         Raises:
-            ValueError: If the comment is empty or the review is missing/decided.
+            ValueError: If the comment is empty, the review is missing/decided,
+                or the acting user is not the assigned reviewer.
         """
         if not comment or not comment.strip():
             raise ValueError("A comment is required to reject a posting")
-        review = await self._require_pending_review(session, review_id)
+        review = await self._require_pending_review(session, review_id, acting_user_id)
         review.status = JobReviewStatus.REJECTED
         review.reject_comment = comment
         review.decided_at = datetime.now(timezone.utc)
@@ -620,25 +628,35 @@ class JobService:
         return self.recruiting_mapper.to_job_dto(job)
 
     async def _require_pending_review(
-        self, session: AsyncSession, review_id: int
+        self, session: AsyncSession, review_id: int, acting_user_id: int
     ) -> JobReviewEntity:
         """Return the pending review for review_id, or raise ValueError.
 
         Args:
             session (AsyncSession): Active database async session.
             review_id (int): Identifier to look up.
+            acting_user_id (int): The authenticated user making the decision;
+                must be the review's assigned reviewer.
 
         Returns:
             JobReviewEntity: The pending review.
 
         Raises:
-            ValueError: If the review is missing or already decided.
+            ValueError: If the review is missing, already decided, or the acting
+                user is not the assigned reviewer.
         """
         review = await self.job_review_repository.get(session, review_id)
         if review is None:
             raise ValueError(f"Review {review_id} not found")
         if review.status != JobReviewStatus.PENDING:
             raise ValueError(f"Review {review_id} is not pending")
+        if review.reviewer_id != acting_user_id:
+            # Only the assigned reviewer may decide. Because submit_for_review
+            # rejects reviewer == submitter, enforcing this here also prevents a
+            # submitter from approving or rejecting their own posting.
+            raise ValueError(
+                f"Only the assigned reviewer may decide review {review_id}"
+            )
         return review
 
     async def close_job(self, session: AsyncSession, job_id: int) -> JobDto:
