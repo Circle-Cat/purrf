@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { toast } from "sonner";
 import { Calendar, RotateCcw } from "lucide-react";
 import {
   Dialog,
@@ -68,7 +69,6 @@ export default function RoundModal({
   const [initialForm, setInitialForm] = useState(EMPTY_FORM);
   const [template, setTemplate] = useState(EMPTY_TEMPLATE);
   const [formError, setFormError] = useState({});
-  const [apiError, setApiError] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
 
   const initializeEditForm = (r) => {
@@ -91,14 +91,12 @@ export default function RoundModal({
       initializeCreateForm();
     }
     setFormError({});
-    setApiError(null);
     setIsSaving(false);
   }, [open, round, isEdit]);
 
   const resetForm = () => {
     setForm(initialForm);
     setFormError({});
-    setApiError(null);
     if (!isEdit) setTemplate(EMPTY_TEMPLATE);
   };
 
@@ -129,13 +127,12 @@ export default function RoundModal({
       return;
     }
     setFormError({});
-    setApiError(null);
     setIsSaving(true);
     try {
       await onSave(buildUpsertPayload(form));
     } catch (err) {
       const msg = err?.response?.data?.message || err?.message;
-      setApiError(msg ?? "Failed to save round. Please try again.");
+      toast.error(msg ?? "Couldn't save the round. Please try again.");
     } finally {
       setIsSaving(false);
     }
@@ -293,10 +290,6 @@ export default function RoundModal({
                 readOnly={readOnly}
               />
             </div>
-
-            {apiError && (
-              <span className="text-destructive text-xs">{apiError}</span>
-            )}
           </div>
           <div className="pointer-events-none sticky bottom-0 h-8 bg-gradient-to-t from-background to-transparent" />
         </div>
