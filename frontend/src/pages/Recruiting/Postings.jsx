@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -11,8 +12,6 @@ import {
 import { useAuth } from "@/context/auth/AuthContext";
 import {
   listJobs,
-  createJob,
-  updateJob,
   closeJob,
   listApprovers,
   submitForReview,
@@ -20,8 +19,8 @@ import {
   requestReopen,
   deleteJob,
 } from "@/api/recruitingApi";
+import { ROUTE_PATHS } from "@/constants/RoutePaths";
 import PostingsList from "@/pages/Recruiting/components/PostingsList";
-import PostingForm from "@/pages/Recruiting/components/PostingForm";
 import PostingPreview from "@/pages/Recruiting/components/PostingPreview";
 import SubmitReviewDialog from "@/pages/Recruiting/components/SubmitReviewDialog";
 
@@ -47,9 +46,8 @@ const REVIEW_ACTION = {
 /** Postings management page: lifecycle + review submission. */
 const Postings = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [jobs, setJobs] = useState([]);
-  const [formOpen, setFormOpen] = useState(false);
-  const [editing, setEditing] = useState(null);
   const [submitOpen, setSubmitOpen] = useState(false);
   const [reviewAction, setReviewAction] = useState(null); // { kind, jobId }
   const [approvers, setApprovers] = useState([]);
@@ -80,23 +78,6 @@ const Postings = () => {
     } catch (e) {
       toast.error(e.message);
     }
-  };
-
-  const openCreate = () => {
-    setEditing(null);
-    setFormOpen(true);
-  };
-  const openEdit = (job) => {
-    setEditing(job);
-    setFormOpen(true);
-  };
-
-  const handleFormSubmit = (body) => {
-    setFormOpen(false);
-    run(
-      () => (editing ? updateJob(editing.id, body) : createJob(body)),
-      editing ? "Posting updated." : "Posting created.",
-    );
   };
 
   /**
@@ -141,23 +122,19 @@ const Postings = () => {
     <div className="space-y-4 p-6">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold text-slate-900">Postings</h1>
-        <Button onClick={openCreate}>New posting</Button>
+        <Button onClick={() => navigate(ROUTE_PATHS.RECRUITING_POSTING_NEW)}>
+          New posting
+        </Button>
       </div>
       <PostingsList
         jobs={jobs}
-        onEdit={openEdit}
+        onEdit={(job) => navigate(ROUTE_PATHS.RECRUITING_POSTING_EDIT(job.id))}
         onSubmit={(id) => openReview(id, "submit")}
         onClose={(id) => run(() => closeJob(id), "Posting closed.")}
         onRequestClose={(id) => openReview(id, "close")}
         onRequestReopen={(id) => openReview(id, "reopen")}
         onDelete={askDelete}
         onView={(job) => setPreviewJob(job)}
-      />
-      <PostingForm
-        open={formOpen}
-        job={editing}
-        onSubmit={handleFormSubmit}
-        onOpenChange={setFormOpen}
       />
       <PostingPreview
         open={!!previewJob}

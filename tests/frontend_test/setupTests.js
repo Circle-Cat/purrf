@@ -9,6 +9,20 @@ globalThis.ResizeObserver = class {
   disconnect() {}
 };
 
+// Radix Select/Dropdown open via pointer-capture + scroll the active option
+// into view — neither exists in jsdom, so the portal'd listbox never mounts and
+// its options are unreachable in tests. These no-ops fix it. Do NOT add a
+// PointerEvent shim: defining PointerEvent flips userEvent into pointer-event
+// dispatch and regresses other suites.
+Element.prototype.hasPointerCapture =
+  Element.prototype.hasPointerCapture || (() => false);
+Element.prototype.setPointerCapture =
+  Element.prototype.setPointerCapture || (() => {});
+Element.prototype.releasePointerCapture =
+  Element.prototype.releasePointerCapture || (() => {});
+Element.prototype.scrollIntoView =
+  Element.prototype.scrollIntoView || (() => {});
+
 // pdfjs-dist (4.x) calls Promise.withResolvers, which is native in modern
 // browsers (the production target) but absent in the pinned Node 18 test
 // toolchain. Provide the standard ponyfill so the resume parser can be tested.
