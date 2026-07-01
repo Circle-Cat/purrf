@@ -65,3 +65,40 @@ class RecruitingMapper:
             was_published=job.was_published or False,
             cooldown_days=job.cooldown_days,
         )
+
+    def to_application_dto(self, application, current_submission=None):
+        """Map an application (+ its current submission version) to a DTO.
+
+        Args:
+            application (ApplicationEntity): The application container.
+            current_submission (ApplicationSubmissionEntity | None): Highest
+                version, or None if not yet written.
+
+        Returns:
+            ApplicationDto: The response DTO.
+        """
+        from backend.dto.application_dto import ApplicationDto, ApplicationSubmissionDto
+
+        current = (
+            ApplicationSubmissionDto(
+                version=current_submission.version,
+                # Mapped-column default (False) only applies on flush; a
+                # freshly-constructed, not-yet-flushed entity has None here.
+                is_frozen=bool(current_submission.is_frozen),
+                submission=current_submission.submission,
+                resume_object_key=current_submission.resume_object_key,
+                resume_sha256=current_submission.resume_sha256,
+                submitted_at=current_submission.submitted_at,
+            )
+            if current_submission is not None
+            else None
+        )
+        return ApplicationDto(
+            id=application.application_id,
+            job_id=application.job_id,
+            user_id=application.user_id,
+            stage=application.stage,
+            sub_status=application.sub_status,
+            tags=application.tags,
+            current=current,
+        )

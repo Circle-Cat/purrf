@@ -18,6 +18,17 @@ class ApplicationRepository:
         )
         return result.scalar_one_or_none()
 
+    async def get_by_id(
+        self, session: AsyncSession, application_id: int
+    ) -> ApplicationEntity | None:
+        """Return the application with this application_id, or None."""
+        result = await session.execute(
+            select(ApplicationEntity).where(
+                ApplicationEntity.application_id == application_id,
+            )
+        )
+        return result.scalar_one_or_none()
+
     async def create(
         self, session: AsyncSession, entity: ApplicationEntity
     ) -> ApplicationEntity:
