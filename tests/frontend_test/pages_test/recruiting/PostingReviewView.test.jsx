@@ -1,6 +1,9 @@
-import { describe, it, expect } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import PostingReviewView from "@/pages/Recruiting/components/PostingReviewView";
+import * as api from "@/api/recruitingApi";
+
+vi.mock("@/api/recruitingApi");
 
 const job = {
   title: "SWE",
@@ -19,8 +22,14 @@ const job = {
 };
 
 describe("PostingReviewView", () => {
-  it("renders the applicant view and pipeline for a non-revision review", () => {
+  beforeEach(() => {
+    api.listInterviewPool.mockResolvedValue({ data: [] });
+    api.listJobOwners.mockResolvedValue({ data: [] });
+  });
+
+  it("renders the applicant view and pipeline for a non-revision review", async () => {
     render(<PostingReviewView job={job} />);
+    await waitFor(() => expect(api.listInterviewPool).toHaveBeenCalled());
     expect(screen.getByLabelText("Live question")).toBeInTheDocument();
     expect(screen.getByText("1. Tech — 1 round(s)")).toBeInTheDocument();
     expect(
@@ -28,8 +37,9 @@ describe("PostingReviewView", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("defaults to Pending and toggles to Live for a revision", () => {
+  it("defaults to Pending and toggles to Live for a revision", async () => {
     render(<PostingReviewView job={job} isRevision />);
+    await waitFor(() => expect(api.listInterviewPool).toHaveBeenCalled());
     expect(screen.getByLabelText("Pending question")).toBeInTheDocument();
     expect(
       screen.getByText("1. Board review — 1 round(s)"),
@@ -39,7 +49,7 @@ describe("PostingReviewView", () => {
     expect(screen.getByText("1. Tech — 1 round(s)")).toBeInTheDocument();
   });
 
-  it("falls back to live form and pipeline when a revision omits pending fields", () => {
+  it("falls back to live form and pipeline when a revision omits pending fields", async () => {
     const partial = {
       title: "SWE",
       kind: "employment",
@@ -52,8 +62,28 @@ describe("PostingReviewView", () => {
       // no pendingFormSchema / pendingProfileConfig / pendingPipelineConfig
     };
     render(<PostingReviewView job={partial} isRevision />);
+    await waitFor(() => expect(api.listInterviewPool).toHaveBeenCalled());
     // Pending is the default view; with no pending fields it shows live content.
     expect(screen.getByLabelText("Live question")).toBeInTheDocument();
     expect(screen.getByText("1. Tech — 1 round(s)")).toBeInTheDocument();
+  });
+
+  it("shows resolved owner/assignee names in the pipeline", async () => {
+    api.listJobOwners.mockResolvedValue({
+      data: [{ userId: 42, name: "Bo", email: "bo@x.com" }],
+    });
+    api.listInterviewPool.mockResolvedValue({
+      data: [{ userId: 7, name: "Ann", email: "ann@x.com" }],
+    });
+    const ownerJob = {
+      ...job,
+      pipelineConfig: {
+        ownerId: 42,
+        stages: [{ stage: "tech", rounds: 1, defaultAssigneeId: 7 }],
+      },
+    };
+    render(<PostingReviewView job={ownerJob} />);
+    expect(await screen.findByText("Owner: Bo (#42)")).toBeInTheDocument();
+    expect(screen.getByText("Assignee Ann (#7)")).toBeInTheDocument();
   });
 });

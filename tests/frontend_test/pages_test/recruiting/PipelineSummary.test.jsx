@@ -37,4 +37,19 @@ describe("PipelineSummary", () => {
     render(<PipelineSummary pipelineConfig={{ stages: [] }} />);
     expect(screen.getByText("No stages configured.")).toBeInTheDocument();
   });
+
+  it("resolves owner and assignee ids to names via the pools", () => {
+    render(
+      <PipelineSummary
+        pipelineConfig={{
+          ownerId: 42,
+          stages: [{ stage: "tech", rounds: 1, defaultAssigneeId: 7 }],
+        }}
+        jobOwners={[{ userId: 42, name: "Bo", email: "bo@x.com" }]}
+        interviewPool={[{ userId: 7, name: "Ann", email: "ann@x.com" }]}
+      />,
+    );
+    expect(screen.getByText("Owner: Bo (#42)")).toBeInTheDocument();
+    expect(screen.getByText("Assignee Ann (#7)")).toBeInTheDocument();
+  });
 });
