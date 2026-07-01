@@ -23,6 +23,7 @@ class JobCreateDto(BaseRequestDto):
     pipeline_config: PipelineConfigDto | None = None
     screen_rules: ScreenRulesDto | None = None
     profile_config: ProfileConfigDto | None = None
+    cooldown_days: int | None = None
 
     @model_validator(mode="after")
     def validate_answer_rules_against_form(self) -> "JobCreateDto":
@@ -80,3 +81,23 @@ class JobDto(BaseDto):
     pending_profile_config: dict | None = None
     last_reject_comment: str | None = None
     was_published: bool = False
+    cooldown_days: int | None = None
+
+
+class PublicJobDto(BaseDto):
+    """Candidate-safe projection of a published posting.
+
+    Deliberately excludes internal recruiting config that must never reach a
+    candidate: ``screen_rules`` (auto-reject logic), ``pipeline_config``
+    (internal stages + staff ``ownerId``/``defaultAssigneeId``), the
+    ``pending_*`` fields, and ``last_reject_comment``. Only what the
+    applicant-facing form needs is exposed.
+    """
+
+    id: int
+    title: str
+    description: str | None = None
+    kind: JobKind
+    mentorship_role: ParticipantRole | None = None
+    form_schema: dict | None = None
+    profile_config: dict | None = None
