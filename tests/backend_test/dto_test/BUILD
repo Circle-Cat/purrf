@@ -11,3 +11,9 @@ py_test(
     srcs = ["job_dto_test.py"],
     deps = ["//backend/dto"],
 )
+
+py_test(
+    name = "application_dto_test",
+    srcs = ["application_dto_test.py"],
+    deps = ["//backend/common:recruiting_enums", "//backend/dto"],
+)

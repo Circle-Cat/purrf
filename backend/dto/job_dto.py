@@ -23,6 +23,7 @@ class JobCreateDto(BaseRequestDto):
     pipeline_config: PipelineConfigDto | None = None
     screen_rules: ScreenRulesDto | None = None
     profile_config: ProfileConfigDto | None = None
+    cooldown_days: int | None = None
 
     @model_validator(mode="after")
     def validate_answer_rules_against_form(self) -> "JobCreateDto":
@@ -80,3 +81,4 @@ class JobDto(BaseDto):
     pending_profile_config: dict | None = None
     last_reject_comment: str | None = None
     was_published: bool = False
+    cooldown_days: int | None = None
