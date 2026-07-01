@@ -43,7 +43,8 @@ export const POSTINGS_GUIDE = {
   statuses: [
     {
       name: "Draft",
-      description: "Editable, visible only to you. Submit for review to publish.",
+      description:
+        "Editable, visible only to you. Submit for review to publish.",
     },
     {
       name: "Pending review",
