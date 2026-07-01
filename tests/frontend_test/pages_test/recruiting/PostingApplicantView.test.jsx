@@ -18,7 +18,7 @@ const questions = [
 ];
 
 describe("PostingApplicantView", () => {
-  it("renders title, kind, description, profile requirements and the form", () => {
+  it("renders title, kind, description, profile form and the questions", () => {
     render(
       <PostingApplicantView
         title="SWE Intern"
@@ -33,8 +33,8 @@ describe("PostingApplicantView", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("employment")).toBeInTheDocument();
     expect(screen.getByText("Great role.")).toBeInTheDocument();
-    expect(screen.getByText("Resume")).toBeInTheDocument();
-    expect(screen.getByText("Required")).toBeInTheDocument();
+    expect(screen.getByText("Profile")).toBeInTheDocument();
+    expect(screen.getByText("Contact email")).toBeInTheDocument();
     expect(
       screen.getByRole("radiogroup", { name: "Referred?" }),
     ).toBeInTheDocument();
