@@ -28,7 +28,7 @@ const PipelineSummary = ({ pipelineConfig }) => {
         <ol className="space-y-1">
           {stages.map((s, i) => (
             <li
-              key={s.stage ?? i}
+              key={`${s.stage ?? "stage"}-${i}`}
               className="flex flex-wrap items-center gap-2 text-sm text-slate-700"
             >
               <span>{`${i + 1}. ${stageLabel(s.stage)} — ${s.rounds ?? 1} round(s)`}</span>
