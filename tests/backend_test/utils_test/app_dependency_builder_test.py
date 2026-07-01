@@ -84,11 +84,13 @@ from backend.common.environment_constants import (
 @patch("backend.utils.app_dependency_builder.RetryUtils")
 @patch("backend.utils.app_dependency_builder.JiraClient")
 @patch("backend.utils.app_dependency_builder.JiraHistorySyncService")
+@patch("backend.utils.app_dependency_builder.storage")
 @patch("os.getenv")
 class TestAppDependencyBuilder(TestCase):
     def test_dependencies_are_wired_correctly(
         self,
         mock_os_getenv,
+        mock_storage_module,
         mock_jira_history_cls,
         mock_jira_client_cls,
         mock_retry_utils_cls,
@@ -548,6 +550,7 @@ class TestAppDependencyBuilder(TestCase):
             email_management_controller=mock_email_management_controller_cls.return_value,
             permission_admin_controller=mock_permission_admin_controller_cls.return_value,
             recruiting_controller=ANY,
+            application_controller=ANY,
             launchdarkly_client=mock_launchdarkly_client_cls.return_value,
             database=mock_database_cls.return_value,
             logger=mock_logger,

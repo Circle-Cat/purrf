@@ -48,3 +48,13 @@ py_test(
         "//backend/recruiting",
     ],
 )
+
+py_test(
+    name = "application_controller_test",
+    srcs = ["application_controller_test.py"],
+    deps = [
+        "//backend/dto",
+        "//backend/recruiting",
+        "@pypi//python_multipart",
+    ],
+)
