@@ -5,16 +5,14 @@ from backend.dto.application_dto import ApplicationSubmitDto, ApplicationEditDto
 
 class TestApplicationDtos(unittest.TestCase):
     def test_submit_accepts_camel_case_aliases(self):
-        dto = ApplicationSubmitDto.model_validate(
-            {
-                "jobId": 7,
-                "personal": {"firstName": "A"},
-                "answers": {"q1": "yes"},
-                "resumeSha256": "abc",
-                "resumeObjectKey": "resumes/abc.pdf",
-                "saveToProfile": True,
-            }
-        )
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 7,
+            "personal": {"firstName": "A"},
+            "answers": {"q1": "yes"},
+            "resumeSha256": "abc",
+            "resumeObjectKey": "resumes/abc.pdf",
+            "saveToProfile": True,
+        })
         self.assertEqual(dto.job_id, 7)
         self.assertTrue(dto.save_to_profile)
         self.assertEqual(dto.resume_object_key, "resumes/abc.pdf")

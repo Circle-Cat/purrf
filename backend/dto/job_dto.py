@@ -82,3 +82,22 @@ class JobDto(BaseDto):
     last_reject_comment: str | None = None
     was_published: bool = False
     cooldown_days: int | None = None
+
+
+class PublicJobDto(BaseDto):
+    """Candidate-safe projection of a published posting.
+
+    Deliberately excludes internal recruiting config that must never reach a
+    candidate: ``screen_rules`` (auto-reject logic), ``pipeline_config``
+    (internal stages + staff ``ownerId``/``defaultAssigneeId``), the
+    ``pending_*`` fields, and ``last_reject_comment``. Only what the
+    applicant-facing form needs is exposed.
+    """
+
+    id: int
+    title: str
+    description: str | None = None
+    kind: JobKind
+    mentorship_role: ParticipantRole | None = None
+    form_schema: dict | None = None
+    profile_config: dict | None = None

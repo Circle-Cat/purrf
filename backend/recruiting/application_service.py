@@ -169,7 +169,13 @@ class ApplicationService:
             applied_at = (
                 existing.created_datetime or datetime.now(timezone.utc)
             ).date()
-            rejected_at = (prior.submitted_at or existing.created_datetime).date()
+            # Use the application container's last-update time (when it was
+            # moved to REJECTED), not the frozen submission's submitted_at —
+            # for fixed-cooldown (non-ACTIVITY) jobs the thaw is anchored to
+            # the actual rejection moment, which submitted_at can predate.
+            rejected_at = (
+                existing.updated_timestamp or existing.created_datetime
+            ).date()
             thaw = cooldown.compute_thaw(
                 job.kind, applied_at, rejected_at, job.cooldown_days
             )
@@ -195,6 +201,7 @@ class ApplicationService:
         if not blocked and self._profile_writeback and dto.save_to_profile:
             await self._safe_writeback(session, current_user.user_id, dto)
 
+        await session.commit()
         return self.recruiting_mapper.to_application_dto(application, current_sub)
 
     async def edit(
@@ -235,6 +242,7 @@ class ApplicationService:
         )
         if self._profile_writeback and dto.save_to_profile:
             await self._safe_writeback(session, current_user.user_id, dto)
+        await session.commit()
         return self.recruiting_mapper.to_application_dto(application, current_sub)
 
     async def get_mine(

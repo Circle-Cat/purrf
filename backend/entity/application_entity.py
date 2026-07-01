@@ -1,6 +1,5 @@
 from datetime import datetime
 from sqlalchemy import (
-    Boolean,
     DateTime,
     Enum,
     ForeignKey,
@@ -19,7 +18,9 @@ class ApplicationEntity(Base):
     """One candidate's application to a posting (unique per job+user)."""
 
     __tablename__ = "application"
-    __table_args__ = (UniqueConstraint("job_id", "user_id", name="uq_application_job_user"),)
+    __table_args__ = (
+        UniqueConstraint("job_id", "user_id", name="uq_application_job_user"),
+    )
 
     application_id: Mapped[int] = mapped_column(
         Integer, primary_key=True, autoincrement=True

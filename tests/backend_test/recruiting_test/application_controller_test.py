@@ -19,7 +19,7 @@ class TestApplicationController(unittest.IsolatedAsyncioTestCase):
         self.app_service.get_mine = AsyncMock(return_value=None)
 
         self.job_service = MagicMock()
-        self.job_service.get_published_job = AsyncMock(return_value={"id": 1})
+        self.job_service.get_published_job_public = AsyncMock(return_value={"id": 1})
 
         self.resume_storage = MagicMock()
         self.resume_storage.put = MagicMock(return_value=("abc", "resumes/abc.pdf"))
@@ -28,9 +28,7 @@ class TestApplicationController(unittest.IsolatedAsyncioTestCase):
             self.app_service, self.job_service, self.resume_storage, self.database
         )
 
-        self.patcher = patch(
-            "backend.recruiting.application_controller.api_response"
-        )
+        self.patcher = patch("backend.recruiting.application_controller.api_response")
         self.mock_api_response = self.patcher.start()
         self.mock_api_response.side_effect = (
             lambda message, data=None, status_code=HTTPStatus.OK, success=True: {
@@ -44,7 +42,9 @@ class TestApplicationController(unittest.IsolatedAsyncioTestCase):
 
     async def test_get_public_job_delegates(self):
         resp = await self.controller.get_public_job(self.ctx, 1)
-        self.job_service.get_published_job.assert_awaited_once_with(self.session, 1)
+        self.job_service.get_published_job_public.assert_awaited_once_with(
+            self.session, 1
+        )
         self.assertEqual(resp["data"], {"id": 1})
 
     async def test_upload_resume_returns_object_key(self):

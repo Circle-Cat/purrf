@@ -1,7 +1,7 @@
 from backend.entity.job_entity import JobEntity
 from backend.entity.job_review_entity import JobReviewEntity
 from backend.entity.users_entity import UsersEntity
-from backend.dto.job_dto import JobDto
+from backend.dto.job_dto import JobDto, PublicJobDto
 from backend.dto.job_review_dto import ApproverDto, JobReviewDto
 
 
@@ -64,6 +64,30 @@ class RecruitingMapper:
             last_reject_comment=last_reject_comment,
             was_published=job.was_published or False,
             cooldown_days=job.cooldown_days,
+        )
+
+    def to_public_job_dto(self, job: JobEntity) -> PublicJobDto:
+        """Map a JobEntity to the candidate-safe PublicJobDto.
+
+        Only exposes the fields an applicant's form needs: maps the *live*
+        (published) ``form_schema``/``profile_config`` — never the
+        ``pending_*`` variants — and omits ``screen_rules``,
+        ``pipeline_config``, and ``last_reject_comment`` entirely.
+
+        Args:
+            job (JobEntity): The published posting entity to convert.
+
+        Returns:
+            PublicJobDto: The candidate-facing projection.
+        """
+        return PublicJobDto(
+            id=job.job_id,
+            title=job.title,
+            description=job.description,
+            kind=job.kind,
+            mentorship_role=job.mentorship_role,
+            form_schema=job.form_schema,
+            profile_config=job.profile_config,
         )
 
     def to_application_dto(self, application, current_submission=None):

@@ -61,9 +61,9 @@ class ApplicationController:
         )
 
     async def get_public_job(self, current_user: UserContextDto, job_id: int):
-        """Fetch a published posting for the application form."""
+        """Fetch a published posting's candidate-safe projection for the application form."""
         async with self.database.session() as session:
-            result = await self.job_service.get_published_job(session, job_id)
+            result = await self.job_service.get_published_job_public(session, job_id)
         return api_response(message="Job fetched.", data=result)
 
     async def upload_resume(

@@ -15,5 +15,8 @@ py_test(
 py_test(
     name = "application_dto_test",
     srcs = ["application_dto_test.py"],
-    deps = ["//backend/common:recruiting_enums", "//backend/dto"],
+    deps = [
+        "//backend/common:recruiting_enums",
+        "//backend/dto",
+    ],
 )

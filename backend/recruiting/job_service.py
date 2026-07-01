@@ -6,7 +6,7 @@ from backend.repository.job_repository import JobRepository
 from backend.repository.job_review_repository import JobReviewRepository
 from backend.repository.user_permissions_repository import UserPermissionsRepository
 from backend.recruiting.recruiting_mapper import RecruitingMapper
-from backend.dto.job_dto import JobCreateDto, JobDto
+from backend.dto.job_dto import JobCreateDto, JobDto, PublicJobDto
 from backend.dto.job_review_dto import ApproverDto, JobReviewDto
 from backend.common.permissions import Permission
 from backend.common.recruiting_enums import (
@@ -847,3 +847,28 @@ class JobService:
         if job is None or job.status != JobStatus.PUBLISHED:
             raise ValueError(f"Published job {job_id} not found")
         return self.recruiting_mapper.to_job_dto(job)
+
+    async def get_published_job_public(
+        self, session: AsyncSession, job_id: int
+    ) -> PublicJobDto:
+        """Return a PUBLISHED posting's candidate-safe projection.
+
+        Same lookup/validation as ``get_published_job``, but maps through
+        ``to_public_job_dto`` so internal config (screen_rules,
+        pipeline_config, pending_*, last_reject_comment) never reaches the
+        candidate-facing application form.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            job_id (int): The posting id.
+
+        Returns:
+            PublicJobDto: The published posting's candidate-safe projection.
+
+        Raises:
+            ValueError: If the posting is missing or not PUBLISHED.
+        """
+        job = await self.job_repository.get_by_job_id(session, job_id)
+        if job is None or job.status != JobStatus.PUBLISHED:
+            raise ValueError(f"Published job {job_id} not found")
+        return self.recruiting_mapper.to_public_job_dto(job)
