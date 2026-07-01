@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.recruiting_enums import ApplicationStage, JobStatus
@@ -9,6 +11,7 @@ from backend.dto.application_dto import (
 from backend.dto.user_context_dto import UserContextDto
 from backend.entity.application_entity import ApplicationEntity
 from backend.entity.application_submission_entity import ApplicationSubmissionEntity
+from backend.recruiting import cooldown
 
 
 class ApplicationService:
@@ -41,6 +44,11 @@ class ApplicationService:
         self.users_repository = users_repository
         self.recruiting_mapper = recruiting_mapper
         self._profile_writeback = profile_writeback
+
+    @staticmethod
+    def _today():
+        """Current UTC date (seam for tests)."""
+        return datetime.now(timezone.utc).date()
 
     @staticmethod
     def _snapshot(dto) -> dict:
@@ -100,8 +108,9 @@ class ApplicationService:
             ApplicationDto: The persisted application with its current version.
 
         Raises:
-            ValueError: If the posting is missing or not PUBLISHED, or a
-                required résumé/answer is missing.
+            ValueError: If the posting is missing or not PUBLISHED, a required
+                résumé/answer is missing, or an existing application is not a
+                REJECTED terminal eligible for re-application.
         """
         job = await self.job_repository.get_by_job_id(session, dto.job_id)
         if job is None or job.status != JobStatus.PUBLISHED:
@@ -146,10 +155,41 @@ class ApplicationService:
                 session, application.application_id, version, current_sub, dto
             )
         else:
-            # Only a re-application after a REJECTED terminal is allowed; the
-            # re-apply branch (new version + cold-freeze tag) is added in Task 8.
-            raise ValueError(
-                "you already have an application for this job; edit it instead"
+            prior = await self.application_submission_repository.get_current(
+                session, existing.application_id
+            )
+            if existing.stage != ApplicationStage.REJECTED or prior is None:
+                raise ValueError(
+                    "you already have an application for this job; edit it instead"
+                )
+            # Freeze the prior attempt so its snapshot survives for the diff.
+            prior.is_frozen = True
+            await self.application_submission_repository.update(session, prior)
+
+            applied_at = (
+                existing.created_datetime or datetime.now(timezone.utc)
+            ).date()
+            rejected_at = (prior.submitted_at or existing.created_datetime).date()
+            thaw = cooldown.compute_thaw(
+                job.kind, applied_at, rejected_at, job.cooldown_days
+            )
+            tags = (
+                {"cold_freeze": {"thaw_date": thaw.isoformat()}}
+                if cooldown.is_in_cooldown(self._today(), thaw)
+                else None
+            )
+            existing.stage = ApplicationStage.APPLIED
+            existing.tags = tags
+            application = await self.application_repository.update(session, existing)
+            current_sub = await self.application_submission_repository.create(
+                session,
+                ApplicationSubmissionEntity(
+                    application_id=application.application_id,
+                    version=prior.version + 1,
+                    submission=self._snapshot(dto),
+                    resume_object_key=dto.resume_object_key,
+                    resume_sha256=dto.resume_sha256,
+                ),
             )
 
         if not blocked and self._profile_writeback and dto.save_to_profile:

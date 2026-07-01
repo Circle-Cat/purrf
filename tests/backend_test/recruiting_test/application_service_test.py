@@ -1,4 +1,5 @@
 import unittest
+from datetime import date, datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 from backend.recruiting.application_service import ApplicationService
 from backend.recruiting.recruiting_mapper import RecruitingMapper
@@ -132,6 +133,45 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
                 self._ctx(),
                 ApplicationSubmitDto.model_validate({"jobId": 1}),
             )
+
+    async def test_reapply_after_reject_mints_new_version_and_freezes_prior(self):
+        app = ApplicationEntity(job_id=1, user_id=2, stage=ApplicationStage.REJECTED)
+        app.application_id = 100
+        app.created_datetime = datetime(2026, 1, 10, tzinfo=timezone.utc)
+        self.app_repo.get_by_job_and_user = AsyncMock(return_value=app)
+        prior = ApplicationSubmissionEntity(
+            application_id=100, version=1, submission={"v": 1}
+        )
+        prior.submitted_at = datetime(2026, 1, 20, tzinfo=timezone.utc)
+        self.sub_repo.get_current = AsyncMock(return_value=prior)
+        self.service._today = lambda: date(2026, 2, 1)  # inside cooldown (< 2026-04-01)
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": {"firstName": "New"},
+        })
+        result = await self.service.submit(self.session, self._ctx(), dto)
+        self.assertEqual(result.stage, ApplicationStage.APPLIED)
+        self.assertTrue(prior.is_frozen)  # prior version preserved as frozen
+        created_sub = self.sub_repo.create.call_args.args[1]
+        self.assertEqual(created_sub.version, 2)
+        self.assertIn("cold_freeze", result.tags or {})
+        self.assertEqual(result.tags["cold_freeze"]["thaw_date"], "2026-04-01")
+
+    async def test_reapply_after_thaw_has_no_cold_freeze_tag(self):
+        app = ApplicationEntity(job_id=1, user_id=2, stage=ApplicationStage.REJECTED)
+        app.application_id = 100
+        app.created_datetime = datetime(2026, 1, 10, tzinfo=timezone.utc)
+        self.app_repo.get_by_job_and_user = AsyncMock(return_value=app)
+        prior = ApplicationSubmissionEntity(
+            application_id=100, version=1, submission={}
+        )
+        prior.submitted_at = datetime(2026, 1, 20, tzinfo=timezone.utc)
+        self.sub_repo.get_current = AsyncMock(return_value=prior)
+        self.service._today = lambda: date(2026, 5, 1)  # past thaw (>= 2026-04-01)
+        result = await self.service.submit(
+            self.session, self._ctx(), ApplicationSubmitDto.model_validate({"jobId": 1})
+        )
+        self.assertNotIn("cold_freeze", result.tags or {})
 
 
 if __name__ == "__main__":
