@@ -2,7 +2,10 @@ import React from "react";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { toast } from "sonner";
 import RoundModal from "@/pages/MentorshipManagement/components/RoundModal";
+
+vi.spyOn(toast, "error").mockImplementation(() => {});
 
 vi.mock("@/pages/MentorshipManagement/components/PhaseTimelineTable", () => ({
   default: vi.fn(() => <div data-testid="mock-phase-timeline-table" />),
@@ -100,12 +103,12 @@ describe("RoundModal", () => {
     );
   });
 
-  it("shows API error when onSave rejects", async () => {
+  it("shows an error toast when onSave rejects", async () => {
     const onSave = vi.fn().mockRejectedValue({ message: "Server error" });
     renderModal({ round: fullEditRound, onSave });
     await userEvent.click(screen.getByRole("button", { name: /^save$/i }));
     await waitFor(() =>
-      expect(screen.getByText("Server error")).toBeInTheDocument(),
+      expect(toast.error).toHaveBeenCalledWith("Server error"),
     );
   });
 
