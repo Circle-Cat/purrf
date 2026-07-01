@@ -19,3 +19,9 @@ py_test(
         "//backend/recruiting",
     ],
 )
+
+py_test(
+    name = "cooldown_test",
+    srcs = ["cooldown_test.py"],
+    deps = ["//backend/common:recruiting_enums", "//backend/recruiting"],
+)
