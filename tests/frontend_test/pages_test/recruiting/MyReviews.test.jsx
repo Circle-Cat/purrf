@@ -33,6 +33,17 @@ describe("MyReviews page", () => {
     expect(api.getJob).toHaveBeenCalledWith(1);
   });
 
+  it("shows the How it works guide with review kinds", async () => {
+    render(<MyReviews />);
+    await screen.findByRole("button", { name: "Review" });
+    fireEvent.click(screen.getByRole("button", { name: "How it works" }));
+    expect(
+      await screen.findByRole("heading", { name: "How reviews work" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Initial")).toBeInTheDocument();
+    expect(screen.getByText("Reopen")).toBeInTheDocument();
+  });
+
   it("approves then returns to the refreshed queue", async () => {
     render(<MyReviews />);
     fireEvent.click(await screen.findByRole("button", { name: "Review" }));
