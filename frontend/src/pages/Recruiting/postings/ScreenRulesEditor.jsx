@@ -59,7 +59,11 @@ const ActionSelect = ({ label, value, onChange }) => (
  * @param {{value: {rules: object[]}, onChange: (next: object) => void,
  *          questions: object[]}} props
  */
-const ScreenRulesEditor = ({ value = { rules: [] }, onChange, questions = [] }) => {
+const ScreenRulesEditor = ({
+  value = { rules: [] },
+  onChange,
+  questions = [],
+}) => {
   const [rules, setRules] = useState(value.rules ?? []);
 
   const emailRule = rules.find((r) => r.condition.source === "email_domain");
@@ -93,7 +97,12 @@ const ScreenRulesEditor = ({ value = { rules: [] }, onChange, questions = [] }) 
       ...rules,
       {
         id: nextRuleId(rules),
-        condition: { source: "answer", operator: "equals", questionId: "", value: "" },
+        condition: {
+          source: "answer",
+          operator: "equals",
+          questionId: "",
+          value: "",
+        },
         action: "reject",
       },
     ]);
@@ -139,7 +148,9 @@ const ScreenRulesEditor = ({ value = { rules: [] }, onChange, questions = [] }) 
 
       <div className="space-y-2">
         {answerRules.map((rule) => {
-          const q = singleChoice.find((x) => x.id === rule.condition.questionId);
+          const q = singleChoice.find(
+            (x) => x.id === rule.condition.questionId,
+          );
           return (
             <div
               key={rule.id}
@@ -149,11 +160,18 @@ const ScreenRulesEditor = ({ value = { rules: [] }, onChange, questions = [] }) 
                 value={rule.condition.questionId || undefined}
                 onValueChange={(qid) =>
                   patchAnswer(rule, {
-                    condition: { ...rule.condition, questionId: qid, value: "" },
+                    condition: {
+                      ...rule.condition,
+                      questionId: qid,
+                      value: "",
+                    },
                   })
                 }
               >
-                <SelectTrigger aria-label="Answer rule question" className="max-w-xs">
+                <SelectTrigger
+                  aria-label="Answer rule question"
+                  className="max-w-xs"
+                >
                   <SelectValue placeholder="Question" />
                 </SelectTrigger>
                 <SelectContent>
@@ -172,7 +190,10 @@ const ScreenRulesEditor = ({ value = { rules: [] }, onChange, questions = [] }) 
                   })
                 }
               >
-                <SelectTrigger aria-label="Answer rule value" className="max-w-xs">
+                <SelectTrigger
+                  aria-label="Answer rule value"
+                  className="max-w-xs"
+                >
                   <SelectValue placeholder="Value" />
                 </SelectTrigger>
                 <SelectContent>
@@ -200,7 +221,12 @@ const ScreenRulesEditor = ({ value = { rules: [] }, onChange, questions = [] }) 
             </div>
           );
         })}
-        <Button type="button" variant="outline" size="sm" onClick={addAnswerRule}>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={addAnswerRule}
+        >
           Add answer rule
         </Button>
       </div>
