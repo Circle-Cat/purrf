@@ -50,6 +50,22 @@ describe("QuestionEditor", () => {
     expect(onChange).toHaveBeenCalledWith({ ...base, label: "Why us" });
   });
 
+  it("edits the description and clears it to undefined when emptied", () => {
+    const onChange = vi.fn();
+    render(<ControlledEditor initialQuestion={base} onChange={onChange} />);
+    const desc = screen.getByLabelText("Description");
+    fireEvent.change(desc, { target: { value: "Explain briefly" } });
+    expect(onChange).toHaveBeenCalledWith({
+      ...base,
+      description: "Explain briefly",
+    });
+    fireEvent.change(desc, { target: { value: "" } });
+    expect(onChange).toHaveBeenLastCalledWith({
+      ...base,
+      description: undefined,
+    });
+  });
+
   it("shows OptionsEditor for choice types", () => {
     render(
       <QuestionEditor

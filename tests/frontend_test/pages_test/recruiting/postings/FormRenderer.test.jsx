@@ -20,6 +20,27 @@ describe("FormRenderer", () => {
     expect(screen.getByText("Fluent?")).toBeInTheDocument();
   });
 
+  it("renders a question's description as help text, and omits it when absent", () => {
+    render(
+      <FormRenderer
+        questions={[
+          {
+            id: "q1",
+            type: "short_text",
+            label: "Name",
+            description: "Your legal name",
+          },
+          { id: "q2", type: "short_text", label: "Age" },
+        ]}
+        answers={{}}
+        onAnswerChange={() => {}}
+      />,
+    );
+    expect(screen.getByText("Your legal name")).toBeInTheDocument();
+    // The description-less question renders only its label.
+    expect(screen.getByText("Age")).toBeInTheDocument();
+  });
+
   it("hides a showWhen question until the dependency matches", () => {
     const { rerender } = render(
       <FormRenderer questions={QS} answers={{}} onAnswerChange={() => {}} />,
