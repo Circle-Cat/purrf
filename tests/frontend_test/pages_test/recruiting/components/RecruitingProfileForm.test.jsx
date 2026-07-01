@@ -18,6 +18,13 @@ describe("RecruitingProfileForm", () => {
     expect(email).toHaveAttribute("readonly");
   });
 
+  it("renders an empty contact email when there is no AuthProvider", () => {
+    // No AuthContext.Provider: useAuth() returns null; the `?? {}` guard must
+    // keep the component from crashing and leave the email blank.
+    render(<RecruitingProfileForm profileConfig={{}} />);
+    expect(screen.getByLabelText("Contact email")).toHaveValue("");
+  });
+
   it("always renders basic info even when every section is off", () => {
     renderForm({ education: "off", workExperience: "off", resume: "off" });
     expect(screen.getByLabelText("First name")).toBeInTheDocument();

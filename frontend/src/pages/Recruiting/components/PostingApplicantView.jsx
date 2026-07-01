@@ -4,7 +4,7 @@ import RecruitingProfileForm from "@/pages/Recruiting/components/RecruitingProfi
 
 /**
  * Read-only, applicant-facing rendering of one version of a posting: title,
- * kind, description, profile requirements, and the interactive submission form.
+ * kind, description, the profile form, and the interactive submission form.
  * Owns throwaway answer state so `showWhen` conditionals work while previewing;
  * answers are never submitted. Remount with a `key` to reset answers.
  *
