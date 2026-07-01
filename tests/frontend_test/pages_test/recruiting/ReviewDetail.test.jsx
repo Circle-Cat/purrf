@@ -13,8 +13,10 @@ const job = {
   title: "SWE",
   description: "JD",
   status: "pending_review",
-  formSchema: { a: 1 },
-  pipelineConfig: [{ stage: "tech" }],
+  formSchema: {
+    questions: [{ id: "q1", type: "short_text", label: "Your name" }],
+  },
+  pipelineConfig: { stages: [{ stage: "tech", rounds: 1 }] },
 };
 
 describe("ReviewDetail", () => {
@@ -28,7 +30,9 @@ describe("ReviewDetail", () => {
         onBack={() => {}}
       />,
     );
-    expect(screen.getByText("SWE")).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { level: 1, name: "SWE" }),
+    ).toBeInTheDocument();
     expect(screen.getByText("look")).toBeInTheDocument();
   });
 
@@ -68,22 +72,40 @@ describe("ReviewDetail", () => {
     expect(onReject).toHaveBeenCalledWith("fix it");
   });
 
-  it("shows live vs pending for a revision", () => {
+  it("renders the applicant form and readable pipeline for a review", () => {
     render(
       <ReviewDetail
-        review={{ ...review, kind: "revision" }}
-        job={{
-          ...job,
-          status: "published_pending_revision",
-          pendingFormSchema: { a: 2 },
-        }}
+        review={review}
+        job={job}
         onApprove={() => {}}
         onReject={() => {}}
         onBack={() => {}}
       />,
     );
-    expect(screen.getByText("Live")).toBeInTheDocument();
-    expect(screen.getByText("Pending")).toBeInTheDocument();
+    expect(screen.getByLabelText("Your name")).toBeInTheDocument();
+    expect(screen.getByText("1. Tech — 1 round(s)")).toBeInTheDocument();
+    expect(document.querySelector("pre")).toBeNull();
+  });
+
+  it("shows a Pending|Live toggle for a revision", () => {
+    const revisionJob = {
+      ...job,
+      pendingFormSchema: {
+        questions: [{ id: "q1", type: "short_text", label: "Pending name" }],
+      },
+    };
+    render(
+      <ReviewDetail
+        review={{ ...review, kind: "revision" }}
+        job={revisionJob}
+        onApprove={() => {}}
+        onReject={() => {}}
+        onBack={() => {}}
+      />,
+    );
+    expect(screen.getByLabelText("Pending name")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Live" }));
+    expect(screen.getByLabelText("Your name")).toBeInTheDocument();
   });
 
   it("shows 'Request to close this posting.' for kind=close and hides pipeline/form blocks", () => {
@@ -99,8 +121,7 @@ describe("ReviewDetail", () => {
     expect(
       screen.getByText("Request to close this posting."),
     ).toBeInTheDocument();
-    expect(screen.queryByText("Pipeline")).not.toBeInTheDocument();
-    expect(screen.queryByText("Form schema")).not.toBeInTheDocument();
+    expect(screen.queryByText("Interview pipeline")).not.toBeInTheDocument();
   });
 
   it("shows 'Request to reopen this posting.' for kind=reopen and hides pipeline/form blocks", () => {
@@ -116,8 +137,7 @@ describe("ReviewDetail", () => {
     expect(
       screen.getByText("Request to reopen this posting."),
     ).toBeInTheDocument();
-    expect(screen.queryByText("Pipeline")).not.toBeInTheDocument();
-    expect(screen.queryByText("Form schema")).not.toBeInTheDocument();
+    expect(screen.queryByText("Interview pipeline")).not.toBeInTheDocument();
   });
 
   it("approve/reject still work for kind=close", () => {

@@ -27,7 +27,9 @@ describe("MyReviews page", () => {
   it("loads the queue and opens a review detail", async () => {
     render(<MyReviews />);
     fireEvent.click(await screen.findByRole("button", { name: "Review" }));
-    expect(await screen.findByText("SWE")).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "SWE" }),
+    ).toBeInTheDocument();
     expect(api.getJob).toHaveBeenCalledWith(1);
   });
 
