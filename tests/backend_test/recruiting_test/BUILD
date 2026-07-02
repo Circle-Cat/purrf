@@ -45,6 +45,7 @@ py_test(
     deps = [
         "//backend/recruiting",
         "@pypi//google_api_core",
+        "@pypi//google_cloud_storage",
     ],
 )
 

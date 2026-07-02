@@ -146,6 +146,5 @@ py_library(
         "//backend/service:microsoft_service",
         "//backend/user_identity:user_identity_service",
         "@pypi//asyncpg",
-        "@pypi//google_cloud_storage",
     ],
 )
