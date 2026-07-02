@@ -812,12 +812,21 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(review.status, JobReviewStatus.APPROVED)
         self.assertIsNotNone(review.decided_at)
 
-    async def test_approve_reopen_review_publishes_job(self):
-        """Approving a REOPEN review transitions the posting to PUBLISHED."""
-        job = self._job(status=JobStatus.PENDING_REOPEN)
+    async def test_approve_reopen_with_pending_payload_applies_it(self):
+        """Approving a REOPEN with a staged edit applies it and republishes."""
+        job = self._job(status=JobStatus.PENDING_REOPEN, was_published=True, title="old")
+        job.pending_payload = {
+            "title": "new",
+            "description": None,
+            "cooldownDays": None,
+            "screenRules": None,
+            "formSchema": None,
+            "pipelineConfig": None,
+            "profileConfig": None,
+        }
         self.repo.get_by_job_id.return_value = job
         review = JobReviewEntity(
-            review_id=21,
+            review_id=11,
             job_id=job.job_id,
             submitted_by=1,
             reviewer_id=2,
@@ -831,7 +840,30 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(result.status, JobStatus.PUBLISHED)
-        self.assertEqual(review.status, JobReviewStatus.APPROVED)
+        self.assertEqual(result.title, "new")
+        self.assertIsNone(result.pending_payload)
+        self.assertTrue(result.was_published)
+
+    async def test_approve_reopen_without_edit_just_publishes(self):
+        """Approving a REOPEN with no staged edit only flips status."""
+        job = self._job(status=JobStatus.PENDING_REOPEN, was_published=True, title="old")
+        self.repo.get_by_job_id.return_value = job
+        review = JobReviewEntity(
+            review_id=12,
+            job_id=job.job_id,
+            submitted_by=1,
+            reviewer_id=2,
+            status=JobReviewStatus.PENDING,
+            kind=JobReviewKind.REOPEN,
+        )
+        self.review_repo.get.return_value = review
+
+        result = await self.service.approve(
+            self.session, review.review_id, acting_user_id=2
+        )
+
+        self.assertEqual(result.status, JobStatus.PUBLISHED)
+        self.assertEqual(result.title, "old")
 
     # ---------------------------------------------------------------------------
     # reject — CLOSE and REOPEN kinds
@@ -859,12 +891,13 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(review.status, JobReviewStatus.REJECTED)
         self.assertEqual(review.reject_comment, "keep it open")
 
-    async def test_reject_reopen_review_keeps_closed(self):
-        """Rejecting a REOPEN review aborts the reopen and leaves the posting CLOSED."""
-        job = self._job(status=JobStatus.PENDING_REOPEN)
+    async def test_reject_reopen_review_keeps_pending_payload(self):
+        """Rejecting a REOPEN reverts to CLOSED but keeps the staged draft."""
+        job = self._job(status=JobStatus.PENDING_REOPEN, was_published=True)
+        job.pending_payload = {"title": "draft title"}
         self.repo.get_by_job_id.return_value = job
         review = JobReviewEntity(
-            review_id=23,
+            review_id=13,
             job_id=job.job_id,
             submitted_by=1,
             reviewer_id=2,
@@ -874,11 +907,11 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         self.review_repo.get.return_value = review
 
         result = await self.service.reject(
-            self.session, review.review_id, comment="stay closed", acting_user_id=2
+            self.session, review.review_id, comment="not yet", acting_user_id=2
         )
 
         self.assertEqual(result.status, JobStatus.CLOSED)
-        self.assertEqual(review.status, JobReviewStatus.REJECTED)
+        self.assertEqual(result.pending_payload, {"title": "draft title"})
 
     # ---------------------------------------------------------------------------
     # approve — was_published flag
