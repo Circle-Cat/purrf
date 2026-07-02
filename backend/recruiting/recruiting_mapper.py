@@ -1,6 +1,8 @@
+from backend.entity.application_entity import ApplicationEntity
 from backend.entity.job_entity import JobEntity
 from backend.entity.job_review_entity import JobReviewEntity
 from backend.entity.users_entity import UsersEntity
+from backend.dto.board_dto import BoardCardDto
 from backend.dto.job_dto import JobDto, PublicJobDto, PublicJobSummaryDto
 from backend.dto.job_review_dto import ApproverDto, JobReviewDto
 
@@ -102,6 +104,28 @@ class RecruitingMapper:
             title=job.title,
             kind=job.kind,
             description=job.description,
+        )
+
+    def to_board_card_dto(
+        self, application: ApplicationEntity, user: UsersEntity
+    ) -> BoardCardDto:
+        """Map an application + its joined applicant to a board card.
+
+        Args:
+            application (ApplicationEntity): The application to project.
+            user (UsersEntity): The applicant, joined by user_id.
+
+        Returns:
+            BoardCardDto: The board's applicant-card projection.
+        """
+        return BoardCardDto(
+            id=application.application_id,
+            applicant_name=f"{user.first_name} {user.last_name}".strip(),
+            applicant_email=user.primary_email,
+            stage=application.stage,
+            sub_status=application.sub_status,
+            tags=application.tags,
+            applied_at=application.created_datetime,
         )
 
     def to_application_dto(self, application, current_submission=None, editable=False):

@@ -1,10 +1,32 @@
 from backend.entity.application_entity import ApplicationEntity
+from backend.entity.users_entity import UsersEntity
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class ApplicationRepository:
     """Database operations for ApplicationEntity (one row per job+user)."""
+
+    async def list_by_job(
+        self, session: AsyncSession, job_id: int
+    ) -> list[tuple[ApplicationEntity, UsersEntity]]:
+        """Return every application for a job, joined with its applicant.
+
+        Args:
+            session (AsyncSession): The active DB session.
+            job_id (int): The job whose applications to list.
+
+        Returns:
+            list[tuple[ApplicationEntity, UsersEntity]]: (application, user)
+                pairs ordered by application_id (stable board card order).
+        """
+        result = await session.execute(
+            select(ApplicationEntity, UsersEntity)
+            .join(UsersEntity, ApplicationEntity.user_id == UsersEntity.user_id)
+            .where(ApplicationEntity.job_id == job_id)
+            .order_by(ApplicationEntity.application_id)
+        )
+        return [tuple(row) for row in result.all()]
 
     async def get_by_job_and_user(
         self, session: AsyncSession, job_id: int, user_id: int
