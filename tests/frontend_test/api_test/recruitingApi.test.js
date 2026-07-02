@@ -15,6 +15,11 @@ import {
   submitForReview,
   listMyReviews,
   decideReview,
+  getPublicJob,
+  uploadResume,
+  submitApplication,
+  updateApplication,
+  getMyApplication,
 } from "@/api/recruitingApi";
 
 vi.mock("@/utils/request", () => ({
@@ -125,6 +130,36 @@ describe("recruitingApi", () => {
     expect(request.patch).toHaveBeenCalledWith("/recruiting/reviews/9", {
       decision: "reject",
       comment: "no",
+    });
+  });
+
+  it("getPublicJob GETs the public job endpoint", async () => {
+    request.get.mockResolvedValue({});
+    await getPublicJob(5);
+    expect(request.get).toHaveBeenCalledWith("/recruiting/public/jobs/5");
+  });
+
+  it("submitApplication POSTs to /recruiting/applications", async () => {
+    request.post.mockResolvedValue({});
+    await submitApplication({ jobId: 5 });
+    expect(request.post).toHaveBeenCalledWith("/recruiting/applications", { jobId: 5 });
+  });
+
+  it("uploadResume POSTs multipart form data", async () => {
+    request.post.mockResolvedValue({});
+    const file = new File(["x"], "cv.pdf", { type: "application/pdf" });
+    await uploadResume(file);
+    const [url, body, config] = request.post.mock.calls.at(-1);
+    expect(url).toBe("/recruiting/resumes");
+    expect(body).toBeInstanceOf(FormData);
+    expect(config).toMatchObject({ headers: { "Content-Type": "multipart/form-data" } });
+  });
+
+  it("getMyApplication GETs with jobId param", async () => {
+    request.get.mockResolvedValue({});
+    await getMyApplication(5);
+    expect(request.get).toHaveBeenCalledWith("/recruiting/applications/mine", {
+      params: { job_id: 5 },
     });
   });
 });

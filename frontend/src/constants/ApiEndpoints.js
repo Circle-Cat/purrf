@@ -45,6 +45,12 @@ export const API_ENDPOINTS = {
   RECRUITING_REVIEW: (reviewId) => `/recruiting/reviews/${reviewId}`,
   RECRUITING_INTERVIEW_POOL: "/recruiting/interview-pool",
   RECRUITING_JOB_OWNERS: "/recruiting/job-owners",
+  RECRUITING_PUBLIC_JOB: (jobId) => `/recruiting/public/jobs/${jobId}`,
+  RECRUITING_RESUMES: "/recruiting/resumes",
+  RECRUITING_APPLICATIONS: "/recruiting/applications",
+  RECRUITING_APPLICATION: (applicationId) =>
+    `/recruiting/applications/${applicationId}`,
+  RECRUITING_APPLICATIONS_MINE: "/recruiting/applications/mine",
 };
 
 /**
