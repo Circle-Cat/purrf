@@ -13,13 +13,14 @@ import {
  * Title / description / kind fields for a posting.
  *
  * @param {{title: string, description: string, kind: string, cooldownDays: (number|null|undefined),
- *          onChange: (patch: object) => void}} props
+ *          mentorshipRole: (string|null|undefined), onChange: (patch: object) => void}} props
  */
 const JobBasicsSection = ({
   title,
   description,
   kind,
   cooldownDays,
+  mentorshipRole,
   onChange,
 }) => (
   <div className="space-y-3">
@@ -57,6 +58,27 @@ const JobBasicsSection = ({
         </SelectContent>
       </Select>
     </div>
+    {kind === "activity" && (
+      <div className="space-y-1">
+        <Label htmlFor="posting-mentorship-role">Mentorship role</Label>
+        <Select
+          value={mentorshipRole ?? ""}
+          onValueChange={(v) => onChange({ mentorshipRole: v || null })}
+        >
+          <SelectTrigger
+            id="posting-mentorship-role"
+            aria-label="Mentorship role"
+            className="w-full max-w-xs"
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="mentor">Mentor</SelectItem>
+            <SelectItem value="mentee">Mentee</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+    )}
     {kind === "employment" && (
       <div className="space-y-1">
         <Label htmlFor="posting-cooldown">Cooldown days</Label>

@@ -66,6 +66,7 @@ describe("PostingEditor", () => {
       title: "SWE",
       kind: "activity",
       cooldownDays: null,
+      mentorshipRole: null,
       formSchema: { questions: [] },
     });
     expect(toast.success).toHaveBeenCalled();
@@ -123,6 +124,37 @@ describe("PostingEditor", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(api.updateJob).toHaveBeenCalled());
     expect(api.updateJob.mock.calls[0][1].cooldownDays).toBe(30);
+  });
+
+  it("loads an activity posting's mentorship role and saves the edited value", async () => {
+    const user = userEvent.setup();
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 5,
+        title: "Mentor gig",
+        description: "",
+        kind: "activity",
+        mentorshipRole: "mentor",
+        formSchema: { questions: [] },
+      },
+    });
+    const router = createMemoryRouter(
+      [
+        { path: "/postings/:id/edit", element: <PostingEditor /> },
+        { path: ROUTE_PATHS.RECRUITING_POSTINGS, element: <div /> },
+      ],
+      { initialEntries: ["/postings/5/edit"] },
+    );
+    render(<RouterProvider router={router} />);
+    const select = await screen.findByRole("combobox", {
+      name: "Mentorship role",
+    });
+    expect(select).toHaveTextContent("Mentor");
+    await user.click(select);
+    await user.click(screen.getByRole("option", { name: "Mentee" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(api.updateJob).toHaveBeenCalled());
+    expect(api.updateJob.mock.calls[0][1].mentorshipRole).toBe("mentee");
   });
 
   it("shows the backend error message on save failure", async () => {

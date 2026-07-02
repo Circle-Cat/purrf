@@ -83,4 +83,48 @@ describe("JobBasicsSection", () => {
     });
     expect(onChange).toHaveBeenCalledWith({ cooldownDays: null });
   });
+
+  it("shows Mentorship role only for activity postings", () => {
+    const onChange = vi.fn();
+    const { rerender } = render(
+      <JobBasicsSection
+        title=""
+        description=""
+        kind="activity"
+        onChange={onChange}
+      />,
+    );
+    expect(
+      screen.getByRole("combobox", { name: "Mentorship role" }),
+    ).toBeInTheDocument();
+
+    rerender(
+      <JobBasicsSection
+        title=""
+        description=""
+        kind="employment"
+        onChange={onChange}
+      />,
+    );
+    expect(
+      screen.queryByRole("combobox", { name: "Mentorship role" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("emits mentorshipRole changes via the Select", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <JobBasicsSection
+        title=""
+        description=""
+        kind="activity"
+        mentorshipRole={null}
+        onChange={onChange}
+      />,
+    );
+    await user.click(screen.getByRole("combobox", { name: "Mentorship role" }));
+    await user.click(screen.getByRole("option", { name: "Mentee" }));
+    expect(onChange).toHaveBeenCalledWith({ mentorshipRole: "mentee" });
+  });
 });

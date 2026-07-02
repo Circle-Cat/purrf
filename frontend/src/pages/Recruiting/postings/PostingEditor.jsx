@@ -23,6 +23,7 @@ const BLANK = {
   description: "",
   kind: "activity",
   cooldownDays: null,
+  mentorshipRole: null,
   formSchema: { questions: [] },
   pipelineConfig: null,
   screenRules: null,
@@ -32,7 +33,8 @@ const BLANK = {
 /**
  * Build the create/update request body from a draft. Config sections not
  * edited in PR1 (pipeline/screen-rules/profile) pass through as loaded.
- * `cooldownDays` is actively edited and passes through as `null` when unset.
+ * `cooldownDays` and `mentorshipRole` are actively edited and pass through
+ * as `null` when unset.
  *
  * @param {object} draft
  * @returns {object}
@@ -42,6 +44,7 @@ const toBody = (draft) => ({
   description: draft.description,
   kind: draft.kind,
   cooldownDays: draft.cooldownDays,
+  mentorshipRole: draft.mentorshipRole,
   formSchema: draft.formSchema,
   pipelineConfig: draft.pipelineConfig ?? undefined,
   screenRules: draft.screenRules ?? undefined,
@@ -75,6 +78,7 @@ const PostingEditor = () => {
           description: data.description ?? "",
           kind: data.kind ?? "activity",
           cooldownDays: data.cooldownDays ?? null,
+          mentorshipRole: data.mentorshipRole ?? null,
           formSchema: data.formSchema ?? { questions: [] },
           pipelineConfig: data.pipelineConfig ?? null,
           screenRules: data.screenRules ?? null,
@@ -133,6 +137,7 @@ const PostingEditor = () => {
             description={draft.description}
             kind={draft.kind}
             cooldownDays={draft.cooldownDays}
+            mentorshipRole={draft.mentorshipRole}
             onChange={patch}
           />
           <FormBuilder
