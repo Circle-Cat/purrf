@@ -227,6 +227,18 @@ class TestPipelineConfigDto(unittest.TestCase):
                 stages=[PipelineStageDto(stage="tech", rounds=1, default_assignee_id=9)]
             )
 
+    def test_owner_ids_accepts_list(self):
+        dto = PipelineConfigDto.model_validate({"ownerIds": [1, 2], "stages": []})
+        self.assertEqual(dto.owner_ids, [1, 2])
+
+    def test_legacy_owner_id_merges_into_owner_ids(self):
+        dto = PipelineConfigDto.model_validate({"ownerId": 5, "stages": []})
+        self.assertEqual(dto.owner_ids, [5])
+
+    def test_duplicate_owner_ids_rejected(self):
+        with self.assertRaises(ValidationError):
+            PipelineConfigDto.model_validate({"ownerIds": [1, 1], "stages": []})
+
 
 class TestScreenRulesDto(unittest.TestCase):
     def test_email_domain_qualify(self):

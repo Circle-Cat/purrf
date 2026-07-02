@@ -5,6 +5,7 @@ from backend.entity.job_review_entity import JobReviewEntity
 from backend.repository.job_repository import JobRepository
 from backend.repository.job_review_repository import JobReviewRepository
 from backend.repository.user_permissions_repository import UserPermissionsRepository
+from backend.recruiting.pipeline_owners import normalized_owner_ids
 from backend.recruiting.recruiting_mapper import RecruitingMapper
 from backend.dto.job_dto import JobCreateDto, JobDto, PublicJobDto, PublicJobSummaryDto
 from backend.dto.job_review_dto import ApproverDto, JobReviewDto
@@ -121,11 +122,12 @@ class JobService:
     async def _validate_assignees_and_owner(
         self, session: AsyncSession, dto: JobCreateDto
     ) -> None:
-        """Validate pre-configured assignees/owner hold the required permission.
+        """Validate pre-configured assignees/owners hold the required permission.
 
         Each stage ``default_assignee_id`` must be an active holder of
-        ``recruiting.interview.evaluate``; ``owner_id`` must be an active holder
-        of ``recruiting.application.advance``. No-op when pipeline_config is unset.
+        ``recruiting.interview.evaluate``; every id in ``owner_ids`` must be an
+        active holder of ``recruiting.application.advance``. No-op when
+        pipeline_config is unset.
 
         Args:
             session (AsyncSession): Active database async session.
@@ -153,21 +155,24 @@ class JobService:
                 raise ValueError(
                     f"default_assignee_id {sorted(missing)} are not active interview evaluators"
                 )
-        if dto.pipeline_config.owner_id is not None:
+        owner_ids = dto.pipeline_config.owner_ids
+        if owner_ids:
             pool = (
                 await self.user_permissions_repository.get_active_users_with_permission(
                     session, Permission.RECRUITING_APPLICATION_ADVANCE.value
                 )
             )
-            if dto.pipeline_config.owner_id not in {u.user_id for u in pool}:
+            valid = {u.user_id for u in pool}
+            missing = [o for o in owner_ids if o not in valid]
+            if missing:
                 raise ValueError(
-                    f"owner_id {dto.pipeline_config.owner_id} cannot advance applications"
+                    f"owner_ids {sorted(missing)} cannot advance applications"
                 )
 
     async def _revalidate_job_config(
         self, session: AsyncSession, job: "JobEntity"
     ) -> None:
-        """Re-check the stored pipeline's assignees/owner before submission.
+        """Re-check the stored pipeline's assignees/owners before submission.
 
         Args:
             session (AsyncSession): Active database async session.
@@ -191,15 +196,17 @@ class JobService:
             missing = assignee_ids - {u.user_id for u in pool}
             if missing:
                 raise ValueError(f"assignees {sorted(missing)} no longer qualify")
-        owner_id = cfg.get("ownerId")
-        if owner_id is not None:
+        owner_ids = normalized_owner_ids(cfg)
+        if owner_ids:
             pool = (
                 await self.user_permissions_repository.get_active_users_with_permission(
                     session, Permission.RECRUITING_APPLICATION_ADVANCE.value
                 )
             )
-            if owner_id not in {u.user_id for u in pool}:
-                raise ValueError(f"owner {owner_id} no longer qualifies")
+            valid = {u.user_id for u in pool}
+            missing_owners = [o for o in owner_ids if o not in valid]
+            if missing_owners:
+                raise ValueError(f"owners {sorted(missing_owners)} no longer qualify")
 
     async def create_job(self, session: AsyncSession, dto: JobCreateDto) -> JobDto:
         """Create a DRAFT posting from a JobCreateDto.
@@ -246,7 +253,7 @@ class JobService:
           in pending_form_schema/pending_pipeline_config/pending_profile_config
           and the status flips to PUBLISHED_PENDING_REVISION for re-review.
           Operational changes (title, description, cooldown_days, screen_rules,
-          and the pipeline's ownerId/defaultAssigneeId) are written live
+          and the pipeline's ownerIds/defaultAssigneeId) are written live
           immediately. kind/mentorship_role are not editable once published.
 
         Any other status (PENDING_REVIEW, PUBLISHED_PENDING_REVISION,
