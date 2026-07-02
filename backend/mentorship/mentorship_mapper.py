@@ -6,6 +6,7 @@ from backend.dto.preference_dto import (
 )
 from backend.dto.registration_dto import GlobalPreferencesDto, RoundPreferencesDto
 from backend.dto.meeting_dto import MeetingDto, MeetingInfoDto, MeetingTimeDto
+from backend.dto.admin_meeting_log_dto import AdminMeetingDto
 
 from backend.entity.mentorship_pairs_entity import MentorshipPairsEntity
 from backend.entity.preference_entity import PreferenceEntity
@@ -13,7 +14,7 @@ from backend.entity.mentorship_round_participants_entity import (
     MentorshipRoundParticipantsEntity,
 )
 from backend.entity.mentorship_round_entity import MentorshipRoundEntity
-from backend.common.mentorship_enums import ParticipantRole
+from backend.common.mentorship_enums import ParticipantRole, MeetingNoteTag
 
 
 class MentorshipMapper:
@@ -218,3 +219,19 @@ class MentorshipMapper:
             google_dtos.append(dto)
 
         return manual_dtos + google_dtos
+
+    def map_to_admin_meeting_dto(
+        self,
+        meeting: dict,
+        *,
+        is_completed: bool,
+        note_tags: list[MeetingNoteTag],
+    ) -> AdminMeetingDto:
+        """Maps a meeting record and resolved fields to an AdminMeetingDto."""
+        return AdminMeetingDto(
+            meeting_id=meeting["meeting_id"],
+            time_range=f"{meeting['start_datetime']} - {meeting['end_datetime']}",
+            is_completed=is_completed,
+            note=note_tags,
+            create_datetime=meeting["created_datetime"],
+        )

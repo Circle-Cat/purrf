@@ -9,6 +9,7 @@ class TestMentorshipAdminController(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.mock_admin_service = MagicMock()
         self.mock_admin_service.search_participants = AsyncMock()
+        self.mock_admin_service.get_meeting_log = AsyncMock()
 
         self.mock_database = MagicMock()
         self.mock_session = AsyncMock()
@@ -68,6 +69,21 @@ class TestMentorshipAdminController(unittest.IsolatedAsyncioTestCase):
 
         self.mock_admin_service.search_participants.assert_awaited_once_with(
             self.mock_session, filters, 50, 200
+        )
+
+    async def test_get_meeting_log_delegates_to_service(self):
+        """Delegates to service and wraps the result in api_response."""
+        mock_result = MagicMock()
+        self.mock_admin_service.get_meeting_log.return_value = mock_result
+
+        await self.controller.get_meeting_log(pair_id=1)
+
+        self.mock_admin_service.get_meeting_log.assert_awaited_once_with(
+            self.mock_session, 1
+        )
+        self.mock_api_response.assert_called_once_with(
+            message="Successfully retrieved meeting log.",
+            data=mock_result,
         )
 
 
