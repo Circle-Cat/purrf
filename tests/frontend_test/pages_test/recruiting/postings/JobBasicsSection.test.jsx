@@ -127,4 +127,36 @@ describe("JobBasicsSection", () => {
     await user.click(screen.getByRole("option", { name: "Mentee" }));
     expect(onChange).toHaveBeenCalledWith({ mentorshipRole: "mentee" });
   });
+
+  it("shows None when the mentorship role is unset", () => {
+    render(
+      <JobBasicsSection
+        title=""
+        description=""
+        kind="activity"
+        mentorshipRole={null}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByRole("combobox", { name: "Mentorship role" }),
+    ).toHaveTextContent("None");
+  });
+
+  it("emits null when None is selected as the mentorship role", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <JobBasicsSection
+        title=""
+        description=""
+        kind="activity"
+        mentorshipRole="mentee"
+        onChange={onChange}
+      />,
+    );
+    await user.click(screen.getByRole("combobox", { name: "Mentorship role" }));
+    await user.click(screen.getByRole("option", { name: "None" }));
+    expect(onChange).toHaveBeenCalledWith({ mentorshipRole: null });
+  });
 });

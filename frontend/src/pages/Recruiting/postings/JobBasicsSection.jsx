@@ -62,8 +62,10 @@ const JobBasicsSection = ({
       <div className="space-y-1">
         <Label htmlFor="posting-mentorship-role">Mentorship role</Label>
         <Select
-          value={mentorshipRole ?? ""}
-          onValueChange={(v) => onChange({ mentorshipRole: v || null })}
+          value={mentorshipRole ?? "none"}
+          onValueChange={(v) =>
+            onChange({ mentorshipRole: v === "none" ? null : v })
+          }
         >
           <SelectTrigger
             id="posting-mentorship-role"
@@ -73,6 +75,7 @@ const JobBasicsSection = ({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
+            <SelectItem value="none">None</SelectItem>
             <SelectItem value="mentor">Mentor</SelectItem>
             <SelectItem value="mentee">Mentee</SelectItem>
           </SelectContent>

@@ -146,9 +146,8 @@ describe("PostingEditor", () => {
       { initialEntries: ["/postings/5/edit"] },
     );
     render(<RouterProvider router={router} />);
-    const select = await screen.findByRole("combobox", {
-      name: "Mentorship role",
-    });
+    expect(await screen.findByDisplayValue("Mentor gig")).toBeInTheDocument();
+    const select = screen.getByRole("combobox", { name: "Mentorship role" });
     expect(select).toHaveTextContent("Mentor");
     await user.click(select);
     await user.click(screen.getByRole("option", { name: "Mentee" }));
