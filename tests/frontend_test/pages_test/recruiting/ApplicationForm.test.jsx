@@ -632,4 +632,18 @@ describe("ApplicationForm", () => {
     await waitFor(() => expect(api.uploadResume).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(toast.error).toHaveBeenCalled());
   });
+
+  it("does not render the job description while filling the form, but does render the title", () => {
+    const jobWithDescription = {
+      ...JOB,
+      description:
+        "This is a detailed job description with a lot of information about the role.",
+    };
+    render(<ApplicationForm job={jobWithDescription} onSubmitted={vi.fn()} />);
+
+    expect(screen.getByText("Mentee")).toBeInTheDocument();
+    expect(
+      screen.queryByText(/detailed job description/),
+    ).not.toBeInTheDocument();
+  });
 });
