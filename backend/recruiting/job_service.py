@@ -128,7 +128,7 @@ class JobService:
         return {
             "title": dto.title,
             "description": dto.description,
-            "cooldownDays": dto.cooldown_days if dto.cooldown_days is not None else job.cooldown_days,
+            "cooldownDays": dto.cooldown_days,
             "screenRules": new_screen if new_screen is not None else job.screen_rules,
             "formSchema": new_form if new_form is not None else job.form_schema,
             "pipelineConfig": (
