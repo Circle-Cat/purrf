@@ -24,10 +24,15 @@ const EMPTY_PARSED = {
  * Non-PDF input is rejected inline without parsing. Parsing never surfaces an
  * error to the caller: a failure yields an empty `ParsedResume`.
  *
- * @param {{ onParsed: (parsed: object) => void }} props
+ * When `onFile` is provided, it's invoked synchronously with the raw
+ * `File` as soon as it passes the PDF check (before parsing), so a caller
+ * can kick off something else with the original file -- e.g. uploading it
+ * -- independent of, and without waiting on, the in-browser parse.
+ *
+ * @param {{ onParsed: (parsed: object) => void, onFile?: (file: File) => void }} props
  * @returns {JSX.Element}
  */
-export default function ResumeUpload({ onParsed }) {
+export default function ResumeUpload({ onParsed, onFile }) {
   const inputRef = useRef(null);
   const [error, setError] = useState("");
   const [dragOver, setDragOver] = useState(false);
@@ -42,6 +47,7 @@ export default function ResumeUpload({ onParsed }) {
       return;
     }
     setError("");
+    onFile?.(file);
     setIsParsing(true);
     let result;
     try {

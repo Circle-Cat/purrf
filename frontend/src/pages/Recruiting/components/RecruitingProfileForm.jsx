@@ -1,8 +1,10 @@
 import { useState } from "react";
+import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import ResumeUpload from "@/components/common/ResumeUpload";
 import ProfileSection from "@/pages/Profile/components/ProfileSection";
+import { uploadResume } from "@/api/recruitingApi";
 import {
   parsedResumeToProfile,
   mergeParsedIntoProfile,
@@ -62,15 +64,46 @@ const ReqMark = ({ level }) => {
  * required/optional marker on the resume-as-deliverable. Owns throwaway state;
  * nothing is submitted.
  *
- * @param {{profileConfig?: {education?: string, workExperience?: string, resume?: string}}} props
+ * Controlled when both `value` and `onChange` are provided by a parent (e.g.
+ * `PostingApplicantView` lifting state for a future submission form); falls
+ * back to internal state otherwise so existing render-only usages keep
+ * working unchanged.
+ *
+ * `contactEmail`, when provided, fills the read-only contact-email field
+ * (e.g. from the signed-in applicant's account); omitted, the field renders
+ * blank with a placeholder, as in a preview.
+ *
+ * `onResumeStored`, when provided, is called with `{sha256, objectKey}` once
+ * an uploaded resume file has been persisted via `uploadResume` -- upload
+ * failures toast an error but never block the parse-and-autofill flow below.
+ * Omitted, no upload call is made (e.g. preview-only usages).
+ *
+ * @param {{profileConfig?: {education?: string, workExperience?: string, resume?: string},
+ *          value?: {personal: object, education: object[], experience: object[]},
+ *          onChange?: (value: {personal: object, education: object[], experience: object[]}) => void,
+ *          contactEmail?: string,
+ *          onResumeStored?: (resume: {sha256: string, objectKey: string}) => void}} props
  * @returns {JSX.Element}
  */
-const RecruitingProfileForm = ({ profileConfig }) => {
-  const [value, setValue] = useState({
+const RecruitingProfileForm = ({
+  profileConfig,
+  value: controlledValue,
+  onChange,
+  contactEmail,
+  onResumeStored,
+}) => {
+  const [internal, setInternal] = useState({
     personal: {},
     education: [emptyEducation()],
     experience: [emptyExperience()],
   });
+  const value = controlledValue ?? internal;
+  /** Resolve `next` (value or updater fn) against the current value and commit it to the controlling parent or internal state. */
+  const setValue = (next) => {
+    const resolved = typeof next === "function" ? next(value) : next;
+    if (onChange) onChange(resolved);
+    else setInternal(resolved);
+  };
 
   const requirements = {
     education: profileConfig?.education ?? "optional",
@@ -78,6 +111,7 @@ const RecruitingProfileForm = ({ profileConfig }) => {
   };
   const resumeLevel = profileConfig?.resume ?? "optional";
 
+  /** Merge a resume-parser result into the current profile value, assigning ids to any new rows. */
   const handleParsed = (parsed) => {
     const merged = mergeParsedIntoProfile(value, parsedResumeToProfile(parsed));
     setValue({
@@ -85,6 +119,23 @@ const RecruitingProfileForm = ({ profileConfig }) => {
       education: merged.education.map(withId),
       experience: merged.experience.map(withId),
     });
+  };
+
+  /**
+   * Persist a resume file via `uploadResume` and forward the resulting
+   * `{sha256, objectKey}` to the parent through `onResumeStored`. Runs
+   * independently of parsing/autofill above -- a failure here only toasts
+   * and never blocks or rolls back the parse-and-autofill flow.
+   */
+  const handleResumeFile = async (file) => {
+    if (!onResumeStored) return;
+    try {
+      const res = await uploadResume(file);
+      const stored = res?.data ?? res;
+      onResumeStored({ sha256: stored?.sha256, objectKey: stored?.objectKey });
+    } catch {
+      toast.error("Couldn't upload your resume file. You can still submit.");
+    }
   };
 
   return (
@@ -96,7 +147,7 @@ const RecruitingProfileForm = ({ profileConfig }) => {
         <Input
           id="rpf-email"
           readOnly
-          value=""
+          value={contactEmail ?? ""}
           placeholder="Auto-filled from the applicant's account"
         />
         <p className="text-xs text-muted-foreground">
@@ -115,7 +166,7 @@ const RecruitingProfileForm = ({ profileConfig }) => {
           {resumeLevel === "off" &&
             " This posting doesn't collect a resume; uploading only saves you time."}
         </p>
-        <ResumeUpload onParsed={handleParsed} />
+        <ResumeUpload onParsed={handleParsed} onFile={handleResumeFile} />
       </section>
 
       <ProfileSection

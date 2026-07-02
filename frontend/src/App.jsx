@@ -23,6 +23,8 @@ import AdminPermissions from "@/pages/AdminPermissions";
 import Postings from "@/pages/Recruiting/Postings";
 import PostingEditor from "@/pages/Recruiting/postings/PostingEditor";
 import MyReviews from "@/pages/Recruiting/MyReviews";
+import JobDetailPage from "@/pages/Recruiting/JobDetailPage";
+import MyApplication from "@/pages/Recruiting/MyApplication";
 import { AuthProvider } from "@/context/auth";
 import { FlagsProvider, LDIdentifier } from "@/context/flags";
 import { PERMISSIONS } from "@/constants/Permissions";
@@ -161,6 +163,18 @@ function App() {
                           <MyReviews />
                         </ProtectedRoute>
                       }
+                    />
+                    <Route
+                      path="/recruiting/jobs/:jobId"
+                      element={<JobDetailPage />}
+                    />
+                    <Route
+                      path="/recruiting/jobs/:jobId/apply"
+                      element={<JobDetailPage />}
+                    />
+                    <Route
+                      path="/recruiting/jobs/:jobId/application"
+                      element={<MyApplication />}
                     />
                     <Route
                       path={ROUTE_PATHS.ACCESS_DENIED}

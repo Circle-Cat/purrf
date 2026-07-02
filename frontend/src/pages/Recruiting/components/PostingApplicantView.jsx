@@ -5,11 +5,21 @@ import RecruitingProfileForm from "@/pages/Recruiting/components/RecruitingProfi
 /**
  * Read-only, applicant-facing rendering of one version of a posting: title,
  * kind, description, the profile form, and the interactive submission form.
- * Owns throwaway answer state so `showWhen` conditionals work while previewing;
- * answers are never submitted. Remount with a `key` to reset answers.
+ * Profile value and answers can be lifted to a parent (e.g. a future
+ * submission form) via `profileValue`/`onProfileChange` and
+ * `answers`/`onAnswerChange`; when those callbacks are omitted, the component
+ * owns throwaway internal state so `showWhen` conditionals work while
+ * previewing and answers are never submitted. Remount with a `key` to reset
+ * internally-owned answers.
  *
  * @param {{title?: string, kind?: string, description?: string,
- *          questions?: object[], profileConfig?: object}} props
+ *          questions?: object[], profileConfig?: object,
+ *          profileValue?: {personal: object, education: object[], experience: object[]},
+ *          onProfileChange?: (value: object) => void,
+ *          answers?: Record<string, unknown>,
+ *          onAnswerChange?: (id: string, value: unknown) => void,
+ *          contactEmail?: string,
+ *          onResumeStored?: (resume: {sha256: string, objectKey: string}) => void}} props
  */
 const PostingApplicantView = ({
   title,
@@ -17,8 +27,20 @@ const PostingApplicantView = ({
   description,
   questions = [],
   profileConfig,
+  profileValue,
+  onProfileChange,
+  answers: controlledAnswers,
+  onAnswerChange,
+  contactEmail,
+  onResumeStored,
 }) => {
-  const [answers, setAnswers] = useState({});
+  const [internalAnswers, setInternalAnswers] = useState({});
+  const answers = controlledAnswers ?? internalAnswers;
+  /** Merge one answer into the controlling parent's state or internal state. */
+  const handleAnswerChange = (id, value) => {
+    if (onAnswerChange) onAnswerChange(id, value);
+    else setInternalAnswers((a) => ({ ...a, [id]: value }));
+  };
 
   return (
     <div className="space-y-4">
@@ -33,13 +55,17 @@ const PostingApplicantView = ({
           {description}
         </p>
       )}
-      <RecruitingProfileForm profileConfig={profileConfig} />
+      <RecruitingProfileForm
+        profileConfig={profileConfig}
+        value={profileValue}
+        onChange={onProfileChange}
+        contactEmail={contactEmail}
+        onResumeStored={onResumeStored}
+      />
       <FormRenderer
         questions={questions}
         answers={answers}
-        onAnswerChange={(id, value) =>
-          setAnswers((a) => ({ ...a, [id]: value }))
-        }
+        onAnswerChange={handleAnswerChange}
       />
     </div>
   );

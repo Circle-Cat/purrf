@@ -30,8 +30,6 @@ const Profile = () => {
     personalInfo,
     experienceList,
     educationList,
-    canEditTimezone,
-    nextEditableDate,
     handleUpdateProfile,
     refresh,
   } = useProfileData();
@@ -145,8 +143,6 @@ const Profile = () => {
         onClose={() => toggleModal("personal", false)}
         initialData={personalInfo}
         onSave={handleUpdateProfile}
-        canEditTimezone={canEditTimezone}
-        nextEditableDate={nextEditableDate}
       />
 
       <ExperienceEditModal
