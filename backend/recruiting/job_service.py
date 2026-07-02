@@ -143,17 +143,21 @@ class JobService:
     def _apply_pending_payload(job: "JobEntity") -> None:
         """Overwrite a posting's live fields with its pending_payload, then clear it.
 
+        Reads each field via ``dict.get`` rather than indexing, so a payload
+        missing a key degrades to clearing that field to None instead of
+        raising KeyError.
+
         Args:
             job (JobEntity): The posting; job.pending_payload must not be None.
         """
         payload = job.pending_payload
-        job.title = payload["title"]
-        job.description = payload["description"]
-        job.cooldown_days = payload["cooldownDays"]
-        job.screen_rules = payload["screenRules"]
-        job.form_schema = payload["formSchema"]
-        job.pipeline_config = payload["pipelineConfig"]
-        job.profile_config = payload["profileConfig"]
+        job.title = payload.get("title")
+        job.description = payload.get("description")
+        job.cooldown_days = payload.get("cooldownDays")
+        job.screen_rules = payload.get("screenRules")
+        job.form_schema = payload.get("formSchema")
+        job.pipeline_config = payload.get("pipelineConfig")
+        job.profile_config = payload.get("profileConfig")
         job.pending_payload = None
 
     async def _validate_assignees_and_owner(
@@ -301,8 +305,10 @@ class JobService:
 
         Raises:
             ValueError: If no posting with the given id exists, the posting's
-                current status is not DRAFT or PUBLISHED, or a pre-configured
-                assignee/owner lacks its required permission.
+                current status is not DRAFT, PUBLISHED, or CLOSED (i.e. it is
+                PENDING_REVIEW, PUBLISHED_PENDING_REVISION, PENDING_CLOSE, or
+                PENDING_REOPEN), or a pre-configured assignee/owner lacks its
+                required permission.
         """
         job = await self._require_job(session, job_id)
         await self._validate_assignees_and_owner(session, dto)
@@ -560,7 +566,8 @@ class JobService:
         - REVISION: pending_payload is applied to live fields and cleared, and
           the posting moves to PUBLISHED.
         - CLOSE: posting moves to CLOSED.
-        - REOPEN: posting moves to PUBLISHED.
+        - REOPEN: if a pending_payload exists it is applied to live fields
+          and cleared, then the posting moves to PUBLISHED.
 
         Args:
             session (AsyncSession): Active database async session.
