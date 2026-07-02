@@ -6,7 +6,7 @@ from backend.repository.job_repository import JobRepository
 from backend.repository.job_review_repository import JobReviewRepository
 from backend.repository.user_permissions_repository import UserPermissionsRepository
 from backend.recruiting.recruiting_mapper import RecruitingMapper
-from backend.dto.job_dto import JobCreateDto, JobDto, PublicJobDto
+from backend.dto.job_dto import JobCreateDto, JobDto, PublicJobDto, PublicJobSummaryDto
 from backend.dto.job_review_dto import ApproverDto, JobReviewDto
 from backend.common.permissions import Permission
 from backend.common.recruiting_enums import (
@@ -724,17 +724,20 @@ class JobService:
         await self.job_repository.delete_job(session, job)
         await session.commit()
 
-    async def list_published(self, session: AsyncSession) -> list[JobDto]:
-        """List all PUBLISHED postings.
+    async def list_published(self, session: AsyncSession) -> list[PublicJobSummaryDto]:
+        """List all PUBLISHED postings as candidate-safe card summaries.
+
+        Serves the logged-in jobs-browse page; the projection deliberately
+        carries no form/config/internal fields.
 
         Args:
             session (AsyncSession): Active database async session.
 
         Returns:
-            list[JobDto]: All currently published postings.
+            list[PublicJobSummaryDto]: One summary per published posting.
         """
         jobs = await self.job_repository.list_published(session)
-        return [self.recruiting_mapper.to_job_dto(j) for j in jobs]
+        return [self.recruiting_mapper.to_public_job_summary_dto(j) for j in jobs]
 
     async def list_all_jobs(self, session: AsyncSession) -> list[JobDto]:
         """List postings of every status (internal/admin view).

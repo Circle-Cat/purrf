@@ -12,6 +12,16 @@ py_test(
 )
 
 py_test(
+    name = "recruiting_mapper_test",
+    srcs = ["recruiting_mapper_test.py"],
+    deps = [
+        "//backend/common:recruiting_enums",
+        "//backend/entity:entities",
+        "//backend/recruiting",
+    ],
+)
+
+py_test(
     name = "recruiting_controller_test",
     srcs = ["recruiting_controller_test.py"],
     deps = [

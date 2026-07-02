@@ -1180,6 +1180,21 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             await self.service.get_published_job_public(self.session, 1)
 
+    async def test_list_published_returns_public_summaries(self):
+        job1 = self._job(status=JobStatus.PUBLISHED)
+        job2 = self._job(status=JobStatus.PUBLISHED)
+        job2.job_id = 2
+        self.repo.list_published = AsyncMock(return_value=[job1, job2])
+
+        result = await self.service.list_published(self.session)
+
+        self.assertEqual([d.id for d in result], [1, 2])
+        for d in result:
+            self.assertEqual(
+                set(type(d).model_fields.keys()),
+                {"id", "title", "kind", "description"},
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

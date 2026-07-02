@@ -1,7 +1,7 @@
 from backend.entity.job_entity import JobEntity
 from backend.entity.job_review_entity import JobReviewEntity
 from backend.entity.users_entity import UsersEntity
-from backend.dto.job_dto import JobDto, PublicJobDto
+from backend.dto.job_dto import JobDto, PublicJobDto, PublicJobSummaryDto
 from backend.dto.job_review_dto import ApproverDto, JobReviewDto
 
 
@@ -88,6 +88,22 @@ class RecruitingMapper:
             mentorship_role=job.mentorship_role,
             form_schema=job.form_schema,
             profile_config=job.profile_config,
+        )
+
+    def to_public_job_summary_dto(self, job: JobEntity) -> PublicJobSummaryDto:
+        """Map a JobEntity to the candidate-safe list-card summary.
+
+        Args:
+            job (JobEntity): The published posting entity to convert.
+
+        Returns:
+            PublicJobSummaryDto: id/title/kind/description only.
+        """
+        return PublicJobSummaryDto(
+            id=job.job_id,
+            title=job.title,
+            kind=job.kind,
+            description=job.description,
         )
 
     def to_application_dto(self, application, current_submission=None):
