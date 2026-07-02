@@ -95,8 +95,9 @@ class TestProfileCommandService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.timezone, "Asia/Shanghai")
         self.assertGreater(result.timezone_updated_at, last_update)
 
-    async def test_update_users_timezone_restriction_error(self):
-        """Updating timezone too frequently (less than 30 days) should raise ValueError."""
+    async def test_update_users_timezone_success_within_30_days(self):
+        """Updating timezone shortly after a previous update should succeed
+        (the 30-day cooldown restriction has been removed)."""
         last_update = datetime.now(timezone.utc) - timedelta(days=5)
         existing_user = UsersEntity(
             user_id=1,
@@ -106,10 +107,15 @@ class TestProfileCommandService(unittest.IsolatedAsyncioTestCase):
 
         profile_dto = self._create_profile_dto(timezone="America/New_York")
 
-        with self.assertRaises(ValueError):
-            await self.service.update_users(self.session, profile_dto, existing_user)
+        self.users_repository.upsert_users.side_effect = lambda s, u: u
 
-        self.users_repository.upsert_users.assert_not_awaited()
+        result = await self.service.update_users(
+            self.session, profile_dto, existing_user
+        )
+
+        self.assertEqual(result.timezone, "America/New_York")
+        self.assertGreater(result.timezone_updated_at, last_update)
+        self.users_repository.upsert_users.assert_awaited_once()
 
     async def test_update_users_database_error(self):
         """Database error occurs during save; error should be logged and re-raised."""
