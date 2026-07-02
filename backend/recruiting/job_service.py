@@ -274,7 +274,7 @@ class JobService:
     ) -> JobDto:
         """Update a posting's editable fields.
 
-        Only DRAFT and PUBLISHED postings are editable:
+        Only DRAFT, PUBLISHED, and CLOSED postings are editable:
         - DRAFT: every field (title, description, kind, mentorship_role,
           form_schema, pipeline_config, screen_rules, profile_config,
           cooldown_days) is written live directly.
@@ -283,9 +283,12 @@ class JobService:
           for re-review. The live version stays public and unchanged until
           the revision is approved. kind/mentorship_role are not editable
           once published.
+        - CLOSED: same rule as PUBLISHED — any edit parks into pending_payload;
+          status is unchanged (still CLOSED). Use request_reopen separately to
+          submit the posting (with or without this edit) for a REOPEN review.
 
         Any other status (PENDING_REVIEW, PUBLISHED_PENDING_REVISION,
-        PENDING_CLOSE, PENDING_REOPEN, CLOSED) raises ValueError immediately
+        PENDING_CLOSE, PENDING_REOPEN) raises ValueError immediately
         without touching the entity.
 
         Args:
@@ -321,6 +324,8 @@ class JobService:
         elif job.status == JobStatus.PUBLISHED:
             job.pending_payload = self._build_pending_payload(job, dto)
             job.status = JobStatus.PUBLISHED_PENDING_REVISION
+        elif job.status == JobStatus.CLOSED:
+            job.pending_payload = self._build_pending_payload(job, dto)
         else:
             raise ValueError(f"Job {job_id} cannot be edited from {job.status}")
         job = await self.job_repository.update_job(session, job)
