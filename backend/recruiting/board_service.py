@@ -108,7 +108,8 @@ class BoardService:
 
         Returns:
             dict[str, list[BoardCardDto]]: Applicant cards keyed by the
-                application's stage value.
+                application's stage value. Stages with zero cards are
+                absent keys — the frontend must ``.get(stage, [])``.
 
         Raises:
             ValueError: If the caller is not an owner of the job.
@@ -141,20 +142,35 @@ class BoardService:
 
         Raises:
             ValueError: If the application is missing, or the caller is not
-                an owner of the application's job.
+                an owner of the application's job. Both cases raise the
+                same generic message (mirroring
+                ``ApplicationService._load_owned``) so response bodies don't
+                leak which application ids exist to non-owners.
         """
         application = await self.application_repository.get_by_id(
             session, application_id
         )
+        # Missing and not-owned must be indistinguishable: a distinct
+        # "not an owner" message would let any authenticated caller probe
+        # which application ids exist.
         if application is None:
             raise ValueError(f"application {application_id} not found")
-        job = await self._require_owner(session, current_user, application.job_id)
+        job = await self.job_repository.get_by_job_id(session, application.job_id)
+        if job is None or current_user.user_id not in normalized_owner_ids(
+            job.pipeline_config
+        ):
+            raise ValueError(f"application {application_id} not found")
         user = await self.users_repository.get_user_by_user_id(
             session, application.user_id
         )
         current_sub = await self.application_submission_repository.get_current(
             session, application_id
         )
+        # The embedded ApplicationDto's `editable` is deliberately left at
+        # its default (False) here: it encodes the CANDIDATE's edit window
+        # (first stage / pending / unfrozen), which the owner-facing detail
+        # UI doesn't consume yet. Recompute via
+        # ApplicationService._is_editable if the board dialog ever needs it.
         application_dto = self.recruiting_mapper.to_application_dto(
             application, current_sub
         )

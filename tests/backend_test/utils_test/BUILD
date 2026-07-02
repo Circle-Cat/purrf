@@ -39,6 +39,7 @@ py_test(
     name = "fast_app_factory_test",
     srcs = ["fast_app_factory_test.py"],
     deps = [
+        "//backend/recruiting",
         "//backend/utils:fast_app_factory",
         "@pypi//httpx",
     ],

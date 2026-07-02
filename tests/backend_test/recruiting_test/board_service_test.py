@@ -165,10 +165,11 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
     async def test_get_application_detail_raises_when_missing(self):
         self.app_repo.get_by_id = AsyncMock(return_value=None)
 
-        with self.assertRaises(ValueError):
+        with self.assertRaises(ValueError) as ctx:
             await self.service.get_application_detail(
                 self.session, self._ctx(user_id=2), 999
             )
+        self.assertEqual(str(ctx.exception), "application 999 not found")
 
     async def test_get_application_detail_raises_for_non_owner(self):
         job = self._job(job_id=1, owner_ids=(9,))
@@ -176,10 +177,14 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.app_repo.get_by_id = AsyncMock(return_value=application)
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
 
-        with self.assertRaises(ValueError):
+        with self.assertRaises(ValueError) as ctx:
             await self.service.get_application_detail(
                 self.session, self._ctx(user_id=2), 10
             )
+        # Same message as the missing-application case: not-owned must be
+        # indistinguishable from nonexistent, or authenticated callers could
+        # enumerate which application ids exist.
+        self.assertEqual(str(ctx.exception), "application 10 not found")
 
 
 if __name__ == "__main__":

@@ -169,6 +169,56 @@ class TestFastAppFactory(unittest.TestCase):
             {route.path for route in app.routes},
         )
 
+    def test_applications_mine_resolves_before_board_detail_route(self):
+        """GET /recruiting/applications/mine must not be shadowed by the board.
+
+        Starlette matches routes in registration order, so the board's
+        GET /recruiting/applications/{application_id} would swallow "/mine"
+        (a silent 422 parsing "mine" as an int) if its router were included
+        before the application router. This pins the include order in
+        FastAppFactory.create_app using the real controllers' routers.
+        """
+        from backend.recruiting.application_controller import ApplicationController
+        from backend.recruiting.board_controller import BoardController
+
+        application_controller = ApplicationController(
+            MagicMock(), MagicMock(), MagicMock(), MagicMock()
+        )
+        board_controller = BoardController(MagicMock(), MagicMock())
+        factory = FastAppFactory(
+            authentication_controller=self.mock_controller,
+            authentication_service=self.mock_service,
+            user_identity_service=MagicMock(),
+            user_permissions_repository=MagicMock(),
+            notification_controller=self.mock_controller,
+            historical_controller=self.mock_controller,
+            consumer_controller=self.mock_controller,
+            internal_activity_controller=self.mock_controller,
+            profile_controller=self.mock_profile_controller,
+            mentorship_controller=self.mock_controller,
+            mentorship_admin_controller=self.mock_controller,
+            email_management_controller=self.mock_controller,
+            permission_admin_controller=self.mock_controller,
+            recruiting_controller=self.mock_controller,
+            application_controller=application_controller,
+            board_controller=board_controller,
+            launchdarkly_client=MagicMock(),
+            database=MagicMock(),
+            logger=MagicMock(),
+        )
+
+        app = factory.create_app()
+
+        paths = [route.path for route in app.routes]
+        mine = paths.index("/api/recruiting/applications/mine")
+        detail = paths.index("/api/recruiting/applications/{application_id}")
+        self.assertLess(
+            mine,
+            detail,
+            "GET /recruiting/applications/mine must be registered before the "
+            "board's /recruiting/applications/{application_id} or it 422s",
+        )
+
     @patch("backend.utils.fast_app_factory.register_exception_handlers")
     def test_exception_handler_registration_called(self, mock_register):
         """
