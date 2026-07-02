@@ -47,6 +47,7 @@ class TestResumeStorage(unittest.TestCase):
         with self.assertRaises(ValueError) as ctx:
             storage.put(b"%PDF-1.4 no bucket")
         self.assertIn("RESUME_BUCKET", str(ctx.exception))
+        self.assertIsNone(storage._client)
 
     @patch("google.cloud.storage.Client")
     def test_client_is_created_lazily_and_reused(self, mock_client_cls):
