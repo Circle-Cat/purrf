@@ -69,3 +69,11 @@ py_test(
         "@pypi//python_multipart",
     ],
 )
+
+py_test(
+    name = "pipeline_owners_test",
+    srcs = ["pipeline_owners_test.py"],
+    deps = [
+        "//backend/recruiting",
+    ],
+)

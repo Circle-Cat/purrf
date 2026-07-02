@@ -179,6 +179,36 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             await self.service.create_job(self.session, dto)
 
+    async def test_create_job_accepts_multiple_qualified_owners(self):
+        """create_job succeeds when every listed owner can advance applications."""
+
+        async def pool(session, perm):
+            if perm == Permission.RECRUITING_APPLICATION_ADVANCE.value:
+                return self._make_users(42, 43)
+            return []
+
+        self.perms.get_active_users_with_permission = AsyncMock(side_effect=pool)
+        dto = JobCreateDto(
+            title="T", pipelineConfig={"ownerIds": [42, 43], "stages": []}
+        )
+        result = await self.service.create_job(self.session, dto)
+        self.assertEqual(result.title, "T")
+
+    async def test_create_job_rejects_any_unqualified_owner_names_offenders(self):
+        """When one of several owners cannot advance applications, name it."""
+
+        async def pool(session, perm):
+            if perm == Permission.RECRUITING_APPLICATION_ADVANCE.value:
+                return self._make_users(42)
+            return []
+
+        self.perms.get_active_users_with_permission = AsyncMock(side_effect=pool)
+        dto = JobCreateDto(
+            title="T", pipelineConfig={"ownerIds": [42, 99], "stages": []}
+        )
+        with self.assertRaisesRegex(ValueError, "99"):
+            await self.service.create_job(self.session, dto)
+
     async def test_update_draft_changes_live_directly(self):
         """Editing a DRAFT posting mutates the live fields with no review gate."""
         job = self._job(status=JobStatus.DRAFT, title="old")
@@ -1041,7 +1071,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         )
         result = await self.service.update_job(self.session, 1, dto)
         self.assertEqual(result.status, JobStatus.PUBLISHED)
-        self.assertEqual(job.pipeline_config["ownerId"], 50)
+        self.assertEqual(job.pipeline_config["ownerIds"], [50])
 
     async def test_published_rounds_change_goes_pending(self):
         await self._qualified_pools()

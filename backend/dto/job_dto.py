@@ -89,7 +89,7 @@ class PublicJobDto(BaseDto):
 
     Deliberately excludes internal recruiting config that must never reach a
     candidate: ``screen_rules`` (auto-reject logic), ``pipeline_config``
-    (internal stages + staff ``ownerId``/``defaultAssigneeId``), the
+    (internal stages + staff ``ownerIds``/``defaultAssigneeId``), the
     ``pending_*`` fields, and ``last_reject_comment``. Only what the
     applicant-facing form needs is exposed.
     """
