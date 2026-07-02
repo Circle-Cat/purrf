@@ -1,15 +1,6 @@
 import { formatDateFromParts } from "@/pages/Profile/utils";
 
 /**
- * Millisecond equivalent of the backend's 30-day timezone change cooldown
- * (see `update_users` in backend/profile/profile_command_service.py, which
- * rejects a timezone CHANGE within 30 days of `timezoneUpdatedAt` -- and a
- * rejected user write aborts the whole PATCH, education/work lists included).
- * Uses exact millisecond arithmetic to match the backend's datetime check.
- */
-const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
-
-/**
  * Whether an education row has enough data for the profile PATCH DTO
  * (school, degree, and a complete start + end date).
  *
@@ -161,9 +152,7 @@ export const hasPersonalWriteBackInput = (personal) =>
  * Form values win per field only when non-empty; `preferredName` and
  * `communicationMethod` aren't collected by the form and pass through
  * fetched (communicationMethod defaulting to "email"). The form's timezone
- * is only adopted when it wouldn't trip the backend's 30-day
- * timezone-change cooldown (see TIMEZONE_CHANGE_COOLDOWN_DAYS): either it
- * equals the stored timezone or the last change is old enough.
+ * is adopted whenever it is non-empty (there is no cooldown restriction).
  *
  * @param {object|undefined} fetchedUser - `profile.user` from `getMyProfile`.
  * @param {{firstName?: string, lastName?: string, linkedin?: string, timezone?: string}|undefined} personal
@@ -172,23 +161,12 @@ export const hasPersonalWriteBackInput = (personal) =>
 const mergeUserWriteBack = (fetchedUser, personal) => {
   const fetched = fetchedUser ?? {};
   const formTimezone = personal?.timezone?.trim();
-  // Backend `update_users` rejects a timezone CHANGE made within 30 days of
-  // the previous one (timezoneUpdatedAt) -- and that rejection would abort
-  // the whole PATCH. Only adopt the form's timezone when it isn't a locked
-  // change. Use exact millisecond arithmetic to match the backend's check.
-  const tzChangeAllowed =
-    fetched.timezoneUpdatedAt == null ||
-    Date.now() - new Date(fetched.timezoneUpdatedAt).getTime() >=
-      THIRTY_DAYS_MS;
-  const timezoneChangeAllowed =
-    Boolean(formTimezone) &&
-    (formTimezone === fetched.timezone || tzChangeAllowed);
 
   const merged = {
     firstName: personal?.firstName?.trim() || fetched.firstName,
     lastName: personal?.lastName?.trim() || fetched.lastName,
     preferredName: fetched.preferredName,
-    timezone: timezoneChangeAllowed ? formTimezone : fetched.timezone,
+    timezone: formTimezone || fetched.timezone,
     linkedinLink: personal?.linkedin?.trim() || fetched.linkedinLink,
     communicationMethod: fetched.communicationMethod ?? "email",
   };

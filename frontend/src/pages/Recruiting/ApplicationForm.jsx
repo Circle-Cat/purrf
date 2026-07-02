@@ -24,9 +24,8 @@ import {
  * When "save to my profile" is checked, a successful submission is followed
  * by a best-effort write-back of the form's personal fields and complete
  * education/experience rows to the applicant's profile: the current profile
- * is fetched first, personal fields are merged over the stored user (with a
- * guard for the backend's 30-day timezone-change cooldown), and the new rows
- * are MERGED into its lists (the backend PATCH fully replaces each list, so
+ * is fetched first, personal fields are merged over the stored user, and the
+ * new rows are MERGED into its lists (the backend PATCH fully replaces each list, so
  * sending only the new rows would wipe existing entries). Nothing is sent
  * when the form adds nothing new -- no personal input and no complete rows,
  * or everything merged away as already-stored. A write-back failure only
@@ -54,8 +53,7 @@ const ApplicationForm = ({ job, existing, onSubmitted }) => {
   /**
    * Best-effort merge write-back of this form's personal fields and
    * complete profile rows. Fetches the stored profile, merges the personal
-   * fields over the stored user (timezone guarded by the backend's 30-day
-   * change cooldown) and the new rows into the stored lists (preserving
+   * fields over the stored user and the new rows into the stored lists (preserving
    * existing rows and their ids -- the backend PATCH replaces each list
    * wholesale), then PATCHes only the keys that actually changed. Skips the
    * network entirely when the form has neither complete new rows nor any

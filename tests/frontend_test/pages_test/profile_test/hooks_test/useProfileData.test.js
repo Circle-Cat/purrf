@@ -7,7 +7,6 @@ import {
   sortExperienceOrEducationList,
   DegreeEnum,
 } from "@/pages/Profile/utils";
-import { getDaysSince, formatLocalYmd } from "@/utils/dateTime";
 
 vi.mock("@/api/profileApi", () => ({
   getMyProfile: vi.fn(),
@@ -20,14 +19,6 @@ vi.mock("@/pages/Profile/utils", async (importOriginal) => {
     ...actual,
     parseDateParts: vi.fn(),
     sortExperienceOrEducationList: vi.fn(),
-  };
-});
-
-vi.mock("@/utils/dateTime", async (importOriginal) => {
-  const actual = await importOriginal();
-  return {
-    ...actual,
-    getDaysSince: vi.fn(),
   };
 });
 
@@ -91,7 +82,6 @@ describe("useProfileData Hook", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     parseDateParts.mockReturnValue({ month: "01", year: "2020" });
-    getDaysSince.mockReturnValue(0);
     sortExperienceOrEducationList.mockReturnValue(0);
   });
 
@@ -276,73 +266,6 @@ describe("useProfileData Hook", () => {
         firstName: "Jane",
       });
       expect(result.current.personalInfo.firstName).toBe("Jane");
-    });
-  });
-
-  describe("Computed Property: canEditTimezone", () => {
-    it("should allow edit if timezoneUpdatedAt is null", async () => {
-      const noTimeProfile = {
-        profile: {
-          ...mockProfileResponse.profile,
-          user: {
-            ...mockProfileResponse.profile.user,
-            timezoneUpdatedAt: null,
-          },
-        },
-      };
-      getMyProfile.mockResolvedValue({ data: noTimeProfile });
-
-      const { result } = renderHook(() => useProfileData());
-      await waitFor(() => expect(result.current.isLoading).toBe(false));
-
-      expect(result.current.canEditTimezone).toBe(true);
-    });
-
-    it("should NOT allow edit if less than 30 days since update", async () => {
-      getMyProfile.mockResolvedValue({ data: mockProfileResponse });
-
-      /**
-       * Mock a recent update (10 days ago).
-       */
-      getDaysSince.mockReturnValue(10);
-
-      const { result } = renderHook(() => useProfileData());
-      await waitFor(() => expect(result.current.isLoading).toBe(false));
-
-      expect(result.current.canEditTimezone).toBe(false);
-      expect(getDaysSince).toHaveBeenCalledWith(
-        mockProfileResponse.profile.user.timezoneUpdatedAt,
-      );
-    });
-
-    it("should allow edit if 30 days or more since update", async () => {
-      getMyProfile.mockResolvedValue({ data: mockProfileResponse });
-
-      /**
-       * Mock exactly 30 days since last update.
-       */
-      getDaysSince.mockReturnValue(30);
-
-      const { result } = renderHook(() => useProfileData());
-      await waitFor(() => expect(result.current.isLoading).toBe(false));
-
-      expect(result.current.canEditTimezone).toBe(true);
-    });
-  });
-
-  describe("Computed Property: nextEditableDate", () => {
-    it("should return a formatted date 30 days from timezoneUpdatedAt", async () => {
-      getMyProfile.mockResolvedValue({ data: mockProfileResponse });
-
-      const { result } = renderHook(() => useProfileData());
-      await waitFor(() => expect(result.current.isLoading).toBe(false));
-
-      const expectedDate = new Date("2023-01-01T00:00:00Z");
-      expectedDate.setDate(expectedDate.getDate() + 30);
-
-      expect(result.current.nextEditableDate).toBe(
-        formatLocalYmd(expectedDate),
-      );
     });
   });
 });

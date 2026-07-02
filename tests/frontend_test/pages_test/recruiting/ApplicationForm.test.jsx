@@ -423,7 +423,8 @@ describe("ApplicationForm", () => {
     await waitFor(() =>
       expect(profileApi.updateMyProfile).toHaveBeenCalledTimes(1),
     );
-    // timezoneUpdatedAt is 1970 -> the timezone change is allowed.
+    // timezoneUpdatedAt is 1970, but that no longer matters -- there's no
+    // cooldown restriction on timezone changes.
     expect(profileApi.updateMyProfile).toHaveBeenCalledWith({
       user: {
         firstName: "Ada",
@@ -436,7 +437,7 @@ describe("ApplicationForm", () => {
     });
   });
 
-  it("keeps the stored timezone when the last change is under the 30-day cooldown", async () => {
+  it("always adopts a non-empty form timezone, even with a very recent timezoneUpdatedAt", async () => {
     const user = userEvent.setup();
     api.updateApplication.mockResolvedValue({ data: { id: 7 } });
     profileApi.getMyProfile.mockResolvedValue({
@@ -444,58 +445,9 @@ describe("ApplicationForm", () => {
         profile: {
           user: {
             ...FETCHED_USER_NEW,
-            // Changed just now -> backend would reject another change and
-            // abort the whole PATCH; the merge must keep the stored value.
+            // Changed just now -- there is no cooldown restriction, so the
+            // form's timezone must still win.
             timezoneUpdatedAt: new Date().toISOString(),
-          },
-          education: [],
-          workHistory: [],
-        },
-      },
-    });
-    profileApi.updateMyProfile.mockResolvedValue({ data: {} });
-    render(
-      <ApplicationForm
-        job={JOB}
-        existing={PERSONAL_ONLY_EXISTING}
-        onSubmitted={vi.fn()}
-      />,
-    );
-
-    await user.click(
-      screen.getByRole("checkbox", { name: /save to my profile/i }),
-    );
-    await user.click(screen.getByRole("button", { name: /submit/i }));
-
-    await waitFor(() =>
-      expect(profileApi.updateMyProfile).toHaveBeenCalledTimes(1),
-    );
-    expect(profileApi.updateMyProfile).toHaveBeenCalledWith({
-      user: {
-        firstName: "Ada",
-        lastName: "L",
-        preferredName: null,
-        timezone: "America/Los_Angeles",
-        linkedinLink: null,
-        communicationMethod: "email",
-      },
-    });
-  });
-
-  it("allows timezone change when 30+ days have elapsed (boundary test)", async () => {
-    const user = userEvent.setup();
-    api.updateApplication.mockResolvedValue({ data: { id: 7 } });
-    // Exactly 30 days + 1 second ago: the guard should allow the change.
-    const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
-    const thirtyDaysAgo = new Date(
-      Date.now() - (thirtyDaysMs + 1000),
-    ).toISOString();
-    profileApi.getMyProfile.mockResolvedValue({
-      data: {
-        profile: {
-          user: {
-            ...FETCHED_USER_NEW,
-            timezoneUpdatedAt: thirtyDaysAgo,
           },
           education: [],
           workHistory: [],

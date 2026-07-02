@@ -17,17 +17,8 @@ const ERROR_TEXT = "mt-1 block text-xs text-destructive";
  * @param {function} onClose - Callback to close the modal
  * @param {object} initialData - Initial form data
  * @param {function} onSave - Callback for saving data
- * @param {boolean} canEditTimezone - Whether the user can edit timezone
- * @param {string} nextEditableDate - Next allowed timezone update date
  */
-const PersonalEditModal = ({
-  isOpen,
-  onClose,
-  initialData,
-  onSave,
-  canEditTimezone,
-  nextEditableDate,
-}) => {
+const PersonalEditModal = ({ isOpen, onClose, initialData, onSave }) => {
   const [formData, setFormData] = useState({});
   const [errors, setErrors] = useState({});
   const [isSaving, setIsSaving] = useState(false);
@@ -155,16 +146,10 @@ const PersonalEditModal = ({
             <TimezoneSelector
               value={formData.timezone || ""}
               onChange={(opt) => handleChange("timezone", opt?.value ?? "")}
-              isDisabled={!canEditTimezone}
             />
             {errors.timezone && (
               <span className={ERROR_TEXT}>{errors.timezone}</span>
             )}
-            <span className="text-xs">
-              Timezone can only be updated once every 30 days.
-              <br />
-              {!canEditTimezone && `Next editable date: ${nextEditableDate}.`}
-            </span>
           </div>
 
           {/* LinkedIn */}

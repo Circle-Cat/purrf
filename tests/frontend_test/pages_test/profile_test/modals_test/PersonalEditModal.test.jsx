@@ -75,7 +75,6 @@ describe("PersonalEditModal Component", () => {
         onClose={mockOnClose}
         initialData={initialData}
         onSave={mockOnSave}
-        canEditTimezone={true}
       />,
     );
 
@@ -98,7 +97,6 @@ describe("PersonalEditModal Component", () => {
         onClose={mockOnClose}
         initialData={initialData}
         onSave={mockOnSave}
-        canEditTimezone={true}
       />,
     );
 
@@ -124,7 +122,6 @@ describe("PersonalEditModal Component", () => {
         onClose={mockOnClose}
         initialData={initialData}
         onSave={mockOnSave}
-        canEditTimezone={true}
       />,
     );
 
@@ -160,7 +157,6 @@ describe("PersonalEditModal Component", () => {
         onClose={mockOnClose}
         initialData={initialData}
         onSave={mockOnSave}
-        canEditTimezone={true}
       />,
     );
 
@@ -178,7 +174,6 @@ describe("PersonalEditModal Component", () => {
         onClose={mockOnClose}
         initialData={initialData}
         onSave={mockOnSave}
-        canEditTimezone={true}
       />,
     );
 
@@ -200,7 +195,6 @@ describe("PersonalEditModal Component", () => {
         onClose={mockOnClose}
         initialData={initialData}
         onSave={mockOnSave}
-        canEditTimezone={true}
       />,
     );
 
@@ -213,25 +207,20 @@ describe("PersonalEditModal Component", () => {
     expect(mockOnSave).not.toHaveBeenCalled();
   });
 
-  it("should disable timezone selector when canEditTimezone is false", () => {
+  it("always renders the timezone selector enabled (no cooldown restriction)", () => {
     render(
       <PersonalEditModal
         isOpen={true}
         onClose={mockOnClose}
         initialData={initialData}
         onSave={mockOnSave}
-        canEditTimezone={false}
-        nextEditableDate="2025-01-01"
       />,
     );
 
     const timezoneSelect = screen.getByDisplayValue(
       "Eastern Time (US & Canada)",
     );
-    expect(timezoneSelect).toBeDisabled();
-    expect(
-      screen.getByText(/Next editable date: 2025-01-01/),
-    ).toBeInTheDocument();
+    expect(timezoneSelect).not.toBeDisabled();
   });
 
   it("does not render the communication method selector", () => {
