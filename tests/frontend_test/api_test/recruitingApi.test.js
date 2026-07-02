@@ -20,6 +20,7 @@ import {
   submitApplication,
   updateApplication,
   getMyApplication,
+  listPublicJobs,
 } from "@/api/recruitingApi";
 
 vi.mock("@/utils/request", () => ({
@@ -173,5 +174,11 @@ describe("recruitingApi", () => {
     expect(request.get).toHaveBeenCalledWith("/recruiting/applications/mine", {
       params: { job_id: 5 },
     });
+  });
+
+  it("listPublicJobs GETs the public jobs endpoint", async () => {
+    request.get.mockResolvedValue({});
+    await listPublicJobs();
+    expect(request.get).toHaveBeenCalledWith("/recruiting/public/jobs");
   });
 });
