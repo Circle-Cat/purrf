@@ -814,7 +814,9 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
 
     async def test_approve_reopen_with_pending_payload_applies_it(self):
         """Approving a REOPEN with a staged edit applies it and republishes."""
-        job = self._job(status=JobStatus.PENDING_REOPEN, was_published=True, title="old")
+        job = self._job(
+            status=JobStatus.PENDING_REOPEN, was_published=True, title="old"
+        )
         job.pending_payload = {
             "title": "new",
             "description": None,
@@ -846,7 +848,9 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
 
     async def test_approve_reopen_without_edit_just_publishes(self):
         """Approving a REOPEN with no staged edit only flips status."""
-        job = self._job(status=JobStatus.PENDING_REOPEN, was_published=True, title="old")
+        job = self._job(
+            status=JobStatus.PENDING_REOPEN, was_published=True, title="old"
+        )
         self.repo.get_by_job_id.return_value = job
         review = JobReviewEntity(
             review_id=12,
@@ -1079,9 +1083,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
             "workExperience": "optional",
             "resume": "optional",
         }
-        job.pending_form_schema = None
-        job.pending_pipeline_config = None
-        job.pending_profile_config = None
+        job.pending_payload = None
         for k, v in over.items():
             setattr(job, k, v)
         return job
@@ -1154,9 +1156,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         )
         job.screen_rules = {"rules": [{"id": "r1"}]}
         job.pipeline_config = {"stages": [{"stage": "tech", "ownerId": 9}]}
-        job.pending_form_schema = {"questions": [{"id": "leak"}]}
-        job.pending_pipeline_config = {"stages": []}
-        job.pending_profile_config = {"resume": "optional"}
+        job.pending_payload = {"formSchema": {"questions": [{"id": "leak"}]}}
         self.repo.get_by_job_id = AsyncMock(return_value=job)
 
         dto = await self.service.get_published_job_public(self.session, 1)
@@ -1166,18 +1166,14 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(dto.profile_config, {"resume": "required"})
         self.assertFalse(hasattr(dto, "screen_rules"))
         self.assertFalse(hasattr(dto, "pipeline_config"))
-        self.assertFalse(hasattr(dto, "pending_form_schema"))
-        self.assertFalse(hasattr(dto, "pending_pipeline_config"))
-        self.assertFalse(hasattr(dto, "pending_profile_config"))
+        self.assertFalse(hasattr(dto, "pending_payload"))
         self.assertFalse(hasattr(dto, "last_reject_comment"))
 
         dumped = dto.model_dump()
         for leaked_field in (
             "screen_rules",
             "pipeline_config",
-            "pending_form_schema",
-            "pending_pipeline_config",
-            "pending_profile_config",
+            "pending_payload",
             "last_reject_comment",
         ):
             self.assertNotIn(leaked_field, dumped)
