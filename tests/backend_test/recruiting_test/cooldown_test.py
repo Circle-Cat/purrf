@@ -35,3 +35,7 @@ class TestCooldown(unittest.TestCase):
     def test_is_in_cooldown(self):
         self.assertTrue(is_in_cooldown(date(2026, 3, 31), date(2026, 4, 1)))
         self.assertFalse(is_in_cooldown(date(2026, 4, 1), date(2026, 4, 1)))
+
+
+if __name__ == "__main__":
+    unittest.main()
