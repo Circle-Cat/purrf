@@ -103,7 +103,9 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
             cooldown_days=30,
         )
         self.repo.get_by_job_id.return_value = job
-        dto = JobCreateDto(title="new title", kind=job.kind, description="old desc")
+        dto = JobCreateDto(
+            title="new title", kind=job.kind, description="old desc", cooldownDays=90
+        )
 
         result = await self.service.update_job(self.session, job.job_id, dto)
 
@@ -111,7 +113,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.title, "old title")  # live field untouched
         self.assertEqual(result.pending_payload["title"], "new title")
         self.assertEqual(result.pending_payload["formSchema"], {"questions": []})
-        self.assertEqual(result.pending_payload["cooldownDays"], 30)
+        self.assertEqual(result.pending_payload["cooldownDays"], 90)
 
     async def test_update_published_omitted_optional_field_falls_back_to_live(self):
         """A dto with screen_rules/form_schema/pipeline_config/profile_config left
@@ -128,14 +130,29 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
 
         result = await self.service.update_job(self.session, job.job_id, dto)
 
-        self.assertEqual(result.pending_payload["screenRules"], {"rules": [{"id": "r1"}]})
-        self.assertEqual(result.pending_payload["formSchema"], {"questions": [{"id": "q1"}]})
+        self.assertEqual(
+            result.pending_payload["screenRules"], {"rules": [{"id": "r1"}]}
+        )
+        self.assertEqual(
+            result.pending_payload["formSchema"], {"questions": [{"id": "q1"}]}
+        )
         self.assertEqual(
             result.pending_payload["pipelineConfig"], {"ownerId": 1, "stages": []}
         )
         self.assertEqual(
             result.pending_payload["profileConfig"], {"education": "required"}
         )
+
+    async def test_update_published_explicit_cooldown_clear_is_not_a_fallback(self):
+        """Sending cooldown_days=None on a PUBLISHED edit is an explicit clear,
+        not 'leave unchanged' — unlike the four optional config fields."""
+        job = self._job(status=JobStatus.PUBLISHED, cooldown_days=30)
+        self.repo.get_by_job_id.return_value = job
+        dto = JobCreateDto(title=job.title, kind=job.kind, cooldownDays=None)
+
+        result = await self.service.update_job(self.session, job.job_id, dto)
+
+        self.assertIsNone(result.pending_payload["cooldownDays"])
 
     async def test_create_job_stores_config_as_camelcase(self):
         """create_job serialises typed config to camelCase JSONB dicts."""
@@ -1003,10 +1020,6 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
             return []
 
         self.perms.get_active_users_with_permission = AsyncMock(side_effect=pool)
-
-
-
-
 
     async def test_approve_revision_merges_pending_profile_config(self):
         review = MagicMock()
