@@ -529,11 +529,16 @@ class JobService:
             JobDto: The posting with status PENDING_REOPEN.
 
         Raises:
-            ValueError: If the posting is not CLOSED, the submitter picks
-                themselves, the pool is too small, or the reviewer is not an
-                active approver.
+            ValueError: If the posting is not CLOSED, was never published
+                (use delete_job instead), the submitter picks themselves,
+                the pool is too small, or the reviewer is not an active
+                approver.
         """
         job = await self._require_job(session, job_id)
+        if not job.was_published:
+            raise ValueError(
+                f"Job {job_id} was never published; delete it instead of reopening"
+            )
         return await self._open_review(
             session,
             job,

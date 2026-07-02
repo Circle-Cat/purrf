@@ -738,7 +738,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
 
     async def test_request_reopen_closed_creates_review(self):
         """request_reopen from CLOSED creates a REOPEN review and sets PENDING_REOPEN."""
-        job = self._job(status=JobStatus.CLOSED)
+        job = self._job(status=JobStatus.CLOSED, was_published=True)
         self.repo.get_by_job_id.return_value = job
         self._two_approvers()
 
@@ -759,6 +759,17 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         self._two_approvers()
 
         with self.assertRaises(ValueError):
+            await self.service.request_reopen(
+                self.session, job.job_id, reviewer_id=2, submitted_by=1, message=None
+            )
+
+    async def test_request_reopen_never_published_raises(self):
+        """A CLOSED posting that was never published cannot be reopened."""
+        job = self._job(status=JobStatus.CLOSED, was_published=False)
+        self.repo.get_by_job_id.return_value = job
+        self._two_approvers()
+
+        with self.assertRaisesRegex(ValueError, "never published"):
             await self.service.request_reopen(
                 self.session, job.job_id, reviewer_id=2, submitted_by=1, message=None
             )
