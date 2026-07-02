@@ -32,6 +32,7 @@ const BLANK = {
 /**
  * Build the create/update request body from a draft. Config sections not
  * edited in PR1 (pipeline/screen-rules/profile) pass through as loaded.
+ * `cooldownDays` is actively edited and passes through as `null` when unset.
  *
  * @param {object} draft
  * @returns {object}
@@ -40,7 +41,7 @@ const toBody = (draft) => ({
   title: draft.title,
   description: draft.description,
   kind: draft.kind,
-  cooldownDays: draft.cooldownDays ?? undefined,
+  cooldownDays: draft.cooldownDays,
   formSchema: draft.formSchema,
   pipelineConfig: draft.pipelineConfig ?? undefined,
   screenRules: draft.screenRules ?? undefined,

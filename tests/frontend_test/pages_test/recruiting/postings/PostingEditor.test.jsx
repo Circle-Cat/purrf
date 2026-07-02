@@ -65,7 +65,7 @@ describe("PostingEditor", () => {
     expect(api.createJob.mock.calls[0][0]).toMatchObject({
       title: "SWE",
       kind: "activity",
-      cooldownDays: undefined,
+      cooldownDays: null,
       formSchema: { questions: [] },
     });
     expect(toast.success).toHaveBeenCalled();
@@ -96,6 +96,33 @@ describe("PostingEditor", () => {
         ROUTE_PATHS.RECRUITING_POSTINGS,
       ),
     );
+  });
+
+  it("loads an employment posting's cooldown and saves the edited value", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 5,
+        title: "Eng",
+        description: "",
+        kind: "employment",
+        cooldownDays: 45,
+        formSchema: { questions: [] },
+      },
+    });
+    const router = createMemoryRouter(
+      [
+        { path: "/postings/:id/edit", element: <PostingEditor /> },
+        { path: ROUTE_PATHS.RECRUITING_POSTINGS, element: <div /> },
+      ],
+      { initialEntries: ["/postings/5/edit"] },
+    );
+    render(<RouterProvider router={router} />);
+    const input = await screen.findByLabelText("Cooldown days");
+    expect(input.value).toBe("45");
+    fireEvent.change(input, { target: { value: "30" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(api.updateJob).toHaveBeenCalled());
+    expect(api.updateJob.mock.calls[0][1].cooldownDays).toBe(30);
   });
 
   it("shows the backend error message on save failure", async () => {

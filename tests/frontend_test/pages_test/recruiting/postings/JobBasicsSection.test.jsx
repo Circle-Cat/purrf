@@ -66,4 +66,21 @@ describe("JobBasicsSection", () => {
     fireEvent.change(input, { target: { value: "90" } });
     expect(onChange).toHaveBeenCalledWith({ cooldownDays: 90 });
   });
+
+  it("emits null when Cooldown days is cleared", () => {
+    const onChange = vi.fn();
+    render(
+      <JobBasicsSection
+        title=""
+        description=""
+        kind="employment"
+        cooldownDays={90}
+        onChange={onChange}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("Cooldown days"), {
+      target: { value: "" },
+    });
+    expect(onChange).toHaveBeenCalledWith({ cooldownDays: null });
+  });
 });
