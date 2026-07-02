@@ -6,8 +6,12 @@ import { Checkbox } from "@/components/ui/checkbox";
 import PostingApplicantView from "@/pages/Recruiting/components/PostingApplicantView";
 import { useAuth } from "@/context/auth/AuthContext.js";
 import { submitApplication, updateApplication } from "@/api/recruitingApi";
-import { updateMyProfile } from "@/api/profileApi";
-import { buildProfileWriteBackPayload } from "@/pages/Recruiting/profileWriteBack";
+import { getMyProfile, updateMyProfile } from "@/api/profileApi";
+import { ProfileFields } from "@/constants/ApiEndpoints";
+import {
+  buildNewWriteBackRows,
+  mergeWriteBackPayload,
+} from "@/pages/Recruiting/profileWriteBack";
 
 /**
  * Candidate application form for a published job. Owns the applicant's
@@ -16,8 +20,12 @@ import { buildProfileWriteBackPayload } from "@/pages/Recruiting/profileWriteBac
  *
  * When "save to my profile" is checked, a successful submission is followed
  * by a best-effort write-back of complete education/experience rows to the
- * applicant's profile (`updateMyProfile`); a write-back failure only toasts a
- * warning and never fails the submission -- `onSubmitted` still fires.
+ * applicant's profile: the current profile is fetched first and the new rows
+ * are MERGED into its lists (the backend PATCH fully replaces each list, so
+ * sending only the new rows would wipe existing entries). Nothing is sent
+ * when the form has no complete new rows or every new row already exists in
+ * the profile. A write-back failure only toasts a warning and never fails
+ * the submission -- `onSubmitted` still fires.
  *
  * @param {{job: object, existing?: object, onSubmitted: (app: object) => void}} props
  */
@@ -37,10 +45,24 @@ const ApplicationForm = ({ job, existing, onSubmitted }) => {
   const [saveToProfile, setSaveToProfile] = useState(!existing);
   const [submitting, setSubmitting] = useState(false);
 
-  /** Best-effort write-back of this form's profile rows; failures only toast, never throw. */
+  /**
+   * Best-effort merge write-back of this form's complete profile rows.
+   * Fetches the stored profile, merges the new rows in (preserving existing
+   * rows and their ids -- the backend PATCH replaces each list wholesale),
+   * and PATCHes only lists that actually gained a row. Skips the network
+   * entirely when the form has no complete new rows. Failures (fetch or
+   * patch) only toast a warning, never throw.
+   */
   const writeBackProfile = async () => {
     try {
-      await updateMyProfile(buildProfileWriteBackPayload(profileValue));
+      const newRows = buildNewWriteBackRows(profileValue);
+      if (!newRows.education.length && !newRows.workHistory.length) return;
+      const res = await getMyProfile({
+        fields: [ProfileFields.WORK_HISTORY, ProfileFields.EDUCATION],
+      });
+      const payload = mergeWriteBackPayload(res?.data?.profile, newRows);
+      if (!payload) return;
+      await updateMyProfile(payload);
     } catch {
       toast.warning(
         "Application submitted, but saving to your profile failed.",

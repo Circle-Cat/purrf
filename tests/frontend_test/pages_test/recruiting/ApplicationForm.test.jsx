@@ -157,9 +157,26 @@ describe("ApplicationForm", () => {
     await waitFor(() => expect(button).not.toBeDisabled());
   });
 
-  it("writes complete profile rows back to the profile on submit when save-to-profile is checked", async () => {
+  it("merges complete new rows into the fetched profile (preserving existing rows and ids) when save-to-profile is checked", async () => {
     const user = userEvent.setup();
     api.updateApplication.mockResolvedValue({ data: { id: 7 } });
+    profileApi.getMyProfile.mockResolvedValue({
+      data: {
+        profile: {
+          education: [
+            {
+              id: 33,
+              school: "Stanford",
+              degree: "Master",
+              fieldOfStudy: "EE",
+              startDate: "2010-09-01",
+              endDate: "2012-06-01",
+            },
+          ],
+          workHistory: [],
+        },
+      },
+    });
     profileApi.updateMyProfile.mockResolvedValue({ data: {} });
     render(
       <ApplicationForm
@@ -178,8 +195,19 @@ describe("ApplicationForm", () => {
     await waitFor(() =>
       expect(profileApi.updateMyProfile).toHaveBeenCalledTimes(1),
     );
+    expect(profileApi.getMyProfile).toHaveBeenCalledWith({
+      fields: ["workHistory", "education"],
+    });
     expect(profileApi.updateMyProfile).toHaveBeenCalledWith({
       education: [
+        {
+          id: 33,
+          school: "Stanford",
+          degree: "Master",
+          fieldOfStudy: "EE",
+          startDate: "2010-09-01",
+          endDate: "2012-06-01",
+        },
         {
           school: "MIT",
           degree: "Bachelor",
@@ -200,32 +228,188 @@ describe("ApplicationForm", () => {
     });
   });
 
-  it("does not write back to the profile when save-to-profile is unchecked", async () => {
+  it("skips duplicate rows and omits lists that gained nothing", async () => {
     const user = userEvent.setup();
-    api.submitApplication.mockResolvedValue({ data: { id: 100 } });
-    render(<ApplicationForm job={JOB} onSubmitted={vi.fn()} />);
+    api.updateApplication.mockResolvedValue({ data: { id: 7 } });
+    // Profile already holds a content-identical SWE@Acme job, but not the
+    // MIT education row.
+    profileApi.getMyProfile.mockResolvedValue({
+      data: {
+        profile: {
+          education: [],
+          workHistory: [
+            {
+              id: 42,
+              title: "SWE",
+              companyOrOrganization: "Acme",
+              isCurrentJob: true,
+              startDate: "2020-06-01",
+              endDate: null,
+            },
+          ],
+        },
+      },
+    });
+    profileApi.updateMyProfile.mockResolvedValue({ data: {} });
+    render(
+      <ApplicationForm
+        job={JOB}
+        existing={FILLED_EXISTING}
+        onSubmitted={vi.fn()}
+      />,
+    );
 
-    // No `existing` -> save-to-profile defaults checked; uncheck it.
     await user.click(
       screen.getByRole("checkbox", { name: /save to my profile/i }),
     );
     await user.click(screen.getByRole("button", { name: /submit/i }));
 
-    await waitFor(() => expect(api.submitApplication).toHaveBeenCalledTimes(1));
-    expect(profileApi.updateMyProfile).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(profileApi.updateMyProfile).toHaveBeenCalledTimes(1),
+    );
+    // Exact match: the unchanged workHistory list must NOT be sent.
+    expect(profileApi.updateMyProfile).toHaveBeenCalledWith({
+      education: [
+        {
+          school: "MIT",
+          degree: "Bachelor",
+          fieldOfStudy: "CS",
+          startDate: "2016-09-01",
+          endDate: "2020-05-01",
+        },
+      ],
+    });
   });
 
-  it("soft-fails when the profile write-back rejects: submission still succeeds and onSubmitted still fires", async () => {
+  it("sends no PATCH when every complete new row already exists in the profile", async () => {
     const user = userEvent.setup();
-    api.submitApplication.mockResolvedValue({ data: { id: 100 } });
-    profileApi.updateMyProfile.mockRejectedValue(new Error("boom"));
+    api.updateApplication.mockResolvedValue({ data: { id: 7 } });
+    profileApi.getMyProfile.mockResolvedValue({
+      data: {
+        profile: {
+          education: [
+            {
+              id: 33,
+              school: "MIT",
+              degree: "Bachelor",
+              fieldOfStudy: "CS",
+              startDate: "2016-09-01",
+              endDate: "2020-05-01",
+            },
+          ],
+          workHistory: [
+            {
+              id: 42,
+              title: "SWE",
+              companyOrOrganization: "Acme",
+              isCurrentJob: true,
+              startDate: "2020-06-01",
+              endDate: null,
+            },
+          ],
+        },
+      },
+    });
     const onSubmitted = vi.fn();
-    render(<ApplicationForm job={JOB} onSubmitted={onSubmitted} />);
+    render(
+      <ApplicationForm
+        job={JOB}
+        existing={FILLED_EXISTING}
+        onSubmitted={onSubmitted}
+      />,
+    );
 
-    // No `existing` -> save-to-profile defaults checked.
+    await user.click(
+      screen.getByRole("checkbox", { name: /save to my profile/i }),
+    );
     await user.click(screen.getByRole("button", { name: /submit/i }));
 
     await waitFor(() => expect(onSubmitted).toHaveBeenCalled());
+    expect(profileApi.getMyProfile).toHaveBeenCalledTimes(1);
+    expect(profileApi.updateMyProfile).not.toHaveBeenCalled();
+  });
+
+  it("sends no profile requests at all when the form has no complete rows", async () => {
+    const user = userEvent.setup();
+    api.submitApplication.mockResolvedValue({ data: { id: 100 } });
+    const onSubmitted = vi.fn();
+    // No `existing` -> empty profile, save-to-profile defaults checked.
+    render(<ApplicationForm job={JOB} onSubmitted={onSubmitted} />);
+
+    await user.click(screen.getByRole("button", { name: /submit/i }));
+
+    await waitFor(() => expect(onSubmitted).toHaveBeenCalled());
+    expect(profileApi.getMyProfile).not.toHaveBeenCalled();
+    expect(profileApi.updateMyProfile).not.toHaveBeenCalled();
+  });
+
+  it("does not write back to the profile when save-to-profile is unchecked", async () => {
+    const user = userEvent.setup();
+    api.updateApplication.mockResolvedValue({ data: { id: 7 } });
+    render(
+      <ApplicationForm
+        job={JOB}
+        existing={FILLED_EXISTING}
+        onSubmitted={vi.fn()}
+      />,
+    );
+
+    // Existing application -> save-to-profile already unchecked; submit as-is.
+    await user.click(screen.getByRole("button", { name: /submit/i }));
+
+    await waitFor(() => expect(api.updateApplication).toHaveBeenCalledTimes(1));
+    expect(profileApi.getMyProfile).not.toHaveBeenCalled();
+    expect(profileApi.updateMyProfile).not.toHaveBeenCalled();
+  });
+
+  it("soft-fails when the profile PATCH rejects: submission still succeeds and onSubmitted still fires", async () => {
+    const user = userEvent.setup();
+    api.updateApplication.mockResolvedValue({ data: { id: 7 } });
+    profileApi.getMyProfile.mockResolvedValue({
+      data: { profile: { education: [], workHistory: [] } },
+    });
+    profileApi.updateMyProfile.mockRejectedValue(new Error("boom"));
+    const onSubmitted = vi.fn();
+    render(
+      <ApplicationForm
+        job={JOB}
+        existing={FILLED_EXISTING}
+        onSubmitted={onSubmitted}
+      />,
+    );
+
+    await user.click(
+      screen.getByRole("checkbox", { name: /save to my profile/i }),
+    );
+    await user.click(screen.getByRole("button", { name: /submit/i }));
+
+    await waitFor(() => expect(onSubmitted).toHaveBeenCalled());
+    expect(toast.success).toHaveBeenCalledWith("Application submitted.");
+    expect(toast.warning).toHaveBeenCalledWith(
+      "Application submitted, but saving to your profile failed.",
+    );
+  });
+
+  it("soft-fails when the profile fetch rejects: no PATCH, warning toast, onSubmitted still fires", async () => {
+    const user = userEvent.setup();
+    api.updateApplication.mockResolvedValue({ data: { id: 7 } });
+    profileApi.getMyProfile.mockRejectedValue(new Error("fetch failed"));
+    const onSubmitted = vi.fn();
+    render(
+      <ApplicationForm
+        job={JOB}
+        existing={FILLED_EXISTING}
+        onSubmitted={onSubmitted}
+      />,
+    );
+
+    await user.click(
+      screen.getByRole("checkbox", { name: /save to my profile/i }),
+    );
+    await user.click(screen.getByRole("button", { name: /submit/i }));
+
+    await waitFor(() => expect(onSubmitted).toHaveBeenCalled());
+    expect(profileApi.updateMyProfile).not.toHaveBeenCalled();
     expect(toast.success).toHaveBeenCalledWith("Application submitted.");
     expect(toast.warning).toHaveBeenCalledWith(
       "Application submitted, but saving to your profile failed.",
