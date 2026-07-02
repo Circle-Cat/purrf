@@ -48,6 +48,11 @@ const Sidebar = () => {
       permissions: [PERMISSIONS.PERMISSION_MANAGE],
     },
     {
+      label: "Open Positions",
+      to: ROUTE_PATHS.RECRUITING_JOBS_BROWSE,
+      permissions: [],
+    },
+    {
       label: "Recruiting",
       to: ROUTE_PATHS.RECRUITING_POSTINGS,
       permissions: [PERMISSIONS.RECRUITING_JOB_WRITE],
