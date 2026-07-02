@@ -633,7 +633,7 @@ describe("ApplicationForm", () => {
     await waitFor(() => expect(toast.error).toHaveBeenCalled());
   });
 
-  it("does not render the job description while filling the form, but does render the title", () => {
+  it("does not render the job description and kind while filling the form, but does render the title", () => {
     const jobWithDescription = {
       ...JOB,
       description:
@@ -645,5 +645,6 @@ describe("ApplicationForm", () => {
     expect(
       screen.queryByText(/detailed job description/),
     ).not.toBeInTheDocument();
+    expect(screen.queryByText("activity")).not.toBeInTheDocument();
   });
 });

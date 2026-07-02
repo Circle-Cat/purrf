@@ -116,7 +116,6 @@ const ApplicationForm = ({ job, existing, onSubmitted }) => {
     <div className="space-y-4">
       <PostingApplicantView
         title={job.title}
-        kind={job.kind}
         questions={job.formSchema?.questions ?? []}
         profileConfig={job.profileConfig}
         profileValue={profileValue}
