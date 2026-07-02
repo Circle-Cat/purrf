@@ -85,7 +85,6 @@ from backend.authentication.email_management_controller import (
 )
 from backend.admin.permission_admin_service import PermissionAdminService
 from backend.admin.permission_admin_controller import PermissionAdminController
-from google.cloud import storage
 from backend.repository.job_repository import JobRepository
 from backend.repository.job_review_repository import JobReviewRepository
 from backend.repository.application_repository import ApplicationRepository
@@ -541,7 +540,7 @@ class AppDependencyBuilder:
         )
         self.application_repository = ApplicationRepository()
         self.application_submission_repository = ApplicationSubmissionRepository()
-        self.resume_storage = ResumeStorage(storage.Client(), os.getenv(RESUME_BUCKET))
+        self.resume_storage = ResumeStorage(os.getenv(RESUME_BUCKET))
         self.application_service = ApplicationService(
             self.application_repository,
             self.application_submission_repository,

@@ -17,6 +17,7 @@ py_library(
         "//backend/utils:permission_decorators",
         "@pypi//fastapi",
         "@pypi//google_api_core",
+        "@pypi//google_cloud_storage",
         "@pypi//python_multipart",
         "@pypi//sqlalchemy",
     ],
