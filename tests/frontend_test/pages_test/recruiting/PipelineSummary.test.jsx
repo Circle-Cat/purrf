@@ -52,4 +52,20 @@ describe("PipelineSummary", () => {
     expect(screen.getByText("Owner: Bo (#42)")).toBeInTheDocument();
     expect(screen.getByText("Assignee Ann (#7)")).toBeInTheDocument();
   });
+
+  it("renders all owner names comma-separated for ownerIds", () => {
+    render(
+      <PipelineSummary
+        pipelineConfig={{
+          ownerIds: [42, 43],
+          stages: [],
+        }}
+        jobOwners={[
+          { userId: 42, name: "Bo", email: "bo@x.com" },
+          { userId: 43, name: "Cy", email: "cy@x.com" },
+        ]}
+      />,
+    );
+    expect(screen.getByText("Owner: Bo (#42), Cy (#43)")).toBeInTheDocument();
+  });
 });
