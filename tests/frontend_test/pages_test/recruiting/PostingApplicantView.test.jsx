@@ -72,4 +72,29 @@ describe("PostingApplicantView", () => {
     fireEvent.click(screen.getByRole("radio", { name: "no" }));
     expect(onAnswerChange).toHaveBeenCalledWith("q1", "no");
   });
+
+  it("emits profile changes on field edit when controlled", () => {
+    const onProfileChange = vi.fn();
+    const profileValue = {
+      personal: { firstName: "Sam" },
+      education: [],
+      experience: [],
+    };
+    render(
+      <PostingApplicantView
+        title="T"
+        questions={questions}
+        profileValue={profileValue}
+        onProfileChange={onProfileChange}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("First name"), {
+      target: { value: "Casey" },
+    });
+    expect(onProfileChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        personal: expect.objectContaining({ firstName: "Casey" }),
+      }),
+    );
+  });
 });

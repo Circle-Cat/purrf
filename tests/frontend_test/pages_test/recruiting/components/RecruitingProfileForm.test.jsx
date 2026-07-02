@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import RecruitingProfileForm from "@/pages/Recruiting/components/RecruitingProfileForm";
 
 const renderForm = (profileConfig) =>
@@ -76,7 +76,7 @@ describe("RecruitingProfileForm", () => {
     ).toBeInTheDocument();
   });
 
-  it("reflects controlled value and emits changes", () => {
+  it("reflects controlled value", () => {
     const onChange = vi.fn();
     const value = {
       personal: { firstName: "Zed" },
@@ -95,5 +95,33 @@ describe("RecruitingProfileForm", () => {
       />,
     );
     expect(screen.getByDisplayValue("Zed")).toBeInTheDocument();
+  });
+
+  it("emits changes on field edit when controlled", () => {
+    const onChange = vi.fn();
+    const value = {
+      personal: { firstName: "Zed" },
+      education: [],
+      experience: [],
+    };
+    render(
+      <RecruitingProfileForm
+        profileConfig={{
+          education: "optional",
+          workExperience: "optional",
+          resume: "off",
+        }}
+        value={value}
+        onChange={onChange}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("First name"), {
+      target: { value: "Ada" },
+    });
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        personal: expect.objectContaining({ firstName: "Ada" }),
+      }),
+    );
   });
 });
