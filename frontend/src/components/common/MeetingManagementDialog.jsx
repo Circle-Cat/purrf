@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import Select from "react-select";
 import {
   CalendarIcon,
@@ -6,10 +6,12 @@ import {
   Plus,
   CalendarDays,
   ChevronDown,
+  Trash2 as TrashIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogTrigger,
@@ -44,12 +46,21 @@ const TIME_SLOTS = Array.from({ length: 48 }, (_, i) => {
 });
 
 export default function MeetingManagementDialog({ roundId, onBooked }) {
-  const { partners, bookMeeting, isLoading } = useMeetingManagement(roundId);
+  const {
+    partners,
+    bookMeeting,
+    upcomingMeetings = [],
+    cancelMeetings,
+    isLoading,
+    refresh,
+  } = useMeetingManagement(roundId);
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("schedule");
 
   const [selectedDate, setSelectedDate] = useState(null);
   const [selectedTime, setSelectedTime] = useState("09:00");
+
+  const [selectedIds, setSelectedIds] = useState(new Set());
 
   const initialFormState = {
     partnerId: "",
@@ -57,6 +68,98 @@ export default function MeetingManagementDialog({ roundId, onBooked }) {
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
   };
   const [formData, setFormData] = useState(initialFormState);
+
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [isOpen, activeTab]);
+
+  const upcomingLength = upcomingMeetings.length;
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [upcomingLength]);
+
+  const isAllChecked = useMemo(() => {
+    return upcomingLength > 0 && selectedIds.size === upcomingLength;
+  }, [selectedIds, upcomingLength]);
+
+  const isIndeterminate = useMemo(() => {
+    return selectedIds.size > 0 && selectedIds.size < upcomingLength;
+  }, [selectedIds, upcomingLength]);
+
+  const handleToggleAll = () => {
+    if (isAllChecked) {
+      setSelectedIds(new Set());
+    } else {
+      const allIds = upcomingMeetings.map((m) => m.meetingId);
+      setSelectedIds(new Set(allIds));
+    }
+  };
+
+  // Toggle single item selection
+  const handleToggleItem = (meetingId) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(meetingId)) {
+        next.delete(meetingId);
+      } else {
+        next.add(meetingId);
+      }
+      return next;
+    });
+  };
+
+  // Trigger batch deletion
+  const handleDeleteSelected = async () => {
+    if (selectedIds.size === 0) return;
+
+    // Construct the full selected meeting objects for processing in cancelMeetings
+    const selectedMeetings = upcomingMeetings.filter((m) =>
+      selectedIds.has(m.meetingId),
+    );
+
+    try {
+      await cancelMeetings(selectedMeetings);
+      toast.success("Meetings cancelled successfully!");
+      setSelectedIds(new Set()); // Clear checked states upon success
+
+      if (typeof refresh === "function") {
+        await refresh();
+      }
+      await onBooked?.();
+    } catch (error) {
+      console.error("Failed to delete meetings in UI:", error);
+      toast.error("Failed to cancel selected meetings.");
+    }
+  };
+
+  // Helper function: Format meeting card details based on user's local timezone
+  const formatCardDetails = (startStr, endStr) => {
+    const start = new Date(startStr);
+    const end = new Date(endStr);
+
+    // Calculate duration in minutes
+    const durationMin = Math.round((end - start) / 1000 / 60);
+    const durationStr = `${durationMin} mins`;
+
+    // Format local date, time, and timezone
+    const userTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const dateStr = start.toLocaleDateString(undefined, {
+      weekday: "short",
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    });
+
+    const timeStr = `${start.toLocaleTimeString(undefined, {
+      hour: "2-digit",
+      minute: "2-digit",
+    })} - ${end.toLocaleTimeString(undefined, {
+      hour: "2-digit",
+      minute: "2-digit",
+    })}`;
+
+    return { dateStr, timeStr, durationStr, timezoneStr: userTz };
+  };
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -160,7 +263,7 @@ export default function MeetingManagementDialog({ roundId, onBooked }) {
         </DialogTrigger>
       </div>
 
-      <DialogContent className="w-full max-w-2xl rounded-xl bg-white shadow-2xl p-0 animate-in fade-in zoom-in-95 duration-200 overflow-visible">
+      <DialogContent className="w-full max-w-2xl h-auto max-h-[80vh] flex flex-col rounded-xl bg-white shadow-2xl p-0 animate-in fade-in zoom-in-95 duration-200 overflow-hidden ">
         {/* Header */}
         <div className="flex items-center justify-between bg-gray-50/50 px-6 py-4 border-b rounded-t-xl">
           <DialogTitle className="text-xl font-semibold text-gray-900 flex items-center gap-2">
@@ -170,8 +273,12 @@ export default function MeetingManagementDialog({ roundId, onBooked }) {
         </div>
 
         {/* Tabs */}
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <div className="px-6 mt-4">
+        <Tabs
+          value={activeTab}
+          onValueChange={setActiveTab}
+          className="w-full flex flex-col flex-1 min-h-0 overflow-hidden"
+        >
+          <div className="px-6 mt-4 flex-shrink-0">
             <TabsList className="grid w-full grid-cols-2 p-1.5 h-12 bg-gray-100 rounded-lg">
               <TabsTrigger
                 value="schedule"
@@ -189,11 +296,11 @@ export default function MeetingManagementDialog({ roundId, onBooked }) {
           </div>
 
           {/* Content Area */}
-          <div className="p-6">
+          <div className="p-6 flex-1 min-h-0 overflow-hidden">
             {/* Schedule Meeting Form */}
             <TabsContent
               value="schedule"
-              className="mt-0 focus-visible:outline-none"
+              className="mt-0 focus-visible:outline-none h-full overflow-y-auto pr-1 scrollbar-thin"
             >
               <form onSubmit={handleSubmit} className="space-y-5">
                 {/* Mentor / Mentee Selection Dropdown */}
@@ -359,14 +466,127 @@ export default function MeetingManagementDialog({ roundId, onBooked }) {
             {/* Upcoming Tab */}
             <TabsContent
               value="upcoming"
-              className="mt-0 focus-visible:outline-none"
+              className="mt-0 focus-visible:outline-none flex flex-col h-[400px] min-h-0"
             >
-              <div className="flex flex-col items-center justify-center h-64 border-2 border-dashed border-gray-100 rounded-xl bg-gray-50/50">
-                <CalendarDays className="w-12 h-12 text-gray-200 mb-2" />
-                <p className="text-gray-400 font-medium">
-                  No upcoming meetings found
-                </p>
-              </div>
+              {upcomingLength === 0 ? (
+                /* Empty state placeholder text preserved */
+                <div className="flex flex-col items-center justify-center h-64 border-2 border-dashed border-gray-100 rounded-xl bg-gray-50/50 my-auto">
+                  <CalendarDays className="w-12 h-12 text-gray-200 mb-2" />
+                  <p className="text-gray-400 font-medium">
+                    No upcoming meetings found
+                  </p>
+                </div>
+              ) : (
+                <div className="flex flex-col h-full min-h-0 justify-between flex-1 overflow-hidden">
+                  <div className="flex flex-col min-h-0 flex-1 overflow-hidden">
+                    {/* Top Control Bar: Select All Checkbox */}
+                    <div className="flex items-center space-x-3 pb-3 mb-4 border-b border-gray-100 flex-shrink-0">
+                      <Checkbox
+                        id="select-all-upcoming"
+                        checked={isAllChecked}
+                        indeterminate={isIndeterminate ? "true" : undefined}
+                        onCheckedChange={handleToggleAll}
+                        disabled={isLoading}
+                      />
+                      <label
+                        htmlFor="select-all-upcoming"
+                        className="text-sm font-semibold text-gray-700 cursor-pointer select-none"
+                      >
+                        Select All
+                      </label>
+                    </div>
+
+                    {/* Card List */}
+                    <div className="flex-1 space-y-3 overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-gray-200 min-h-0">
+                      {upcomingMeetings.map((meeting) => {
+                        const isChecked = selectedIds.has(meeting.meetingId);
+                        const { dateStr, timeStr, durationStr, timezoneStr } =
+                          formatCardDetails(
+                            meeting.startDatetime,
+                            meeting.endDatetime,
+                          );
+
+                        return (
+                          <div
+                            key={meeting.meetingId}
+                            className={cn(
+                              "flex items-center p-4 border rounded-xl transition-all duration-200",
+                              isChecked
+                                ? "border-[#6035F3] bg-[#6035F3]/5 shadow-sm"
+                                : "border-gray-200 bg-white hover:border-gray-300",
+                            )}
+                          >
+                            {/* Single Selection Checkbox */}
+                            <div className="mr-4 flex items-center">
+                              <Checkbox
+                                id={`check-${meeting.meetingId}`}
+                                checked={isChecked}
+                                onCheckedChange={() =>
+                                  handleToggleItem(meeting.meetingId)
+                                }
+                                disabled={isLoading}
+                              />
+                            </div>
+
+                            {/* Core Card Content Display */}
+                            <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                              {/* Left Side: Partner Info */}
+                              <div className="flex flex-col justify-center">
+                                <h4 className="font-semibold text-gray-900 flex items-center gap-2 flex-wrap">
+                                  {meeting.partnerName}
+                                </h4>
+                              </div>
+
+                              {/* Right Side: Formatted Date/Time & Duration in User's Timezone */}
+                              <div className="sm:text-right flex flex-col justify-center space-y-0.5">
+                                <p className="font-medium text-gray-800">
+                                  {dateStr}
+                                </p>
+                                <p className="text-xs font-mono text-[#6035F3] font-semibold">
+                                  {timeStr}
+                                </p>
+                                <p className="text-[11px] text-gray-400">
+                                  Duration:{" "}
+                                  <span className="text-gray-700 font-medium">
+                                    {durationStr}
+                                  </span>
+                                  <span className="mx-1.5 text-gray-300">
+                                    |
+                                  </span>
+                                  TZ:{" "}
+                                  <span
+                                    className="text-gray-700"
+                                    title={timezoneStr}
+                                  >
+                                    {timezoneStr
+                                      .split("/")
+                                      .pop()
+                                      .replace("_", " ")}
+                                  </span>
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Delete Button */}
+                  <div className="flex justify-end mt-4 pt-4 border-t border-gray-50 bg-white flex-shrink-0">
+                    <Button
+                      variant="destructive"
+                      size="lg"
+                      className="px-6 font-medium text-white shadow-md transition-all active:scale-95 disabled:bg-gray-200 disabled:text-gray-400 disabled:shadow-none disabled:active:scale-100"
+                      disabled={selectedIds.size === 0 || isLoading}
+                      onClick={handleDeleteSelected}
+                    >
+                      <TrashIcon className="w-4 h-4" />
+                      Delete ({selectedIds.size})
+                    </Button>
+                  </div>
+                </div>
+              )}
             </TabsContent>
           </div>
         </Tabs>
