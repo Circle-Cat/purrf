@@ -482,6 +482,55 @@ describe("ApplicationForm", () => {
     });
   });
 
+  it("allows timezone change when 30+ days have elapsed (boundary test)", async () => {
+    const user = userEvent.setup();
+    api.updateApplication.mockResolvedValue({ data: { id: 7 } });
+    // Exactly 30 days + 1 second ago: the guard should allow the change.
+    const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+    const thirtyDaysAgo = new Date(
+      Date.now() - (thirtyDaysMs + 1000),
+    ).toISOString();
+    profileApi.getMyProfile.mockResolvedValue({
+      data: {
+        profile: {
+          user: {
+            ...FETCHED_USER_NEW,
+            timezoneUpdatedAt: thirtyDaysAgo,
+          },
+          education: [],
+          workHistory: [],
+        },
+      },
+    });
+    profileApi.updateMyProfile.mockResolvedValue({ data: {} });
+    render(
+      <ApplicationForm
+        job={JOB}
+        existing={PERSONAL_ONLY_EXISTING}
+        onSubmitted={vi.fn()}
+      />,
+    );
+
+    await user.click(
+      screen.getByRole("checkbox", { name: /save to my profile/i }),
+    );
+    await user.click(screen.getByRole("button", { name: /submit/i }));
+
+    await waitFor(() =>
+      expect(profileApi.updateMyProfile).toHaveBeenCalledTimes(1),
+    );
+    expect(profileApi.updateMyProfile).toHaveBeenCalledWith({
+      user: {
+        firstName: "Ada",
+        lastName: "L",
+        preferredName: null,
+        timezone: "Asia/Shanghai",
+        linkedinLink: null,
+        communicationMethod: "email",
+      },
+    });
+  });
+
   it("treats an education row missing `field` as incomplete and excludes it from write-back", async () => {
     const user = userEvent.setup();
     api.updateApplication.mockResolvedValue({ data: { id: 7 } });

@@ -1,14 +1,13 @@
 import { formatDateFromParts } from "@/pages/Profile/utils";
-import { getDaysSince } from "@/utils/dateTime";
 
 /**
- * Minimum days since the last timezone change before the backend accepts
- * another one (see `update_users` in
- * backend/profile/profile_command_service.py, which rejects a timezone
- * CHANGE within 30 days of `timezoneUpdatedAt` -- and a rejected user
- * write aborts the whole PATCH, education/work lists included).
+ * Millisecond equivalent of the backend's 30-day timezone change cooldown
+ * (see `update_users` in backend/profile/profile_command_service.py, which
+ * rejects a timezone CHANGE within 30 days of `timezoneUpdatedAt` -- and a
+ * rejected user write aborts the whole PATCH, education/work lists included).
+ * Uses exact millisecond arithmetic to match the backend's datetime check.
  */
-const TIMEZONE_CHANGE_COOLDOWN_DAYS = 30;
+const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
 /**
  * Whether an education row has enough data for the profile PATCH DTO
@@ -176,11 +175,14 @@ const mergeUserWriteBack = (fetchedUser, personal) => {
   // Backend `update_users` rejects a timezone CHANGE made within 30 days of
   // the previous one (timezoneUpdatedAt) -- and that rejection would abort
   // the whole PATCH. Only adopt the form's timezone when it isn't a locked
-  // change.
+  // change. Use exact millisecond arithmetic to match the backend's check.
+  const tzChangeAllowed =
+    fetched.timezoneUpdatedAt == null ||
+    Date.now() - new Date(fetched.timezoneUpdatedAt).getTime() >=
+      THIRTY_DAYS_MS;
   const timezoneChangeAllowed =
     Boolean(formTimezone) &&
-    (formTimezone === fetched.timezone ||
-      getDaysSince(fetched.timezoneUpdatedAt) >= TIMEZONE_CHANGE_COOLDOWN_DAYS);
+    (formTimezone === fetched.timezone || tzChangeAllowed);
 
   const merged = {
     firstName: personal?.firstName?.trim() || fetched.firstName,
