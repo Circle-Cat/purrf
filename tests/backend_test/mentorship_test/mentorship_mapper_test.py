@@ -10,6 +10,7 @@ from backend.dto.preference_dto import (
 from backend.dto.registration_dto import GlobalPreferencesDto, RoundPreferencesDto
 from backend.dto.rounds_dto import RoundsDto, TimelineDto
 from backend.dto.meeting_dto import MeetingDto
+from backend.dto.admin_meeting_log_dto import AdminMeetingDto
 from backend.entity.users_entity import UsersEntity
 from backend.entity.preference_entity import PreferenceEntity
 from backend.entity.mentorship_pairs_entity import MentorshipPairsEntity
@@ -24,6 +25,7 @@ from backend.common.mentorship_enums import (
     PairStatus,
     MenteeActionStatus,
     MentorActionStatus,
+    MeetingNoteTag,
 )
 
 
@@ -605,6 +607,28 @@ class TestMentorshipMapper(unittest.TestCase):
         self.assertTrue(google_meeting.has_unknown_late)
         self.assertEqual(google_meeting.late_user_ids, [456])
         self.assertTrue(google_meeting.has_insufficient_duration)
+
+    def test_map_to_admin_meeting_dto(self):
+        """Test mapping a raw meeting_log entry to an AdminMeetingDto."""
+        meeting = {
+            "meeting_id": "gm-1",
+            "start_datetime": "2026-05-05T10:00:00",
+            "end_datetime": "2026-05-05T11:00:00",
+            "created_datetime": "2026-05-05T09:55:00",
+        }
+
+        dto = self.mapper.map_to_admin_meeting_dto(
+            meeting,
+            is_completed=True,
+            note_tags=[MeetingNoteTag.MENTOR_LATE],
+        )
+
+        self.assertIsInstance(dto, AdminMeetingDto)
+        self.assertEqual(dto.meeting_id, "gm-1")
+        self.assertEqual(dto.time_range, "2026-05-05T10:00:00 - 2026-05-05T11:00:00")
+        self.assertTrue(dto.is_completed)
+        self.assertEqual(dto.note, [MeetingNoteTag.MENTOR_LATE])
+        self.assertEqual(dto.create_datetime, "2026-05-05T09:55:00")
 
 
 if __name__ == "__main__":

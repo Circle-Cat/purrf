@@ -66,6 +66,7 @@ MENTORSHIP_MEETING_V2_BATCH_DELETE_ENDPOINT = "/mentorship/v2/meetings/batch-del
 MEET_ATTENDANCE_SYNC_ENDPOINT = "/mentorship/v2/meetings/attendance/sync"
 MENTORSHIP_ROUNDS_FEEDBACK_ENDPOINT = "/mentorship/rounds/{round_id}/feedback"
 MENTORSHIP_ADMIN_PARTICIPANTS = "/mentorship/admin/participants"
+MENTORSHIP_ADMIN_PAIRS_MEETINGS = "/mentorship/admin/pairs/{pair_id}/meetings"
 
 ADMIN_PERMISSIONS_ENDPOINT = "/admin/permissions"
 ADMIN_USERS_ENDPOINT = "/admin/users"

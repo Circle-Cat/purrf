@@ -67,3 +67,13 @@ class TrainingStatus(str, Enum):
     TO_DO = "to_do"
     IN_PROGRESS = "in_progress"
     DONE = "done"
+
+
+class MeetingNoteTag(str, Enum):
+    INSUFFICIENT_DURATION = "insufficient_duration"
+    UNKNOWN_ABSENT = "unknown_absent"
+    MENTOR_ABSENT = "mentor_absent"
+    MENTEE_ABSENT = "mentee_absent"
+    UNKNOWN_LATE = "unknown_late"
+    MENTOR_LATE = "mentor_late"
+    MENTEE_LATE = "mentee_late"
