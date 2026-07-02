@@ -104,13 +104,15 @@ class RecruitingMapper:
             description=job.description,
         )
 
-    def to_application_dto(self, application, current_submission=None):
+    def to_application_dto(self, application, current_submission=None, editable=False):
         """Map an application (+ its current submission version) to a DTO.
 
         Args:
             application (ApplicationEntity): The application container.
             current_submission (ApplicationSubmissionEntity | None): Highest
                 version, or None if not yet written.
+            editable (bool): Whether the candidate may still edit this
+                application (see ``ApplicationService._is_editable``).
 
         Returns:
             ApplicationDto: The response DTO.
@@ -139,4 +141,5 @@ class RecruitingMapper:
             sub_status=application.sub_status,
             tags=application.tags,
             current=current,
+            editable=editable,
         )

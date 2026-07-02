@@ -50,3 +50,6 @@ class ApplicationDto(BaseDto):
     sub_status: str | None = None
     tags: dict | None = None
     current: ApplicationSubmissionDto | None = None
+    # Whether the candidate may still edit this application (first pipeline
+    # stage, pending sub_status, current submission unfrozen).
+    editable: bool = False

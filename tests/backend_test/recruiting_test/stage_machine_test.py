@@ -49,7 +49,9 @@ class TestAdvanceTarget(unittest.TestCase):
 
     def test_advances_from_last_configured_to_hired(self):
         cfg = {"stages": [{"stage": "recruiter_screening"}, {"stage": "tech"}]}
-        self.assertEqual(advance_target(cfg, ApplicationStage.TECH), ApplicationStage.HIRED)
+        self.assertEqual(
+            advance_target(cfg, ApplicationStage.TECH), ApplicationStage.HIRED
+        )
 
     def test_returns_none_from_terminal_or_unconfigured_current(self):
         cfg = {"stages": [{"stage": "recruiter_screening"}]}
