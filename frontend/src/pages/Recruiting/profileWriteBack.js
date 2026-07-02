@@ -1,4 +1,14 @@
 import { formatDateFromParts } from "@/pages/Profile/utils";
+import { getDaysSince } from "@/utils/dateTime";
+
+/**
+ * Minimum days since the last timezone change before the backend accepts
+ * another one (see `update_users` in
+ * backend/profile/profile_command_service.py, which rejects a timezone
+ * CHANGE within 30 days of `timezoneUpdatedAt` -- and a rejected user
+ * write aborts the whole PATCH, education/work lists included).
+ */
+const TIMEZONE_CHANGE_COOLDOWN_DAYS = 30;
 
 /**
  * Whether an education row has enough data for the profile PATCH DTO
@@ -126,24 +136,94 @@ export const buildNewWriteBackRows = (profileValue) => {
 };
 
 /**
- * Merge new application rows into the user's FETCHED profile lists,
- * producing the partial PATCH payload for `updateMyProfile` -- or `null`
- * when there is nothing to write.
+ * Whether the application form collected any personal input worth writing
+ * back (first/last name, LinkedIn, or timezone). Used to skip the profile
+ * fetch entirely when there is nothing personal AND no complete rows.
+ *
+ * @param {{firstName?: string, lastName?: string, linkedin?: string, timezone?: string}|undefined} personal
+ * @returns {boolean}
+ */
+export const hasPersonalWriteBackInput = (personal) =>
+  Boolean(
+    personal?.firstName?.trim() ||
+    personal?.lastName?.trim() ||
+    personal?.linkedin?.trim() ||
+    personal?.timezone?.trim(),
+  );
+
+/**
+ * Merge the form's personal fields over the FETCHED profile user into the
+ * full six-key `user` request object (mirroring PersonalEditModal's
+ * payload; the backend UsersRequestDto requires firstName/lastName/
+ * timezone/communicationMethod). Returns `null` when the merged object
+ * doesn't actually differ from the fetched values, so no-op user writes
+ * are never sent.
+ *
+ * Form values win per field only when non-empty; `preferredName` and
+ * `communicationMethod` aren't collected by the form and pass through
+ * fetched (communicationMethod defaulting to "email"). The form's timezone
+ * is only adopted when it wouldn't trip the backend's 30-day
+ * timezone-change cooldown (see TIMEZONE_CHANGE_COOLDOWN_DAYS): either it
+ * equals the stored timezone or the last change is old enough.
+ *
+ * @param {object|undefined} fetchedUser - `profile.user` from `getMyProfile`.
+ * @param {{firstName?: string, lastName?: string, linkedin?: string, timezone?: string}|undefined} personal
+ * @returns {object|null} Six-key user request object, or null when unchanged.
+ */
+const mergeUserWriteBack = (fetchedUser, personal) => {
+  const fetched = fetchedUser ?? {};
+  const formTimezone = personal?.timezone?.trim();
+  // Backend `update_users` rejects a timezone CHANGE made within 30 days of
+  // the previous one (timezoneUpdatedAt) -- and that rejection would abort
+  // the whole PATCH. Only adopt the form's timezone when it isn't a locked
+  // change.
+  const timezoneChangeAllowed =
+    Boolean(formTimezone) &&
+    (formTimezone === fetched.timezone ||
+      getDaysSince(fetched.timezoneUpdatedAt) >= TIMEZONE_CHANGE_COOLDOWN_DAYS);
+
+  const merged = {
+    firstName: personal?.firstName?.trim() || fetched.firstName,
+    lastName: personal?.lastName?.trim() || fetched.lastName,
+    preferredName: fetched.preferredName,
+    timezone: timezoneChangeAllowed ? formTimezone : fetched.timezone,
+    linkedinLink: personal?.linkedin?.trim() || fetched.linkedinLink,
+    communicationMethod: fetched.communicationMethod ?? "email",
+  };
+
+  const differs =
+    merged.firstName !== fetched.firstName ||
+    merged.lastName !== fetched.lastName ||
+    merged.timezone !== fetched.timezone ||
+    merged.linkedinLink !== fetched.linkedinLink ||
+    merged.communicationMethod !== fetched.communicationMethod;
+  return differs ? merged : null;
+};
+
+/**
+ * Merge the application form's write-back data into the user's FETCHED
+ * profile, producing the partial PATCH payload for `updateMyProfile` -- or
+ * `null` when there is nothing to write.
  *
  * The backend's profile upsert has full-overwrite semantics (a PATCHed
  * list fully replaces what's stored), so each written list must carry ALL
  * existing rows -- mapped back to request shape with their real ids
  * preserved -- plus the appended new rows. A new row content-identical to
  * an existing one is skipped, and a list whose new rows all dedup away is
- * omitted from the payload entirely: unchanged lists are never sent.
+ * omitted from the payload entirely: unchanged lists are never sent. The
+ * `user` key is likewise included only when the merged personal fields
+ * actually differ from the fetched ones (see `mergeUserWriteBack`).
  *
  * @param {object|undefined} fetchedProfile - Profile from `getMyProfile`
- *   ({education?: object[], workHistory?: object[]} in backend field names).
+ *   ({user?: object, education?: object[], workHistory?: object[]} in
+ *   backend field names).
  * @param {{education: object[], workHistory: object[]}} newRows - Output of
  *   `buildNewWriteBackRows`.
- * @returns {{education?: object[], workHistory?: object[]}|null}
+ * @param {{firstName?: string, lastName?: string, linkedin?: string, timezone?: string}|undefined} personal -
+ *   The form's `profileValue.personal`.
+ * @returns {{user?: object, education?: object[], workHistory?: object[]}|null}
  */
-export const mergeWriteBackPayload = (fetchedProfile, newRows) => {
+export const mergeWriteBackPayload = (fetchedProfile, newRows, personal) => {
   const existingEducation = (fetchedProfile?.education ?? []).map(
     fetchedEducationToRequest,
   );
@@ -161,6 +241,10 @@ export const mergeWriteBackPayload = (fetchedProfile, newRows) => {
   );
 
   const payload = {};
+  const user = mergeUserWriteBack(fetchedProfile?.user, personal);
+  if (user) {
+    payload.user = user;
+  }
   if (appendEducation.length) {
     payload.education = [...existingEducation, ...appendEducation];
   }

@@ -87,6 +87,46 @@ const FILLED_EXISTING = {
   },
 };
 
+/**
+ * Fetched profile user matching FILLED_EXISTING's personal input
+ * ({firstName: "Ann"}), so the personal write-back merges to no change.
+ */
+const FETCHED_USER_ANN = {
+  firstName: "Ann",
+  lastName: "",
+  preferredName: null,
+  timezone: "America/Los_Angeles",
+  linkedinLink: null,
+  communicationMethod: "email",
+  timezoneUpdatedAt: "1970-01-01T00:00:00Z",
+};
+
+/** Fresh-account fetched user (backend defaults; timezone always changeable). */
+const FETCHED_USER_NEW = {
+  firstName: "",
+  lastName: "",
+  preferredName: null,
+  timezone: "America/Los_Angeles",
+  linkedinLink: null,
+  communicationMethod: "email",
+  timezoneUpdatedAt: "1970-01-01T00:00:00Z",
+};
+
+/** An `existing` application whose form collected only personal fields. */
+const PERSONAL_ONLY_EXISTING = {
+  id: 7,
+  current: {
+    submission: {
+      personal: { firstName: "Ada", lastName: "L", timezone: "Asia/Shanghai" },
+      education: [],
+      experience: [],
+      answers: {},
+    },
+    resumeSha256: null,
+    resumeObjectKey: null,
+  },
+};
+
 const pdfFile = () =>
   new File(["%PDF-1.4"], "resume.pdf", { type: "application/pdf" });
 
@@ -173,6 +213,7 @@ describe("ApplicationForm", () => {
     profileApi.getMyProfile.mockResolvedValue({
       data: {
         profile: {
+          user: FETCHED_USER_ANN,
           education: [
             {
               id: 33,
@@ -208,6 +249,8 @@ describe("ApplicationForm", () => {
     expect(profileApi.getMyProfile).toHaveBeenCalledWith({
       fields: ["workHistory", "education"],
     });
+    // Exact match doubles as the "personal identical to fetched -> NO user
+    // key" case: the form's {firstName: "Ann"} matches FETCHED_USER_ANN.
     expect(profileApi.updateMyProfile).toHaveBeenCalledWith({
       education: [
         {
@@ -246,6 +289,7 @@ describe("ApplicationForm", () => {
     profileApi.getMyProfile.mockResolvedValue({
       data: {
         profile: {
+          user: FETCHED_USER_ANN,
           education: [],
           workHistory: [
             {
@@ -297,6 +341,7 @@ describe("ApplicationForm", () => {
     profileApi.getMyProfile.mockResolvedValue({
       data: {
         profile: {
+          user: FETCHED_USER_ANN,
           education: [
             {
               id: 33,
@@ -339,7 +384,7 @@ describe("ApplicationForm", () => {
     expect(profileApi.updateMyProfile).not.toHaveBeenCalled();
   });
 
-  it("sends no profile requests at all when the form has no complete rows", async () => {
+  it("sends no profile requests at all when the form has no complete rows and no personal input", async () => {
     const user = userEvent.setup();
     api.submitApplication.mockResolvedValue({ data: { id: 100 } });
     const onSubmitted = vi.fn();
@@ -353,6 +398,90 @@ describe("ApplicationForm", () => {
     expect(profileApi.updateMyProfile).not.toHaveBeenCalled();
   });
 
+  it("writes back personal fields for a fresh account (form values win, defaults pass through)", async () => {
+    const user = userEvent.setup();
+    api.updateApplication.mockResolvedValue({ data: { id: 7 } });
+    profileApi.getMyProfile.mockResolvedValue({
+      data: {
+        profile: { user: FETCHED_USER_NEW, education: [], workHistory: [] },
+      },
+    });
+    profileApi.updateMyProfile.mockResolvedValue({ data: {} });
+    render(
+      <ApplicationForm
+        job={JOB}
+        existing={PERSONAL_ONLY_EXISTING}
+        onSubmitted={vi.fn()}
+      />,
+    );
+
+    await user.click(
+      screen.getByRole("checkbox", { name: /save to my profile/i }),
+    );
+    await user.click(screen.getByRole("button", { name: /submit/i }));
+
+    await waitFor(() =>
+      expect(profileApi.updateMyProfile).toHaveBeenCalledTimes(1),
+    );
+    // timezoneUpdatedAt is 1970 -> the timezone change is allowed.
+    expect(profileApi.updateMyProfile).toHaveBeenCalledWith({
+      user: {
+        firstName: "Ada",
+        lastName: "L",
+        preferredName: null,
+        timezone: "Asia/Shanghai",
+        linkedinLink: null,
+        communicationMethod: "email",
+      },
+    });
+  });
+
+  it("keeps the stored timezone when the last change is under the 30-day cooldown", async () => {
+    const user = userEvent.setup();
+    api.updateApplication.mockResolvedValue({ data: { id: 7 } });
+    profileApi.getMyProfile.mockResolvedValue({
+      data: {
+        profile: {
+          user: {
+            ...FETCHED_USER_NEW,
+            // Changed just now -> backend would reject another change and
+            // abort the whole PATCH; the merge must keep the stored value.
+            timezoneUpdatedAt: new Date().toISOString(),
+          },
+          education: [],
+          workHistory: [],
+        },
+      },
+    });
+    profileApi.updateMyProfile.mockResolvedValue({ data: {} });
+    render(
+      <ApplicationForm
+        job={JOB}
+        existing={PERSONAL_ONLY_EXISTING}
+        onSubmitted={vi.fn()}
+      />,
+    );
+
+    await user.click(
+      screen.getByRole("checkbox", { name: /save to my profile/i }),
+    );
+    await user.click(screen.getByRole("button", { name: /submit/i }));
+
+    await waitFor(() =>
+      expect(profileApi.updateMyProfile).toHaveBeenCalledTimes(1),
+    );
+    expect(profileApi.updateMyProfile).toHaveBeenCalledWith({
+      user: {
+        firstName: "Ada",
+        lastName: "L",
+        preferredName: null,
+        timezone: "America/Los_Angeles",
+        linkedinLink: null,
+        communicationMethod: "email",
+      },
+    });
+  });
+
   it("treats an education row missing `field` as incomplete and excludes it from write-back", async () => {
     const user = userEvent.setup();
     api.updateApplication.mockResolvedValue({ data: { id: 7 } });
@@ -362,6 +491,9 @@ describe("ApplicationForm", () => {
         ...FILLED_EXISTING.current,
         submission: {
           ...FILLED_EXISTING.current.submission,
+          // No personal input either, so the only write-back candidate is
+          // the (incomplete) education row below.
+          personal: {},
           education: [
             {
               id: "rpf-4",
@@ -420,7 +552,9 @@ describe("ApplicationForm", () => {
     const user = userEvent.setup();
     api.updateApplication.mockResolvedValue({ data: { id: 7 } });
     profileApi.getMyProfile.mockResolvedValue({
-      data: { profile: { education: [], workHistory: [] } },
+      data: {
+        profile: { user: FETCHED_USER_ANN, education: [], workHistory: [] },
+      },
     });
     profileApi.updateMyProfile.mockRejectedValue(new Error("boom"));
     const onSubmitted = vi.fn();
