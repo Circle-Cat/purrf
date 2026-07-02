@@ -30,6 +30,7 @@ beforeEach(() => {
       title: "Loaded",
       description: "",
       kind: "activity",
+      cooldownDays: null,
       formSchema: { questions: [] },
       pipelineConfig: { ownerId: 9, stages: [] },
     },
@@ -64,6 +65,8 @@ describe("PostingEditor", () => {
     expect(api.createJob.mock.calls[0][0]).toMatchObject({
       title: "SWE",
       kind: "activity",
+      cooldownDays: null,
+      mentorshipRole: null,
       formSchema: { questions: [] },
     });
     expect(toast.success).toHaveBeenCalled();
@@ -94,6 +97,63 @@ describe("PostingEditor", () => {
         ROUTE_PATHS.RECRUITING_POSTINGS,
       ),
     );
+  });
+
+  it("loads an employment posting's cooldown and saves the edited value", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 5,
+        title: "Eng",
+        description: "",
+        kind: "employment",
+        cooldownDays: 45,
+        formSchema: { questions: [] },
+      },
+    });
+    const router = createMemoryRouter(
+      [
+        { path: "/postings/:id/edit", element: <PostingEditor /> },
+        { path: ROUTE_PATHS.RECRUITING_POSTINGS, element: <div /> },
+      ],
+      { initialEntries: ["/postings/5/edit"] },
+    );
+    render(<RouterProvider router={router} />);
+    const input = await screen.findByLabelText("Cooldown days");
+    expect(input.value).toBe("45");
+    fireEvent.change(input, { target: { value: "30" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(api.updateJob).toHaveBeenCalled());
+    expect(api.updateJob.mock.calls[0][1].cooldownDays).toBe(30);
+  });
+
+  it("loads an activity posting's mentorship role and saves the edited value", async () => {
+    const user = userEvent.setup();
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 5,
+        title: "Mentor gig",
+        description: "",
+        kind: "activity",
+        mentorshipRole: "mentor",
+        formSchema: { questions: [] },
+      },
+    });
+    const router = createMemoryRouter(
+      [
+        { path: "/postings/:id/edit", element: <PostingEditor /> },
+        { path: ROUTE_PATHS.RECRUITING_POSTINGS, element: <div /> },
+      ],
+      { initialEntries: ["/postings/5/edit"] },
+    );
+    render(<RouterProvider router={router} />);
+    expect(await screen.findByDisplayValue("Mentor gig")).toBeInTheDocument();
+    const select = screen.getByRole("combobox", { name: "Mentorship role" });
+    expect(select).toHaveTextContent("Mentor");
+    await user.click(select);
+    await user.click(screen.getByRole("option", { name: "Mentee" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(api.updateJob).toHaveBeenCalled());
+    expect(api.updateJob.mock.calls[0][1].mentorshipRole).toBe("mentee");
   });
 
   it("shows the backend error message on save failure", async () => {

@@ -55,3 +55,30 @@ export const listInterviewPool = () =>
 /** List active users eligible to own a posting (ApproverDto[]). */
 export const listJobOwners = () =>
   request.get(API_ENDPOINTS.RECRUITING_JOB_OWNERS);
+
+/** Fetch a public job posting (candidate view). */
+export const getPublicJob = (jobId) =>
+  request.get(API_ENDPOINTS.RECRUITING_PUBLIC_JOB(jobId));
+
+/** Upload a resume file. Returns resume metadata. */
+export const uploadResume = (file) => {
+  const form = new FormData();
+  form.append("file", file);
+  return request.post(API_ENDPOINTS.RECRUITING_RESUMES, form, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+};
+
+/** Submit a candidate application. body: {jobId, ...}. */
+export const submitApplication = (body) =>
+  request.post(API_ENDPOINTS.RECRUITING_APPLICATIONS, body);
+
+/** Update a candidate application. */
+export const updateApplication = (applicationId, body) =>
+  request.patch(API_ENDPOINTS.RECRUITING_APPLICATION(applicationId), body);
+
+/** Fetch the current user's application for a specific job. */
+export const getMyApplication = (jobId) =>
+  request.get(API_ENDPOINTS.RECRUITING_APPLICATIONS_MINE, {
+    params: { job_id: jobId },
+  });

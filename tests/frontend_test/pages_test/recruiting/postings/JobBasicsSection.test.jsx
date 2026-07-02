@@ -40,4 +40,123 @@ describe("JobBasicsSection", () => {
     const descField = screen.getByLabelText("Description");
     expect(descField.value).toBe("");
   });
+
+  it("shows Cooldown days only for employment and emits changes", () => {
+    const onChange = vi.fn();
+    const { rerender } = render(
+      <JobBasicsSection
+        title=""
+        description=""
+        kind="activity"
+        onChange={onChange}
+      />,
+    );
+    expect(screen.queryByLabelText("Cooldown days")).not.toBeInTheDocument();
+
+    rerender(
+      <JobBasicsSection
+        title=""
+        description=""
+        kind="employment"
+        cooldownDays={null}
+        onChange={onChange}
+      />,
+    );
+    const input = screen.getByLabelText("Cooldown days");
+    fireEvent.change(input, { target: { value: "90" } });
+    expect(onChange).toHaveBeenCalledWith({ cooldownDays: 90 });
+  });
+
+  it("emits null when Cooldown days is cleared", () => {
+    const onChange = vi.fn();
+    render(
+      <JobBasicsSection
+        title=""
+        description=""
+        kind="employment"
+        cooldownDays={90}
+        onChange={onChange}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("Cooldown days"), {
+      target: { value: "" },
+    });
+    expect(onChange).toHaveBeenCalledWith({ cooldownDays: null });
+  });
+
+  it("shows Mentorship role only for activity postings", () => {
+    const onChange = vi.fn();
+    const { rerender } = render(
+      <JobBasicsSection
+        title=""
+        description=""
+        kind="activity"
+        onChange={onChange}
+      />,
+    );
+    expect(
+      screen.getByRole("combobox", { name: "Mentorship role" }),
+    ).toBeInTheDocument();
+
+    rerender(
+      <JobBasicsSection
+        title=""
+        description=""
+        kind="employment"
+        onChange={onChange}
+      />,
+    );
+    expect(
+      screen.queryByRole("combobox", { name: "Mentorship role" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("emits mentorshipRole changes via the Select", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <JobBasicsSection
+        title=""
+        description=""
+        kind="activity"
+        mentorshipRole={null}
+        onChange={onChange}
+      />,
+    );
+    await user.click(screen.getByRole("combobox", { name: "Mentorship role" }));
+    await user.click(screen.getByRole("option", { name: "Mentee" }));
+    expect(onChange).toHaveBeenCalledWith({ mentorshipRole: "mentee" });
+  });
+
+  it("shows None when the mentorship role is unset", () => {
+    render(
+      <JobBasicsSection
+        title=""
+        description=""
+        kind="activity"
+        mentorshipRole={null}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByRole("combobox", { name: "Mentorship role" }),
+    ).toHaveTextContent("None");
+  });
+
+  it("emits null when None is selected as the mentorship role", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <JobBasicsSection
+        title=""
+        description=""
+        kind="activity"
+        mentorshipRole="mentee"
+        onChange={onChange}
+      />,
+    );
+    await user.click(screen.getByRole("combobox", { name: "Mentorship role" }));
+    await user.click(screen.getByRole("option", { name: "None" }));
+    expect(onChange).toHaveBeenCalledWith({ mentorshipRole: null });
+  });
 });

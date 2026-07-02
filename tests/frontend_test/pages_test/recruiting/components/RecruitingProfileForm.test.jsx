@@ -1,9 +1,35 @@
-import { describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { toast } from "sonner";
 import RecruitingProfileForm from "@/pages/Recruiting/components/RecruitingProfileForm";
+import * as api from "@/api/recruitingApi";
 
-const renderForm = (profileConfig) =>
-  render(<RecruitingProfileForm profileConfig={profileConfig} />);
+vi.mock("@/api/recruitingApi");
+vi.mock("@/lib/resume-parser", () => ({
+  parseResumeFromPdf: vi.fn().mockResolvedValue({
+    user: {},
+    education: [],
+    workHistory: [],
+    projects: [],
+    unmapped: {},
+  }),
+}));
+vi.spyOn(toast, "error").mockImplementation(() => {});
+
+beforeEach(() => vi.clearAllMocks());
+
+const renderForm = (profileConfig, extraProps) =>
+  render(
+    <RecruitingProfileForm profileConfig={profileConfig} {...extraProps} />,
+  );
+
+const pdfFile = () =>
+  new File(["%PDF-1.4"], "resume.pdf", { type: "application/pdf" });
+
+const selectResumeFile = (file) =>
+  fireEvent.change(screen.getByTestId("resume-file-input"), {
+    target: { files: [file] },
+  });
 
 describe("RecruitingProfileForm", () => {
   it("renders a read-only, empty contact email placeholder (filled from the applicant's account on submission)", () => {
@@ -14,6 +40,52 @@ describe("RecruitingProfileForm", () => {
     expect(email).toHaveAttribute(
       "placeholder",
       "Auto-filled from the applicant's account",
+    );
+  });
+
+  it("fills the contact email field from the contactEmail prop", () => {
+    renderForm({}, { contactEmail: "cand@x.com" });
+    const email = screen.getByLabelText("Contact email");
+    expect(email).toHaveValue("cand@x.com");
+    expect(email).toHaveAttribute("readonly");
+  });
+
+  it("uploads a chosen resume and forwards {sha256, objectKey} via onResumeStored", async () => {
+    api.uploadResume.mockResolvedValue({
+      data: { sha256: "abc123", objectKey: "resumes/abc123.pdf" },
+    });
+    const onResumeStored = vi.fn();
+    renderForm({}, { onResumeStored });
+
+    selectResumeFile(pdfFile());
+
+    await waitFor(() =>
+      expect(onResumeStored).toHaveBeenCalledWith({
+        sha256: "abc123",
+        objectKey: "resumes/abc123.pdf",
+      }),
+    );
+  });
+
+  it("toasts an error and does not call onResumeStored when the resume upload fails", async () => {
+    api.uploadResume.mockRejectedValue(new Error("upload failed"));
+    const onResumeStored = vi.fn();
+    renderForm({}, { onResumeStored });
+
+    selectResumeFile(pdfFile());
+
+    await waitFor(() => expect(api.uploadResume).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+    expect(onResumeStored).not.toHaveBeenCalled();
+  });
+
+  it("does not call uploadResume when onResumeStored is not provided", async () => {
+    renderForm({});
+    selectResumeFile(pdfFile());
+    expect(api.uploadResume).not.toHaveBeenCalled();
+    // Let the (mocked) parse settle so its state update lands inside `act`.
+    await waitFor(() =>
+      expect(screen.queryByText(/Parsing/i)).not.toBeInTheDocument(),
     );
   });
 
@@ -74,5 +146,54 @@ describe("RecruitingProfileForm", () => {
     expect(
       screen.getByRole("button", { name: "Add experience" }),
     ).toBeInTheDocument();
+  });
+
+  it("reflects controlled value", () => {
+    const onChange = vi.fn();
+    const value = {
+      personal: { firstName: "Zed" },
+      education: [],
+      experience: [],
+    };
+    render(
+      <RecruitingProfileForm
+        profileConfig={{
+          education: "optional",
+          workExperience: "optional",
+          resume: "off",
+        }}
+        value={value}
+        onChange={onChange}
+      />,
+    );
+    expect(screen.getByDisplayValue("Zed")).toBeInTheDocument();
+  });
+
+  it("emits changes on field edit when controlled", () => {
+    const onChange = vi.fn();
+    const value = {
+      personal: { firstName: "Zed" },
+      education: [],
+      experience: [],
+    };
+    render(
+      <RecruitingProfileForm
+        profileConfig={{
+          education: "optional",
+          workExperience: "optional",
+          resume: "off",
+        }}
+        value={value}
+        onChange={onChange}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("First name"), {
+      target: { value: "Ada" },
+    });
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        personal: expect.objectContaining({ firstName: "Ada" }),
+      }),
+    );
   });
 });
