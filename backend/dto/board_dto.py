@@ -7,6 +7,7 @@ sub-project.
 
 from datetime import datetime
 
+from backend.dto.application_dto import ApplicationDto
 from backend.dto.base_dto import BaseDto
 from backend.common.recruiting_enums import ApplicationStage, JobKind
 
@@ -30,3 +31,15 @@ class BoardCardDto(BaseDto):
     sub_status: str | None = None
     tags: dict | None = None
     applied_at: datetime | None = None
+
+
+class ApplicationDetailDto(BaseDto):
+    """Owner-facing full view of one application."""
+
+    application: ApplicationDto
+    applicant_name: str
+    applicant_email: str
+    resume_available: bool
+    form_schema: dict | None = (
+        None  # the job's LIVE form_schema, so the dialog can label answers
+    )

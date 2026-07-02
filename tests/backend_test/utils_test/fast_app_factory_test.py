@@ -28,6 +28,7 @@ class TestFastAppFactory(unittest.TestCase):
             permission_admin_controller=self.mock_controller,
             recruiting_controller=self.mock_controller,
             application_controller=self.mock_controller,
+            board_controller=self.mock_controller,
             launchdarkly_client=MagicMock(),
             database=MagicMock(),
             logger=MagicMock(),
@@ -47,6 +48,7 @@ class TestFastAppFactory(unittest.TestCase):
         self.assertEqual(self.factory.mentorship_controller, self.mock_controller)
         self.assertEqual(self.factory.recruiting_controller, self.mock_controller)
         self.assertEqual(self.factory.application_controller, self.mock_controller)
+        self.assertEqual(self.factory.board_controller, self.mock_controller)
 
     def test_create_app_returns_fastapi_instance(self):
         """Test that create_app returns a FastAPI application instance."""
@@ -79,6 +81,7 @@ class TestFastAppFactory(unittest.TestCase):
             permission_admin_controller=self.mock_controller,
             recruiting_controller=recruiting,
             application_controller=self.mock_controller,
+            board_controller=self.mock_controller,
             launchdarkly_client=MagicMock(),
             database=MagicMock(),
             logger=MagicMock(),
@@ -114,6 +117,7 @@ class TestFastAppFactory(unittest.TestCase):
             permission_admin_controller=self.mock_controller,
             recruiting_controller=self.mock_controller,
             application_controller=application,
+            board_controller=self.mock_controller,
             launchdarkly_client=MagicMock(),
             database=MagicMock(),
             logger=MagicMock(),
@@ -123,6 +127,45 @@ class TestFastAppFactory(unittest.TestCase):
 
         self.assertIn(
             "/api/recruiting/applications/ping",
+            {route.path for route in app.routes},
+        )
+
+    def test_board_routes_are_mounted(self):
+        """The board controller's router is mounted under /api."""
+        board = MagicMock()
+        router = APIRouter()
+
+        @router.get("/recruiting/board/ping")
+        def _ping():
+            return {}
+
+        board.router = router
+        factory = FastAppFactory(
+            authentication_controller=self.mock_controller,
+            authentication_service=self.mock_service,
+            user_identity_service=MagicMock(),
+            user_permissions_repository=MagicMock(),
+            notification_controller=self.mock_controller,
+            historical_controller=self.mock_controller,
+            consumer_controller=self.mock_controller,
+            internal_activity_controller=self.mock_controller,
+            profile_controller=self.mock_profile_controller,
+            mentorship_controller=self.mock_controller,
+            mentorship_admin_controller=self.mock_controller,
+            email_management_controller=self.mock_controller,
+            permission_admin_controller=self.mock_controller,
+            recruiting_controller=self.mock_controller,
+            application_controller=self.mock_controller,
+            board_controller=board,
+            launchdarkly_client=MagicMock(),
+            database=MagicMock(),
+            logger=MagicMock(),
+        )
+
+        app = factory.create_app()
+
+        self.assertIn(
+            "/api/recruiting/board/ping",
             {route.path for route in app.routes},
         )
 
@@ -179,6 +222,7 @@ class TestFastAppFactoryLifespan(unittest.IsolatedAsyncioTestCase):
             permission_admin_controller=self.mock_controller,
             recruiting_controller=self.mock_controller,
             application_controller=self.mock_controller,
+            board_controller=self.mock_controller,
             launchdarkly_client=self.mock_launchdarkly_client,
             database=self.mock_database,
             logger=MagicMock(),
