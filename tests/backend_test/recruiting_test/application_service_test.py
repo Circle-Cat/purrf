@@ -117,6 +117,41 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(result)
         self.session.commit.assert_not_awaited()
 
+    async def test_edit_row_locks_the_application(self):
+        """A TOCTOU fix (Task 8 review rider): the edit path must lock the
+        application row so a concurrent owner decision (freeze/advance)
+        can't interleave with — and be silently clobbered by — a candidate
+        edit based on stale state."""
+        app = ApplicationEntity(
+            job_id=1,
+            user_id=2,
+            stage=ApplicationStage.RECRUITER_SCREENING,
+            sub_status="pending",
+        )
+        app.application_id = 100
+        self.app_repo.get_by_id = AsyncMock(return_value=app)
+        await self.service.edit(
+            self.session, self._ctx(), 100, ApplicationEditDto()
+        )
+        self.app_repo.get_by_id.assert_awaited_once_with(
+            self.session, 100, for_update=True
+        )
+
+    async def test_get_mine_does_not_row_lock(self):
+        """get_mine is a read; it must stay lock-free (no for_update)."""
+        app = ApplicationEntity(
+            job_id=1,
+            user_id=2,
+            stage=ApplicationStage.RECRUITER_SCREENING,
+            sub_status="pending",
+        )
+        app.application_id = 100
+        self.app_repo.get_by_job_and_user = AsyncMock(return_value=app)
+        await self.service.get_mine(self.session, self._ctx(), 1)
+        self.app_repo.get_by_job_and_user.assert_awaited_once_with(
+            self.session, 1, 2
+        )
+
     async def test_edit_blocked_when_stage_advanced(self):
         app = ApplicationEntity(
             job_id=1,

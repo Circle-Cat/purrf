@@ -4,7 +4,12 @@ from unittest.mock import AsyncMock, MagicMock
 
 from backend.recruiting.board_service import BoardService
 from backend.recruiting.recruiting_mapper import RecruitingMapper
-from backend.dto.board_dto import REJECT_REASONS, StageChangeDto, SubStatusChangeDto
+from backend.dto.board_dto import (
+    REJECT_REASONS,
+    BlacklistDto,
+    StageChangeDto,
+    SubStatusChangeDto,
+)
 from backend.dto.user_context_dto import UserContextDto
 from backend.entity.application_entity import ApplicationEntity
 from backend.entity.application_submission_entity import ApplicationSubmissionEntity
@@ -442,6 +447,114 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.app_repo.get_by_id.assert_awaited_once_with(
             self.session, 10, for_update=True
         )
+
+    # -- blacklist --
+
+    async def test_blacklist_writes_block_fields_on_the_user(self):
+        user = self._user(user_id=3)
+        application = self._application(
+            application_id=10, job_id=1, user_id=3, stage=ApplicationStage.TECH
+        )
+        self.users_repo.get_user_by_user_id = AsyncMock(return_value=user)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+
+        dto = BlacklistDto(user_id=3, application_id=10, reason="Fabricated credentials")
+        await self.service.blacklist(self.session, self._ctx(user_id=99), dto)
+
+        self.assertTrue(user.is_blocked)
+        self.assertEqual(user.blocked_by, 99)
+        self.assertEqual(user.blocked_reason, "Fabricated credentials")
+        self.assertIsNotNone(user.blocked_at)
+
+    async def test_blacklist_closes_tags_and_freezes_the_application(self):
+        user = self._user(user_id=3)
+        application = self._application(
+            application_id=10, job_id=1, user_id=3, stage=ApplicationStage.TECH
+        )
+        application.sub_status = "in_progress"
+        application.tags = {"existing": "keep-me"}
+        current_sub = self._submission(application_id=10, is_frozen=False)
+        self.users_repo.get_user_by_user_id = AsyncMock(return_value=user)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.sub_repo.get_current = AsyncMock(return_value=current_sub)
+
+        dto = BlacklistDto(user_id=3, application_id=10, reason="Fabricated credentials")
+        result = await self.service.blacklist(self.session, self._ctx(user_id=99), dto)
+
+        self.assertEqual(result.stage, ApplicationStage.REJECTED)
+        self.assertIsNone(result.sub_status)
+        self.assertEqual(result.tags["existing"], "keep-me")
+        self.assertTrue(result.tags["blacklisted"])
+        self.assertTrue(current_sub.is_frozen)
+        self.app_repo.update.assert_awaited_once()
+        self.session.commit.assert_awaited_once()
+
+    async def test_blacklist_row_locks_the_application(self):
+        user = self._user(user_id=3)
+        application = self._application(application_id=10, job_id=1, user_id=3)
+        self.users_repo.get_user_by_user_id = AsyncMock(return_value=user)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+
+        dto = BlacklistDto(user_id=3, application_id=10, reason="Spam")
+        await self.service.blacklist(self.session, self._ctx(user_id=99), dto)
+
+        self.app_repo.get_by_id.assert_awaited_once_with(
+            self.session, 10, for_update=True
+        )
+
+    async def test_blacklist_missing_user_raises(self):
+        self.users_repo.get_user_by_user_id = AsyncMock(return_value=None)
+        self.app_repo.get_by_id = AsyncMock(return_value=None)
+
+        dto = BlacklistDto(user_id=3, application_id=10, reason="Spam")
+        with self.assertRaises(ValueError):
+            await self.service.blacklist(self.session, self._ctx(user_id=99), dto)
+        self.app_repo.get_by_id.assert_not_awaited()
+
+    async def test_blacklist_missing_application_raises(self):
+        user = self._user(user_id=3)
+        self.users_repo.get_user_by_user_id = AsyncMock(return_value=user)
+        self.app_repo.get_by_id = AsyncMock(return_value=None)
+
+        dto = BlacklistDto(user_id=3, application_id=999, reason="Spam")
+        with self.assertRaises(ValueError) as ctx:
+            await self.service.blacklist(self.session, self._ctx(user_id=99), dto)
+        self.assertEqual(str(ctx.exception), "application 999 not found")
+
+    async def test_blacklist_application_belonging_to_other_user_raises(self):
+        user = self._user(user_id=3)
+        application = self._application(application_id=10, job_id=1, user_id=4)
+        self.users_repo.get_user_by_user_id = AsyncMock(return_value=user)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+
+        dto = BlacklistDto(user_id=3, application_id=10, reason="Spam")
+        with self.assertRaises(ValueError) as ctx:
+            await self.service.blacklist(self.session, self._ctx(user_id=99), dto)
+        self.assertEqual(str(ctx.exception), "application 10 not found")
+        self.app_repo.update.assert_not_awaited()
+        self.session.commit.assert_not_awaited()
+
+    async def test_blacklist_is_not_owner_gated(self):
+        """The caller need not own the application's job — only the
+        RECRUITING_BLACKLIST_WRITE permission (checked at the route) gates
+        this action."""
+        user = self._user(user_id=3)
+        application = self._application(application_id=10, job_id=1, user_id=3)
+        self.users_repo.get_user_by_user_id = AsyncMock(return_value=user)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+        # job_repo is deliberately never consulted; blacklist doesn't load
+        # the job or check ownership at all.
+        self.job_repo.get_by_job_id = AsyncMock(
+            side_effect=AssertionError("blacklist must not check job ownership")
+        )
+
+        dto = BlacklistDto(user_id=3, application_id=10, reason="Spam")
+        await self.service.blacklist(self.session, self._ctx(user_id=42), dto)
+
+        self.job_repo.get_by_job_id.assert_not_awaited()
 
 
 if __name__ == "__main__":

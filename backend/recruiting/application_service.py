@@ -218,6 +218,13 @@ class ApplicationService:
     ) -> ApplicationDto:
         """Overwrite the current submission version while still Applied.
 
+        Row-locks the application for the duration of the transaction so a
+        concurrent owner decision (freeze/advance via ``BoardService``)
+        can't interleave with this edit — without the lock, an edit could
+        silently overwrite the submission a decision was already based on.
+        ``_is_editable`` is evaluated after this locked load, on the
+        now-current row.
+
         Args:
             session (AsyncSession): Active database async session.
             current_user (UserContextDto): The authenticated applicant.
@@ -232,7 +239,9 @@ class ApplicationService:
                 editable (processing has started), or a required
                 résumé/answer is missing.
         """
-        application = await self._load_owned(session, current_user, application_id)
+        application = await self._load_owned(
+            session, current_user, application_id, for_update=True
+        )
         job = await self.job_repository.get_by_job_id(session, application.job_id)
         current_sub = await self.application_submission_repository.get_current(
             session, application_id
@@ -299,13 +308,20 @@ class ApplicationService:
             and not (current_submission is not None and current_submission.is_frozen)
         )
 
-    async def _load_owned(self, session, current_user, application_id):
+    async def _load_owned(
+        self, session, current_user, application_id, *, for_update: bool = False
+    ):
         """Fetch an application and assert the caller owns it.
 
         Args:
             session (AsyncSession): Active database async session.
             current_user (UserContextDto): The authenticated applicant.
             application_id (int): The application to fetch.
+            for_update (bool): When True, row-locks the application
+                (``SELECT ... FOR UPDATE``) so a concurrent owner decision
+                (freeze/advance) on the same application can't interleave
+                with this call. ``edit`` passes True (it mutates); read-only
+                callers should leave this False.
 
         Returns:
             ApplicationEntity: The owned application.
@@ -314,7 +330,7 @@ class ApplicationService:
             ValueError: If missing or owned by another user.
         """
         application = await self.application_repository.get_by_id(
-            session, application_id
+            session, application_id, for_update=for_update
         )
         if application is None or application.user_id != current_user.user_id:
             raise ValueError(f"application {application_id} not found")

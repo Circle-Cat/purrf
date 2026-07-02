@@ -2,7 +2,7 @@ import unittest
 from http import HTTPStatus
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from backend.dto.board_dto import StageChangeDto, SubStatusChangeDto
+from backend.dto.board_dto import BlacklistDto, StageChangeDto, SubStatusChangeDto
 from backend.dto.user_context_dto import UserContextDto
 from backend.common.permissions import Permission
 from backend.common.recruiting_enums import ApplicationStage
@@ -22,6 +22,7 @@ class TestBoardController(unittest.IsolatedAsyncioTestCase):
         self.board_service.get_application_detail = AsyncMock(return_value={"id": 10})
         self.board_service.change_stage = AsyncMock(return_value={"id": 10})
         self.board_service.set_sub_status = AsyncMock(return_value={"id": 10})
+        self.board_service.blacklist = AsyncMock(return_value={"id": 10})
 
         self.controller = BoardController(self.board_service, self.database)
 
@@ -88,6 +89,18 @@ class TestBoardController(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(resp["data"], updated)
 
+    async def test_blacklist_delegates(self):
+        updated = {"id": 10, "stage": "rejected"}
+        self.board_service.blacklist = AsyncMock(return_value=updated)
+        dto = BlacklistDto(user_id=3, application_id=10, reason="Fabricated credentials")
+
+        resp = await self.controller.blacklist(self.ctx, blacklist_data=dto)
+
+        self.board_service.blacklist.assert_awaited_once_with(
+            self.session, self.ctx, dto
+        )
+        self.assertEqual(resp["data"], updated)
+
     # -- route registration: PATCH methods + permission gate --
     #
     # This test suite calls controller methods directly rather than through
@@ -118,6 +131,17 @@ class TestBoardController(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             self._endpoint_permissions(sub_status_route.endpoint),
             [Permission.RECRUITING_APPLICATION_ADVANCE],
+        )
+
+    def test_blacklist_route_is_post_and_permission_gated(self):
+        routes_by_path = {route.path: route for route in self.controller.router.routes}
+
+        blacklist_route = routes_by_path["/recruiting/blacklist"]
+
+        self.assertIn("POST", blacklist_route.methods)
+        self.assertEqual(
+            self._endpoint_permissions(blacklist_route.endpoint),
+            [Permission.RECRUITING_BLACKLIST_WRITE],
         )
 
 

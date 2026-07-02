@@ -7,7 +7,7 @@ sub-project.
 
 from datetime import datetime
 
-from pydantic import model_validator
+from pydantic import field_validator, model_validator
 
 from backend.dto.application_dto import ApplicationDto
 from backend.dto.base_dto import BaseDto
@@ -80,3 +80,19 @@ class SubStatusChangeDto(BaseRequestDto):
     """Manual sub-status switch within the current stage."""
 
     sub_status: str
+
+
+class BlacklistDto(BaseRequestDto):
+    """Block a user org-wide and close out the triggering application."""
+
+    user_id: int
+    application_id: int
+    reason: str
+
+    @field_validator("reason")
+    @classmethod
+    def reason_must_not_be_blank(cls, value: str) -> str:
+        """A blacklist action must always carry a non-empty reason."""
+        if not value.strip():
+            raise ValueError("a reason is required")
+        return value

@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.dto.application_dto import ApplicationDto
 from backend.dto.board_dto import (
     ApplicationDetailDto,
+    BlacklistDto,
     BoardCardDto,
     BoardJobDto,
     StageChangeDto,
@@ -24,7 +25,10 @@ class BoardService:
     Every read here is row-level owner-gated against a job's
     ``pipeline_config`` owner ids (see ``pipeline_owners.normalized_owner_ids``)
     rather than an enum permission — visibility is "did you configure
-    yourself as an owner of this posting", not a role.
+    yourself as an owner of this posting", not a role. ``blacklist`` is the
+    one exception: it's an org-level sanction gated only by the
+    ``RECRUITING_BLACKLIST_WRITE`` permission at the route, not by job
+    ownership (see its docstring).
     """
 
     def __init__(
@@ -373,6 +377,67 @@ class BoardService:
             )
         application.sub_status = dto.sub_status
 
+        application = await self.application_repository.update(session, application)
+        await session.commit()
+        return self.recruiting_mapper.to_application_dto(
+            application, current_sub, editable=False
+        )
+
+    async def blacklist(
+        self,
+        session: AsyncSession,
+        current_user: UserContextDto,
+        dto: BlacklistDto,
+    ) -> ApplicationDto:
+        """Block a user org-wide and close out the triggering application.
+
+        Deliberately NOT owner-gated: unlike every other write in this
+        service, this does not check whether ``current_user`` owns the
+        triggering application's job. It's an org-level sanction — whoever
+        holds ``Permission.RECRUITING_BLACKLIST_WRITE`` (checked at the
+        route) may blacklist any user off any application, regardless of
+        which posting surfaced the abuse (2026-06-26 decision).
+
+        Row-locks the application for the duration of the transaction, same
+        as ``change_stage``/``set_sub_status``, and freezes its current
+        submission version since the application is being closed out.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            current_user (UserContextDto): The authenticated caller,
+                recorded as ``blocked_by``.
+            dto (BlacklistDto): The target user/application and the
+                (required, non-blank) reason.
+
+        Returns:
+            ApplicationDto: The now-REJECTED, blacklist-tagged application.
+
+        Raises:
+            ValueError: If the target user is missing, the application is
+                missing, or the application does not belong to
+                ``dto.user_id``.
+        """
+        user = await self.users_repository.get_user_by_user_id(session, dto.user_id)
+        if user is None:
+            raise ValueError(f"user {dto.user_id} not found")
+        user.is_blocked = True
+        user.blocked_by = current_user.user_id
+        user.blocked_at = datetime.now(timezone.utc)
+        user.blocked_reason = dto.reason
+
+        application = await self.application_repository.get_by_id(
+            session, dto.application_id, for_update=True
+        )
+        if application is None or application.user_id != dto.user_id:
+            raise ValueError(f"application {dto.application_id} not found")
+
+        application.stage = ApplicationStage.REJECTED
+        application.tags = {**(application.tags or {}), "blacklisted": True}
+        application.sub_status = None
+
+        current_sub = await self._freeze_current_submission(
+            session, dto.application_id
+        )
         application = await self.application_repository.update(session, application)
         await session.commit()
         return self.recruiting_mapper.to_application_dto(
