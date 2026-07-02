@@ -910,6 +910,20 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
 
         self.assertNotIn(empty_round.round_id, result)
 
+    async def test_get_pair_by_id_existing(self):
+        """Test that an existing pair_id returns the matching pair."""
+        pair = self.pairs[0]
+        result = await self.repo.get_pair_by_id(self.session, pair.pair_id)
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result.pair_id, pair.pair_id)
+
+    async def test_get_pair_by_id_non_existent(self):
+        """Test that a non-existent pair_id returns None."""
+        result = await self.repo.get_pair_by_id(self.session, 999)
+
+        self.assertIsNone(result)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -184,6 +184,26 @@ class MentorshipPairsRepository:
 
         return result.scalars().all()
 
+    async def get_pair_by_id(
+        self, session: AsyncSession, pair_id: int
+    ) -> MentorshipPairsEntity | None:
+        """
+        Fetch a mentorship pair by its pair ID.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            pair_id (int): ID of the mentorship pair.
+
+        Returns:
+            MentorshipPairsEntity | None: The matching pair, or None if not found.
+        """
+        result = await session.execute(
+            select(MentorshipPairsEntity).where(
+                MentorshipPairsEntity.pair_id == pair_id
+            )
+        )
+        return result.scalars().one_or_none()
+
     async def get_pair_by_mentee_and_round(
         self, session: AsyncSession, mentee_id: int, round_id: int
     ) -> MentorshipPairsEntity | None:
