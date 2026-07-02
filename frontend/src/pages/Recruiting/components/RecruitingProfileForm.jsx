@@ -62,15 +62,33 @@ const ReqMark = ({ level }) => {
  * required/optional marker on the resume-as-deliverable. Owns throwaway state;
  * nothing is submitted.
  *
- * @param {{profileConfig?: {education?: string, workExperience?: string, resume?: string}}} props
+ * Controlled when both `value` and `onChange` are provided by a parent (e.g.
+ * `PostingApplicantView` lifting state for a future submission form); falls
+ * back to internal state otherwise so existing render-only usages keep
+ * working unchanged.
+ *
+ * @param {{profileConfig?: {education?: string, workExperience?: string, resume?: string},
+ *          value?: {personal: object, education: object[], experience: object[]},
+ *          onChange?: (value: {personal: object, education: object[], experience: object[]}) => void}} props
  * @returns {JSX.Element}
  */
-const RecruitingProfileForm = ({ profileConfig }) => {
-  const [value, setValue] = useState({
+const RecruitingProfileForm = ({
+  profileConfig,
+  value: controlledValue,
+  onChange,
+}) => {
+  const [internal, setInternal] = useState({
     personal: {},
     education: [emptyEducation()],
     experience: [emptyExperience()],
   });
+  const value = controlledValue ?? internal;
+  /** Resolve `next` (value or updater fn) against the current value and commit it to the controlling parent or internal state. */
+  const setValue = (next) => {
+    const resolved = typeof next === "function" ? next(value) : next;
+    if (onChange) onChange(resolved);
+    else setInternal(resolved);
+  };
 
   const requirements = {
     education: profileConfig?.education ?? "optional",
@@ -78,6 +96,7 @@ const RecruitingProfileForm = ({ profileConfig }) => {
   };
   const resumeLevel = profileConfig?.resume ?? "optional";
 
+  /** Merge a resume-parser result into the current profile value, assigning ids to any new rows. */
   const handleParsed = (parsed) => {
     const merged = mergeParsedIntoProfile(value, parsedResumeToProfile(parsed));
     setValue({

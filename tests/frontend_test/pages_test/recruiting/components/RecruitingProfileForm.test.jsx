@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import RecruitingProfileForm from "@/pages/Recruiting/components/RecruitingProfileForm";
 
@@ -74,5 +74,26 @@ describe("RecruitingProfileForm", () => {
     expect(
       screen.getByRole("button", { name: "Add experience" }),
     ).toBeInTheDocument();
+  });
+
+  it("reflects controlled value and emits changes", () => {
+    const onChange = vi.fn();
+    const value = {
+      personal: { firstName: "Zed" },
+      education: [],
+      experience: [],
+    };
+    render(
+      <RecruitingProfileForm
+        profileConfig={{
+          education: "optional",
+          workExperience: "optional",
+          resume: "off",
+        }}
+        value={value}
+        onChange={onChange}
+      />,
+    );
+    expect(screen.getByDisplayValue("Zed")).toBeInTheDocument();
   });
 });

@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import PostingApplicantView from "@/pages/Recruiting/components/PostingApplicantView";
 
@@ -45,5 +45,31 @@ describe("PostingApplicantView", () => {
     expect(screen.queryByLabelText("Referrer name")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("radio", { name: "yes" }));
     expect(screen.getByLabelText("Referrer name")).toBeInTheDocument();
+  });
+
+  it("lifts profile value and answers to a parent when controlled props are provided", () => {
+    const onProfileChange = vi.fn();
+    const onAnswerChange = vi.fn();
+    const profileValue = {
+      personal: { firstName: "Ada" },
+      education: [],
+      experience: [],
+    };
+    render(
+      <PostingApplicantView
+        title="T"
+        questions={questions}
+        profileValue={profileValue}
+        onProfileChange={onProfileChange}
+        answers={{ q1: "yes" }}
+        onAnswerChange={onAnswerChange}
+      />,
+    );
+    expect(screen.getByDisplayValue("Ada")).toBeInTheDocument();
+    // Controlled `answers` already reveals the showWhen-dependent question.
+    expect(screen.getByLabelText("Referrer name")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("radio", { name: "no" }));
+    expect(onAnswerChange).toHaveBeenCalledWith("q1", "no");
   });
 });
