@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { toast } from "sonner";
 import MyApplication from "@/pages/Recruiting/MyApplication";
@@ -83,8 +83,12 @@ describe("MyApplication", () => {
       },
     });
     renderAt(5);
+    // Exact string: stage labels are sentence case ("Recruiter screening",
+    // not "Recruiter Screening").
     await waitFor(() =>
-      expect(screen.getByText(/recruiter screening/i)).toBeInTheDocument(),
+      expect(
+        screen.getByText("Status: Recruiter screening"),
+      ).toBeInTheDocument(),
     );
     expect(
       screen.queryByRole("button", { name: /submit application/i }),
@@ -118,5 +122,30 @@ describe("MyApplication", () => {
     api.getMyApplication.mockRejectedValue(new Error("boom"));
     renderAt(5);
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith("boom"));
+  });
+
+  it("shows a loading placeholder while the application is being fetched", () => {
+    api.getMyApplication.mockReturnValue(new Promise(() => {}));
+    renderAt(5);
+    expect(screen.getByText("Loading…")).toBeInTheDocument();
+  });
+
+  it("shows an inline error with a Retry button on load failure, and recovers on retry", async () => {
+    api.getMyApplication.mockRejectedValueOnce(new Error("boom"));
+    api.getMyApplication.mockResolvedValue({
+      data: { id: 9, stage: "applied", current: { submission: {} } },
+    });
+    renderAt(5);
+    expect(
+      await screen.findByText("Couldn't load your application."),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() =>
+      expect(screen.getByText("Existing id 9")).toBeInTheDocument(),
+    );
+    expect(
+      screen.queryByText("Couldn't load your application."),
+    ).not.toBeInTheDocument();
   });
 });

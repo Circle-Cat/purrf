@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { getPublicJob, getMyApplication } from "@/api/recruitingApi";
 import { formatTimeDuration } from "@/pages/Profile/utils";
 import ApplicationForm from "@/pages/Recruiting/ApplicationForm";
+import LoadGate from "@/pages/Recruiting/components/LoadGate";
 
 /** The only stage at which a candidate's application is still editable. */
 const EDITABLE_STAGE = "applied";
@@ -17,8 +18,8 @@ const EDITABLE_STAGE = "applied";
  */
 const formatStageLabel = (stage) => {
   if (!stage) return "";
-  const [first, ...rest] = stage.split("_");
-  return [first, ...rest].map((w) => w[0].toUpperCase() + w.slice(1)).join(" ");
+  const words = stage.split("_").join(" ");
+  return words[0].toUpperCase() + words.slice(1);
 };
 
 /**
@@ -116,25 +117,45 @@ const ReadOnlySummary = ({ job, application }) => {
  * The signed-in candidate's own application for a job: a new/editable
  * `ApplicationForm` while the application has no stage yet or is still at
  * the `applied` stage, otherwise a read-only summary of what was submitted.
- * Loads the job and application on mount and toasts an error on failure.
+ * Loads the job and application on mount; while loading shows a placeholder,
+ * and on failure toasts the error and shows an inline retryable error state.
  */
 const MyApplication = () => {
   const { jobId } = useParams();
   const [job, setJob] = useState(null);
   const [application, setApplication] = useState(null);
   const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState(false);
 
-  useEffect(() => {
+  /** Load (or reload, after a failure) the job and the caller's application. */
+  const load = useCallback(() => {
+    setLoadError(false);
+    setLoaded(false);
     Promise.all([getPublicJob(jobId), getMyApplication(jobId)])
       .then(([jobRes, appRes]) => {
         setJob(jobRes.data);
         setApplication(appRes.data ?? null);
         setLoaded(true);
       })
-      .catch((e) => toast.error(e.message));
+      .catch((e) => {
+        setLoadError(true);
+        toast.error(e.message);
+      });
   }, [jobId]);
 
-  if (!loaded || !job) return null;
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  if (!loaded || !job) {
+    return (
+      <LoadGate
+        error={loadError}
+        errorMessage="Couldn't load your application."
+        onRetry={load}
+      />
+    );
+  }
 
   if (!application || application.stage === EDITABLE_STAGE) {
     return (

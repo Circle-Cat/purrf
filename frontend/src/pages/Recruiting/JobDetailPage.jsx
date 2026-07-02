@@ -1,32 +1,53 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { getPublicJob } from "@/api/recruitingApi";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
 import ApplicationForm from "@/pages/Recruiting/ApplicationForm";
+import LoadGate from "@/pages/Recruiting/components/LoadGate";
 
 /**
  * Candidate-facing published-job screen, registered at both
  * `/recruiting/jobs/:jobId` (summary + Apply action) and
  * `/recruiting/jobs/:jobId/apply` (the new-application form) so both routes
  * share one load of the public job. Loads the job on mount via
- * `getPublicJob` and toasts an error if that fails.
+ * `getPublicJob`; while loading shows a placeholder, and on failure toasts
+ * the error and shows an inline retryable error state.
  */
 const JobDetailPage = () => {
   const { jobId } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
   const [job, setJob] = useState(null);
+  const [loadError, setLoadError] = useState(false);
   const isApplying = location.pathname.endsWith("/apply");
 
-  useEffect(() => {
+  /** Load (or reload, after a failure) the public job into state. */
+  const load = useCallback(() => {
+    setLoadError(false);
+    setJob(null);
     getPublicJob(jobId)
       .then(({ data }) => setJob(data))
-      .catch((e) => toast.error(e.message));
+      .catch((e) => {
+        setLoadError(true);
+        toast.error(e.message);
+      });
   }, [jobId]);
 
-  if (!job) return null;
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  if (!job) {
+    return (
+      <LoadGate
+        error={loadError}
+        errorMessage="Couldn't load this job."
+        onRetry={load}
+      />
+    );
+  }
 
   if (isApplying) {
     return (

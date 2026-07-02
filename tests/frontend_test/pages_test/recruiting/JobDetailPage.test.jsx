@@ -92,4 +92,25 @@ describe("JobDetailPage", () => {
     renderAt("/recruiting/jobs/5");
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith("not found"));
   });
+
+  it("shows a loading placeholder while the job is being fetched", () => {
+    api.getPublicJob.mockReturnValue(new Promise(() => {}));
+    renderAt("/recruiting/jobs/5");
+    expect(screen.getByText("Loading…")).toBeInTheDocument();
+  });
+
+  it("shows an inline error with a Retry button on load failure, and recovers on retry", async () => {
+    api.getPublicJob.mockRejectedValueOnce(new Error("not found"));
+    renderAt("/recruiting/jobs/5");
+    expect(
+      await screen.findByText("Couldn't load this job."),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(screen.getByText("Mentee")).toBeInTheDocument());
+    expect(api.getPublicJob).toHaveBeenCalledTimes(2);
+    expect(
+      screen.queryByText("Couldn't load this job."),
+    ).not.toBeInTheDocument();
+  });
 });
