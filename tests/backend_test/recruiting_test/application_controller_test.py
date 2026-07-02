@@ -72,6 +72,20 @@ class TestApplicationController(unittest.IsolatedAsyncioTestCase):
         self.app_service.edit.assert_awaited_once_with(self.session, self.ctx, 5, dto)
         self.assertEqual(resp["data"], {"id": 100})
 
+    async def test_list_public_jobs_delegates(self):
+        from backend.dto.job_dto import PublicJobSummaryDto
+        from backend.common.recruiting_enums import JobKind
+
+        summaries = [
+            PublicJobSummaryDto(
+                id=1, title="Mentee", kind=JobKind.ACTIVITY, description=None
+            )
+        ]
+        self.job_service.list_published = AsyncMock(return_value=summaries)
+        resp = await self.controller.list_public_jobs(self.ctx)
+        self.job_service.list_published.assert_awaited_once_with(self.session)
+        self.assertEqual(resp["data"][0].title, "Mentee")
+
     async def test_get_my_application_uses_job_id_query_param(self):
         resp = await self.controller.get_my_application(self.ctx, job_id=7)
         self.app_service.get_mine.assert_awaited_once_with(self.session, self.ctx, 7)
