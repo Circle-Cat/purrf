@@ -1,7 +1,18 @@
+from datetime import datetime, timezone
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.dto.board_dto import ApplicationDetailDto, BoardCardDto, BoardJobDto
+from backend.dto.application_dto import ApplicationDto
+from backend.dto.board_dto import (
+    ApplicationDetailDto,
+    BoardCardDto,
+    BoardJobDto,
+    StageChangeDto,
+    SubStatusChangeDto,
+)
 from backend.dto.user_context_dto import UserContextDto
+from backend.common.recruiting_enums import ApplicationStage
+from backend.entity.application_entity import ApplicationEntity
 from backend.entity.job_entity import JobEntity
 from backend.recruiting import stage_machine
 from backend.recruiting.pipeline_owners import normalized_owner_ids
@@ -122,6 +133,49 @@ class BoardService:
             board.setdefault(application.stage.value, []).append(card)
         return board
 
+    async def _load_owned_application(
+        self,
+        session: AsyncSession,
+        current_user: UserContextDto,
+        application_id: int,
+        *,
+        for_update: bool = False,
+    ) -> tuple[ApplicationEntity, JobEntity]:
+        """Load an application and assert the caller owns its job.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            current_user (UserContextDto): The authenticated caller.
+            application_id (int): The application to load.
+            for_update (bool): When True, row-locks the application (``SELECT
+                ... FOR UPDATE``) so a concurrent decision on the same
+                application serialises behind this transaction.
+
+        Returns:
+            tuple[ApplicationEntity, JobEntity]: The application and its job.
+
+        Raises:
+            ValueError: If the application is missing, or the caller is not
+                an owner of the application's job. Both cases raise the
+                same generic message (mirroring
+                ``ApplicationService._load_owned``) so response bodies don't
+                leak which application ids exist to non-owners.
+        """
+        application = await self.application_repository.get_by_id(
+            session, application_id, for_update=for_update
+        )
+        # Missing and not-owned must be indistinguishable: a distinct
+        # "not an owner" message would let any authenticated caller probe
+        # which application ids exist.
+        if application is None:
+            raise ValueError(f"application {application_id} not found")
+        job = await self.job_repository.get_by_job_id(session, application.job_id)
+        if job is None or current_user.user_id not in normalized_owner_ids(
+            job.pipeline_config
+        ):
+            raise ValueError(f"application {application_id} not found")
+        return application, job
+
     async def get_application_detail(
         self,
         session: AsyncSession,
@@ -147,19 +201,9 @@ class BoardService:
                 ``ApplicationService._load_owned``) so response bodies don't
                 leak which application ids exist to non-owners.
         """
-        application = await self.application_repository.get_by_id(
-            session, application_id
+        application, job = await self._load_owned_application(
+            session, current_user, application_id
         )
-        # Missing and not-owned must be indistinguishable: a distinct
-        # "not an owner" message would let any authenticated caller probe
-        # which application ids exist.
-        if application is None:
-            raise ValueError(f"application {application_id} not found")
-        job = await self.job_repository.get_by_job_id(session, application.job_id)
-        if job is None or current_user.user_id not in normalized_owner_ids(
-            job.pipeline_config
-        ):
-            raise ValueError(f"application {application_id} not found")
         user = await self.users_repository.get_user_by_user_id(
             session, application.user_id
         )
@@ -186,4 +230,151 @@ class BoardService:
                 current_sub is not None and current_sub.resume_object_key
             ),
             form_schema=job.form_schema,
+        )
+
+    async def _freeze_current_submission(
+        self, session: AsyncSession, application_id: int
+    ):
+        """Mark an application's current submission version as frozen.
+
+        Fetches the highest-version submission and sets ``is_frozen=True``.
+        Safe to call on an already-frozen submission (idempotent re-write of
+        the same value). ``change_stage`` calls this unconditionally on
+        every stage change; ``set_sub_status`` only calls it the first time
+        an application leaves ``"pending"``, so it isn't invoked (and no
+        extra write happens) on later, already-frozen transitions.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            application_id (int): The owning application.
+
+        Returns:
+            ApplicationSubmissionEntity | None: The (now-frozen) current
+                submission, or None if the application has none yet.
+        """
+        current_sub = await self.application_submission_repository.get_current(
+            session, application_id
+        )
+        if current_sub is not None:
+            current_sub.is_frozen = True
+            current_sub = await self.application_submission_repository.update(
+                session, current_sub
+            )
+        return current_sub
+
+    async def change_stage(
+        self,
+        session: AsyncSession,
+        current_user: UserContextDto,
+        application_id: int,
+        dto: StageChangeDto,
+    ) -> ApplicationDto:
+        """Advance or reject an application, per the job's configured pipeline.
+
+        Row-locks the application for the duration of the transaction so two
+        concurrent decisions on the same application serialise. On reject,
+        records the reason/note/origin stage under ``tags["reject"]``. The
+        target's sub_status resets to ``"pending"`` for pipeline stages, or
+        ``None`` for terminal stages (HIRED/REJECTED). Every stage change
+        freezes the application's current submission version, since once a
+        decision has been made on it, the candidate must not be able to edit
+        the record the decision was based on.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            current_user (UserContextDto): The authenticated caller.
+            application_id (int): The application to move.
+            dto (StageChangeDto): The target stage and, for rejects, the
+                reason/note.
+
+        Returns:
+            ApplicationDto: The refreshed application.
+
+        Raises:
+            ValueError: If the application is missing, the caller is not an
+                owner (collapsed to the same "not found" message as
+                ``get_application_detail``), or the transition is not legal
+                for the job's configured pipeline
+                (``stage_machine.validate_transition``).
+        """
+        application, job = await self._load_owned_application(
+            session, current_user, application_id, for_update=True
+        )
+        from_stage = application.stage
+        stage_machine.validate_transition(job.pipeline_config, from_stage, dto.to_stage)
+
+        if dto.to_stage == ApplicationStage.REJECTED:
+            application.tags = {
+                **(application.tags or {}),
+                "reject": {
+                    "reason": dto.reason,
+                    "note": dto.note,
+                    "fromStage": from_stage.value,
+                    "at": datetime.now(timezone.utc).isoformat(),
+                },
+            }
+        application.stage = dto.to_stage
+        application.sub_status = (
+            "pending"
+            if dto.to_stage in stage_machine.configured_stages(job.pipeline_config)
+            else None
+        )
+
+        current_sub = await self._freeze_current_submission(session, application_id)
+        application = await self.application_repository.update(session, application)
+        await session.commit()
+        # `editable` encodes the CANDIDATE's edit window (see
+        # get_application_detail's note); a fresh stage/sub_status decision
+        # is never in that window, so this is always False here.
+        return self.recruiting_mapper.to_application_dto(
+            application, current_sub, editable=False
+        )
+
+    async def set_sub_status(
+        self,
+        session: AsyncSession,
+        current_user: UserContextDto,
+        application_id: int,
+        dto: SubStatusChangeDto,
+    ) -> ApplicationDto:
+        """Manually switch an application's sub_status within its current stage.
+
+        The first move away from ``"pending"`` freezes the application's
+        current submission version (one-way: switching between later
+        non-pending values doesn't re-freeze since it's already frozen, and
+        moving back to ``"pending"`` never unfreezes it).
+
+        Args:
+            session (AsyncSession): Active database async session.
+            current_user (UserContextDto): The authenticated caller.
+            application_id (int): The application to update.
+            dto (SubStatusChangeDto): The target sub_status.
+
+        Returns:
+            ApplicationDto: The refreshed application.
+
+        Raises:
+            ValueError: If the application is missing, the caller is not an
+                owner (collapsed "not found" message), or ``dto.sub_status``
+                isn't valid for the application's current stage
+                (``stage_machine.validate_sub_status``).
+        """
+        application, _job = await self._load_owned_application(
+            session, current_user, application_id, for_update=True
+        )
+        stage_machine.validate_sub_status(application.stage, dto.sub_status)
+
+        current_value = application.sub_status or "pending"
+        if current_value == "pending" and dto.sub_status != "pending":
+            current_sub = await self._freeze_current_submission(session, application_id)
+        else:
+            current_sub = await self.application_submission_repository.get_current(
+                session, application_id
+            )
+        application.sub_status = dto.sub_status
+
+        application = await self.application_repository.update(session, application)
+        await session.commit()
+        return self.recruiting_mapper.to_application_dto(
+            application, current_sub, editable=False
         )

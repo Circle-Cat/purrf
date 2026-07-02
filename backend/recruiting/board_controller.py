@@ -1,22 +1,28 @@
 from fastapi import APIRouter
 
 from backend.common.fast_api_response_wrapper import api_response
+from backend.common.permissions import Permission
 from backend.utils.permission_decorators import authenticate
+from backend.dto.board_dto import StageChangeDto, SubStatusChangeDto
 from backend.dto.user_context_dto import UserContextDto
 from backend.common.api_endpoints import (
     RECRUITING_BOARD_JOBS_ENDPOINT,
     RECRUITING_JOB_BOARD_ENDPOINT,
     RECRUITING_APPLICATION_DETAIL_ENDPOINT,
+    RECRUITING_APPLICATION_STAGE_ENDPOINT,
+    RECRUITING_APPLICATION_SUB_STATUS_ENDPOINT,
 )
 
 
 class BoardController:
     """FastAPI routes for the owner-facing recruiting application board.
 
-    All routes are plain login-gated (``authenticate()``) rather than
+    The read routes are plain login-gated (``authenticate()``) rather than
     permission-gated: ownership is a row-level check performed by
     ``BoardService`` against a job's configured owner ids, not an enum
-    permission.
+    permission. The two decision routes (stage/sub-status) are double-gated:
+    ``Permission.RECRUITING_APPLICATION_ADVANCE`` at the route, and the same
+    row-level owner check in ``BoardService``.
     """
 
     def __init__(self, board_service, database):
@@ -48,6 +54,22 @@ class BoardController:
             methods=["GET"],
             response_model=None,
         )
+        self.router.add_api_route(
+            RECRUITING_APPLICATION_STAGE_ENDPOINT,
+            endpoint=authenticate(
+                permissions=[Permission.RECRUITING_APPLICATION_ADVANCE]
+            )(self.change_stage),
+            methods=["PATCH"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            RECRUITING_APPLICATION_SUB_STATUS_ENDPOINT,
+            endpoint=authenticate(
+                permissions=[Permission.RECRUITING_APPLICATION_ADVANCE]
+            )(self.set_sub_status),
+            methods=["PATCH"],
+            response_model=None,
+        )
 
     async def list_my_jobs(self, current_user: UserContextDto):
         """List jobs the caller owns, for the board's job switcher."""
@@ -70,3 +92,29 @@ class BoardController:
                 session, current_user, application_id
             )
         return api_response(message="Application fetched.", data=result)
+
+    async def change_stage(
+        self,
+        current_user: UserContextDto,
+        application_id: int,
+        stage_data: StageChangeDto,
+    ):
+        """Advance or reject an application to a new pipeline stage."""
+        async with self.database.session() as session:
+            result = await self.board_service.change_stage(
+                session, current_user, application_id, stage_data
+            )
+        return api_response(message="Application stage updated.", data=result)
+
+    async def set_sub_status(
+        self,
+        current_user: UserContextDto,
+        application_id: int,
+        sub_status_data: SubStatusChangeDto,
+    ):
+        """Manually switch an application's sub_status within its stage."""
+        async with self.database.session() as session:
+            result = await self.board_service.set_sub_status(
+                session, current_user, application_id, sub_status_data
+            )
+        return api_response(message="Application sub-status updated.", data=result)

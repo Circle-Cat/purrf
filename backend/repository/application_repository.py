@@ -41,14 +41,25 @@ class ApplicationRepository:
         return result.scalar_one_or_none()
 
     async def get_by_id(
-        self, session: AsyncSession, application_id: int
+        self,
+        session: AsyncSession,
+        application_id: int,
+        *,
+        for_update: bool = False,
     ) -> ApplicationEntity | None:
-        """Return the application with this application_id, or None."""
-        result = await session.execute(
-            select(ApplicationEntity).where(
-                ApplicationEntity.application_id == application_id,
-            )
+        """Return the application with this application_id, or None.
+
+        When ``for_update`` is True the row is selected ``FOR UPDATE`` so a
+        concurrent stage/sub-status decision on the same application blocks
+        until this transaction commits (mirrors
+        ``JobReviewRepository.get``'s row lock).
+        """
+        stmt = select(ApplicationEntity).where(
+            ApplicationEntity.application_id == application_id,
         )
+        if for_update:
+            stmt = stmt.with_for_update()
+        result = await session.execute(stmt)
         return result.scalar_one_or_none()
 
     async def create(

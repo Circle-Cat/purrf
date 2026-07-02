@@ -2,7 +2,10 @@ import unittest
 from http import HTTPStatus
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from backend.dto.board_dto import StageChangeDto, SubStatusChangeDto
 from backend.dto.user_context_dto import UserContextDto
+from backend.common.permissions import Permission
+from backend.common.recruiting_enums import ApplicationStage
 from backend.recruiting.board_controller import BoardController
 
 
@@ -17,6 +20,8 @@ class TestBoardController(unittest.IsolatedAsyncioTestCase):
         self.board_service.list_my_jobs = AsyncMock(return_value=[])
         self.board_service.get_board = AsyncMock(return_value={})
         self.board_service.get_application_detail = AsyncMock(return_value={"id": 10})
+        self.board_service.change_stage = AsyncMock(return_value={"id": 10})
+        self.board_service.set_sub_status = AsyncMock(return_value={"id": 10})
 
         self.controller = BoardController(self.board_service, self.database)
 
@@ -54,6 +59,66 @@ class TestBoardController(unittest.IsolatedAsyncioTestCase):
             self.session, self.ctx, 10
         )
         self.assertEqual(resp["data"], detail)
+
+    async def test_change_stage_delegates(self):
+        updated = {"id": 10, "stage": "tech"}
+        self.board_service.change_stage = AsyncMock(return_value=updated)
+        dto = StageChangeDto(to_stage=ApplicationStage.TECH)
+
+        resp = await self.controller.change_stage(
+            self.ctx, application_id=10, stage_data=dto
+        )
+
+        self.board_service.change_stage.assert_awaited_once_with(
+            self.session, self.ctx, 10, dto
+        )
+        self.assertEqual(resp["data"], updated)
+
+    async def test_set_sub_status_delegates(self):
+        updated = {"id": 10, "sub_status": "in_progress"}
+        self.board_service.set_sub_status = AsyncMock(return_value=updated)
+        dto = SubStatusChangeDto(sub_status="in_progress")
+
+        resp = await self.controller.set_sub_status(
+            self.ctx, application_id=10, sub_status_data=dto
+        )
+
+        self.board_service.set_sub_status.assert_awaited_once_with(
+            self.session, self.ctx, 10, dto
+        )
+        self.assertEqual(resp["data"], updated)
+
+    # -- route registration: PATCH methods + permission gate --
+    #
+    # This test suite calls controller methods directly rather than through
+    # a FastAPI TestClient (see the other tests above), so `authenticate()`
+    # never actually runs here. We can still assert what the route table
+    # (path/method) and the `authenticate(permissions=[...])` closure were
+    # registered with, which is what enforces the gate at request time.
+
+    def _endpoint_permissions(self, endpoint):
+        """Pull the `permissions` list out of an authenticate()-wrapped endpoint."""
+        idx = endpoint.__code__.co_freevars.index("permissions")
+        return endpoint.__closure__[idx].cell_contents
+
+    def test_decision_routes_are_patch_and_permission_gated(self):
+        routes_by_path = {route.path: route for route in self.controller.router.routes}
+
+        stage_route = routes_by_path["/recruiting/applications/{application_id}/stage"]
+        sub_status_route = routes_by_path[
+            "/recruiting/applications/{application_id}/sub-status"
+        ]
+
+        self.assertIn("PATCH", stage_route.methods)
+        self.assertIn("PATCH", sub_status_route.methods)
+        self.assertEqual(
+            self._endpoint_permissions(stage_route.endpoint),
+            [Permission.RECRUITING_APPLICATION_ADVANCE],
+        )
+        self.assertEqual(
+            self._endpoint_permissions(sub_status_route.endpoint),
+            [Permission.RECRUITING_APPLICATION_ADVANCE],
+        )
 
 
 if __name__ == "__main__":
