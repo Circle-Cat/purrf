@@ -76,9 +76,7 @@ class JobDto(BaseDto):
     pipeline_config: dict | None = None
     screen_rules: dict | None = None
     profile_config: dict | None = None
-    pending_form_schema: dict | None = None
-    pending_pipeline_config: dict | None = None
-    pending_profile_config: dict | None = None
+    pending_payload: dict | None = None
     last_reject_comment: str | None = None
     was_published: bool = False
     cooldown_days: int | None = None

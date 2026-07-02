@@ -83,6 +83,16 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.pipeline_config["stages"][0]["stage"], "tech")
         self.assertEqual(result.status, JobStatus.DRAFT)
 
+    async def test_get_job_exposes_pending_payload(self):
+        """get_job surfaces pending_payload straight through from the entity."""
+        job = self._job(status=JobStatus.PUBLISHED_PENDING_REVISION)
+        job.pending_payload = {"title": "New title"}
+        self.repo.get_by_job_id.return_value = job
+
+        result = await self.service.get_job(self.session, job.job_id)
+
+        self.assertEqual(result.pending_payload, {"title": "New title"})
+
     async def test_update_published_writes_pending_and_flips_status(self):
         """Editing a PUBLISHED posting's form parks the change as a pending revision."""
         job = self._job(status=JobStatus.PUBLISHED, form_schema={"questions": []})
