@@ -12,10 +12,16 @@ import {
 /**
  * Title / description / kind fields for a posting.
  *
- * @param {{title: string, description: string, kind: string,
+ * @param {{title: string, description: string, kind: string, cooldownDays: (number|null|undefined),
  *          onChange: (patch: object) => void}} props
  */
-const JobBasicsSection = ({ title, description, kind, onChange }) => (
+const JobBasicsSection = ({
+  title,
+  description,
+  kind,
+  cooldownDays,
+  onChange,
+}) => (
   <div className="space-y-3">
     <div className="space-y-1">
       <Label htmlFor="posting-title">Title</Label>
@@ -51,6 +57,24 @@ const JobBasicsSection = ({ title, description, kind, onChange }) => (
         </SelectContent>
       </Select>
     </div>
+    {kind === "employment" && (
+      <div className="space-y-1">
+        <Label htmlFor="posting-cooldown">Cooldown days</Label>
+        <Input
+          id="posting-cooldown"
+          type="number"
+          min={0}
+          aria-label="Cooldown days"
+          className="w-full max-w-xs"
+          value={cooldownDays ?? ""}
+          onChange={(e) =>
+            onChange({
+              cooldownDays: e.target.value ? Number(e.target.value) : null,
+            })
+          }
+        />
+      </div>
+    )}
   </div>
 );
 

@@ -30,6 +30,7 @@ beforeEach(() => {
       title: "Loaded",
       description: "",
       kind: "activity",
+      cooldownDays: null,
       formSchema: { questions: [] },
       pipelineConfig: { ownerId: 9, stages: [] },
     },
@@ -64,6 +65,7 @@ describe("PostingEditor", () => {
     expect(api.createJob.mock.calls[0][0]).toMatchObject({
       title: "SWE",
       kind: "activity",
+      cooldownDays: undefined,
       formSchema: { questions: [] },
     });
     expect(toast.success).toHaveBeenCalled();

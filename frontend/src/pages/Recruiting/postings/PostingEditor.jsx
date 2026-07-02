@@ -22,6 +22,7 @@ const BLANK = {
   title: "",
   description: "",
   kind: "activity",
+  cooldownDays: null,
   formSchema: { questions: [] },
   pipelineConfig: null,
   screenRules: null,
@@ -39,6 +40,7 @@ const toBody = (draft) => ({
   title: draft.title,
   description: draft.description,
   kind: draft.kind,
+  cooldownDays: draft.cooldownDays ?? undefined,
   formSchema: draft.formSchema,
   pipelineConfig: draft.pipelineConfig ?? undefined,
   screenRules: draft.screenRules ?? undefined,
@@ -71,6 +73,7 @@ const PostingEditor = () => {
           title: data.title ?? "",
           description: data.description ?? "",
           kind: data.kind ?? "activity",
+          cooldownDays: data.cooldownDays ?? null,
           formSchema: data.formSchema ?? { questions: [] },
           pipelineConfig: data.pipelineConfig ?? null,
           screenRules: data.screenRules ?? null,
@@ -128,6 +131,7 @@ const PostingEditor = () => {
             title={draft.title}
             description={draft.description}
             kind={draft.kind}
+            cooldownDays={draft.cooldownDays}
             onChange={patch}
           />
           <FormBuilder

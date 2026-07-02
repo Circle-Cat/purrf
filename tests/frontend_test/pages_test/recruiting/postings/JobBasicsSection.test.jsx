@@ -40,4 +40,30 @@ describe("JobBasicsSection", () => {
     const descField = screen.getByLabelText("Description");
     expect(descField.value).toBe("");
   });
+
+  it("shows Cooldown days only for employment and emits changes", () => {
+    const onChange = vi.fn();
+    const { rerender } = render(
+      <JobBasicsSection
+        title=""
+        description=""
+        kind="activity"
+        onChange={onChange}
+      />,
+    );
+    expect(screen.queryByLabelText("Cooldown days")).not.toBeInTheDocument();
+
+    rerender(
+      <JobBasicsSection
+        title=""
+        description=""
+        kind="employment"
+        cooldownDays={null}
+        onChange={onChange}
+      />,
+    );
+    const input = screen.getByLabelText("Cooldown days");
+    fireEvent.change(input, { target: { value: "90" } });
+    expect(onChange).toHaveBeenCalledWith({ cooldownDays: 90 });
+  });
 });
