@@ -2,7 +2,7 @@
 
 ## Overview
 
-**Purrf** is a web application designed to provide a comprehensive summary of CircleCat organization members' activity across various platforms. It aggregates data from JIRA, Google Meet, Google Chat, Microsoft Teams, and Gerrit to offer insights into individual contributions, such as the number of messages sent, code changes (CLs) submitted, and more.  Purrf helps team members track progress, assess contributions.
+**Purrf** is a web application for CircleCat organization operations. It aggregates member activity data from JIRA, Google Meet, Google Chat, Microsoft Teams, and Gerrit to offer insights into individual contributions, such as the number of messages sent, code changes (CLs) submitted, and more. It also supports mentorship program management and recruiting workflows, helping the organization track progress, assess contributions, and manage people processes end to end.
 
 ## Features
 
@@ -11,8 +11,11 @@
 * **Google Chat Participation:**  Visualizes participation in Google Chat.
 * **Microsoft Teams Activity:**  Visualizes participation in Microsoft Teams Chat.
 * **Gerrit Statistics:**  Provides summaries of Gerrit contributions.
-* **Interactive Dashboard:**  A web-based dashboard for viewing aggregated reports.
-* **User Authentication:**  Secure access to the application.
+* **Interactive Dashboard:**  A web-based dashboard for viewing aggregated reports, including a personal dashboard for individual members.
+* **Mentorship Management:**  Manages mentor/mentee postings and pairings.
+* **Recruiting:**  Manages job postings and candidate application review/screening.
+* **Admin Permissions:**  Manages user roles and access control.
+* **User Authentication:**  Secure access to the application via Auth0, with sign-in security settings.
 
 ## Getting Started
 
@@ -21,7 +24,7 @@ This project uses Bazel for build and dependency management.
 ### Prerequisites
 
 - Bazel 8.1.0
-- Python 3.12.3
+- Python 3.11
 
 ### Building
 
@@ -163,7 +166,7 @@ This step is required to verify that the built artifacts behave **exactly as exp
 ```bash
 bazel build //frontend:dist
 bazel run //frontend:vite_preview
-
+```
 
 Before running the repository unit tests under `tests/backend_test/repository_test`,
 export the test database URL (replace the placeholders as needed):
