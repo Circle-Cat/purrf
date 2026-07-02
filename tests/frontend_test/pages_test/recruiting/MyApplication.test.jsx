@@ -1,0 +1,122 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen, waitFor } from "@testing-library/react";
+import { createMemoryRouter, RouterProvider } from "react-router-dom";
+import { toast } from "sonner";
+import MyApplication from "@/pages/Recruiting/MyApplication";
+import * as api from "@/api/recruitingApi";
+
+vi.mock("@/api/recruitingApi");
+// Keep this page test focused on MyApplication's own load/gating logic;
+// ApplicationForm's submission behavior is covered by its own test suite.
+vi.mock("@/pages/Recruiting/ApplicationForm", () => ({
+  default: ({ job, existing }) => (
+    <div>
+      <p>Editing application for {job.title}</p>
+      {existing && <p>Existing id {existing.id}</p>}
+      <button type="button">Submit application</button>
+    </div>
+  ),
+}));
+
+vi.spyOn(toast, "error").mockImplementation(() => {});
+
+const JOB = { id: 5, title: "Mentee", kind: "activity", description: "" };
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  api.getPublicJob.mockResolvedValue({ data: JOB });
+});
+
+/** Render MyApplication inside a MemoryRouter at the given job's application path. */
+const renderAt = (jobId) => {
+  const router = createMemoryRouter(
+    [
+      {
+        path: "/recruiting/jobs/:jobId/application",
+        element: <MyApplication />,
+      },
+    ],
+    { initialEntries: [`/recruiting/jobs/${jobId}/application`] },
+  );
+  return render(<RouterProvider router={router} />);
+};
+
+describe("MyApplication", () => {
+  it("renders the ApplicationForm as a new submission when there is no existing application", async () => {
+    api.getMyApplication.mockResolvedValue({ data: null });
+    renderAt(5);
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /submit application/i }),
+      ).toBeInTheDocument(),
+    );
+    expect(api.getMyApplication).toHaveBeenCalledWith("5");
+    expect(screen.queryByText(/existing id/i)).not.toBeInTheDocument();
+  });
+
+  it("renders the editable ApplicationForm with the existing draft when stage is applied", async () => {
+    api.getMyApplication.mockResolvedValue({
+      data: { id: 9, stage: "applied", current: { submission: {} } },
+    });
+    renderAt(5);
+    await waitFor(() =>
+      expect(screen.getByText("Existing id 9")).toBeInTheDocument(),
+    );
+    expect(
+      screen.getByRole("button", { name: /submit application/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("renders a read-only summary with no Submit button once past the applied stage", async () => {
+    api.getMyApplication.mockResolvedValue({
+      data: {
+        id: 9,
+        stage: "recruiter_screening",
+        current: {
+          submission: {
+            personal: { firstName: "Ann", lastName: "Lee" },
+            education: [],
+            experience: [],
+            answers: {},
+          },
+        },
+      },
+    });
+    renderAt(5);
+    await waitFor(() =>
+      expect(screen.getByText(/recruiter screening/i)).toBeInTheDocument(),
+    );
+    expect(
+      screen.queryByRole("button", { name: /submit application/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText(/Ann/)).toBeInTheDocument();
+  });
+
+  it("shows a status line naming the final stage for a terminal outcome", async () => {
+    api.getMyApplication.mockResolvedValue({
+      data: {
+        id: 9,
+        stage: "hired",
+        current: {
+          submission: {
+            personal: {},
+            education: [],
+            experience: [],
+            answers: {},
+          },
+        },
+      },
+    });
+    renderAt(5);
+    await waitFor(() => expect(screen.getByText(/hired/i)).toBeInTheDocument());
+    expect(
+      screen.queryByRole("button", { name: /submit application/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("toasts an error when loading fails", async () => {
+    api.getMyApplication.mockRejectedValue(new Error("boom"));
+    renderAt(5);
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("boom"));
+  });
+});
