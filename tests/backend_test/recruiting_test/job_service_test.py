@@ -361,13 +361,22 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         created = self.review_repo.create.await_args.args[1]
         self.assertEqual(created.kind, JobReviewKind.REVISION)
 
-    async def test_approve_publishes_and_swaps_pending(self):
-        """Approving a revision swaps pending into live and publishes."""
+    async def test_approve_revision_applies_pending_payload(self):
+        """Approving a REVISION applies the full pending_payload and clears it."""
         job = self._job(
             status=JobStatus.PUBLISHED_PENDING_REVISION,
             form_schema={"a": 1},
-            pending_form_schema={"a": 2},
+            title="old",
         )
+        job.pending_payload = {
+            "title": "new",
+            "description": None,
+            "cooldownDays": None,
+            "screenRules": None,
+            "formSchema": {"a": 2},
+            "pipelineConfig": None,
+            "profileConfig": None,
+        }
         self.repo.get_by_job_id.return_value = job
         review = JobReviewEntity(
             review_id=5,
@@ -384,8 +393,9 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(result.status, JobStatus.PUBLISHED)
+        self.assertEqual(result.title, "new")
         self.assertEqual(result.form_schema, {"a": 2})
-        self.assertIsNone(result.pending_form_schema)
+        self.assertIsNone(result.pending_payload)
         self.assertEqual(review.status, JobReviewStatus.APPROVED)
         self.assertIsNotNone(review.decided_at)
 
@@ -522,12 +532,13 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(review.reject_comment, "fix the form")
 
     async def test_reject_revision_keeps_published_and_discards_pending(self):
-        """Rejecting a REVISION discards the parked change and stays PUBLISHED."""
+        """Rejecting a REVISION discards the parked draft and stays PUBLISHED."""
         job = self._job(
             status=JobStatus.PUBLISHED_PENDING_REVISION,
             form_schema={"a": 1},
-            pending_form_schema={"a": 2},
+            title="old",
         )
+        job.pending_payload = {"title": "new", "formSchema": {"a": 2}}
         self.repo.get_by_job_id.return_value = job
         review = JobReviewEntity(
             review_id=10,
@@ -544,8 +555,9 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(result.status, JobStatus.PUBLISHED)
+        self.assertEqual(result.title, "old")
         self.assertEqual(result.form_schema, {"a": 1})
-        self.assertIsNone(result.pending_form_schema)
+        self.assertIsNone(result.pending_payload)
 
     async def test_publish_job_is_removed(self):
         """Direct publish is gone; publishing only happens through approval."""
@@ -1050,29 +1062,6 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
             return []
 
         self.perms.get_active_users_with_permission = AsyncMock(side_effect=pool)
-
-    async def test_approve_revision_merges_pending_profile_config(self):
-        review = MagicMock()
-        review.status = JobReviewStatus.PENDING
-        review.kind = JobReviewKind.REVISION
-        review.job_id = 1
-        review.reviewer_id = 2
-        self.review_repo.get = AsyncMock(return_value=review)
-        job = self._published_job(
-            status=JobStatus.PUBLISHED_PENDING_REVISION,
-            pending_profile_config={
-                "education": "required",
-                "workExperience": "off",
-                "resume": "required",
-            },
-            pending_form_schema={"questions": []},
-            pending_pipeline_config={"ownerId": 42, "stages": []},
-        )
-        self.repo.get_by_job_id = AsyncMock(return_value=job)
-        result = await self.service.approve(self.session, 10, acting_user_id=2)
-        self.assertEqual(result.status, JobStatus.PUBLISHED)
-        self.assertEqual(job.profile_config["education"], "required")
-        self.assertIsNone(job.pending_profile_config)
 
     async def test_list_interview_pool(self):
         users = self._make_users(7, 8)

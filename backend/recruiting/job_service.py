@@ -557,7 +557,7 @@ class JobService:
 
         Review-kind state machine on approval:
         - INITIAL: posting moves to PUBLISHED.
-        - REVISION: pending_* values are swapped into live fields, cleared, and
+        - REVISION: pending_payload is applied to live fields and cleared, and
           the posting moves to PUBLISHED.
         - CLOSE: posting moves to CLOSED.
         - REOPEN: posting moves to PUBLISHED.
@@ -583,22 +583,17 @@ class JobService:
         if review.kind == JobReviewKind.CLOSE:
             job.status = JobStatus.CLOSED
         elif review.kind == JobReviewKind.REOPEN:
+            if job.pending_payload is not None:
+                self._apply_pending_payload(job)
             job.status = JobStatus.PUBLISHED
             job.was_published = True
         else:
             # INITIAL or REVISION
-            if job.status == JobStatus.PUBLISHED_PENDING_REVISION:
-                if review.kind == JobReviewKind.REVISION:
-                    job.form_schema = job.pending_form_schema or job.form_schema
-                    job.pipeline_config = (
-                        job.pending_pipeline_config or job.pipeline_config
-                    )
-                    job.profile_config = (
-                        job.pending_profile_config or job.profile_config
-                    )
-                job.pending_form_schema = None
-                job.pending_pipeline_config = None
-                job.pending_profile_config = None
+            if (
+                job.status == JobStatus.PUBLISHED_PENDING_REVISION
+                and review.kind == JobReviewKind.REVISION
+            ):
+                self._apply_pending_payload(job)
             job.status = JobStatus.PUBLISHED
             job.was_published = True
         job = await self.job_repository.update_job(session, job)
@@ -612,7 +607,7 @@ class JobService:
 
         Review-kind state machine on rejection:
         - INITIAL: posting returns to DRAFT.
-        - REVISION: pending_* values are discarded and the posting stays PUBLISHED.
+        - REVISION: pending_payload is discarded and the posting stays PUBLISHED.
         - CLOSE: the close is aborted and the posting returns to PUBLISHED.
         - REOPEN: the reopen is aborted and the posting remains CLOSED.
 
@@ -639,9 +634,7 @@ class JobService:
 
         job = await self._require_job(session, review.job_id)
         if review.kind == JobReviewKind.REVISION:
-            job.pending_form_schema = None
-            job.pending_pipeline_config = None
-            job.pending_profile_config = None
+            job.pending_payload = None
             job.status = JobStatus.PUBLISHED
         elif review.kind == JobReviewKind.CLOSE:
             # Abort the close — posting goes back to PUBLISHED.
