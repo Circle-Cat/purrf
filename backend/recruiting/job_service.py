@@ -102,21 +102,59 @@ class JobService:
         return model.model_dump(mode="json", by_alias=True, exclude_none=True)
 
     @staticmethod
-    def _pipeline_structure(cfg: dict | None) -> list:
-        """Extract the re-reviewable structure of a pipeline (ignores owner/assignees).
+    def _build_pending_payload(job: "JobEntity", dto: JobCreateDto) -> dict:
+        """Merge an edit dto onto a posting's current live values.
+
+        Optional config fields (screen_rules, form_schema, pipeline_config,
+        profile_config) fall back to the posting's current live value when the
+        dto sends None, so a field the submitter didn't touch is never blanked
+        out when this payload is later applied. title and cooldown_days are
+        carried through as-is: title is required non-null on the dto, and
+        cooldown_days's None is an explicit clear (existing behavior), not
+        "leave unchanged".
 
         Args:
-            cfg (dict | None): A serialized pipeline_config, or None.
+            job (JobEntity): The posting being edited.
+            dto (JobCreateDto): The incoming edit payload.
 
         Returns:
-            list: Ordered [(stage, rounds, referralSkippable)] tuples; [] if None.
+            dict: A complete camelCase draft snapshot of all seven editable
+            fields, ready to store as pending_payload and later apply verbatim.
         """
-        if not cfg:
-            return []
-        return [
-            (s.get("stage"), s.get("rounds"), s.get("referralSkippable", False))
-            for s in cfg.get("stages", [])
-        ]
+        new_form = JobService._serialize(dto.form_schema)
+        new_pipeline = JobService._serialize(dto.pipeline_config)
+        new_screen = JobService._serialize(dto.screen_rules)
+        new_profile = JobService._serialize(dto.profile_config)
+        return {
+            "title": dto.title,
+            "description": dto.description,
+            "cooldownDays": dto.cooldown_days if dto.cooldown_days is not None else job.cooldown_days,
+            "screenRules": new_screen if new_screen is not None else job.screen_rules,
+            "formSchema": new_form if new_form is not None else job.form_schema,
+            "pipelineConfig": (
+                new_pipeline if new_pipeline is not None else job.pipeline_config
+            ),
+            "profileConfig": (
+                new_profile if new_profile is not None else job.profile_config
+            ),
+        }
+
+    @staticmethod
+    def _apply_pending_payload(job: "JobEntity") -> None:
+        """Overwrite a posting's live fields with its pending_payload, then clear it.
+
+        Args:
+            job (JobEntity): The posting; job.pending_payload must not be None.
+        """
+        payload = job.pending_payload
+        job.title = payload["title"]
+        job.description = payload["description"]
+        job.cooldown_days = payload["cooldownDays"]
+        job.screen_rules = payload["screenRules"]
+        job.form_schema = payload["formSchema"]
+        job.pipeline_config = payload["pipelineConfig"]
+        job.profile_config = payload["profileConfig"]
+        job.pending_payload = None
 
     async def _validate_assignees_and_owner(
         self, session: AsyncSession, dto: JobCreateDto
@@ -240,14 +278,11 @@ class JobService:
         - DRAFT: every field (title, description, kind, mentorship_role,
           form_schema, pipeline_config, screen_rules, profile_config,
           cooldown_days) is written live directly.
-        - PUBLISHED: changes are split into "contract" vs "operational".
-          Contract changes (form_schema, profile_config, or the pipeline's
-          structure = each stage's stage/rounds/referralSkippable) are parked
-          in pending_form_schema/pending_pipeline_config/pending_profile_config
-          and the status flips to PUBLISHED_PENDING_REVISION for re-review.
-          Operational changes (title, description, cooldown_days, screen_rules,
-          and the pipeline's ownerId/defaultAssigneeId) are written live
-          immediately. kind/mentorship_role are not editable once published.
+        - PUBLISHED: any edit — every field, no exceptions — is packed into
+          pending_payload and the status flips to PUBLISHED_PENDING_REVISION
+          for re-review. The live version stays public and unchanged until
+          the revision is approved. kind/mentorship_role are not editable
+          once published.
 
         Any other status (PENDING_REVIEW, PUBLISHED_PENDING_REVISION,
         PENDING_CLOSE, PENDING_REOPEN, CLOSED) raises ValueError immediately
@@ -284,33 +319,8 @@ class JobService:
             job.profile_config = new_profile
             job.cooldown_days = dto.cooldown_days
         elif job.status == JobStatus.PUBLISHED:
-            # A None config field means "not provided / leave unchanged"
-            # (JobCreateDto is a full-replacement body and the editor always
-            # echoes the live config it is not editing). Only a provided field
-            # whose contract differs triggers re-review.
-            structural = (
-                (new_form is not None and new_form != job.form_schema)
-                or (new_profile is not None and new_profile != job.profile_config)
-                or (
-                    new_pipeline is not None
-                    and self._pipeline_structure(new_pipeline)
-                    != self._pipeline_structure(job.pipeline_config)
-                )
-            )
-            # Operational levers apply live immediately.
-            job.title = dto.title
-            job.description = dto.description
-            job.cooldown_days = dto.cooldown_days
-            if new_screen is not None:
-                job.screen_rules = new_screen
-            if structural:
-                job.pending_form_schema = new_form
-                job.pending_pipeline_config = new_pipeline
-                job.pending_profile_config = new_profile
-                job.status = JobStatus.PUBLISHED_PENDING_REVISION
-            elif new_pipeline is not None:
-                # only owner/assignee (or title/desc/screen_rules) changed
-                job.pipeline_config = new_pipeline
+            job.pending_payload = self._build_pending_payload(job, dto)
+            job.status = JobStatus.PUBLISHED_PENDING_REVISION
         else:
             raise ValueError(f"Job {job_id} cannot be edited from {job.status}")
         job = await self.job_repository.update_job(session, job)
