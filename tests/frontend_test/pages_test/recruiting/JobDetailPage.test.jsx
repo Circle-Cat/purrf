@@ -28,6 +28,7 @@ beforeEach(() => {
   api.getPublicJob.mockResolvedValue({
     data: { id: 5, title: "Mentee", kind: "activity", description: "" },
   });
+  api.getMyApplication.mockResolvedValue({ data: null });
 });
 
 /** Render JobDetailPage inside a MemoryRouter at the given path, with both
@@ -37,6 +38,10 @@ const renderAt = (path) => {
     [
       { path: "/recruiting/jobs/:jobId", element: <JobDetailPage /> },
       { path: "/recruiting/jobs/:jobId/apply", element: <JobDetailPage /> },
+      {
+        path: "/recruiting/jobs/:jobId/application",
+        element: <p>My application</p>,
+      },
     ],
     { initialEntries: [path] },
   );
@@ -49,6 +54,12 @@ describe("JobDetailPage", () => {
     await waitFor(() => expect(screen.getByText("Mentee")).toBeInTheDocument());
     expect(api.getPublicJob).toHaveBeenCalledWith("5");
     expect(screen.getByRole("button", { name: /apply/i })).toBeInTheDocument();
+  });
+
+  it("does not check for an existing application on the plain job-detail route", async () => {
+    renderAt("/recruiting/jobs/5");
+    await waitFor(() => expect(screen.getByText("Mentee")).toBeInTheDocument());
+    expect(api.getMyApplication).not.toHaveBeenCalled();
   });
 
   it("shows the job kind and description alongside the title", async () => {
@@ -85,6 +96,42 @@ describe("JobDetailPage", () => {
     expect(
       screen.queryByRole("button", { name: /^apply$/i }),
     ).not.toBeInTheDocument();
+    expect(api.getMyApplication).toHaveBeenCalledWith("5");
+  });
+
+  it("redirects to the my-application route when an application already exists at the apply route", async () => {
+    api.getMyApplication.mockResolvedValue({
+      data: { id: 7, stage: "applied" },
+    });
+    const { router } = renderAt("/recruiting/jobs/5/apply");
+    await waitFor(() =>
+      expect(router.state.location.pathname).toBe(
+        "/recruiting/jobs/5/application",
+      ),
+    );
+    expect(
+      screen.queryByRole("button", { name: /submit application/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows the ApplicationForm at the apply route when no application exists yet", async () => {
+    api.getMyApplication.mockResolvedValue({ data: null });
+    renderAt("/recruiting/jobs/5/apply");
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /submit application/i }),
+      ).toBeInTheDocument(),
+    );
+  });
+
+  it("falls back to showing the ApplicationForm when the existing-application check fails", async () => {
+    api.getMyApplication.mockRejectedValue(new Error("boom"));
+    renderAt("/recruiting/jobs/5/apply");
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /submit application/i }),
+      ).toBeInTheDocument(),
+    );
   });
 
   it("toasts an error when the job fails to load", async () => {

@@ -10,6 +10,9 @@ import { formatDateFromParts } from "@/pages/Profile/utils";
 const isCompleteEducationRow = (row) =>
   Boolean(row.institution?.trim()) &&
   Boolean(row.degree?.trim()) &&
+  // `field` maps to the backend's required `fieldOfStudy` (str) -- an
+  // undefined key would 422; an empty string stays acceptable.
+  row.field != null &&
   Boolean(row.startMonth && row.startYear) &&
   Boolean(row.endMonth && row.endYear);
 

@@ -136,6 +136,16 @@ describe("ApplicationForm", () => {
     expect(api.updateApplication.mock.calls[0][0]).toBe(7);
     expect(api.submitApplication).not.toHaveBeenCalled();
     expect(onSubmitted).toHaveBeenCalled();
+    // `ApplicationEditDto` forbids extra fields -- `jobId` must never be
+    // sent on the edit path, or every edit 422s.
+    expect(api.updateApplication.mock.calls[0][1]).not.toHaveProperty("jobId");
+    expect(api.updateApplication.mock.calls[0][1]).toMatchObject({
+      personal: { firstName: "Ann" },
+      answers: {},
+      resumeSha256: null,
+      resumeObjectKey: null,
+      saveToProfile: false,
+    });
   });
 
   it("guards against double submission", async () => {
@@ -339,6 +349,50 @@ describe("ApplicationForm", () => {
     await user.click(screen.getByRole("button", { name: /submit/i }));
 
     await waitFor(() => expect(onSubmitted).toHaveBeenCalled());
+    expect(profileApi.getMyProfile).not.toHaveBeenCalled();
+    expect(profileApi.updateMyProfile).not.toHaveBeenCalled();
+  });
+
+  it("treats an education row missing `field` as incomplete and excludes it from write-back", async () => {
+    const user = userEvent.setup();
+    api.updateApplication.mockResolvedValue({ data: { id: 7 } });
+    const existingWithMissingField = {
+      ...FILLED_EXISTING,
+      current: {
+        ...FILLED_EXISTING.current,
+        submission: {
+          ...FILLED_EXISTING.current.submission,
+          education: [
+            {
+              id: "rpf-4",
+              institution: "CMU",
+              degree: "Master",
+              // `field` deliberately omitted (undefined) -- would 422
+              // against the backend's required `fieldOfStudy: str`.
+              startMonth: "September",
+              startYear: "2018",
+              endMonth: "May",
+              endYear: "2020",
+            },
+          ],
+          experience: [],
+        },
+      },
+    };
+    render(
+      <ApplicationForm
+        job={JOB}
+        existing={existingWithMissingField}
+        onSubmitted={vi.fn()}
+      />,
+    );
+
+    await user.click(
+      screen.getByRole("checkbox", { name: /save to my profile/i }),
+    );
+    await user.click(screen.getByRole("button", { name: /submit/i }));
+
+    await waitFor(() => expect(api.updateApplication).toHaveBeenCalledTimes(1));
     expect(profileApi.getMyProfile).not.toHaveBeenCalled();
     expect(profileApi.updateMyProfile).not.toHaveBeenCalled();
   });

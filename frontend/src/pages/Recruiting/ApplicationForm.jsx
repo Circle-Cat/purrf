@@ -16,7 +16,9 @@ import {
 /**
  * Candidate application form for a published job. Owns the applicant's
  * profile/answers/resume state and submits it via `submitApplication`
- * (create) or `updateApplication` (edit, when `existing` is provided).
+ * (create) or `updateApplication` (edit, when `existing` is provided). Both
+ * calls share the same base body; `jobId` is added only for the create call,
+ * since the edit DTO forbids extra fields and rejects it.
  *
  * When "save to my profile" is checked, a successful submission is followed
  * by a best-effort write-back of complete education/experience rows to the
@@ -74,8 +76,7 @@ const ApplicationForm = ({ job, existing, onSubmitted }) => {
     if (submitting) return;
     setSubmitting(true);
     try {
-      const body = {
-        jobId: job.id,
+      const base = {
         personal: profileValue.personal,
         education: profileValue.education,
         experience: profileValue.experience,
@@ -84,9 +85,11 @@ const ApplicationForm = ({ job, existing, onSubmitted }) => {
         resumeObjectKey: resume.objectKey,
         saveToProfile,
       };
+      // `ApplicationEditDto` forbids extra fields, so `jobId` is only ever
+      // sent on create (`ApplicationSubmitDto`), never on edit.
       const res = existing
-        ? await updateApplication(existing.id, body)
-        : await submitApplication(body);
+        ? await updateApplication(existing.id, base)
+        : await submitApplication({ jobId: job.id, ...base });
       toast.success("Application submitted.");
       if (saveToProfile) await writeBackProfile();
       onSubmitted(res?.data ?? res);
