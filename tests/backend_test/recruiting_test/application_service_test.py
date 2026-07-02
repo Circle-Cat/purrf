@@ -90,6 +90,27 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.stage, ApplicationStage.REJECTED)
         self.assertFalse(result.editable)
 
+    async def test_blocked_user_reapply_with_existing_application(self):
+        """Blocked user attempting to reapply: existing application is updated to REJECTED with sub_status cleared."""
+        self.users_repo.get_user_by_user_id = AsyncMock(
+            return_value=self._user(is_blocked=True)
+        )
+        # Simulate an existing application in screening stage.
+        app = ApplicationEntity(
+            job_id=1,
+            user_id=2,
+            stage=ApplicationStage.RECRUITER_SCREENING,
+            sub_status="pending",
+        )
+        app.application_id = 100
+        self.app_repo.get_by_job_and_user = AsyncMock(return_value=app)
+        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        result = await self.service.submit(self.session, self._ctx(), dto)
+        self.assertEqual(result.stage, ApplicationStage.REJECTED)
+        self.assertIsNone(result.sub_status)
+        self.assertEqual(result.tags, {"auto_reject": "blocked"})
+        self.assertFalse(result.editable)
+
     async def test_edit_overwrites_current_version_when_editable(self):
         app = ApplicationEntity(
             job_id=1,

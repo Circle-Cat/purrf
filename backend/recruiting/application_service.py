@@ -146,6 +146,7 @@ class ApplicationService:
             )
         elif blocked:
             existing.stage = ApplicationStage.REJECTED
+            existing.sub_status = None
             existing.tags = {"auto_reject": "blocked"}
             application = await self.application_repository.update(session, existing)
             current_sub = await self.application_submission_repository.get_current(

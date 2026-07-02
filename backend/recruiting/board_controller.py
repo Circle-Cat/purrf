@@ -8,7 +8,7 @@ from backend.dto.user_context_dto import UserContextDto
 from backend.common.api_endpoints import (
     RECRUITING_BOARD_JOBS_ENDPOINT,
     RECRUITING_JOB_BOARD_ENDPOINT,
-    RECRUITING_APPLICATION_DETAIL_ENDPOINT,
+    RECRUITING_APPLICATION_ENDPOINT,
     RECRUITING_APPLICATION_STAGE_ENDPOINT,
     RECRUITING_APPLICATION_SUB_STATUS_ENDPOINT,
     RECRUITING_APPLICATION_RESUME_ENDPOINT,
@@ -55,7 +55,7 @@ class BoardController:
             response_model=None,
         )
         self.router.add_api_route(
-            RECRUITING_APPLICATION_DETAIL_ENDPOINT,
+            RECRUITING_APPLICATION_ENDPOINT,
             endpoint=authenticate()(self.get_application_detail),
             methods=["GET"],
             response_model=None,
