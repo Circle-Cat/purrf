@@ -2,6 +2,8 @@ import unittest
 from http import HTTPStatus
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from fastapi import Response
+
 from backend.dto.board_dto import BlacklistDto, StageChangeDto, SubStatusChangeDto
 from backend.dto.user_context_dto import UserContextDto
 from backend.common.permissions import Permission
@@ -23,6 +25,7 @@ class TestBoardController(unittest.IsolatedAsyncioTestCase):
         self.board_service.change_stage = AsyncMock(return_value={"id": 10})
         self.board_service.set_sub_status = AsyncMock(return_value={"id": 10})
         self.board_service.blacklist = AsyncMock(return_value={"id": 10})
+        self.board_service.get_resume = AsyncMock(return_value=b"%PDF-1.4 data")
 
         self.controller = BoardController(self.board_service, self.database)
 
@@ -92,7 +95,9 @@ class TestBoardController(unittest.IsolatedAsyncioTestCase):
     async def test_blacklist_delegates(self):
         updated = {"id": 10, "stage": "rejected"}
         self.board_service.blacklist = AsyncMock(return_value=updated)
-        dto = BlacklistDto(user_id=3, application_id=10, reason="Fabricated credentials")
+        dto = BlacklistDto(
+            user_id=3, application_id=10, reason="Fabricated credentials"
+        )
 
         resp = await self.controller.blacklist(self.ctx, blacklist_data=dto)
 
@@ -100,6 +105,27 @@ class TestBoardController(unittest.IsolatedAsyncioTestCase):
             self.session, self.ctx, dto
         )
         self.assertEqual(resp["data"], updated)
+
+    async def test_get_resume_returns_raw_pdf_response(self):
+        self.board_service.get_resume = AsyncMock(return_value=b"%PDF-1.4 data")
+
+        resp = await self.controller.get_resume(self.ctx, application_id=10)
+
+        self.board_service.get_resume.assert_awaited_once_with(
+            self.session, self.ctx, 10
+        )
+        self.assertIsInstance(resp, Response)
+        self.assertEqual(resp.body, b"%PDF-1.4 data")
+        self.assertEqual(resp.media_type, "application/pdf")
+
+    def test_resume_route_is_get_and_plain_authenticated(self):
+        routes_by_path = {route.path: route for route in self.controller.router.routes}
+
+        resume_route = routes_by_path[
+            "/recruiting/applications/{application_id}/resume"
+        ]
+
+        self.assertIn("GET", resume_route.methods)
 
     # -- route registration: PATCH methods + permission gate --
     #

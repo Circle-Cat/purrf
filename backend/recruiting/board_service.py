@@ -38,6 +38,7 @@ class BoardService:
         application_submission_repository,
         users_repository,
         recruiting_mapper,
+        resume_storage,
     ):
         """
         Args:
@@ -48,12 +49,15 @@ class BoardService:
             users_repository (UsersRepository): Applicant lookups for the
                 detail view.
             recruiting_mapper (RecruitingMapper): Entity->DTO conversion.
+            resume_storage (ResumeStorage): Content-addressed résumé download,
+                for the owner-facing proxy download route.
         """
         self.job_repository = job_repository
         self.application_repository = application_repository
         self.application_submission_repository = application_submission_repository
         self.users_repository = users_repository
         self.recruiting_mapper = recruiting_mapper
+        self.resume_storage = resume_storage
 
     async def list_my_jobs(
         self, session: AsyncSession, current_user: UserContextDto
@@ -235,6 +239,38 @@ class BoardService:
             ),
             form_schema=job.form_schema,
         )
+
+    async def get_resume(
+        self,
+        session: AsyncSession,
+        current_user: UserContextDto,
+        application_id: int,
+    ) -> bytes:
+        """Return an application's résumé bytes, for the owner-facing proxy download.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            current_user (UserContextDto): The authenticated caller.
+            application_id (int): The application whose résumé to fetch.
+
+        Returns:
+            bytes: The raw PDF bytes, fetched from ``resume_storage``.
+
+        Raises:
+            ValueError: If the application is missing, the caller is not an
+                owner (collapsed "not found" message, same as
+                ``get_application_detail``), or the application's current
+                submission has no résumé on file.
+        """
+        _application, _job = await self._load_owned_application(
+            session, current_user, application_id
+        )
+        current_sub = await self.application_submission_repository.get_current(
+            session, application_id
+        )
+        if current_sub is None or not current_sub.resume_object_key:
+            raise ValueError(f"no resume on file for application {application_id}")
+        return self.resume_storage.get(current_sub.resume_object_key)
 
     async def _freeze_current_submission(
         self, session: AsyncSession, application_id: int
@@ -435,9 +471,7 @@ class BoardService:
         application.tags = {**(application.tags or {}), "blacklisted": True}
         application.sub_status = None
 
-        current_sub = await self._freeze_current_submission(
-            session, dto.application_id
-        )
+        current_sub = await self._freeze_current_submission(session, dto.application_id)
         application = await self.application_repository.update(session, application)
         await session.commit()
         return self.recruiting_mapper.to_application_dto(

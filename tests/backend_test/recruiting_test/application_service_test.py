@@ -130,9 +130,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         )
         app.application_id = 100
         self.app_repo.get_by_id = AsyncMock(return_value=app)
-        await self.service.edit(
-            self.session, self._ctx(), 100, ApplicationEditDto()
-        )
+        await self.service.edit(self.session, self._ctx(), 100, ApplicationEditDto())
         self.app_repo.get_by_id.assert_awaited_once_with(
             self.session, 100, for_update=True
         )
@@ -148,9 +146,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         app.application_id = 100
         self.app_repo.get_by_job_and_user = AsyncMock(return_value=app)
         await self.service.get_mine(self.session, self._ctx(), 1)
-        self.app_repo.get_by_job_and_user.assert_awaited_once_with(
-            self.session, 1, 2
-        )
+        self.app_repo.get_by_job_and_user.assert_awaited_once_with(self.session, 1, 2)
 
     async def test_edit_blocked_when_stage_advanced(self):
         app = ApplicationEntity(

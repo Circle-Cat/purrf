@@ -24,6 +24,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.app_repo = MagicMock()
         self.sub_repo = MagicMock()
         self.users_repo = MagicMock()
+        self.resume_storage = MagicMock()
         self.session = AsyncMock()
         self.service = BoardService(
             self.job_repo,
@@ -31,6 +32,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             self.sub_repo,
             self.users_repo,
             RecruitingMapper(),
+            self.resume_storage,
         )
         # Default persistence mocks: echo the entity back, like SQLAlchemy's
         # merge-and-flush does when nothing else stubs them out.
@@ -204,6 +206,56 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         # indistinguishable from nonexistent, or authenticated callers could
         # enumerate which application ids exist.
         self.assertEqual(str(ctx.exception), "application 10 not found")
+
+    # -- get_resume --
+
+    async def test_get_resume_returns_bytes_from_storage(self):
+        job = self._job(job_id=1, owner_ids=(2,))
+        application = self._application(application_id=10, job_id=1, user_id=3)
+        current_sub = ApplicationSubmissionEntity(
+            application_id=10,
+            version=1,
+            submission={"answers": {}},
+            resume_object_key="resumes/abc.pdf",
+        )
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.sub_repo.get_current = AsyncMock(return_value=current_sub)
+        self.resume_storage.get = MagicMock(return_value=b"%PDF-1.4 data")
+
+        result = await self.service.get_resume(self.session, self._ctx(user_id=2), 10)
+
+        self.assertEqual(result, b"%PDF-1.4 data")
+        self.resume_storage.get.assert_called_once_with("resumes/abc.pdf")
+
+    async def test_get_resume_raises_when_missing(self):
+        self.app_repo.get_by_id = AsyncMock(return_value=None)
+
+        with self.assertRaises(ValueError) as ctx:
+            await self.service.get_resume(self.session, self._ctx(user_id=2), 999)
+        self.assertEqual(str(ctx.exception), "application 999 not found")
+
+    async def test_get_resume_raises_for_non_owner_with_collapsed_message(self):
+        job = self._job(job_id=1, owner_ids=(9,))
+        application = self._application(application_id=10, job_id=1, user_id=3)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+
+        with self.assertRaises(ValueError) as ctx:
+            await self.service.get_resume(self.session, self._ctx(user_id=2), 10)
+        self.assertEqual(str(ctx.exception), "application 10 not found")
+
+    async def test_get_resume_raises_when_no_resume_on_file(self):
+        job = self._job(job_id=1, owner_ids=(2,))
+        application = self._application(application_id=10, job_id=1, user_id=3)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+
+        with self.assertRaises(ValueError) as ctx:
+            await self.service.get_resume(self.session, self._ctx(user_id=2), 10)
+        self.assertEqual(str(ctx.exception), "no resume on file for application 10")
+        self.resume_storage.get.assert_not_called()
 
     # -- change_stage --
 
@@ -459,7 +511,9 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.app_repo.get_by_id = AsyncMock(return_value=application)
         self.sub_repo.get_current = AsyncMock(return_value=None)
 
-        dto = BlacklistDto(user_id=3, application_id=10, reason="Fabricated credentials")
+        dto = BlacklistDto(
+            user_id=3, application_id=10, reason="Fabricated credentials"
+        )
         await self.service.blacklist(self.session, self._ctx(user_id=99), dto)
 
         self.assertTrue(user.is_blocked)
@@ -479,7 +533,9 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.app_repo.get_by_id = AsyncMock(return_value=application)
         self.sub_repo.get_current = AsyncMock(return_value=current_sub)
 
-        dto = BlacklistDto(user_id=3, application_id=10, reason="Fabricated credentials")
+        dto = BlacklistDto(
+            user_id=3, application_id=10, reason="Fabricated credentials"
+        )
         result = await self.service.blacklist(self.session, self._ctx(user_id=99), dto)
 
         self.assertEqual(result.stage, ApplicationStage.REJECTED)

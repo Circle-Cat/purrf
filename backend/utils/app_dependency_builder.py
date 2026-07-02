@@ -562,6 +562,7 @@ class AppDependencyBuilder:
             self.application_submission_repository,
             self.users_repository,
             self.recruiting_mapper,
+            self.resume_storage,
         )
         self.board_controller = BoardController(
             self.board_service,
