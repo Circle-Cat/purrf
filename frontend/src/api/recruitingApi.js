@@ -60,6 +60,10 @@ export const listJobOwners = () =>
 export const getPublicJob = (jobId) =>
   request.get(API_ENDPOINTS.RECRUITING_PUBLIC_JOB(jobId));
 
+/** List published jobs as candidate-safe card summaries. */
+export const listPublicJobs = () =>
+  request.get(API_ENDPOINTS.RECRUITING_PUBLIC_JOBS);
+
 /** Upload a resume file. Returns resume metadata. */
 export const uploadResume = (file) => {
   const form = new FormData();

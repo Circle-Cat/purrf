@@ -101,3 +101,17 @@ class PublicJobDto(BaseDto):
     mentorship_role: ParticipantRole | None = None
     form_schema: dict | None = None
     profile_config: dict | None = None
+
+
+class PublicJobSummaryDto(BaseDto):
+    """Candidate-safe list-card projection of a published posting.
+
+    The browse page needs only what a job card shows. Everything else --
+    the application form config and every internal recruiting field -- is
+    served by ``PublicJobDto`` (detail) or internal DTOs, never here.
+    """
+
+    id: int
+    title: str
+    kind: JobKind
+    description: str | None = None

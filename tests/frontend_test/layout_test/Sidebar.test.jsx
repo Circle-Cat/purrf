@@ -39,6 +39,17 @@ describe("Sidebar Component", () => {
     expect(screen.queryByText("DataSearch")).not.toBeInTheDocument();
   });
 
+  test("renders Open Positions for a user with no permissions and links to the jobs browse page", () => {
+    renderSidebar([]);
+
+    const link = screen.getByText("Open Positions");
+    expect(link).toBeInTheDocument();
+    expect(link.closest("a")).toHaveAttribute(
+      "href",
+      ROUTE_PATHS.RECRUITING_JOBS_BROWSE,
+    );
+  });
+
   test("renders all links for a user with both internal permissions", () => {
     renderSidebar([
       PERMISSIONS.DASHBOARD_ACTIVITY_SUMMARY_READ,

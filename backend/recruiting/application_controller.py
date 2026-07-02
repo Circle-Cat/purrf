@@ -5,6 +5,7 @@ from backend.dto.user_context_dto import UserContextDto
 from backend.dto.application_dto import ApplicationSubmitDto, ApplicationEditDto
 from backend.common.api_endpoints import (
     RECRUITING_PUBLIC_JOB_ENDPOINT,
+    RECRUITING_PUBLIC_JOBS_ENDPOINT,
     RECRUITING_RESUMES_ENDPOINT,
     RECRUITING_APPLICATIONS_ENDPOINT,
     RECRUITING_APPLICATION_ENDPOINT,
@@ -42,6 +43,12 @@ class ApplicationController:
             response_model=None,
         )
         self.router.add_api_route(
+            RECRUITING_PUBLIC_JOBS_ENDPOINT,
+            endpoint=authenticate()(self.list_public_jobs),
+            methods=["GET"],
+            response_model=None,
+        )
+        self.router.add_api_route(
             RECRUITING_RESUMES_ENDPOINT,
             endpoint=authenticate()(self.upload_resume),
             methods=["POST"],
@@ -65,6 +72,12 @@ class ApplicationController:
         async with self.database.session() as session:
             result = await self.job_service.get_published_job_public(session, job_id)
         return api_response(message="Job fetched.", data=result)
+
+    async def list_public_jobs(self, current_user: UserContextDto):
+        """List published postings as candidate-safe summaries for the browse page."""
+        async with self.database.session() as session:
+            result = await self.job_service.list_published(session)
+        return api_response(message="Jobs fetched.", data=result)
 
     async def upload_resume(
         self, current_user: UserContextDto, file: UploadFile = File(...)
