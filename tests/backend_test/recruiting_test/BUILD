@@ -40,6 +40,15 @@ py_test(
 )
 
 py_test(
+    name = "stage_machine_test",
+    srcs = ["stage_machine_test.py"],
+    deps = [
+        "//backend/common:recruiting_enums",
+        "//backend/recruiting",
+    ],
+)
+
+py_test(
     name = "resume_storage_test",
     srcs = ["resume_storage_test.py"],
     deps = [
