@@ -1,8 +1,10 @@
 import { useState } from "react";
+import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import ResumeUpload from "@/components/common/ResumeUpload";
 import ProfileSection from "@/pages/Profile/components/ProfileSection";
+import { uploadResume } from "@/api/recruitingApi";
 import {
   parsedResumeToProfile,
   mergeParsedIntoProfile,
@@ -67,15 +69,28 @@ const ReqMark = ({ level }) => {
  * back to internal state otherwise so existing render-only usages keep
  * working unchanged.
  *
+ * `contactEmail`, when provided, fills the read-only contact-email field
+ * (e.g. from the signed-in applicant's account); omitted, the field renders
+ * blank with a placeholder, as in a preview.
+ *
+ * `onResumeStored`, when provided, is called with `{sha256, objectKey}` once
+ * an uploaded resume file has been persisted via `uploadResume` -- upload
+ * failures toast an error but never block the parse-and-autofill flow below.
+ * Omitted, no upload call is made (e.g. preview-only usages).
+ *
  * @param {{profileConfig?: {education?: string, workExperience?: string, resume?: string},
  *          value?: {personal: object, education: object[], experience: object[]},
- *          onChange?: (value: {personal: object, education: object[], experience: object[]}) => void}} props
+ *          onChange?: (value: {personal: object, education: object[], experience: object[]}) => void,
+ *          contactEmail?: string,
+ *          onResumeStored?: (resume: {sha256: string, objectKey: string}) => void}} props
  * @returns {JSX.Element}
  */
 const RecruitingProfileForm = ({
   profileConfig,
   value: controlledValue,
   onChange,
+  contactEmail,
+  onResumeStored,
 }) => {
   const [internal, setInternal] = useState({
     personal: {},
@@ -106,6 +121,23 @@ const RecruitingProfileForm = ({
     });
   };
 
+  /**
+   * Persist a resume file via `uploadResume` and forward the resulting
+   * `{sha256, objectKey}` to the parent through `onResumeStored`. Runs
+   * independently of parsing/autofill above -- a failure here only toasts
+   * and never blocks or rolls back the parse-and-autofill flow.
+   */
+  const handleResumeFile = async (file) => {
+    if (!onResumeStored) return;
+    try {
+      const res = await uploadResume(file);
+      const stored = res?.data ?? res;
+      onResumeStored({ sha256: stored?.sha256, objectKey: stored?.objectKey });
+    } catch {
+      toast.error("Couldn't upload your resume file. You can still submit.");
+    }
+  };
+
   return (
     <div className="space-y-6">
       <p className="text-sm font-medium text-slate-700">Profile</p>
@@ -115,7 +147,7 @@ const RecruitingProfileForm = ({
         <Input
           id="rpf-email"
           readOnly
-          value=""
+          value={contactEmail ?? ""}
           placeholder="Auto-filled from the applicant's account"
         />
         <p className="text-xs text-muted-foreground">
@@ -134,7 +166,7 @@ const RecruitingProfileForm = ({
           {resumeLevel === "off" &&
             " This posting doesn't collect a resume; uploading only saves you time."}
         </p>
-        <ResumeUpload onParsed={handleParsed} />
+        <ResumeUpload onParsed={handleParsed} onFile={handleResumeFile} />
       </section>
 
       <ProfileSection

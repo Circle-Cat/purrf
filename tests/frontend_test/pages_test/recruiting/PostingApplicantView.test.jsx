@@ -1,6 +1,18 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import PostingApplicantView from "@/pages/Recruiting/components/PostingApplicantView";
+import * as api from "@/api/recruitingApi";
+
+vi.mock("@/api/recruitingApi");
+vi.mock("@/lib/resume-parser", () => ({
+  parseResumeFromPdf: vi.fn().mockResolvedValue({
+    user: {},
+    education: [],
+    workHistory: [],
+    projects: [],
+    unmapped: {},
+  }),
+}));
 
 const questions = [
   {
@@ -38,6 +50,44 @@ describe("PostingApplicantView", () => {
     expect(
       screen.getByRole("radiogroup", { name: "Referred?" }),
     ).toBeInTheDocument();
+  });
+
+  it("threads contactEmail into the profile form's read-only email field", () => {
+    render(
+      <PostingApplicantView
+        title="T"
+        questions={questions}
+        contactEmail="cand@x.com"
+      />,
+    );
+    const email = screen.getByLabelText("Contact email");
+    expect(email).toHaveValue("cand@x.com");
+    expect(email).toHaveAttribute("readonly");
+  });
+
+  it("threads onResumeStored into the profile form's resume upload", async () => {
+    api.uploadResume.mockResolvedValue({
+      data: { sha256: "s", objectKey: "k" },
+    });
+    const onResumeStored = vi.fn();
+    render(
+      <PostingApplicantView
+        title="T"
+        questions={questions}
+        onResumeStored={onResumeStored}
+      />,
+    );
+    fireEvent.change(screen.getByTestId("resume-file-input"), {
+      target: {
+        files: [new File(["%PDF-1.4"], "r.pdf", { type: "application/pdf" })],
+      },
+    });
+    await waitFor(() =>
+      expect(onResumeStored).toHaveBeenCalledWith({
+        sha256: "s",
+        objectKey: "k",
+      }),
+    );
   });
 
   it("reveals a showWhen question when its dependency is answered (throwaway state)", () => {

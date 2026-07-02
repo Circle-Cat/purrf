@@ -17,7 +17,9 @@ import RecruitingProfileForm from "@/pages/Recruiting/components/RecruitingProfi
  *          profileValue?: {personal: object, education: object[], experience: object[]},
  *          onProfileChange?: (value: object) => void,
  *          answers?: Record<string, unknown>,
- *          onAnswerChange?: (id: string, value: unknown) => void}} props
+ *          onAnswerChange?: (id: string, value: unknown) => void,
+ *          contactEmail?: string,
+ *          onResumeStored?: (resume: {sha256: string, objectKey: string}) => void}} props
  */
 const PostingApplicantView = ({
   title,
@@ -29,6 +31,8 @@ const PostingApplicantView = ({
   onProfileChange,
   answers: controlledAnswers,
   onAnswerChange,
+  contactEmail,
+  onResumeStored,
 }) => {
   const [internalAnswers, setInternalAnswers] = useState({});
   const answers = controlledAnswers ?? internalAnswers;
@@ -55,6 +59,8 @@ const PostingApplicantView = ({
         profileConfig={profileConfig}
         value={profileValue}
         onChange={onProfileChange}
+        contactEmail={contactEmail}
+        onResumeStored={onResumeStored}
       />
       <FormRenderer
         questions={questions}

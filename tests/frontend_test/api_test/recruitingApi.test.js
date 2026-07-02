@@ -142,13 +142,17 @@ describe("recruitingApi", () => {
   it("submitApplication POSTs to /recruiting/applications", async () => {
     request.post.mockResolvedValue({});
     await submitApplication({ jobId: 5 });
-    expect(request.post).toHaveBeenCalledWith("/recruiting/applications", { jobId: 5 });
+    expect(request.post).toHaveBeenCalledWith("/recruiting/applications", {
+      jobId: 5,
+    });
   });
 
   it("updateApplication PATCHes the application endpoint", async () => {
     request.patch.mockResolvedValue({});
     await updateApplication(7, { answers: {} });
-    expect(request.patch).toHaveBeenCalledWith("/recruiting/applications/7", { answers: {} });
+    expect(request.patch).toHaveBeenCalledWith("/recruiting/applications/7", {
+      answers: {},
+    });
   });
 
   it("uploadResume POSTs multipart form data", async () => {
@@ -158,7 +162,9 @@ describe("recruitingApi", () => {
     const [url, body, config] = request.post.mock.calls.at(-1);
     expect(url).toBe("/recruiting/resumes");
     expect(body).toBeInstanceOf(FormData);
-    expect(config).toMatchObject({ headers: { "Content-Type": "multipart/form-data" } });
+    expect(config).toMatchObject({
+      headers: { "Content-Type": "multipart/form-data" },
+    });
   });
 
   it("getMyApplication GETs with job_id param", async () => {

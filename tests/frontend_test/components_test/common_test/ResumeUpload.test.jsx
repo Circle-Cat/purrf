@@ -92,4 +92,26 @@ describe("ResumeUpload", () => {
 
     await waitFor(() => expect(onParsed).toHaveBeenCalledWith(EMPTY));
   });
+
+  it("forwards the raw file to onFile as soon as it passes the PDF check", async () => {
+    parseResumeFromPdf.mockResolvedValue(PARSED);
+    const onParsed = vi.fn();
+    const onFile = vi.fn();
+    const file = pdfFile();
+    render(<ResumeUpload onParsed={onParsed} onFile={onFile} />);
+
+    selectFile(file);
+
+    expect(onFile).toHaveBeenCalledWith(file);
+    await waitFor(() => expect(onParsed).toHaveBeenCalledWith(PARSED));
+  });
+
+  it("does not call onFile for a rejected non-PDF file", () => {
+    const onFile = vi.fn();
+    render(<ResumeUpload onParsed={vi.fn()} onFile={onFile} />);
+
+    selectFile(txtFile());
+
+    expect(onFile).not.toHaveBeenCalled();
+  });
 });
