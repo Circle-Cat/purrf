@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -64,16 +63,16 @@ const ScreenRulesEditor = ({
   onChange,
   questions = [],
 }) => {
-  const [rules, setRules] = useState(value.rules ?? []);
+  // Fully controlled: derive from `value` so the editor always reflects the
+  // loaded posting. (Holding a local copy in useState went stale when the
+  // parent's value arrived after mount, silently wiping saved rules on edit.)
+  const rules = value.rules ?? [];
 
   const emailRule = rules.find((r) => r.condition.source === "email_domain");
   const answerRules = rules.filter((r) => r.condition.source === "answer");
   const singleChoice = questions.filter((q) => q.type === "single_choice");
 
-  const emit = (nextRules) => {
-    setRules(nextRules);
-    onChange({ ...value, rules: nextRules });
-  };
+  const emit = (nextRules) => onChange({ ...value, rules: nextRules });
 
   const toggleEmail = (on) => {
     if (on) {

@@ -85,11 +85,20 @@ from backend.authentication.email_management_controller import (
 )
 from backend.admin.permission_admin_service import PermissionAdminService
 from backend.admin.permission_admin_controller import PermissionAdminController
+from google.cloud import storage
 from backend.repository.job_repository import JobRepository
 from backend.repository.job_review_repository import JobReviewRepository
+from backend.repository.application_repository import ApplicationRepository
+from backend.repository.application_submission_repository import (
+    ApplicationSubmissionRepository,
+)
 from backend.recruiting.recruiting_mapper import RecruitingMapper
 from backend.recruiting.job_service import JobService
 from backend.recruiting.recruiting_controller import RecruitingController
+from backend.recruiting.resume_storage import ResumeStorage
+from backend.recruiting.application_service import ApplicationService
+from backend.recruiting.application_controller import ApplicationController
+from backend.common.environment_constants import RESUME_BUCKET
 from backend.common.auth0_client import Auth0Client
 from backend.repository.users_repository import UsersRepository
 from backend.repository.user_identities_repository import UserIdentitiesRepository
@@ -530,6 +539,22 @@ class AppDependencyBuilder:
             job_service=self.job_service,
             database=self.database,
         )
+        self.application_repository = ApplicationRepository()
+        self.application_submission_repository = ApplicationSubmissionRepository()
+        self.resume_storage = ResumeStorage(storage.Client(), os.getenv(RESUME_BUCKET))
+        self.application_service = ApplicationService(
+            self.application_repository,
+            self.application_submission_repository,
+            self.job_repository,
+            self.users_repository,
+            self.recruiting_mapper,
+        )
+        self.application_controller = ApplicationController(
+            self.application_service,
+            self.job_service,
+            self.resume_storage,
+            self.database,
+        )
         self.fast_app_factory = FastAppFactory(
             authentication_controller=self.authentication_controller,
             authentication_service=self.authentication_service,
@@ -545,6 +570,7 @@ class AppDependencyBuilder:
             email_management_controller=self.email_management_controller,
             permission_admin_controller=self.permission_admin_controller,
             recruiting_controller=self.recruiting_controller,
+            application_controller=self.application_controller,
             launchdarkly_client=self.launchdarkly_client,
             database=self.database,
             logger=self.logger,

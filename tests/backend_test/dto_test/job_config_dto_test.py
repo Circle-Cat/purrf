@@ -25,6 +25,26 @@ class TestQuestionDto(unittest.TestCase):
         with self.assertRaises(ValidationError):
             QuestionDto(id="q1", type="short_text", label="   ")
 
+    def test_description_optional_and_allowed_on_any_type(self):
+        # Absent by default.
+        self.assertIsNone(
+            QuestionDto(id="q1", type="short_text", label="Name").description
+        )
+        # Accepted on a plain text type...
+        q = QuestionDto(
+            id="q1", type="short_text", label="Name", description="Your legal name"
+        )
+        self.assertEqual(q.description, "Your legal name")
+        # ...and on a choice type, without tripping the per-type foreign-field check.
+        q2 = QuestionDto(
+            id="q2",
+            type="single_choice",
+            label="Pick",
+            options=["a", "b"],
+            description="Choose one",
+        )
+        self.assertEqual(q2.description, "Choose one")
+
     def test_long_text_maxlength_and_maxwords_must_be_positive(self):
         QuestionDto(id="q1", type="long_text", label="Why", max_length=10, max_words=5)
         with self.assertRaises(ValidationError):

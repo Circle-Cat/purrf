@@ -6,7 +6,7 @@ from backend.repository.job_repository import JobRepository
 from backend.repository.job_review_repository import JobReviewRepository
 from backend.repository.user_permissions_repository import UserPermissionsRepository
 from backend.recruiting.recruiting_mapper import RecruitingMapper
-from backend.dto.job_dto import JobCreateDto, JobDto
+from backend.dto.job_dto import JobCreateDto, JobDto, PublicJobDto
 from backend.dto.job_review_dto import ApproverDto, JobReviewDto
 from backend.common.permissions import Permission
 from backend.common.recruiting_enums import (
@@ -225,6 +225,7 @@ class JobService:
             pipeline_config=self._serialize(dto.pipeline_config),
             screen_rules=self._serialize(dto.screen_rules),
             profile_config=self._serialize(dto.profile_config),
+            cooldown_days=dto.cooldown_days,
         )
         job = await self.job_repository.create_job(session, job)
         await session.commit()
@@ -237,16 +238,16 @@ class JobService:
 
         Only DRAFT and PUBLISHED postings are editable:
         - DRAFT: every field (title, description, kind, mentorship_role,
-          form_schema, pipeline_config, screen_rules, profile_config) is
-          written live directly.
+          form_schema, pipeline_config, screen_rules, profile_config,
+          cooldown_days) is written live directly.
         - PUBLISHED: changes are split into "contract" vs "operational".
           Contract changes (form_schema, profile_config, or the pipeline's
           structure = each stage's stage/rounds/referralSkippable) are parked
           in pending_form_schema/pending_pipeline_config/pending_profile_config
           and the status flips to PUBLISHED_PENDING_REVISION for re-review.
-          Operational changes (title, description, screen_rules, and the
-          pipeline's ownerId/defaultAssigneeId) are written live immediately.
-          kind/mentorship_role are not editable once published.
+          Operational changes (title, description, cooldown_days, screen_rules,
+          and the pipeline's ownerId/defaultAssigneeId) are written live
+          immediately. kind/mentorship_role are not editable once published.
 
         Any other status (PENDING_REVIEW, PUBLISHED_PENDING_REVISION,
         PENDING_CLOSE, PENDING_REOPEN, CLOSED) raises ValueError immediately
@@ -281,6 +282,7 @@ class JobService:
             job.pipeline_config = new_pipeline
             job.screen_rules = new_screen
             job.profile_config = new_profile
+            job.cooldown_days = dto.cooldown_days
         elif job.status == JobStatus.PUBLISHED:
             # A None config field means "not provided / leave unchanged"
             # (JobCreateDto is a full-replacement body and the editor always
@@ -298,6 +300,7 @@ class JobService:
             # Operational levers apply live immediately.
             job.title = dto.title
             job.description = dto.description
+            job.cooldown_days = dto.cooldown_days
             if new_screen is not None:
                 job.screen_rules = new_screen
             if structural:
@@ -328,10 +331,11 @@ class JobService:
     ) -> JobDto:
         """Shared validation and creation logic for any review gate.
 
-        Validates that the job's current status is in ``allowed_from``, that
-        the submitter is not also the reviewer, that the active approver pool
-        has at least ``MIN_APPROVER_POOL`` members, and that the chosen reviewer
-        is in that pool. Then creates a PENDING ``JobReviewEntity`` of ``kind``,
+        Validates that the job's current status is in ``allowed_from``, that the
+        job has no already-open review, that the submitter is not also the
+        reviewer, that the active approver pool has at least ``MIN_APPROVER_POOL``
+        members, and that the chosen reviewer is in that pool. Then creates a
+        PENDING ``JobReviewEntity`` of ``kind``,
         optionally flips ``job.status`` to ``pending_status`` (when not None),
         persists, commits, and returns the updated JobDto.
 
@@ -353,14 +357,19 @@ class JobService:
             JobDto: The posting after the review was opened.
 
         Raises:
-            ValueError: If the job status is not in ``allowed_from``, the
-                submitter picks themselves, the pool is too small, or the
-                reviewer is not an active approver.
+            ValueError: If the job status is not in ``allowed_from``, the job
+                already has an open review, the submitter picks themselves, the
+                pool is too small, or the reviewer is not an active approver.
         """
         if job.status not in allowed_from:
             raise ValueError(
                 f"Job {job.job_id} cannot open a {kind} review from {job.status}"
             )
+        existing = await self.job_review_repository.get_open_for_job(
+            session, job.job_id
+        )
+        if existing is not None:
+            raise ValueError(f"Job {job.job_id} already has an open review")
         if reviewer_id == submitted_by:
             raise ValueError("Submitter cannot self-review the posting")
 
@@ -521,7 +530,9 @@ class JobService:
             pending_status=JobStatus.PENDING_REOPEN,
         )
 
-    async def approve(self, session: AsyncSession, review_id: int) -> JobDto:
+    async def approve(
+        self, session: AsyncSession, review_id: int, acting_user_id: int
+    ) -> JobDto:
         """Approve a pending review, advancing the posting to its next state.
 
         Review-kind state machine on approval:
@@ -534,14 +545,17 @@ class JobService:
         Args:
             session (AsyncSession): Active database async session.
             review_id (int): The review to approve.
+            acting_user_id (int): The authenticated user making the decision;
+                must be the review's assigned reviewer.
 
         Returns:
             JobDto: The posting after approval.
 
         Raises:
-            ValueError: If the review is missing or not pending.
+            ValueError: If the review is missing, not pending, or the acting
+                user is not the assigned reviewer.
         """
-        review = await self._require_pending_review(session, review_id)
+        review = await self._require_pending_review(session, review_id, acting_user_id)
         review.status = JobReviewStatus.APPROVED
         review.decided_at = datetime.now(timezone.utc)
 
@@ -572,7 +586,7 @@ class JobService:
         return self.recruiting_mapper.to_job_dto(job)
 
     async def reject(
-        self, session: AsyncSession, review_id: int, comment: str
+        self, session: AsyncSession, review_id: int, comment: str, acting_user_id: int
     ) -> JobDto:
         """Reject a pending review.
 
@@ -586,16 +600,19 @@ class JobService:
             session (AsyncSession): Active database async session.
             review_id (int): The review to reject.
             comment (str): Required reviewer feedback.
+            acting_user_id (int): The authenticated user making the decision;
+                must be the review's assigned reviewer.
 
         Returns:
             JobDto: The posting after rejection.
 
         Raises:
-            ValueError: If the comment is empty or the review is missing/decided.
+            ValueError: If the comment is empty, the review is missing/decided,
+                or the acting user is not the assigned reviewer.
         """
         if not comment or not comment.strip():
             raise ValueError("A comment is required to reject a posting")
-        review = await self._require_pending_review(session, review_id)
+        review = await self._require_pending_review(session, review_id, acting_user_id)
         review.status = JobReviewStatus.REJECTED
         review.reject_comment = comment
         review.decided_at = datetime.now(timezone.utc)
@@ -620,25 +637,40 @@ class JobService:
         return self.recruiting_mapper.to_job_dto(job)
 
     async def _require_pending_review(
-        self, session: AsyncSession, review_id: int
+        self, session: AsyncSession, review_id: int, acting_user_id: int
     ) -> JobReviewEntity:
         """Return the pending review for review_id, or raise ValueError.
 
         Args:
             session (AsyncSession): Active database async session.
             review_id (int): Identifier to look up.
+            acting_user_id (int): The authenticated user making the decision;
+                must be the review's assigned reviewer.
 
         Returns:
             JobReviewEntity: The pending review.
 
         Raises:
-            ValueError: If the review is missing or already decided.
+            ValueError: If the review is missing, already decided, or the acting
+                user is not the assigned reviewer.
         """
-        review = await self.job_review_repository.get(session, review_id)
+        # Lock the row so two concurrent decisions on the same review serialise:
+        # the second blocks until the first commits, then sees a non-pending
+        # status below and is rejected.
+        review = await self.job_review_repository.get(
+            session, review_id, for_update=True
+        )
         if review is None:
             raise ValueError(f"Review {review_id} not found")
         if review.status != JobReviewStatus.PENDING:
             raise ValueError(f"Review {review_id} is not pending")
+        if review.reviewer_id != acting_user_id:
+            # Only the assigned reviewer may decide. Because submit_for_review
+            # rejects reviewer == submitter, enforcing this here also prevents a
+            # submitter from approving or rejecting their own posting.
+            raise ValueError(
+                f"Only the assigned reviewer may decide review {review_id}"
+            )
         return review
 
     async def close_job(self, session: AsyncSession, job_id: int) -> JobDto:
@@ -797,3 +829,46 @@ class JobService:
         if job is None:
             raise ValueError(f"Job {job_id} not found")
         return job
+
+    async def get_published_job(self, session: AsyncSession, job_id: int) -> JobDto:
+        """Return a posting only when it is PUBLISHED (candidate-facing view).
+
+        Args:
+            session (AsyncSession): Active database async session.
+            job_id (int): The posting id.
+
+        Returns:
+            JobDto: The published posting.
+
+        Raises:
+            ValueError: If the posting is missing or not PUBLISHED.
+        """
+        job = await self.job_repository.get_by_job_id(session, job_id)
+        if job is None or job.status != JobStatus.PUBLISHED:
+            raise ValueError(f"Published job {job_id} not found")
+        return self.recruiting_mapper.to_job_dto(job)
+
+    async def get_published_job_public(
+        self, session: AsyncSession, job_id: int
+    ) -> PublicJobDto:
+        """Return a PUBLISHED posting's candidate-safe projection.
+
+        Same lookup/validation as ``get_published_job``, but maps through
+        ``to_public_job_dto`` so internal config (screen_rules,
+        pipeline_config, pending_*, last_reject_comment) never reaches the
+        candidate-facing application form.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            job_id (int): The posting id.
+
+        Returns:
+            PublicJobDto: The published posting's candidate-safe projection.
+
+        Raises:
+            ValueError: If the posting is missing or not PUBLISHED.
+        """
+        job = await self.job_repository.get_by_job_id(session, job_id)
+        if job is None or job.status != JobStatus.PUBLISHED:
+            raise ValueError(f"Published job {job_id} not found")
+        return self.recruiting_mapper.to_public_job_dto(job)

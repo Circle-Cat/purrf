@@ -36,6 +36,10 @@ class QuestionDto(BaseRequestDto):
     id: str
     type: QuestionType
     label: str
+    # Optional explanatory text shown to the applicant under the label.
+    # Universal across all question types, so it is intentionally excluded
+    # from the per-type foreign-field check in validate_type_fields.
+    description: str | None = None
     required: bool = False
     show_when: ShowWhenDto | None = None
     options: list[str] | None = None
