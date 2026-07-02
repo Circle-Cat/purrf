@@ -399,6 +399,36 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(review.status, JobReviewStatus.APPROVED)
         self.assertIsNotNone(review.decided_at)
 
+    async def test_approve_revision_tolerates_partial_pending_payload(self):
+        """A partial pending_payload degrades missing keys to None instead of
+        raising, even though _build_pending_payload never produces one today."""
+        job = self._job(
+            status=JobStatus.PUBLISHED_PENDING_REVISION,
+            form_schema={"a": 1},
+            title="old",
+        )
+        job.pending_payload = {"title": "x"}
+        self.repo.get_by_job_id.return_value = job
+        review = JobReviewEntity(
+            review_id=42,
+            job_id=job.job_id,
+            submitted_by=1,
+            reviewer_id=2,
+            status=JobReviewStatus.PENDING,
+            kind=JobReviewKind.REVISION,
+        )
+        self.review_repo.get.return_value = review
+
+        result = await self.service.approve(
+            self.session, review.review_id, acting_user_id=2
+        )
+
+        self.assertEqual(result.status, JobStatus.PUBLISHED)
+        self.assertEqual(result.title, "x")
+        self.assertIsNone(result.description)
+        self.assertIsNone(result.form_schema)
+        self.assertIsNone(result.pending_payload)
+
     async def test_approve_initial_publishes(self):
         """Approving an INITIAL review publishes the draft."""
         job = self._job(status=JobStatus.PENDING_REVIEW)
