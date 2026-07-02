@@ -83,23 +83,76 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.pipeline_config["stages"][0]["stage"], "tech")
         self.assertEqual(result.status, JobStatus.DRAFT)
 
-    async def test_update_published_writes_pending_and_flips_status(self):
-        """Editing a PUBLISHED posting's form parks the change as a pending revision."""
-        job = self._job(status=JobStatus.PUBLISHED, form_schema={"questions": []})
+    async def test_get_job_exposes_pending_payload(self):
+        """get_job surfaces pending_payload straight through from the entity."""
+        job = self._job(status=JobStatus.PUBLISHED_PENDING_REVISION)
+        job.pending_payload = {"title": "New title"}
+        self.repo.get_by_job_id.return_value = job
+
+        result = await self.service.get_job(self.session, job.job_id)
+
+        self.assertEqual(result.pending_payload, {"title": "New title"})
+
+    async def test_update_published_any_field_parks_pending_payload(self):
+        """Editing a PUBLISHED posting — any field — parks a full draft, live fields untouched."""
+        job = self._job(
+            status=JobStatus.PUBLISHED,
+            title="old title",
+            description="old desc",
+            form_schema={"questions": []},
+            cooldown_days=30,
+        )
         self.repo.get_by_job_id.return_value = job
         dto = JobCreateDto(
-            title=job.title,
-            kind=job.kind,
-            formSchema={
-                "questions": [{"id": "q1", "type": "short_text", "label": "New"}]
-            },
+            title="new title", kind=job.kind, description="old desc", cooldownDays=90
         )
 
         result = await self.service.update_job(self.session, job.job_id, dto)
 
         self.assertEqual(result.status, JobStatus.PUBLISHED_PENDING_REVISION)
-        self.assertEqual(result.pending_form_schema["questions"][0]["id"], "q1")
-        self.assertEqual(result.form_schema, {"questions": []})
+        self.assertEqual(result.title, "old title")  # live field untouched
+        self.assertEqual(result.pending_payload["title"], "new title")
+        self.assertEqual(result.pending_payload["formSchema"], {"questions": []})
+        self.assertEqual(result.pending_payload["cooldownDays"], 90)
+
+    async def test_update_published_omitted_optional_field_falls_back_to_live(self):
+        """A dto with screen_rules/form_schema/pipeline_config/profile_config left
+        unset must not blank those fields out in the resulting pending_payload."""
+        job = self._job(
+            status=JobStatus.PUBLISHED,
+            screen_rules={"rules": [{"id": "r1"}]},
+            form_schema={"questions": [{"id": "q1"}]},
+            pipeline_config={"ownerId": 1, "stages": []},
+            profile_config={"education": "required"},
+        )
+        self.repo.get_by_job_id.return_value = job
+        dto = JobCreateDto(title=job.title, kind=job.kind)  # no config fields set
+
+        result = await self.service.update_job(self.session, job.job_id, dto)
+
+        self.assertEqual(
+            result.pending_payload["screenRules"], {"rules": [{"id": "r1"}]}
+        )
+        self.assertEqual(
+            result.pending_payload["formSchema"], {"questions": [{"id": "q1"}]}
+        )
+        self.assertEqual(
+            result.pending_payload["pipelineConfig"], {"ownerId": 1, "stages": []}
+        )
+        self.assertEqual(
+            result.pending_payload["profileConfig"], {"education": "required"}
+        )
+
+    async def test_update_published_explicit_cooldown_clear_is_not_a_fallback(self):
+        """Sending cooldown_days=None on a PUBLISHED edit is an explicit clear,
+        not 'leave unchanged' — unlike the four optional config fields."""
+        job = self._job(status=JobStatus.PUBLISHED, cooldown_days=30)
+        self.repo.get_by_job_id.return_value = job
+        dto = JobCreateDto(title=job.title, kind=job.kind, cooldownDays=None)
+
+        result = await self.service.update_job(self.session, job.job_id, dto)
+
+        self.assertIsNone(result.pending_payload["cooldownDays"])
 
     async def test_create_job_stores_config_as_camelcase(self):
         """create_job serialises typed config to camelCase JSONB dicts."""
@@ -308,13 +361,22 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         created = self.review_repo.create.await_args.args[1]
         self.assertEqual(created.kind, JobReviewKind.REVISION)
 
-    async def test_approve_publishes_and_swaps_pending(self):
-        """Approving a revision swaps pending into live and publishes."""
+    async def test_approve_revision_applies_pending_payload(self):
+        """Approving a REVISION applies the full pending_payload and clears it."""
         job = self._job(
             status=JobStatus.PUBLISHED_PENDING_REVISION,
             form_schema={"a": 1},
-            pending_form_schema={"a": 2},
+            title="old",
         )
+        job.pending_payload = {
+            "title": "new",
+            "description": None,
+            "cooldownDays": None,
+            "screenRules": None,
+            "formSchema": {"a": 2},
+            "pipelineConfig": None,
+            "profileConfig": None,
+        }
         self.repo.get_by_job_id.return_value = job
         review = JobReviewEntity(
             review_id=5,
@@ -331,10 +393,41 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(result.status, JobStatus.PUBLISHED)
+        self.assertEqual(result.title, "new")
         self.assertEqual(result.form_schema, {"a": 2})
-        self.assertIsNone(result.pending_form_schema)
+        self.assertIsNone(result.pending_payload)
         self.assertEqual(review.status, JobReviewStatus.APPROVED)
         self.assertIsNotNone(review.decided_at)
+
+    async def test_approve_revision_tolerates_partial_pending_payload(self):
+        """A partial pending_payload degrades missing keys to None instead of
+        raising, even though _build_pending_payload never produces one today."""
+        job = self._job(
+            status=JobStatus.PUBLISHED_PENDING_REVISION,
+            form_schema={"a": 1},
+            title="old",
+        )
+        job.pending_payload = {"title": "x"}
+        self.repo.get_by_job_id.return_value = job
+        review = JobReviewEntity(
+            review_id=42,
+            job_id=job.job_id,
+            submitted_by=1,
+            reviewer_id=2,
+            status=JobReviewStatus.PENDING,
+            kind=JobReviewKind.REVISION,
+        )
+        self.review_repo.get.return_value = review
+
+        result = await self.service.approve(
+            self.session, review.review_id, acting_user_id=2
+        )
+
+        self.assertEqual(result.status, JobStatus.PUBLISHED)
+        self.assertEqual(result.title, "x")
+        self.assertIsNone(result.description)
+        self.assertIsNone(result.form_schema)
+        self.assertIsNone(result.pending_payload)
 
     async def test_approve_initial_publishes(self):
         """Approving an INITIAL review publishes the draft."""
@@ -469,12 +562,13 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(review.reject_comment, "fix the form")
 
     async def test_reject_revision_keeps_published_and_discards_pending(self):
-        """Rejecting a REVISION discards the parked change and stays PUBLISHED."""
+        """Rejecting a REVISION discards the parked draft and stays PUBLISHED."""
         job = self._job(
             status=JobStatus.PUBLISHED_PENDING_REVISION,
             form_schema={"a": 1},
-            pending_form_schema={"a": 2},
+            title="old",
         )
+        job.pending_payload = {"title": "new", "formSchema": {"a": 2}}
         self.repo.get_by_job_id.return_value = job
         review = JobReviewEntity(
             review_id=10,
@@ -491,8 +585,9 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(result.status, JobStatus.PUBLISHED)
+        self.assertEqual(result.title, "old")
         self.assertEqual(result.form_schema, {"a": 1})
-        self.assertIsNone(result.pending_form_schema)
+        self.assertIsNone(result.pending_payload)
 
     async def test_publish_job_is_removed(self):
         """Direct publish is gone; publishing only happens through approval."""
@@ -685,7 +780,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
 
     async def test_request_reopen_closed_creates_review(self):
         """request_reopen from CLOSED creates a REOPEN review and sets PENDING_REOPEN."""
-        job = self._job(status=JobStatus.CLOSED)
+        job = self._job(status=JobStatus.CLOSED, was_published=True)
         self.repo.get_by_job_id.return_value = job
         self._two_approvers()
 
@@ -706,6 +801,17 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         self._two_approvers()
 
         with self.assertRaises(ValueError):
+            await self.service.request_reopen(
+                self.session, job.job_id, reviewer_id=2, submitted_by=1, message=None
+            )
+
+    async def test_request_reopen_never_published_raises(self):
+        """A CLOSED posting that was never published cannot be reopened."""
+        job = self._job(status=JobStatus.CLOSED, was_published=False)
+        self.repo.get_by_job_id.return_value = job
+        self._two_approvers()
+
+        with self.assertRaisesRegex(ValueError, "never published"):
             await self.service.request_reopen(
                 self.session, job.job_id, reviewer_id=2, submitted_by=1, message=None
             )
@@ -736,12 +842,23 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(review.status, JobReviewStatus.APPROVED)
         self.assertIsNotNone(review.decided_at)
 
-    async def test_approve_reopen_review_publishes_job(self):
-        """Approving a REOPEN review transitions the posting to PUBLISHED."""
-        job = self._job(status=JobStatus.PENDING_REOPEN)
+    async def test_approve_reopen_with_pending_payload_applies_it(self):
+        """Approving a REOPEN with a staged edit applies it and republishes."""
+        job = self._job(
+            status=JobStatus.PENDING_REOPEN, was_published=True, title="old"
+        )
+        job.pending_payload = {
+            "title": "new",
+            "description": None,
+            "cooldownDays": None,
+            "screenRules": None,
+            "formSchema": None,
+            "pipelineConfig": None,
+            "profileConfig": None,
+        }
         self.repo.get_by_job_id.return_value = job
         review = JobReviewEntity(
-            review_id=21,
+            review_id=11,
             job_id=job.job_id,
             submitted_by=1,
             reviewer_id=2,
@@ -755,7 +872,32 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(result.status, JobStatus.PUBLISHED)
-        self.assertEqual(review.status, JobReviewStatus.APPROVED)
+        self.assertEqual(result.title, "new")
+        self.assertIsNone(result.pending_payload)
+        self.assertTrue(result.was_published)
+
+    async def test_approve_reopen_without_edit_just_publishes(self):
+        """Approving a REOPEN with no staged edit only flips status."""
+        job = self._job(
+            status=JobStatus.PENDING_REOPEN, was_published=True, title="old"
+        )
+        self.repo.get_by_job_id.return_value = job
+        review = JobReviewEntity(
+            review_id=12,
+            job_id=job.job_id,
+            submitted_by=1,
+            reviewer_id=2,
+            status=JobReviewStatus.PENDING,
+            kind=JobReviewKind.REOPEN,
+        )
+        self.review_repo.get.return_value = review
+
+        result = await self.service.approve(
+            self.session, review.review_id, acting_user_id=2
+        )
+
+        self.assertEqual(result.status, JobStatus.PUBLISHED)
+        self.assertEqual(result.title, "old")
 
     # ---------------------------------------------------------------------------
     # reject — CLOSE and REOPEN kinds
@@ -783,12 +925,13 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(review.status, JobReviewStatus.REJECTED)
         self.assertEqual(review.reject_comment, "keep it open")
 
-    async def test_reject_reopen_review_keeps_closed(self):
-        """Rejecting a REOPEN review aborts the reopen and leaves the posting CLOSED."""
-        job = self._job(status=JobStatus.PENDING_REOPEN)
+    async def test_reject_reopen_review_keeps_pending_payload(self):
+        """Rejecting a REOPEN reverts to CLOSED but keeps the staged draft."""
+        job = self._job(status=JobStatus.PENDING_REOPEN, was_published=True)
+        job.pending_payload = {"title": "draft title"}
         self.repo.get_by_job_id.return_value = job
         review = JobReviewEntity(
-            review_id=23,
+            review_id=13,
             job_id=job.job_id,
             submitted_by=1,
             reviewer_id=2,
@@ -798,11 +941,11 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         self.review_repo.get.return_value = review
 
         result = await self.service.reject(
-            self.session, review.review_id, comment="stay closed", acting_user_id=2
+            self.session, review.review_id, comment="not yet", acting_user_id=2
         )
 
         self.assertEqual(result.status, JobStatus.CLOSED)
-        self.assertEqual(review.status, JobReviewStatus.REJECTED)
+        self.assertEqual(result.pending_payload, {"title": "draft title"})
 
     # ---------------------------------------------------------------------------
     # approve — was_published flag
@@ -914,16 +1057,35 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
 
         self.repo.update_job.assert_not_awaited()
 
-    async def test_update_closed_raises(self):
-        """update_job raises ValueError and does not call repo when status is CLOSED."""
-        job = self._job(status=JobStatus.CLOSED)
+    async def test_update_closed_parks_pending_payload_without_status_change(self):
+        """Editing a CLOSED posting stages a draft but leaves status/live fields alone."""
+        job = self._job(
+            status=JobStatus.CLOSED,
+            title="old title",
+            was_published=True,
+        )
         self.repo.get_by_job_id.return_value = job
         dto = JobCreateDto(title="new title", kind=job.kind)
 
-        with self.assertRaisesRegex(ValueError, "cannot be edited"):
-            await self.service.update_job(self.session, job.job_id, dto)
+        result = await self.service.update_job(self.session, job.job_id, dto)
 
-        self.repo.update_job.assert_not_awaited()
+        self.assertEqual(result.status, JobStatus.CLOSED)
+        self.assertEqual(result.title, "old title")
+        self.assertEqual(result.pending_payload["title"], "new title")
+
+    async def test_update_closed_ignores_kind_and_mentorship_role(self):
+        """kind/mentorship_role stay locked for a CLOSED posting, same as PUBLISHED."""
+        job = self._job(
+            status=JobStatus.CLOSED,
+            kind=JobKind.ACTIVITY,
+            was_published=True,
+        )
+        self.repo.get_by_job_id.return_value = job
+        dto = JobCreateDto(title=job.title, kind=JobKind.EMPLOYMENT)
+
+        await self.service.update_job(self.session, job.job_id, dto)
+
+        self.assertEqual(job.kind, JobKind.ACTIVITY)
 
     def _published_job(self, **over):
         job = MagicMock()
@@ -951,9 +1113,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
             "workExperience": "optional",
             "resume": "optional",
         }
-        job.pending_form_schema = None
-        job.pending_pipeline_config = None
-        job.pending_profile_config = None
+        job.pending_payload = None
         for k, v in over.items():
             setattr(job, k, v)
         return job
@@ -967,125 +1127,6 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
             return []
 
         self.perms.get_active_users_with_permission = AsyncMock(side_effect=pool)
-
-    async def test_published_screen_rules_change_is_immediate(self):
-        await self._qualified_pools()
-        job = self._published_job()
-        self.repo.get_by_job_id = AsyncMock(return_value=job)
-        dto = JobCreateDto(
-            title="T",
-            pipelineConfig={
-                "ownerId": 42,
-                "stages": [
-                    {
-                        "stage": "recruiter_screening",
-                        "rounds": 1,
-                        "referralSkippable": False,
-                    }
-                ],
-            },
-            screenRules={
-                "rules": [
-                    {
-                        "id": "r1",
-                        "condition": {
-                            "source": "email_domain",
-                            "operator": "in",
-                            "value": ["google.com"],
-                        },
-                        "action": "qualify",
-                    }
-                ]
-            },
-        )
-        result = await self.service.update_job(self.session, 1, dto)
-        self.assertEqual(result.status, JobStatus.PUBLISHED)
-        self.assertEqual(job.screen_rules["rules"][0]["id"], "r1")
-        self.assertIsNone(job.pending_form_schema)
-
-    async def test_published_form_change_goes_pending(self):
-        await self._qualified_pools()
-        job = self._published_job()
-        self.repo.get_by_job_id = AsyncMock(return_value=job)
-        dto = JobCreateDto(
-            title="T",
-            formSchema={
-                "questions": [{"id": "q1", "type": "short_text", "label": "New"}]
-            },
-        )
-        result = await self.service.update_job(self.session, 1, dto)
-        self.assertEqual(result.status, JobStatus.PUBLISHED_PENDING_REVISION)
-        self.assertEqual(job.pending_form_schema["questions"][0]["id"], "q1")
-
-    async def test_published_owner_only_change_is_immediate(self):
-        async def pool(session, perm):
-            if perm == Permission.RECRUITING_APPLICATION_ADVANCE.value:
-                return self._make_users(42, 50)
-            return self._make_users(7)
-
-        self.perms.get_active_users_with_permission = AsyncMock(side_effect=pool)
-        job = self._published_job()
-        self.repo.get_by_job_id = AsyncMock(return_value=job)
-        dto = JobCreateDto(
-            title="T",
-            pipelineConfig={
-                "ownerId": 50,
-                "stages": [
-                    {
-                        "stage": "recruiter_screening",
-                        "rounds": 1,
-                        "referralSkippable": False,
-                    }
-                ],
-            },
-        )
-        result = await self.service.update_job(self.session, 1, dto)
-        self.assertEqual(result.status, JobStatus.PUBLISHED)
-        self.assertEqual(job.pipeline_config["ownerId"], 50)
-
-    async def test_published_rounds_change_goes_pending(self):
-        await self._qualified_pools()
-        job = self._published_job()
-        self.repo.get_by_job_id = AsyncMock(return_value=job)
-        dto = JobCreateDto(
-            title="T",
-            pipelineConfig={
-                "ownerId": 42,
-                "stages": [
-                    {
-                        "stage": "recruiter_screening",
-                        "rounds": 3,
-                        "referralSkippable": False,
-                    }
-                ],
-            },
-        )
-        result = await self.service.update_job(self.session, 1, dto)
-        self.assertEqual(result.status, JobStatus.PUBLISHED_PENDING_REVISION)
-        self.assertEqual(job.pending_pipeline_config["stages"][0]["rounds"], 3)
-
-    async def test_approve_revision_merges_pending_profile_config(self):
-        review = MagicMock()
-        review.status = JobReviewStatus.PENDING
-        review.kind = JobReviewKind.REVISION
-        review.job_id = 1
-        review.reviewer_id = 2
-        self.review_repo.get = AsyncMock(return_value=review)
-        job = self._published_job(
-            status=JobStatus.PUBLISHED_PENDING_REVISION,
-            pending_profile_config={
-                "education": "required",
-                "workExperience": "off",
-                "resume": "required",
-            },
-            pending_form_schema={"questions": []},
-            pending_pipeline_config={"ownerId": 42, "stages": []},
-        )
-        self.repo.get_by_job_id = AsyncMock(return_value=job)
-        result = await self.service.approve(self.session, 10, acting_user_id=2)
-        self.assertEqual(result.status, JobStatus.PUBLISHED)
-        self.assertEqual(job.profile_config["education"], "required")
-        self.assertIsNone(job.pending_profile_config)
 
     async def test_list_interview_pool(self):
         users = self._make_users(7, 8)
@@ -1145,9 +1186,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         )
         job.screen_rules = {"rules": [{"id": "r1"}]}
         job.pipeline_config = {"stages": [{"stage": "tech", "ownerId": 9}]}
-        job.pending_form_schema = {"questions": [{"id": "leak"}]}
-        job.pending_pipeline_config = {"stages": []}
-        job.pending_profile_config = {"resume": "optional"}
+        job.pending_payload = {"formSchema": {"questions": [{"id": "leak"}]}}
         self.repo.get_by_job_id = AsyncMock(return_value=job)
 
         dto = await self.service.get_published_job_public(self.session, 1)
@@ -1157,18 +1196,14 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(dto.profile_config, {"resume": "required"})
         self.assertFalse(hasattr(dto, "screen_rules"))
         self.assertFalse(hasattr(dto, "pipeline_config"))
-        self.assertFalse(hasattr(dto, "pending_form_schema"))
-        self.assertFalse(hasattr(dto, "pending_pipeline_config"))
-        self.assertFalse(hasattr(dto, "pending_profile_config"))
+        self.assertFalse(hasattr(dto, "pending_payload"))
         self.assertFalse(hasattr(dto, "last_reject_comment"))
 
         dumped = dto.model_dump()
         for leaked_field in (
             "screen_rules",
             "pipeline_config",
-            "pending_form_schema",
-            "pending_pipeline_config",
-            "pending_profile_config",
+            "pending_payload",
             "last_reject_comment",
         ):
             self.assertNotIn(leaked_field, dumped)

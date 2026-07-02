@@ -41,11 +41,9 @@ class JobEntity(Base):
     description: Mapped[str | None] = mapped_column(String)
     form_schema: Mapped[dict | None] = mapped_column(JSONB)
     pipeline_config: Mapped[dict | None] = mapped_column(JSONB)
-    pending_form_schema: Mapped[dict | None] = mapped_column(JSONB)
-    pending_pipeline_config: Mapped[dict | None] = mapped_column(JSONB)
+    pending_payload: Mapped[dict | None] = mapped_column(JSONB)
     screen_rules: Mapped[dict | None] = mapped_column(JSONB)
     profile_config: Mapped[dict | None] = mapped_column(JSONB)
-    pending_profile_config: Mapped[dict | None] = mapped_column(JSONB)
     # Fixed cold-freeze window (days) for employment postings; activity
     # postings ignore this and use the mentorship round calendar instead.
     cooldown_days: Mapped[int | None] = mapped_column(Integer)
