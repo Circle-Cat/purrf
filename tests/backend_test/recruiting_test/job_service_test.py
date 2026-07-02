@@ -967,16 +967,35 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
 
         self.repo.update_job.assert_not_awaited()
 
-    async def test_update_closed_raises(self):
-        """update_job raises ValueError and does not call repo when status is CLOSED."""
-        job = self._job(status=JobStatus.CLOSED)
+    async def test_update_closed_parks_pending_payload_without_status_change(self):
+        """Editing a CLOSED posting stages a draft but leaves status/live fields alone."""
+        job = self._job(
+            status=JobStatus.CLOSED,
+            title="old title",
+            was_published=True,
+        )
         self.repo.get_by_job_id.return_value = job
         dto = JobCreateDto(title="new title", kind=job.kind)
 
-        with self.assertRaisesRegex(ValueError, "cannot be edited"):
-            await self.service.update_job(self.session, job.job_id, dto)
+        result = await self.service.update_job(self.session, job.job_id, dto)
 
-        self.repo.update_job.assert_not_awaited()
+        self.assertEqual(result.status, JobStatus.CLOSED)
+        self.assertEqual(result.title, "old title")
+        self.assertEqual(result.pending_payload["title"], "new title")
+
+    async def test_update_closed_ignores_kind_and_mentorship_role(self):
+        """kind/mentorship_role stay locked for a CLOSED posting, same as PUBLISHED."""
+        job = self._job(
+            status=JobStatus.CLOSED,
+            kind=JobKind.ACTIVITY,
+            was_published=True,
+        )
+        self.repo.get_by_job_id.return_value = job
+        dto = JobCreateDto(title=job.title, kind=JobKind.EMPLOYMENT)
+
+        await self.service.update_job(self.session, job.job_id, dto)
+
+        self.assertEqual(job.kind, JobKind.ACTIVITY)
 
     def _published_job(self, **over):
         job = MagicMock()
