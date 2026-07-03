@@ -29,13 +29,15 @@ const PostingReviewView = ({ job, isRevision = false }) => {
   }, []);
 
   const questions = showPending
-    ? (job.pendingFormSchema?.questions ?? job.formSchema?.questions ?? [])
+    ? (job.pendingPayload?.formSchema?.questions ??
+      job.formSchema?.questions ??
+      [])
     : (job.formSchema?.questions ?? []);
   const profileConfig = showPending
-    ? (job.pendingProfileConfig ?? job.profileConfig)
+    ? (job.pendingPayload?.profileConfig ?? job.profileConfig)
     : job.profileConfig;
   const pipelineConfig = showPending
-    ? (job.pendingPipelineConfig ?? job.pipelineConfig)
+    ? (job.pendingPayload?.pipelineConfig ?? job.pipelineConfig)
     : job.pipelineConfig;
 
   return (

@@ -1087,6 +1087,17 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
 
         self.repo.update_job.assert_not_awaited()
 
+    async def test_update_closed_never_published_raises(self):
+        """A CLOSED posting that was never published cannot be edited."""
+        job = self._job(status=JobStatus.CLOSED, was_published=False)
+        self.repo.get_by_job_id.return_value = job
+        dto = JobCreateDto(title="new title", kind=job.kind)
+
+        with self.assertRaisesRegex(ValueError, "never published"):
+            await self.service.update_job(self.session, job.job_id, dto)
+
+        self.repo.update_job.assert_not_awaited()
+
     async def test_update_closed_parks_pending_payload_without_status_change(self):
         """Editing a CLOSED posting stages a draft but leaves status/live fields alone."""
         job = self._job(
