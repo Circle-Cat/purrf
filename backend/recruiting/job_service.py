@@ -297,6 +297,9 @@ class JobService:
         - CLOSED: same rule as PUBLISHED — any edit parks into pending_payload;
           status is unchanged (still CLOSED). Use request_reopen separately to
           submit the posting (with or without this edit) for a REOPEN review.
+          A CLOSED posting that was never published cannot be edited — there
+          is no review path that would ever apply a staged edit on it, so it
+          is rejected outright (delete_job instead).
 
         Any other status (PENDING_REVIEW, PUBLISHED_PENDING_REVISION,
         PENDING_CLOSE, PENDING_REOPEN) raises ValueError immediately
@@ -314,7 +317,8 @@ class JobService:
             ValueError: If no posting with the given id exists, the posting's
                 current status is not DRAFT, PUBLISHED, or CLOSED (i.e. it is
                 PENDING_REVIEW, PUBLISHED_PENDING_REVISION, PENDING_CLOSE, or
-                PENDING_REOPEN), or a pre-configured assignee/owner lacks its
+                PENDING_REOPEN), the posting is CLOSED but was never
+                published, or a pre-configured assignee/owner lacks its
                 required permission.
         """
         job = await self._require_job(session, job_id)
@@ -338,6 +342,10 @@ class JobService:
             job.pending_payload = self._build_pending_payload(job, dto)
             job.status = JobStatus.PUBLISHED_PENDING_REVISION
         elif job.status == JobStatus.CLOSED:
+            if not job.was_published:
+                raise ValueError(
+                    f"Job {job_id} was never published; delete it instead of editing"
+                )
             job.pending_payload = self._build_pending_payload(job, dto)
         else:
             raise ValueError(f"Job {job_id} cannot be edited from {job.status}")
