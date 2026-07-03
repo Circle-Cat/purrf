@@ -12,6 +12,12 @@ class TestApplicationEntities(unittest.TestCase):
         self.assertEqual(app.user_id, 2)
         self.assertEqual(app.stage, ApplicationStage.APPLIED)
 
+    def test_application_current_round_round_trips(self):
+        app = ApplicationEntity(
+            job_id=1, user_id=2, stage=ApplicationStage.APPLIED, current_round=3
+        )
+        self.assertEqual(app.current_round, 3)
+
     def test_submission_carries_snapshot_and_resume_ref(self):
         sub = ApplicationSubmissionEntity(
             application_id=1,
@@ -24,3 +30,7 @@ class TestApplicationEntities(unittest.TestCase):
         self.assertEqual(sub.version, 1)
         self.assertEqual(sub.resume_object_key, "resumes/abc.pdf")
         self.assertEqual(sub.submission["personal"]["firstName"], "A")
+
+
+if __name__ == "__main__":
+    unittest.main()
