@@ -88,7 +88,7 @@ export const REVIEWS_GUIDE = {
     {
       title: "Open a review",
       detail:
-        "Inspect the posting details, pipeline, and form schema. Revisions show the live and pending versions side by side.",
+        "Inspect the posting details, pipeline, and form schema. Revisions, and reopen requests with a staged edit, show the live and pending versions side by side.",
     },
     {
       title: "Approve",
