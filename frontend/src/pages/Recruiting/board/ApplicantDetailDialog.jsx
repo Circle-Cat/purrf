@@ -25,10 +25,11 @@ import {
   blacklistUser,
   resumeUrl,
 } from "@/api/recruitingApi";
+import { humanize } from "@/pages/Recruiting/board/stageFormat";
 
 /**
  * Rejection reasons offered to the reviewer, mirroring the backend's fixed
- * list (backend/recruiting/board_dto.py) so the option text sent matches
+ * list (backend/dto/board_dto.py) so the option text sent matches
  * exactly what the server expects.
  */
 const REJECT_REASONS = [
@@ -72,21 +73,16 @@ const SUB_STATUS_SETS = {
   offer: ["pending", "evaluated"],
 };
 
-/** "in_progress" -> "In progress". */
-const humanize = (value) => {
-  const spaced = value.replaceAll("_", " ");
-  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
-};
-
 /**
  * Sub-status selector: one button per value allowed for the application's
  * current stage, the active one visually and semantically marked via
  * `aria-pressed`. Renders nothing for stages with no configured sub-status
  * set (terminal stages).
  *
- * @param {{stage: string, subStatus: string|null, onSelect: (value: string) => void}} props
+ * @param {{stage: string, subStatus: string|null, disabled: boolean,
+ *          onSelect: (value: string) => void}} props
  */
-const SubStatusSelector = ({ stage, subStatus, onSelect }) => {
+const SubStatusSelector = ({ stage, subStatus, disabled, onSelect }) => {
   const options = SUB_STATUS_SETS[stage];
   if (!options) return null;
   return (
@@ -101,6 +97,7 @@ const SubStatusSelector = ({ stage, subStatus, onSelect }) => {
             size="sm"
             variant={isActive ? "default" : "outline"}
             aria-pressed={isActive}
+            disabled={disabled}
             onClick={() => onSelect(value)}
           >
             {humanize(value)}
@@ -181,6 +178,7 @@ const ApplicantDetailDialog = ({
   const [loadError, setLoadError] = useState(false);
 
   const [advancing, setAdvancing] = useState(false);
+  const [switchingSubStatus, setSwitchingSubStatus] = useState(false);
 
   const [rejectFormOpen, setRejectFormOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
@@ -209,6 +207,7 @@ const ApplicantDetailDialog = ({
   useEffect(() => {
     if (open) {
       setAdvancing(false);
+      setSwitchingSubStatus(false);
       setRejectFormOpen(false);
       setRejectReason("");
       setRejectNote("");
@@ -220,6 +219,8 @@ const ApplicantDetailDialog = ({
   }, [open, load]);
 
   const handleSelectSubStatus = (value) => {
+    if (switchingSubStatus) return;
+    setSwitchingSubStatus(true);
     setApplicationSubStatus(applicationId, value)
       .then(() => {
         setDetail((prev) =>
@@ -232,7 +233,8 @@ const ApplicantDetailDialog = ({
         );
         onChanged();
       })
-      .catch((e) => toast.error(e.message));
+      .catch((e) => toast.error(e.message))
+      .finally(() => setSwitchingSubStatus(false));
   };
 
   const handleAdvance = (next) => {
@@ -327,6 +329,7 @@ const ApplicantDetailDialog = ({
                 <SubStatusSelector
                   stage={detail.application.stage}
                   subStatus={detail.application.subStatus}
+                  disabled={switchingSubStatus}
                   onSelect={handleSelectSubStatus}
                 />
               </>

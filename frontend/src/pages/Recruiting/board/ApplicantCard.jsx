@@ -1,4 +1,5 @@
 import { Badge } from "@/components/ui/badge";
+import { humanize } from "@/pages/Recruiting/board/stageFormat";
 
 /**
  * One applicant card on the board: applicant name, an optional sub-status
@@ -24,7 +25,7 @@ const ApplicantCard = ({ card, showStatus, onOpen }) => {
       <div className="flex items-center justify-between gap-2">
         <p className="font-medium text-slate-900">{card.applicantName}</p>
         {showStatus && card.subStatus && (
-          <Badge variant="outline">{card.subStatus}</Badge>
+          <Badge variant="outline">{humanize(card.subStatus)}</Badge>
         )}
       </div>
       {card.tags?.coldFreeze || card.tags?.blacklisted ? (

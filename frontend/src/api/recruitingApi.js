@@ -107,13 +107,13 @@ export const getApplicationDetail = (id) =>
 
 /**
  * Change an application's stage (e.g., "screening" → "hired", "rejected", etc.).
- * body: { stage: "hired" | "rejected" | ... }
+ * body: { toStage: "hired" | "rejected" | ..., reason?: string, note?: string }
  */
 export const changeApplicationStage = (id, body) =>
   request.patch(API_ENDPOINTS.RECRUITING_APPLICATION_STAGE(id), body);
 
 /**
- * Set an application's sub-status (e.g., "frozen", "waiting", etc.).
+ * Set an application's sub-status (e.g., "pending", "in_progress", etc.).
  * Wraps subStatus in the request body automatically.
  */
 export const setApplicationSubStatus = (id, subStatus) =>

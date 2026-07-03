@@ -12,15 +12,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { listBoardJobs, getJobBoard } from "@/api/recruitingApi";
+import { humanize } from "@/pages/Recruiting/board/stageFormat";
 
 /** Terminal lanes always appended after a job's configured pipeline stages. */
 const TERMINAL_STAGES = ["hired", "rejected"];
-
-/** "recruiter_screening" -> "Recruiter screening". */
-const stageLabel = (stage) => {
-  const spaced = stage.replaceAll("_", " ");
-  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
-};
 
 /**
  * Owner-facing kanban board: pick a job you own from the switcher, see its
@@ -149,7 +144,7 @@ const BoardPage = () => {
               >
                 <div className="flex items-center justify-between">
                   <h2 className="text-sm font-semibold text-slate-900">
-                    {stageLabel(stage)}
+                    {humanize(stage)}
                   </h2>
                   <Badge variant="secondary">{cards.length}</Badge>
                 </div>

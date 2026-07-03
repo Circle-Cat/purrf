@@ -209,19 +209,19 @@ describe("recruitingApi", () => {
 
   it("changeApplicationStage PATCHes the stage endpoint with body", async () => {
     request.patch.mockResolvedValue({ data: {} });
-    await changeApplicationStage(7, { stage: "hired" });
+    await changeApplicationStage(7, { toStage: "hired" });
     expect(request.patch).toHaveBeenCalledWith(
       "/recruiting/applications/7/stage",
-      { stage: "hired" },
+      { toStage: "hired" },
     );
   });
 
   it("setApplicationSubStatus PATCHes the sub-status endpoint with subStatus", async () => {
     request.patch.mockResolvedValue({ data: {} });
-    await setApplicationSubStatus(7, "frozen");
+    await setApplicationSubStatus(7, "in_progress");
     expect(request.patch).toHaveBeenCalledWith(
       "/recruiting/applications/7/sub-status",
-      { subStatus: "frozen" },
+      { subStatus: "in_progress" },
     );
   });
 

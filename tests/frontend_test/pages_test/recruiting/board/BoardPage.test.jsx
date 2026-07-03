@@ -208,7 +208,7 @@ describe("BoardPage", () => {
     await waitFor(() =>
       expect(screen.getByText("Alice Smith")).toBeInTheDocument(),
     );
-    expect(screen.getByText("in_progress")).toBeInTheDocument();
+    expect(screen.getByText("In progress")).toBeInTheDocument();
     expect(screen.getByText("Cara Lee")).toBeInTheDocument();
     // Cara has a subStatus, but it must not render in a terminal lane.
     const rejectedLane = screen.getByTestId("lane-rejected");

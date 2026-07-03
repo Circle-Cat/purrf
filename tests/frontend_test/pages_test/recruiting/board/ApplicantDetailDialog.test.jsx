@@ -266,6 +266,49 @@ describe("ApplicantDetailDialog", () => {
     expect(onChanged).not.toHaveBeenCalled();
   });
 
+  it("disables the sub-status buttons while a switch request is in flight", async () => {
+    const user = userEvent.setup();
+    api.getApplicationDetail.mockResolvedValue({ data: baseDetail });
+    let resolveSwitch;
+    api.setApplicationSubStatus.mockReturnValue(
+      new Promise((resolve) => {
+        resolveSwitch = resolve;
+      }),
+    );
+    renderDialog();
+
+    await waitFor(() =>
+      expect(screen.getByText("alice@example.com")).toBeInTheDocument(),
+    );
+
+    const inProgress = screen.getByRole("button", { name: /in progress/i });
+    const pending = screen.getByRole("button", { name: /pending/i });
+    await user.click(inProgress);
+
+    expect(inProgress).toBeDisabled();
+    expect(pending).toBeDisabled();
+
+    resolveSwitch({ data: {} });
+    await waitFor(() => expect(inProgress).not.toBeDisabled());
+    expect(pending).not.toBeDisabled();
+  });
+
+  it("re-enables the sub-status buttons after a failed switch", async () => {
+    const user = userEvent.setup();
+    api.getApplicationDetail.mockResolvedValue({ data: baseDetail });
+    api.setApplicationSubStatus.mockRejectedValue(new Error("boom"));
+    renderDialog();
+
+    await waitFor(() =>
+      expect(screen.getByText("alice@example.com")).toBeInTheDocument(),
+    );
+
+    const inProgress = screen.getByRole("button", { name: /in progress/i });
+    await user.click(inProgress);
+
+    await waitFor(() => expect(inProgress).not.toBeDisabled());
+  });
+
   it("re-fetches the detail each time the dialog opens", async () => {
     api.getApplicationDetail.mockResolvedValue({ data: baseDetail });
     const { rerender } = render(
