@@ -55,9 +55,8 @@ const Blacklist = () => {
         <div>
           <h1 className="text-xl font-semibold">Blacklist</h1>
           <p className="mt-0.5 text-sm text-muted-foreground">
-            Blocked users are rejected at the application entry point across
-            all postings — no cooldown, no re-apply. Unblock to lift the
-            block.
+            Blocked users are rejected at the application entry point across all
+            postings — no cooldown, no re-apply. Unblock to lift the block.
           </p>
         </div>
         <Badge variant="outline" className="ml-auto shrink-0">
@@ -92,9 +91,7 @@ const Blacklist = () => {
             >
               <div className="min-w-0 space-y-1.5">
                 <div className="flex items-center gap-2">
-                  <span className="font-semibold text-slate-900">
-                    {e.name}
-                  </span>
+                  <span className="font-semibold text-slate-900">{e.name}</span>
                   <Badge
                     variant="outline"
                     className="border-slate-300 text-xs text-slate-500"

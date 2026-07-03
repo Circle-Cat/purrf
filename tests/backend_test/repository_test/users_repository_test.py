@@ -442,9 +442,7 @@ class TestUsersRepository(BaseRepositoryTestLib):
         user.blocked_reason = f"Fraud-{token}"
         await self.insert_entities([user])
 
-        rows = await self.repo.list_blocked_users(
-            self.session, search=token.upper()
-        )
+        rows = await self.repo.list_blocked_users(self.session, search=token.upper())
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0].user_id, user.user_id)
 

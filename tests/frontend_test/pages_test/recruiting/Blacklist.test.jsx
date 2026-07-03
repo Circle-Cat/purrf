@@ -60,7 +60,9 @@ describe("Blacklist page", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Unblock" }));
     await screen.findByText(/Unblock Sam Rivera\?/i);
 
-    fireEvent.click(screen.getByRole("button", { name: "Unblock", hidden: false }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Unblock", hidden: false }),
+    );
 
     await waitFor(() => expect(api.unblockUser).toHaveBeenCalledWith(1));
     await waitFor(() =>
@@ -76,7 +78,9 @@ describe("Blacklist page", () => {
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
     await waitFor(() =>
-      expect(screen.queryByText(/Unblock Sam Rivera\?/i)).not.toBeInTheDocument(),
+      expect(
+        screen.queryByText(/Unblock Sam Rivera\?/i),
+      ).not.toBeInTheDocument(),
     );
     expect(api.unblockUser).not.toHaveBeenCalled();
   });
@@ -87,7 +91,9 @@ describe("Blacklist page", () => {
     render(<Blacklist />);
     fireEvent.click(await screen.findByRole("button", { name: "Unblock" }));
     await screen.findByText(/Unblock Sam Rivera\?/i);
-    fireEvent.click(screen.getByRole("button", { name: "Unblock", hidden: false }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Unblock", hidden: false }),
+    );
 
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith("network error"),

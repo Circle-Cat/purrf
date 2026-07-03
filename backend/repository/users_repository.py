@@ -354,9 +354,7 @@ class UsersRepository:
                 )
             )
         result = await session.execute(
-            select(UsersEntity)
-            .where(*filters)
-            .order_by(UsersEntity.blocked_at.desc())
+            select(UsersEntity).where(*filters).order_by(UsersEntity.blocked_at.desc())
         )
         return list(result.scalars().all())
 

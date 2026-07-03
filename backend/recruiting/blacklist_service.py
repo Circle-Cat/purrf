@@ -34,9 +34,7 @@ class BlacklistService:
         Returns:
             list[BlacklistEntryDto]: Blocked users, most recently blocked first.
         """
-        users = await self.users_repository.list_blocked_users(
-            session, search=search
-        )
+        users = await self.users_repository.list_blocked_users(session, search=search)
         return [
             BlacklistEntryDto(
                 user_id=user.user_id,
