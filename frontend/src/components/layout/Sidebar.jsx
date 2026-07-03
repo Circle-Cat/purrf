@@ -67,6 +67,11 @@ const Sidebar = () => {
       to: ROUTE_PATHS.RECRUITING_REVIEWS,
       permissions: [PERMISSIONS.RECRUITING_JOB_APPROVE],
     },
+    {
+      label: "Blacklist",
+      to: ROUTE_PATHS.RECRUITING_BLACKLIST,
+      permissions: [PERMISSIONS.RECRUITING_BLACKLIST_WRITE],
+    },
   ];
 
   return (
