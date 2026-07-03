@@ -2,9 +2,9 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { getPublicJob, getMyApplication } from "@/api/recruitingApi";
-import { formatTimeDuration } from "@/pages/Profile/utils";
 import ApplicationForm from "@/pages/Recruiting/ApplicationForm";
 import LoadGate from "@/pages/Recruiting/components/LoadGate";
+import { RowList } from "@/pages/Recruiting/components/ApplicationSnapshotRows";
 
 /** The only stage at which a candidate's application is still editable. */
 const EDITABLE_STAGE = "applied";
@@ -21,52 +21,6 @@ const formatStageLabel = (stage) => {
   const words = stage.split("_").join(" ");
   return words[0].toUpperCase() + words.slice(1);
 };
-
-/**
- * Read-only rendering of one submitted education or experience row.
- *
- * @param {{institution?: string, title?: string, degree?: string,
- *          company?: string, field?: string, startMonth?: string,
- *          startYear?: string|number, endMonth?: string,
- *          endYear?: string|number, isCurrentlyWorking?: boolean}} row
- * @returns {{heading: string, subheading?: string, duration: string}}
- */
-const summarizeRow = (row) => ({
-  heading: row.institution ?? row.title ?? "",
-  subheading: row.institution
-    ? [row.degree, row.field].filter(Boolean).join(", ")
-    : row.company,
-  duration: formatTimeDuration(
-    row.startMonth,
-    row.startYear,
-    row.endMonth,
-    row.endYear,
-    row.isCurrentlyWorking,
-  ),
-});
-
-/** Read-only list of education/experience rows, sharing one rendering shape. */
-const RowList = ({ title, rows }) => (
-  <div className="space-y-2">
-    <h2 className="text-sm font-medium text-slate-700">{title}</h2>
-    {rows.length === 0 ? (
-      <p className="text-sm text-slate-400">None provided.</p>
-    ) : (
-      <ul className="space-y-1">
-        {rows.map((row, i) => {
-          const s = summarizeRow(row);
-          return (
-            <li key={row.id ?? i} className="text-sm text-slate-700">
-              {s.heading}
-              {s.subheading && ` — ${s.subheading}`}
-              {s.duration && ` (${s.duration})`}
-            </li>
-          );
-        })}
-      </ul>
-    )}
-  </div>
-);
 
 /**
  * Read-only summary of a submitted application: the applicant's answers, no

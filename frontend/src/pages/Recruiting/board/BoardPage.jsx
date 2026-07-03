@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import LoadGate from "@/pages/Recruiting/components/LoadGate";
 import ApplicantCard from "@/pages/Recruiting/board/ApplicantCard";
+import ApplicantDetailDialog from "@/pages/Recruiting/board/ApplicantDetailDialog";
 import { Badge } from "@/components/ui/badge";
 import {
   Select,
@@ -32,6 +33,8 @@ const BoardPage = () => {
   const [selectedJobId, setSelectedJobId] = useState(null);
   const [board, setBoard] = useState(null);
   const [boardError, setBoardError] = useState(false);
+  const [selectedApplicationId, setSelectedApplicationId] = useState(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
 
   /** Fetch (or re-fetch, via Retry) the caller's owned jobs. */
   const loadJobs = useCallback(async () => {
@@ -82,8 +85,11 @@ const BoardPage = () => {
     return [...selectedJob.stages, ...TERMINAL_STAGES];
   }, [selectedJob]);
 
-  /** No-op-for-now stub: a later task wires this to a detail dialog. */
-  const handleOpen = useCallback(() => {}, []);
+  /** Open the detail dialog for the clicked card's application. */
+  const handleOpen = useCallback((applicationId) => {
+    setSelectedApplicationId(applicationId);
+    setDialogOpen(true);
+  }, []);
 
   if (!jobs) {
     return (
@@ -166,6 +172,13 @@ const BoardPage = () => {
           })}
         </div>
       )}
+
+      <ApplicantDetailDialog
+        applicationId={selectedApplicationId}
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        onChanged={() => loadBoard(selectedJobId)}
+      />
     </div>
   );
 };
