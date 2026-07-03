@@ -8,13 +8,55 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import LoadGate from "@/pages/Recruiting/components/LoadGate";
 import { RowList } from "@/pages/Recruiting/components/ApplicationSnapshotRows";
 import {
   getApplicationDetail,
   setApplicationSubStatus,
+  changeApplicationStage,
+  blacklistUser,
   resumeUrl,
 } from "@/api/recruitingApi";
+
+/**
+ * Rejection reasons offered to the reviewer, mirroring the backend's fixed
+ * list (backend/recruiting/board_dto.py) so the option text sent matches
+ * exactly what the server expects.
+ */
+const REJECT_REASONS = [
+  "Insufficient experience",
+  "Did not meet the technical bar",
+  "Communication concerns",
+  "Not aligned with our mission",
+  "Accepted another offer",
+  "Incomplete application",
+  "Other",
+];
+
+/**
+ * Compute the stage an application advances to, mirroring the backend's
+ * `stage_machine.advance_target`: the next configured pipeline stage, or
+ * "hired" once the current stage is the last one configured. Returns null
+ * when the current stage isn't part of the job's configured pipeline (i.e.
+ * it's already a terminal stage), meaning there's no advance target.
+ *
+ * @param {string[]} jobStages
+ * @param {string} stage
+ * @returns {string|null}
+ */
+const advanceTarget = (jobStages, stage) => {
+  const index = jobStages.indexOf(stage);
+  if (index === -1) return null;
+  return index === jobStages.length - 1 ? "hired" : jobStages[index + 1];
+};
 
 /**
  * Allowed sub_status values per pipeline stage, mirroring the backend's
@@ -119,22 +161,35 @@ const AnswersSection = ({ answers, questions }) => {
 /**
  * Applicant detail dialog: opened from a board card, shows the full
  * application snapshot (personal info, education, experience, form
- * answers), a resume link when available, and a sub-status selector for
- * the application's current pipeline stage. A later task adds
- * Advance/Reject/Blacklist actions to the footer.
+ * answers), a resume link when available, a sub-status selector for the
+ * application's current pipeline stage, and decision actions
+ * (Advance/Reject/Blacklist) in the footer.
  *
  * @param {{applicationId: number|null, open: boolean,
- *          onOpenChange: (open: boolean) => void, onChanged: () => void}} props
+ *          onOpenChange: (open: boolean) => void, onChanged: () => void,
+ *          jobStages: string[]}} props
  */
 const ApplicantDetailDialog = ({
   applicationId,
   open,
   onOpenChange,
   onChanged,
+  jobStages = [],
 }) => {
   const [detail, setDetail] = useState(null);
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState(false);
+
+  const [advancing, setAdvancing] = useState(false);
+
+  const [rejectFormOpen, setRejectFormOpen] = useState(false);
+  const [rejectReason, setRejectReason] = useState("");
+  const [rejectNote, setRejectNote] = useState("");
+  const [rejecting, setRejecting] = useState(false);
+
+  const [blacklistConfirmOpen, setBlacklistConfirmOpen] = useState(false);
+  const [blacklistReason, setBlacklistReason] = useState("");
+  const [blacklisting, setBlacklisting] = useState(false);
 
   const load = useCallback(() => {
     if (applicationId == null) return;
@@ -153,6 +208,13 @@ const ApplicantDetailDialog = ({
 
   useEffect(() => {
     if (open) {
+      setAdvancing(false);
+      setRejectFormOpen(false);
+      setRejectReason("");
+      setRejectNote("");
+      setBlacklistConfirmOpen(false);
+      setBlacklistReason("");
+      setBlacklisting(false);
       load();
     }
   }, [open, load]);
@@ -173,66 +235,239 @@ const ApplicantDetailDialog = ({
       .catch((e) => toast.error(e.message));
   };
 
+  const handleAdvance = (next) => {
+    if (advancing) return;
+    setAdvancing(true);
+    changeApplicationStage(applicationId, { toStage: next })
+      .then(() => {
+        toast.success(`Advanced to ${humanize(next)}.`);
+        onChanged();
+        onOpenChange(false);
+      })
+      .catch((e) => toast.error(e.message))
+      .finally(() => setAdvancing(false));
+  };
+
+  const handleCancelReject = () => {
+    setRejectFormOpen(false);
+    setRejectReason("");
+    setRejectNote("");
+  };
+
+  const handleConfirmReject = () => {
+    if (!rejectReason || rejecting) return;
+    setRejecting(true);
+    changeApplicationStage(applicationId, {
+      toStage: "rejected",
+      reason: rejectReason,
+      note: rejectNote.trim() || undefined,
+    })
+      .then(() => {
+        toast.success("Application rejected.");
+        onChanged();
+        onOpenChange(false);
+      })
+      .catch((e) => toast.error(e.message))
+      .finally(() => setRejecting(false));
+  };
+
+  const handleCancelBlacklist = () => {
+    setBlacklistConfirmOpen(false);
+    setBlacklistReason("");
+  };
+
+  const handleConfirmBlacklist = () => {
+    if (!blacklistReason.trim() || blacklisting) return;
+    setBlacklisting(true);
+    blacklistUser({
+      userId: detail.application.userId,
+      applicationId,
+      reason: blacklistReason.trim(),
+    })
+      .then(() => {
+        toast.success("Applicant blacklisted.");
+        onChanged();
+        setBlacklistConfirmOpen(false);
+        setBlacklistReason("");
+        onOpenChange(false);
+      })
+      .catch((e) => toast.error(e.message))
+      .finally(() => setBlacklisting(false));
+  };
+
+  const next =
+    loaded && detail
+      ? advanceTarget(jobStages, detail.application.stage)
+      : null;
+  const isPipelineStage = next !== null;
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-xl">
-        <DialogHeader>
-          <DialogTitle>
-            {loaded && detail ? detail.applicantName : "Applicant"}
-          </DialogTitle>
-          {loaded && detail && (
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>
+              {loaded && detail ? detail.applicantName : "Applicant"}
+            </DialogTitle>
+            {loaded && detail && (
+              <>
+                <p className="text-sm text-slate-600">
+                  {detail.applicantEmail}
+                </p>
+                {detail.resumeAvailable && (
+                  <a
+                    href={resumeUrl(applicationId)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-sm text-blue-600 underline"
+                  >
+                    Resume
+                  </a>
+                )}
+                <SubStatusSelector
+                  stage={detail.application.stage}
+                  subStatus={detail.application.subStatus}
+                  onSelect={handleSelectSubStatus}
+                />
+              </>
+            )}
+          </DialogHeader>
+          {!loaded || !detail ? (
+            <LoadGate
+              error={loadError}
+              errorMessage="Couldn't load this application."
+              onRetry={load}
+            />
+          ) : (
             <>
-              <p className="text-sm text-slate-600">{detail.applicantEmail}</p>
-              {detail.resumeAvailable && (
-                <a
-                  href={resumeUrl(applicationId)}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-sm text-blue-600 underline"
-                >
-                  Resume
-                </a>
+              <div className="space-y-4">
+                <PersonalSection
+                  personal={
+                    detail.application.current?.submission?.personal ?? {}
+                  }
+                />
+                <RowList
+                  title="Education"
+                  rows={detail.application.current?.submission?.education ?? []}
+                />
+                <RowList
+                  title="Experience"
+                  rows={
+                    detail.application.current?.submission?.experience ?? []
+                  }
+                />
+                <AnswersSection
+                  answers={
+                    detail.application.current?.submission?.answers ?? {}
+                  }
+                  questions={detail.formSchema?.questions ?? []}
+                />
+              </div>
+              {rejectFormOpen ? (
+                <DialogFooter className="flex-col items-stretch gap-3 sm:flex-col sm:items-stretch">
+                  <Select value={rejectReason} onValueChange={setRejectReason}>
+                    <SelectTrigger
+                      aria-label="Rejection reason"
+                      className="w-full"
+                    >
+                      <SelectValue placeholder="Select a reason…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {REJECT_REASONS.map((reason) => (
+                        <SelectItem key={reason} value={reason}>
+                          {reason}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Textarea
+                    placeholder="Note (optional)"
+                    value={rejectNote}
+                    onChange={(e) => setRejectNote(e.target.value)}
+                  />
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={handleCancelReject}
+                      disabled={rejecting}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      onClick={handleConfirmReject}
+                      disabled={!rejectReason || rejecting}
+                    >
+                      Confirm reject
+                    </Button>
+                  </div>
+                </DialogFooter>
+              ) : (
+                <DialogFooter>
+                  <Button
+                    variant="outline"
+                    className="mr-auto"
+                    disabled={blacklisting}
+                    onClick={() => setBlacklistConfirmOpen(true)}
+                  >
+                    Blacklist
+                  </Button>
+                  {isPipelineStage && (
+                    <>
+                      <Button
+                        variant="outline"
+                        onClick={() => setRejectFormOpen(true)}
+                      >
+                        Reject
+                      </Button>
+                      <Button
+                        disabled={advancing}
+                        onClick={() => handleAdvance(next)}
+                      >
+                        Advance to {humanize(next)}
+                      </Button>
+                    </>
+                  )}
+                </DialogFooter>
               )}
-              <SubStatusSelector
-                stage={detail.application.stage}
-                subStatus={detail.application.subStatus}
-                onSelect={handleSelectSubStatus}
-              />
             </>
           )}
-        </DialogHeader>
-        {!loaded || !detail ? (
-          <LoadGate
-            error={loadError}
-            errorMessage="Couldn't load this application."
-            onRetry={load}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={blacklistConfirmOpen}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) handleCancelBlacklist();
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Blacklist this applicant?</DialogTitle>
+          </DialogHeader>
+          <Textarea
+            placeholder="Reason (required)"
+            value={blacklistReason}
+            onChange={(e) => setBlacklistReason(e.target.value)}
           />
-        ) : (
-          <>
-            <div className="space-y-4">
-              <PersonalSection
-                personal={
-                  detail.application.current?.submission?.personal ?? {}
-                }
-              />
-              <RowList
-                title="Education"
-                rows={detail.application.current?.submission?.education ?? []}
-              />
-              <RowList
-                title="Experience"
-                rows={detail.application.current?.submission?.experience ?? []}
-              />
-              <AnswersSection
-                answers={detail.application.current?.submission?.answers ?? {}}
-                questions={detail.formSchema?.questions ?? []}
-              />
-            </div>
-            <DialogFooter />
-          </>
-        )}
-      </DialogContent>
-    </Dialog>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={handleCancelBlacklist}
+              disabled={blacklisting}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleConfirmBlacklist}
+              disabled={!blacklistReason.trim() || blacklisting}
+            >
+              Confirm blacklist
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 };
 

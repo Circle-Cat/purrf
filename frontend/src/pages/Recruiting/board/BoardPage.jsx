@@ -178,6 +178,7 @@ const BoardPage = () => {
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         onChanged={() => loadBoard(selectedJobId)}
+        jobStages={selectedJob?.stages ?? []}
       />
     </div>
   );
