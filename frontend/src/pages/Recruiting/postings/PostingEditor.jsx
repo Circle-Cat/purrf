@@ -72,19 +72,24 @@ const PostingEditor = () => {
   useEffect(() => {
     if (!id) return;
     getJob(id)
-      .then(({ data }) =>
+      .then(({ data }) => {
+        // A CLOSED posting can already have a staged edit in pendingPayload
+        // (from a prior edit while still CLOSED); prefill from that draft
+        // rather than the live fields so re-editing doesn't silently discard
+        // it. kind/mentorshipRole are never part of pendingPayload.
+        const source = data.pendingPayload ?? data;
         setDraft({
-          title: data.title ?? "",
-          description: data.description ?? "",
+          title: source.title ?? "",
+          description: source.description ?? "",
           kind: data.kind ?? "activity",
-          cooldownDays: data.cooldownDays ?? null,
+          cooldownDays: source.cooldownDays ?? null,
           mentorshipRole: data.mentorshipRole ?? null,
-          formSchema: data.formSchema ?? { questions: [] },
-          pipelineConfig: data.pipelineConfig ?? null,
-          screenRules: data.screenRules ?? null,
-          profileConfig: data.profileConfig ?? null,
-        }),
-      )
+          formSchema: source.formSchema ?? { questions: [] },
+          pipelineConfig: source.pipelineConfig ?? null,
+          screenRules: source.screenRules ?? null,
+          profileConfig: source.profileConfig ?? null,
+        });
+      })
       .catch((e) => toast.error(e.message));
   }, [id]);
 

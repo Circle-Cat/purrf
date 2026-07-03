@@ -12,13 +12,15 @@ const job = {
   formSchema: {
     questions: [{ id: "q1", type: "short_text", label: "Live question" }],
   },
-  pendingFormSchema: {
-    questions: [{ id: "q1", type: "short_text", label: "Pending question" }],
-  },
   profileConfig: { resume: "required" },
-  pendingProfileConfig: { resume: "optional" },
   pipelineConfig: { stages: [{ stage: "tech", rounds: 1 }] },
-  pendingPipelineConfig: { stages: [{ stage: "board_review", rounds: 1 }] },
+  pendingPayload: {
+    formSchema: {
+      questions: [{ id: "q1", type: "short_text", label: "Pending question" }],
+    },
+    profileConfig: { resume: "optional" },
+    pipelineConfig: { stages: [{ stage: "board_review", rounds: 1 }] },
+  },
 };
 
 describe("PostingReviewView", () => {
@@ -59,7 +61,7 @@ describe("PostingReviewView", () => {
       },
       profileConfig: { resume: "required" },
       pipelineConfig: { stages: [{ stage: "tech", rounds: 1 }] },
-      // no pendingFormSchema / pendingProfileConfig / pendingPipelineConfig
+      // no pendingPayload
     };
     render(<PostingReviewView job={partial} isRevision />);
     await waitFor(() => expect(api.listInterviewPool).toHaveBeenCalled());
