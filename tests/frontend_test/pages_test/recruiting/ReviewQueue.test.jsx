@@ -26,6 +26,20 @@ describe("ReviewQueue", () => {
     expect(screen.getByText("Job #42")).toBeInTheDocument();
   });
 
+  it("shows a human-readable, Request-suffixed badge for each review kind", () => {
+    const reviews = [
+      { reviewId: 1, jobId: 1, jobTitle: "A", kind: "initial" },
+      { reviewId: 2, jobId: 2, jobTitle: "B", kind: "revision" },
+      { reviewId: 3, jobId: 3, jobTitle: "C", kind: "close" },
+      { reviewId: 4, jobId: 4, jobTitle: "D", kind: "reopen" },
+    ];
+    render(<ReviewQueue reviews={reviews} onOpen={() => {}} />);
+    expect(screen.getByText("Initial Request")).toBeInTheDocument();
+    expect(screen.getByText("Revision Request")).toBeInTheDocument();
+    expect(screen.getByText("Close Request")).toBeInTheDocument();
+    expect(screen.getByText("Reopen Request")).toBeInTheDocument();
+  });
+
   it("shows an empty state", () => {
     render(<ReviewQueue reviews={[]} onOpen={() => {}} />);
     expect(screen.getByText("No pending reviews.")).toBeInTheDocument();
