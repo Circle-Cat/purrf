@@ -13,7 +13,12 @@ vi.mock("@/api/recruitingApi");
 vi.spyOn(toast, "success").mockImplementation(() => {});
 vi.spyOn(toast, "error").mockImplementation(() => {});
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  // ApplicantDetailDialog fetches the interview-evaluator pool alongside
+  // the application detail whenever it opens.
+  api.listInterviewPool.mockResolvedValue({ data: [] });
+});
 
 /** Render BoardPage inside a memory router. */
 const renderPage = () => {

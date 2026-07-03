@@ -35,6 +35,14 @@ class TestStageChangeDto(unittest.TestCase):
         self.assertEqual(dto.reason, REJECT_REASONS[0])
         self.assertEqual(dto.note, "some note")
 
+    def test_assignee_id_defaults_none(self):
+        dto = StageChangeDto.model_validate({"toStage": "hired"})
+        self.assertIsNone(dto.assignee_id)
+
+    def test_assignee_id_round_trips(self):
+        dto = StageChangeDto.model_validate({"toStage": "tech", "assigneeId": 7})
+        self.assertEqual(dto.assignee_id, 7)
+
 
 class TestSubStatusChangeDto(unittest.TestCase):
     def test_accepts_camel_case_field(self):

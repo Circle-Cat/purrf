@@ -128,6 +128,12 @@ export const setApplicationSubStatus = (id, subStatus) =>
 export const blacklistUser = (body) =>
   request.post(API_ENDPOINTS.RECRUITING_BLACKLIST, body);
 
+/** Reassign the interviewer responsible for an application's current stage. */
+export const reassignApplication = (id, assigneeId) =>
+  request.patch(API_ENDPOINTS.RECRUITING_APPLICATION_ASSIGNMENT(id), {
+    assigneeId,
+  });
+
 /**
  * Build the full URL to a candidate's resume PDF.
  * Used to construct href for direct file download links.

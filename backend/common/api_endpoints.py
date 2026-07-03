@@ -101,6 +101,9 @@ RECRUITING_APPLICATION_STAGE_ENDPOINT = (
 RECRUITING_APPLICATION_SUB_STATUS_ENDPOINT = (
     "/recruiting/applications/{application_id}/sub-status"
 )
+RECRUITING_APPLICATION_ASSIGNMENT_ENDPOINT = (
+    "/recruiting/applications/{application_id}/assignment"
+)
 RECRUITING_BLACKLIST_ENDPOINT = "/recruiting/blacklist"
 RECRUITING_APPLICATION_RESUME_ENDPOINT = (
     "/recruiting/applications/{application_id}/resume"

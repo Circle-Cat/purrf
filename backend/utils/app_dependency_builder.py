@@ -88,6 +88,9 @@ from backend.admin.permission_admin_controller import PermissionAdminController
 from backend.repository.job_repository import JobRepository
 from backend.repository.job_review_repository import JobReviewRepository
 from backend.repository.application_repository import ApplicationRepository
+from backend.repository.application_assignment_repository import (
+    ApplicationAssignmentRepository,
+)
 from backend.repository.application_submission_repository import (
     ApplicationSubmissionRepository,
 )
@@ -541,6 +544,7 @@ class AppDependencyBuilder:
             database=self.database,
         )
         self.application_repository = ApplicationRepository()
+        self.application_assignment_repository = ApplicationAssignmentRepository()
         self.application_submission_repository = ApplicationSubmissionRepository()
         self.resume_storage = ResumeStorage(os.getenv(RESUME_BUCKET))
         self.application_service = ApplicationService(
@@ -563,6 +567,8 @@ class AppDependencyBuilder:
             self.users_repository,
             self.recruiting_mapper,
             self.resume_storage,
+            self.application_assignment_repository,
+            self.user_permissions_repository,
         )
         self.board_controller = BoardController(
             self.board_service,

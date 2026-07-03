@@ -12,11 +12,18 @@ vi.mock("@/api/recruitingApi");
 vi.spyOn(toast, "error").mockImplementation(() => {});
 vi.spyOn(toast, "success").mockImplementation(() => {});
 
+/** The interview-evaluator pool offered by the assignee pickers. */
+const INTERVIEW_POOL = [
+  { userId: 10, name: "Eve Evaluator", email: "eve@example.com" },
+  { userId: 11, name: "Ivan Interviewer", email: "ivan@example.com" },
+];
+
 beforeEach(() => {
   vi.clearAllMocks();
   api.resumeUrl.mockImplementation(
     (id) => `/api/recruiting/applications/${id}/resume`,
   );
+  api.listInterviewPool.mockResolvedValue({ data: INTERVIEW_POOL });
 });
 
 const baseDetail = {
@@ -361,7 +368,7 @@ describe("ApplicantDetailDialog", () => {
 });
 
 describe("ApplicantDetailDialog decision actions", () => {
-  it("shows Advance (to the next configured stage) and Reject for a pipeline stage, plus Blacklist", async () => {
+  it("shows an assignee picker (not a plain Advance button) plus Reject/Reassign/Blacklist, for an interview-stage target", async () => {
     api.getApplicationDetail.mockResolvedValue({
       data: detailWithStage("recruiter_screening"),
     });
@@ -371,16 +378,27 @@ describe("ApplicantDetailDialog decision actions", () => {
       expect(screen.getByText("alice@example.com")).toBeInTheDocument(),
     );
 
+    // "tech" is an interview stage, so no plain "Advance to Tech" button —
+    // the assignee picker gates the advance instead.
     expect(
-      screen.getByRole("button", { name: "Advance to Tech" }),
+      screen.queryByRole("button", { name: "Advance to Tech" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("combobox", { name: /assignee/i }),
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Confirm advance" }),
+    ).toBeDisabled();
     expect(screen.getByRole("button", { name: "Reject" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Reassign" }),
+    ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Blacklist" }),
     ).toBeInTheDocument();
   });
 
-  it("advances to the next configured stage on click", async () => {
+  it("does not advance until an assignee is selected, then advances with the chosen assigneeId", async () => {
     const user = userEvent.setup();
     api.getApplicationDetail.mockResolvedValue({
       data: detailWithStage("recruiter_screening"),
@@ -394,11 +412,21 @@ describe("ApplicantDetailDialog decision actions", () => {
       expect(screen.getByText("alice@example.com")).toBeInTheDocument(),
     );
 
-    await user.click(screen.getByRole("button", { name: "Advance to Tech" }));
+    const confirmButton = screen.getByRole("button", {
+      name: "Confirm advance",
+    });
+    await user.click(confirmButton);
+    expect(api.changeApplicationStage).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("combobox", { name: /assignee/i }));
+    await user.click(await screen.findByText(/Eve Evaluator/));
+    expect(confirmButton).not.toBeDisabled();
+    await user.click(confirmButton);
 
     await waitFor(() =>
       expect(api.changeApplicationStage).toHaveBeenCalledWith(101, {
         toStage: "tech",
+        assigneeId: 10,
       }),
     );
     await waitFor(() => expect(onChanged).toHaveBeenCalled());
@@ -406,7 +434,7 @@ describe("ApplicantDetailDialog decision actions", () => {
     expect(toast.success).toHaveBeenCalled();
   });
 
-  it("advances to 'hired' when the current stage is the job's last configured stage", async () => {
+  it("advances to 'hired' immediately, with no picker and no assigneeId, when the current stage is the job's last configured stage", async () => {
     const user = userEvent.setup();
     api.getApplicationDetail.mockResolvedValue({
       data: detailWithStage("tech"),
@@ -418,6 +446,9 @@ describe("ApplicantDetailDialog decision actions", () => {
       expect(screen.getByText("alice@example.com")).toBeInTheDocument(),
     );
 
+    expect(
+      screen.queryByRole("combobox", { name: /assignee/i }),
+    ).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Advance to Hired" }));
 
     await waitFor(() =>
@@ -427,7 +458,7 @@ describe("ApplicantDetailDialog decision actions", () => {
     );
   });
 
-  it("toasts an error and keeps the dialog open when Advance fails", async () => {
+  it("toasts an error and keeps the dialog open when a picker-gated Advance fails", async () => {
     const user = userEvent.setup();
     api.getApplicationDetail.mockResolvedValue({
       data: detailWithStage("recruiter_screening"),
@@ -441,7 +472,9 @@ describe("ApplicantDetailDialog decision actions", () => {
       expect(screen.getByText("alice@example.com")).toBeInTheDocument(),
     );
 
-    await user.click(screen.getByRole("button", { name: "Advance to Tech" }));
+    await user.click(screen.getByRole("combobox", { name: /assignee/i }));
+    await user.click(await screen.findByText(/Eve Evaluator/));
+    await user.click(screen.getByRole("button", { name: "Confirm advance" }));
 
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith("advance boom"),
@@ -450,7 +483,7 @@ describe("ApplicantDetailDialog decision actions", () => {
     expect(onOpenChange).not.toHaveBeenCalledWith(false);
   });
 
-  it("disables the Advance button while its request is in flight", async () => {
+  it("disables Confirm advance while its request is in flight", async () => {
     const user = userEvent.setup();
     api.getApplicationDetail.mockResolvedValue({
       data: detailWithStage("recruiter_screening"),
@@ -467,18 +500,20 @@ describe("ApplicantDetailDialog decision actions", () => {
       expect(screen.getByText("alice@example.com")).toBeInTheDocument(),
     );
 
-    const advanceButton = screen.getByRole("button", {
-      name: "Advance to Tech",
+    await user.click(screen.getByRole("combobox", { name: /assignee/i }));
+    await user.click(await screen.findByText(/Eve Evaluator/));
+    const confirmButton = screen.getByRole("button", {
+      name: "Confirm advance",
     });
-    await user.click(advanceButton);
+    await user.click(confirmButton);
 
-    expect(advanceButton).toBeDisabled();
+    expect(confirmButton).toBeDisabled();
 
     resolveAdvance({ data: {} });
-    await waitFor(() => expect(advanceButton).not.toBeDisabled());
+    await waitFor(() => expect(confirmButton).not.toBeDisabled());
   });
 
-  it("hides Advance and Reject, showing only Blacklist, for terminal stages", async () => {
+  it("hides Advance, Reject, and Reassign, showing only Blacklist, for terminal stages", async () => {
     api.getApplicationDetail.mockResolvedValue({
       data: detailWithStage("hired"),
     });
@@ -493,6 +528,9 @@ describe("ApplicantDetailDialog decision actions", () => {
     ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Reject" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Reassign" }),
     ).not.toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Blacklist" }),
@@ -546,7 +584,7 @@ describe("ApplicantDetailDialog decision actions", () => {
     expect(confirmButton).not.toBeDisabled();
   });
 
-  it("Cancel in the reject form reverts to the three-button footer", async () => {
+  it("Cancel in the reject form reverts to the default footer", async () => {
     const user = userEvent.setup();
     api.getApplicationDetail.mockResolvedValue({
       data: detailWithStage("recruiter_screening"),
@@ -561,7 +599,7 @@ describe("ApplicantDetailDialog decision actions", () => {
     await user.click(screen.getByRole("button", { name: "Cancel" }));
 
     expect(
-      screen.getByRole("button", { name: "Advance to Tech" }),
+      screen.getByRole("button", { name: "Confirm advance" }),
     ).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Confirm reject" }),
@@ -766,5 +804,86 @@ describe("ApplicantDetailDialog decision actions", () => {
         screen.queryByRole("button", { name: "Confirm blacklist" }),
       ).not.toBeInTheDocument(),
     );
+  });
+
+  it("Reassign opens an inline picker; selecting a pool member and confirming calls reassignApplication then onChanged", async () => {
+    const user = userEvent.setup();
+    api.getApplicationDetail.mockResolvedValue({
+      data: detailWithStage("recruiter_screening"),
+    });
+    api.reassignApplication.mockResolvedValue({ data: {} });
+    const { onChanged } = renderDialog({
+      jobStages: ["recruiter_screening", "tech"],
+    });
+
+    await waitFor(() =>
+      expect(screen.getByText("alice@example.com")).toBeInTheDocument(),
+    );
+
+    await user.click(screen.getByRole("button", { name: "Reassign" }));
+
+    const confirmButton = screen.getByRole("button", {
+      name: "Confirm reassign",
+    });
+    expect(confirmButton).toBeDisabled();
+    expect(api.reassignApplication).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("combobox", { name: /assignee/i }));
+    await user.click(await screen.findByText(/Ivan Interviewer/));
+    expect(confirmButton).not.toBeDisabled();
+    await user.click(confirmButton);
+
+    await waitFor(() =>
+      expect(api.reassignApplication).toHaveBeenCalledWith(101, 11),
+    );
+    await waitFor(() => expect(onChanged).toHaveBeenCalled());
+  });
+
+  it("Cancel in the reassign form reverts to the default footer without calling the API", async () => {
+    const user = userEvent.setup();
+    api.getApplicationDetail.mockResolvedValue({
+      data: detailWithStage("recruiter_screening"),
+    });
+    renderDialog({ jobStages: ["recruiter_screening", "tech"] });
+
+    await waitFor(() =>
+      expect(screen.getByText("alice@example.com")).toBeInTheDocument(),
+    );
+
+    await user.click(screen.getByRole("button", { name: "Reassign" }));
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(
+      screen.queryByRole("button", { name: "Confirm reassign" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Reassign" }),
+    ).toBeInTheDocument();
+    expect(api.reassignApplication).not.toHaveBeenCalled();
+  });
+
+  it("toasts an error and keeps the reassign form usable when reassign fails", async () => {
+    const user = userEvent.setup();
+    api.getApplicationDetail.mockResolvedValue({
+      data: detailWithStage("recruiter_screening"),
+    });
+    api.reassignApplication.mockRejectedValue(new Error("reassign boom"));
+    const { onChanged } = renderDialog({
+      jobStages: ["recruiter_screening", "tech"],
+    });
+
+    await waitFor(() =>
+      expect(screen.getByText("alice@example.com")).toBeInTheDocument(),
+    );
+
+    await user.click(screen.getByRole("button", { name: "Reassign" }));
+    await user.click(screen.getByRole("combobox", { name: /assignee/i }));
+    await user.click(await screen.findByText(/Ivan Interviewer/));
+    await user.click(screen.getByRole("button", { name: "Confirm reassign" }));
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith("reassign boom"),
+    );
+    expect(onChanged).not.toHaveBeenCalled();
   });
 });
