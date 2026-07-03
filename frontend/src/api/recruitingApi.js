@@ -135,6 +135,17 @@ export const reassignApplication = (id, assigneeId) =>
   });
 
 /**
+ * List every currently-blocked user, optionally filtered by a name/email/
+ * reason substring.
+ */
+export const listBlacklist = (search) =>
+  request.get(API_ENDPOINTS.RECRUITING_BLACKLIST, { params: { search } });
+
+/** Clear a user's block state. */
+export const unblockUser = (userId) =>
+  request.delete(API_ENDPOINTS.RECRUITING_BLACKLIST_UNBLOCK(userId));
+
+/**
  * Build the full URL to a candidate's resume PDF.
  * Used to construct href for direct file download links.
  * Mirrors the base URL logic from request.js to ensure consistency.

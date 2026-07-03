@@ -29,6 +29,7 @@ class TestFastAppFactory(unittest.TestCase):
             recruiting_controller=self.mock_controller,
             application_controller=self.mock_controller,
             board_controller=self.mock_controller,
+            blacklist_controller=self.mock_controller,
             launchdarkly_client=MagicMock(),
             database=MagicMock(),
             logger=MagicMock(),
@@ -82,6 +83,7 @@ class TestFastAppFactory(unittest.TestCase):
             recruiting_controller=recruiting,
             application_controller=self.mock_controller,
             board_controller=self.mock_controller,
+            blacklist_controller=self.mock_controller,
             launchdarkly_client=MagicMock(),
             database=MagicMock(),
             logger=MagicMock(),
@@ -118,6 +120,7 @@ class TestFastAppFactory(unittest.TestCase):
             recruiting_controller=self.mock_controller,
             application_controller=application,
             board_controller=self.mock_controller,
+            blacklist_controller=self.mock_controller,
             launchdarkly_client=MagicMock(),
             database=MagicMock(),
             logger=MagicMock(),
@@ -157,6 +160,7 @@ class TestFastAppFactory(unittest.TestCase):
             recruiting_controller=self.mock_controller,
             application_controller=self.mock_controller,
             board_controller=board,
+            blacklist_controller=self.mock_controller,
             launchdarkly_client=MagicMock(),
             database=MagicMock(),
             logger=MagicMock(),
@@ -167,6 +171,45 @@ class TestFastAppFactory(unittest.TestCase):
         self.assertIn(
             "/api/recruiting/board/ping",
             {route.path for route in app.routes},
+        )
+
+    def test_blacklist_routes_are_mounted(self):
+        """The blacklist controller's router is mounted under /api."""
+        blacklist = MagicMock()
+        router = APIRouter()
+
+        @router.get("/recruiting/blacklist/ping")
+        def _ping():
+            return {}
+
+        blacklist.router = router
+        factory = FastAppFactory(
+            authentication_controller=self.mock_controller,
+            authentication_service=self.mock_service,
+            user_identity_service=MagicMock(),
+            user_permissions_repository=MagicMock(),
+            notification_controller=self.mock_controller,
+            historical_controller=self.mock_controller,
+            consumer_controller=self.mock_controller,
+            internal_activity_controller=self.mock_controller,
+            profile_controller=self.mock_profile_controller,
+            mentorship_controller=self.mock_controller,
+            mentorship_admin_controller=self.mock_controller,
+            email_management_controller=self.mock_controller,
+            permission_admin_controller=self.mock_controller,
+            recruiting_controller=self.mock_controller,
+            application_controller=self.mock_controller,
+            board_controller=self.mock_controller,
+            blacklist_controller=blacklist,
+            launchdarkly_client=MagicMock(),
+            database=MagicMock(),
+            logger=MagicMock(),
+        )
+
+        app = factory.create_app()
+
+        self.assertIn(
+            "/api/recruiting/blacklist/ping", {route.path for route in app.routes}
         )
 
     def test_applications_mine_resolves_before_board_detail_route(self):
@@ -202,6 +245,7 @@ class TestFastAppFactory(unittest.TestCase):
             recruiting_controller=self.mock_controller,
             application_controller=application_controller,
             board_controller=board_controller,
+            blacklist_controller=self.mock_controller,
             launchdarkly_client=MagicMock(),
             database=MagicMock(),
             logger=MagicMock(),
@@ -273,6 +317,7 @@ class TestFastAppFactoryLifespan(unittest.IsolatedAsyncioTestCase):
             recruiting_controller=self.mock_controller,
             application_controller=self.mock_controller,
             board_controller=self.mock_controller,
+            blacklist_controller=self.mock_controller,
             launchdarkly_client=self.mock_launchdarkly_client,
             database=self.mock_database,
             logger=MagicMock(),

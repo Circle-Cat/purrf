@@ -102,6 +102,8 @@ from backend.recruiting.application_service import ApplicationService
 from backend.recruiting.application_controller import ApplicationController
 from backend.recruiting.board_service import BoardService
 from backend.recruiting.board_controller import BoardController
+from backend.recruiting.blacklist_service import BlacklistService
+from backend.recruiting.blacklist_controller import BlacklistController
 from backend.common.environment_constants import RESUME_BUCKET
 from backend.common.auth0_client import Auth0Client
 from backend.repository.users_repository import UsersRepository
@@ -574,6 +576,11 @@ class AppDependencyBuilder:
             self.board_service,
             self.database,
         )
+        self.blacklist_service = BlacklistService(self.users_repository)
+        self.blacklist_controller = BlacklistController(
+            self.blacklist_service,
+            self.database,
+        )
         self.fast_app_factory = FastAppFactory(
             authentication_controller=self.authentication_controller,
             authentication_service=self.authentication_service,
@@ -591,6 +598,7 @@ class AppDependencyBuilder:
             recruiting_controller=self.recruiting_controller,
             application_controller=self.application_controller,
             board_controller=self.board_controller,
+            blacklist_controller=self.blacklist_controller,
             launchdarkly_client=self.launchdarkly_client,
             database=self.database,
             logger=self.logger,
