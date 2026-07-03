@@ -25,6 +25,9 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.sub_repo = MagicMock()
         self.users_repo = MagicMock()
         self.resume_storage = MagicMock()
+        self.assignment_repo = MagicMock()
+        self.assignment_repo.upsert = AsyncMock()
+        self.user_permissions_repo = MagicMock()
         self.session = AsyncMock()
         self.service = BoardService(
             self.job_repo,
@@ -33,6 +36,8 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             self.users_repo,
             RecruitingMapper(),
             self.resume_storage,
+            self.assignment_repo,
+            self.user_permissions_repo,
         )
         # Default persistence mocks: echo the entity back, like SQLAlchemy's
         # merge-and-flush does when nothing else stubs them out.
@@ -273,8 +278,11 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
         self.app_repo.get_by_id = AsyncMock(return_value=application)
         self.sub_repo.get_current = AsyncMock(return_value=current_sub)
+        self.user_permissions_repo.get_active_users_with_permission = AsyncMock(
+            return_value=[self._user(user_id=42)]
+        )
 
-        dto = StageChangeDto(to_stage=ApplicationStage.TECH)
+        dto = StageChangeDto(to_stage=ApplicationStage.TECH, assignee_id=42)
         result = await self.service.change_stage(
             self.session, self._ctx(user_id=2), 10, dto
         )
@@ -286,6 +294,9 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.sub_repo.update.assert_awaited_once()
         self.app_repo.update.assert_awaited_once()
         self.session.commit.assert_awaited_once()
+        self.assignment_repo.upsert.assert_awaited_once_with(
+            self.session, 10, ApplicationStage.TECH, 42, 2
+        )
 
     async def test_change_stage_last_stage_to_hired_clears_sub_status(self):
         job = self._job(job_id=1, owner_ids=(2,), stages=("tech",))
@@ -385,6 +396,83 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.app_repo.get_by_id.assert_awaited_once_with(
             self.session, 10, for_update=True
         )
+
+    async def test_change_stage_to_interview_stage_requires_assignee_id(self):
+        job = self._job(
+            job_id=1, owner_ids=(2,), stages=("recruiter_screening", "tech")
+        )
+        application = self._application(
+            application_id=10, job_id=1, stage=ApplicationStage.RECRUITER_SCREENING
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+
+        dto = StageChangeDto(to_stage=ApplicationStage.TECH)  # no assignee_id
+        with self.assertRaisesRegex(ValueError, "assignee"):
+            await self.service.change_stage(self.session, self._ctx(user_id=2), 10, dto)
+
+        self.assignment_repo.upsert.assert_not_awaited()
+        self.app_repo.update.assert_not_awaited()
+        self.session.commit.assert_not_awaited()
+
+    async def test_change_stage_to_interview_stage_rejects_unqualified_assignee(self):
+        job = self._job(
+            job_id=1, owner_ids=(2,), stages=("recruiter_screening", "tech")
+        )
+        application = self._application(
+            application_id=10, job_id=1, stage=ApplicationStage.RECRUITER_SCREENING
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+        self.user_permissions_repo.get_active_users_with_permission = AsyncMock(
+            return_value=[]
+        )
+
+        dto = StageChangeDto(to_stage=ApplicationStage.TECH, assignee_id=99)
+        with self.assertRaisesRegex(ValueError, "99"):
+            await self.service.change_stage(self.session, self._ctx(user_id=2), 10, dto)
+
+        self.assignment_repo.upsert.assert_not_awaited()
+        self.app_repo.update.assert_not_awaited()
+        self.session.commit.assert_not_awaited()
+
+    async def test_change_stage_to_interview_stage_persists_assignment(self):
+        job = self._job(
+            job_id=1, owner_ids=(2,), stages=("recruiter_screening", "tech")
+        )
+        application = self._application(
+            application_id=10, job_id=1, stage=ApplicationStage.RECRUITER_SCREENING
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+        self.user_permissions_repo.get_active_users_with_permission = AsyncMock(
+            return_value=[self._user(user_id=42)]
+        )
+
+        dto = StageChangeDto(to_stage=ApplicationStage.TECH, assignee_id=42)
+        await self.service.change_stage(self.session, self._ctx(user_id=2), 10, dto)
+
+        self.assignment_repo.upsert.assert_awaited_once_with(
+            self.session, 10, ApplicationStage.TECH, 42, 2
+        )
+
+    async def test_change_stage_to_hired_ignores_assignee_id(self):
+        job = self._job(job_id=1, owner_ids=(2,), stages=("tech",))
+        application = self._application(
+            application_id=10, job_id=1, stage=ApplicationStage.TECH
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+
+        dto = StageChangeDto(to_stage=ApplicationStage.HIRED)  # no assignee_id
+        await self.service.change_stage(self.session, self._ctx(user_id=2), 10, dto)
+
+        self.assignment_repo.upsert.assert_not_awaited()
+        self.user_permissions_repo.get_active_users_with_permission.assert_not_called()
 
     # -- set_sub_status --
 

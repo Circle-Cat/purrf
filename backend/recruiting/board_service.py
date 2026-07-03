@@ -12,11 +12,21 @@ from backend.dto.board_dto import (
     SubStatusChangeDto,
 )
 from backend.dto.user_context_dto import UserContextDto
+from backend.common.permissions import Permission
 from backend.common.recruiting_enums import ApplicationStage
 from backend.entity.application_entity import ApplicationEntity
 from backend.entity.job_entity import JobEntity
 from backend.recruiting import stage_machine
 from backend.recruiting.pipeline_owners import normalized_owner_ids
+
+# Stages that carry an interview assignment/evaluation (sub-project #3
+# slice 1); OFFER has no rubric and is not assignable.
+INTERVIEW_STAGES = {
+    ApplicationStage.RECRUITER_SCREENING,
+    ApplicationStage.BEHAVIORAL,
+    ApplicationStage.TECH,
+    ApplicationStage.BOARD_REVIEW,
+}
 
 
 class BoardService:
@@ -39,6 +49,8 @@ class BoardService:
         users_repository,
         recruiting_mapper,
         resume_storage,
+        application_assignment_repository,
+        user_permissions_repository,
     ):
         """
         Args:
@@ -51,6 +63,11 @@ class BoardService:
             recruiting_mapper (RecruitingMapper): Entity->DTO conversion.
             resume_storage (ResumeStorage): Content-addressed résumé download,
                 for the owner-facing proxy download route.
+            application_assignment_repository (ApplicationAssignmentRepository):
+                Per-(application, stage) interviewer assignment data access.
+            user_permissions_repository (UserPermissionsRepository): Used to
+                verify a proposed assignee actively holds
+                ``Permission.RECRUITING_INTERVIEW_EVALUATE``.
         """
         self.job_repository = job_repository
         self.application_repository = application_repository
@@ -58,6 +75,8 @@ class BoardService:
         self.users_repository = users_repository
         self.recruiting_mapper = recruiting_mapper
         self.resume_storage = resume_storage
+        self.application_assignment_repository = application_assignment_repository
+        self.user_permissions_repository = user_permissions_repository
 
     async def list_my_jobs(
         self, session: AsyncSession, current_user: UserContextDto
@@ -312,20 +331,28 @@ class BoardService:
         """Advance or reject an application, per the job's configured pipeline.
 
         Row-locks the application for the duration of the transaction so two
-        concurrent decisions on the same application serialise. On reject,
-        records the reason/note/origin stage under ``tags["reject"]``. The
-        target's sub_status resets to ``"pending"`` for pipeline stages, or
-        ``None`` for terminal stages (HIRED/REJECTED). Every stage change
-        freezes the application's current submission version, since once a
-        decision has been made on it, the candidate must not be able to edit
-        the record the decision was based on.
+        concurrent decisions on the same application serialise. When
+        ``dto.to_stage`` is an interview stage (``INTERVIEW_STAGES``), an
+        assignee must be supplied and must be an active holder of
+        ``Permission.RECRUITING_INTERVIEW_EVALUATE``; the assignment is then
+        persisted via ``application_assignment_repository.upsert``. Terminal
+        targets (HIRED/REJECTED) ignore ``dto.assignee_id`` if present, since
+        there's no interview to assign. On reject, records the
+        reason/note/origin stage under ``tags["reject"]``. The target's
+        sub_status resets to ``"pending"`` for pipeline stages, or ``None``
+        for terminal stages. Every stage change freezes the application's
+        current submission version, since once a decision has been made on
+        it, the candidate must not be able to edit the record the decision
+        was based on.
 
         Args:
             session (AsyncSession): Active database async session.
-            current_user (UserContextDto): The authenticated caller.
+            current_user (UserContextDto): The authenticated caller,
+                recorded as the assignment's ``assigned_by`` when advancing
+                into an interview stage.
             application_id (int): The application to move.
             dto (StageChangeDto): The target stage and, for rejects, the
-                reason/note.
+                reason/note; for interview-stage advances, the assignee.
 
         Returns:
             ApplicationDto: The refreshed application.
@@ -333,15 +360,39 @@ class BoardService:
         Raises:
             ValueError: If the application is missing, the caller is not an
                 owner (collapsed to the same "not found" message as
-                ``get_application_detail``), or the transition is not legal
-                for the job's configured pipeline
-                (``stage_machine.validate_transition``).
+                ``get_application_detail``), the transition is not legal for
+                the job's configured pipeline
+                (``stage_machine.validate_transition``), or (for interview
+                stages) ``dto.assignee_id`` is missing or is not an active
+                holder of ``Permission.RECRUITING_INTERVIEW_EVALUATE``.
         """
         application, job = await self._load_owned_application(
             session, current_user, application_id, for_update=True
         )
         from_stage = application.stage
         stage_machine.validate_transition(job.pipeline_config, from_stage, dto.to_stage)
+
+        if dto.to_stage in INTERVIEW_STAGES:
+            if dto.assignee_id is None:
+                raise ValueError(
+                    f"assignee is required when advancing to {dto.to_stage!s}"
+                )
+            pool = (
+                await self.user_permissions_repository.get_active_users_with_permission(
+                    session, Permission.RECRUITING_INTERVIEW_EVALUATE.value
+                )
+            )
+            if dto.assignee_id not in {u.user_id for u in pool}:
+                raise ValueError(
+                    f"assignee {dto.assignee_id} is not an active interview evaluator"
+                )
+            await self.application_assignment_repository.upsert(
+                session,
+                application_id,
+                dto.to_stage,
+                dto.assignee_id,
+                current_user.user_id,
+            )
 
         if dto.to_stage == ApplicationStage.REJECTED:
             application.tags = {

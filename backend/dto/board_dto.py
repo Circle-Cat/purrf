@@ -66,6 +66,9 @@ class StageChangeDto(BaseRequestDto):
     to_stage: ApplicationStage
     reason: str | None = None
     note: str | None = None
+    # Required when to_stage is an interview stage (screening/behavioral/
+    # tech/board_review); ignored for terminal targets (hired/rejected).
+    assignee_id: int | None = None
 
     @model_validator(mode="after")
     def reason_required_for_reject(self) -> "StageChangeDto":
