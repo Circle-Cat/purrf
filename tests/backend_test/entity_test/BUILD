@@ -8,3 +8,12 @@ py_test(
         "//backend/entity:entities",
     ],
 )
+
+py_test(
+    name = "application_assignment_entity_test",
+    srcs = ["application_assignment_entity_test.py"],
+    deps = [
+        "//backend/common:recruiting_enums",
+        "//backend/entity:entities",
+    ],
+)
