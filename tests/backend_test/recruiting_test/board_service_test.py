@@ -8,6 +8,7 @@ from backend.dto.board_dto import (
     REJECT_REASONS,
     BlacklistDto,
     ReassignDto,
+    RoundChangeDto,
     StageChangeDto,
     SubStatusChangeDto,
 )
@@ -301,6 +302,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             job_id=1,
             stage=ApplicationStage.RECRUITER_SCREENING,
         )
+        application.current_round = 2
         application.sub_status = "in_progress"
         current_sub = self._submission(application_id=10, is_frozen=False)
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
@@ -325,6 +327,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.assignment_repo.upsert.assert_awaited_once_with(
             self.session, 10, ApplicationStage.TECH, 42, 2
         )
+        self.assertEqual(result.current_round, 1)
 
     async def test_change_stage_last_stage_to_hired_clears_sub_status(self):
         job = self._job(job_id=1, owner_ids=(2,), stages=("tech",))
@@ -366,6 +369,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         application = self._application(
             application_id=10, job_id=1, stage=ApplicationStage.TECH
         )
+        application.current_round = 2
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
         self.app_repo.get_by_id = AsyncMock(return_value=application)
         self.sub_repo.get_current = AsyncMock(return_value=None)
@@ -387,6 +391,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(reject_tag["fromStage"], "tech")
         # "at" is an ISO-8601 timestamp; just assert it parses.
         datetime.fromisoformat(reject_tag["at"])
+        self.assertEqual(result.current_round, 1)
 
     async def test_change_stage_non_owner_gets_collapsed_not_found_message(self):
         job = self._job(job_id=1, owner_ids=(9,))
@@ -741,6 +746,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         application = self._application(
             application_id=10, job_id=1, user_id=3, stage=ApplicationStage.TECH
         )
+        application.current_round = 2
         application.sub_status = "in_progress"
         application.tags = {"existing": "keep-me"}
         current_sub = self._submission(application_id=10, is_frozen=False)
@@ -760,6 +766,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(current_sub.is_frozen)
         self.app_repo.update.assert_awaited_once()
         self.session.commit.assert_awaited_once()
+        self.assertEqual(result.current_round, 1)
 
     async def test_blacklist_row_locks_the_application(self):
         user = self._user(user_id=3)
@@ -826,6 +833,69 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         await self.service.blacklist(self.session, self._ctx(user_id=42), dto)
 
         self.job_repo.get_by_job_id.assert_not_awaited()
+
+    # -- set_round --
+
+    async def test_set_round_advances_to_a_valid_round(self):
+        job = self._job(job_id=1, owner_ids=(2,), stages=("tech",), rounds={"tech": 3})
+        application = self._application(
+            application_id=10, job_id=1, stage=ApplicationStage.TECH
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+
+        dto = RoundChangeDto(round=2)
+        result = await self.service.set_round(
+            self.session, self._ctx(user_id=2), 10, dto
+        )
+
+        self.assertEqual(result.current_round, 2)
+        self.app_repo.update.assert_awaited_once()
+        self.session.commit.assert_awaited_once()
+
+    async def test_set_round_rejects_round_above_the_stage_configured_max(self):
+        job = self._job(job_id=1, owner_ids=(2,), stages=("tech",), rounds={"tech": 2})
+        application = self._application(
+            application_id=10, job_id=1, stage=ApplicationStage.TECH
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+
+        dto = RoundChangeDto(round=3)
+        with self.assertRaises(ValueError):
+            await self.service.set_round(self.session, self._ctx(user_id=2), 10, dto)
+
+        self.assertEqual(application.current_round, 1)
+        self.app_repo.update.assert_not_awaited()
+        self.session.commit.assert_not_awaited()
+
+    async def test_set_round_non_owner_gets_collapsed_not_found_message(self):
+        job = self._job(job_id=1, owner_ids=(9,))
+        application = self._application(application_id=10, job_id=1)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+
+        dto = RoundChangeDto(round=1)
+        with self.assertRaises(ValueError) as ctx:
+            await self.service.set_round(self.session, self._ctx(user_id=2), 10, dto)
+        self.assertEqual(str(ctx.exception), "application 10 not found")
+
+    async def test_set_round_row_locks_the_application(self):
+        job = self._job(job_id=1, owner_ids=(2,), stages=("tech",), rounds={"tech": 2})
+        application = self._application(
+            application_id=10, job_id=1, stage=ApplicationStage.TECH
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+
+        dto = RoundChangeDto(round=2)
+        await self.service.set_round(self.session, self._ctx(user_id=2), 10, dto)
+
+        self.app_repo.get_by_id.assert_awaited_once_with(
+            self.session, 10, for_update=True
+        )
 
 
 if __name__ == "__main__":

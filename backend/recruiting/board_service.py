@@ -10,6 +10,7 @@ from backend.dto.board_dto import (
     BoardJobDto,
     PipelineStageInfoDto,
     ReassignDto,
+    RoundChangeDto,
     StageChangeDto,
     SubStatusChangeDto,
 )
@@ -418,6 +419,7 @@ class BoardService:
             if dto.to_stage in stage_machine.configured_stages(job.pipeline_config)
             else None
         )
+        application.current_round = 1
 
         current_sub = await self._freeze_current_submission(session, application_id)
         application = await self.application_repository.update(session, application)
@@ -540,6 +542,52 @@ class BoardService:
             application, current_sub, editable=False
         )
 
+    async def set_round(
+        self,
+        session: AsyncSession,
+        current_user: UserContextDto,
+        application_id: int,
+        dto: RoundChangeDto,
+    ) -> ApplicationDto:
+        """Manually advance an application to a round within its current stage.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            current_user (UserContextDto): The authenticated caller.
+            application_id (int): The application to update.
+            dto (RoundChangeDto): The target round.
+
+        Returns:
+            ApplicationDto: The refreshed application.
+
+        Raises:
+            ValueError: If the application is missing, the caller is not an
+                owner (collapsed "not found" message), or ``dto.round`` is
+                outside ``1..rounds_for_stage(...)`` for the application's
+                current stage.
+        """
+        application, job = await self._load_owned_application(
+            session, current_user, application_id, for_update=True
+        )
+        max_round = stage_machine.rounds_for_stage(
+            job.pipeline_config, application.stage
+        )
+        if not (1 <= dto.round <= max_round):
+            raise ValueError(
+                f"round {dto.round} is out of range for stage "
+                f"{application.stage!s} (configured rounds: {max_round})"
+            )
+        application.current_round = dto.round
+
+        current_sub = await self.application_submission_repository.get_current(
+            session, application_id
+        )
+        application = await self.application_repository.update(session, application)
+        await session.commit()
+        return self.recruiting_mapper.to_application_dto(
+            application, current_sub, editable=False
+        )
+
     async def blacklist(
         self,
         session: AsyncSession,
@@ -591,6 +639,7 @@ class BoardService:
         application.stage = ApplicationStage.REJECTED
         application.tags = {**(application.tags or {}), "blacklisted": True}
         application.sub_status = None
+        application.current_round = 1
 
         current_sub = await self._freeze_current_submission(session, dto.application_id)
         application = await self.application_repository.update(session, application)
