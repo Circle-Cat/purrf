@@ -76,6 +76,71 @@ export const POSTINGS_GUIDE = {
   ],
 };
 
+/** Author-facing guide for the New/Edit posting form. */
+export const POSTING_EDITOR_GUIDE = {
+  title: "How posting setup works",
+  description: "What each part of this form does.",
+  steps: [
+    {
+      title: "Basics",
+      detail:
+        "Title, description, kind, optional mentorship role, and a cooldown before a rejected applicant can re-apply. Kind and mentorship role lock once the posting is published.",
+    },
+    {
+      title: "Application form",
+      detail:
+        "Add the questions applicants answer — short/long text, single/multi choice, or exact-match text.",
+    },
+    {
+      title: "Interview pipeline",
+      detail:
+        "Pick one or more owners who can advance applicants, then add stages in the order applicants move through them.",
+    },
+    {
+      title: "Screening rules",
+      detail:
+        "Optional conditions that auto-reject an applicant based on their answers as soon as they apply.",
+    },
+    {
+      title: "Profile requirements",
+      detail:
+        "Choose whether education, work experience, and resume are required, optional, or off for applicants.",
+    },
+    {
+      title: "Save",
+      detail:
+        "Saving never publishes by itself — it creates or updates a draft (or stages an edit to a live posting). Submit it for review separately from the Postings page when it's ready.",
+    },
+  ],
+  statusesTitle: "Key concepts",
+  statuses: [
+    {
+      name: "Owner(s)",
+      description:
+        "Staff who can advance applicants through every stage of this posting's pipeline.",
+    },
+    {
+      name: "Stage",
+      description:
+        "One step of the interview pipeline, e.g. recruiter screening or tech; each can require multiple rounds.",
+    },
+    {
+      name: "Screen rule",
+      description:
+        "An automatic reject condition checked against an applicant's answers when they apply.",
+    },
+    {
+      name: "Profile requirement",
+      description:
+        "Whether education, work experience, and resume are Required, Optional, or Off for applicants.",
+    },
+  ],
+  notes: [
+    "Kind and mentorship role can only be changed while the posting is a draft.",
+    "The live preview on the right updates as you edit.",
+  ],
+};
+
 /** Reviewer-facing guide for the My reviews page. */
 export const REVIEWS_GUIDE = {
   title: "How reviews work",

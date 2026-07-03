@@ -55,6 +55,15 @@ const renderAt = (path) => {
 };
 
 describe("PostingEditor", () => {
+  it("shows the How it works guide explaining the form", () => {
+    renderAt("/postings/new");
+    fireEvent.click(screen.getByRole("button", { name: "How it works" }));
+    expect(
+      screen.getByRole("heading", { name: "How posting setup works" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Owner(s)")).toBeInTheDocument();
+  });
+
   it("creates a new posting from the typed draft", async () => {
     const { router } = renderAt("/postings/new");
     fireEvent.change(screen.getByLabelText("Title"), {

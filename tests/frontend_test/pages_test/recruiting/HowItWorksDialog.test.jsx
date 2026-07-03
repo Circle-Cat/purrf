@@ -48,4 +48,17 @@ describe("HowItWorksDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "How it works" }));
     expect(screen.queryByText("Good to know")).not.toBeInTheDocument();
   });
+
+  it("omits the legend section entirely when statuses is empty or absent", () => {
+    render(<HowItWorksDialog {...guide} statuses={[]} />);
+    fireEvent.click(screen.getByRole("button", { name: "How it works" }));
+    expect(screen.queryByText("Statuses")).not.toBeInTheDocument();
+  });
+
+  it("uses a custom legend heading via statusesTitle", () => {
+    render(<HowItWorksDialog {...guide} statusesTitle="Key concepts" />);
+    fireEvent.click(screen.getByRole("button", { name: "How it works" }));
+    expect(screen.getByText("Key concepts")).toBeInTheDocument();
+    expect(screen.queryByText("Statuses")).not.toBeInTheDocument();
+  });
 });
