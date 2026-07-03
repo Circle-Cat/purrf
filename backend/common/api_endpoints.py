@@ -104,6 +104,9 @@ RECRUITING_APPLICATION_SUB_STATUS_ENDPOINT = (
 RECRUITING_APPLICATION_ASSIGNMENT_ENDPOINT = (
     "/recruiting/applications/{application_id}/assignment"
 )
+RECRUITING_APPLICATION_ROUND_ENDPOINT = (
+    "/recruiting/applications/{application_id}/round"
+)
 RECRUITING_BLACKLIST_ENDPOINT = "/recruiting/blacklist"
 RECRUITING_BLACKLIST_UNBLOCK_ENDPOINT = "/recruiting/blacklist/{user_id}"
 RECRUITING_APPLICATION_RESUME_ENDPOINT = (

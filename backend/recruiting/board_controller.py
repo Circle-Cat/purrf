@@ -6,6 +6,7 @@ from backend.utils.permission_decorators import authenticate
 from backend.dto.board_dto import (
     BlacklistDto,
     ReassignDto,
+    RoundChangeDto,
     StageChangeDto,
     SubStatusChangeDto,
 )
@@ -17,6 +18,7 @@ from backend.common.api_endpoints import (
     RECRUITING_APPLICATION_STAGE_ENDPOINT,
     RECRUITING_APPLICATION_SUB_STATUS_ENDPOINT,
     RECRUITING_APPLICATION_ASSIGNMENT_ENDPOINT,
+    RECRUITING_APPLICATION_ROUND_ENDPOINT,
     RECRUITING_APPLICATION_RESUME_ENDPOINT,
     RECRUITING_BLACKLIST_ENDPOINT,
 )
@@ -29,7 +31,7 @@ class BoardController:
     login-gated (``authenticate()``) rather than permission-gated: ownership
     is a row-level check performed by ``BoardService`` against a job's
     configured owner ids, not an enum permission. The decision routes
-    (stage/sub-status/reassign) are double-gated:
+    (stage/sub-status/reassign/round) are double-gated:
     ``Permission.RECRUITING_APPLICATION_ADVANCE`` at the route, and the same
     row-level owner check in ``BoardService``. The blacklist route is
     permission-gated only (``Permission.RECRUITING_BLACKLIST_WRITE``):
@@ -93,6 +95,14 @@ class BoardController:
             endpoint=authenticate(
                 permissions=[Permission.RECRUITING_APPLICATION_ADVANCE]
             )(self.reassign),
+            methods=["PATCH"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            RECRUITING_APPLICATION_ROUND_ENDPOINT,
+            endpoint=authenticate(
+                permissions=[Permission.RECRUITING_APPLICATION_ADVANCE]
+            )(self.set_round),
             methods=["PATCH"],
             response_model=None,
         )
@@ -178,6 +188,19 @@ class BoardController:
                 session, current_user, application_id, reassign_data
             )
         return api_response(message="Application reassigned.", data=result)
+
+    async def set_round(
+        self,
+        current_user: UserContextDto,
+        application_id: int,
+        round_data: RoundChangeDto,
+    ):
+        """Manually advance an application to a round within its current stage."""
+        async with self.database.session() as session:
+            result = await self.board_service.set_round(
+                session, current_user, application_id, round_data
+            )
+        return api_response(message="Application round updated.", data=result)
 
     async def blacklist(
         self,
