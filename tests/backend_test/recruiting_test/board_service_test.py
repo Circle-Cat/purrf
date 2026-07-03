@@ -76,6 +76,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             user_id=user_id,
             stage=stage,
             sub_status="pending",
+            current_round=1,
         )
         app.application_id = application_id
         return app
