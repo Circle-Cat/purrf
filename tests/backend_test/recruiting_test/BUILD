@@ -40,6 +40,15 @@ py_test(
 )
 
 py_test(
+    name = "stage_machine_test",
+    srcs = ["stage_machine_test.py"],
+    deps = [
+        "//backend/common:recruiting_enums",
+        "//backend/recruiting",
+    ],
+)
+
+py_test(
     name = "resume_storage_test",
     srcs = ["resume_storage_test.py"],
     deps = [
@@ -74,6 +83,28 @@ py_test(
     name = "pipeline_owners_test",
     srcs = ["pipeline_owners_test.py"],
     deps = [
+        "//backend/recruiting",
+    ],
+)
+
+py_test(
+    name = "board_service_test",
+    srcs = ["board_service_test.py"],
+    deps = [
+        "//backend/common:recruiting_enums",
+        "//backend/dto",
+        "//backend/entity:entities",
+        "//backend/recruiting",
+    ],
+)
+
+py_test(
+    name = "board_controller_test",
+    srcs = ["board_controller_test.py"],
+    deps = [
+        "//backend/common:permissions",
+        "//backend/common:recruiting_enums",
+        "//backend/dto",
         "//backend/recruiting",
     ],
 )

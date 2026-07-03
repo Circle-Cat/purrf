@@ -93,3 +93,15 @@ RECRUITING_RESUMES_ENDPOINT = "/recruiting/resumes"
 RECRUITING_APPLICATIONS_ENDPOINT = "/recruiting/applications"
 RECRUITING_APPLICATION_ENDPOINT = "/recruiting/applications/{application_id}"
 RECRUITING_APPLICATIONS_MINE_ENDPOINT = "/recruiting/applications/mine"
+RECRUITING_BOARD_JOBS_ENDPOINT = "/recruiting/board/jobs"
+RECRUITING_JOB_BOARD_ENDPOINT = "/recruiting/jobs/{job_id}/board"
+RECRUITING_APPLICATION_STAGE_ENDPOINT = (
+    "/recruiting/applications/{application_id}/stage"
+)
+RECRUITING_APPLICATION_SUB_STATUS_ENDPOINT = (
+    "/recruiting/applications/{application_id}/sub-status"
+)
+RECRUITING_BLACKLIST_ENDPOINT = "/recruiting/blacklist"
+RECRUITING_APPLICATION_RESUME_ENDPOINT = (
+    "/recruiting/applications/{application_id}/resume"
+)

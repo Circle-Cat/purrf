@@ -59,3 +59,47 @@ class TestApplicationRepository(BaseRepositoryTestLib):
         self.assertEqual(current.version, 2)
         versions = await sub_repo.list_by_application(self.session, app.application_id)
         self.assertEqual([v.version for v in versions], [1, 2])
+
+    async def test_list_by_job_returns_joined_rows_ordered_excluding_other_jobs(self):
+        job = JobEntity(kind=JobKind.ACTIVITY, title="T", status=JobStatus.PUBLISHED)
+        other_job = JobEntity(
+            kind=JobKind.ACTIVITY, title="Other", status=JobStatus.PUBLISHED
+        )
+        user_a = UsersEntity(first_name="A", last_name="One", primary_email="a1@b.com")
+        user_b = UsersEntity(first_name="B", last_name="Two", primary_email="b2@b.com")
+        await self.insert_entities([job, other_job, user_a, user_b])
+        await self.session.flush()
+
+        repo = ApplicationRepository()
+        app_a = await repo.create(
+            self.session,
+            ApplicationEntity(
+                job_id=job.job_id,
+                user_id=user_a.user_id,
+                stage=ApplicationStage.APPLIED,
+            ),
+        )
+        app_b = await repo.create(
+            self.session,
+            ApplicationEntity(
+                job_id=job.job_id,
+                user_id=user_b.user_id,
+                stage=ApplicationStage.RECRUITER_SCREENING,
+            ),
+        )
+        await repo.create(
+            self.session,
+            ApplicationEntity(job_id=other_job.job_id, user_id=user_a.user_id),
+        )
+
+        rows = await repo.list_by_job(self.session, job.job_id)
+
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(
+            [app.application_id for app, _ in rows],
+            [app_a.application_id, app_b.application_id],
+        )
+        self.assertEqual(
+            [user.user_id for _, user in rows], [user_a.user_id, user_b.user_id]
+        )
+        self.assertTrue(all(app.job_id == job.job_id for app, _ in rows))

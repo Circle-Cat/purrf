@@ -1,0 +1,70 @@
+import unittest
+import pydantic
+
+from backend.dto.board_dto import (
+    REJECT_REASONS,
+    BlacklistDto,
+    StageChangeDto,
+    SubStatusChangeDto,
+)
+from backend.common.recruiting_enums import ApplicationStage
+
+
+class TestStageChangeDto(unittest.TestCase):
+    def test_advance_without_reason_is_fine(self):
+        dto = StageChangeDto.model_validate({"toStage": ApplicationStage.TECH.value})
+        self.assertIsNone(dto.reason)
+
+    def test_reject_requires_a_reason(self):
+        with self.assertRaises(pydantic.ValidationError):
+            StageChangeDto.model_validate({"toStage": ApplicationStage.REJECTED.value})
+
+    def test_reject_reason_must_be_from_fixed_list(self):
+        with self.assertRaises(pydantic.ValidationError):
+            StageChangeDto.model_validate({
+                "toStage": ApplicationStage.REJECTED.value,
+                "reason": "not a real reason",
+            })
+
+    def test_reject_with_valid_reason_is_accepted(self):
+        dto = StageChangeDto.model_validate({
+            "toStage": ApplicationStage.REJECTED.value,
+            "reason": REJECT_REASONS[0],
+            "note": "some note",
+        })
+        self.assertEqual(dto.reason, REJECT_REASONS[0])
+        self.assertEqual(dto.note, "some note")
+
+
+class TestSubStatusChangeDto(unittest.TestCase):
+    def test_accepts_camel_case_field(self):
+        dto = SubStatusChangeDto.model_validate({"subStatus": "in_progress"})
+        self.assertEqual(dto.sub_status, "in_progress")
+
+
+class TestBlacklistDto(unittest.TestCase):
+    def test_accepts_camel_case_fields(self):
+        dto = BlacklistDto.model_validate({
+            "userId": 3,
+            "applicationId": 10,
+            "reason": "Fabricated credentials",
+        })
+        self.assertEqual(dto.user_id, 3)
+        self.assertEqual(dto.application_id, 10)
+        self.assertEqual(dto.reason, "Fabricated credentials")
+
+    def test_blank_reason_is_rejected(self):
+        with self.assertRaises(pydantic.ValidationError):
+            BlacklistDto.model_validate({
+                "userId": 3,
+                "applicationId": 10,
+                "reason": "   ",
+            })
+
+    def test_missing_reason_is_rejected(self):
+        with self.assertRaises(pydantic.ValidationError):
+            BlacklistDto.model_validate({"userId": 3, "applicationId": 10})
+
+
+if __name__ == "__main__":
+    unittest.main()

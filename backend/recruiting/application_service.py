@@ -11,7 +11,7 @@ from backend.dto.application_dto import (
 from backend.dto.user_context_dto import UserContextDto
 from backend.entity.application_entity import ApplicationEntity
 from backend.entity.application_submission_entity import ApplicationSubmissionEntity
-from backend.recruiting import cooldown
+from backend.recruiting import cooldown, stage_machine
 
 
 class ApplicationService:
@@ -135,8 +135,9 @@ class ApplicationService:
                     stage=(
                         ApplicationStage.REJECTED
                         if blocked
-                        else ApplicationStage.APPLIED
+                        else stage_machine.first_stage(job.pipeline_config)
                     ),
+                    sub_status=None if blocked else "pending",
                     tags={"auto_reject": "blocked"} if blocked else None,
                 ),
             )
@@ -145,6 +146,7 @@ class ApplicationService:
             )
         elif blocked:
             existing.stage = ApplicationStage.REJECTED
+            existing.sub_status = None
             existing.tags = {"auto_reject": "blocked"}
             application = await self.application_repository.update(session, existing)
             current_sub = await self.application_submission_repository.get_current(
@@ -184,7 +186,8 @@ class ApplicationService:
                 if cooldown.is_in_cooldown(self._today(), thaw)
                 else None
             )
-            existing.stage = ApplicationStage.APPLIED
+            existing.stage = stage_machine.first_stage(job.pipeline_config)
+            existing.sub_status = "pending"
             existing.tags = tags
             application = await self.application_repository.update(session, existing)
             current_sub = await self.application_submission_repository.create(
@@ -202,7 +205,10 @@ class ApplicationService:
             await self._safe_writeback(session, current_user.user_id, dto)
 
         await session.commit()
-        return self.recruiting_mapper.to_application_dto(application, current_sub)
+        editable = self._is_editable(application, job, current_sub)
+        return self.recruiting_mapper.to_application_dto(
+            application, current_sub, editable=editable
+        )
 
     async def edit(
         self,
@@ -212,6 +218,13 @@ class ApplicationService:
         dto: ApplicationEditDto,
     ) -> ApplicationDto:
         """Overwrite the current submission version while still Applied.
+
+        Row-locks the application for the duration of the transaction so a
+        concurrent owner decision (freeze/advance via ``BoardService``)
+        can't interleave with this edit — without the lock, an edit could
+        silently overwrite the submission a decision was already based on.
+        ``_is_editable`` is evaluated after this locked load, on the
+        now-current row.
 
         Args:
             session (AsyncSession): Active database async session.
@@ -223,19 +236,20 @@ class ApplicationService:
             ApplicationDto: The persisted application with its current version.
 
         Raises:
-            ValueError: If not the owner, the application has left Applied, or
-                a required résumé/answer is missing.
+            ValueError: If not the owner, the application is no longer
+                editable (processing has started), or a required
+                résumé/answer is missing.
         """
-        application = await self._load_owned(session, current_user, application_id)
-        if application.stage != ApplicationStage.APPLIED:
-            raise ValueError(
-                "application is locked; editing is only allowed while Applied"
-            )
+        application = await self._load_owned(
+            session, current_user, application_id, for_update=True
+        )
         job = await self.job_repository.get_by_job_id(session, application.job_id)
-        self._validate_submission(job, dto)
         current_sub = await self.application_submission_repository.get_current(
             session, application_id
         )
+        if not self._is_editable(application, job, current_sub):
+            raise ValueError("application is locked once processing has started")
+        self._validate_submission(job, dto)
         version = current_sub.version if current_sub is not None else 1
         current_sub = await self._write_version(
             session, application_id, version, current_sub, dto
@@ -243,7 +257,10 @@ class ApplicationService:
         if self._profile_writeback and dto.save_to_profile:
             await self._safe_writeback(session, current_user.user_id, dto)
         await session.commit()
-        return self.recruiting_mapper.to_application_dto(application, current_sub)
+        editable = self._is_editable(application, job, current_sub)
+        return self.recruiting_mapper.to_application_dto(
+            application, current_sub, editable=editable
+        )
 
     async def get_mine(
         self, session: AsyncSession, current_user: UserContextDto, job_id: int
@@ -266,15 +283,46 @@ class ApplicationService:
         current_sub = await self.application_submission_repository.get_current(
             session, application.application_id
         )
-        return self.recruiting_mapper.to_application_dto(application, current_sub)
+        job = await self.job_repository.get_by_job_id(session, application.job_id)
+        editable = self._is_editable(application, job, current_sub)
+        return self.recruiting_mapper.to_application_dto(
+            application, current_sub, editable=editable
+        )
 
-    async def _load_owned(self, session, current_user, application_id):
+    def _is_editable(self, application, job, current_submission) -> bool:
+        """Whether the candidate may still edit: first-stage, untouched, unfrozen.
+
+        Args:
+            application (ApplicationEntity): The application container.
+            job (JobEntity): The posting the application is for.
+            current_submission (ApplicationSubmissionEntity | None): The
+                application's current (highest) submission version.
+
+        Returns:
+            bool: True while the application sits at the job's first
+                configured pipeline stage, its sub_status is still
+                ``"pending"``, and the current submission is not frozen.
+        """
+        return (
+            application.stage == stage_machine.first_stage(job.pipeline_config)
+            and (application.sub_status or "pending") == "pending"
+            and not (current_submission is not None and current_submission.is_frozen)
+        )
+
+    async def _load_owned(
+        self, session, current_user, application_id, *, for_update: bool = False
+    ):
         """Fetch an application and assert the caller owns it.
 
         Args:
             session (AsyncSession): Active database async session.
             current_user (UserContextDto): The authenticated applicant.
             application_id (int): The application to fetch.
+            for_update (bool): When True, row-locks the application
+                (``SELECT ... FOR UPDATE``) so a concurrent owner decision
+                (freeze/advance) on the same application can't interleave
+                with this call. ``edit`` passes True (it mutates); read-only
+                callers should leave this False.
 
         Returns:
             ApplicationEntity: The owned application.
@@ -283,7 +331,7 @@ class ApplicationService:
             ValueError: If missing or owned by another user.
         """
         application = await self.application_repository.get_by_id(
-            session, application_id
+            session, application_id, for_update=for_update
         )
         if application is None or application.user_id != current_user.user_id:
             raise ValueError(f"application {application_id} not found")

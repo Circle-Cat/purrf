@@ -97,6 +97,8 @@ from backend.recruiting.recruiting_controller import RecruitingController
 from backend.recruiting.resume_storage import ResumeStorage
 from backend.recruiting.application_service import ApplicationService
 from backend.recruiting.application_controller import ApplicationController
+from backend.recruiting.board_service import BoardService
+from backend.recruiting.board_controller import BoardController
 from backend.common.environment_constants import RESUME_BUCKET
 from backend.common.auth0_client import Auth0Client
 from backend.repository.users_repository import UsersRepository
@@ -554,6 +556,18 @@ class AppDependencyBuilder:
             self.resume_storage,
             self.database,
         )
+        self.board_service = BoardService(
+            self.job_repository,
+            self.application_repository,
+            self.application_submission_repository,
+            self.users_repository,
+            self.recruiting_mapper,
+            self.resume_storage,
+        )
+        self.board_controller = BoardController(
+            self.board_service,
+            self.database,
+        )
         self.fast_app_factory = FastAppFactory(
             authentication_controller=self.authentication_controller,
             authentication_service=self.authentication_service,
@@ -570,6 +584,7 @@ class AppDependencyBuilder:
             permission_admin_controller=self.permission_admin_controller,
             recruiting_controller=self.recruiting_controller,
             application_controller=self.application_controller,
+            board_controller=self.board_controller,
             launchdarkly_client=self.launchdarkly_client,
             database=self.database,
             logger=self.logger,
