@@ -27,6 +27,7 @@ import {
   changeApplicationStage,
   setApplicationSubStatus,
   blacklistUser,
+  reassignApplication,
   resumeUrl,
 } from "@/api/recruitingApi";
 
@@ -232,6 +233,15 @@ describe("recruitingApi", () => {
       userId: 42,
       reason: "spam",
     });
+  });
+
+  it("reassigns an application's interviewer", async () => {
+    request.patch.mockResolvedValueOnce({ data: {} });
+    await reassignApplication(9, 42);
+    expect(request.patch).toHaveBeenCalledWith(
+      "/recruiting/applications/9/assignment",
+      { assigneeId: 42 },
+    );
   });
 
   it("resumeUrl returns correctly formatted URL", () => {
