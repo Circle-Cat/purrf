@@ -18,6 +18,11 @@ class TestApplicationEntities(unittest.TestCase):
         )
         self.assertEqual(app.current_round, 3)
 
+    def test_application_current_round_column_default_is_one(self):
+        column = ApplicationEntity.__table__.c.current_round
+        self.assertEqual(column.default.arg, 1)
+        self.assertEqual(column.server_default.arg, "1")
+
     def test_submission_carries_snapshot_and_resume_ref(self):
         sub = ApplicationSubmissionEntity(
             application_id=1,
