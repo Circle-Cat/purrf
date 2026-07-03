@@ -51,6 +51,26 @@ describe("PostingReviewView", () => {
     expect(screen.getByText("1. Tech — 1 round(s)")).toBeInTheDocument();
   });
 
+  it("toggles the title and description between pending and live for a revision", async () => {
+    const jobWithPendingTitle = {
+      ...job,
+      pendingPayload: {
+        ...job.pendingPayload,
+        title: "SWE (updated)",
+        description: "Updated JD",
+      },
+    };
+    render(<PostingReviewView job={jobWithPendingTitle} isRevision />);
+    await waitFor(() => expect(api.listInterviewPool).toHaveBeenCalled());
+    expect(
+      screen.getByRole("heading", { name: "SWE (updated)" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Updated JD")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Live" }));
+    expect(screen.getByRole("heading", { name: "SWE" })).toBeInTheDocument();
+    expect(screen.getByText("JD")).toBeInTheDocument();
+  });
+
   it("falls back to live form and pipeline when a revision omits pending fields", async () => {
     const partial = {
       title: "SWE",

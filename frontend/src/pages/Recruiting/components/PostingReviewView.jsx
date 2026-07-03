@@ -8,8 +8,9 @@ import PipelineSummary from "@/pages/Recruiting/components/PipelineSummary";
 /**
  * Shared reviewer/preview body for a posting: the applicant-facing view plus a
  * readable pipeline summary. For a revision (an edit to a published posting) it
- * shows a Pending|Live toggle (Pending default) over the form/profile/pipeline.
- * Fetches the interview + owner pools once so PipelineSummary can show names.
+ * shows a Pending|Live toggle (Pending default) over title/description/form/
+ * profile/pipeline. Fetches the interview + owner pools once so
+ * PipelineSummary can show names.
  *
  * @param {{job: object, isRevision?: boolean}} props
  */
@@ -28,6 +29,12 @@ const PostingReviewView = ({ job, isRevision = false }) => {
       .catch((e) => toast.error(e.message));
   }, []);
 
+  const title = showPending
+    ? (job.pendingPayload?.title ?? job.title)
+    : job.title;
+  const description = showPending
+    ? (job.pendingPayload?.description ?? job.description)
+    : job.description;
   const questions = showPending
     ? (job.pendingPayload?.formSchema?.questions ??
       job.formSchema?.questions ??
@@ -62,9 +69,9 @@ const PostingReviewView = ({ job, isRevision = false }) => {
       )}
       <PostingApplicantView
         key={version}
-        title={job.title}
+        title={title}
         kind={job.kind}
-        description={job.description}
+        description={description}
         questions={questions}
         profileConfig={profileConfig}
       />
