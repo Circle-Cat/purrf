@@ -12,8 +12,8 @@ class EvaluationEntity(Base):
     Unique per (application_id, stage, evaluator_id) — a reassignment
     (application_assignment) leaves prior evaluators' rows untouched as
     history; a fresh assignee gets their own row when they start a draft.
-    Immutable once is_confirmed=True (enforced in EvaluationService, not at
-    the DB layer).
+    Immutable once is_confirmed=True (enforced in EvaluationRepository, not
+    at the DB layer).
     """
 
     __tablename__ = "evaluation"
