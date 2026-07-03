@@ -6,9 +6,6 @@ import ApplicationForm from "@/pages/Recruiting/ApplicationForm";
 import LoadGate from "@/pages/Recruiting/components/LoadGate";
 import { RowList } from "@/pages/Recruiting/components/ApplicationSnapshotRows";
 
-/** The only stage at which a candidate's application is still editable. */
-const EDITABLE_STAGE = "applied";
-
 /**
  * Human-readable label for an `ApplicationStage` enum value, e.g.
  * "recruiter_screening" -> "Recruiter screening".
@@ -24,7 +21,7 @@ const formatStageLabel = (stage) => {
 
 /**
  * Read-only summary of a submitted application: the applicant's answers, no
- * longer editable once the application has moved past the `applied` stage.
+ * longer editable once the server reports `application.editable === false`.
  *
  * @param {{job: object, application: object}} props
  */
@@ -69,8 +66,11 @@ const ReadOnlySummary = ({ job, application }) => {
 
 /**
  * The signed-in candidate's own application for a job: a new/editable
- * `ApplicationForm` while the application has no stage yet or is still at
- * the `applied` stage, otherwise a read-only summary of what was submitted.
+ * `ApplicationForm` while there is no existing application yet, or while the
+ * server reports the existing application as `editable: true`, otherwise a
+ * read-only summary of what was submitted. Editability is decided entirely
+ * by the server-computed `editable` flag on the application, not by the
+ * stage string.
  * Loads the job and application on mount; while loading shows a placeholder,
  * and on failure toasts the error and shows an inline retryable error state.
  */
@@ -111,7 +111,7 @@ const MyApplication = () => {
     );
   }
 
-  if (!application || application.stage === EDITABLE_STAGE) {
+  if (!application || application.editable === true) {
     return (
       <div className="space-y-4 p-6">
         <ApplicationForm
