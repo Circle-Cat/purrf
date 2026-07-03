@@ -33,14 +33,17 @@ const jobA = {
   id: 1,
   title: "Backend Engineer",
   kind: "employment",
-  stages: ["recruiter_screening", "tech"],
+  stages: [
+    { stage: "recruiter_screening", rounds: 1 },
+    { stage: "tech", rounds: 1 },
+  ],
 };
 
 const jobB = {
   id: 2,
   title: "Mentor",
   kind: "activity",
-  stages: ["board_review"],
+  stages: [{ stage: "board_review", rounds: 1 }],
 };
 
 describe("BoardPage", () => {
@@ -329,5 +332,64 @@ describe("BoardPage", () => {
     await waitFor(() =>
       expect(screen.getByText("alice@example.com")).toBeInTheDocument(),
     );
+  });
+
+  it("splits a multi-round stage into one lane per round and buckets cards by round", async () => {
+    const jobC = {
+      id: 3,
+      title: "Staff Engineer",
+      kind: "employment",
+      stages: [{ stage: "tech", rounds: 2 }],
+    };
+    api.listBoardJobs.mockResolvedValue({ data: [jobC] });
+    api.getJobBoard.mockResolvedValue({
+      data: {
+        tech: [
+          {
+            id: 201,
+            applicantName: "Round One Person",
+            applicantEmail: "r1@example.com",
+            stage: "tech",
+            subStatus: "pending",
+            tags: null,
+            appliedAt: "2026-06-01T00:00:00Z",
+            round: 1,
+          },
+          {
+            id: 202,
+            applicantName: "Round Two Person",
+            applicantEmail: "r2@example.com",
+            stage: "tech",
+            subStatus: "pending",
+            tags: null,
+            appliedAt: "2026-06-02T00:00:00Z",
+            round: 2,
+          },
+        ],
+      },
+    });
+
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByText("Tech — Round 1")).toBeInTheDocument(),
+    );
+    expect(screen.getByText("Tech — Round 2")).toBeInTheDocument();
+
+    const round1Lane = screen.getByTestId("lane-tech:1");
+    expect(
+      within(round1Lane).getByText("Round One Person"),
+    ).toBeInTheDocument();
+    expect(
+      within(round1Lane).queryByText("Round Two Person"),
+    ).not.toBeInTheDocument();
+
+    const round2Lane = screen.getByTestId("lane-tech:2");
+    expect(
+      within(round2Lane).getByText("Round Two Person"),
+    ).toBeInTheDocument();
+    expect(
+      within(round2Lane).queryByText("Round One Person"),
+    ).not.toBeInTheDocument();
   });
 });

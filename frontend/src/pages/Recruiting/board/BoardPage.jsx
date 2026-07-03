@@ -77,7 +77,23 @@ const BoardPage = () => {
 
   const lanes = useMemo(() => {
     if (!selectedJob) return [];
-    return [...selectedJob.stages, ...TERMINAL_STAGES];
+    const pipelineLanes = selectedJob.stages.flatMap(({ stage, rounds }) =>
+      rounds > 1
+        ? Array.from({ length: rounds }, (_, i) => ({
+            key: `${stage}:${i + 1}`,
+            stage,
+            round: i + 1,
+            label: `${humanize(stage)} — Round ${i + 1}`,
+          }))
+        : [{ key: stage, stage, round: null, label: humanize(stage) }],
+    );
+    const terminalLanes = TERMINAL_STAGES.map((stage) => ({
+      key: stage,
+      stage,
+      round: null,
+      label: humanize(stage),
+    }));
+    return [...pipelineLanes, ...terminalLanes];
   }, [selectedJob]);
 
   /** Open the detail dialog for the clicked card's application. */
@@ -133,18 +149,22 @@ const BoardPage = () => {
         />
       ) : (
         <div className="flex flex-1 gap-4 overflow-x-auto pb-4">
-          {lanes.map((stage) => {
-            const cards = board[stage] ?? [];
-            const isTerminal = TERMINAL_STAGES.includes(stage);
+          {lanes.map((lane) => {
+            const cardsForStage = board[lane.stage] ?? [];
+            const cards =
+              lane.round == null
+                ? cardsForStage
+                : cardsForStage.filter((c) => c.round === lane.round);
+            const isTerminal = TERMINAL_STAGES.includes(lane.stage);
             return (
               <div
-                key={stage}
-                data-testid={`lane-${stage}`}
+                key={lane.key}
+                data-testid={`lane-${lane.key}`}
                 className="flex w-72 shrink-0 flex-col gap-3 rounded-lg bg-slate-50 p-3"
               >
                 <div className="flex items-center justify-between">
                   <h2 className="text-sm font-semibold text-slate-900">
-                    {humanize(stage)}
+                    {lane.label}
                   </h2>
                   <Badge variant="secondary">{cards.length}</Badge>
                 </div>
@@ -173,7 +193,10 @@ const BoardPage = () => {
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         onChanged={() => loadBoard(selectedJobId)}
-        jobStages={selectedJob?.stages ?? []}
+        jobStages={selectedJob?.stages.map((s) => s.stage) ?? []}
+        stageRounds={Object.fromEntries(
+          (selectedJob?.stages ?? []).map((s) => [s.stage, s.rounds]),
+        )}
       />
     </div>
   );
