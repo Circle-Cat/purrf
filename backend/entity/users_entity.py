@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Boolean, String, DateTime, func, text, Enum as SAEnum
+from sqlalchemy import Boolean, Integer, String, DateTime, func, text, Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column
 from backend.common.base import Base
 from backend.common.mentorship_enums import CommunicationMethod
@@ -49,6 +49,11 @@ class UsersEntity(Base):
     is_blocked: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("false"), default=False
     )
+
+    # Audit trail for is_blocked, written only by the blacklist action.
+    blocked_by: Mapped[int | None] = mapped_column(Integer)
+    blocked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    blocked_reason: Mapped[str | None] = mapped_column(String)
 
     updated_timestamp: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=func.now(), onupdate=func.now()

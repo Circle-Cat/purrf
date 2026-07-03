@@ -20,3 +20,12 @@ py_test(
         "//backend/dto",
     ],
 )
+
+py_test(
+    name = "board_dto_test",
+    srcs = ["board_dto_test.py"],
+    deps = [
+        "//backend/common:recruiting_enums",
+        "//backend/dto",
+    ],
+)

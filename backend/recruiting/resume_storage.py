@@ -74,3 +74,23 @@ class ResumeStorage:
             # Object already exists — identical content, reuse it.
             pass
         return sha256_hex, object_key
+
+    def get(self, object_key: str) -> bytes:
+        """Download a previously-stored résumé's raw bytes.
+
+        Args:
+            object_key (str): The object key returned by ``put`` (e.g.
+                ``resumes/<sha256>.pdf``).
+
+        Returns:
+            bytes: The raw PDF bytes.
+
+        Raises:
+            ValueError: If resume storage is not configured (no bucket
+                name), before any Google Cloud API is touched.
+        """
+        if not self._bucket_name:
+            raise ValueError("Resume storage is not configured; set RESUME_BUCKET.")
+
+        blob = self._get_client().bucket(self._bucket_name).blob(object_key)
+        return blob.download_as_bytes()

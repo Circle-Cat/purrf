@@ -551,6 +551,7 @@ class TestAppDependencyBuilder(TestCase):
             permission_admin_controller=mock_permission_admin_controller_cls.return_value,
             recruiting_controller=ANY,
             application_controller=ANY,
+            board_controller=ANY,
             launchdarkly_client=mock_launchdarkly_client_cls.return_value,
             database=mock_database_cls.return_value,
             logger=mock_logger,

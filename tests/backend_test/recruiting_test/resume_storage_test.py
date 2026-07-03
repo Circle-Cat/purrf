@@ -64,6 +64,24 @@ class TestResumeStorage(unittest.TestCase):
         mock_client_cls.assert_called_once()
         self.assertEqual(bucket.blob.call_count, 2)
 
+    def test_get_downloads_bytes_for_object_key(self):
+        blob = MagicMock()
+        blob.download_as_bytes.return_value = b"%PDF-1.4 content"
+        client, bucket = self._storage(blob)
+
+        result = ResumeStorage("purrf-test-resumes", client).get("resumes/abc.pdf")
+
+        self.assertEqual(result, b"%PDF-1.4 content")
+        bucket.blob.assert_called_once_with("resumes/abc.pdf")
+        blob.download_as_bytes.assert_called_once()
+
+    def test_get_without_bucket_raises_before_touching_client(self):
+        storage = ResumeStorage(None)
+        with self.assertRaises(ValueError) as ctx:
+            storage.get("resumes/abc.pdf")
+        self.assertIn("RESUME_BUCKET", str(ctx.exception))
+        self.assertIsNone(storage._client)
+
 
 if __name__ == "__main__":
     unittest.main()
