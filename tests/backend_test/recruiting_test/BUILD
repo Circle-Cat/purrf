@@ -146,3 +146,12 @@ py_test(
         "//backend/recruiting",
     ],
 )
+
+py_test(
+    name = "evaluation_controller_test",
+    srcs = ["evaluation_controller_test.py"],
+    deps = [
+        "//backend/dto",
+        "//backend/recruiting",
+    ],
+)

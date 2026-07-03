@@ -112,3 +112,7 @@ RECRUITING_BLACKLIST_UNBLOCK_ENDPOINT = "/recruiting/blacklist/{user_id}"
 RECRUITING_APPLICATION_RESUME_ENDPOINT = (
     "/recruiting/applications/{application_id}/resume"
 )
+RECRUITING_APPLICATION_EVALUATION_ENDPOINT = (
+    "/recruiting/applications/{application_id}/evaluation"
+)
+RECRUITING_EVALUATIONS_MINE_ENDPOINT = "/recruiting/evaluations/mine"
