@@ -35,7 +35,7 @@ const VARIANT = {
  * - published: Edit, Request close, View
  * - published_pending_revision: Submit for review, View
  * - pending_review / pending_close / pending_reopen: View only
- * - closed + wasPublished: Request reopen, View
+ * - closed + wasPublished: Edit, Request reopen, View
  * - closed (never published): Delete, View
  *
  * @param {{jobs: object[], onEdit?: Function, onSubmit?: Function,
@@ -137,13 +137,22 @@ const PostingsList = ({
               </Button>
             )}
             {isClosed && job.wasPublished && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => onRequestReopen?.(job.id)}
-              >
-                Request reopen
-              </Button>
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onEdit?.(job)}
+                >
+                  Edit
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onRequestReopen?.(job.id)}
+                >
+                  Request reopen
+                </Button>
+              </>
             )}
             {isClosed && !job.wasPublished && (
               <Button
