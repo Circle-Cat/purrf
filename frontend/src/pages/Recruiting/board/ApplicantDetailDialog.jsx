@@ -22,6 +22,7 @@ import PeoplePicker from "@/pages/Recruiting/components/PeoplePicker";
 import {
   getApplicationDetail,
   setApplicationSubStatus,
+  setApplicationRound,
   changeApplicationStage,
   blacklistUser,
   reassignApplication,
@@ -173,13 +174,14 @@ const AnswersSection = ({ answers, questions }) => {
 /**
  * Applicant detail dialog: opened from a board card, shows the full
  * application snapshot (personal info, education, experience, form
- * answers), a resume link when available, a sub-status selector for the
- * application's current pipeline stage, and decision actions
- * (Advance/Reject/Blacklist) in the footer.
+ * answers), a resume link when available, a sub-status selector and
+ * (for a multi-round stage) an advance-round action for the application's
+ * current pipeline stage, and decision actions (Advance/Reject/Blacklist)
+ * in the footer.
  *
  * @param {{applicationId: number|null, open: boolean,
  *          onOpenChange: (open: boolean) => void, onChanged: () => void,
- *          jobStages: string[]}} props
+ *          jobStages: string[], stageRounds?: Record<string, number>}} props
  */
 const ApplicantDetailDialog = ({
   applicationId,
@@ -187,6 +189,7 @@ const ApplicantDetailDialog = ({
   onOpenChange,
   onChanged,
   jobStages = [],
+  stageRounds = {},
 }) => {
   const [detail, setDetail] = useState(null);
   const [loaded, setLoaded] = useState(false);
@@ -196,6 +199,7 @@ const ApplicantDetailDialog = ({
   const [advancing, setAdvancing] = useState(false);
   const [advanceAssigneeId, setAdvanceAssigneeId] = useState("");
   const [switchingSubStatus, setSwitchingSubStatus] = useState(false);
+  const [advancingRound, setAdvancingRound] = useState(false);
 
   const [rejectFormOpen, setRejectFormOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
@@ -231,6 +235,7 @@ const ApplicantDetailDialog = ({
       setAdvancing(false);
       setAdvanceAssigneeId("");
       setSwitchingSubStatus(false);
+      setAdvancingRound(false);
       setRejectFormOpen(false);
       setRejectReason("");
       setRejectNote("");
@@ -261,6 +266,26 @@ const ApplicantDetailDialog = ({
       })
       .catch((e) => toast.error(e.message))
       .finally(() => setSwitchingSubStatus(false));
+  };
+
+  const handleAdvanceRound = () => {
+    if (advancingRound || !detail) return;
+    const nextRound = (detail.application.currentRound ?? 1) + 1;
+    setAdvancingRound(true);
+    setApplicationRound(applicationId, nextRound)
+      .then(() => {
+        setDetail((prev) =>
+          prev
+            ? {
+                ...prev,
+                application: { ...prev.application, currentRound: nextRound },
+              }
+            : prev,
+        );
+        onChanged();
+      })
+      .catch((e) => toast.error(e.message))
+      .finally(() => setAdvancingRound(false));
   };
 
   const handleAdvance = (next, assigneeId) => {
@@ -351,6 +376,13 @@ const ApplicantDetailDialog = ({
       : null;
   const isPipelineStage = next !== null;
   const needsAssignee = isPipelineStage && INTERVIEW_STAGES.has(next);
+  const currentStageRounds =
+    loaded && detail ? (stageRounds[detail.application.stage] ?? 1) : 1;
+  const canAdvanceRound =
+    loaded &&
+    detail &&
+    currentStageRounds > 1 &&
+    (detail.application.currentRound ?? 1) < currentStageRounds;
 
   return (
     <>
@@ -381,6 +413,18 @@ const ApplicantDetailDialog = ({
                   disabled={switchingSubStatus}
                   onSelect={handleSelectSubStatus}
                 />
+                {canAdvanceRound && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={advancingRound}
+                    onClick={handleAdvanceRound}
+                  >
+                    Advance to Round{" "}
+                    {(detail.application.currentRound ?? 1) + 1}
+                  </Button>
+                )}
               </>
             )}
           </DialogHeader>
