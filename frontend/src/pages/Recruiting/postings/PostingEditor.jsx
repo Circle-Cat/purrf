@@ -16,6 +16,8 @@ import PostingApplicantView from "@/pages/Recruiting/components/PostingApplicant
 import PipelineConfigEditor from "@/pages/Recruiting/postings/PipelineConfigEditor";
 import ScreenRulesEditor from "@/pages/Recruiting/postings/ScreenRulesEditor";
 import ProfileConfigEditor from "@/pages/Recruiting/postings/ProfileConfigEditor";
+import HowItWorksDialog from "@/pages/Recruiting/components/HowItWorksDialog";
+import { POSTING_EDITOR_GUIDE } from "@/pages/Recruiting/components/guideContent";
 
 /** A blank posting draft. */
 const BLANK = {
@@ -123,7 +125,8 @@ const PostingEditor = () => {
         <h1 className="text-xl font-semibold text-slate-900">
           {id ? "Edit posting" : "New posting"}
         </h1>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
+          <HowItWorksDialog {...POSTING_EDITOR_GUIDE} />
           <Button
             variant="outline"
             onClick={() => navigate(ROUTE_PATHS.RECRUITING_POSTINGS)}
