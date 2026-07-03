@@ -7,10 +7,18 @@ import { humanize } from "@/pages/Recruiting/board/stageFormat";
  * present), and the applied date. The whole card is a button so any lane
  * can open the detail view for it.
  *
+ * The blacklist tag chip distinguishes two states: `tags.blacklisted` alone
+ * just records that this application was once rejected by a blacklist
+ * action (a historical fact that never changes); `isBlocked` reflects
+ * whether the applicant is CURRENTLY blocked. A rejected application whose
+ * applicant has since been unblocked shows "Blacklist Lifted" instead of
+ * "Blacklisted", so the board doesn't look like it's flagging someone who
+ * is no longer blocked.
+ *
  * @param {{
  *   card: {id: number, applicantName: string, applicantEmail: string,
  *     stage: string, subStatus: string|null, tags: object|null,
- *     appliedAt: string|null},
+ *     appliedAt: string|null, isBlocked: boolean},
  *   showStatus: boolean,
  *   onOpen: (id: number) => void,
  * }} props
@@ -33,9 +41,12 @@ const ApplicantCard = ({ card, showStatus, onOpen }) => {
           {card.tags?.coldFreeze && (
             <Badge variant="secondary">Cold freeze</Badge>
           )}
-          {card.tags?.blacklisted && (
-            <Badge variant="destructive">Blacklisted</Badge>
-          )}
+          {card.tags?.blacklisted &&
+            (card.isBlocked ? (
+              <Badge variant="destructive">Blacklisted</Badge>
+            ) : (
+              <Badge variant="secondary">Blacklist Lifted</Badge>
+            ))}
         </div>
       ) : null}
       {card.appliedAt && (

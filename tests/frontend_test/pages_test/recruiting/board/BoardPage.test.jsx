@@ -248,6 +248,7 @@ describe("BoardPage", () => {
             stage: "hired",
             subStatus: null,
             tags: { blacklisted: true },
+            isBlocked: true,
             appliedAt: "2026-06-05T00:00:00Z",
           },
         ],
