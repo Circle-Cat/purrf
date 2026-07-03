@@ -1,6 +1,10 @@
 import unittest
 import pydantic
-from backend.dto.application_dto import ApplicationSubmitDto, ApplicationEditDto
+from backend.dto.application_dto import (
+    ApplicationDto,
+    ApplicationEditDto,
+    ApplicationSubmitDto,
+)
 
 
 class TestApplicationDtos(unittest.TestCase):
@@ -26,3 +30,13 @@ class TestApplicationDtos(unittest.TestCase):
     def test_edit_forbids_job_id(self):
         with self.assertRaises(pydantic.ValidationError):
             ApplicationEditDto.model_validate({"jobId": 1})
+
+    def test_application_dto_exposes_current_round(self):
+        dto = ApplicationDto(
+            id=1,
+            job_id=1,
+            user_id=2,
+            stage="tech",
+            current_round=2,
+        )
+        self.assertEqual(dto.current_round, 2)
