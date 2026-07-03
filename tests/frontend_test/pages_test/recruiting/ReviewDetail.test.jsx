@@ -145,6 +145,34 @@ describe("ReviewDetail", () => {
     expect(screen.queryByText("Interview pipeline")).not.toBeInTheDocument();
   });
 
+  it("shows a Pending|Live toggle for kind=reopen when the posting has a staged edit", () => {
+    const reopenJobWithEdit = {
+      ...job,
+      pendingPayload: {
+        formSchema: {
+          questions: [
+            { id: "q1", type: "short_text", label: "Pending reopen name" },
+          ],
+        },
+      },
+    };
+    render(
+      <ReviewDetail
+        review={{ ...review, kind: "reopen" }}
+        job={reopenJobWithEdit}
+        onApprove={() => {}}
+        onReject={() => {}}
+        onBack={() => {}}
+      />,
+    );
+    expect(
+      screen.getByText("Request to reopen this posting."),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Pending reopen name")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Live" }));
+    expect(screen.getByLabelText("Your name")).toBeInTheDocument();
+  });
+
   it("approve/reject still work for kind=close", () => {
     const onApprove = vi.fn();
     const onReject = vi.fn();
