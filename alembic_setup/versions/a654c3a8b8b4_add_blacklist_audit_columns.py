@@ -1,7 +1,7 @@
 """add blacklist audit columns
 
 Revision ID: a654c3a8b8b4
-Revises: 95b36bb95db2
+Revises: 70d81c883d0c
 Create Date: 2026-07-02 12:21:43.297714
 
 """
@@ -14,7 +14,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = "a654c3a8b8b4"
-down_revision: Union[str, Sequence[str], None] = "95b36bb95db2"
+down_revision: Union[str, Sequence[str], None] = "70d81c883d0c"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
