@@ -40,8 +40,8 @@ describe("MyReviews page", () => {
     expect(
       await screen.findByRole("heading", { name: "How reviews work" }),
     ).toBeInTheDocument();
-    expect(screen.getByText("Initial")).toBeInTheDocument();
-    expect(screen.getByText("Reopen")).toBeInTheDocument();
+    expect(screen.getByText("Initial Request")).toBeInTheDocument();
+    expect(screen.getByText("Reopen Request")).toBeInTheDocument();
   });
 
   it("approves then returns to the refreshed queue", async () => {

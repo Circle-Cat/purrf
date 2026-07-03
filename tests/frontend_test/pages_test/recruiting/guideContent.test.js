@@ -15,7 +15,12 @@ describe("recruiting guide content", () => {
   it("REVIEWS_GUIDE covers the four review kinds", () => {
     const names = REVIEWS_GUIDE.statuses.map((s) => s.name);
     expect(names).toEqual(
-      expect.arrayContaining(["Initial", "Revision", "Close", "Reopen"]),
+      expect.arrayContaining([
+        "Initial Request",
+        "Revision Request",
+        "Close Request",
+        "Reopen Request",
+      ]),
     );
     expect(REVIEWS_GUIDE.steps.length).toBeGreaterThan(0);
   });
