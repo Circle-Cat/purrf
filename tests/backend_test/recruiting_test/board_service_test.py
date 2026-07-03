@@ -45,7 +45,13 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.app_repo.update = AsyncMock(side_effect=lambda session, entity: entity)
         self.sub_repo.update = AsyncMock(side_effect=lambda session, entity: entity)
 
-    def _job(self, job_id=1, owner_ids=(2,), stages=("recruiter_screening", "tech")):
+    def _job(
+        self,
+        job_id=1,
+        owner_ids=(2,),
+        stages=("recruiter_screening", "tech"),
+        rounds=None,
+    ):
         job = JobEntity(
             kind=JobKind.ACTIVITY,
             title=f"Job {job_id}",
@@ -53,9 +59,10 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         )
         job.job_id = job_id
         job.form_schema = {"questions": [{"id": "q1"}]}
+        rounds = rounds or {}
         job.pipeline_config = {
             "ownerIds": list(owner_ids),
-            "stages": [{"stage": s} for s in stages],
+            "stages": [{"stage": s, "rounds": rounds.get(s, 1)} for s in stages],
         }
         return job
 
@@ -103,7 +110,26 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0].id, 1)
-        self.assertEqual(result[0].stages, ["recruiter_screening", "tech"])
+        self.assertEqual(
+            [(s.stage, s.rounds) for s in result[0].stages],
+            [("recruiter_screening", 1), ("tech", 1)],
+        )
+
+    async def test_list_my_jobs_reports_configured_rounds_per_stage(self):
+        job = self._job(
+            job_id=1,
+            owner_ids=(2,),
+            stages=("recruiter_screening", "tech"),
+            rounds={"tech": 3},
+        )
+        self.job_repo.list_all = AsyncMock(return_value=[job])
+
+        result = await self.service.list_my_jobs(self.session, self._ctx(user_id=2))
+
+        self.assertEqual(
+            [(s.stage, s.rounds) for s in result[0].stages],
+            [("recruiter_screening", 1), ("tech", 3)],
+        )
 
     async def test_list_my_jobs_empty_when_not_owner_of_any(self):
         job_a = self._job(job_id=1, owner_ids=(9,))

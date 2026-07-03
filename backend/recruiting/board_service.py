@@ -8,6 +8,7 @@ from backend.dto.board_dto import (
     BlacklistDto,
     BoardCardDto,
     BoardJobDto,
+    PipelineStageInfoDto,
     ReassignDto,
     StageChangeDto,
     SubStatusChangeDto,
@@ -95,7 +96,8 @@ class BoardService:
 
         Returns:
             list[BoardJobDto]: Jobs the caller owns, each with its
-                configured pipeline stages in global order.
+                configured pipeline stages (and each stage's configured
+                round count) in global order.
         """
         jobs = await self.job_repository.list_all(session)
         return [
@@ -104,7 +106,12 @@ class BoardService:
                 title=job.title,
                 kind=job.kind,
                 stages=[
-                    stage.value
+                    PipelineStageInfoDto(
+                        stage=stage.value,
+                        rounds=stage_machine.rounds_for_stage(
+                            job.pipeline_config, stage
+                        ),
+                    )
                     for stage in stage_machine.configured_stages(job.pipeline_config)
                 ],
             )
