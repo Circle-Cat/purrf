@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import {
+  render,
+  screen,
+  fireEvent,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import MyReviews from "@/pages/Recruiting/MyReviews";
 import * as api from "@/api/recruitingApi";
 
@@ -37,11 +43,12 @@ describe("MyReviews page", () => {
     render(<MyReviews />);
     await screen.findByRole("button", { name: "Review" });
     fireEvent.click(screen.getByRole("button", { name: "How it works" }));
+    const dialog = await screen.findByRole("dialog");
     expect(
-      await screen.findByRole("heading", { name: "How reviews work" }),
+      within(dialog).getByRole("heading", { name: "How reviews work" }),
     ).toBeInTheDocument();
-    expect(screen.getByText("Initial Request")).toBeInTheDocument();
-    expect(screen.getByText("Reopen Request")).toBeInTheDocument();
+    expect(within(dialog).getByText("Initial Request")).toBeInTheDocument();
+    expect(within(dialog).getByText("Reopen Request")).toBeInTheDocument();
   });
 
   it("approves then returns to the refreshed queue", async () => {
