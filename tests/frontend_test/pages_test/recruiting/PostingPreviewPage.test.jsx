@@ -52,8 +52,10 @@ describe("PostingPreviewPage", () => {
     const revJob = {
       ...job,
       status: "published_pending_revision",
-      pendingFormSchema: {
-        questions: [{ id: "q1", type: "short_text", label: "Pending name" }],
+      pendingPayload: {
+        formSchema: {
+          questions: [{ id: "q1", type: "short_text", label: "Pending name" }],
+        },
       },
     };
     render(<PostingPreviewPage job={revJob} onBack={() => {}} />);

@@ -90,8 +90,10 @@ describe("ReviewDetail", () => {
   it("shows a Pending|Live toggle for a revision", () => {
     const revisionJob = {
       ...job,
-      pendingFormSchema: {
-        questions: [{ id: "q1", type: "short_text", label: "Pending name" }],
+      pendingPayload: {
+        formSchema: {
+          questions: [{ id: "q1", type: "short_text", label: "Pending name" }],
+        },
       },
     };
     render(
