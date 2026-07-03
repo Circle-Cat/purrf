@@ -33,12 +33,27 @@ const PeoplePicker = ({ label, pool, value, onChange }) => (
   </Select>
 );
 
+/** A selected owner rendered as a chip, with a button to remove it. */
+const OwnerChip = ({ name, onRemove }) => (
+  <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-sm text-slate-700">
+    {name}
+    <button
+      type="button"
+      onClick={onRemove}
+      aria-label={`Remove owner ${name}`}
+      className="text-slate-400 hover:text-slate-600"
+    >
+      ×
+    </button>
+  </span>
+);
+
 /**
- * Editor for a posting's interview pipeline: owner + ordered selected stages
+ * Editor for a posting's interview pipeline: owners + ordered selected stages
  * (each with rounds / referralSkippable, and a default assignee on
  * screening/behavioral).
  *
- * @param {{value: {ownerId?: number, stages: object[]},
+ * @param {{value: {ownerIds?: number[], ownerId?: number, stages: object[]},
  *          onChange: (next: object) => void,
  *          interviewPool: object[], jobOwners: object[]}} props
  */
@@ -50,6 +65,22 @@ const PipelineConfigEditor = ({
 }) => {
   const stages = value.stages ?? [];
   const stageOf = (name) => stages.find((s) => s.stage === name);
+
+  // Legacy postings stored a single `ownerId`; new ones store `ownerIds`.
+  const ownerIds =
+    value.ownerIds ?? (value.ownerId != null ? [value.ownerId] : []);
+  const ownerName = (id) =>
+    jobOwners.find((u) => u.userId === id)?.name ?? `#${id}`;
+  const availableOwners = jobOwners.filter((u) => !ownerIds.includes(u.userId));
+
+  /** Emit a new owner list, dropping the deprecated `ownerId` key. */
+  const emitOwnerIds = (next) =>
+    onChange({ ...value, ownerId: undefined, ownerIds: next });
+  const removeOwner = (id) =>
+    emitOwnerIds(ownerIds.filter((existing) => existing !== id));
+  const addOwner = (id) => {
+    if (id != null) emitOwnerIds([...ownerIds, id]);
+  };
 
   /** Re-emit stages in canonical order after a mutation map. */
   const emitStages = (next) =>
@@ -77,11 +108,20 @@ const PipelineConfigEditor = ({
       <p className="text-sm font-medium text-slate-700">Interview pipeline</p>
       <div className="space-y-1">
         <Label>Owner</Label>
+        <div className="flex flex-wrap items-center gap-2">
+          {ownerIds.map((id) => (
+            <OwnerChip
+              key={id}
+              name={ownerName(id)}
+              onRemove={() => removeOwner(id)}
+            />
+          ))}
+        </div>
         <PeoplePicker
-          label="Owner"
-          pool={jobOwners}
-          value={value.ownerId}
-          onChange={(ownerId) => onChange({ ...value, ownerId })}
+          label="Add owner"
+          pool={availableOwners}
+          value={undefined}
+          onChange={addOwner}
         />
       </div>
       {STAGES.map((name) => {

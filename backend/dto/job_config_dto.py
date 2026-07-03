@@ -202,10 +202,36 @@ class PipelineStageDto(BaseRequestDto):
 
 
 class PipelineConfigDto(BaseRequestDto):
-    """A posting's interview pipeline: an owner plus ordered selected stages."""
+    """A posting's interview pipeline: owners plus ordered selected stages."""
 
+    owner_ids: list[int] = []
+    # Deprecated single-owner input; merged into owner_ids by the validator
+    # so postings saved before multi-owner keep round-tripping.
     owner_id: int | None = None
     stages: list[PipelineStageDto] = []
+
+    @model_validator(mode="after")
+    def merge_legacy_owner(self) -> "PipelineConfigDto":
+        """Fold legacy ``ownerId`` into ``owner_ids`` and reject duplicates.
+
+        Returns:
+            PipelineConfigDto: self, when valid.
+
+        Raises:
+            ValueError: On a duplicate owner id.
+        """
+        # Guard the reset with the same condition as the merge: BaseRequestDto
+        # has validate_assignment=True, so an unconditional `self.owner_id =
+        # None` re-triggers this validator on every assignment and never
+        # bottoms out (RecursionError). Only assign when there is a legacy
+        # value to clear.
+        if self.owner_id is not None:
+            if self.owner_id not in self.owner_ids:
+                self.owner_ids = [*self.owner_ids, self.owner_id]
+            self.owner_id = None
+        if len(self.owner_ids) != len(set(self.owner_ids)):
+            raise ValueError("owner_ids must not contain duplicates")
+        return self
 
     @model_validator(mode="after")
     def no_duplicate_stages(self) -> "PipelineConfigDto":

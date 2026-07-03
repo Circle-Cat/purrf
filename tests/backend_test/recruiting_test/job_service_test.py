@@ -232,6 +232,36 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             await self.service.create_job(self.session, dto)
 
+    async def test_create_job_accepts_multiple_qualified_owners(self):
+        """create_job succeeds when every listed owner can advance applications."""
+
+        async def pool(session, perm):
+            if perm == Permission.RECRUITING_APPLICATION_ADVANCE.value:
+                return self._make_users(42, 43)
+            return []
+
+        self.perms.get_active_users_with_permission = AsyncMock(side_effect=pool)
+        dto = JobCreateDto(
+            title="T", pipelineConfig={"ownerIds": [42, 43], "stages": []}
+        )
+        result = await self.service.create_job(self.session, dto)
+        self.assertEqual(result.title, "T")
+
+    async def test_create_job_rejects_any_unqualified_owner_names_offenders(self):
+        """When one of several owners cannot advance applications, name it."""
+
+        async def pool(session, perm):
+            if perm == Permission.RECRUITING_APPLICATION_ADVANCE.value:
+                return self._make_users(42)
+            return []
+
+        self.perms.get_active_users_with_permission = AsyncMock(side_effect=pool)
+        dto = JobCreateDto(
+            title="T", pipelineConfig={"ownerIds": [42, 99], "stages": []}
+        )
+        with self.assertRaisesRegex(ValueError, "99"):
+            await self.service.create_job(self.session, dto)
+
     async def test_update_draft_changes_live_directly(self):
         """Editing a DRAFT posting mutates the live fields with no review gate."""
         job = self._job(status=JobStatus.DRAFT, title="old")
@@ -1086,47 +1116,6 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         await self.service.update_job(self.session, job.job_id, dto)
 
         self.assertEqual(job.kind, JobKind.ACTIVITY)
-
-    def _published_job(self, **over):
-        job = MagicMock()
-        job.job_id = 1
-        job.title = "T"
-        job.description = None
-        job.kind = JobKind.ACTIVITY
-        job.mentorship_role = None
-        job.was_published = True
-        job.status = JobStatus.PUBLISHED
-        job.form_schema = {"questions": []}
-        job.pipeline_config = {
-            "ownerId": 42,
-            "stages": [
-                {
-                    "stage": "recruiter_screening",
-                    "rounds": 1,
-                    "referralSkippable": False,
-                }
-            ],
-        }
-        job.screen_rules = {"rules": []}
-        job.profile_config = {
-            "education": "optional",
-            "workExperience": "optional",
-            "resume": "optional",
-        }
-        job.pending_payload = None
-        for k, v in over.items():
-            setattr(job, k, v)
-        return job
-
-    async def _qualified_pools(self):
-        async def pool(session, perm):
-            if perm == Permission.RECRUITING_INTERVIEW_EVALUATE.value:
-                return self._make_users(7)
-            if perm == Permission.RECRUITING_APPLICATION_ADVANCE.value:
-                return self._make_users(42)
-            return []
-
-        self.perms.get_active_users_with_permission = AsyncMock(side_effect=pool)
 
     async def test_list_interview_pool(self):
         users = self._make_users(7, 8)

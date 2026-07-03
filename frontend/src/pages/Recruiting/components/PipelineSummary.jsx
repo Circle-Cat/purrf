@@ -13,12 +13,18 @@ const personLabel = (pool, id) => {
   return u ? `${u.name} (#${id})` : `#${id}`;
 };
 
+/** Comma-separated "Name (#id)" labels for a list of owner ids. */
+const personLabels = (pool, ids) =>
+  ids.map((id) => personLabel(pool, id)).join(", ");
+
 /**
- * Reviewer-facing readable summary of a posting's interview pipeline: owner and
- * the ordered stages with rounds, referral-skippable and assignee tags. Owner
- * and default-assignee ids are resolved to names via the provided pools.
+ * Reviewer-facing readable summary of a posting's interview pipeline: owners
+ * and the ordered stages with rounds, referral-skippable and assignee tags.
+ * Owner and default-assignee ids are resolved to names via the provided
+ * pools.
  *
- * @param {{pipelineConfig?: {ownerId?: number, stages?: object[]},
+ * @param {{pipelineConfig?: {ownerIds?: number[], ownerId?: number,
+ *          stages?: object[]},
  *          interviewPool?: object[], jobOwners?: object[]}} props
  */
 const PipelineSummary = ({
@@ -27,12 +33,16 @@ const PipelineSummary = ({
   jobOwners = [],
 }) => {
   const stages = pipelineConfig?.stages ?? [];
+  // Legacy postings stored a single `ownerId`; new ones store `ownerIds`.
+  const ownerIds =
+    pipelineConfig?.ownerIds ??
+    (pipelineConfig?.ownerId != null ? [pipelineConfig.ownerId] : []);
   return (
     <div className="space-y-2">
       <p className="text-sm font-medium text-slate-700">Interview pipeline</p>
-      {pipelineConfig?.ownerId != null && (
+      {ownerIds.length > 0 && (
         <p className="text-sm text-slate-600">
-          Owner: {personLabel(jobOwners, pipelineConfig.ownerId)}
+          Owner: {personLabels(jobOwners, ownerIds)}
         </p>
       )}
       {stages.length === 0 ? (

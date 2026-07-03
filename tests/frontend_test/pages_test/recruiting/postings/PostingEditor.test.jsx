@@ -99,6 +99,33 @@ describe("PostingEditor", () => {
     );
   });
 
+  it("preserves a multi-owner pipeline config untouched through save", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 5,
+        title: "Loaded",
+        description: "",
+        kind: "activity",
+        cooldownDays: null,
+        formSchema: { questions: [] },
+        pipelineConfig: { ownerIds: [9, 10], stages: [] },
+      },
+    });
+    const router = createMemoryRouter(
+      [
+        { path: "/postings/:id/edit", element: <PostingEditor /> },
+        { path: ROUTE_PATHS.RECRUITING_POSTINGS, element: <div /> },
+      ],
+      { initialEntries: ["/postings/5/edit"] },
+    );
+    render(<RouterProvider router={router} />);
+    expect(await screen.findByDisplayValue("Loaded")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(api.updateJob).toHaveBeenCalled());
+    const [, body] = api.updateJob.mock.calls[0];
+    expect(body.pipelineConfig).toEqual({ ownerIds: [9, 10], stages: [] });
+  });
+
   it("loads an employment posting's cooldown and saves the edited value", async () => {
     api.getJob.mockResolvedValue({
       data: {

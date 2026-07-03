@@ -4,7 +4,10 @@ import userEvent from "@testing-library/user-event";
 import PipelineConfigEditor from "@/pages/Recruiting/postings/PipelineConfigEditor";
 
 const POOL = [{ userId: 7, name: "Ann", email: "ann@x.com" }];
-const OWNERS = [{ userId: 42, name: "Bo", email: "bo@x.com" }];
+const OWNERS = [
+  { userId: 42, name: "Bo", email: "bo@x.com" },
+  { userId: 43, name: "Cy", email: "cy@x.com" },
+];
 
 const renderEditor = (value, onChange) =>
   render(
@@ -90,12 +93,39 @@ describe("PipelineConfigEditor", () => {
     });
   });
 
-  it("sets the owner from the job-owners pool", async () => {
+  it("renders existing owners as chips and adds another from the pool", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
-    renderEditor({ stages: [] }, onChange);
-    await user.click(screen.getByRole("combobox", { name: "Owner" }));
-    await user.click(screen.getByRole("option", { name: /Bo/ }));
-    expect(onChange).toHaveBeenCalledWith({ ownerId: 42, stages: [] });
+    renderEditor({ ownerIds: [42], stages: [] }, onChange);
+    expect(screen.getByText("Bo")).toBeInTheDocument();
+    await user.click(screen.getByRole("combobox", { name: "Add owner" }));
+    await user.click(screen.getByRole("option", { name: /Cy/ }));
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ ownerIds: [42, 43] }),
+    );
+  });
+
+  it("falls back to legacy ownerId and removes an owner via chip x", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    renderEditor({ ownerId: 42, stages: [] }, onChange);
+    expect(screen.getByText("Bo")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Remove owner Bo" }));
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ ownerIds: [] }),
+    );
+  });
+
+  it("does not offer an already-selected owner in the add-owner pool", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    renderEditor({ ownerIds: [42, 43], stages: [] }, onChange);
+    await user.click(screen.getByRole("combobox", { name: "Add owner" }));
+    expect(
+      screen.queryByRole("option", { name: /Bo/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("option", { name: /Cy/ }),
+    ).not.toBeInTheDocument();
   });
 });
