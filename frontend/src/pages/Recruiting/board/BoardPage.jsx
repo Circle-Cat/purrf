@@ -83,9 +83,18 @@ const BoardPage = () => {
             key: `${stage}:${i + 1}`,
             stage,
             round: i + 1,
+            isLastRound: i + 1 === rounds,
             label: `${humanize(stage)} — Round ${i + 1}`,
           }))
-        : [{ key: stage, stage, round: null, label: humanize(stage) }],
+        : [
+            {
+              key: stage,
+              stage,
+              round: null,
+              isLastRound: false,
+              label: humanize(stage),
+            },
+          ],
     );
     const terminalLanes = TERMINAL_STAGES.map((stage) => ({
       key: stage,
@@ -151,10 +160,18 @@ const BoardPage = () => {
         <div className="flex flex-1 gap-4 overflow-x-auto pb-4">
           {lanes.map((lane) => {
             const cardsForStage = board[lane.stage] ?? [];
+            // A stage's configured rounds can shrink after applicants are
+            // already staged past the new max (e.g. an owner edits "tech"
+            // from 3 rounds down to 2); the last round lane catches those
+            // stale higher rounds instead of silently hiding the applicant.
             const cards =
               lane.round == null
                 ? cardsForStage
-                : cardsForStage.filter((c) => c.round === lane.round);
+                : cardsForStage.filter((c) =>
+                    lane.isLastRound
+                      ? c.round >= lane.round
+                      : c.round === lane.round,
+                  );
             const isTerminal = TERMINAL_STAGES.includes(lane.stage);
             return (
               <div
