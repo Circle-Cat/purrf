@@ -392,6 +392,98 @@ class TestUsersRepository(BaseRepositoryTestLib):
         updated = await self.repo.set_super_admin(self.session, 9_999_999, True)
         self.assertEqual(updated, 0)
 
+    async def test_list_blocked_users_returns_only_blocked(self):
+        token = uuid.uuid4().hex[:10]
+        blocked = self._make_user(
+            first_name=f"Blocked{token}", email=f"blocked-{token}@example.com"
+        )
+        blocked.is_blocked = True
+        blocked.blocked_by = 1
+        blocked.blocked_at = datetime.now(timezone.utc)
+        blocked.blocked_reason = "cheated"
+        not_blocked = self._make_user(
+            first_name=f"Clean{token}", email=f"clean-{token}@example.com"
+        )
+        await self.insert_entities([blocked, not_blocked])
+
+        rows = await self.repo.list_blocked_users(self.session)
+        ids = {u.user_id for u in rows}
+        self.assertIn(blocked.user_id, ids)
+        self.assertNotIn(not_blocked.user_id, ids)
+
+    async def test_list_blocked_users_search_matches_name(self):
+        token = uuid.uuid4().hex[:10]
+        user = self._make_user(
+            first_name=f"Name{token}", email=f"n-{token}@example.com"
+        )
+        user.is_blocked = True
+        user.blocked_reason = "spam"
+        await self.insert_entities([user])
+
+        rows = await self.repo.list_blocked_users(self.session, search=token)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].user_id, user.user_id)
+
+    async def test_list_blocked_users_search_matches_email(self):
+        token = uuid.uuid4().hex[:10]
+        user = self._make_user(email=f"findme-{token}@example.com")
+        user.is_blocked = True
+        user.blocked_reason = "spam"
+        await self.insert_entities([user])
+
+        rows = await self.repo.list_blocked_users(self.session, search=token)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].user_id, user.user_id)
+
+    async def test_list_blocked_users_search_matches_reason_case_insensitive(self):
+        token = uuid.uuid4().hex[:10]
+        user = self._make_user(email=f"reason-{token}@example.com")
+        user.is_blocked = True
+        user.blocked_reason = f"Fraud-{token}"
+        await self.insert_entities([user])
+
+        rows = await self.repo.list_blocked_users(
+            self.session, search=token.upper()
+        )
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].user_id, user.user_id)
+
+    async def test_list_blocked_users_search_with_no_match_is_empty(self):
+        rows = await self.repo.list_blocked_users(
+            self.session, search="no-such-token-xyz"
+        )
+        self.assertEqual(rows, [])
+
+    async def test_clear_block_resets_all_block_columns(self):
+        token = uuid.uuid4().hex[:10]
+        user = self._make_user(email=f"clear-{token}@example.com")
+        user.is_blocked = True
+        user.blocked_by = 1
+        user.blocked_at = datetime.now(timezone.utc)
+        user.blocked_reason = "test"
+        await self.insert_entities([user])
+
+        await self.repo.clear_block(self.session, user.user_id)
+
+        refetched = await self.repo.get_user_by_user_id(self.session, user.user_id)
+        self.assertFalse(refetched.is_blocked)
+        self.assertIsNone(refetched.blocked_by)
+        self.assertIsNone(refetched.blocked_at)
+        self.assertIsNone(refetched.blocked_reason)
+
+    async def test_clear_block_on_non_blocked_user_is_a_noop_success(self):
+        token = uuid.uuid4().hex[:10]
+        user = self._make_user(email=f"already-clean-{token}@example.com")
+        await self.insert_entities([user])
+
+        await self.repo.clear_block(self.session, user.user_id)  # must not raise
+
+        refetched = await self.repo.get_user_by_user_id(self.session, user.user_id)
+        self.assertFalse(refetched.is_blocked)
+
+    async def test_clear_block_missing_user_is_a_noop_success(self):
+        await self.repo.clear_block(self.session, 9_999_999)  # must not raise
+
     async def test_get_users_and_emails_empty_list(self):
         users_map, emails_map = await self.repo.get_users_and_emails_by_ids(
             self.session, []
