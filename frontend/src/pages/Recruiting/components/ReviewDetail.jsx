@@ -12,8 +12,13 @@ import PostingReviewView from "@/pages/Recruiting/components/PostingReviewView";
  */
 const ReviewDetail = ({ review, job, onApprove, onReject, onBack }) => {
   const [comment, setComment] = useState("");
-  const isRevision = review.kind === "revision";
-  const isCloseOrReopen = review.kind === "close" || review.kind === "reopen";
+  const isClose = review.kind === "close";
+  const isReopen = review.kind === "reopen";
+  // A reopen can carry a staged edit (from update_job while the posting was
+  // still CLOSED); only then is there anything to compare pending vs. live.
+  const reopenHasPendingChanges = isReopen && Boolean(job.pendingPayload);
+  const showPendingToggle =
+    review.kind === "revision" || reopenHasPendingChanges;
 
   return (
     <div className="space-y-4 p-6">
@@ -25,23 +30,26 @@ const ReviewDetail = ({ review, job, onApprove, onReject, onBack }) => {
           {review.submitMessage}
         </p>
       )}
-      {isCloseOrReopen ? (
+      {isClose || isReopen ? (
         <div className="space-y-2">
-          <div>
-            <h1 className="text-xl font-semibold text-slate-900">
-              {job.title}
-            </h1>
-            <p className="text-sm text-slate-600">{job.description}</p>
-          </div>
+          {!reopenHasPendingChanges && (
+            <div>
+              <h1 className="text-xl font-semibold text-slate-900">
+                {job.title}
+              </h1>
+              <p className="text-sm text-slate-600">{job.description}</p>
+            </div>
+          )}
           <p className="text-base font-medium text-slate-800">
-            {review.kind === "close"
+            {isClose
               ? "Request to close this posting."
               : "Request to reopen this posting."}
           </p>
         </div>
-      ) : (
-        <PostingReviewView job={job} isRevision={isRevision} />
-      )}
+      ) : null}
+      {(!isClose && !isReopen) || reopenHasPendingChanges ? (
+        <PostingReviewView job={job} isRevision={showPendingToggle} />
+      ) : null}
       <div className="space-y-2 border-t border-slate-200 pt-4">
         <div className="space-y-1">
           <Label htmlFor="comment">Rejection comment</Label>
