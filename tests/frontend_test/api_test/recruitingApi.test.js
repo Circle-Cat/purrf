@@ -21,6 +21,13 @@ import {
   updateApplication,
   getMyApplication,
   listPublicJobs,
+  listBoardJobs,
+  getJobBoard,
+  getApplicationDetail,
+  changeApplicationStage,
+  setApplicationSubStatus,
+  blacklistUser,
+  resumeUrl,
 } from "@/api/recruitingApi";
 
 vi.mock("@/utils/request", () => ({
@@ -180,5 +187,56 @@ describe("recruitingApi", () => {
     request.get.mockResolvedValue({});
     await listPublicJobs();
     expect(request.get).toHaveBeenCalledWith("/recruiting/public/jobs");
+  });
+
+  it("listBoardJobs GETs /recruiting/board/jobs", async () => {
+    request.get.mockResolvedValue({ data: [] });
+    await listBoardJobs();
+    expect(request.get).toHaveBeenCalledWith("/recruiting/board/jobs");
+  });
+
+  it("getJobBoard GETs the job board endpoint", async () => {
+    request.get.mockResolvedValue({ data: {} });
+    await getJobBoard(5);
+    expect(request.get).toHaveBeenCalledWith("/recruiting/jobs/5/board");
+  });
+
+  it("getApplicationDetail GETs the application endpoint", async () => {
+    request.get.mockResolvedValue({ data: {} });
+    await getApplicationDetail(7);
+    expect(request.get).toHaveBeenCalledWith("/recruiting/applications/7");
+  });
+
+  it("changeApplicationStage PATCHes the stage endpoint with body", async () => {
+    request.patch.mockResolvedValue({ data: {} });
+    await changeApplicationStage(7, { toStage: "hired" });
+    expect(request.patch).toHaveBeenCalledWith(
+      "/recruiting/applications/7/stage",
+      { toStage: "hired" },
+    );
+  });
+
+  it("setApplicationSubStatus PATCHes the sub-status endpoint with subStatus", async () => {
+    request.patch.mockResolvedValue({ data: {} });
+    await setApplicationSubStatus(7, "in_progress");
+    expect(request.patch).toHaveBeenCalledWith(
+      "/recruiting/applications/7/sub-status",
+      { subStatus: "in_progress" },
+    );
+  });
+
+  it("blacklistUser POSTs to /recruiting/blacklist with body", async () => {
+    request.post.mockResolvedValue({ data: {} });
+    await blacklistUser({ userId: 42, reason: "spam" });
+    expect(request.post).toHaveBeenCalledWith("/recruiting/blacklist", {
+      userId: 42,
+      reason: "spam",
+    });
+  });
+
+  it("resumeUrl returns correctly formatted URL", () => {
+    const url = resumeUrl(7);
+    // In test (dev-mode), baseURL is "/api", so full URL should be exact
+    expect(url).toBe("/api/recruiting/applications/7/resume");
   });
 });
