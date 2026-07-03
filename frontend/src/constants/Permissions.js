@@ -14,4 +14,5 @@ export const PERMISSIONS = {
   RECRUITING_JOB_READ: "recruiting.job.read",
   RECRUITING_JOB_WRITE: "recruiting.job.write",
   RECRUITING_JOB_APPROVE: "recruiting.job.approve",
+  RECRUITING_BLACKLIST_WRITE: "recruiting.blacklist.write",
 };

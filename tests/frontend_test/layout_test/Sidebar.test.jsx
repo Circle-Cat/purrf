@@ -120,4 +120,19 @@ describe("Sidebar Component", () => {
     renderSidebar([PERMISSIONS.DASHBOARD_ACTIVITY_SUMMARY_READ]);
     expect(screen.queryByText("User Permissions")).not.toBeInTheDocument();
   });
+
+  test("renders Blacklist for a user with recruiting.blacklist.write permission", () => {
+    renderSidebar([PERMISSIONS.RECRUITING_BLACKLIST_WRITE]);
+    const link = screen.getByText("Blacklist");
+    expect(link).toBeInTheDocument();
+    expect(link.closest("a")).toHaveAttribute(
+      "href",
+      ROUTE_PATHS.RECRUITING_BLACKLIST,
+    );
+  });
+
+  test("does not render Blacklist without recruiting.blacklist.write permission", () => {
+    renderSidebar([PERMISSIONS.RECRUITING_JOB_APPROVE]);
+    expect(screen.queryByText("Blacklist")).not.toBeInTheDocument();
+  });
 });
