@@ -101,7 +101,7 @@ class TestJobCreateDtoCrossValidation(unittest.TestCase):
                 ],
             },
         )
-        self.assertEqual(dto.pipeline_config.owner_id, 5)
+        self.assertEqual(dto.pipeline_config.owner_ids, [5])
         self.assertTrue(dto.pipeline_config.stages[0].referral_skippable)
 
 
