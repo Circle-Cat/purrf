@@ -53,6 +53,11 @@ const Sidebar = () => {
       permissions: [],
     },
     {
+      label: "Applications",
+      to: ROUTE_PATHS.RECRUITING_BOARD,
+      permissions: [],
+    },
+    {
       label: "Recruiting",
       to: ROUTE_PATHS.RECRUITING_POSTINGS,
       permissions: [PERMISSIONS.RECRUITING_JOB_WRITE],

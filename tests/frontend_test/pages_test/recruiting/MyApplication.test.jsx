@@ -54,9 +54,14 @@ describe("MyApplication", () => {
     expect(screen.queryByText(/existing id/i)).not.toBeInTheDocument();
   });
 
-  it("renders the editable ApplicationForm with the existing draft when stage is applied", async () => {
+  it("renders the editable ApplicationForm with the existing draft when editable is true, even at a later stage", async () => {
     api.getMyApplication.mockResolvedValue({
-      data: { id: 9, stage: "applied", current: { submission: {} } },
+      data: {
+        id: 9,
+        stage: "recruiter_screening",
+        editable: true,
+        current: { submission: {} },
+      },
     });
     renderAt(5);
     await waitFor(() =>
@@ -67,11 +72,12 @@ describe("MyApplication", () => {
     ).toBeInTheDocument();
   });
 
-  it("renders a read-only summary with no Submit button once past the applied stage", async () => {
+  it("renders a read-only summary with no Submit button when editable is false", async () => {
     api.getMyApplication.mockResolvedValue({
       data: {
         id: 9,
         stage: "recruiter_screening",
+        editable: false,
         current: {
           submission: {
             personal: { firstName: "Ann", lastName: "Lee" },
@@ -96,11 +102,40 @@ describe("MyApplication", () => {
     expect(screen.getByText(/Ann/)).toBeInTheDocument();
   });
 
+  it("renders a read-only summary when editable is false even though the stage string is still applied", async () => {
+    // Proves the gate keys off the server's `editable` flag, not the stage
+    // string: a stage of "applied" with `editable: false` (e.g. the current
+    // submission has been frozen) must NOT render the editable form.
+    api.getMyApplication.mockResolvedValue({
+      data: {
+        id: 9,
+        stage: "applied",
+        editable: false,
+        current: {
+          submission: {
+            personal: { firstName: "Ann", lastName: "Lee" },
+            education: [],
+            experience: [],
+            answers: {},
+          },
+        },
+      },
+    });
+    renderAt(5);
+    await waitFor(() =>
+      expect(screen.getByText("Status: Applied")).toBeInTheDocument(),
+    );
+    expect(
+      screen.queryByRole("button", { name: /submit application/i }),
+    ).not.toBeInTheDocument();
+  });
+
   it("shows a status line naming the final stage for a terminal outcome", async () => {
     api.getMyApplication.mockResolvedValue({
       data: {
         id: 9,
         stage: "hired",
+        editable: false,
         current: {
           submission: {
             personal: {},
@@ -133,7 +168,12 @@ describe("MyApplication", () => {
   it("shows an inline error with a Retry button on load failure, and recovers on retry", async () => {
     api.getMyApplication.mockRejectedValueOnce(new Error("boom"));
     api.getMyApplication.mockResolvedValue({
-      data: { id: 9, stage: "applied", current: { submission: {} } },
+      data: {
+        id: 9,
+        stage: "applied",
+        editable: true,
+        current: { submission: {} },
+      },
     });
     renderAt(5);
     expect(

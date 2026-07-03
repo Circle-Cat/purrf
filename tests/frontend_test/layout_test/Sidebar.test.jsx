@@ -50,6 +50,17 @@ describe("Sidebar Component", () => {
     );
   });
 
+  test("renders Applications for a user with no permissions and links to the board page", () => {
+    renderSidebar([]);
+
+    const link = screen.getByText("Applications");
+    expect(link).toBeInTheDocument();
+    expect(link.closest("a")).toHaveAttribute(
+      "href",
+      ROUTE_PATHS.RECRUITING_BOARD,
+    );
+  });
+
   test("renders all links for a user with both internal permissions", () => {
     renderSidebar([
       PERMISSIONS.DASHBOARD_ACTIVITY_SUMMARY_READ,

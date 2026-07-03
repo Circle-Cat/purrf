@@ -13,6 +13,7 @@ export const ROUTE_PATHS = {
   RECRUITING_POSTING_NEW: "/recruiting/postings/new",
   RECRUITING_POSTING_EDIT: (jobId) => `/recruiting/postings/${jobId}/edit`,
   RECRUITING_REVIEWS: "/recruiting/reviews",
+  RECRUITING_BOARD: "/recruiting/board",
   RECRUITING_JOBS_BROWSE: "/recruiting/jobs",
   RECRUITING_JOB_DETAIL: (jobId) => `/recruiting/jobs/${jobId}`,
   RECRUITING_JOB_APPLY: (jobId) => `/recruiting/jobs/${jobId}/apply`,
