@@ -52,6 +52,15 @@ export const API_ENDPOINTS = {
   RECRUITING_APPLICATION: (applicationId) =>
     `/recruiting/applications/${applicationId}`,
   RECRUITING_APPLICATIONS_MINE: "/recruiting/applications/mine",
+  RECRUITING_BOARD_JOBS: "/recruiting/board/jobs",
+  RECRUITING_JOB_BOARD: (jobId) => `/recruiting/jobs/${jobId}/board`,
+  RECRUITING_APPLICATION_STAGE: (id) =>
+    `/recruiting/applications/${id}/stage`,
+  RECRUITING_APPLICATION_SUB_STATUS: (id) =>
+    `/recruiting/applications/${id}/sub-status`,
+  RECRUITING_APPLICATION_RESUME: (id) =>
+    `/recruiting/applications/${id}/resume`,
+  RECRUITING_BLACKLIST: "/recruiting/blacklist",
 };
 
 /**

@@ -86,3 +86,56 @@ export const getMyApplication = (jobId) =>
   request.get(API_ENDPOINTS.RECRUITING_APPLICATIONS_MINE, {
     params: { job_id: jobId },
   });
+
+/**
+ * List all jobs accessible to the current recruiter on the board (job switcher).
+ */
+export const listBoardJobs = () =>
+  request.get(API_ENDPOINTS.RECRUITING_BOARD_JOBS);
+
+/**
+ * Fetch a job's board with all applications grouped by stage/sub-status.
+ */
+export const getJobBoard = (jobId) =>
+  request.get(API_ENDPOINTS.RECRUITING_JOB_BOARD(jobId));
+
+/**
+ * Fetch detailed application information for the application detail view.
+ */
+export const getApplicationDetail = (id) =>
+  request.get(API_ENDPOINTS.RECRUITING_APPLICATION(id));
+
+/**
+ * Change an application's stage (e.g., "screening" → "hired", "rejected", etc.).
+ * body: { stage: "hired" | "rejected" | ... }
+ */
+export const changeApplicationStage = (id, body) =>
+  request.patch(API_ENDPOINTS.RECRUITING_APPLICATION_STAGE(id), body);
+
+/**
+ * Set an application's sub-status (e.g., "frozen", "waiting", etc.).
+ * Wraps subStatus in the request body automatically.
+ */
+export const setApplicationSubStatus = (id, subStatus) =>
+  request.patch(API_ENDPOINTS.RECRUITING_APPLICATION_SUB_STATUS(id), {
+    subStatus,
+  });
+
+/**
+ * Add a user to the recruiting blacklist.
+ * body: { userId, reason? }
+ */
+export const blacklistUser = (body) =>
+  request.post(API_ENDPOINTS.RECRUITING_BLACKLIST, body);
+
+/**
+ * Build the full URL to a candidate's resume PDF.
+ * Used to construct href for direct file download links.
+ * Mirrors the base URL logic from request.js to ensure consistency.
+ */
+export const resumeUrl = (id) => {
+  const baseURL = import.meta.env.PROD
+    ? import.meta.env.VITE_API_BASE_URL + "/api"
+    : "/api";
+  return baseURL + API_ENDPOINTS.RECRUITING_APPLICATION_RESUME(id);
+};
