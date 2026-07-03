@@ -3,7 +3,12 @@ from fastapi import APIRouter, Response
 from backend.common.fast_api_response_wrapper import api_response
 from backend.common.permissions import Permission
 from backend.utils.permission_decorators import authenticate
-from backend.dto.board_dto import BlacklistDto, StageChangeDto, SubStatusChangeDto
+from backend.dto.board_dto import (
+    BlacklistDto,
+    ReassignDto,
+    StageChangeDto,
+    SubStatusChangeDto,
+)
 from backend.dto.user_context_dto import UserContextDto
 from backend.common.api_endpoints import (
     RECRUITING_BOARD_JOBS_ENDPOINT,
@@ -11,6 +16,7 @@ from backend.common.api_endpoints import (
     RECRUITING_APPLICATION_ENDPOINT,
     RECRUITING_APPLICATION_STAGE_ENDPOINT,
     RECRUITING_APPLICATION_SUB_STATUS_ENDPOINT,
+    RECRUITING_APPLICATION_ASSIGNMENT_ENDPOINT,
     RECRUITING_APPLICATION_RESUME_ENDPOINT,
     RECRUITING_BLACKLIST_ENDPOINT,
 )
@@ -22,8 +28,8 @@ class BoardController:
     The read routes (including the résumé proxy download) are plain
     login-gated (``authenticate()``) rather than permission-gated: ownership
     is a row-level check performed by ``BoardService`` against a job's
-    configured owner ids, not an enum permission. The two decision routes
-    (stage/sub-status) are double-gated:
+    configured owner ids, not an enum permission. The decision routes
+    (stage/sub-status/reassign) are double-gated:
     ``Permission.RECRUITING_APPLICATION_ADVANCE`` at the route, and the same
     row-level owner check in ``BoardService``. The blacklist route is
     permission-gated only (``Permission.RECRUITING_BLACKLIST_WRITE``):
@@ -79,6 +85,14 @@ class BoardController:
             endpoint=authenticate(
                 permissions=[Permission.RECRUITING_APPLICATION_ADVANCE]
             )(self.set_sub_status),
+            methods=["PATCH"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            RECRUITING_APPLICATION_ASSIGNMENT_ENDPOINT,
+            endpoint=authenticate(
+                permissions=[Permission.RECRUITING_APPLICATION_ADVANCE]
+            )(self.reassign),
             methods=["PATCH"],
             response_model=None,
         )
@@ -151,6 +165,19 @@ class BoardController:
                 session, current_user, application_id, sub_status_data
             )
         return api_response(message="Application sub-status updated.", data=result)
+
+    async def reassign(
+        self,
+        current_user: UserContextDto,
+        application_id: int,
+        reassign_data: ReassignDto,
+    ):
+        """Change who is responsible for an application's current stage."""
+        async with self.database.session() as session:
+            result = await self.board_service.reassign(
+                session, current_user, application_id, reassign_data
+            )
+        return api_response(message="Application reassigned.", data=result)
 
     async def blacklist(
         self,

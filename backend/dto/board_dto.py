@@ -85,6 +85,12 @@ class SubStatusChangeDto(BaseRequestDto):
     sub_status: str
 
 
+class ReassignDto(BaseRequestDto):
+    """Change who is responsible for an application's current stage."""
+
+    assignee_id: int
+
+
 class BlacklistDto(BaseRequestDto):
     """Block a user org-wide and close out the triggering application."""
 

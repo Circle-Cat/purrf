@@ -8,6 +8,7 @@ from backend.dto.board_dto import (
     BlacklistDto,
     BoardCardDto,
     BoardJobDto,
+    ReassignDto,
     StageChangeDto,
     SubStatusChangeDto,
 )
@@ -417,6 +418,68 @@ class BoardService:
         # `editable` encodes the CANDIDATE's edit window (see
         # get_application_detail's note); a fresh stage/sub_status decision
         # is never in that window, so this is always False here.
+        return self.recruiting_mapper.to_application_dto(
+            application, current_sub, editable=False
+        )
+
+    async def reassign(
+        self,
+        session: AsyncSession,
+        current_user: UserContextDto,
+        application_id: int,
+        dto: ReassignDto,
+    ) -> ApplicationDto:
+        """Change the interviewer responsible for an application's current stage.
+
+        Independent of Advance: usable any time the application sits in an
+        interview stage, whether or not the outgoing assignee has submitted
+        anything. Resets sub_status to "pending" so the new assignee starts
+        from a clean slate; any evaluation the outgoing assignee already
+        confirmed is untouched (it's a separate row keyed by its own
+        evaluator_id — sub-project #3 slice 1's evaluation feature).
+
+        Args:
+            session (AsyncSession): Active database async session.
+            current_user (UserContextDto): The authenticated caller.
+            application_id (int): The application to reassign.
+            dto (ReassignDto): The new assignee.
+
+        Returns:
+            ApplicationDto: The refreshed application.
+
+        Raises:
+            ValueError: If the application is missing, the caller is not an
+                owner (collapsed "not found" message), the application's
+                current stage is not an interview stage, or the assignee
+                does not hold RECRUITING_INTERVIEW_EVALUATE.
+        """
+        application, _job = await self._load_owned_application(
+            session, current_user, application_id, for_update=True
+        )
+        if application.stage not in INTERVIEW_STAGES:
+            raise ValueError(
+                f"application {application_id} is not in an interview stage"
+            )
+        pool = await self.user_permissions_repository.get_active_users_with_permission(
+            session, Permission.RECRUITING_INTERVIEW_EVALUATE.value
+        )
+        if dto.assignee_id not in {u.user_id for u in pool}:
+            raise ValueError(
+                f"assignee {dto.assignee_id} is not an active interview evaluator"
+            )
+        await self.application_assignment_repository.upsert(
+            session,
+            application_id,
+            application.stage,
+            dto.assignee_id,
+            current_user.user_id,
+        )
+        application.sub_status = "pending"
+        application = await self.application_repository.update(session, application)
+        await session.commit()
+        current_sub = await self.application_submission_repository.get_current(
+            session, application_id
+        )
         return self.recruiting_mapper.to_application_dto(
             application, current_sub, editable=False
         )

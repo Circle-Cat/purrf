@@ -7,6 +7,7 @@ from backend.recruiting.recruiting_mapper import RecruitingMapper
 from backend.dto.board_dto import (
     REJECT_REASONS,
     BlacklistDto,
+    ReassignDto,
     StageChangeDto,
     SubStatusChangeDto,
 )
@@ -473,6 +474,105 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
 
         self.assignment_repo.upsert.assert_not_awaited()
         self.user_permissions_repo.get_active_users_with_permission.assert_not_called()
+
+    # -- reassign --
+
+    async def test_reassign_updates_assignment_and_resets_sub_status(self):
+        job = self._job(
+            job_id=1, owner_ids=(2,), stages=("recruiter_screening", "tech")
+        )
+        application = self._application(
+            application_id=10, job_id=1, stage=ApplicationStage.TECH
+        )
+        application.sub_status = "evaluated"
+        current_sub = self._submission(application_id=10, is_frozen=True)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.sub_repo.get_current = AsyncMock(return_value=current_sub)
+        self.user_permissions_repo.get_active_users_with_permission = AsyncMock(
+            return_value=[self._user(user_id=42)]
+        )
+
+        dto = ReassignDto(assignee_id=42)
+        result = await self.service.reassign(
+            self.session, self._ctx(user_id=2), 10, dto
+        )
+
+        self.assertEqual(result.sub_status, "pending")
+        self.assignment_repo.upsert.assert_awaited_once_with(
+            self.session, 10, ApplicationStage.TECH, 42, 2
+        )
+        self.app_repo.update.assert_awaited_once()
+        self.session.commit.assert_awaited_once()
+
+    async def test_reassign_on_terminal_stage_raises(self):
+        job = self._job(job_id=1, owner_ids=(2,), stages=("tech",))
+        application = self._application(
+            application_id=10, job_id=1, stage=ApplicationStage.HIRED
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+
+        dto = ReassignDto(assignee_id=42)
+        with self.assertRaises(ValueError):
+            await self.service.reassign(self.session, self._ctx(user_id=2), 10, dto)
+
+        self.assignment_repo.upsert.assert_not_awaited()
+        self.app_repo.update.assert_not_awaited()
+        self.session.commit.assert_not_awaited()
+
+    async def test_reassign_rejects_unqualified_assignee(self):
+        job = self._job(
+            job_id=1, owner_ids=(2,), stages=("recruiter_screening", "tech")
+        )
+        application = self._application(
+            application_id=10, job_id=1, stage=ApplicationStage.TECH
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.user_permissions_repo.get_active_users_with_permission = AsyncMock(
+            return_value=[]
+        )
+
+        dto = ReassignDto(assignee_id=99)
+        with self.assertRaisesRegex(ValueError, "99"):
+            await self.service.reassign(self.session, self._ctx(user_id=2), 10, dto)
+
+        self.assignment_repo.upsert.assert_not_awaited()
+        self.app_repo.update.assert_not_awaited()
+        self.session.commit.assert_not_awaited()
+
+    async def test_reassign_non_owner_gets_collapsed_not_found_message(self):
+        job = self._job(job_id=1, owner_ids=(9,), stages=("tech",))
+        application = self._application(
+            application_id=10, job_id=1, stage=ApplicationStage.TECH
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+
+        dto = ReassignDto(assignee_id=42)
+        with self.assertRaises(ValueError) as ctx:
+            await self.service.reassign(self.session, self._ctx(user_id=2), 10, dto)
+        self.assertEqual(str(ctx.exception), "application 10 not found")
+
+    async def test_reassign_row_locks_the_application(self):
+        job = self._job(job_id=1, owner_ids=(2,), stages=("tech",))
+        application = self._application(
+            application_id=10, job_id=1, stage=ApplicationStage.TECH
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+        self.user_permissions_repo.get_active_users_with_permission = AsyncMock(
+            return_value=[self._user(user_id=42)]
+        )
+
+        dto = ReassignDto(assignee_id=42)
+        await self.service.reassign(self.session, self._ctx(user_id=2), 10, dto)
+
+        self.app_repo.get_by_id.assert_awaited_once_with(
+            self.session, 10, for_update=True
+        )
 
     # -- set_sub_status --
 
