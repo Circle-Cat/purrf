@@ -49,6 +49,15 @@ py_test(
 )
 
 py_test(
+    name = "evaluation_rubric_test",
+    srcs = ["evaluation_rubric_test.py"],
+    deps = [
+        "//backend/common:recruiting_enums",
+        "//backend/recruiting",
+    ],
+)
+
+py_test(
     name = "resume_storage_test",
     srcs = ["resume_storage_test.py"],
     deps = [
