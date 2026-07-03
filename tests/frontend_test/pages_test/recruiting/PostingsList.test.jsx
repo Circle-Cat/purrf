@@ -134,14 +134,18 @@ describe("PostingsList", () => {
     expect(screen.getByRole("button", { name: "View" })).toBeInTheDocument();
   });
 
-  it("offers Request reopen and View for closed+wasPublished", () => {
-    const onRequestReopen = vi.fn();
+  it("offers Edit, Request reopen and View for closed+wasPublished", () => {
+    const onEdit = vi.fn(),
+      onRequestReopen = vi.fn();
     render(
       <PostingsList
         jobs={[job({ status: "closed", wasPublished: true })]}
+        onEdit={onEdit}
         onRequestReopen={onRequestReopen}
       />,
     );
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({ id: 1 }));
     fireEvent.click(screen.getByRole("button", { name: "Request reopen" }));
     expect(onRequestReopen).toHaveBeenCalledWith(1);
     expect(
@@ -160,6 +164,9 @@ describe("PostingsList", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
     expect(onDelete).toHaveBeenCalledWith(1);
+    expect(
+      screen.queryByRole("button", { name: "Edit" }),
+    ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Request reopen" }),
     ).not.toBeInTheDocument();
