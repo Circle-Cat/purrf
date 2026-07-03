@@ -1,37 +1,10 @@
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import PeoplePicker from "@/pages/Recruiting/components/PeoplePicker";
 
 const STAGES = ["recruiter_screening", "behavioral", "tech", "board_review"];
 const ASSIGNABLE = new Set(["recruiter_screening", "behavioral"]);
-const NONE = "__none__";
-
-/** A user-picker Select backed by an ApproverDto[] pool. */
-const PeoplePicker = ({ label, pool, value, onChange }) => (
-  <Select
-    value={value != null ? String(value) : NONE}
-    onValueChange={(v) => onChange(v === NONE ? undefined : Number(v))}
-  >
-    <SelectTrigger aria-label={label} className="max-w-xs">
-      <SelectValue placeholder="— none —" />
-    </SelectTrigger>
-    <SelectContent className="z-[110]">
-      <SelectItem value={NONE}>— none —</SelectItem>
-      {pool.map((u) => (
-        <SelectItem key={u.userId} value={String(u.userId)}>
-          {u.name} ({u.email})
-        </SelectItem>
-      ))}
-    </SelectContent>
-  </Select>
-);
 
 /** A selected owner rendered as a chip, with a button to remove it. */
 const OwnerChip = ({ name, onRemove }) => (

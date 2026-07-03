@@ -4,7 +4,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi import Response
 
-from backend.dto.board_dto import BlacklistDto, StageChangeDto, SubStatusChangeDto
+from backend.dto.board_dto import (
+    BlacklistDto,
+    ReassignDto,
+    StageChangeDto,
+    SubStatusChangeDto,
+)
 from backend.dto.user_context_dto import UserContextDto
 from backend.common.permissions import Permission
 from backend.common.recruiting_enums import ApplicationStage
@@ -92,6 +97,20 @@ class TestBoardController(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(resp["data"], updated)
 
+    async def test_reassign_delegates(self):
+        updated = {"id": 10, "sub_status": "pending"}
+        self.board_service.reassign = AsyncMock(return_value=updated)
+        dto = ReassignDto(assignee_id=42)
+
+        resp = await self.controller.reassign(
+            self.ctx, application_id=10, reassign_data=dto
+        )
+
+        self.board_service.reassign.assert_awaited_once_with(
+            self.session, self.ctx, 10, dto
+        )
+        self.assertEqual(resp["data"], updated)
+
     async def test_blacklist_delegates(self):
         updated = {"id": 10, "stage": "rejected"}
         self.board_service.blacklist = AsyncMock(return_value=updated)
@@ -148,14 +167,23 @@ class TestBoardController(unittest.IsolatedAsyncioTestCase):
             "/recruiting/applications/{application_id}/sub-status"
         ]
 
+        reassign_route = routes_by_path[
+            "/recruiting/applications/{application_id}/assignment"
+        ]
+
         self.assertIn("PATCH", stage_route.methods)
         self.assertIn("PATCH", sub_status_route.methods)
+        self.assertIn("PATCH", reassign_route.methods)
         self.assertEqual(
             self._endpoint_permissions(stage_route.endpoint),
             [Permission.RECRUITING_APPLICATION_ADVANCE],
         )
         self.assertEqual(
             self._endpoint_permissions(sub_status_route.endpoint),
+            [Permission.RECRUITING_APPLICATION_ADVANCE],
+        )
+        self.assertEqual(
+            self._endpoint_permissions(reassign_route.endpoint),
             [Permission.RECRUITING_APPLICATION_ADVANCE],
         )
 

@@ -18,14 +18,29 @@ import {
 } from "@/components/ui/select";
 import LoadGate from "@/pages/Recruiting/components/LoadGate";
 import { RowList } from "@/pages/Recruiting/components/ApplicationSnapshotRows";
+import PeoplePicker from "@/pages/Recruiting/components/PeoplePicker";
 import {
   getApplicationDetail,
   setApplicationSubStatus,
   changeApplicationStage,
   blacklistUser,
+  reassignApplication,
+  listInterviewPool,
   resumeUrl,
 } from "@/api/recruitingApi";
 import { humanize } from "@/pages/Recruiting/board/stageFormat";
+
+/**
+ * Stages that carry an interview assignment/evaluation, mirroring the
+ * backend's `INTERVIEW_STAGES` (backend/recruiting/board_service.py). An
+ * advance into one of these requires picking an assignee up front.
+ */
+const INTERVIEW_STAGES = new Set([
+  "recruiter_screening",
+  "behavioral",
+  "tech",
+  "board_review",
+]);
 
 /**
  * Rejection reasons offered to the reviewer, mirroring the backend's fixed
@@ -176,14 +191,20 @@ const ApplicantDetailDialog = ({
   const [detail, setDetail] = useState(null);
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState(false);
+  const [interviewPool, setInterviewPool] = useState([]);
 
   const [advancing, setAdvancing] = useState(false);
+  const [advanceAssigneeId, setAdvanceAssigneeId] = useState("");
   const [switchingSubStatus, setSwitchingSubStatus] = useState(false);
 
   const [rejectFormOpen, setRejectFormOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
   const [rejectNote, setRejectNote] = useState("");
   const [rejecting, setRejecting] = useState(false);
+
+  const [reassignOpen, setReassignOpen] = useState(false);
+  const [reassignAssigneeId, setReassignAssigneeId] = useState("");
+  const [reassigning, setReassigning] = useState(false);
 
   const [blacklistConfirmOpen, setBlacklistConfirmOpen] = useState(false);
   const [blacklistReason, setBlacklistReason] = useState("");
@@ -193,9 +214,10 @@ const ApplicantDetailDialog = ({
     if (applicationId == null) return;
     setLoadError(false);
     setLoaded(false);
-    getApplicationDetail(applicationId)
-      .then(({ data }) => {
+    Promise.all([getApplicationDetail(applicationId), listInterviewPool()])
+      .then(([{ data }, { data: pool }]) => {
         setDetail(data);
+        setInterviewPool(pool);
         setLoaded(true);
       })
       .catch((e) => {
@@ -207,10 +229,14 @@ const ApplicantDetailDialog = ({
   useEffect(() => {
     if (open) {
       setAdvancing(false);
+      setAdvanceAssigneeId("");
       setSwitchingSubStatus(false);
       setRejectFormOpen(false);
       setRejectReason("");
       setRejectNote("");
+      setReassignOpen(false);
+      setReassignAssigneeId("");
+      setReassigning(false);
       setBlacklistConfirmOpen(false);
       setBlacklistReason("");
       setBlacklisting(false);
@@ -237,10 +263,13 @@ const ApplicantDetailDialog = ({
       .finally(() => setSwitchingSubStatus(false));
   };
 
-  const handleAdvance = (next) => {
+  const handleAdvance = (next, assigneeId) => {
     if (advancing) return;
     setAdvancing(true);
-    changeApplicationStage(applicationId, { toStage: next })
+    changeApplicationStage(applicationId, {
+      toStage: next,
+      assigneeId: assigneeId ? Number(assigneeId) : undefined,
+    })
       .then(() => {
         toast.success(`Advanced to ${humanize(next)}.`);
         onChanged();
@@ -248,6 +277,25 @@ const ApplicantDetailDialog = ({
       })
       .catch((e) => toast.error(e.message))
       .finally(() => setAdvancing(false));
+  };
+
+  const handleCancelReassign = () => {
+    setReassignOpen(false);
+    setReassignAssigneeId("");
+  };
+
+  const handleConfirmReassign = () => {
+    if (!reassignAssigneeId || reassigning) return;
+    setReassigning(true);
+    reassignApplication(applicationId, Number(reassignAssigneeId))
+      .then(() => {
+        toast.success("Reassigned.");
+        onChanged();
+        setReassignOpen(false);
+        setReassignAssigneeId("");
+      })
+      .catch((e) => toast.error(e.message))
+      .finally(() => setReassigning(false));
   };
 
   const handleCancelReject = () => {
@@ -302,6 +350,7 @@ const ApplicantDetailDialog = ({
       ? advanceTarget(jobStages, detail.application.stage)
       : null;
   const isPipelineStage = next !== null;
+  const needsAssignee = isPipelineStage && INTERVIEW_STAGES.has(next);
 
   return (
     <>
@@ -404,6 +453,30 @@ const ApplicantDetailDialog = ({
                     </Button>
                   </div>
                 </DialogFooter>
+              ) : reassignOpen ? (
+                <DialogFooter className="flex-col items-stretch gap-3 sm:flex-col sm:items-stretch">
+                  <PeoplePicker
+                    label="Assignee"
+                    pool={interviewPool}
+                    value={reassignAssigneeId || undefined}
+                    onChange={setReassignAssigneeId}
+                  />
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={handleCancelReassign}
+                      disabled={reassigning}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      onClick={handleConfirmReassign}
+                      disabled={!reassignAssigneeId || reassigning}
+                    >
+                      Confirm reassign
+                    </Button>
+                  </div>
+                </DialogFooter>
               ) : (
                 <DialogFooter>
                   <Button
@@ -418,16 +491,41 @@ const ApplicantDetailDialog = ({
                     <>
                       <Button
                         variant="outline"
+                        onClick={() => setReassignOpen(true)}
+                      >
+                        Reassign
+                      </Button>
+                      <Button
+                        variant="outline"
                         onClick={() => setRejectFormOpen(true)}
                       >
                         Reject
                       </Button>
-                      <Button
-                        disabled={advancing}
-                        onClick={() => handleAdvance(next)}
-                      >
-                        Advance to {humanize(next)}
-                      </Button>
+                      {needsAssignee ? (
+                        <>
+                          <PeoplePicker
+                            label="Assignee"
+                            pool={interviewPool}
+                            value={advanceAssigneeId || undefined}
+                            onChange={setAdvanceAssigneeId}
+                          />
+                          <Button
+                            disabled={!advanceAssigneeId || advancing}
+                            onClick={() =>
+                              handleAdvance(next, advanceAssigneeId)
+                            }
+                          >
+                            Confirm advance
+                          </Button>
+                        </>
+                      ) : (
+                        <Button
+                          disabled={advancing}
+                          onClick={() => handleAdvance(next)}
+                        >
+                          Advance to {humanize(next)}
+                        </Button>
+                      )}
                     </>
                   )}
                 </DialogFooter>
