@@ -103,15 +103,21 @@ export const REVIEWS_GUIDE = {
   ],
   statuses: [
     {
-      name: "Initial",
+      name: "Initial Request",
       description: "First submission of a draft for publication.",
     },
     {
-      name: "Revision",
+      name: "Revision Request",
       description: "An edit to an already-published posting.",
     },
-    { name: "Close", description: "A request to close a published posting." },
-    { name: "Reopen", description: "A request to reopen a closed posting." },
+    {
+      name: "Close Request",
+      description: "A request to close a published posting.",
+    },
+    {
+      name: "Reopen Request",
+      description: "A request to reopen a closed posting.",
+    },
   ],
   notes: [
     "A comment is required when you reject.",
