@@ -26,8 +26,7 @@ class TestJobRepository(BaseRepositoryTestLib):
         saved = await self.repo.create_job(self.session, job)
 
         self.assertEqual(saved.pipeline_config[0]["stage"], "recruiter_screening")
-        self.assertIsNone(saved.pending_form_schema)
-        self.assertIsNone(saved.pending_pipeline_config)
+        self.assertIsNone(saved.pending_payload)
 
     async def test_list_all_returns_every_status(self):
         """list_all returns jobs regardless of status."""
@@ -74,7 +73,6 @@ class TestJobRepository(BaseRepositoryTestLib):
                 "workExperience": "optional",
                 "resume": "off",
             },
-            pending_profile_config=None,
             pipeline_config={
                 "stages": [
                     {
