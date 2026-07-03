@@ -99,6 +99,43 @@ describe("PostingEditor", () => {
     );
   });
 
+  it("prefills from pendingPayload when a CLOSED posting already has a staged edit", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 5,
+        title: "Live title",
+        description: "",
+        kind: "activity",
+        cooldownDays: null,
+        formSchema: { questions: [] },
+        pipelineConfig: { ownerId: 9, stages: [] },
+        pendingPayload: {
+          title: "Staged title",
+          description: "Staged description",
+          cooldownDays: 30,
+          formSchema: { questions: [] },
+          pipelineConfig: { ownerId: 9, stages: [] },
+        },
+      },
+    });
+    const router = createMemoryRouter(
+      [
+        { path: "/postings/:id/edit", element: <PostingEditor /> },
+        { path: ROUTE_PATHS.RECRUITING_POSTINGS, element: <div /> },
+      ],
+      { initialEntries: ["/postings/5/edit"] },
+    );
+    render(<RouterProvider router={router} />);
+    expect(await screen.findByDisplayValue("Staged title")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("Staged description")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(api.updateJob).toHaveBeenCalled());
+    expect(api.updateJob.mock.calls[0][1]).toMatchObject({
+      title: "Staged title",
+      cooldownDays: 30,
+    });
+  });
+
   it("preserves a multi-owner pipeline config untouched through save", async () => {
     api.getJob.mockResolvedValue({
       data: {
