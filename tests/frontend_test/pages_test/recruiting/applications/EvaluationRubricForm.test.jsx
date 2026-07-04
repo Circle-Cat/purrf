@@ -157,6 +157,49 @@ describe("EvaluationRubricForm", () => {
     expect(onConfirm).toHaveBeenCalledWith({ data_structures: { value: 5 } });
   });
 
+  it("saving disables Save draft and the Confirm & Submit trigger, to prevent a double-submit", () => {
+    render(
+      <EvaluationRubricForm
+        stage="tech"
+        initialResponses={{}}
+        saving
+        onSaveDraft={vi.fn()}
+        onConfirm={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Save draft" })).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Confirm & Submit" }),
+    ).toBeDisabled();
+  });
+
+  it("saving disables the irreversibility dialog's Submit button, to prevent a double-submit", async () => {
+    const user = userEvent.setup();
+    const onConfirm = vi.fn();
+    const { rerender } = render(
+      <EvaluationRubricForm
+        stage="tech"
+        initialResponses={{}}
+        onSaveDraft={vi.fn()}
+        onConfirm={onConfirm}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Confirm & Submit" }));
+    rerender(
+      <EvaluationRubricForm
+        stage="tech"
+        initialResponses={{}}
+        saving
+        onSaveDraft={vi.fn()}
+        onConfirm={onConfirm}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Submit" })).toBeDisabled();
+  });
+
   it("readOnly disables every input and hides the action buttons", () => {
     render(
       <EvaluationRubricForm
