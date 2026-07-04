@@ -93,6 +93,33 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result.pending_payload, {"title": "New title"})
 
+    async def test_get_job_includes_reviewer_id_from_open_review(self):
+        """get_job surfaces reviewer_id from the job's open PENDING review."""
+        job = self._job(status=JobStatus.PENDING_REVIEW)
+        self.repo.get_by_job_id.return_value = job
+        open_review = JobReviewEntity(
+            review_id=5,
+            job_id=job.job_id,
+            submitted_by=1,
+            reviewer_id=4,
+            status=JobReviewStatus.PENDING,
+            kind=JobReviewKind.INITIAL,
+        )
+        self.review_repo.get_open_for_job = AsyncMock(return_value=open_review)
+
+        result = await self.service.get_job(self.session, job.job_id)
+
+        self.assertEqual(result.reviewer_id, 4)
+
+    async def test_get_job_reviewer_id_none_without_open_review(self):
+        """get_job leaves reviewer_id None when there is no open review."""
+        job = self._job(status=JobStatus.DRAFT)
+        self.repo.get_by_job_id.return_value = job
+
+        result = await self.service.get_job(self.session, job.job_id)
+
+        self.assertIsNone(result.reviewer_id)
+
     async def test_update_published_any_field_parks_pending_payload(self):
         """Editing a PUBLISHED posting — any field — parks a full draft, live fields untouched."""
         job = self._job(

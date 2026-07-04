@@ -842,13 +842,19 @@ class JobService:
             job_id (int): Identifier of the posting to retrieve.
 
         Returns:
-            JobDto: The requested posting.
+            JobDto: The requested posting, with ``reviewer_id`` set to its
+            open (PENDING) review's reviewer when one exists, otherwise
+            ``None``.
 
         Raises:
             ValueError: If no posting with the given id exists.
         """
         job = await self._require_job(session, job_id)
-        return self.recruiting_mapper.to_job_dto(job)
+        open_review = await self.job_review_repository.get_open_for_job(
+            session, job_id
+        )
+        reviewer_id = open_review.reviewer_id if open_review is not None else None
+        return self.recruiting_mapper.to_job_dto(job, reviewer_id=reviewer_id)
 
     async def _require_job(self, session: AsyncSession, job_id: int) -> JobEntity:
         """Return the JobEntity for job_id, or raise ValueError if absent.
