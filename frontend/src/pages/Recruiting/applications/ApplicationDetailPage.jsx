@@ -219,7 +219,7 @@ const EvaluationSummaryRow = ({ field, entry }) => {
  * section/field grouping (via `rubricFor`). Shown to owners so they can see
  * evaluators' scorecards before deciding.
  *
- * @param {{evaluations: {id: number, stage: string, responses: object}[]}} props
+ * @param {{evaluations: {id: number, stage: string, round: number, responses: object}[]}} props
  */
 const EvaluationSummary = ({ evaluations }) => (
   <div className="space-y-4">
@@ -230,7 +230,7 @@ const EvaluationSummary = ({ evaluations }) => (
       evaluations.map((evaluation) => (
         <div key={evaluation.id} className="space-y-3 rounded border p-3">
           <h3 className="text-sm font-medium text-slate-700">
-            {humanize(evaluation.stage)}
+            {humanize(evaluation.stage)} — Round {evaluation.round}
           </h3>
           {(rubricFor(evaluation.stage) ?? []).map((section) => (
             <div key={section.title} className="space-y-2">
@@ -597,7 +597,9 @@ const ApplicationDetailPage = () => {
     currentUserId != null && detail.assigneeId === currentUserId;
   const myEntry = evaluations.find(
     (e) =>
-      e.evaluatorId === currentUserId && e.stage === detail.application.stage,
+      e.evaluatorId === currentUserId &&
+      e.stage === detail.application.stage &&
+      e.round === (detail.application.currentRound ?? 1),
   );
   const assigneeName =
     interviewPool.find((u) => u.userId === detail.assigneeId)?.name ??

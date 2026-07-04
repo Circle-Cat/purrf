@@ -1198,6 +1198,29 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.app_repo.update.assert_awaited_once()
         self.session.commit.assert_awaited_once()
 
+    async def test_set_round_resets_sub_status_to_pending(self):
+        """Mirrors reassign/change_stage: advancing to a new round must not
+        leave the prior round's "evaluated" sub_status on a round nobody has
+        evaluated yet."""
+        job = self._job(job_id=1, owner_ids=(2,), stages=("tech",), rounds={"tech": 3})
+        application = self._application(
+            application_id=10, job_id=1, stage=ApplicationStage.TECH
+        )
+        application.sub_status = "evaluated"
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+        self.user_permissions_repo.get_active_users_with_permission = AsyncMock(
+            return_value=[self._user(user_id=42)]
+        )
+
+        dto = RoundChangeDto(round=2, assignee_id=42)
+        result = await self.service.set_round(
+            self.session, self._ctx(user_id=2), 10, dto
+        )
+
+        self.assertEqual(result.sub_status, "pending")
+
     async def test_set_round_rejects_round_above_the_stage_configured_max(self):
         job = self._job(job_id=1, owner_ids=(2,), stages=("tech",), rounds={"tech": 2})
         application = self._application(

@@ -92,6 +92,7 @@ class EvaluationService:
             session,
             application_id,
             application.stage,
+            application.current_round,
             current_user.user_id,
             dto.responses,
         )
@@ -106,6 +107,7 @@ class EvaluationService:
             id=row.evaluation_id,
             application_id=row.application_id,
             stage=row.stage,
+            round=row.round,
             evaluator_id=row.evaluator_id,
             responses=row.responses,
             is_confirmed=row.is_confirmed,
@@ -144,6 +146,7 @@ class EvaluationService:
                 session,
                 assignment.application_id,
                 assignment.stage,
+                assignment.round,
                 current_user.user_id,
             )
             result.append(
@@ -156,6 +159,7 @@ class EvaluationService:
                         else ""
                     ),
                     stage=assignment.stage,
+                    round=assignment.round,
                     is_confirmed=bool(
                         evaluation is not None and evaluation.is_confirmed
                     ),
@@ -225,6 +229,7 @@ class EvaluationService:
                 id=row.evaluation_id,
                 application_id=row.application_id,
                 stage=row.stage,
+                round=row.round,
                 evaluator_id=row.evaluator_id,
                 responses=row.responses,
                 is_confirmed=row.is_confirmed,

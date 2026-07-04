@@ -66,6 +66,7 @@ class TestEvaluationRepository(BaseRepositoryTestLib):
             self.session,
             app.application_id,
             ApplicationStage.RECRUITER_SCREENING,
+            1,
             evaluator.user_id,
         )
 
@@ -80,6 +81,7 @@ class TestEvaluationRepository(BaseRepositoryTestLib):
             self.session,
             app.application_id,
             ApplicationStage.RECRUITER_SCREENING,
+            1,
             evaluator.user_id,
             {"rating": 1},
         )
@@ -89,6 +91,7 @@ class TestEvaluationRepository(BaseRepositoryTestLib):
             self.session,
             app.application_id,
             ApplicationStage.RECRUITER_SCREENING,
+            1,
             evaluator.user_id,
             {"rating": 5},
         )
@@ -100,6 +103,7 @@ class TestEvaluationRepository(BaseRepositoryTestLib):
             self.session,
             app.application_id,
             ApplicationStage.RECRUITER_SCREENING,
+            1,
             evaluator.user_id,
         )
         self.assertEqual(fetched.evaluation_id, first.evaluation_id)
@@ -114,6 +118,7 @@ class TestEvaluationRepository(BaseRepositoryTestLib):
             self.session,
             app.application_id,
             ApplicationStage.RECRUITER_SCREENING,
+            1,
             evaluator.user_id,
             {"rating": 1},
         )
@@ -124,9 +129,48 @@ class TestEvaluationRepository(BaseRepositoryTestLib):
                 self.session,
                 app.application_id,
                 ApplicationStage.RECRUITER_SCREENING,
+                1,
                 evaluator.user_id,
                 {"rating": 2},
             )
+
+    async def test_same_evaluator_two_rounds_are_independent_rows(self):
+        """A stage's round is part of the key: the same evaluator confirming
+        round 1 must not block or overwrite their round 2 draft."""
+        app = await self._seed_application()
+        (evaluator,) = await self._seed_users(1)
+        repo = EvaluationRepository()
+
+        round1 = await repo.upsert_draft(
+            self.session,
+            app.application_id,
+            ApplicationStage.TECH,
+            1,
+            evaluator.user_id,
+            {"rating": 1},
+        )
+        await repo.confirm(self.session, round1, datetime.now(timezone.utc))
+
+        round2 = await repo.upsert_draft(
+            self.session,
+            app.application_id,
+            ApplicationStage.TECH,
+            2,
+            evaluator.user_id,
+            {"rating": 5},
+        )
+
+        self.assertNotEqual(round2.evaluation_id, round1.evaluation_id)
+        self.assertFalse(round2.is_confirmed)
+        fetched_round1 = await repo.get(
+            self.session,
+            app.application_id,
+            ApplicationStage.TECH,
+            1,
+            evaluator.user_id,
+        )
+        self.assertTrue(fetched_round1.is_confirmed)
+        self.assertEqual(fetched_round1.responses, {"rating": 1})
 
     async def test_confirm_sets_fields_and_is_retrievable(self):
         app = await self._seed_application()
@@ -136,6 +180,7 @@ class TestEvaluationRepository(BaseRepositoryTestLib):
             self.session,
             app.application_id,
             ApplicationStage.RECRUITER_SCREENING,
+            1,
             evaluator.user_id,
             {"rating": 3},
         )
@@ -150,6 +195,7 @@ class TestEvaluationRepository(BaseRepositoryTestLib):
             self.session,
             app.application_id,
             ApplicationStage.RECRUITER_SCREENING,
+            1,
             evaluator.user_id,
         )
         self.assertTrue(fetched.is_confirmed)
@@ -173,6 +219,7 @@ class TestEvaluationRepository(BaseRepositoryTestLib):
             self.session,
             app1.application_id,
             ApplicationStage.RECRUITER_SCREENING,
+            1,
             evaluator.user_id,
             {"rating": 1},
         )
@@ -180,6 +227,7 @@ class TestEvaluationRepository(BaseRepositoryTestLib):
             self.session,
             app1.application_id,
             ApplicationStage.BEHAVIORAL,
+            1,
             other_evaluator.user_id,
             {"rating": 9},
         )
@@ -187,6 +235,7 @@ class TestEvaluationRepository(BaseRepositoryTestLib):
             self.session,
             app2.application_id,
             ApplicationStage.RECRUITER_SCREENING,
+            1,
             evaluator.user_id,
             {"rating": 2},
         )
@@ -221,6 +270,7 @@ class TestEvaluationRepository(BaseRepositoryTestLib):
             self.session,
             app1.application_id,
             ApplicationStage.RECRUITER_SCREENING,
+            1,
             evaluator.user_id,
             {"rating": 1},
         )
@@ -228,6 +278,7 @@ class TestEvaluationRepository(BaseRepositoryTestLib):
             self.session,
             app2.application_id,
             ApplicationStage.RECRUITER_SCREENING,
+            1,
             evaluator.user_id,
             {"rating": 2},
         )
@@ -235,6 +286,7 @@ class TestEvaluationRepository(BaseRepositoryTestLib):
             self.session,
             app1.application_id,
             ApplicationStage.BEHAVIORAL,
+            1,
             other_evaluator.user_id,
             {"rating": 9},
         )

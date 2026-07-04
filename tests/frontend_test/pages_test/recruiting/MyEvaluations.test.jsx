@@ -50,6 +50,7 @@ describe("MyEvaluations page", () => {
           jobTitle: "Backend Engineer",
           applicantName: "Ada Lovelace",
           stage: "recruiter_screening",
+          round: 1,
           isConfirmed: false,
         },
         {
@@ -57,6 +58,7 @@ describe("MyEvaluations page", () => {
           jobTitle: "Frontend Engineer",
           applicantName: "Grace Hopper",
           stage: "tech",
+          round: 2,
           isConfirmed: true,
         },
       ],
@@ -67,16 +69,49 @@ describe("MyEvaluations page", () => {
       expect(screen.getByText("Ada Lovelace")).toBeInTheDocument(),
     );
     expect(screen.getByText("Backend Engineer")).toBeInTheDocument();
-    expect(screen.getByText("Recruiter screening")).toBeInTheDocument();
+    expect(
+      screen.getByText("Recruiter screening — Round 1"),
+    ).toBeInTheDocument();
     expect(screen.getByText("Pending")).toBeInTheDocument();
 
     expect(screen.getByText("Grace Hopper")).toBeInTheDocument();
     expect(screen.getByText("Frontend Engineer")).toBeInTheDocument();
-    expect(screen.getByText("Tech")).toBeInTheDocument();
+    expect(screen.getByText("Tech — Round 2")).toBeInTheDocument();
     expect(screen.getByText("Confirmed")).toBeInTheDocument();
 
     await user.click(screen.getByText("Ada Lovelace"));
     expect(screen.getByText("DETAIL PAGE")).toBeInTheDocument();
+  });
+
+  it("shows two rounds of the same application/stage as distinct rows", async () => {
+    api.listMyEvaluations.mockResolvedValue({
+      data: [
+        {
+          applicationId: 9,
+          jobTitle: "Backend Engineer",
+          applicantName: "Ada Lovelace",
+          stage: "tech",
+          round: 1,
+          isConfirmed: true,
+        },
+        {
+          applicationId: 9,
+          jobTitle: "Backend Engineer",
+          applicantName: "Ada Lovelace",
+          stage: "tech",
+          round: 2,
+          isConfirmed: false,
+        },
+      ],
+    });
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByText("Tech — Round 1")).toBeInTheDocument(),
+    );
+    expect(screen.getByText("Tech — Round 2")).toBeInTheDocument();
+    expect(screen.getByText("Confirmed")).toBeInTheDocument();
+    expect(screen.getByText("Pending")).toBeInTheDocument();
   });
 
   it("shows an inline error with Retry and recovers", async () => {
@@ -90,6 +125,7 @@ describe("MyEvaluations page", () => {
             jobTitle: "Backend Engineer",
             applicantName: "Ada Lovelace",
             stage: "recruiter_screening",
+            round: 1,
             isConfirmed: false,
           },
         ],

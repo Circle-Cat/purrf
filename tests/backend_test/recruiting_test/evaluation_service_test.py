@@ -13,6 +13,7 @@ from backend.common.recruiting_enums import ApplicationStage, JobKind, JobStatus
 from backend.repository.application_assignment_repository import (
     ApplicationAssignmentRepository,
 )
+from backend.repository.evaluation_repository import EvaluationRepository
 
 # A fully-answered RECRUITER_SCREENING rubric (see evaluation_rubric.RUBRICS):
 # every field required on confirm, in the shape validate_responses expects.
@@ -42,7 +43,7 @@ class TestEvaluationService(unittest.IsolatedAsyncioTestCase):
         self.assignment_repo = create_autospec(
             ApplicationAssignmentRepository, instance=True
         )
-        self.evaluation_repo = MagicMock()
+        self.evaluation_repo = create_autospec(EvaluationRepository, instance=True)
         self.job_repo = MagicMock()
         self.users_repo = MagicMock()
         self.session = AsyncMock()
@@ -73,12 +74,14 @@ class TestEvaluationService(unittest.IsolatedAsyncioTestCase):
         user_id=3,
         stage=ApplicationStage.RECRUITER_SCREENING,
         sub_status="pending",
+        current_round=1,
     ):
         app = ApplicationEntity(
             job_id=job_id,
             user_id=user_id,
             stage=stage,
             sub_status=sub_status,
+            current_round=current_round,
         )
         app.application_id = application_id
         return app
@@ -90,12 +93,14 @@ class TestEvaluationService(unittest.IsolatedAsyncioTestCase):
         self,
         application_id=10,
         stage=ApplicationStage.RECRUITER_SCREENING,
+        round=1,
         assignee_id=2,
         assigned_by=1,
     ):
         a = ApplicationAssignmentEntity(
             application_id=application_id,
             stage=stage,
+            round=round,
             assignee_id=assignee_id,
             assigned_by=assigned_by,
         )
@@ -107,6 +112,7 @@ class TestEvaluationService(unittest.IsolatedAsyncioTestCase):
         evaluation_id=200,
         application_id=10,
         stage=ApplicationStage.RECRUITER_SCREENING,
+        round=1,
         evaluator_id=2,
         responses=None,
         is_confirmed=False,
@@ -115,6 +121,7 @@ class TestEvaluationService(unittest.IsolatedAsyncioTestCase):
         e = EvaluationEntity(
             application_id=application_id,
             stage=stage,
+            round=round,
             evaluator_id=evaluator_id,
             responses=responses or {},
         )
@@ -135,8 +142,7 @@ class TestEvaluationService(unittest.IsolatedAsyncioTestCase):
         )
         self.app_repo.get_by_id = AsyncMock(return_value=application)
         self.assignment_repo.get.return_value = assignment
-        self.evaluation_repo.upsert_draft = AsyncMock(return_value=draft_row)
-        self.evaluation_repo.confirm = AsyncMock()
+        self.evaluation_repo.upsert_draft.return_value = draft_row
         self.app_repo.update = AsyncMock()
 
         dto = EvaluationSubmitDto(
@@ -149,6 +155,7 @@ class TestEvaluationService(unittest.IsolatedAsyncioTestCase):
             self.session,
             10,
             ApplicationStage.RECRUITER_SCREENING,
+            1,
             2,
             INCOMPLETE_RECRUITER_SCREENING_RESPONSES,
         )
@@ -156,6 +163,35 @@ class TestEvaluationService(unittest.IsolatedAsyncioTestCase):
         self.app_repo.update.assert_not_awaited()
         self.assertEqual(application.sub_status, "pending")
         self.session.commit.assert_awaited_once()
+
+    async def test_submit_on_round_two_scopes_the_key_to_that_round(self):
+        """Confirming round 1 must not affect round 2: the evaluation key
+        includes the application's current_round, not just stage."""
+        application = self._application(
+            stage=ApplicationStage.TECH, current_round=2, sub_status="pending"
+        )
+        assignment = self._assignment(
+            stage=ApplicationStage.TECH, round=2, assignee_id=2
+        )
+        draft_row = self._evaluation(
+            stage=ApplicationStage.TECH, round=2, responses={"rating": 5}
+        )
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.assignment_repo.get.return_value = assignment
+        self.evaluation_repo.upsert_draft.return_value = draft_row
+
+        dto = EvaluationSubmitDto(responses={"rating": 5}, confirm=False)
+        result = await self.service.submit(self.session, self._ctx(user_id=2), 10, dto)
+
+        self.assertEqual(result.round, 2)
+        self.evaluation_repo.upsert_draft.assert_awaited_once_with(
+            self.session,
+            10,
+            ApplicationStage.TECH,
+            2,
+            2,
+            {"rating": 5},
+        )
 
     async def test_submit_confirm_with_complete_rubric_locks_row_and_sets_sub_status(
         self,
@@ -170,8 +206,8 @@ class TestEvaluationService(unittest.IsolatedAsyncioTestCase):
         )
         self.app_repo.get_by_id = AsyncMock(return_value=application)
         self.assignment_repo.get.return_value = assignment
-        self.evaluation_repo.upsert_draft = AsyncMock(return_value=draft_row)
-        self.evaluation_repo.confirm = AsyncMock(return_value=confirmed_row)
+        self.evaluation_repo.upsert_draft.return_value = draft_row
+        self.evaluation_repo.confirm.return_value = confirmed_row
         self.app_repo.update = AsyncMock(side_effect=lambda session, entity: entity)
 
         dto = EvaluationSubmitDto(
@@ -195,7 +231,6 @@ class TestEvaluationService(unittest.IsolatedAsyncioTestCase):
         assignment = self._assignment(assignee_id=2)
         self.app_repo.get_by_id = AsyncMock(return_value=application)
         self.assignment_repo.get.return_value = assignment
-        self.evaluation_repo.upsert_draft = AsyncMock()
         self.app_repo.update = AsyncMock()
 
         dto = EvaluationSubmitDto(
@@ -213,7 +248,6 @@ class TestEvaluationService(unittest.IsolatedAsyncioTestCase):
         assignment = self._assignment(assignee_id=42)  # not the caller
         self.app_repo.get_by_id = AsyncMock(return_value=application)
         self.assignment_repo.get.return_value = assignment
-        self.evaluation_repo.upsert_draft = AsyncMock()
 
         dto = EvaluationSubmitDto(
             responses=INCOMPLETE_RECRUITER_SCREENING_RESPONSES, confirm=False
@@ -228,7 +262,6 @@ class TestEvaluationService(unittest.IsolatedAsyncioTestCase):
         application = self._application(sub_status="pending")
         self.app_repo.get_by_id = AsyncMock(return_value=application)
         self.assignment_repo.get.return_value = None
-        self.evaluation_repo.upsert_draft = AsyncMock()
 
         dto = EvaluationSubmitDto(
             responses=INCOMPLETE_RECRUITER_SCREENING_RESPONSES, confirm=False
@@ -243,10 +276,8 @@ class TestEvaluationService(unittest.IsolatedAsyncioTestCase):
         assignment = self._assignment(assignee_id=2)
         self.app_repo.get_by_id = AsyncMock(return_value=application)
         self.assignment_repo.get.return_value = assignment
-        self.evaluation_repo.upsert_draft = AsyncMock(
-            side_effect=ValueError(
-                "this evaluation is already confirmed and cannot be edited"
-            )
+        self.evaluation_repo.upsert_draft.side_effect = ValueError(
+            "this evaluation is already confirmed and cannot be edited"
         )
         self.app_repo.update = AsyncMock()
 
@@ -309,12 +340,12 @@ class TestEvaluationService(unittest.IsolatedAsyncioTestCase):
             is_confirmed=True,
         )
 
-        async def get_evaluation(session, application_id, stage, evaluator_id):
+        async def get_evaluation(session, application_id, stage, round, evaluator_id):
             if application_id == 11:
                 return confirmed_row
             return None
 
-        self.evaluation_repo.get = AsyncMock(side_effect=get_evaluation)
+        self.evaluation_repo.get.side_effect = get_evaluation
 
         result = await self.service.get_mine(self.session, self._ctx(user_id=2))
 
@@ -326,6 +357,42 @@ class TestEvaluationService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(by_app[10].applicant_name, "C D")
         self.assertEqual(by_app[10].stage, ApplicationStage.RECRUITER_SCREENING)
         self.assertEqual(by_app[11].stage, ApplicationStage.TECH)
+
+    async def test_get_mine_returns_distinct_rows_for_two_rounds_of_same_application(
+        self,
+    ):
+        """The same evaluator assigned to two rounds of one multi-round stage
+        must appear as two distinct rows (round-scoped), not collapse into
+        one duplicate-keyed entry."""
+        round1 = self._assignment(
+            application_id=10, stage=ApplicationStage.TECH, round=1, assignee_id=2
+        )
+        round2 = self._assignment(
+            application_id=10, stage=ApplicationStage.TECH, round=2, assignee_id=2
+        )
+        self.assignment_repo.list_by_assignee = AsyncMock(return_value=[round1, round2])
+        app = self._application(
+            application_id=10, stage=ApplicationStage.TECH, current_round=2
+        )
+        self.app_repo.get_by_id = AsyncMock(return_value=app)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=self._job(job_id=1))
+        self.users_repo.get_user_by_user_id = AsyncMock(return_value=self._user())
+
+        confirmed_round1 = self._evaluation(
+            application_id=10, stage=ApplicationStage.TECH, round=1, is_confirmed=True
+        )
+
+        async def get_evaluation(session, application_id, stage, round, evaluator_id):
+            return confirmed_round1 if round == 1 else None
+
+        self.evaluation_repo.get.side_effect = get_evaluation
+
+        result = await self.service.get_mine(self.session, self._ctx(user_id=2))
+
+        self.assertEqual(len(result), 2)
+        by_round = {r.round: r for r in result}
+        self.assertTrue(by_round[1].is_confirmed)
+        self.assertFalse(by_round[2].is_confirmed)
 
     # -- get_for_application --
 
@@ -349,7 +416,7 @@ class TestEvaluationService(unittest.IsolatedAsyncioTestCase):
         self.app_repo.get_by_id = AsyncMock(return_value=application)
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
         self.assignment_repo.get.return_value = None
-        self.evaluation_repo.list_by_application = AsyncMock(return_value=rows)
+        self.evaluation_repo.list_by_application.return_value = rows
 
         result = await self.service.get_for_application(
             self.session, self._ctx(user_id=2), 10
@@ -378,7 +445,7 @@ class TestEvaluationService(unittest.IsolatedAsyncioTestCase):
         self.app_repo.get_by_id = AsyncMock(return_value=application)
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
         self.assignment_repo.get.return_value = assignment
-        self.evaluation_repo.list_by_application = AsyncMock(return_value=[own_draft])
+        self.evaluation_repo.list_by_application.return_value = [own_draft]
 
         result = await self.service.get_for_application(
             self.session, self._ctx(user_id=2), 10
@@ -394,7 +461,6 @@ class TestEvaluationService(unittest.IsolatedAsyncioTestCase):
         self.app_repo.get_by_id = AsyncMock(return_value=application)
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
         self.assignment_repo.get.return_value = None
-        self.evaluation_repo.list_by_application = AsyncMock()
 
         with self.assertRaises(ValueError):
             await self.service.get_for_application(
