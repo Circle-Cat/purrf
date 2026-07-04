@@ -188,6 +188,35 @@ describe("ApplicationForm", () => {
     });
   });
 
+  it("prefills from `seed` without switching into edit mode", async () => {
+    const user = userEvent.setup();
+    api.submitApplication.mockResolvedValue({ data: { id: 101 } });
+    const onSubmitted = vi.fn();
+    render(
+      <ApplicationForm
+        job={JOB}
+        seed={FILLED_EXISTING.current}
+        onSubmitted={onSubmitted}
+      />,
+    );
+
+    // seed-only prefill still defaults save-to-profile checked (same as a
+    // brand-new application, since `existing` is undefined); uncheck it so
+    // this test stays focused on the seed-vs-existing submit-path split.
+    await user.click(
+      screen.getByRole("checkbox", { name: /save to my profile/i }),
+    );
+    await user.click(screen.getByRole("button", { name: /submit/i }));
+
+    expect(api.submitApplication).toHaveBeenCalledTimes(1);
+    expect(api.submitApplication.mock.calls[0][0]).toMatchObject({
+      jobId: 5,
+      personal: { firstName: "Ann" },
+    });
+    expect(api.updateApplication).not.toHaveBeenCalled();
+    expect(onSubmitted).toHaveBeenCalled();
+  });
+
   it("guards against double submission", async () => {
     const user = userEvent.setup();
     let resolveSubmit;

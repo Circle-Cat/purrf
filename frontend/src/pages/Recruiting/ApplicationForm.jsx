@@ -21,6 +21,13 @@ import {
  * calls share the same base body; `jobId` is added only for the create call,
  * since the edit DTO forbids extra fields and rejects it.
  *
+ * `existing` and `seed` both prefill the form but serve different purposes:
+ * `existing` is a still-editable application being edited in place (drives
+ * the `updateApplication` submit path); `seed` is a prior submission used
+ * purely to prefill the form while still submitting via `submitApplication`
+ * (create) — used when a rejected candidate reapplies, since the backend's
+ * reapply branch lives on the create path, not edit.
+ *
  * When "save to my profile" is checked, a successful submission is followed
  * by a best-effort write-back of the form's personal fields and complete
  * education/experience rows to the applicant's profile: the current profile
@@ -32,20 +39,21 @@ import {
  * toasts a warning and never fails the submission -- `onSubmitted` still
  * fires.
  *
- * @param {{job: object, existing?: object, onSubmitted: (app: object) => void}} props
+ * @param {{job: object, existing?: object, seed?: object, onSubmitted: (app: object) => void}} props
  */
-const ApplicationForm = ({ job, existing, onSubmitted }) => {
+const ApplicationForm = ({ job, existing, seed, onSubmitted }) => {
   const { user } = useAuth();
-  const seed = existing?.current?.submission ?? {};
+  const priorSubmission = existing?.current ?? seed ?? {};
+  const submissionSeed = priorSubmission.submission ?? {};
   const [profileValue, setProfileValue] = useState({
-    personal: seed.personal ?? {},
-    education: seed.education ?? [],
-    experience: seed.experience ?? [],
+    personal: submissionSeed.personal ?? {},
+    education: submissionSeed.education ?? [],
+    experience: submissionSeed.experience ?? [],
   });
-  const [answers, setAnswers] = useState(seed.answers ?? {});
+  const [answers, setAnswers] = useState(submissionSeed.answers ?? {});
   const [resume, setResume] = useState({
-    sha256: existing?.current?.resumeSha256 ?? null,
-    objectKey: existing?.current?.resumeObjectKey ?? null,
+    sha256: priorSubmission.resumeSha256 ?? null,
+    objectKey: priorSubmission.resumeObjectKey ?? null,
   });
   const [saveToProfile, setSaveToProfile] = useState(!existing);
   const [submitting, setSubmitting] = useState(false);
