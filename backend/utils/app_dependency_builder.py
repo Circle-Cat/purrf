@@ -591,7 +591,6 @@ class AppDependencyBuilder:
             self.evaluation_repository,
             self.job_repository,
             self.users_repository,
-            self.recruiting_mapper,
         )
         self.evaluation_controller = EvaluationController(
             self.evaluation_service,

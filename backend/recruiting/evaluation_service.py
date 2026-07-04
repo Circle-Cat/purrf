@@ -23,7 +23,6 @@ class EvaluationService:
         evaluation_repository,
         job_repository,
         users_repository,
-        recruiting_mapper,
     ):
         """
         Args:
@@ -35,14 +34,12 @@ class EvaluationService:
                 in "My Evaluations".
             users_repository (UsersRepository): Applicant lookups, for
                 applicant names in "My Evaluations".
-            recruiting_mapper (RecruitingMapper): Entity->DTO conversion.
         """
         self.application_repository = application_repository
         self.application_assignment_repository = application_assignment_repository
         self.evaluation_repository = evaluation_repository
         self.job_repository = job_repository
         self.users_repository = users_repository
-        self.recruiting_mapper = recruiting_mapper
 
     async def submit(
         self,
