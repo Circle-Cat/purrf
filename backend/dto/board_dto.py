@@ -70,6 +70,11 @@ class ApplicationDetailDto(BaseDto):
     form_schema: dict | None = (
         None  # the job's LIVE form_schema, so the dialog can label answers
     )
+    # Role signals for the shared detail page (sub-project #3 slice 1): lets
+    # the frontend decide which of the owner-decision area / evaluator-rubric
+    # area to render, without a second round-trip.
+    is_owner: bool = False
+    assignee_id: int | None = None
 
 
 class StageChangeDto(BaseRequestDto):

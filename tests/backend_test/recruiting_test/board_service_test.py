@@ -189,6 +189,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         )
         self.app_repo.get_by_id = AsyncMock(return_value=application)
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.assignment_repo.get = AsyncMock(return_value=None)
         self.users_repo.get_user_by_user_id = AsyncMock(return_value=applicant)
         self.sub_repo.get_current = AsyncMock(return_value=current_sub)
 
@@ -201,6 +202,8 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.applicant_email, "c@d.com")
         self.assertTrue(result.resume_available)
         self.assertEqual(result.form_schema, {"questions": [{"id": "q1"}]})
+        self.assertTrue(result.is_owner)
+        self.assertIsNone(result.assignee_id)
 
     async def test_get_application_detail_resume_unavailable_without_submission(self):
         job = self._job(job_id=1, owner_ids=(2,))
@@ -208,6 +211,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         applicant = self._user(user_id=3)
         self.app_repo.get_by_id = AsyncMock(return_value=application)
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.assignment_repo.get = AsyncMock(return_value=None)
         self.users_repo.get_user_by_user_id = AsyncMock(return_value=applicant)
         self.sub_repo.get_current = AsyncMock(return_value=None)
 
@@ -267,7 +271,10 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(result.application.id, 10)
-        self.assignment_repo.get.assert_awaited_once_with(
+        # Called twice: once inside `_load_owned_application` (to check
+        # assignee-eligibility for the auth gate) and once more directly in
+        # `get_application_detail` (to compute `assigneeId` for the DTO).
+        self.assignment_repo.get.assert_any_await(
             self.session, 10, ApplicationStage.RECRUITER_SCREENING
         )
 
@@ -286,6 +293,105 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
                 self.session, self._ctx(user_id=2), 10
             )
         self.assertEqual(str(ctx.exception), "application 10 not found")
+
+    async def test_get_application_detail_owner_not_assignee_role_signals(self):
+        """An owner who is not the current-stage assignee sees isOwner=True
+        and the OTHER user's id as assigneeId, so the frontend can render
+        the owner-decision area (and not claim they're also evaluating)."""
+        job = self._job(job_id=1, owner_ids=(2,))
+        application = self._application(
+            application_id=10,
+            job_id=1,
+            user_id=3,
+            stage=ApplicationStage.RECRUITER_SCREENING,
+        )
+        applicant = self._user(user_id=3, first="C", last="D", email="c@d.com")
+        assignment = MagicMock(assignee_id=7)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.assignment_repo.get = AsyncMock(return_value=assignment)
+        self.users_repo.get_user_by_user_id = AsyncMock(return_value=applicant)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+
+        result = await self.service.get_application_detail(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertTrue(result.is_owner)
+        self.assertEqual(result.assignee_id, 7)
+
+    async def test_get_application_detail_assignee_not_owner_role_signals(self):
+        """The current-stage assignee who is not an owner sees isOwner=False
+        and their OWN id as assigneeId, so the frontend renders the
+        evaluator rubric area."""
+        job = self._job(job_id=1, owner_ids=(9,))
+        application = self._application(
+            application_id=10,
+            job_id=1,
+            user_id=3,
+            stage=ApplicationStage.RECRUITER_SCREENING,
+        )
+        applicant = self._user(user_id=3, first="C", last="D", email="c@d.com")
+        assignment = MagicMock(assignee_id=2)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.assignment_repo.get = AsyncMock(return_value=assignment)
+        self.users_repo.get_user_by_user_id = AsyncMock(return_value=applicant)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+
+        result = await self.service.get_application_detail(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertFalse(result.is_owner)
+        self.assertEqual(result.assignee_id, 2)
+
+    async def test_get_application_detail_both_owner_and_assignee_role_signals(self):
+        """A caller who is both an owner and the current-stage assignee sees
+        isOwner=True and their own id as assigneeId, so the frontend can
+        render both the owner-decision area and the evaluator rubric."""
+        job = self._job(job_id=1, owner_ids=(2,))
+        application = self._application(
+            application_id=10,
+            job_id=1,
+            user_id=3,
+            stage=ApplicationStage.RECRUITER_SCREENING,
+        )
+        applicant = self._user(user_id=3, first="C", last="D", email="c@d.com")
+        assignment = MagicMock(assignee_id=2)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.assignment_repo.get = AsyncMock(return_value=assignment)
+        self.users_repo.get_user_by_user_id = AsyncMock(return_value=applicant)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+
+        result = await self.service.get_application_detail(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertTrue(result.is_owner)
+        self.assertEqual(result.assignee_id, 2)
+
+    async def test_get_application_detail_no_assignment_yet_gives_none_assignee_id(
+        self,
+    ):
+        """An application still in a non-interview stage (no assignment row
+        yet) gets assigneeId=None rather than an error."""
+        job = self._job(job_id=1, owner_ids=(2,))
+        application = self._application(application_id=10, job_id=1, user_id=3)
+        applicant = self._user(user_id=3, first="C", last="D", email="c@d.com")
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.assignment_repo.get = AsyncMock(return_value=None)
+        self.users_repo.get_user_by_user_id = AsyncMock(return_value=applicant)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+
+        result = await self.service.get_application_detail(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertTrue(result.is_owner)
+        self.assertIsNone(result.assignee_id)
 
     # -- get_resume --
 
