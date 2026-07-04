@@ -204,13 +204,11 @@ class BoardService:
         for application, user in rows:
             reviewer_name = None
             if application.stage in INTERVIEW_STAGES:
-                assignee_id = assignment_by_key.get(
-                    (
-                        application.application_id,
-                        application.stage,
-                        application.current_round,
-                    )
-                )
+                assignee_id = assignment_by_key.get((
+                    application.application_id,
+                    application.stage,
+                    application.current_round,
+                ))
                 if assignee_id is None and application.current_round == 1:
                     assignee_id = default_by_stage.get(application.stage)
                 if assignee_id is not None:

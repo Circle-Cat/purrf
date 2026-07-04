@@ -138,7 +138,9 @@ class TestBoardCardDtoReviewer(unittest.TestCase):
             stage="tech",
             reviewer_name="Ivan Interviewer",
         )
-        self.assertEqual(dto.model_dump(by_alias=True)["reviewerName"], "Ivan Interviewer")
+        self.assertEqual(
+            dto.model_dump(by_alias=True)["reviewerName"], "Ivan Interviewer"
+        )
 
 
 if __name__ == "__main__":
