@@ -430,7 +430,7 @@ class JobService:
             job.status = pending_status
             job = await self.job_repository.update_job(session, job)
         await session.commit()
-        return self.recruiting_mapper.to_job_dto(job)
+        return self.recruiting_mapper.to_job_dto(job, reviewer_id=reviewer_id)
 
     async def submit_for_review(
         self,

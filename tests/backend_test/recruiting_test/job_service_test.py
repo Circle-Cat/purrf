@@ -376,6 +376,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(created.kind, JobReviewKind.INITIAL)
         self.assertEqual(created.status, JobReviewStatus.PENDING)
         self.assertEqual(created.reviewer_id, 2)
+        self.assertEqual(result.reviewer_id, 2)
 
     async def test_submit_revision_keeps_published_pending(self):
         """Submitting a parked revision opens a REVISION review, status unchanged."""
