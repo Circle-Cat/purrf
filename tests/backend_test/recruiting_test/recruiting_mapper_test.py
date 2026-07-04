@@ -150,6 +150,16 @@ class TestRecruitingMapper(unittest.TestCase):
 
         self.assertFalse(dto.is_blocked)
 
+    def test_to_job_dto_includes_reviewer_id_when_provided(self):
+        job = self._make_job_entity(status=JobStatus.PENDING_REVIEW)
+        dto = self.mapper.to_job_dto(job, reviewer_id=7)
+        self.assertEqual(dto.reviewer_id, 7)
+
+    def test_to_job_dto_reviewer_id_defaults_to_none(self):
+        job = self._make_job_entity()
+        dto = self.mapper.to_job_dto(job)
+        self.assertIsNone(dto.reviewer_id)
+
 
 if __name__ == "__main__":
     unittest.main()
