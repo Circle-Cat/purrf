@@ -715,6 +715,50 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsNone(result[0].last_reject_comment)
 
+    async def test_list_all_jobs_includes_reviewer_id_for_open_review(self):
+        """list_all_jobs surfaces reviewer_id when the latest review is still PENDING."""
+        job = self._job(status=JobStatus.PENDING_REVIEW)
+        job.job_id = 1
+        self.repo.list_all.return_value = [job]
+
+        pending_review = JobReviewEntity(
+            review_id=101,
+            job_id=1,
+            submitted_by=1,
+            reviewer_id=6,
+            status=JobReviewStatus.PENDING,
+            kind=JobReviewKind.INITIAL,
+        )
+        self.review_repo.get_latest_reviews = AsyncMock(
+            return_value={1: pending_review}
+        )
+
+        result = await self.service.list_all_jobs(self.session)
+
+        self.assertEqual(result[0].reviewer_id, 6)
+
+    async def test_list_all_jobs_reviewer_id_none_when_latest_is_decided(self):
+        """reviewer_id is None once the latest review has been approved or rejected."""
+        job = self._job(status=JobStatus.PUBLISHED)
+        job.job_id = 1
+        self.repo.list_all.return_value = [job]
+
+        approved_review = JobReviewEntity(
+            review_id=102,
+            job_id=1,
+            submitted_by=1,
+            reviewer_id=6,
+            status=JobReviewStatus.APPROVED,
+            kind=JobReviewKind.INITIAL,
+        )
+        self.review_repo.get_latest_reviews = AsyncMock(
+            return_value={1: approved_review}
+        )
+
+        result = await self.service.list_all_jobs(self.session)
+
+        self.assertIsNone(result[0].reviewer_id)
+
     async def test_list_reviews_for_reviewer_returns_pending(self):
         """list_reviews_for_reviewer maps the reviewer's pending reviews with job title."""
         review = JobReviewEntity(

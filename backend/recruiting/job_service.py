@@ -779,8 +779,10 @@ class JobService:
 
         Each posting is annotated with the reject_comment from its most-recent
         review when that review was a rejection, so the creator can see the
-        posting was sent back and why. The field self-clears once a newer
-        (non-rejected) review becomes the latest.
+        posting was sent back and why. It's also annotated with that same
+        review's reviewer_id when the review is still PENDING, so the creator
+        can see who it's currently assigned to. Both fields self-clear once a
+        newer review becomes the latest (or the prior one is decided).
 
         Args:
             session (AsyncSession): Active database async session.
@@ -788,7 +790,8 @@ class JobService:
         Returns:
             list[JobDto]: All postings regardless of status, each carrying
             ``last_reject_comment`` if the posting's latest review was a
-            rejection, otherwise ``None``.
+            rejection, and ``reviewer_id`` if the posting's latest review is
+            still open, otherwise ``None`` for either.
         """
         jobs = await self.job_repository.list_all(session)
         latest_reviews = await self.job_review_repository.get_latest_reviews(
@@ -802,8 +805,15 @@ class JobService:
                 if latest is not None and latest.status == JobReviewStatus.REJECTED
                 else None
             )
+            reviewer_id = (
+                latest.reviewer_id
+                if latest is not None and latest.status == JobReviewStatus.PENDING
+                else None
+            )
             dtos.append(
-                self.recruiting_mapper.to_job_dto(j, last_reject_comment=comment)
+                self.recruiting_mapper.to_job_dto(
+                    j, last_reject_comment=comment, reviewer_id=reviewer_id
+                )
             )
         return dtos
 
