@@ -1,6 +1,6 @@
 import unittest
 from datetime import datetime
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, call
 
 from backend.recruiting.board_service import BoardService
 from backend.recruiting.recruiting_mapper import RecruitingMapper
@@ -274,9 +274,12 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         # Called twice: once inside `_load_owned_application` (to check
         # assignee-eligibility for the auth gate) and once more directly in
         # `get_application_detail` (to compute `assigneeId` for the DTO).
-        self.assignment_repo.get.assert_any_await(
-            self.session, 10, ApplicationStage.RECRUITER_SCREENING
+        # Assert both the args AND the exact count so a future accidental
+        # extra call (or a dropped call) doesn't go unnoticed.
+        self.assignment_repo.get.assert_has_awaits(
+            [call(self.session, 10, ApplicationStage.RECRUITER_SCREENING)] * 2
         )
+        self.assertEqual(self.assignment_repo.get.await_count, 2)
 
     async def test_get_application_detail_raises_when_neither_owner_nor_assignee(
         self,
