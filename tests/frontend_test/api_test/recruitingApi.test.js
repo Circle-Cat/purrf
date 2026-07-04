@@ -230,12 +230,12 @@ describe("recruitingApi", () => {
     );
   });
 
-  it("setApplicationRound PATCHes the round endpoint with round", async () => {
+  it("setApplicationRound PATCHes the round endpoint with round and assigneeId", async () => {
     request.patch.mockResolvedValue({ data: {} });
-    await setApplicationRound(7, 2);
+    await setApplicationRound(7, 2, 42);
     expect(request.patch).toHaveBeenCalledWith(
       "/recruiting/applications/7/round",
-      { round: 2 },
+      { round: 2, assigneeId: 42 },
     );
   });
 

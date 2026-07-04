@@ -58,6 +58,11 @@ class BoardCardDto(BaseDto):
     # tags["blacklisted"], which just records that this application was
     # rejected by a blacklist action at some point and never changes after).
     is_blocked: bool = False
+    # The interviewer responsible for this card's current stage+round, for
+    # interview-stage cards only (None for e.g. applied/offer/hired/rejected
+    # — the board never renders a reviewer line for those). None also means
+    # "nobody assigned yet" for an interview-stage card.
+    reviewer_name: str | None = None
 
 
 class ApplicationDetailDto(BaseDto):
@@ -112,6 +117,10 @@ class RoundChangeDto(BaseRequestDto):
     """Advance an application to a specific round within its current stage."""
 
     round: int
+    # Required when the application's current stage is an interview stage
+    # (INTERVIEW_STAGES in board_service.py); ignored otherwise — e.g. a
+    # multi-round OFFER stage, which has no rubric and is not assignable.
+    assignee_id: int | None = None
 
     @field_validator("round")
     @classmethod

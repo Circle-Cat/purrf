@@ -526,7 +526,30 @@ describe("ApplicationDetailPage — advance round", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("clicking Advance Round calls setApplicationRound and updates the displayed round", async () => {
+  it("clicking Advance Round on an interview stage opens an inline assignee picker instead of advancing immediately", async () => {
+    const user = userEvent.setup();
+    authState.userId = OWNER_ID;
+    api.getJob.mockResolvedValue({ data: jobWithTechRounds(3) });
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, stage: "tech", currentRound: 1 }),
+    });
+    renderPage();
+    await waitLoaded();
+
+    await user.click(
+      screen.getByRole("button", { name: "Advance to Round 2" }),
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Confirm advance round" }),
+    ).toBeDisabled();
+    expect(api.setApplicationRound).not.toHaveBeenCalled();
+    expect(
+      screen.queryByRole("button", { name: "Advance to Round 2" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("picking an assignee and confirming calls setApplicationRound with the assignee and updates the displayed round", async () => {
     const user = userEvent.setup();
     authState.userId = OWNER_ID;
     api.getJob.mockResolvedValue({ data: jobWithTechRounds(3) });
@@ -540,13 +563,45 @@ describe("ApplicationDetailPage — advance round", () => {
     await user.click(
       screen.getByRole("button", { name: "Advance to Round 2" }),
     );
+    await user.click(screen.getByRole("combobox", { name: /assignee/i }));
+    await user.click(await screen.findByText(/Ivan Interviewer/));
+    const confirmButton = screen.getByRole("button", {
+      name: "Confirm advance round",
+    });
+    expect(confirmButton).not.toBeDisabled();
+    await user.click(confirmButton);
+
     await waitFor(() =>
-      expect(api.setApplicationRound).toHaveBeenCalledWith("101", 2),
+      expect(api.setApplicationRound).toHaveBeenCalledWith("101", 2, 11),
     );
     // Local state patched in place: the button now reflects round 2 -> 3.
     expect(
       await screen.findByRole("button", { name: "Advance to Round 3" }),
     ).toBeInTheDocument();
+  });
+
+  it("Cancel in the round-advance picker reverts to the trigger button without calling the API", async () => {
+    const user = userEvent.setup();
+    authState.userId = OWNER_ID;
+    api.getJob.mockResolvedValue({ data: jobWithTechRounds(3) });
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, stage: "tech", currentRound: 1 }),
+    });
+    renderPage();
+    await waitLoaded();
+
+    await user.click(
+      screen.getByRole("button", { name: "Advance to Round 2" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(
+      screen.queryByRole("button", { name: "Confirm advance round" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Advance to Round 2" }),
+    ).toBeInTheDocument();
+    expect(api.setApplicationRound).not.toHaveBeenCalled();
   });
 
   it("surfaces a toast error when advancing the round fails", async () => {
@@ -563,8 +618,47 @@ describe("ApplicationDetailPage — advance round", () => {
     await user.click(
       screen.getByRole("button", { name: "Advance to Round 2" }),
     );
+    await user.click(screen.getByRole("combobox", { name: /assignee/i }));
+    await user.click(await screen.findByText(/Ivan Interviewer/));
+    await user.click(
+      screen.getByRole("button", { name: "Confirm advance round" }),
+    );
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith("Round update failed"),
     );
+  });
+
+  it("advances a non-interview stage's round immediately, with no assignee picker", async () => {
+    const user = userEvent.setup();
+    authState.userId = OWNER_ID;
+    // "offer" isn't in INTERVIEW_STAGES (no rubric, not assignable), but the
+    // rounds mechanism itself is stage-agnostic — a job can still configure
+    // it with rounds > 1.
+    api.getJob.mockResolvedValue({
+      data: {
+        ...JOB,
+        pipelineConfig: {
+          ...JOB.pipelineConfig,
+          stages: [...JOB.pipelineConfig.stages, { stage: "offer", rounds: 2 }],
+        },
+      },
+    });
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, stage: "offer", currentRound: 1 }),
+    });
+    api.setApplicationRound.mockResolvedValue({ data: {} });
+    renderPage();
+    await waitLoaded();
+
+    await user.click(
+      screen.getByRole("button", { name: "Advance to Round 2" }),
+    );
+
+    await waitFor(() =>
+      expect(api.setApplicationRound).toHaveBeenCalledWith("101", 2),
+    );
+    expect(
+      screen.queryByRole("button", { name: "Confirm advance round" }),
+    ).not.toBeInTheDocument();
   });
 });

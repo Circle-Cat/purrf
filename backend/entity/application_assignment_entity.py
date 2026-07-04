@@ -6,18 +6,21 @@ from backend.common.recruiting_enums import ApplicationStage
 
 
 class ApplicationAssignmentEntity(Base):
-    """The interviewer currently responsible for one application's stage.
+    """The interviewer currently responsible for one application's stage+round.
 
-    One active row per (application_id, stage) — reassigning overwrites the
-    row rather than appending history; the outgoing assignee's `evaluation`
-    row (sub-project #3 slice 1) survives independently, keyed by its own
-    evaluator_id.
+    One active row per (application_id, stage, round) — reassigning
+    overwrites the row rather than appending history; the outgoing
+    assignee's `evaluation` row (sub-project #3 slice 1) survives
+    independently, keyed by its own evaluator_id.
     """
 
     __tablename__ = "application_assignment"
     __table_args__ = (
         UniqueConstraint(
-            "application_id", "stage", name="uq_application_assignment_app_stage"
+            "application_id",
+            "stage",
+            "round",
+            name="uq_application_assignment_app_stage_round",
         ),
     )
 
@@ -36,6 +39,9 @@ class ApplicationAssignmentEntity(Base):
             values_callable=lambda obj: [e.value for e in obj],
         ),
         nullable=False,
+    )
+    round: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1, server_default="1"
     )
     assignee_id: Mapped[int] = mapped_column(
         ForeignKey("users.user_id", ondelete="CASCADE"), index=True, nullable=False
