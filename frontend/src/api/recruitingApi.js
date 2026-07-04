@@ -163,3 +163,11 @@ export const resumeUrl = (id) => {
     : "/api";
   return baseURL + API_ENDPOINTS.RECRUITING_APPLICATION_RESUME(id);
 };
+
+/** List the current user's assigned evaluations (EvaluationSummaryDto[]). */
+export const listMyEvaluations = () =>
+  request.get(API_ENDPOINTS.RECRUITING_EVALUATIONS_MINE);
+
+/** body: { responses: object, confirm: boolean } */
+export const submitEvaluation = (id, body) =>
+  request.put(API_ENDPOINTS.RECRUITING_APPLICATION_EVALUATION(id), body);

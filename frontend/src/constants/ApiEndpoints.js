@@ -64,6 +64,9 @@ export const API_ENDPOINTS = {
     `/recruiting/applications/${id}/assignment`,
   RECRUITING_BLACKLIST: "/recruiting/blacklist",
   RECRUITING_BLACKLIST_UNBLOCK: (userId) => `/recruiting/blacklist/${userId}`,
+  RECRUITING_APPLICATION_EVALUATION: (id) =>
+    `/recruiting/applications/${id}/evaluation`,
+  RECRUITING_EVALUATIONS_MINE: "/recruiting/evaluations/mine",
 };
 
 /**
