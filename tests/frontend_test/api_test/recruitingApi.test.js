@@ -32,6 +32,7 @@ import {
   resumeUrl,
   listMyEvaluations,
   submitEvaluation,
+  getEvaluationsForApplication,
 } from "@/api/recruitingApi";
 
 vi.mock("@/utils/request", () => ({
@@ -275,6 +276,14 @@ describe("recruitingApi", () => {
     expect(request.put).toHaveBeenCalledWith(
       "/recruiting/applications/7/evaluation",
       body,
+    );
+  });
+
+  it("getEvaluationsForApplication GETs the evaluations list endpoint", async () => {
+    request.get.mockResolvedValue({ data: [] });
+    await getEvaluationsForApplication(7);
+    expect(request.get).toHaveBeenCalledWith(
+      "/recruiting/applications/7/evaluations",
     );
   });
 });

@@ -67,6 +67,8 @@ export const API_ENDPOINTS = {
   RECRUITING_APPLICATION_EVALUATION: (id) =>
     `/recruiting/applications/${id}/evaluation`,
   RECRUITING_EVALUATIONS_MINE: "/recruiting/evaluations/mine",
+  RECRUITING_APPLICATION_EVALUATIONS: (id) =>
+    `/recruiting/applications/${id}/evaluations`,
 };
 
 /**

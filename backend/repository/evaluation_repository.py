@@ -101,6 +101,29 @@ class EvaluationRepository:
         await session.flush()
         return evaluation
 
+    async def list_by_application(
+        self, session: AsyncSession, application_id: int
+    ) -> list[EvaluationEntity]:
+        """Every evaluation row for an application, across all stages it has visited.
+
+        Args:
+            session (AsyncSession): The active DB session.
+            application_id (int): The application whose rows to list.
+
+        Returns:
+            list[EvaluationEntity]: Unordered; one row per (stage, evaluator)
+                pair that has ever submitted a draft or confirmation for
+                this application. Used by the owner's history summary and,
+                filtered client-side by stage, by the current-stage
+                assignee's rubric pre-fill.
+        """
+        result = await session.execute(
+            select(EvaluationEntity).where(
+                EvaluationEntity.application_id == application_id
+            )
+        )
+        return list(result.scalars().all())
+
     async def list_by_assignee(
         self, session: AsyncSession, assignee_id: int
     ) -> list[EvaluationEntity]:
