@@ -250,11 +250,71 @@ describe("ApplicationDetailPage — role-adaptive right column", () => {
     ).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Timeline" })).toBeInTheDocument();
     expect(screen.getByText(/solid background/)).toBeInTheDocument();
+    expect(screen.getByText(/Evaluated by: Eve Evaluator/)).toBeInTheDocument();
 
     // No rubric form for a viewer who is not the current-stage assignee
     expect(
       screen.queryByRole("button", { name: "Confirm & Submit" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("sorts evaluations newest-first by id", async () => {
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
+    });
+    api.getEvaluationsForApplication.mockResolvedValue({
+      data: [
+        {
+          id: 1,
+          applicationId: 101,
+          stage: "recruiter_screening",
+          round: 1,
+          evaluatorId: 10,
+          responses: { bg_strength: { value: 2, notes: "older note" } },
+          isConfirmed: true,
+        },
+        {
+          id: 2,
+          applicationId: 101,
+          stage: "recruiter_screening",
+          round: 1,
+          evaluatorId: 11,
+          responses: { bg_strength: { value: 5, notes: "newer note" } },
+          isConfirmed: true,
+        },
+      ],
+    });
+    renderPage();
+    await waitLoaded();
+
+    const notes = screen.getAllByText(/note$/);
+    expect(notes[0]).toHaveTextContent("newer note");
+    expect(notes[1]).toHaveTextContent("older note");
+  });
+
+  it("falls back to \"User {id}\" when the evaluator isn't in the interview pool", async () => {
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
+    });
+    api.getEvaluationsForApplication.mockResolvedValue({
+      data: [
+        {
+          id: 1,
+          applicationId: 101,
+          stage: "recruiter_screening",
+          round: 1,
+          evaluatorId: 77,
+          responses: { bg_strength: { value: 3, notes: "a note" } },
+          isConfirmed: true,
+        },
+      ],
+    });
+    renderPage();
+    await waitLoaded();
+
+    expect(screen.getByText(/Evaluated by: User 77/)).toBeInTheDocument();
   });
 
   it("assignee-only viewer sees the rubric form pre-filled from their draft, no decision footer", async () => {

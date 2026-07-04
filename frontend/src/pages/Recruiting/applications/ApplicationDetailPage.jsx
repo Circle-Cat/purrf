@@ -217,39 +217,62 @@ const EvaluationSummaryRow = ({ field, entry }) => {
 };
 
 /**
- * Read-only summary of every submitted evaluation for an application,
- * grouped by stage and, within each stage, by the rubric's own
- * section/field grouping (via `rubricFor`). Shown to owners so they can see
- * evaluators' scorecards before deciding.
+ * Resolve an evaluator's display name from the interview pool, falling back
+ * to "User {id}" for an evaluator no longer in the active pool (their
+ * historical evaluation still needs a label) -- mirrors this page's own
+ * `assigneeName` fallback.
  *
- * @param {{evaluations: {id: number, stage: string, round: number, responses: object}[]}} props
+ * @param {number} evaluatorId
+ * @param {{userId: number, name: string}[]} interviewPool
+ * @returns {string}
  */
-const EvaluationSummary = ({ evaluations }) => (
+const evaluatorName = (evaluatorId, interviewPool) =>
+  interviewPool.find((u) => u.userId === evaluatorId)?.name ??
+  `User ${evaluatorId}`;
+
+/**
+ * Read-only summary of every submitted evaluation for an application,
+ * newest first (by `id`, a reliable proxy for creation order since it's an
+ * auto-incrementing primary key), grouped by stage and, within each stage,
+ * by the rubric's own section/field grouping (via `rubricFor`). Each entry
+ * is labeled with who submitted it, so a reassignment mid-stage doesn't
+ * leave two evaluators' scorecards indistinguishable. Shown to owners so
+ * they can see evaluators' scorecards before deciding.
+ *
+ * @param {{evaluations: {id: number, stage: string, round: number, evaluatorId: number, responses: object}[],
+ *          interviewPool: {userId: number, name: string}[]}} props
+ */
+const EvaluationSummary = ({ evaluations, interviewPool }) => (
   <div className="space-y-4">
     {evaluations.length === 0 ? (
       <p className="text-sm text-slate-400">No evaluations submitted yet.</p>
     ) : (
-      evaluations.map((evaluation) => (
-        <div key={evaluation.id} className="space-y-3 rounded border p-3">
-          <h3 className="text-sm font-medium text-slate-700">
-            {humanize(evaluation.stage)} — Round {evaluation.round}
-          </h3>
-          {(rubricFor(evaluation.stage) ?? []).map((section) => (
-            <div key={section.title} className="space-y-2">
-              <h4 className="text-xs font-semibold uppercase text-slate-500">
-                {section.title}
-              </h4>
-              {section.fields.map((field) => (
-                <EvaluationSummaryRow
-                  key={field.id}
-                  field={field}
-                  entry={evaluation.responses?.[field.id]}
-                />
-              ))}
-            </div>
-          ))}
-        </div>
-      ))
+      [...evaluations]
+        .sort((a, b) => b.id - a.id)
+        .map((evaluation) => (
+          <div key={evaluation.id} className="space-y-3 rounded border p-3">
+            <h3 className="text-sm font-medium text-slate-700">
+              {humanize(evaluation.stage)} — Round {evaluation.round}
+            </h3>
+            <p className="text-xs text-slate-500">
+              Evaluated by: {evaluatorName(evaluation.evaluatorId, interviewPool)}
+            </p>
+            {(rubricFor(evaluation.stage) ?? []).map((section) => (
+              <div key={section.title} className="space-y-2">
+                <h4 className="text-xs font-semibold uppercase text-slate-500">
+                  {section.title}
+                </h4>
+                {section.fields.map((field) => (
+                  <EvaluationSummaryRow
+                    key={field.id}
+                    field={field}
+                    entry={evaluation.responses?.[field.id]}
+                  />
+                ))}
+              </div>
+            ))}
+          </div>
+        ))
     )}
   </div>
 );
@@ -885,7 +908,10 @@ const ApplicationDetailPage = () => {
                   <TabsTrigger value="timeline">Timeline</TabsTrigger>
                 </TabsList>
                 <TabsContent value="evaluations">
-                  <EvaluationSummary evaluations={evaluations} />
+                  <EvaluationSummary
+                    evaluations={evaluations}
+                    interviewPool={interviewPool}
+                  />
                 </TabsContent>
                 <TabsContent value="timeline">
                   <ActivityTimeline activity={activity} />
