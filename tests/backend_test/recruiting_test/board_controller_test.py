@@ -33,6 +33,7 @@ class TestBoardController(unittest.IsolatedAsyncioTestCase):
         self.board_service.set_round = AsyncMock(return_value={"id": 10})
         self.board_service.blacklist = AsyncMock(return_value={"id": 10})
         self.board_service.get_resume = AsyncMock(return_value=b"%PDF-1.4 data")
+        self.board_service.get_application_activity = AsyncMock(return_value=[])
 
         self.controller = BoardController(self.board_service, self.database)
 
@@ -70,6 +71,17 @@ class TestBoardController(unittest.IsolatedAsyncioTestCase):
             self.session, self.ctx, 10
         )
         self.assertEqual(resp["data"], detail)
+
+    async def test_get_application_activity_delegates(self):
+        activity = [{"id": 1, "eventType": "stage_changed"}]
+        self.board_service.get_application_activity = AsyncMock(return_value=activity)
+        resp = await self.controller.get_application_activity(
+            self.ctx, application_id=10
+        )
+        self.board_service.get_application_activity.assert_awaited_once_with(
+            self.session, self.ctx, 10
+        )
+        self.assertEqual(resp["data"], activity)
 
     async def test_change_stage_delegates(self):
         updated = {"id": 10, "stage": "tech"}

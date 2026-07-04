@@ -82,6 +82,24 @@ class ApplicationDetailDto(BaseDto):
     assignee_id: int | None = None
 
 
+class ApplicationActivityDto(BaseDto):
+    """One entry in an application's owner-facing audit timeline, newest first.
+
+    ``event_type`` is one of ``"application_submitted"``, ``"auto_rejected"``
+    (both written by ``ApplicationService.submit``), or ``"stage_changed"``,
+    ``"reassigned"``, ``"round_advanced"`` (written by the matching
+    ``BoardService`` methods). ``details`` is a free-form, event-type-specific
+    payload — see each writer's call site for its exact shape.
+    """
+
+    id: int
+    event_type: str
+    details: dict
+    actor_id: int
+    actor_name: str
+    created_at: datetime
+
+
 class StageChangeDto(BaseRequestDto):
     """Advance or reject one application."""
 

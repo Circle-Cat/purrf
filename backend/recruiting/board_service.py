@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.dto.application_dto import ApplicationDto
 from backend.dto.board_dto import (
+    ApplicationActivityDto,
     ApplicationDetailDto,
     BlacklistDto,
     BoardCardDto,
@@ -54,6 +55,7 @@ class BoardService:
         resume_storage,
         application_assignment_repository,
         user_permissions_repository,
+        application_activity_repository,
     ):
         """
         Args:
@@ -71,6 +73,10 @@ class BoardService:
             user_permissions_repository (UserPermissionsRepository): Used to
                 verify a proposed assignee actively holds
                 ``Permission.RECRUITING_INTERVIEW_EVALUATE``.
+            application_activity_repository (ApplicationActivityRepository):
+                Append-only audit log, written by ``change_stage``/
+                ``reassign``/``set_round`` and read by
+                ``get_application_activity``.
         """
         self.job_repository = job_repository
         self.application_repository = application_repository
@@ -80,6 +86,7 @@ class BoardService:
         self.resume_storage = resume_storage
         self.application_assignment_repository = application_assignment_repository
         self.user_permissions_repository = user_permissions_repository
+        self.application_activity_repository = application_activity_repository
 
     async def list_my_jobs(
         self, session: AsyncSession, current_user: UserContextDto
@@ -386,6 +393,56 @@ class BoardService:
             raise ValueError(f"no resume on file for application {application_id}")
         return self.resume_storage.get(current_sub.resume_object_key)
 
+    async def get_application_activity(
+        self,
+        session: AsyncSession,
+        current_user: UserContextDto,
+        application_id: int,
+    ) -> list[ApplicationActivityDto]:
+        """Return an application's audit timeline, newest first, owner-only.
+
+        Unlike ``get_application_detail``/``get_resume``, this is NOT
+        readable by the current-stage assignee — it's an owner-facing audit
+        view (mirrors ``EvaluationSummary``'s owner-only placement on the
+        frontend), not something an evaluator needs while grading.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            current_user (UserContextDto): The authenticated caller.
+            application_id (int): The application to load history for.
+
+        Returns:
+            list[ApplicationActivityDto]: Newest first, each with the
+                actor's resolved display name.
+
+        Raises:
+            ValueError: If the application is missing, or the caller is not
+                an owner of the application's job (collapsed "not found"
+                message, same as the other owner-facing reads).
+        """
+        await self._load_owned_application(session, current_user, application_id)
+        rows = await self.application_activity_repository.list_by_application(
+            session, application_id
+        )
+        actors = await self.users_repository.get_all_by_ids(
+            session, list({row.actor_id for row in rows})
+        )
+        names_by_id = {
+            user.user_id: f"{user.first_name} {user.last_name}".strip()
+            for user in actors
+        }
+        return [
+            ApplicationActivityDto(
+                id=row.activity_id,
+                event_type=row.event_type,
+                details=row.details,
+                actor_id=row.actor_id,
+                actor_name=names_by_id.get(row.actor_id, f"User {row.actor_id}"),
+                created_at=row.created_at,
+            )
+            for row in rows
+        ]
+
     async def _freeze_current_submission(
         self, session: AsyncSession, application_id: int
     ):
@@ -523,6 +580,26 @@ class BoardService:
 
         current_sub = await self._freeze_current_submission(session, application_id)
         application = await self.application_repository.update(session, application)
+        await self.application_activity_repository.create(
+            session,
+            application_id,
+            current_user.user_id,
+            "stage_changed",
+            details={
+                "fromStage": from_stage.value,
+                "toStage": dto.to_stage.value,
+                **(
+                    {"assigneeId": dto.assignee_id}
+                    if dto.assignee_id is not None
+                    else {}
+                ),
+                **(
+                    {"reason": dto.reason, "note": dto.note}
+                    if dto.to_stage == ApplicationStage.REJECTED
+                    else {}
+                ),
+            },
+        )
         await session.commit()
         # `editable` encodes the CANDIDATE's edit window (see
         # get_application_detail's note); a fresh stage/sub_status decision
@@ -572,6 +649,9 @@ class BoardService:
                 f"application {application_id} is not in an interview stage"
             )
         await self._validate_interview_assignee(session, dto.assignee_id)
+        previous_assignment = await self.application_assignment_repository.get(
+            session, application_id, application.stage, application.current_round
+        )
         await self.application_assignment_repository.upsert(
             session,
             application_id,
@@ -582,6 +662,22 @@ class BoardService:
         )
         application.sub_status = "pending"
         application = await self.application_repository.update(session, application)
+        await self.application_activity_repository.create(
+            session,
+            application_id,
+            current_user.user_id,
+            "reassigned",
+            details={
+                "stage": application.stage.value,
+                "round": application.current_round,
+                "fromAssigneeId": (
+                    previous_assignment.assignee_id
+                    if previous_assignment is not None
+                    else None
+                ),
+                "toAssigneeId": dto.assignee_id,
+            },
+        )
         await session.commit()
         current_sub = await self.application_submission_repository.get_current(
             session, application_id
@@ -703,6 +799,7 @@ class BoardService:
                 dto.assignee_id,
                 current_user.user_id,
             )
+        from_round = application.current_round
         application.current_round = dto.round
         application.sub_status = "pending"
 
@@ -710,6 +807,22 @@ class BoardService:
             session, application_id
         )
         application = await self.application_repository.update(session, application)
+        await self.application_activity_repository.create(
+            session,
+            application_id,
+            current_user.user_id,
+            "round_advanced",
+            details={
+                "stage": application.stage.value,
+                "fromRound": from_round,
+                "toRound": dto.round,
+                **(
+                    {"assigneeId": dto.assignee_id}
+                    if dto.assignee_id is not None
+                    else {}
+                ),
+            },
+        )
         await session.commit()
         return self.recruiting_mapper.to_application_dto(
             application, current_sub, editable=False

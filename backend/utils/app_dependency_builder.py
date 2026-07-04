@@ -91,6 +91,9 @@ from backend.repository.application_repository import ApplicationRepository
 from backend.repository.application_assignment_repository import (
     ApplicationAssignmentRepository,
 )
+from backend.repository.application_activity_repository import (
+    ApplicationActivityRepository,
+)
 from backend.repository.application_submission_repository import (
     ApplicationSubmissionRepository,
 )
@@ -551,6 +554,7 @@ class AppDependencyBuilder:
         )
         self.application_repository = ApplicationRepository()
         self.application_assignment_repository = ApplicationAssignmentRepository()
+        self.application_activity_repository = ApplicationActivityRepository()
         self.application_submission_repository = ApplicationSubmissionRepository()
         self.resume_storage = ResumeStorage(os.getenv(RESUME_BUCKET))
         self.application_service = ApplicationService(
@@ -560,6 +564,7 @@ class AppDependencyBuilder:
             self.users_repository,
             self.recruiting_mapper,
             self.application_assignment_repository,
+            self.application_activity_repository,
         )
         self.application_controller = ApplicationController(
             self.application_service,
@@ -576,6 +581,7 @@ class AppDependencyBuilder:
             self.resume_storage,
             self.application_assignment_repository,
             self.user_permissions_repository,
+            self.application_activity_repository,
         )
         self.board_controller = BoardController(
             self.board_service,

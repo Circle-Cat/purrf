@@ -178,3 +178,7 @@ export const submitEvaluation = (id, body) =>
 /** List every evaluation row for an application (owner or current-stage assignee). */
 export const getEvaluationsForApplication = (id) =>
   request.get(API_ENDPOINTS.RECRUITING_APPLICATION_EVALUATIONS(id));
+
+/** List an application's owner-facing audit timeline (ApplicationActivityDto[]), newest first. */
+export const getApplicationActivity = (id) =>
+  request.get(API_ENDPOINTS.RECRUITING_APPLICATION_ACTIVITY(id));
