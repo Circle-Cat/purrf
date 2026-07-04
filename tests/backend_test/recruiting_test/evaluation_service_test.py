@@ -2,7 +2,6 @@ import unittest
 from unittest.mock import AsyncMock, MagicMock
 
 from backend.recruiting.evaluation_service import EvaluationService
-from backend.recruiting.recruiting_mapper import RecruitingMapper
 from backend.dto.evaluation_dto import EvaluationSubmitDto
 from backend.dto.user_context_dto import UserContextDto
 from backend.entity.application_assignment_entity import ApplicationAssignmentEntity
@@ -45,7 +44,6 @@ class TestEvaluationService(unittest.IsolatedAsyncioTestCase):
             self.evaluation_repo,
             self.job_repo,
             self.users_repo,
-            RecruitingMapper(),
         )
 
     def _job(self, job_id=1, title="Job 1"):
@@ -134,9 +132,7 @@ class TestEvaluationService(unittest.IsolatedAsyncioTestCase):
         dto = EvaluationSubmitDto(
             responses=INCOMPLETE_RECRUITER_SCREENING_RESPONSES, confirm=False
         )
-        result = await self.service.submit(
-            self.session, self._ctx(user_id=2), 10, dto
-        )
+        result = await self.service.submit(self.session, self._ctx(user_id=2), 10, dto)
 
         self.assertFalse(result.is_confirmed)
         self.evaluation_repo.upsert_draft.assert_awaited_once_with(
@@ -171,9 +167,7 @@ class TestEvaluationService(unittest.IsolatedAsyncioTestCase):
         dto = EvaluationSubmitDto(
             responses=COMPLETE_RECRUITER_SCREENING_RESPONSES, confirm=True
         )
-        result = await self.service.submit(
-            self.session, self._ctx(user_id=2), 10, dto
-        )
+        result = await self.service.submit(self.session, self._ctx(user_id=2), 10, dto)
 
         self.assertTrue(result.is_confirmed)
         self.evaluation_repo.confirm.assert_awaited_once()
@@ -184,7 +178,9 @@ class TestEvaluationService(unittest.IsolatedAsyncioTestCase):
         self.app_repo.update.assert_awaited_once_with(self.session, application)
         self.session.commit.assert_awaited_once()
 
-    async def test_submit_confirm_with_incomplete_rubric_raises_without_persisting(self):
+    async def test_submit_confirm_with_incomplete_rubric_raises_without_persisting(
+        self,
+    ):
         application = self._application(sub_status="pending")
         assignment = self._assignment(assignee_id=2)
         self.app_repo.get_by_id = AsyncMock(return_value=application)
@@ -276,7 +272,10 @@ class TestEvaluationService(unittest.IsolatedAsyncioTestCase):
         )
 
         app10 = self._application(
-            application_id=10, job_id=1, user_id=3, stage=ApplicationStage.RECRUITER_SCREENING
+            application_id=10,
+            job_id=1,
+            user_id=3,
+            stage=ApplicationStage.RECRUITER_SCREENING,
         )
         app11 = self._application(
             application_id=11, job_id=1, user_id=3, stage=ApplicationStage.TECH
@@ -286,13 +285,18 @@ class TestEvaluationService(unittest.IsolatedAsyncioTestCase):
             return {10: app10, 11: app11}[application_id]
 
         self.app_repo.get_by_id = AsyncMock(side_effect=get_by_id)
-        self.job_repo.get_by_job_id = AsyncMock(return_value=self._job(job_id=1, title="Engineer"))
+        self.job_repo.get_by_job_id = AsyncMock(
+            return_value=self._job(job_id=1, title="Engineer")
+        )
         self.users_repo.get_user_by_user_id = AsyncMock(
             return_value=self._user(user_id=3, first="C", last="D")
         )
 
         confirmed_row = self._evaluation(
-            application_id=11, stage=ApplicationStage.TECH, evaluator_id=2, is_confirmed=True
+            application_id=11,
+            stage=ApplicationStage.TECH,
+            evaluator_id=2,
+            is_confirmed=True,
         )
 
         async def get_evaluation(session, application_id, stage, evaluator_id):
