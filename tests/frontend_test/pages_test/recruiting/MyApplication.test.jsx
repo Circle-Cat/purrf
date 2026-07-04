@@ -9,11 +9,24 @@ vi.mock("@/api/recruitingApi");
 // Keep this page test focused on MyApplication's own load/gating logic;
 // ApplicationForm's submission behavior is covered by its own test suite.
 vi.mock("@/pages/Recruiting/ApplicationForm", () => ({
-  default: ({ job, existing }) => (
+  default: ({ job, existing, seed, onSubmitted }) => (
     <div>
       <p>Editing application for {job.title}</p>
       {existing && <p>Existing id {existing.id}</p>}
-      <button type="button">Submit application</button>
+      {seed && <p>Seeded from prior submission</p>}
+      <button
+        type="button"
+        onClick={() =>
+          onSubmitted({
+            id: 9,
+            stage: "recruiter_screening",
+            editable: true,
+            current: { submission: {} },
+          })
+        }
+      >
+        Submit application
+      </button>
     </div>
   ),
 }));
@@ -100,6 +113,91 @@ describe("MyApplication", () => {
       screen.queryByRole("button", { name: /submit application/i }),
     ).not.toBeInTheDocument();
     expect(screen.getByText(/Ann/)).toBeInTheDocument();
+  });
+
+  it("shows a Reapply button for a rejected application, and clicking it renders a seeded ApplicationForm", async () => {
+    api.getMyApplication.mockResolvedValue({
+      data: {
+        id: 9,
+        stage: "rejected",
+        editable: false,
+        current: {
+          submission: {
+            personal: { firstName: "Ann", lastName: "Lee" },
+            education: [],
+            experience: [],
+            answers: {},
+          },
+        },
+      },
+    });
+    renderAt(5);
+
+    await waitFor(() =>
+      expect(screen.getByText("Status: Rejected")).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /reapply/i }));
+
+    await waitFor(() =>
+      expect(
+        screen.getByText("Seeded from prior submission"),
+      ).toBeInTheDocument(),
+    );
+    expect(screen.queryByText(/existing id/i)).not.toBeInTheDocument();
+  });
+
+  it("updates the displayed application after a successful reapply submission", async () => {
+    api.getMyApplication.mockResolvedValue({
+      data: {
+        id: 9,
+        stage: "rejected",
+        editable: false,
+        current: { submission: {} },
+      },
+    });
+    renderAt(5);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /reapply/i }),
+      ).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /reapply/i }));
+
+    await waitFor(() =>
+      expect(
+        screen.getByText("Seeded from prior submission"),
+      ).toBeInTheDocument(),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: /submit application/i }),
+    );
+
+    // The mocked ApplicationForm's onSubmitted resolves to an editable,
+    // recruiter_screening application -- MyApplication should re-render into
+    // the editable-form branch (existing id 9), not stay on the reapply seed.
+    await waitFor(() =>
+      expect(screen.getByText("Existing id 9")).toBeInTheDocument(),
+    );
+    expect(
+      screen.queryByText("Seeded from prior submission"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not show a Reapply button for a non-rejected read-only application", async () => {
+    api.getMyApplication.mockResolvedValue({
+      data: {
+        id: 9,
+        stage: "hired",
+        editable: false,
+        current: { submission: {} },
+      },
+    });
+    renderAt(5);
+    await waitFor(() => expect(screen.getByText(/hired/i)).toBeInTheDocument());
+    expect(
+      screen.queryByRole("button", { name: /reapply/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("renders a read-only summary when editable is false even though the stage string is still applied", async () => {
