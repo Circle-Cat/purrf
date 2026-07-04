@@ -443,7 +443,8 @@ const ApplicationDetailPage = () => {
   /**
    * Open the round-advance flow. Interview stages (`INTERVIEW_STAGES`) need
    * an assignee picked up front, mirroring the advance-to-stage flow's
-   * `needsAssignee`; other multi-round stages advance immediately via
+   * `needsAssignee`; other multi-round stages (e.g. a multi-round `offer`,
+   * which has no rubric and isn't assignable) advance immediately via
    * `handleAdvanceRoundDirect`.
    */
   const handleOpenRoundAdvance = () => {
