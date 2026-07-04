@@ -2,9 +2,7 @@ import unittest
 
 from backend.common.recruiting_enums import ApplicationStage
 from backend.recruiting.evaluation_rubric import (
-    RUBRICS,
     RubricField,
-    RubricSection,
     rubric_for,
     validate_responses,
 )
@@ -42,7 +40,9 @@ class TestRubricFor(unittest.TestCase):
                     "Are the candidate's resume, LinkedIn, and application answers consistent?",
                     "pass_fail",
                 ),
-                RubricField("bg_strength", "Background strength", "score", has_notes=True),
+                RubricField(
+                    "bg_strength", "Background strength", "score", has_notes=True
+                ),
             ),
         )
 
@@ -60,7 +60,9 @@ class TestRubricFor(unittest.TestCase):
                     "Does the candidate demonstrate alignment with the community's mission?",
                     "pass_fail",
                 ),
-                RubricField("writing_quality", "Writing quality", "score", has_notes=True),
+                RubricField(
+                    "writing_quality", "Writing quality", "score", has_notes=True
+                ),
             ),
         )
 
@@ -213,9 +215,7 @@ class TestValidateResponsesComplete(unittest.TestCase):
 
     def test_require_complete_rejects_missing_field(self):
         with self.assertRaises(ValueError) as ctx:
-            validate_responses(
-                ApplicationStage.BOARD_REVIEW, {}, require_complete=True
-            )
+            validate_responses(ApplicationStage.BOARD_REVIEW, {}, require_complete=True)
         self.assertIn("final_decision", str(ctx.exception))
 
     def test_require_complete_rejects_submission_missing_one_field(self):

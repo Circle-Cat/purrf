@@ -2,7 +2,11 @@ from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.dto.evaluation_dto import EvaluationDto, EvaluationSubmitDto, MyEvaluationDto
+from backend.dto.evaluation_dto import (
+    EvaluationDto,
+    EvaluationSubmitDto,
+    MyEvaluationDto,
+)
 from backend.dto.user_context_dto import UserContextDto
 from backend.recruiting import evaluation_rubric
 
@@ -84,7 +88,11 @@ class EvaluationService:
             application.stage, dto.responses, require_complete=dto.confirm
         )
         row = await self.evaluation_repository.upsert_draft(
-            session, application_id, application.stage, current_user.user_id, dto.responses
+            session,
+            application_id,
+            application.stage,
+            current_user.user_id,
+            dto.responses,
         )
         if dto.confirm:
             row = await self.evaluation_repository.confirm(
@@ -132,7 +140,10 @@ class EvaluationService:
                 session, application.user_id
             )
             evaluation = await self.evaluation_repository.get(
-                session, assignment.application_id, assignment.stage, current_user.user_id
+                session,
+                assignment.application_id,
+                assignment.stage,
+                current_user.user_id,
             )
             result.append(
                 MyEvaluationDto(
@@ -144,7 +155,9 @@ class EvaluationService:
                         else ""
                     ),
                     stage=assignment.stage,
-                    is_confirmed=bool(evaluation is not None and evaluation.is_confirmed),
+                    is_confirmed=bool(
+                        evaluation is not None and evaluation.is_confirmed
+                    ),
                 )
             )
         return result

@@ -52,7 +52,9 @@ class TestEvaluationController(unittest.IsolatedAsyncioTestCase):
 
         resp = await self.controller.get_mine(self.ctx)
 
-        self.evaluation_service.get_mine.assert_awaited_once_with(self.session, self.ctx)
+        self.evaluation_service.get_mine.assert_awaited_once_with(
+            self.session, self.ctx
+        )
         self.assertEqual(resp["data"], result)
 
     def test_evaluation_route_is_put_and_plain_authenticated(self):

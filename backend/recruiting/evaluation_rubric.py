@@ -41,7 +41,9 @@ RUBRICS: dict[ApplicationStage, tuple[RubricSection, ...]] = {
                     "Are the candidate's resume, LinkedIn, and application answers consistent?",
                     "pass_fail",
                 ),
-                RubricField("bg_strength", "Background strength", "score", has_notes=True),
+                RubricField(
+                    "bg_strength", "Background strength", "score", has_notes=True
+                ),
             ),
         ),
         RubricSection(
@@ -57,7 +59,9 @@ RUBRICS: dict[ApplicationStage, tuple[RubricSection, ...]] = {
                     "Does the candidate demonstrate alignment with the community's mission?",
                     "pass_fail",
                 ),
-                RubricField("writing_quality", "Writing quality", "score", has_notes=True),
+                RubricField(
+                    "writing_quality", "Writing quality", "score", has_notes=True
+                ),
             ),
         ),
         RubricSection(
@@ -86,7 +90,9 @@ RUBRICS: dict[ApplicationStage, tuple[RubricSection, ...]] = {
                     "Does the candidate communicate effectively with teammates and managers to resolve issues and align expectations?",
                     "pass_fail",
                 ),
-                RubricField("execution_quality", "Execution quality", "score", has_notes=True),
+                RubricField(
+                    "execution_quality", "Execution quality", "score", has_notes=True
+                ),
             ),
         ),
         RubricSection(
@@ -103,7 +109,10 @@ RUBRICS: dict[ApplicationStage, tuple[RubricSection, ...]] = {
                     "pass_fail",
                 ),
                 RubricField(
-                    "self_development", "Self-development strength", "score", has_notes=True
+                    "self_development",
+                    "Self-development strength",
+                    "score",
+                    has_notes=True,
                 ),
             ),
         ),
@@ -129,10 +138,14 @@ RUBRICS: dict[ApplicationStage, tuple[RubricSection, ...]] = {
                     "score",
                 ),
                 RubricField(
-                    "correctness", "How correct and complete is the implementation?", "score"
+                    "correctness",
+                    "How correct and complete is the implementation?",
+                    "score",
                 ),
                 RubricField(
-                    "debugging", "How effectively does the candidate identify and fix issues?", "score"
+                    "debugging",
+                    "How effectively does the candidate identify and fix issues?",
+                    "score",
                 ),
                 RubricField(
                     "communication_clarity",
@@ -145,7 +158,11 @@ RUBRICS: dict[ApplicationStage, tuple[RubricSection, ...]] = {
             "Interview Record",
             (
                 RubricField("problem_statement", "Problem Statement", "notes"),
-                RubricField("candidate_approach", "Candidate Understanding and Approach", "notes"),
+                RubricField(
+                    "candidate_approach",
+                    "Candidate Understanding and Approach",
+                    "notes",
+                ),
                 RubricField("code_snippet", "Code Snippet", "notes"),
             ),
         ),
@@ -214,7 +231,11 @@ def _validate_field(field: RubricField, entry: dict) -> None:
             raise ValueError(f"field {field.id!r} requires a boolean value")
     elif field.value_type == "score":
         value = entry.get("value")
-        if not isinstance(value, int) or isinstance(value, bool) or not (1 <= value <= 5):
+        if (
+            not isinstance(value, int)
+            or isinstance(value, bool)
+            or not (1 <= value <= 5)
+        ):
             raise ValueError(f"field {field.id!r} requires an integer score 1-5")
     if field.has_notes:
         if not isinstance(entry.get("notes"), str) or not entry["notes"].strip():

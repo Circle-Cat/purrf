@@ -115,8 +115,6 @@ class EvaluationRepository:
                 against application_assignment/application/job for display.
         """
         result = await session.execute(
-            select(EvaluationEntity).where(
-                EvaluationEntity.evaluator_id == assignee_id
-            )
+            select(EvaluationEntity).where(EvaluationEntity.evaluator_id == assignee_id)
         )
         return list(result.scalars().all())

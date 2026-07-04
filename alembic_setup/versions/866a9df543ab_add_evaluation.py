@@ -45,12 +45,8 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.Column("evaluator_id", sa.Integer(), nullable=False),
-        sa.Column(
-            "responses", postgresql.JSONB(astext_type=sa.Text()), nullable=False
-        ),
-        sa.Column(
-            "is_confirmed", sa.Boolean(), server_default="false", nullable=False
-        ),
+        sa.Column("responses", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
+        sa.Column("is_confirmed", sa.Boolean(), server_default="false", nullable=False),
         sa.Column("confirmed_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column(
             "created_datetime",

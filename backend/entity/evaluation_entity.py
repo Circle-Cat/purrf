@@ -1,5 +1,13 @@
 from datetime import datetime
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, UniqueConstraint, func
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Integer,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from backend.common.base import Base
@@ -19,7 +27,10 @@ class EvaluationEntity(Base):
     __tablename__ = "evaluation"
     __table_args__ = (
         UniqueConstraint(
-            "application_id", "stage", "evaluator_id", name="uq_evaluation_app_stage_evaluator"
+            "application_id",
+            "stage",
+            "evaluator_id",
+            name="uq_evaluation_app_stage_evaluator",
         ),
     )
 
@@ -43,7 +54,9 @@ class EvaluationEntity(Base):
         ForeignKey("users.user_id", ondelete="CASCADE"), index=True, nullable=False
     )
     responses: Mapped[dict] = mapped_column(JSONB, default=dict)
-    is_confirmed: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    is_confirmed: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_datetime: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
