@@ -860,9 +860,7 @@ class JobService:
             ValueError: If no posting with the given id exists.
         """
         job = await self._require_job(session, job_id)
-        open_review = await self.job_review_repository.get_open_for_job(
-            session, job_id
-        )
+        open_review = await self.job_review_repository.get_open_for_job(session, job_id)
         reviewer_id = open_review.reviewer_id if open_review is not None else None
         return self.recruiting_mapper.to_job_dto(job, reviewer_id=reviewer_id)
 

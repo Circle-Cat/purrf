@@ -85,7 +85,9 @@ const PostingsList = ({
                   <p className="text-sm font-medium text-slate-700">
                     Rejection comment
                   </p>
-                  <p className="text-sm text-red-600">{job.lastRejectComment}</p>
+                  <p className="text-sm text-red-600">
+                    {job.lastRejectComment}
+                  </p>
                 </PopoverContent>
               </Popover>
             ) : (
