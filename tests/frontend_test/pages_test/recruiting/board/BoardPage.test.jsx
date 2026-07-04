@@ -15,15 +15,18 @@ vi.spyOn(toast, "error").mockImplementation(() => {});
 
 beforeEach(() => {
   vi.clearAllMocks();
-  // ApplicantDetailDialog fetches the interview-evaluator pool alongside
-  // the application detail whenever it opens.
-  api.listInterviewPool.mockResolvedValue({ data: [] });
 });
 
-/** Render BoardPage inside a memory router. */
+/** Render BoardPage inside a memory router with a stub detail route. */
 const renderPage = () => {
   const router = createMemoryRouter(
-    [{ path: "/recruiting/board", element: <BoardPage /> }],
+    [
+      { path: "/recruiting/board", element: <BoardPage /> },
+      {
+        path: "/recruiting/applications/:applicationId",
+        element: <p>DETAIL PAGE</p>,
+      },
+    ],
     { initialEntries: ["/recruiting/board"] },
   );
   return render(<RouterProvider router={router} />);
@@ -272,7 +275,7 @@ describe("BoardPage", () => {
     expect(within(hiredLane).getByText("Blacklisted")).toBeInTheDocument();
   });
 
-  it("opens the detail dialog via onOpen when a card is clicked", async () => {
+  it("navigates to the shared application detail page when a card is clicked", async () => {
     const user = userEvent.setup();
     api.listBoardJobs.mockResolvedValue({ data: [jobA] });
     api.getJobBoard.mockResolvedValue({
@@ -290,48 +293,18 @@ describe("BoardPage", () => {
         ],
       },
     });
-    api.getApplicationDetail.mockResolvedValue({
-      data: {
-        application: {
-          id: 101,
-          jobId: 1,
-          userId: 5,
-          stage: "recruiter_screening",
-          subStatus: "pending",
-          tags: null,
-          current: {
-            version: 1,
-            isFrozen: false,
-            submission: {
-              personal: {},
-              education: [],
-              experience: [],
-              answers: {},
-            },
-          },
-          editable: false,
-        },
-        applicantName: "Alice Smith",
-        applicantEmail: "alice@example.com",
-        resumeAvailable: false,
-        formSchema: null,
-      },
-    });
 
     renderPage();
 
     await waitFor(() =>
       expect(screen.getByText("Alice Smith")).toBeInTheDocument(),
     );
-    // Whole card is a button, wired to onOpen -> the dialog fetches and
-    // shows this application's detail.
+    // Whole card is a button, wired to onOpen -> navigates to the shared
+    // detail route instead of opening a dialog.
     await user.click(screen.getByRole("button", { name: /Alice Smith/ }));
 
     await waitFor(() =>
-      expect(api.getApplicationDetail).toHaveBeenCalledWith(101),
-    );
-    await waitFor(() =>
-      expect(screen.getByText("alice@example.com")).toBeInTheDocument(),
+      expect(screen.getByText("DETAIL PAGE")).toBeInTheDocument(),
     );
   });
 
