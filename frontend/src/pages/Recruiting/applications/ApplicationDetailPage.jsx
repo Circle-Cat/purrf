@@ -37,20 +37,11 @@ import {
   submitEvaluation,
   resumeUrl,
 } from "@/api/recruitingApi";
-import { humanize } from "@/pages/Recruiting/board/stageFormat";
+import {
+  humanize,
+  INTERVIEW_STAGES,
+} from "@/pages/Recruiting/board/stageFormat";
 import { useAuth } from "@/context/auth/AuthContext";
-
-/**
- * Stages that carry an interview assignment/evaluation, mirroring the
- * backend's `INTERVIEW_STAGES` (backend/recruiting/board_service.py). An
- * advance into one of these requires an assignee up front.
- */
-const INTERVIEW_STAGES = new Set([
-  "recruiter_screening",
-  "behavioral",
-  "tech",
-  "board_review",
-]);
 
 /**
  * Advance targets whose assignee picker may be pre-filled from the job's
