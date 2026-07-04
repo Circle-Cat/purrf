@@ -25,7 +25,10 @@ vi.spyOn(toast, "success").mockImplementation(() => {});
 vi.spyOn(toast, "error").mockImplementation(() => {});
 vi.spyOn(toast, "warning").mockImplementation(() => {});
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  profileApi.getMyProfile.mockResolvedValue({ data: { profile: {} } });
+});
 
 const JOB = {
   id: 5,
@@ -142,7 +145,7 @@ describe("ApplicationForm", () => {
     const onSubmitted = vi.fn();
     render(<ApplicationForm job={JOB} onSubmitted={onSubmitted} />);
 
-    const email = screen.getByLabelText("Contact email");
+    const email = await screen.findByLabelText("Contact email");
     expect(email).toHaveValue("cand@x.com");
     expect(email).toHaveAttribute("readonly");
 
@@ -154,9 +157,9 @@ describe("ApplicationForm", () => {
     expect(onSubmitted).toHaveBeenCalled();
   });
 
-  it("renders exactly one Contact email field", () => {
+  it("renders exactly one Contact email field", async () => {
     render(<ApplicationForm job={JOB} onSubmitted={vi.fn()} />);
-    expect(screen.getAllByLabelText("Contact email")).toHaveLength(1);
+    expect(await screen.findAllByLabelText("Contact email")).toHaveLength(1);
   });
 
   it("updates an existing application via updateApplication when `existing` is provided", async () => {
@@ -217,6 +220,101 @@ describe("ApplicationForm", () => {
     expect(onSubmitted).toHaveBeenCalled();
   });
 
+  it("shows a loading placeholder, then prefills from the profile, for a brand-new application", async () => {
+    const user = userEvent.setup();
+    let resolveProfile;
+    profileApi.getMyProfile.mockReturnValue(
+      new Promise((resolve) => {
+        resolveProfile = resolve;
+      }),
+    );
+    api.submitApplication.mockResolvedValue({ data: { id: 100 } });
+    render(<ApplicationForm job={JOB} onSubmitted={vi.fn()} />);
+
+    expect(screen.getByText("Loading…")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /submit/i }),
+    ).not.toBeInTheDocument();
+
+    resolveProfile({
+      data: {
+        profile: {
+          user: { firstName: "Ann", lastName: "Liu" },
+          education: [],
+          workHistory: [],
+        },
+      },
+    });
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /submit/i }),
+      ).toBeInTheDocument(),
+    );
+    await user.click(screen.getByRole("button", { name: /submit/i }));
+
+    expect(api.submitApplication.mock.calls[0][0]).toMatchObject({
+      personal: { firstName: "Ann", lastName: "Liu" },
+    });
+  });
+
+  it("does not fetch the profile when `existing` is provided", async () => {
+    api.updateApplication.mockResolvedValue({ data: { id: 7 } });
+    render(
+      <ApplicationForm
+        job={JOB}
+        existing={FILLED_EXISTING}
+        onSubmitted={vi.fn()}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /submit/i }),
+      ).toBeInTheDocument(),
+    );
+    expect(profileApi.getMyProfile).not.toHaveBeenCalled();
+  });
+
+  it("does not fetch the profile when `seed` is provided", async () => {
+    api.submitApplication.mockResolvedValue({ data: { id: 101 } });
+    render(
+      <ApplicationForm
+        job={JOB}
+        seed={FILLED_EXISTING.current}
+        onSubmitted={vi.fn()}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /submit/i }),
+      ).toBeInTheDocument(),
+    );
+    expect(profileApi.getMyProfile).not.toHaveBeenCalled();
+  });
+
+  it("renders an empty, submittable form when the profile prefill fetch fails", async () => {
+    const user = userEvent.setup();
+    profileApi.getMyProfile.mockRejectedValue(new Error("boom"));
+    api.submitApplication.mockResolvedValue({ data: { id: 100 } });
+    const onSubmitted = vi.fn();
+    render(<ApplicationForm job={JOB} onSubmitted={onSubmitted} />);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /submit/i }),
+      ).toBeInTheDocument(),
+    );
+    await user.click(screen.getByRole("button", { name: /submit/i }));
+
+    expect(onSubmitted).toHaveBeenCalled();
+    // A vacuous `toMatchObject({ personal: {} })` would pass for ANY
+    // personal value (an empty object subset-matches anything) -- assert
+    // the field directly to actually prove the form stayed empty.
+    expect(api.submitApplication.mock.calls[0][0].personal).toEqual({});
+  });
+
   it("guards against double submission", async () => {
     const user = userEvent.setup();
     let resolveSubmit;
@@ -227,7 +325,7 @@ describe("ApplicationForm", () => {
     );
     render(<ApplicationForm job={JOB} onSubmitted={vi.fn()} />);
 
-    const button = screen.getByRole("button", { name: /submit/i });
+    const button = await screen.findByRole("button", { name: /submit/i });
     await user.click(button);
     await user.click(button);
 
@@ -417,13 +515,16 @@ describe("ApplicationForm", () => {
     const user = userEvent.setup();
     api.submitApplication.mockResolvedValue({ data: { id: 100 } });
     const onSubmitted = vi.fn();
-    // No `existing` -> empty profile, save-to-profile defaults checked.
+    // No `existing` -> empty profile, save-to-profile defaults checked. The
+    // brand-new-application prefill effect calls getMyProfile once on mount
+    // regardless; this test's job is to prove write-back does NOT call it
+    // again (or call updateMyProfile at all) when there's nothing to write.
     render(<ApplicationForm job={JOB} onSubmitted={onSubmitted} />);
 
-    await user.click(screen.getByRole("button", { name: /submit/i }));
+    await user.click(await screen.findByRole("button", { name: /submit/i }));
 
     await waitFor(() => expect(onSubmitted).toHaveBeenCalled());
-    expect(profileApi.getMyProfile).not.toHaveBeenCalled();
+    expect(profileApi.getMyProfile).toHaveBeenCalledTimes(1);
     expect(profileApi.updateMyProfile).not.toHaveBeenCalled();
   });
 
@@ -642,6 +743,7 @@ describe("ApplicationForm", () => {
     api.submitApplication.mockResolvedValue({ data: { id: 100 } });
     render(<ApplicationForm job={JOB} onSubmitted={vi.fn()} />);
 
+    await screen.findByTestId("resume-file-input");
     selectResumeFile(pdfFile());
     await waitFor(() => expect(api.uploadResume).toHaveBeenCalledTimes(1));
 
@@ -656,13 +758,14 @@ describe("ApplicationForm", () => {
     api.uploadResume.mockRejectedValue(new Error("upload failed"));
     render(<ApplicationForm job={JOB} onSubmitted={vi.fn()} />);
 
+    await screen.findByTestId("resume-file-input");
     selectResumeFile(pdfFile());
 
     await waitFor(() => expect(api.uploadResume).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(toast.error).toHaveBeenCalled());
   });
 
-  it("does not render the job description and kind while filling the form, but does render the title", () => {
+  it("does not render the job description and kind while filling the form, but does render the title", async () => {
     const jobWithDescription = {
       ...JOB,
       description:
@@ -670,7 +773,7 @@ describe("ApplicationForm", () => {
     };
     render(<ApplicationForm job={jobWithDescription} onSubmitted={vi.fn()} />);
 
-    expect(screen.getByText("Mentee")).toBeInTheDocument();
+    expect(await screen.findByText("Mentee")).toBeInTheDocument();
     expect(
       screen.queryByText(/detailed job description/),
     ).not.toBeInTheDocument();
