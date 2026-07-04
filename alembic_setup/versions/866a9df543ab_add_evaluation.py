@@ -1,7 +1,7 @@
 """add evaluation
 
 Revision ID: 866a9df543ab
-Revises: 3a0cc23fe442
+Revises: 205cf4cb5f2f
 Create Date: 2026-07-03 08:55:02.937507
 
 """
@@ -14,7 +14,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision: str = "866a9df543ab"
-down_revision: Union[str, Sequence[str], None] = "3a0cc23fe442"
+down_revision: Union[str, Sequence[str], None] = "205cf4cb5f2f"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
