@@ -80,6 +80,7 @@ class JobDto(BaseDto):
     last_reject_comment: str | None = None
     was_published: bool = False
     cooldown_days: int | None = None
+    reviewer_id: int | None = None
 
 
 class PublicJobDto(BaseDto):

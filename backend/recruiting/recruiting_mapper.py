@@ -36,7 +36,10 @@ class RecruitingMapper:
         return dto
 
     def to_job_dto(
-        self, job: JobEntity, last_reject_comment: str | None = None
+        self,
+        job: JobEntity,
+        last_reject_comment: str | None = None,
+        reviewer_id: int | None = None,
     ) -> JobDto:
         """Map a JobEntity to a JobDto.
 
@@ -45,6 +48,9 @@ class RecruitingMapper:
             last_reject_comment (str | None): The reject_comment from that
                 job's most-recent review if it was a rejection, otherwise
                 ``None``. Serialised as ``lastRejectComment`` in API responses.
+            reviewer_id (int | None): The user_id of the posting's currently
+                assigned reviewer, when it has an open (PENDING) review
+                cycle, otherwise ``None``. Serialised as ``reviewerId``.
 
         Returns:
             JobDto: The mapped DTO.
@@ -64,6 +70,7 @@ class RecruitingMapper:
             last_reject_comment=last_reject_comment,
             was_published=job.was_published or False,
             cooldown_days=job.cooldown_days,
+            reviewer_id=reviewer_id,
         )
 
     def to_public_job_dto(self, job: JobEntity) -> PublicJobDto:
