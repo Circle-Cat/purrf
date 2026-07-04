@@ -301,6 +301,8 @@ const ApplicationDetailPage = () => {
   const [advanceAssigneeId, setAdvanceAssigneeId] = useState("");
   const [switchingSubStatus, setSwitchingSubStatus] = useState(false);
   const [advancingRound, setAdvancingRound] = useState(false);
+  const [roundAdvanceOpen, setRoundAdvanceOpen] = useState(false);
+  const [roundAdvanceAssigneeId, setRoundAdvanceAssigneeId] = useState("");
 
   const [rejectFormOpen, setRejectFormOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
@@ -424,9 +426,11 @@ const ApplicationDetailPage = () => {
    * one round via the job's pipeline config. Patches `currentRound` on the
    * local `detail` state in place, mirroring `handleSelectSubStatus`'s
    * pattern for mutations that don't change the application's stage (so no
-   * full reload of the job config/evaluations is needed).
+   * full reload of the job config/evaluations is needed). No assignee is
+   * sent — only used for stages outside `INTERVIEW_STAGES` (e.g. a
+   * multi-round `offer`, which has no rubric and isn't assignable).
    */
-  const handleAdvanceRound = () => {
+  const handleAdvanceRoundDirect = () => {
     if (advancingRound) return;
     const nextRound = (detail.application.currentRound ?? 1) + 1;
     setAdvancingRound(true);
@@ -440,6 +444,50 @@ const ApplicationDetailPage = () => {
               }
             : prev,
         );
+      })
+      .catch((e) => toast.error(e.message))
+      .finally(() => setAdvancingRound(false));
+  };
+
+  /**
+   * Open the round-advance flow. Interview stages (`INTERVIEW_STAGES`) need
+   * an assignee picked up front, mirroring the advance-to-stage flow's
+   * `needsAssignee`; other multi-round stages advance immediately via
+   * `handleAdvanceRoundDirect`.
+   */
+  const handleOpenRoundAdvance = () => {
+    if (INTERVIEW_STAGES.has(detail.application.stage)) {
+      setRoundAdvanceOpen(true);
+      return;
+    }
+    handleAdvanceRoundDirect();
+  };
+
+  const handleCancelRoundAdvance = () => {
+    setRoundAdvanceOpen(false);
+    setRoundAdvanceAssigneeId("");
+  };
+
+  const handleConfirmAdvanceRound = () => {
+    if (!roundAdvanceAssigneeId || advancingRound) return;
+    const nextRound = (detail.application.currentRound ?? 1) + 1;
+    setAdvancingRound(true);
+    setApplicationRound(
+      applicationId,
+      nextRound,
+      Number(roundAdvanceAssigneeId),
+    )
+      .then(() => {
+        setDetail((prev) =>
+          prev
+            ? {
+                ...prev,
+                application: { ...prev.application, currentRound: nextRound },
+              }
+            : prev,
+        );
+        setRoundAdvanceOpen(false);
+        setRoundAdvanceAssigneeId("");
       })
       .catch((e) => toast.error(e.message))
       .finally(() => setAdvancingRound(false));
@@ -601,16 +649,43 @@ const ApplicationDetailPage = () => {
                 disabled={switchingSubStatus}
                 onSelect={handleSelectSubStatus}
               />
-              {canAdvanceRound && (
+              {canAdvanceRound && !roundAdvanceOpen && (
                 <Button
                   type="button"
                   size="sm"
                   variant="outline"
                   disabled={advancingRound}
-                  onClick={handleAdvanceRound}
+                  onClick={handleOpenRoundAdvance}
                 >
                   Advance to Round {(detail.application.currentRound ?? 1) + 1}
                 </Button>
+              )}
+              {roundAdvanceOpen && (
+                <div className="flex flex-col gap-3">
+                  <PeoplePicker
+                    label="Assignee"
+                    pool={interviewPool}
+                    value={roundAdvanceAssigneeId || undefined}
+                    onChange={(v) =>
+                      setRoundAdvanceAssigneeId(v ? String(v) : "")
+                    }
+                  />
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={handleCancelRoundAdvance}
+                      disabled={advancingRound}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      onClick={handleConfirmAdvanceRound}
+                      disabled={!roundAdvanceAssigneeId || advancingRound}
+                    >
+                      Confirm advance round
+                    </Button>
+                  </div>
+                </div>
               )}
               {assigneeName && (
                 <p className="text-sm text-slate-700">
