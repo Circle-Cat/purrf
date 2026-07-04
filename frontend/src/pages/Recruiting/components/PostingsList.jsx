@@ -38,13 +38,14 @@ const VARIANT = {
  * - closed + wasPublished: Edit, Request reopen, View
  * - closed (never published): Delete, View
  *
- * @param {{jobs: object[], onEdit?: Function, onSubmit?: Function,
- *          onClose?: Function, onRequestClose?: Function,
- *          onRequestReopen?: Function, onDelete?: Function,
- *          onView?: Function}} props
+ * @param {{jobs: object[], approversById?: Record<number, string>,
+ *          onEdit?: Function, onSubmit?: Function, onClose?: Function,
+ *          onRequestClose?: Function, onRequestReopen?: Function,
+ *          onDelete?: Function, onView?: Function}} props
  */
 const PostingsList = ({
   jobs,
+  approversById = {},
   onEdit,
   onSubmit,
   onClose,
@@ -62,6 +63,9 @@ const PostingsList = ({
       const isPublished = job.status === "published";
       const isPendingRevision = job.status === "published_pending_revision";
       const isClosed = job.status === "closed";
+      const reviewerName = job.reviewerId
+        ? (approversById[job.reviewerId] ?? `Reviewer #${job.reviewerId}`)
+        : null;
 
       return (
         <div key={job.id} className="flex items-center gap-3 p-4">
@@ -69,25 +73,34 @@ const PostingsList = ({
             <p className="truncate font-medium text-slate-900">{job.title}</p>
             <p className="text-xs text-slate-500">{job.kind}</p>
           </div>
-          {isDraft && job.lastRejectComment ? (
-            <Popover>
-              <PopoverTrigger asChild>
-                <button type="button" className="cursor-pointer">
-                  <Badge variant="destructive">Sent back</Badge>
-                </button>
-              </PopoverTrigger>
-              <PopoverContent className="w-72">
-                <p className="text-sm font-medium text-slate-700">
-                  Rejection comment
-                </p>
-                <p className="text-sm text-red-600">{job.lastRejectComment}</p>
-              </PopoverContent>
-            </Popover>
-          ) : (
-            <Badge variant={VARIANT[job.status]}>
-              {STATUS_LABELS[job.status]}
-            </Badge>
-          )}
+          <div className="flex flex-col items-end gap-1">
+            {isDraft && job.lastRejectComment ? (
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button type="button" className="cursor-pointer">
+                    <Badge variant="destructive">Sent back</Badge>
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent className="w-72">
+                  <p className="text-sm font-medium text-slate-700">
+                    Rejection comment
+                  </p>
+                  <p className="text-sm text-red-600">
+                    {job.lastRejectComment}
+                  </p>
+                </PopoverContent>
+              </Popover>
+            ) : (
+              <Badge variant={VARIANT[job.status]}>
+                {STATUS_LABELS[job.status]}
+              </Badge>
+            )}
+            {reviewerName && (
+              <p className="text-xs text-slate-500">
+                Assigned to: {reviewerName}
+              </p>
+            )}
+          </div>
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={() => onView?.(job)}>
               View

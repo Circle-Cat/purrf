@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -61,9 +61,22 @@ const Postings = () => {
     setJobs(data ?? []);
   }, []);
 
+  /** Fetch active approvers and store them for the reviewer picker and the assignee lookup. */
+  const loadApprovers = useCallback(async () => {
+    const { data } = await listApprovers();
+    setApprovers(data ?? []);
+  }, []);
+
   useEffect(() => {
     refresh().catch((e) => toast.error(e.message));
-  }, [refresh]);
+    loadApprovers().catch((e) => toast.error(e.message));
+  }, [refresh, loadApprovers]);
+
+  /** userId -> name lookup for rendering "Assigned to" against a job's reviewerId. */
+  const approversById = useMemo(
+    () => Object.fromEntries(approvers.map((a) => [a.userId, a.name])),
+    [approvers],
+  );
 
   /**
    * Generic helper: run an async fn, refresh the list, show a success toast.
@@ -91,8 +104,7 @@ const Postings = () => {
    */
   const openReview = async (jobId, kind) => {
     try {
-      const { data } = await listApprovers();
-      setApprovers(data ?? []);
+      await loadApprovers();
       setReviewAction({ kind, jobId });
       setSubmitOpen(true);
     } catch (e) {
@@ -139,6 +151,7 @@ const Postings = () => {
       </div>
       <PostingsList
         jobs={jobs}
+        approversById={approversById}
         onEdit={(job) => navigate(ROUTE_PATHS.RECRUITING_POSTING_EDIT(job.id))}
         onSubmit={(id) => openReview(id, "submit")}
         onClose={(id) => run(() => closeJob(id), "Posting closed.")}

@@ -218,4 +218,29 @@ describe("PostingsList", () => {
     expect(await screen.findByText("fix the form")).toBeInTheDocument();
     expect(screen.getByText("Rejection comment")).toBeInTheDocument();
   });
+
+  it("shows 'Assigned to: <name>' when the job has an assigned reviewer", () => {
+    render(
+      <PostingsList
+        jobs={[job({ status: "pending_review", reviewerId: 2 })]}
+        approversById={{ 2: "Bob" }}
+      />,
+    );
+    expect(screen.getByText("Assigned to: Bob")).toBeInTheDocument();
+  });
+
+  it("falls back to 'Reviewer #<id>' when the assignee isn't in approversById", () => {
+    render(
+      <PostingsList
+        jobs={[job({ status: "pending_review", reviewerId: 9 })]}
+        approversById={{}}
+      />,
+    );
+    expect(screen.getByText("Assigned to: Reviewer #9")).toBeInTheDocument();
+  });
+
+  it("shows no assignee text when the job has no reviewerId", () => {
+    render(<PostingsList jobs={[job({ status: "draft" })]} />);
+    expect(screen.queryByText(/Assigned to:/)).not.toBeInTheDocument();
+  });
 });
