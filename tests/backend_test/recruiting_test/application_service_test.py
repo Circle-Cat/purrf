@@ -17,9 +17,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.app_repo = MagicMock()
         self.app_repo.get_by_job_and_user = AsyncMock(return_value=None)
         self.app_repo.get_by_id = AsyncMock(return_value=None)
-        self.app_repo.create = AsyncMock(
-            side_effect=lambda s, e: setattr(e, "application_id", 100) or e
-        )
+        self.app_repo.create = AsyncMock(side_effect=self._create_side_effect)
         self.app_repo.update = AsyncMock(side_effect=lambda s, e: e)
         self.sub_repo = MagicMock()
         self.sub_repo.get_current = AsyncMock(return_value=None)
@@ -43,6 +41,14 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             self.users_repo,
             RecruitingMapper(),
         )
+
+    def _create_side_effect(self, session, entity):
+        """Stand in for app_repo.create's real flush: sets the id and, like
+        an INSERT-time column default would, current_round when unset."""
+        entity.application_id = 100
+        if entity.current_round is None:
+            entity.current_round = 1
+        return entity
 
     def _job(self, **kw):
         job = JobEntity(
@@ -101,6 +107,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             user_id=2,
             stage=ApplicationStage.RECRUITER_SCREENING,
             sub_status="pending",
+            current_round=1,
         )
         app.application_id = 100
         self.app_repo.get_by_job_and_user = AsyncMock(return_value=app)
@@ -117,6 +124,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             user_id=2,
             stage=ApplicationStage.RECRUITER_SCREENING,
             sub_status="pending",
+            current_round=1,
         )
         app.application_id = 100
         self.app_repo.get_by_id = AsyncMock(return_value=app)
@@ -148,6 +156,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             user_id=2,
             stage=ApplicationStage.RECRUITER_SCREENING,
             sub_status="pending",
+            current_round=1,
         )
         app.application_id = 100
         self.app_repo.get_by_id = AsyncMock(return_value=app)
@@ -163,6 +172,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             user_id=2,
             stage=ApplicationStage.RECRUITER_SCREENING,
             sub_status="pending",
+            current_round=1,
         )
         app.application_id = 100
         self.app_repo.get_by_job_and_user = AsyncMock(return_value=app)
@@ -175,6 +185,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             user_id=2,
             stage=ApplicationStage.BEHAVIORAL,
             sub_status="pending",
+            current_round=1,
         )
         app.application_id = 100
         self.app_repo.get_by_id = AsyncMock(return_value=app)
@@ -189,6 +200,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             user_id=2,
             stage=ApplicationStage.RECRUITER_SCREENING,
             sub_status="in_progress",
+            current_round=1,
         )
         app.application_id = 100
         self.app_repo.get_by_id = AsyncMock(return_value=app)
@@ -203,6 +215,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             user_id=2,
             stage=ApplicationStage.RECRUITER_SCREENING,
             sub_status="pending",
+            current_round=1,
         )
         app.application_id = 100
         self.app_repo.get_by_id = AsyncMock(return_value=app)
@@ -223,6 +236,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             user_id=2,
             stage=ApplicationStage.RECRUITER_SCREENING,
             sub_status="pending",
+            current_round=1,
         )
         app.application_id = 100
         self.app_repo.get_by_job_and_user = AsyncMock(return_value=app)
@@ -240,6 +254,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             user_id=2,
             stage=ApplicationStage.TECH,
             sub_status="pending",
+            current_round=1,
         )
         app.application_id = 100
         self.app_repo.get_by_job_and_user = AsyncMock(return_value=app)
@@ -278,7 +293,9 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             )
 
     async def test_reapply_after_reject_mints_new_version_and_freezes_prior(self):
-        app = ApplicationEntity(job_id=1, user_id=2, stage=ApplicationStage.REJECTED)
+        app = ApplicationEntity(
+            job_id=1, user_id=2, stage=ApplicationStage.REJECTED, current_round=1
+        )
         app.application_id = 100
         app.created_datetime = datetime(2026, 1, 10, tzinfo=timezone.utc)
         self.app_repo.get_by_job_and_user = AsyncMock(return_value=app)
@@ -310,7 +327,9 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         job.cooldown_days = 90
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
 
-        app = ApplicationEntity(job_id=1, user_id=2, stage=ApplicationStage.REJECTED)
+        app = ApplicationEntity(
+            job_id=1, user_id=2, stage=ApplicationStage.REJECTED, current_round=1
+        )
         app.application_id = 100
         app.created_datetime = datetime(2026, 1, 10, tzinfo=timezone.utc)
         # Rejection actually happened later than the prior submission.
@@ -337,7 +356,9 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.tags["cold_freeze"]["thaw_date"], "2026-05-30")
 
     async def test_reapply_after_thaw_has_no_cold_freeze_tag(self):
-        app = ApplicationEntity(job_id=1, user_id=2, stage=ApplicationStage.REJECTED)
+        app = ApplicationEntity(
+            job_id=1, user_id=2, stage=ApplicationStage.REJECTED, current_round=1
+        )
         app.application_id = 100
         app.created_datetime = datetime(2026, 1, 10, tzinfo=timezone.utc)
         self.app_repo.get_by_job_and_user = AsyncMock(return_value=app)

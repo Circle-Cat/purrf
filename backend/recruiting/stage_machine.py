@@ -55,6 +55,30 @@ def configured_stages(pipeline_config: dict | None) -> list[ApplicationStage]:
     return [stage for stage in PIPELINE_ORDER if stage in selected]
 
 
+def rounds_for_stage(pipeline_config: dict | None, stage: ApplicationStage) -> int:
+    """The configured round count for one of a job's pipeline stages.
+
+    Args:
+        pipeline_config (dict | None): The job's stored pipeline
+            configuration (see ``configured_stages``).
+        stage (ApplicationStage): The stage to look up.
+
+    Returns:
+        int: The stage's configured ``rounds`` value, or ``1`` if the stage
+            isn't configured, ``pipeline_config`` is falsy, or the entry's
+            ``rounds`` is missing or not a positive integer.
+    """
+    if not pipeline_config:
+        return 1
+    entries = pipeline_config.get("stages") or []
+    for entry in entries:
+        if not isinstance(entry, dict) or entry.get("stage") != stage.value:
+            continue
+        rounds = entry.get("rounds")
+        return rounds if isinstance(rounds, int) and rounds >= 1 else 1
+    return 1
+
+
 def first_stage(pipeline_config: dict | None) -> ApplicationStage:
     """The job's first configured stage.
 

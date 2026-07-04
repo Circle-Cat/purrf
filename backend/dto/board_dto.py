@@ -27,13 +27,20 @@ REJECT_REASONS = (
 )
 
 
+class PipelineStageInfoDto(BaseDto):
+    """One of a job's configured pipeline stages, for the board's lane list."""
+
+    stage: str
+    rounds: int
+
+
 class BoardJobDto(BaseDto):
     """A job the caller owns, for the board's job switcher."""
 
     id: int
     title: str
     kind: JobKind
-    stages: list[str]  # configured stage values in global order
+    stages: list[PipelineStageInfoDto]  # configured stages + rounds, in global order
 
 
 class BoardCardDto(BaseDto):
@@ -46,6 +53,7 @@ class BoardCardDto(BaseDto):
     sub_status: str | None = None
     tags: dict | None = None
     applied_at: datetime | None = None
+    round: int = 1
 
 
 class ApplicationDetailDto(BaseDto):
@@ -89,6 +97,30 @@ class ReassignDto(BaseRequestDto):
     """Change who is responsible for an application's current stage."""
 
     assignee_id: int
+
+
+class RoundChangeDto(BaseRequestDto):
+    """Advance an application to a specific round within its current stage."""
+
+    round: int
+
+    @field_validator("round")
+    @classmethod
+    def round_positive(cls, v: int) -> int:
+        """Require at least round 1.
+
+        Args:
+            v (int): The candidate round number.
+
+        Returns:
+            int: The validated round number.
+
+        Raises:
+            ValueError: If less than 1.
+        """
+        if v < 1:
+            raise ValueError("round must be >= 1")
+        return v
 
 
 class BlacklistDto(BaseRequestDto):

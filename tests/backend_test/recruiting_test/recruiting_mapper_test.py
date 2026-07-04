@@ -45,6 +45,7 @@ class TestRecruitingMapper(unittest.TestCase):
             stage=ApplicationStage.RECRUITER_SCREENING,
             sub_status="pending",
             tags={"cold_freeze": {"thaw_date": "2026-04-01"}},
+            current_round=1,
         )
         application.application_id = 42
         application.created_datetime = applied_at
@@ -65,7 +66,7 @@ class TestRecruitingMapper(unittest.TestCase):
 
     def test_to_board_card_dto_strips_trailing_space_for_empty_last_name(self):
         application = ApplicationEntity(
-            job_id=1, user_id=2, stage=ApplicationStage.APPLIED
+            job_id=1, user_id=2, stage=ApplicationStage.APPLIED, current_round=1
         )
         application.application_id = 1
         user = UsersEntity(first_name="Cher", last_name="", primary_email="c@b.com")
@@ -74,6 +75,34 @@ class TestRecruitingMapper(unittest.TestCase):
         dto = self.mapper.to_board_card_dto(application, user)
 
         self.assertEqual(dto.applicant_name, "Cher")
+
+    def test_to_board_card_dto_includes_round(self):
+        application = ApplicationEntity(
+            job_id=1,
+            user_id=2,
+            stage=ApplicationStage.TECH,
+            current_round=2,
+        )
+        application.application_id = 1
+        user = UsersEntity(first_name="A", last_name="B", primary_email="a@b.com")
+        user.user_id = 2
+
+        dto = self.mapper.to_board_card_dto(application, user)
+
+        self.assertEqual(dto.round, 2)
+
+    def test_to_application_dto_includes_current_round(self):
+        application = ApplicationEntity(
+            job_id=1,
+            user_id=2,
+            stage=ApplicationStage.TECH,
+            current_round=2,
+        )
+        application.application_id = 1
+
+        dto = self.mapper.to_application_dto(application)
+
+        self.assertEqual(dto.current_round, 2)
 
 
 if __name__ == "__main__":

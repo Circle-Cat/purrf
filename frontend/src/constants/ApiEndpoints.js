@@ -57,6 +57,7 @@ export const API_ENDPOINTS = {
   RECRUITING_APPLICATION_STAGE: (id) => `/recruiting/applications/${id}/stage`,
   RECRUITING_APPLICATION_SUB_STATUS: (id) =>
     `/recruiting/applications/${id}/sub-status`,
+  RECRUITING_APPLICATION_ROUND: (id) => `/recruiting/applications/${id}/round`,
   RECRUITING_APPLICATION_RESUME: (id) =>
     `/recruiting/applications/${id}/resume`,
   RECRUITING_APPLICATION_ASSIGNMENT: (id) =>

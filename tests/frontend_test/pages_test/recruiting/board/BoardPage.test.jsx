@@ -33,14 +33,17 @@ const jobA = {
   id: 1,
   title: "Backend Engineer",
   kind: "employment",
-  stages: ["recruiter_screening", "tech"],
+  stages: [
+    { stage: "recruiter_screening", rounds: 1 },
+    { stage: "tech", rounds: 1 },
+  ],
 };
 
 const jobB = {
   id: 2,
   title: "Mentor",
   kind: "activity",
-  stages: ["board_review"],
+  stages: [{ stage: "board_review", rounds: 1 }],
 };
 
 describe("BoardPage", () => {
@@ -329,5 +332,115 @@ describe("BoardPage", () => {
     await waitFor(() =>
       expect(screen.getByText("alice@example.com")).toBeInTheDocument(),
     );
+  });
+
+  it("splits a multi-round stage into one lane per round and buckets cards by round", async () => {
+    const jobC = {
+      id: 3,
+      title: "Staff Engineer",
+      kind: "employment",
+      stages: [{ stage: "tech", rounds: 2 }],
+    };
+    api.listBoardJobs.mockResolvedValue({ data: [jobC] });
+    api.getJobBoard.mockResolvedValue({
+      data: {
+        tech: [
+          {
+            id: 201,
+            applicantName: "Round One Person",
+            applicantEmail: "r1@example.com",
+            stage: "tech",
+            subStatus: "pending",
+            tags: null,
+            appliedAt: "2026-06-01T00:00:00Z",
+            round: 1,
+          },
+          {
+            id: 202,
+            applicantName: "Round Two Person",
+            applicantEmail: "r2@example.com",
+            stage: "tech",
+            subStatus: "pending",
+            tags: null,
+            appliedAt: "2026-06-02T00:00:00Z",
+            round: 2,
+          },
+        ],
+      },
+    });
+
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByText("Tech — Round 1")).toBeInTheDocument(),
+    );
+    expect(screen.getByText("Tech — Round 2")).toBeInTheDocument();
+
+    const round1Lane = screen.getByTestId("lane-tech:1");
+    expect(
+      within(round1Lane).getByText("Round One Person"),
+    ).toBeInTheDocument();
+    expect(
+      within(round1Lane).queryByText("Round Two Person"),
+    ).not.toBeInTheDocument();
+
+    const round2Lane = screen.getByTestId("lane-tech:2");
+    expect(
+      within(round2Lane).getByText("Round Two Person"),
+    ).toBeInTheDocument();
+    expect(
+      within(round2Lane).queryByText("Round One Person"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("falls back applicants above the current max round into the last lane instead of hiding them", async () => {
+    const jobD = {
+      id: 4,
+      title: "Principal Engineer",
+      kind: "employment",
+      stages: [{ stage: "tech", rounds: 2 }],
+    };
+    api.listBoardJobs.mockResolvedValue({ data: [jobD] });
+    api.getJobBoard.mockResolvedValue({
+      data: {
+        tech: [
+          {
+            id: 301,
+            applicantName: "Round Two Person",
+            applicantEmail: "r2@example.com",
+            stage: "tech",
+            subStatus: "pending",
+            tags: null,
+            appliedAt: "2026-06-01T00:00:00Z",
+            round: 2,
+          },
+          {
+            // Stale: was staged at round 3 before the posting's pipeline
+            // config shrank "tech" from 3 rounds down to 2.
+            id: 302,
+            applicantName: "Stale Round Three Person",
+            applicantEmail: "r3@example.com",
+            stage: "tech",
+            subStatus: "pending",
+            tags: null,
+            appliedAt: "2026-06-02T00:00:00Z",
+            round: 3,
+          },
+        ],
+      },
+    });
+
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByText("Tech — Round 2")).toBeInTheDocument(),
+    );
+    expect(screen.queryByText("Tech — Round 3")).not.toBeInTheDocument();
+
+    const lastLane = screen.getByTestId("lane-tech:2");
+    expect(within(lastLane).getByText("Round Two Person")).toBeInTheDocument();
+    expect(
+      within(lastLane).getByText("Stale Round Three Person"),
+    ).toBeInTheDocument();
   });
 });

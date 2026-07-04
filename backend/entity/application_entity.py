@@ -43,6 +43,13 @@ class ApplicationEntity(Base):
     )
     # Card sub-status within a stage; reserved here, exercised by sub-project #2.
     sub_status: Mapped[str | None] = mapped_column(String)
+    # Which round of the current stage the applicant is on (1-indexed).
+    # Resets to 1 on every stage change; advanced only via an explicit owner
+    # action (BoardService.set_round). Meaningless (always 1) for a stage
+    # configured with a single round.
+    current_round: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1, server_default="1"
+    )
     # Advisory flags (e.g. {"cold_freeze": {"thaw_date": "2026-04-01"}}).
     tags: Mapped[dict | None] = mapped_column(JSONB)
     created_datetime: Mapped[datetime] = mapped_column(

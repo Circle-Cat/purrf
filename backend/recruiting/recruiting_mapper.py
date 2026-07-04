@@ -126,6 +126,7 @@ class RecruitingMapper:
             sub_status=application.sub_status,
             tags=application.tags,
             applied_at=application.created_datetime,
+            round=application.current_round,
         )
 
     def to_application_dto(self, application, current_submission=None, editable=False):
@@ -166,4 +167,5 @@ class RecruitingMapper:
             tags=application.tags,
             current=current,
             editable=editable,
+            current_round=application.current_round,
         )
