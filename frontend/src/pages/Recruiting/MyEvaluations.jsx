@@ -60,7 +60,7 @@ const MyEvaluations = () => {
         <div className="divide-y divide-slate-200 rounded-lg border border-slate-200 bg-white">
           {evaluations.map((row) => (
             <Link
-              key={row.applicationId}
+              key={`${row.applicationId}-${row.stage}-${row.round}`}
               to={ROUTE_PATHS.RECRUITING_APPLICATION_DETAIL(row.applicationId)}
               className="flex items-center gap-3 p-4 no-underline transition-colors hover:bg-slate-50"
             >
@@ -72,7 +72,9 @@ const MyEvaluations = () => {
                   {row.jobTitle}
                 </p>
               </div>
-              <Badge variant="outline">{stageLabel(row.stage)}</Badge>
+              <Badge variant="outline">
+                {stageLabel(row.stage)} — Round {row.round}
+              </Badge>
               <Badge variant={row.isConfirmed ? "default" : "secondary"}>
                 {row.isConfirmed ? "Confirmed" : "Pending"}
               </Badge>

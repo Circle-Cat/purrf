@@ -6,21 +6,23 @@ from backend.entity.evaluation_entity import EvaluationEntity
 
 
 class EvaluationRepository:
-    """Database operations for EvaluationEntity (one row per app+stage+evaluator)."""
+    """Database operations for EvaluationEntity (one row per app+stage+round+evaluator)."""
 
     async def get(
         self,
         session: AsyncSession,
         application_id: int,
         stage: ApplicationStage,
+        round: int,
         evaluator_id: int,
     ) -> EvaluationEntity | None:
-        """Return one evaluator's row for an application's stage, or None.
+        """Return one evaluator's row for an application's stage+round, or None.
 
         Args:
             session (AsyncSession): The active DB session.
             application_id (int): The application being evaluated.
             stage (ApplicationStage): The stage being evaluated.
+            round (int): The round within that stage being evaluated.
             evaluator_id (int): The evaluator whose row to look up.
 
         Returns:
@@ -30,6 +32,7 @@ class EvaluationRepository:
             select(EvaluationEntity).where(
                 EvaluationEntity.application_id == application_id,
                 EvaluationEntity.stage == stage,
+                EvaluationEntity.round == round,
                 EvaluationEntity.evaluator_id == evaluator_id,
             )
         )
@@ -40,6 +43,7 @@ class EvaluationRepository:
         session: AsyncSession,
         application_id: int,
         stage: ApplicationStage,
+        round: int,
         evaluator_id: int,
         responses: dict,
     ) -> EvaluationEntity:
@@ -49,6 +53,7 @@ class EvaluationRepository:
             session (AsyncSession): The active DB session.
             application_id (int): The application being evaluated.
             stage (ApplicationStage): The stage being evaluated.
+            round (int): The round within that stage being evaluated.
             evaluator_id (int): The evaluator writing this draft.
             responses (dict): The rubric answers so far.
 
@@ -59,7 +64,7 @@ class EvaluationRepository:
             ValueError: If a row already exists for this key and is
                 confirmed (immutable).
         """
-        existing = await self.get(session, application_id, stage, evaluator_id)
+        existing = await self.get(session, application_id, stage, round, evaluator_id)
         if existing is not None:
             if existing.is_confirmed:
                 raise ValueError(
@@ -72,6 +77,7 @@ class EvaluationRepository:
         entity = EvaluationEntity(
             application_id=application_id,
             stage=stage,
+            round=round,
             evaluator_id=evaluator_id,
             responses=responses,
         )

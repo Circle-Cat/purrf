@@ -15,13 +15,16 @@ from backend.common.recruiting_enums import ApplicationStage
 
 
 class EvaluationEntity(Base):
-    """One evaluator's scorecard for one application's stage.
+    """One evaluator's scorecard for one round of one application's stage.
 
-    Unique per (application_id, stage, evaluator_id) — a reassignment
-    (application_assignment) leaves prior evaluators' rows untouched as
-    history; a fresh assignee gets their own row when they start a draft.
-    Immutable once is_confirmed=True (enforced in EvaluationRepository, not
-    at the DB layer).
+    Unique per (application_id, stage, round, evaluator_id) — a
+    reassignment (application_assignment) leaves prior evaluators' rows
+    untouched as history; a fresh assignee gets their own row when they
+    start a draft. Keyed by round (not just stage) so the same evaluator
+    assigned to two rounds of a multi-round stage gets independent rows —
+    otherwise confirming round 1 would permanently block round 2 (both
+    would resolve to the same row). Immutable once is_confirmed=True
+    (enforced in EvaluationRepository, not at the DB layer).
     """
 
     __tablename__ = "evaluation"
@@ -29,8 +32,9 @@ class EvaluationEntity(Base):
         UniqueConstraint(
             "application_id",
             "stage",
+            "round",
             "evaluator_id",
-            name="uq_evaluation_app_stage_evaluator",
+            name="uq_evaluation_app_stage_round_evaluator",
         ),
     )
 
@@ -49,6 +53,9 @@ class EvaluationEntity(Base):
             values_callable=lambda obj: [e.value for e in obj],
         ),
         nullable=False,
+    )
+    round: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1, server_default="1"
     )
     evaluator_id: Mapped[int] = mapped_column(
         ForeignKey("users.user_id", ondelete="CASCADE"), index=True, nullable=False

@@ -25,6 +25,7 @@ class EvaluationDto(BaseDto):
     id: int
     application_id: int
     stage: ApplicationStage
+    round: int
     evaluator_id: int
     responses: dict
     is_confirmed: bool
@@ -38,4 +39,5 @@ class MyEvaluationDto(BaseDto):
     job_title: str
     applicant_name: str
     stage: ApplicationStage
+    round: int
     is_confirmed: bool

@@ -654,7 +654,9 @@ class BoardService:
         active holder of ``Permission.RECRUITING_INTERVIEW_EVALUATE``; the
         assignment is persisted for the target round via
         ``application_assignment_repository.upsert``. Non-interview stages
-        (e.g. a multi-round ``offer``) ignore ``dto.assignee_id``.
+        (e.g. a multi-round ``offer``) ignore ``dto.assignee_id``. Resets
+        ``sub_status`` to ``"pending"`` (mirrors ``reassign``/``change_stage``)
+        so the new round doesn't inherit a prior round's ``"evaluated"`` state.
 
         Args:
             session (AsyncSession): Active database async session.
@@ -703,6 +705,7 @@ class BoardService:
                 current_user.user_id,
             )
         application.current_round = dto.round
+        application.sub_status = "pending"
 
         current_sub = await self.application_submission_repository.get_current(
             session, application_id
