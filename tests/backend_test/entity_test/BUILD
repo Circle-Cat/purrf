@@ -17,3 +17,12 @@ py_test(
         "//backend/entity:entities",
     ],
 )
+
+py_test(
+    name = "evaluation_entity_test",
+    srcs = ["evaluation_entity_test.py"],
+    deps = [
+        "//backend/common:recruiting_enums",
+        "//backend/entity:entities",
+    ],
+)
