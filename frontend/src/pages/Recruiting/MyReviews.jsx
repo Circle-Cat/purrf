@@ -10,6 +10,7 @@ import { REVIEWS_GUIDE } from "@/pages/Recruiting/components/guideContent";
 const MyReviews = () => {
   const [reviews, setReviews] = useState([]);
   const [active, setActive] = useState(null); // {review, job}
+  const [deciding, setDeciding] = useState(false);
 
   const refresh = useCallback(async () => {
     const { data } = await listMyReviews();
@@ -30,6 +31,8 @@ const MyReviews = () => {
   };
 
   const decide = async (body, ok) => {
+    if (deciding) return;
+    setDeciding(true);
     try {
       await decideReview(active.review.reviewId, body);
       setActive(null);
@@ -37,6 +40,8 @@ const MyReviews = () => {
       toast.success(ok);
     } catch (e) {
       toast.error(e.message);
+    } finally {
+      setDeciding(false);
     }
   };
 
@@ -45,6 +50,7 @@ const MyReviews = () => {
       <ReviewDetail
         review={active.review}
         job={active.job}
+        deciding={deciding}
         onApprove={() => decide({ decision: "approve" }, "Review approved.")}
         onReject={(comment) =>
           decide({ decision: "reject", comment }, "Review rejected.")
