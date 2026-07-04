@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { Check, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -262,14 +262,21 @@ const EvaluationSummary = ({ evaluations }) => (
  * - Owners (`detail.isOwner`) get the sub-status selector, an Advance Round
  *   action for stages configured for more than one round (via the job's
  *   `pipelineConfig.stages[].rounds`), the current assignee + Reassign
- *   control, the Advance/Reject/Blacklist decision footer (with the
- *   advance-time assignee picker pre-filled from the job's configured
- *   `default_assignee_id` for screening/behavioral targets), and a
- *   read-only summary of all evaluations.
+ *   control, the Advance/Reject/Blacklist decision footer (advancing into an
+ *   interview stage opens a dialog with an optional assignee picker,
+ *   pre-filled from the job's configured `default_assignee_id` for
+ *   screening/behavioral targets — leaving it blank just advances
+ *   unassigned, to be picked up later via Reassign), and a read-only summary
+ *   of all evaluations. This owner view never shows the evaluation-filling
+ *   form, even when the owner is also the current-stage assignee — grading
+ *   only happens via the evaluator view below.
  * - The current-stage assignee (`detail.assigneeId === currentUser.userId`)
- *   gets the `EvaluationRubricForm` for the application's stage, pre-filled
- *   from their own draft and locked once confirmed.
- * - A viewer who is both sees both areas.
+ *   reaching this page via the `?mode=evaluate` link from My Evaluations
+ *   gets ONLY the `EvaluationRubricForm` for the application's stage,
+ *   pre-filled from their own draft and locked once confirmed — no owner
+ *   actions, even if they're also the owner. Landing in this mode without
+ *   being the current assignee (e.g. a stale link, after a reassign) shows a
+ *   short explanatory message instead.
  *
  * The rubric form is only mounted after the evaluations fetch resolves (the
  * whole page is gated behind `loaded`), so it never captures a stale/empty
@@ -278,6 +285,8 @@ const EvaluationSummary = ({ evaluations }) => (
  */
 const ApplicationDetailPage = () => {
   const { applicationId } = useParams();
+  const [searchParams] = useSearchParams();
+  const evaluatorMode = searchParams.get("mode") === "evaluate";
   const { user } = useAuth();
   const currentUserId = user?.userId;
 
@@ -290,6 +299,7 @@ const ApplicationDetailPage = () => {
 
   const [advancing, setAdvancing] = useState(false);
   const [advanceAssigneeId, setAdvanceAssigneeId] = useState("");
+  const [advanceOpen, setAdvanceOpen] = useState(false);
   const [switchingSubStatus, setSwitchingSubStatus] = useState(false);
   const [advancingRound, setAdvancingRound] = useState(false);
   const [roundAdvanceOpen, setRoundAdvanceOpen] = useState(false);
@@ -496,6 +506,7 @@ const ApplicationDetailPage = () => {
     })
       .then(() => {
         toast.success(`Advanced to ${humanize(target)}.`);
+        setAdvanceOpen(false);
         load();
       })
       .catch((e) => toast.error(e.message))
@@ -603,6 +614,7 @@ const ApplicationDetailPage = () => {
   const submission = detail.application.current?.submission ?? {};
   const isAssignee =
     currentUserId != null && detail.assigneeId === currentUserId;
+  const showRubric = evaluatorMode && isAssignee;
   const myEntry = evaluations.find(
     (e) =>
       e.evaluatorId === currentUserId &&
@@ -643,7 +655,7 @@ const ApplicationDetailPage = () => {
 
         {/* Right column: role-adaptive. */}
         <div className="space-y-6">
-          {detail.isOwner && (
+          {detail.isOwner && !evaluatorMode && (
             <div className="space-y-4">
               <SubStatusSelector
                 stage={detail.application.stage}
@@ -782,24 +794,12 @@ const ApplicationDetailPage = () => {
                         Reject
                       </Button>
                       {needsAssignee ? (
-                        <>
-                          <PeoplePicker
-                            label="Assignee"
-                            pool={interviewPool}
-                            value={advanceAssigneeId || undefined}
-                            onChange={(v) =>
-                              setAdvanceAssigneeId(v ? String(v) : "")
-                            }
-                          />
-                          <Button
-                            disabled={!advanceAssigneeId || advancing}
-                            onClick={() =>
-                              handleAdvance(next, advanceAssigneeId)
-                            }
-                          >
-                            Confirm advance
-                          </Button>
-                        </>
+                        <Button
+                          disabled={advancing}
+                          onClick={() => setAdvanceOpen(true)}
+                        >
+                          Advance to next step
+                        </Button>
                       ) : (
                         <Button
                           disabled={advancing}
@@ -817,24 +817,29 @@ const ApplicationDetailPage = () => {
             </div>
           )}
 
-          {isAssignee && (
-            <div className="space-y-4">
-              <h2 className="text-sm font-semibold text-slate-800">
-                Your evaluation
-              </h2>
-              <EvaluationRubricForm
-                key={`eval-${detail.application.stage}-${
-                  myEntry?.isConfirmed ? "confirmed" : "draft"
-                }`}
-                stage={detail.application.stage}
-                initialResponses={myEntry?.responses ?? {}}
-                readOnly={Boolean(myEntry?.isConfirmed)}
-                saving={savingEvaluation}
-                onSaveDraft={handleSaveDraft}
-                onConfirm={handleConfirmEvaluation}
-              />
-            </div>
-          )}
+          {evaluatorMode &&
+            (showRubric ? (
+              <div className="space-y-4">
+                <h2 className="text-sm font-semibold text-slate-800">
+                  Your evaluation
+                </h2>
+                <EvaluationRubricForm
+                  key={`eval-${detail.application.stage}-${
+                    myEntry?.isConfirmed ? "confirmed" : "draft"
+                  }`}
+                  stage={detail.application.stage}
+                  initialResponses={myEntry?.responses ?? {}}
+                  readOnly={Boolean(myEntry?.isConfirmed)}
+                  saving={savingEvaluation}
+                  onSaveDraft={handleSaveDraft}
+                  onConfirm={handleConfirmEvaluation}
+                />
+              </div>
+            ) : (
+              <p className="text-sm text-slate-500">
+                You are not currently assigned to evaluate this application.
+              </p>
+            ))}
         </div>
       </div>
 
@@ -867,6 +872,42 @@ const ApplicationDetailPage = () => {
               disabled={!blacklistReason.trim() || blacklisting}
             >
               Confirm blacklist
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={advanceOpen}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) setAdvanceOpen(false);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {isPipelineStage ? `Advance to ${humanize(next)}` : "Advance"}
+            </DialogTitle>
+          </DialogHeader>
+          <PeoplePicker
+            label="Assignee (optional)"
+            pool={interviewPool}
+            value={advanceAssigneeId || undefined}
+            onChange={(v) => setAdvanceAssigneeId(v ? String(v) : "")}
+          />
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setAdvanceOpen(false)}
+              disabled={advancing}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => handleAdvance(next, advanceAssigneeId)}
+              disabled={advancing}
+            >
+              Confirm advance
             </Button>
           </DialogFooter>
         </DialogContent>

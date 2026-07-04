@@ -448,27 +448,29 @@ class BoardService:
 
         Row-locks the application for the duration of the transaction so two
         concurrent decisions on the same application serialise. When
-        ``dto.to_stage`` is an interview stage (``INTERVIEW_STAGES``), an
-        assignee must be supplied and must be an active holder of
-        ``Permission.RECRUITING_INTERVIEW_EVALUATE``; the assignment is then
-        persisted via ``application_assignment_repository.upsert``. Terminal
-        targets (HIRED/REJECTED) ignore ``dto.assignee_id`` if present, since
-        there's no interview to assign. On reject, records the
-        reason/note/origin stage under ``tags["reject"]``. The target's
-        sub_status resets to ``"pending"`` for pipeline stages, or ``None``
-        for terminal stages. Every stage change freezes the application's
-        current submission version, since once a decision has been made on
-        it, the candidate must not be able to edit the record the decision
-        was based on.
+        ``dto.to_stage`` is an interview stage (``INTERVIEW_STAGES``),
+        ``dto.assignee_id`` is optional: if supplied it must be an active
+        holder of ``Permission.RECRUITING_INTERVIEW_EVALUATE`` and the
+        assignment is persisted via ``application_assignment_repository.upsert``;
+        if omitted, the target stage is simply left unassigned until the
+        owner picks someone via ``reassign``. Terminal targets
+        (HIRED/REJECTED) ignore ``dto.assignee_id`` if present, since there's
+        no interview to assign. On reject, records the reason/note/origin
+        stage under ``tags["reject"]``. The target's sub_status resets to
+        ``"pending"`` for pipeline stages, or ``None`` for terminal stages.
+        Every stage change freezes the application's current submission
+        version, since once a decision has been made on it, the candidate
+        must not be able to edit the record the decision was based on.
 
         Args:
             session (AsyncSession): Active database async session.
             current_user (UserContextDto): The authenticated caller,
                 recorded as the assignment's ``assigned_by`` when advancing
-                into an interview stage.
+                into an interview stage with an assignee.
             application_id (int): The application to move.
             dto (StageChangeDto): The target stage and, for rejects, the
-                reason/note; for interview-stage advances, the assignee.
+                reason/note; for interview-stage advances, the optional
+                assignee.
 
         Returns:
             ApplicationDto: The refreshed application.
@@ -479,7 +481,7 @@ class BoardService:
                 ``get_application_detail``), the transition is not legal for
                 the job's configured pipeline
                 (``stage_machine.validate_transition``), or (for interview
-                stages) ``dto.assignee_id`` is missing or is not an active
+                stages) a supplied ``dto.assignee_id`` is not an active
                 holder of ``Permission.RECRUITING_INTERVIEW_EVALUATE``.
         """
         application, job = await self._load_owned_application(
@@ -488,11 +490,7 @@ class BoardService:
         from_stage = application.stage
         stage_machine.validate_transition(job.pipeline_config, from_stage, dto.to_stage)
 
-        if dto.to_stage in INTERVIEW_STAGES:
-            if dto.assignee_id is None:
-                raise ValueError(
-                    f"assignee is required when advancing to {dto.to_stage!s}"
-                )
+        if dto.to_stage in INTERVIEW_STAGES and dto.assignee_id is not None:
             await self._validate_interview_assignee(session, dto.assignee_id)
             # The target stage always starts at round 1 (current_round is
             # reset below), so the assignment is written for round 1.
