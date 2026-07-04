@@ -23,6 +23,7 @@ REJECT_REASONS = (
     "Not aligned with our mission",
     "Accepted another offer",
     "Incomplete application",
+    "Candidate declined the offer",
     "Other",
 )
 

@@ -682,6 +682,51 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.stage, ApplicationStage.HIRED)
         self.assertIsNone(result.sub_status)
 
+    async def test_change_stage_offer_to_hired_when_offer_is_configured_last(self):
+        """Offer is a plain configurable pipeline stage like the interview
+        ones — advancing out of it to Hired needs no special-casing, the
+        owner just uses the same generic Advance action."""
+        job = self._job(job_id=1, owner_ids=(2,), stages=("board_review", "offer"))
+        application = self._application(
+            application_id=10, job_id=1, stage=ApplicationStage.OFFER
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+
+        dto = StageChangeDto(to_stage=ApplicationStage.HIRED)
+        result = await self.service.change_stage(
+            self.session, self._ctx(user_id=2), 10, dto
+        )
+
+        self.assertEqual(result.stage, ApplicationStage.HIRED)
+        self.assertIsNone(result.sub_status)
+
+    async def test_change_stage_offer_to_rejected_with_declined_reason(self):
+        """The owner rejects from Offer the same generic way as any other
+        configured stage, using the new "candidate declined" reason."""
+        job = self._job(job_id=1, owner_ids=(2,), stages=("board_review", "offer"))
+        application = self._application(
+            application_id=10, job_id=1, stage=ApplicationStage.OFFER
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+
+        dto = StageChangeDto(
+            to_stage=ApplicationStage.REJECTED,
+            reason="Candidate declined the offer",
+        )
+        result = await self.service.change_stage(
+            self.session, self._ctx(user_id=2), 10, dto
+        )
+
+        self.assertEqual(result.stage, ApplicationStage.REJECTED)
+        self.assertEqual(
+            result.tags["reject"]["reason"], "Candidate declined the offer"
+        )
+        self.assertEqual(result.tags["reject"]["fromStage"], "offer")
+
     async def test_change_stage_illegal_transition_raises_without_mutating(self):
         job = self._job(job_id=1, owner_ids=(2,), stages=("tech",))
         application = self._application(
