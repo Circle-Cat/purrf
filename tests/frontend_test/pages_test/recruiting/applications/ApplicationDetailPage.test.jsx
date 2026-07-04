@@ -115,7 +115,7 @@ beforeEach(() => {
 });
 
 /** Render the page at the detail route for a given application id. */
-const renderPage = (applicationId = 101) => {
+const renderPage = (applicationId = 101, search = "") => {
   const router = createMemoryRouter(
     [
       {
@@ -123,10 +123,14 @@ const renderPage = (applicationId = 101) => {
         element: <ApplicationDetailPage />,
       },
     ],
-    { initialEntries: [`/recruiting/applications/${applicationId}`] },
+    { initialEntries: [`/recruiting/applications/${applicationId}${search}`] },
   );
   return render(<RouterProvider router={router} />);
 };
+
+/** Render the page in the evaluator-only view (the My Evaluations link). */
+const renderEvaluatorPage = (applicationId = 101) =>
+  renderPage(applicationId, "?mode=evaluate");
 
 /** Wait until the applicant identity has rendered (page has loaded). */
 const waitLoaded = () =>
@@ -268,7 +272,7 @@ describe("ApplicationDetailPage — role-adaptive right column", () => {
         },
       ],
     });
-    renderPage();
+    renderEvaluatorPage();
     await waitLoaded();
 
     // Rubric form present and editable
@@ -287,7 +291,7 @@ describe("ApplicationDetailPage — role-adaptive right column", () => {
     expect(api.listInterviewPool).not.toHaveBeenCalled();
   });
 
-  it("a viewer who is both owner and assignee sees both areas", async () => {
+  it("an owner who is also the current-stage assignee sees only the decision footer on the plain detail link", async () => {
     authState.userId = ASSIGNEE_ID;
     api.getApplicationDetail.mockResolvedValue({
       data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
@@ -299,8 +303,45 @@ describe("ApplicationDetailPage — role-adaptive right column", () => {
       screen.getByRole("button", { name: "Blacklist" }),
     ).toBeInTheDocument();
     expect(
+      screen.queryByRole("button", { name: "Confirm & Submit" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("the same owner+assignee sees only the rubric form via the evaluator link", async () => {
+    authState.userId = ASSIGNEE_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
+    });
+    renderEvaluatorPage();
+    await waitLoaded();
+
+    expect(
+      screen.queryByRole("button", { name: "Blacklist" }),
+    ).not.toBeInTheDocument();
+    expect(
       screen.getByRole("button", { name: "Confirm & Submit" }),
     ).toBeInTheDocument();
+  });
+
+  it("a viewer in evaluator mode who isn't the current-stage assignee sees an explanatory message, not owner actions", async () => {
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
+    });
+    renderEvaluatorPage();
+    await waitLoaded();
+
+    expect(
+      screen.getByText(
+        "You are not currently assigned to evaluate this application.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Blacklist" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Confirm & Submit" }),
+    ).not.toBeInTheDocument();
   });
 
   it("an already-confirmed assignee sees their rubric read-only", async () => {
@@ -321,7 +362,7 @@ describe("ApplicationDetailPage — role-adaptive right column", () => {
         },
       ],
     });
-    renderPage();
+    renderEvaluatorPage();
     await waitLoaded();
 
     // Read-only: no draft/submit actions, and inputs disabled
@@ -359,7 +400,7 @@ describe("ApplicationDetailPage — role-adaptive right column", () => {
         },
       ],
     });
-    renderPage();
+    renderEvaluatorPage();
     await waitLoaded();
 
     // Round 2 has no evaluation yet: the rubric must be fresh and editable,
@@ -379,7 +420,7 @@ describe("ApplicationDetailPage — role-adaptive right column", () => {
       data: makeDetail({ isOwner: false, assigneeId: ASSIGNEE_ID }),
     });
     api.submitEvaluation.mockResolvedValue({ data: {} });
-    renderPage();
+    renderEvaluatorPage();
     await waitLoaded();
 
     await user.click(screen.getByRole("button", { name: "Save draft" }));
@@ -403,7 +444,7 @@ describe("ApplicationDetailPage — role-adaptive right column", () => {
         resolveSubmit = resolve;
       }),
     );
-    renderPage();
+    renderEvaluatorPage();
     await waitLoaded();
 
     await user.click(screen.getByRole("button", { name: "Save draft" }));
@@ -422,8 +463,9 @@ describe("ApplicationDetailPage — role-adaptive right column", () => {
   });
 });
 
-describe("ApplicationDetailPage — advance-time assignee default", () => {
-  it("pre-fills the picker with the configured default when advancing into behavioral", async () => {
+describe("ApplicationDetailPage — advance-time assignee dialog", () => {
+  it("clicking Advance to next step opens a dialog pre-filled with the configured default", async () => {
+    const user = userEvent.setup();
     authState.userId = OWNER_ID;
     api.getApplicationDetail.mockResolvedValue({
       data: makeDetail({
@@ -435,9 +477,14 @@ describe("ApplicationDetailPage — advance-time assignee default", () => {
     renderPage();
     await waitLoaded();
 
-    // Advance target is "behavioral" (an interview stage): the picker is
-    // pre-filled with behavioral's configured default assignee (Ivan, id 11),
-    // so Confirm advance is already enabled.
+    await user.click(
+      screen.getByRole("button", { name: "Advance to next step" }),
+    );
+
+    // Advance target is "behavioral" (an interview stage): the dialog's
+    // picker is pre-filled with behavioral's configured default assignee
+    // (Ivan, id 11), but the picker is optional so Confirm is enabled either
+    // way.
     const picker = screen.getByRole("combobox", { name: /assignee/i });
     expect(picker).toHaveTextContent("Ivan Interviewer");
     expect(
@@ -459,6 +506,9 @@ describe("ApplicationDetailPage — advance-time assignee default", () => {
     renderPage();
     await waitLoaded();
 
+    await user.click(
+      screen.getByRole("button", { name: "Advance to next step" }),
+    );
     await user.click(screen.getByRole("button", { name: "Confirm advance" }));
     await waitFor(() =>
       expect(api.changeApplicationStage).toHaveBeenCalledWith("101", {
@@ -466,6 +516,68 @@ describe("ApplicationDetailPage — advance-time assignee default", () => {
         assigneeId: 11,
       }),
     );
+  });
+
+  it("advances with no assignee when the picker is left blank, instead of blocking the confirm", async () => {
+    const user = userEvent.setup();
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({
+        isOwner: true,
+        assigneeId: ASSIGNEE_ID,
+        stage: "behavioral",
+      }),
+    });
+    api.changeApplicationStage.mockResolvedValue({ data: {} });
+    renderPage();
+    await waitLoaded();
+
+    // Advance target is "tech" (interview stage, no configured default): the
+    // picker starts unfilled, and Confirm advance is not blocked on it —
+    // leaving it blank just advances the stage unassigned, to be picked up
+    // later via Reassign.
+    await user.click(
+      screen.getByRole("button", { name: "Advance to next step" }),
+    );
+    const picker = screen.getByRole("combobox", { name: /assignee/i });
+    expect(
+      within(picker).queryByText("Ivan Interviewer"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Confirm advance" }),
+    ).not.toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: "Confirm advance" }));
+    await waitFor(() =>
+      expect(api.changeApplicationStage).toHaveBeenCalledWith("101", {
+        toStage: "tech",
+        assigneeId: undefined,
+      }),
+    );
+  });
+
+  it("Cancel closes the dialog without calling the API", async () => {
+    const user = userEvent.setup();
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({
+        isOwner: true,
+        assigneeId: ASSIGNEE_ID,
+        stage: "recruiter_screening",
+      }),
+    });
+    renderPage();
+    await waitLoaded();
+
+    await user.click(
+      screen.getByRole("button", { name: "Advance to next step" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(
+      screen.queryByRole("button", { name: "Confirm advance" }),
+    ).not.toBeInTheDocument();
+    expect(api.changeApplicationStage).not.toHaveBeenCalled();
   });
 
   it("clears a stale prefilled assignee after an in-page advance into a non-prefill stage", async () => {
@@ -494,46 +606,28 @@ describe("ApplicationDetailPage — advance-time assignee default", () => {
     await waitLoaded();
 
     // Advancing out of recruiter_screening pre-fills behavioral's default
-    // (Ivan, id 11), so Confirm advance is already enabled.
+    // (Ivan, id 11).
+    await user.click(
+      screen.getByRole("button", { name: "Advance to next step" }),
+    );
     await waitFor(() =>
       expect(
-        screen.getByRole("button", { name: "Confirm advance" }),
-      ).not.toBeDisabled(),
+        screen.getByRole("combobox", { name: /assignee/i }),
+      ).toHaveTextContent("Ivan Interviewer"),
     );
     await user.click(screen.getByRole("button", { name: "Confirm advance" }));
 
     // The page reloads in place onto "behavioral"; its next target is "tech",
-    // which carries no configured default. The picker must NOT still show
-    // behavioral's stale "Ivan Interviewer" value, and Confirm advance must
-    // NOT be left enabled by a leftover value from the previous stage.
+    // which carries no configured default. Reopening the dialog must NOT
+    // still show behavioral's stale "Ivan Interviewer" value.
     await waitFor(() =>
       expect(
-        screen.getByRole("button", { name: "Confirm advance" }),
-      ).toBeDisabled(),
+        screen.getByRole("button", { name: "Advance to next step" }),
+      ).toBeInTheDocument(),
     );
-    const picker = screen.getByRole("combobox", { name: /assignee/i });
-    expect(
-      within(picker).queryByText("Ivan Interviewer"),
-    ).not.toBeInTheDocument();
-  });
-
-  it("leaves the picker unfilled when advancing into tech (no configured default)", async () => {
-    authState.userId = OWNER_ID;
-    api.getApplicationDetail.mockResolvedValue({
-      data: makeDetail({
-        isOwner: true,
-        assigneeId: ASSIGNEE_ID,
-        stage: "behavioral",
-      }),
-    });
-    renderPage();
-    await waitLoaded();
-
-    // Advance target is "tech" (interview stage, no default_assignee_id):
-    // picker stays on "— none —", Confirm advance disabled.
-    expect(
-      screen.getByRole("button", { name: "Confirm advance" }),
-    ).toBeDisabled();
+    await user.click(
+      screen.getByRole("button", { name: "Advance to next step" }),
+    );
     const picker = screen.getByRole("combobox", { name: /assignee/i });
     expect(
       within(picker).queryByText("Ivan Interviewer"),

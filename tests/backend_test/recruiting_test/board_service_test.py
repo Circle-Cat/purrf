@@ -774,7 +774,10 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             self.session, 10, for_update=True
         )
 
-    async def test_change_stage_to_interview_stage_requires_assignee_id(self):
+    async def test_change_stage_to_interview_stage_allows_missing_assignee_id(self):
+        """Picking an assignee at advance time is optional: the owner may
+        leave the target stage unassigned and use `reassign` once it's
+        entered, instead of being forced to pick someone up front."""
         job = self._job(
             job_id=1, owner_ids=(2,), stages=("recruiter_screening", "tech")
         )
@@ -786,12 +789,14 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.sub_repo.get_current = AsyncMock(return_value=None)
 
         dto = StageChangeDto(to_stage=ApplicationStage.TECH)  # no assignee_id
-        with self.assertRaisesRegex(ValueError, "assignee"):
-            await self.service.change_stage(self.session, self._ctx(user_id=2), 10, dto)
+        result = await self.service.change_stage(
+            self.session, self._ctx(user_id=2), 10, dto
+        )
 
+        self.assertEqual(result.stage, ApplicationStage.TECH)
         self.assignment_repo.upsert.assert_not_awaited()
-        self.app_repo.update.assert_not_awaited()
-        self.session.commit.assert_not_awaited()
+        self.app_repo.update.assert_awaited_once()
+        self.session.commit.assert_awaited_once()
 
     async def test_change_stage_to_interview_stage_rejects_unqualified_assignee(self):
         job = self._job(
