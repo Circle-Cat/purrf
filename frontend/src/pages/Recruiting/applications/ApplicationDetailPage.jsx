@@ -308,6 +308,8 @@ const ApplicationDetailPage = () => {
   const [blacklistReason, setBlacklistReason] = useState("");
   const [blacklisting, setBlacklisting] = useState(false);
 
+  const [savingEvaluation, setSavingEvaluation] = useState(false);
+
   const load = useCallback(() => {
     if (applicationId == null) return;
     setLoadError(false);
@@ -565,21 +567,27 @@ const ApplicationDetailPage = () => {
   };
 
   const handleSaveDraft = (responses) => {
+    if (savingEvaluation) return;
+    setSavingEvaluation(true);
     submitEvaluation(applicationId, { responses, confirm: false })
       .then(() => {
         toast.success("Draft saved.");
         load();
       })
-      .catch((e) => toast.error(e.message));
+      .catch((e) => toast.error(e.message))
+      .finally(() => setSavingEvaluation(false));
   };
 
   const handleConfirmEvaluation = (responses) => {
+    if (savingEvaluation) return;
+    setSavingEvaluation(true);
     submitEvaluation(applicationId, { responses, confirm: true })
       .then(() => {
         toast.success("Evaluation submitted.");
         load();
       })
-      .catch((e) => toast.error(e.message));
+      .catch((e) => toast.error(e.message))
+      .finally(() => setSavingEvaluation(false));
   };
 
   if (!loaded || !detail) {
@@ -821,6 +829,7 @@ const ApplicationDetailPage = () => {
                 stage={detail.application.stage}
                 initialResponses={myEntry?.responses ?? {}}
                 readOnly={Boolean(myEntry?.isConfirmed)}
+                saving={savingEvaluation}
                 onSaveDraft={handleSaveDraft}
                 onConfirm={handleConfirmEvaluation}
               />

@@ -102,13 +102,14 @@ const RubricFieldInput = ({
  *
  * @param {{stage: string, initialResponses?: Object<string, {value?:
  *          boolean|number, notes?: string}>, readOnly?: boolean,
- *          onSaveDraft: (responses: object) => void,
+ *          saving?: boolean, onSaveDraft: (responses: object) => void,
  *          onConfirm: (responses: object) => void}} props
  */
 const EvaluationRubricForm = ({
   stage,
   initialResponses,
   readOnly = false,
+  saving = false,
   onSaveDraft,
   onConfirm,
 }) => {
@@ -156,11 +157,16 @@ const EvaluationRubricForm = ({
           <Button
             type="button"
             variant="outline"
+            disabled={saving}
             onClick={() => onSaveDraft(responses)}
           >
             Save draft
           </Button>
-          <Button type="button" onClick={() => setConfirmOpen(true)}>
+          <Button
+            type="button"
+            disabled={saving}
+            onClick={() => setConfirmOpen(true)}
+          >
             Confirm & Submit
           </Button>
         </div>
@@ -178,6 +184,7 @@ const EvaluationRubricForm = ({
               Cancel
             </Button>
             <Button
+              disabled={saving}
               onClick={() => {
                 setConfirmOpen(false);
                 onConfirm(responses);

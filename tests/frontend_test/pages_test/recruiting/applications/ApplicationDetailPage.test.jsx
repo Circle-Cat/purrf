@@ -390,6 +390,36 @@ describe("ApplicationDetailPage — role-adaptive right column", () => {
       }),
     );
   });
+
+  it("disables Save draft and Confirm & Submit while a submission is in flight, to prevent a double-submit", async () => {
+    const user = userEvent.setup();
+    authState.userId = ASSIGNEE_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: false, assigneeId: ASSIGNEE_ID }),
+    });
+    let resolveSubmit;
+    api.submitEvaluation.mockReturnValue(
+      new Promise((resolve) => {
+        resolveSubmit = resolve;
+      }),
+    );
+    renderPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole("button", { name: "Save draft" }));
+
+    expect(screen.getByRole("button", { name: "Save draft" })).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Confirm & Submit" }),
+    ).toBeDisabled();
+
+    resolveSubmit({ data: {} });
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Save draft" }),
+      ).not.toBeDisabled(),
+    );
+  });
 });
 
 describe("ApplicationDetailPage — advance-time assignee default", () => {
