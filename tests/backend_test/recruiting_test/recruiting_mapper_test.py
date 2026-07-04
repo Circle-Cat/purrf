@@ -104,6 +104,52 @@ class TestRecruitingMapper(unittest.TestCase):
 
         self.assertEqual(dto.current_round, 2)
 
+    def test_to_board_card_dto_is_blocked_true_for_currently_blocked_user(self):
+        application = ApplicationEntity(
+            job_id=1,
+            user_id=2,
+            stage=ApplicationStage.REJECTED,
+            tags={"blacklisted": True},
+            current_round=1,
+        )
+        application.application_id = 1
+        user = UsersEntity(first_name="A", last_name="B", primary_email="a@b.com")
+        user.user_id = 2
+        user.is_blocked = True
+
+        dto = self.mapper.to_board_card_dto(application, user)
+
+        self.assertTrue(dto.is_blocked)
+
+    def test_to_board_card_dto_is_blocked_false_once_unblocked(self):
+        application = ApplicationEntity(
+            job_id=1,
+            user_id=2,
+            stage=ApplicationStage.REJECTED,
+            tags={"blacklisted": True},
+            current_round=1,
+        )
+        application.application_id = 1
+        user = UsersEntity(first_name="A", last_name="B", primary_email="a@b.com")
+        user.user_id = 2
+        user.is_blocked = False
+
+        dto = self.mapper.to_board_card_dto(application, user)
+
+        self.assertFalse(dto.is_blocked)
+
+    def test_to_board_card_dto_is_blocked_defaults_false_when_unset(self):
+        application = ApplicationEntity(
+            job_id=1, user_id=2, stage=ApplicationStage.APPLIED, current_round=1
+        )
+        application.application_id = 1
+        user = UsersEntity(first_name="A", last_name="B", primary_email="a@b.com")
+        user.user_id = 2
+
+        dto = self.mapper.to_board_card_dto(application, user)
+
+        self.assertFalse(dto.is_blocked)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -127,6 +127,7 @@ class RecruitingMapper:
             tags=application.tags,
             applied_at=application.created_datetime,
             round=application.current_round,
+            is_blocked=bool(user.is_blocked),
         )
 
     def to_application_dto(self, application, current_submission=None, editable=False):

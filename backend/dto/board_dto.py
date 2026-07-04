@@ -54,6 +54,10 @@ class BoardCardDto(BaseDto):
     tags: dict | None = None
     applied_at: datetime | None = None
     round: int = 1
+    # Whether the applicant is CURRENTLY blocked org-wide (distinct from
+    # tags["blacklisted"], which just records that this application was
+    # rejected by a blacklist action at some point and never changes after).
+    is_blocked: bool = False
 
 
 class ApplicationDetailDto(BaseDto):
