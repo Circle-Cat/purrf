@@ -80,6 +80,7 @@ const makeDetail = ({
   assigneeId = ASSIGNEE_ID,
   stage = "recruiter_screening",
   resumeAvailable = true,
+  currentRound,
 } = {}) => ({
   application: {
     id: 101,
@@ -88,6 +89,7 @@ const makeDetail = ({
     stage,
     subStatus: "pending",
     tags: null,
+    currentRound,
     current: { version: 1, isFrozen: false, submission: SUBMISSION },
     editable: false,
   },
@@ -467,5 +469,102 @@ describe("ApplicationDetailPage — advance-time assignee default", () => {
     expect(
       within(picker).queryByText("Ivan Interviewer"),
     ).not.toBeInTheDocument();
+  });
+});
+
+describe("ApplicationDetailPage — advance round", () => {
+  /** The base JOB fixture with the tech stage's `rounds` overridden. */
+  const jobWithTechRounds = (rounds) => ({
+    ...JOB,
+    pipelineConfig: {
+      ...JOB.pipelineConfig,
+      stages: JOB.pipelineConfig.stages.map((s) =>
+        s.stage === "tech" ? { ...s, rounds } : s,
+      ),
+    },
+  });
+
+  it("shows the Advance Round button when the stage supports multiple rounds and the applicant hasn't reached the last one", async () => {
+    authState.userId = OWNER_ID;
+    api.getJob.mockResolvedValue({ data: jobWithTechRounds(3) });
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, stage: "tech", currentRound: 1 }),
+    });
+    renderPage();
+    await waitLoaded();
+
+    expect(
+      screen.getByRole("button", { name: "Advance to Round 2" }),
+    ).toBeInTheDocument();
+  });
+
+  it("hides the button for a single-round stage", async () => {
+    authState.userId = OWNER_ID;
+    // Default JOB fixture configures tech with rounds: 1.
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, stage: "tech", currentRound: 1 }),
+    });
+    renderPage();
+    await waitLoaded();
+
+    expect(
+      screen.queryByRole("button", { name: /Advance to Round/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("hides the button once the applicant is already on the last configured round", async () => {
+    authState.userId = OWNER_ID;
+    api.getJob.mockResolvedValue({ data: jobWithTechRounds(2) });
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, stage: "tech", currentRound: 2 }),
+    });
+    renderPage();
+    await waitLoaded();
+
+    expect(
+      screen.queryByRole("button", { name: /Advance to Round/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("clicking Advance Round calls setApplicationRound and updates the displayed round", async () => {
+    const user = userEvent.setup();
+    authState.userId = OWNER_ID;
+    api.getJob.mockResolvedValue({ data: jobWithTechRounds(3) });
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, stage: "tech", currentRound: 1 }),
+    });
+    api.setApplicationRound.mockResolvedValue({ data: {} });
+    renderPage();
+    await waitLoaded();
+
+    await user.click(
+      screen.getByRole("button", { name: "Advance to Round 2" }),
+    );
+    await waitFor(() =>
+      expect(api.setApplicationRound).toHaveBeenCalledWith("101", 2),
+    );
+    // Local state patched in place: the button now reflects round 2 -> 3.
+    expect(
+      await screen.findByRole("button", { name: "Advance to Round 3" }),
+    ).toBeInTheDocument();
+  });
+
+  it("surfaces a toast error when advancing the round fails", async () => {
+    const user = userEvent.setup();
+    authState.userId = OWNER_ID;
+    api.getJob.mockResolvedValue({ data: jobWithTechRounds(3) });
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, stage: "tech", currentRound: 1 }),
+    });
+    api.setApplicationRound.mockRejectedValue(new Error("Round update failed"));
+    renderPage();
+    await waitLoaded();
+
+    await user.click(
+      screen.getByRole("button", { name: "Advance to Round 2" }),
+    );
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith("Round update failed"),
+    );
   });
 });

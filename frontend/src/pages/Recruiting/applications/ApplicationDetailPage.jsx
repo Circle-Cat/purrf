@@ -30,6 +30,7 @@ import {
   getJob,
   listInterviewPool,
   setApplicationSubStatus,
+  setApplicationRound,
   changeApplicationStage,
   blacklistUser,
   reassignApplication,
@@ -267,11 +268,13 @@ const EvaluationSummary = ({ evaluations }) => (
  * snapshot, personal info, answers, and the résumé when available) shared by
  * everyone, plus a right column that adapts to the viewer:
  *
- * - Owners (`detail.isOwner`) get the sub-status selector, the current
- *   assignee + Reassign control, the Advance/Reject/Blacklist decision
- *   footer (with the advance-time assignee picker pre-filled from the job's
- *   configured `default_assignee_id` for screening/behavioral targets), and
- *   a read-only summary of all evaluations.
+ * - Owners (`detail.isOwner`) get the sub-status selector, an Advance Round
+ *   action for stages configured for more than one round (via the job's
+ *   `pipelineConfig.stages[].rounds`), the current assignee + Reassign
+ *   control, the Advance/Reject/Blacklist decision footer (with the
+ *   advance-time assignee picker pre-filled from the job's configured
+ *   `default_assignee_id` for screening/behavioral targets), and a
+ *   read-only summary of all evaluations.
  * - The current-stage assignee (`detail.assigneeId === currentUser.userId`)
  *   gets the `EvaluationRubricForm` for the application's stage, pre-filled
  *   from their own draft and locked once confirmed.
@@ -297,6 +300,7 @@ const ApplicationDetailPage = () => {
   const [advancing, setAdvancing] = useState(false);
   const [advanceAssigneeId, setAdvanceAssigneeId] = useState("");
   const [switchingSubStatus, setSwitchingSubStatus] = useState(false);
+  const [advancingRound, setAdvancingRound] = useState(false);
 
   const [rejectFormOpen, setRejectFormOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
@@ -357,6 +361,22 @@ const ApplicationDetailPage = () => {
   const isPipelineStage = next !== null;
   const needsAssignee = isPipelineStage && INTERVIEW_STAGES.has(next);
 
+  // Rounds configured for the application's *current* stage (a sibling
+  // field to `defaultAssigneeId` on the same per-stage job config entries
+  // used for the advance-time prefill above). Stages not configured for
+  // multiple rounds, or a job that hasn't loaded yet, default to 1.
+  const currentStageRounds =
+    loaded && detail
+      ? ((job?.pipelineConfig?.stages ?? []).find(
+          (s) => s.stage === detail.application.stage,
+        )?.rounds ?? 1)
+      : 1;
+  const canAdvanceRound =
+    loaded &&
+    detail &&
+    currentStageRounds > 1 &&
+    (detail.application.currentRound ?? 1) < currentStageRounds;
+
   // Pre-fill the advance-time assignee picker with the target stage's
   // configured default for screening/behavioral targets (tech/board_review
   // carry none, by design). Runs once the owner's job config has loaded.
@@ -396,6 +416,33 @@ const ApplicationDetailPage = () => {
       })
       .catch((e) => toast.error(e.message))
       .finally(() => setSwitchingSubStatus(false));
+  };
+
+  /**
+   * Advance the application to the next round within its current stage
+   * (e.g. Tech round 1 -> round 2), for stages configured with more than
+   * one round via the job's pipeline config. Patches `currentRound` on the
+   * local `detail` state in place, mirroring `handleSelectSubStatus`'s
+   * pattern for mutations that don't change the application's stage (so no
+   * full reload of the job config/evaluations is needed).
+   */
+  const handleAdvanceRound = () => {
+    if (advancingRound) return;
+    const nextRound = (detail.application.currentRound ?? 1) + 1;
+    setAdvancingRound(true);
+    setApplicationRound(applicationId, nextRound)
+      .then(() => {
+        setDetail((prev) =>
+          prev
+            ? {
+                ...prev,
+                application: { ...prev.application, currentRound: nextRound },
+              }
+            : prev,
+        );
+      })
+      .catch((e) => toast.error(e.message))
+      .finally(() => setAdvancingRound(false));
   };
 
   const handleAdvance = (target, assigneeId) => {
@@ -554,6 +601,17 @@ const ApplicationDetailPage = () => {
                 disabled={switchingSubStatus}
                 onSelect={handleSelectSubStatus}
               />
+              {canAdvanceRound && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={advancingRound}
+                  onClick={handleAdvanceRound}
+                >
+                  Advance to Round {(detail.application.currentRound ?? 1) + 1}
+                </Button>
+              )}
               {assigneeName && (
                 <p className="text-sm text-slate-700">
                   Assigned to: {assigneeName}
