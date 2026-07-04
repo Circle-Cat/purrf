@@ -559,6 +559,7 @@ class AppDependencyBuilder:
             self.job_repository,
             self.users_repository,
             self.recruiting_mapper,
+            self.application_assignment_repository,
         )
         self.application_controller = ApplicationController(
             self.application_service,

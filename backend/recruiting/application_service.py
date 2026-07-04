@@ -12,6 +12,8 @@ from backend.dto.user_context_dto import UserContextDto
 from backend.entity.application_entity import ApplicationEntity
 from backend.entity.application_submission_entity import ApplicationSubmissionEntity
 from backend.recruiting import cooldown, stage_machine
+from backend.recruiting.board_service import INTERVIEW_STAGES
+from backend.recruiting.pipeline_owners import normalized_owner_ids
 
 
 class ApplicationService:
@@ -24,6 +26,7 @@ class ApplicationService:
         job_repository,
         users_repository,
         recruiting_mapper,
+        application_assignment_repository,
         profile_writeback=None,
     ):
         """
@@ -34,6 +37,10 @@ class ApplicationService:
             job_repository (JobRepository): Posting data access.
             users_repository (UsersRepository): Reads is_blocked.
             recruiting_mapper (RecruitingMapper): Entity→DTO conversion.
+            application_assignment_repository (ApplicationAssignmentRepository):
+                Used to materialize a stage's configured default assignee
+                into a real assignment row when an application first lands
+                there (see ``_assign_default_if_configured``).
             profile_writeback (callable | None): ``async (session, user_id, dto)``
                 invoked best-effort when save_to_profile is set. Defaults to a
                 no-op (wired in a later task).
@@ -43,6 +50,7 @@ class ApplicationService:
         self.job_repository = job_repository
         self.users_repository = users_repository
         self.recruiting_mapper = recruiting_mapper
+        self.application_assignment_repository = application_assignment_repository
         self._profile_writeback = profile_writeback
 
     @staticmethod
@@ -201,6 +209,8 @@ class ApplicationService:
                 ),
             )
 
+        await self._assign_default_if_configured(session, application, job)
+
         if not blocked and self._profile_writeback and dto.save_to_profile:
             await self._safe_writeback(session, current_user.user_id, dto)
 
@@ -208,6 +218,54 @@ class ApplicationService:
         editable = self._is_editable(application, job, current_sub)
         return self.recruiting_mapper.to_application_dto(
             application, current_sub, editable=editable
+        )
+
+    async def _assign_default_if_configured(self, session, application, job):
+        """Materialize a stage's configured default assignee into a real row.
+
+        A stage's ``defaultAssigneeId`` is only a board-display fallback
+        (``BoardService.get_board`` shows it on the card) until a real
+        ``application_assignment`` row exists — ``My Evaluations`` and
+        evaluation submit/read only see real rows. Without this, an
+        application landing directly on a stage with a configured default
+        (recruiter_screening on submission, or any stage after a reapply)
+        would show "Assigned to: X" on the board while X's own "My
+        Evaluations" stayed empty forever, since nothing else ever creates
+        that row for the entry stage.
+
+        No-ops for a non-interview stage (e.g. a blocked applicant's
+        REJECTED landing), a stage with no default configured, or a job with
+        no configured owner (nothing sensible to attribute ``assigned_by``
+        to — mirrors the pre-existing "no owner" board-visibility gap rather
+        than raising).
+
+        Args:
+            session (AsyncSession): Active database async session.
+            application (ApplicationEntity): The just-landed application.
+            job (JobEntity): Its posting, for pipeline_config lookup.
+        """
+        if application.stage not in INTERVIEW_STAGES:
+            return
+        default_id = None
+        for entry in (job.pipeline_config or {}).get("stages") or []:
+            if (
+                isinstance(entry, dict)
+                and entry.get("stage") == application.stage.value
+            ):
+                default_id = entry.get("defaultAssigneeId")
+                break
+        if default_id is None:
+            return
+        owner_ids = normalized_owner_ids(job.pipeline_config)
+        if not owner_ids:
+            return
+        await self.application_assignment_repository.upsert(
+            session,
+            application.application_id,
+            application.stage,
+            application.current_round,
+            default_id,
+            owner_ids[0],
         )
 
     async def edit(
