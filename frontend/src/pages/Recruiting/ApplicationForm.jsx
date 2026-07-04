@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -13,6 +13,7 @@ import {
   hasPersonalWriteBackInput,
   mergeWriteBackPayload,
 } from "@/pages/Recruiting/profileWriteBack";
+import { profileToApplicationForm } from "@/pages/Recruiting/profilePrefill";
 
 /**
  * Candidate application form for a published job. Owns the applicant's
@@ -27,6 +28,14 @@ import {
  * purely to prefill the form while still submitting via `submitApplication`
  * (create) — used when a rejected candidate reapplies, since the backend's
  * reapply branch lives on the create path, not edit.
+ *
+ * When there is neither `existing` nor `seed` (a genuinely brand-new
+ * application), the form instead blocks its first render on a fetch of the
+ * candidate's saved Profile and prefills from that (via
+ * `profileToApplicationForm`) — so applying to a second job doesn't start
+ * blank when the candidate already wrote their profile back after a first
+ * application. A failed fetch just leaves the form at its normal empty
+ * state; prefill is a convenience, never a requirement.
  *
  * When "save to my profile" is checked, a successful submission is followed
  * by a best-effort write-back of the form's personal fields and complete
@@ -57,6 +66,31 @@ const ApplicationForm = ({ job, existing, seed, onSubmitted }) => {
   });
   const [saveToProfile, setSaveToProfile] = useState(!existing);
   const [submitting, setSubmitting] = useState(false);
+  const [prefillLoading, setPrefillLoading] = useState(!existing && !seed);
+
+  useEffect(() => {
+    if (existing || seed) return;
+    let cancelled = false;
+    getMyProfile({
+      fields: [ProfileFields.WORK_HISTORY, ProfileFields.EDUCATION],
+    })
+      .then(({ data }) => {
+        if (cancelled) return;
+        setProfileValue(profileToApplicationForm(data?.profile));
+      })
+      .catch(() => {
+        // Prefill is a convenience; a failure just leaves the form at its
+        // normal empty initial state.
+      })
+      .finally(() => {
+        if (!cancelled) setPrefillLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // existing/seed are fixed for the lifetime of a given form instance.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /**
    * Best-effort merge write-back of this form's personal fields and
@@ -119,6 +153,10 @@ const ApplicationForm = ({ job, existing, seed, onSubmitted }) => {
       setSubmitting(false);
     }
   };
+
+  if (prefillLoading) {
+    return <p className="p-6 text-sm text-muted-foreground">Loading…</p>;
+  }
 
   return (
     <div className="space-y-4">
