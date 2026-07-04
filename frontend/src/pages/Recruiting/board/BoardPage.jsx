@@ -3,7 +3,6 @@ import { toast } from "sonner";
 import LoadGate from "@/pages/Recruiting/components/LoadGate";
 import ApplicantCard from "@/pages/Recruiting/board/ApplicantCard";
 import ApplicantDetailDialog from "@/pages/Recruiting/board/ApplicantDetailDialog";
-import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -13,6 +12,7 @@ import {
 } from "@/components/ui/select";
 import { listBoardJobs, getJobBoard } from "@/api/recruitingApi";
 import { humanize } from "@/pages/Recruiting/board/stageFormat";
+import { getStageColors } from "@/pages/Recruiting/board/stageColors";
 
 /** Terminal lanes always appended after a job's configured pipeline stages. */
 const TERMINAL_STAGES = ["hired", "rejected"];
@@ -173,32 +173,39 @@ const BoardPage = () => {
                       : c.round === lane.round,
                   );
             const isTerminal = TERMINAL_STAGES.includes(lane.stage);
+            const colors = getStageColors(lane.stage);
             return (
               <div
                 key={lane.key}
                 data-testid={`lane-${lane.key}`}
-                className="flex w-72 shrink-0 flex-col gap-3 rounded-lg bg-slate-50 p-3"
+                className={`flex w-72 shrink-0 flex-col rounded-lg border ${colors.border} ${colors.tint}`}
               >
-                <div className="flex items-center justify-between">
-                  <h2 className="text-sm font-semibold text-slate-900">
-                    {lane.label}
-                  </h2>
-                  <Badge variant="secondary">{cards.length}</Badge>
+                <div
+                  className={`flex items-center justify-between rounded-t-lg border-b px-3 py-2 ${colors.header} ${colors.border}`}
+                >
+                  <h2 className="text-sm font-semibold">{lane.label}</h2>
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-xs font-semibold ${colors.count}`}
+                  >
+                    {cards.length}
+                  </span>
                 </div>
-                {cards.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">No applicants</p>
-                ) : (
-                  <div className="flex flex-col gap-2">
-                    {cards.map((card) => (
+                <div className="flex flex-col gap-2 p-3">
+                  {cards.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">
+                      No applicants
+                    </p>
+                  ) : (
+                    cards.map((card) => (
                       <ApplicantCard
                         key={card.id}
                         card={card}
                         showStatus={!isTerminal}
                         onOpen={handleOpen}
                       />
-                    ))}
-                  </div>
-                )}
+                    ))
+                  )}
+                </div>
               </div>
             );
           })}
