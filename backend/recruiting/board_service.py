@@ -359,7 +359,8 @@ class BoardService:
         current_user: UserContextDto,
         application_id: int,
     ) -> bytes:
-        """Return an application's résumé bytes, for the owner-facing proxy download.
+        """Return an application's résumé bytes, for the proxy download button
+        on the shared application detail page (#138).
 
         Args:
             session (AsyncSession): Active database async session.
@@ -370,13 +371,13 @@ class BoardService:
             bytes: The raw PDF bytes, fetched from ``resume_storage``.
 
         Raises:
-            ValueError: If the application is missing, the caller is not an
-                owner (collapsed "not found" message, same as
-                ``get_application_detail``), or the application's current
-                submission has no résumé on file.
+            ValueError: If the application is missing, the caller is neither
+                an owner nor its current-stage assignee (collapsed "not
+                found" message, same as ``get_application_detail``), or the
+                application's current submission has no résumé on file.
         """
         _application, _job = await self._load_owned_application(
-            session, current_user, application_id
+            session, current_user, application_id, allow_assignee=True
         )
         current_sub = await self.application_submission_repository.get_current(
             session, application_id

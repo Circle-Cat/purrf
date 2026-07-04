@@ -565,15 +565,43 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             await self.service.get_resume(self.session, self._ctx(user_id=2), 999)
         self.assertEqual(str(ctx.exception), "application 999 not found")
 
-    async def test_get_resume_raises_for_non_owner_with_collapsed_message(self):
+    async def test_get_resume_raises_for_third_party_with_collapsed_message(self):
+        """Neither an owner nor the current-stage assignee: same collapsed
+        "not found" message as get_application_detail, not a distinct 403."""
         job = self._job(job_id=1, owner_ids=(9,))
         application = self._application(application_id=10, job_id=1, user_id=3)
         self.app_repo.get_by_id = AsyncMock(return_value=application)
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.assignment_repo.get.return_value = None
 
         with self.assertRaises(ValueError) as ctx:
             await self.service.get_resume(self.session, self._ctx(user_id=2), 10)
         self.assertEqual(str(ctx.exception), "application 10 not found")
+
+    async def test_get_resume_succeeds_for_current_stage_assignee(self):
+        """The shared detail page (#138) lets a non-owner assignee view
+        everything else about an application; the résumé must not be the one
+        piece of it gated owner-only."""
+        job = self._job(job_id=1, owner_ids=(9,))  # caller is not an owner
+        application = self._application(application_id=10, job_id=1, user_id=3)
+        assignment = self._assignment(
+            application_id=10, stage=application.stage, round=1, assignee_id=2
+        )
+        current_sub = ApplicationSubmissionEntity(
+            application_id=10,
+            version=1,
+            submission={"answers": {}},
+            resume_object_key="resumes/abc.pdf",
+        )
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.assignment_repo.get.return_value = assignment
+        self.sub_repo.get_current = AsyncMock(return_value=current_sub)
+        self.resume_storage.get = MagicMock(return_value=b"%PDF-1.4 data")
+
+        result = await self.service.get_resume(self.session, self._ctx(user_id=2), 10)
+
+        self.assertEqual(result, b"%PDF-1.4 data")
 
     async def test_get_resume_raises_when_no_resume_on_file(self):
         job = self._job(job_id=1, owner_ids=(2,))
