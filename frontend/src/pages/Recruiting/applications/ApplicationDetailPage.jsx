@@ -360,14 +360,24 @@ const ApplicationDetailPage = () => {
   // Pre-fill the advance-time assignee picker with the target stage's
   // configured default for screening/behavioral targets (tech/board_review
   // carry none, by design). Runs once the owner's job config has loaded.
+  //
+  // This page is never remounted between in-page advances on the same
+  // application (`handleAdvance` just calls `load()` again), so a value set
+  // here for one target stage would otherwise survive into a later target
+  // stage that isn't supposed to have one. The non-prefill branches below
+  // explicitly clear it whenever the computed target changes to a stage
+  // that shouldn't carry a default, so a stale pick can never leak forward.
   useEffect(() => {
-    if (!needsAssignee || !PREFILL_TARGET_STAGES.has(next)) return;
+    if (!needsAssignee || !PREFILL_TARGET_STAGES.has(next)) {
+      setAdvanceAssigneeId("");
+      return;
+    }
     const entry = (job?.pipelineConfig?.stages ?? []).find(
       (s) => s.stage === next,
     );
-    if (entry?.defaultAssigneeId != null) {
-      setAdvanceAssigneeId(String(entry.defaultAssigneeId));
-    }
+    setAdvanceAssigneeId(
+      entry?.defaultAssigneeId != null ? String(entry.defaultAssigneeId) : "",
+    );
   }, [needsAssignee, next, job]);
 
   const handleSelectSubStatus = (value) => {

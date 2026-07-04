@@ -18,7 +18,7 @@ const SCORE_OPTIONS = [1, 2, 3, 4, 5];
  * button group for `score`, and/or a `Textarea` for free-text notes (either
  * the field IS notes, i.e. `valueType === "notes"`, or it pairs notes
  * alongside its main value via `hasNotes`). Mirrors `SubStatusSelector`'s
- * `Button` + `aria-pressed` toggle pattern from `ApplicantDetailDialog.jsx`.
+ * `Button` + `aria-pressed` toggle pattern from `ApplicationDetailPage.jsx`.
  *
  * @param {{field: {id: string, label: string, valueType: string,
  *          hasNotes?: boolean}, entry: {value?: boolean|number,

@@ -397,6 +397,55 @@ describe("ApplicationDetailPage — advance-time assignee default", () => {
     );
   });
 
+  it("clears a stale prefilled assignee after an in-page advance into a non-prefill stage", async () => {
+    const user = userEvent.setup();
+    authState.userId = OWNER_ID;
+    // First load lands on recruiter_screening (prefill target); after the
+    // in-page advance, the SAME component instance reloads onto behavioral,
+    // whose own next target is "tech" (not a prefill target).
+    api.getApplicationDetail
+      .mockResolvedValueOnce({
+        data: makeDetail({
+          isOwner: true,
+          assigneeId: ASSIGNEE_ID,
+          stage: "recruiter_screening",
+        }),
+      })
+      .mockResolvedValue({
+        data: makeDetail({
+          isOwner: true,
+          assigneeId: ASSIGNEE_ID,
+          stage: "behavioral",
+        }),
+      });
+    api.changeApplicationStage.mockResolvedValue({ data: {} });
+    renderPage();
+    await waitLoaded();
+
+    // Advancing out of recruiter_screening pre-fills behavioral's default
+    // (Ivan, id 11), so Confirm advance is already enabled.
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Confirm advance" }),
+      ).not.toBeDisabled(),
+    );
+    await user.click(screen.getByRole("button", { name: "Confirm advance" }));
+
+    // The page reloads in place onto "behavioral"; its next target is "tech",
+    // which carries no configured default. The picker must NOT still show
+    // behavioral's stale "Ivan Interviewer" value, and Confirm advance must
+    // NOT be left enabled by a leftover value from the previous stage.
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Confirm advance" }),
+      ).toBeDisabled(),
+    );
+    const picker = screen.getByRole("combobox", { name: /assignee/i });
+    expect(
+      within(picker).queryByText("Ivan Interviewer"),
+    ).not.toBeInTheDocument();
+  });
+
   it("leaves the picker unfilled when advancing into tech (no configured default)", async () => {
     authState.userId = OWNER_ID;
     api.getApplicationDetail.mockResolvedValue({
