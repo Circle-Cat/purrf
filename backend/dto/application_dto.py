@@ -53,3 +53,6 @@ class ApplicationDto(BaseDto):
     # Whether the candidate may still edit this application (first pipeline
     # stage, pending sub_status, current submission unfrozen).
     editable: bool = False
+    # Which round of `stage` the applicant is on; meaningless (always 1)
+    # for a stage configured with a single round.
+    current_round: int = 1

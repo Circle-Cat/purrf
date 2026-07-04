@@ -122,6 +122,13 @@ export const setApplicationSubStatus = (id, subStatus) =>
   });
 
 /**
+ * Advance an application to a specific round within its current stage.
+ * Wraps round in the request body automatically.
+ */
+export const setApplicationRound = (id, round) =>
+  request.patch(API_ENDPOINTS.RECRUITING_APPLICATION_ROUND(id), { round });
+
+/**
  * Add a user to the recruiting blacklist.
  * body: { userId, reason? }
  */

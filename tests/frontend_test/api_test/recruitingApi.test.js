@@ -25,6 +25,7 @@ import {
   getJobBoard,
   getApplicationDetail,
   changeApplicationStage,
+  setApplicationRound,
   setApplicationSubStatus,
   blacklistUser,
   reassignApplication,
@@ -223,6 +224,15 @@ describe("recruitingApi", () => {
     expect(request.patch).toHaveBeenCalledWith(
       "/recruiting/applications/7/sub-status",
       { subStatus: "in_progress" },
+    );
+  });
+
+  it("setApplicationRound PATCHes the round endpoint with round", async () => {
+    request.patch.mockResolvedValue({ data: {} });
+    await setApplicationRound(7, 2);
+    expect(request.patch).toHaveBeenCalledWith(
+      "/recruiting/applications/7/round",
+      { round: 2 },
     );
   });
 

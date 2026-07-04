@@ -886,4 +886,137 @@ describe("ApplicantDetailDialog decision actions", () => {
     );
     expect(onChanged).not.toHaveBeenCalled();
   });
+
+  it("shows an Advance round button when the current stage has multiple rounds and more remain", async () => {
+    api.getApplicationDetail.mockResolvedValue({
+      data: {
+        ...detailWithStage("tech"),
+        application: {
+          ...detailWithStage("tech").application,
+          currentRound: 1,
+        },
+      },
+    });
+    renderDialog({
+      jobStages: ["recruiter_screening", "tech"],
+      stageRounds: { tech: 2 },
+    });
+
+    await waitFor(() =>
+      expect(screen.getByText("alice@example.com")).toBeInTheDocument(),
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Advance to Round 2" }),
+    ).toBeInTheDocument();
+  });
+
+  it("hides the Advance round button when the stage has only one round", async () => {
+    api.getApplicationDetail.mockResolvedValue({
+      data: detailWithStage("recruiter_screening"),
+    });
+    renderDialog({
+      jobStages: ["recruiter_screening", "tech"],
+      stageRounds: { recruiter_screening: 1 },
+    });
+
+    await waitFor(() =>
+      expect(screen.getByText("alice@example.com")).toBeInTheDocument(),
+    );
+
+    expect(
+      screen.queryByRole("button", { name: /^Advance to Round/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("hides the Advance round button at the last configured round", async () => {
+    api.getApplicationDetail.mockResolvedValue({
+      data: {
+        ...detailWithStage("tech"),
+        application: {
+          ...detailWithStage("tech").application,
+          currentRound: 2,
+        },
+      },
+    });
+    renderDialog({
+      jobStages: ["recruiter_screening", "tech"],
+      stageRounds: { tech: 2 },
+    });
+
+    await waitFor(() =>
+      expect(screen.getByText("alice@example.com")).toBeInTheDocument(),
+    );
+
+    expect(
+      screen.queryByRole("button", { name: /^Advance to Round/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("clicking Advance round calls the API, updates state in place, and does not close the dialog", async () => {
+    const user = userEvent.setup();
+    api.getApplicationDetail.mockResolvedValue({
+      data: {
+        ...detailWithStage("tech"),
+        application: {
+          ...detailWithStage("tech").application,
+          currentRound: 1,
+        },
+      },
+    });
+    api.setApplicationRound.mockResolvedValue({ data: {} });
+    const { onOpenChange, onChanged } = renderDialog({
+      jobStages: ["recruiter_screening", "tech"],
+      stageRounds: { tech: 2 },
+    });
+
+    await waitFor(() =>
+      expect(screen.getByText("alice@example.com")).toBeInTheDocument(),
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: "Advance to Round 2" }),
+    );
+
+    await waitFor(() =>
+      expect(api.setApplicationRound).toHaveBeenCalledWith(101, 2),
+    );
+    await waitFor(() => expect(onChanged).toHaveBeenCalled());
+    expect(onOpenChange).not.toHaveBeenCalledWith(false);
+    // The button now reflects the new round without a re-fetch.
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: "Advance to Round 2" }),
+      ).not.toBeInTheDocument(),
+    );
+  });
+
+  it("toasts an error and does not call onChanged when Advance round fails", async () => {
+    const user = userEvent.setup();
+    api.getApplicationDetail.mockResolvedValue({
+      data: {
+        ...detailWithStage("tech"),
+        application: {
+          ...detailWithStage("tech").application,
+          currentRound: 1,
+        },
+      },
+    });
+    api.setApplicationRound.mockRejectedValue(new Error("round boom"));
+    const { onChanged } = renderDialog({
+      jobStages: ["recruiter_screening", "tech"],
+      stageRounds: { tech: 2 },
+    });
+
+    await waitFor(() =>
+      expect(screen.getByText("alice@example.com")).toBeInTheDocument(),
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: "Advance to Round 2" }),
+    );
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("round boom"));
+    expect(onChanged).not.toHaveBeenCalled();
+  });
 });

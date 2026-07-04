@@ -8,6 +8,7 @@ from backend.recruiting.stage_machine import (
     advance_target,
     validate_transition,
     validate_sub_status,
+    rounds_for_stage,
 )
 
 
@@ -147,6 +148,28 @@ class TestPipelineOrder(unittest.TestCase):
                 ApplicationStage.OFFER,
             ],
         )
+
+
+class TestRoundsForStage(unittest.TestCase):
+    def test_returns_configured_rounds_for_the_stage(self):
+        cfg = {"stages": [{"stage": "tech", "rounds": 3}]}
+        self.assertEqual(rounds_for_stage(cfg, ApplicationStage.TECH), 3)
+
+    def test_defaults_to_one_when_stage_is_not_configured(self):
+        cfg = {"stages": [{"stage": "tech", "rounds": 3}]}
+        self.assertEqual(rounds_for_stage(cfg, ApplicationStage.RECRUITER_SCREENING), 1)
+
+    def test_defaults_to_one_for_falsy_pipeline_config(self):
+        self.assertEqual(rounds_for_stage(None, ApplicationStage.TECH), 1)
+        self.assertEqual(rounds_for_stage({}, ApplicationStage.TECH), 1)
+
+    def test_defaults_to_one_when_entry_omits_rounds(self):
+        cfg = {"stages": [{"stage": "tech"}]}
+        self.assertEqual(rounds_for_stage(cfg, ApplicationStage.TECH), 1)
+
+    def test_defaults_to_one_for_a_non_positive_rounds_value(self):
+        cfg = {"stages": [{"stage": "tech", "rounds": 0}]}
+        self.assertEqual(rounds_for_stage(cfg, ApplicationStage.TECH), 1)
 
 
 if __name__ == "__main__":

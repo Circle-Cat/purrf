@@ -7,6 +7,7 @@ from fastapi import Response
 from backend.dto.board_dto import (
     BlacklistDto,
     ReassignDto,
+    RoundChangeDto,
     StageChangeDto,
     SubStatusChangeDto,
 )
@@ -29,6 +30,7 @@ class TestBoardController(unittest.IsolatedAsyncioTestCase):
         self.board_service.get_application_detail = AsyncMock(return_value={"id": 10})
         self.board_service.change_stage = AsyncMock(return_value={"id": 10})
         self.board_service.set_sub_status = AsyncMock(return_value={"id": 10})
+        self.board_service.set_round = AsyncMock(return_value={"id": 10})
         self.board_service.blacklist = AsyncMock(return_value={"id": 10})
         self.board_service.get_resume = AsyncMock(return_value=b"%PDF-1.4 data")
 
@@ -107,6 +109,20 @@ class TestBoardController(unittest.IsolatedAsyncioTestCase):
         )
 
         self.board_service.reassign.assert_awaited_once_with(
+            self.session, self.ctx, 10, dto
+        )
+        self.assertEqual(resp["data"], updated)
+
+    async def test_set_round_delegates(self):
+        updated = {"id": 10, "current_round": 2}
+        self.board_service.set_round = AsyncMock(return_value=updated)
+        dto = RoundChangeDto(round=2)
+
+        resp = await self.controller.set_round(
+            self.ctx, application_id=10, round_data=dto
+        )
+
+        self.board_service.set_round.assert_awaited_once_with(
             self.session, self.ctx, 10, dto
         )
         self.assertEqual(resp["data"], updated)
