@@ -26,4 +26,13 @@ describe("Sidebar recruiting entries", () => {
     );
     expect(screen.queryByText("My Reviews")).not.toBeInTheDocument();
   });
+
+  it("shows My Evaluations for any logged-in user regardless of permissions", () => {
+    render(
+      <MemoryRouter>
+        <Sidebar />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText("My Evaluations")).toBeInTheDocument();
+  });
 });

@@ -30,6 +30,9 @@ import {
   blacklistUser,
   reassignApplication,
   resumeUrl,
+  listMyEvaluations,
+  submitEvaluation,
+  getEvaluationsForApplication,
 } from "@/api/recruitingApi";
 
 vi.mock("@/utils/request", () => ({
@@ -258,5 +261,29 @@ describe("recruitingApi", () => {
     const url = resumeUrl(7);
     // In test (dev-mode), baseURL is "/api", so full URL should be exact
     expect(url).toBe("/api/recruiting/applications/7/resume");
+  });
+
+  it("listMyEvaluations GETs /recruiting/evaluations/mine", async () => {
+    request.get.mockResolvedValue({ data: [] });
+    await listMyEvaluations();
+    expect(request.get).toHaveBeenCalledWith("/recruiting/evaluations/mine");
+  });
+
+  it("submitEvaluation PUTs the evaluation endpoint with body", async () => {
+    request.put.mockResolvedValue({ data: {} });
+    const body = { responses: { q1: "great" }, confirm: true };
+    await submitEvaluation(7, body);
+    expect(request.put).toHaveBeenCalledWith(
+      "/recruiting/applications/7/evaluation",
+      body,
+    );
+  });
+
+  it("getEvaluationsForApplication GETs the evaluations list endpoint", async () => {
+    request.get.mockResolvedValue({ data: [] });
+    await getEvaluationsForApplication(7);
+    expect(request.get).toHaveBeenCalledWith(
+      "/recruiting/applications/7/evaluations",
+    );
   });
 });

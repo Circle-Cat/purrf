@@ -116,3 +116,6 @@ RECRUITING_APPLICATION_EVALUATION_ENDPOINT = (
     "/recruiting/applications/{application_id}/evaluation"
 )
 RECRUITING_EVALUATIONS_MINE_ENDPOINT = "/recruiting/evaluations/mine"
+RECRUITING_APPLICATION_EVALUATIONS_ENDPOINT = (
+    "/recruiting/applications/{application_id}/evaluations"
+)

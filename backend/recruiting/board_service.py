@@ -252,8 +252,11 @@ class BoardService:
 
         Returns:
             ApplicationDetailDto: The application, applicant identity,
-                résumé availability, and the job's live form schema (so the
-                dialog can label answers by question id).
+                résumé availability, the job's live form schema (so the
+                dialog can label answers by question id), and two role
+                signals — ``is_owner`` and ``assignee_id`` — so the frontend
+                can decide which of the owner-decision area / evaluator
+                rubric area to render without a second round-trip.
 
         Raises:
             ValueError: If the application is missing, or the caller is
@@ -271,6 +274,10 @@ class BoardService:
         )
         current_sub = await self.application_submission_repository.get_current(
             session, application_id
+        )
+        is_owner = current_user.user_id in normalized_owner_ids(job.pipeline_config)
+        assignment = await self.application_assignment_repository.get(
+            session, application_id, application.stage
         )
         # The embedded ApplicationDto's `editable` is deliberately left at
         # its default (False) here: it encodes the CANDIDATE's edit window
@@ -292,6 +299,8 @@ class BoardService:
                 current_sub is not None and current_sub.resume_object_key
             ),
             form_schema=job.form_schema,
+            is_owner=is_owner,
+            assignee_id=assignment.assignee_id if assignment is not None else None,
         )
 
     async def get_resume(
