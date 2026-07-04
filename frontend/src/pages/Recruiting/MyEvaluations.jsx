@@ -15,8 +15,9 @@ const stageLabel = (key) =>
 /**
  * List page of the current user's assigned interview evaluations, one row
  * per application/stage pairing they're the assignee for. Each row links to
- * the shared application detail page where the rubric can be filled in.
- * Requires no recruiting permissions.
+ * the shared application detail page in `?mode=evaluate`, which renders only
+ * the rubric form there — no owner actions, even if the caller also owns
+ * the job. Requires no recruiting permissions.
  */
 const MyEvaluations = () => {
   const [evaluations, setEvaluations] = useState(null);
@@ -61,7 +62,7 @@ const MyEvaluations = () => {
           {evaluations.map((row) => (
             <Link
               key={`${row.applicationId}-${row.stage}-${row.round}`}
-              to={ROUTE_PATHS.RECRUITING_APPLICATION_DETAIL(row.applicationId)}
+              to={`${ROUTE_PATHS.RECRUITING_APPLICATION_DETAIL(row.applicationId)}?mode=evaluate`}
               className="flex items-center gap-3 p-4 no-underline transition-colors hover:bg-slate-50"
             >
               <div className="min-w-0 flex-1">
