@@ -3,7 +3,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import PeoplePicker from "@/pages/Recruiting/components/PeoplePicker";
 
-const STAGES = ["recruiter_screening", "behavioral", "tech", "board_review"];
+const STAGES = [
+  "recruiter_screening",
+  "behavioral",
+  "tech",
+  "board_review",
+  "offer",
+];
 const ASSIGNABLE = new Set(["recruiter_screening", "behavioral"]);
 
 /** A selected owner rendered as a chip, with a button to remove it. */
