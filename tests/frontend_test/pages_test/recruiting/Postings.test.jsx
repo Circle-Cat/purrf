@@ -59,6 +59,22 @@ describe("Postings page", () => {
     expect(api.listJobs).toHaveBeenCalled();
   });
 
+  it("loads approvers on mount so assignee names are ready without opening the dialog", async () => {
+    api.listJobs.mockResolvedValue({
+      data: [
+        {
+          id: 1,
+          title: "SWE",
+          kind: "employment",
+          status: "pending_review",
+          reviewerId: 2,
+        },
+      ],
+    });
+    renderPostings();
+    expect(await screen.findByText("Assigned to: Bob")).toBeInTheDocument();
+  });
+
   it("New posting button navigates to the new-posting route", async () => {
     const { router } = renderPostings();
     await screen.findByText("SWE");
