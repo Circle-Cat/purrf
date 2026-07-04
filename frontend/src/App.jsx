@@ -29,6 +29,7 @@ import MyApplication from "@/pages/Recruiting/MyApplication";
 import JobsBrowse from "@/pages/Recruiting/JobsBrowse";
 import BoardPage from "@/pages/Recruiting/board/BoardPage";
 import ApplicationDetailPage from "@/pages/Recruiting/applications/ApplicationDetailPage";
+import MyEvaluations from "@/pages/Recruiting/MyEvaluations";
 import { AuthProvider } from "@/context/auth";
 import { FlagsProvider, LDIdentifier } from "@/context/flags";
 import { PERMISSIONS } from "@/constants/Permissions";
@@ -193,6 +194,10 @@ function App() {
                         ":applicationId",
                       )}
                       element={<ApplicationDetailPage />}
+                    />
+                    <Route
+                      path={ROUTE_PATHS.RECRUITING_MY_EVALUATIONS}
+                      element={<MyEvaluations />}
                     />
                     <Route
                       path="/recruiting/jobs/:jobId"
