@@ -5,6 +5,7 @@ import { getPublicJob, getMyApplication } from "@/api/recruitingApi";
 import ApplicationForm from "@/pages/Recruiting/ApplicationForm";
 import LoadGate from "@/pages/Recruiting/components/LoadGate";
 import { RowList } from "@/pages/Recruiting/components/ApplicationSnapshotRows";
+import { Button } from "@/components/ui/button";
 
 /**
  * Human-readable label for an `ApplicationStage` enum value, e.g.
@@ -22,10 +23,12 @@ const formatStageLabel = (stage) => {
 /**
  * Read-only summary of a submitted application: the applicant's answers, no
  * longer editable once the server reports `application.editable === false`.
+ * Renders a "Reapply" button when `onReapply` is provided (only for a
+ * `rejected` application — see `MyApplication`).
  *
- * @param {{job: object, application: object}} props
+ * @param {{job: object, application: object, onReapply?: () => void}} props
  */
-const ReadOnlySummary = ({ job, application }) => {
+const ReadOnlySummary = ({ job, application, onReapply }) => {
   const submission = application.current?.submission ?? {};
   const personal = submission.personal ?? {};
   const answers = submission.answers ?? {};
@@ -60,6 +63,7 @@ const ReadOnlySummary = ({ job, application }) => {
           </ul>
         </div>
       )}
+      {onReapply && <Button onClick={onReapply}>Reapply</Button>}
     </div>
   );
 };
@@ -73,6 +77,9 @@ const ReadOnlySummary = ({ job, application }) => {
  * stage string.
  * Loads the job and application on mount; while loading shows a placeholder,
  * and on failure toasts the error and shows an inline retryable error state.
+ * A `rejected` application's read-only summary offers a "Reapply" action
+ * that swaps in an `ApplicationForm` seeded from the prior submission,
+ * submitting via the create path (the backend's reapply branch).
  */
 const MyApplication = () => {
   const { jobId } = useParams();
@@ -80,6 +87,7 @@ const MyApplication = () => {
   const [application, setApplication] = useState(null);
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState(false);
+  const [reapplying, setReapplying] = useState(false);
 
   /** Load (or reload, after a failure) the job and the caller's application. */
   const load = useCallback(() => {
@@ -123,7 +131,30 @@ const MyApplication = () => {
     );
   }
 
-  return <ReadOnlySummary job={job} application={application} />;
+  if (application.stage === "rejected" && reapplying) {
+    return (
+      <div className="space-y-4 p-6">
+        <ApplicationForm
+          job={job}
+          seed={application.current}
+          onSubmitted={(app) => {
+            setApplication(app);
+            setReapplying(false);
+          }}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <ReadOnlySummary
+      job={job}
+      application={application}
+      onReapply={
+        application.stage === "rejected" ? () => setReapplying(true) : undefined
+      }
+    />
+  );
 };
 
 export default MyApplication;
