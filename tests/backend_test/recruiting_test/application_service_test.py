@@ -1,6 +1,6 @@
 import unittest
 from datetime import date, datetime, timezone
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, create_autospec
 from backend.recruiting.application_service import ApplicationService
 from backend.recruiting.recruiting_mapper import RecruitingMapper
 from backend.dto.application_dto import ApplicationSubmitDto, ApplicationEditDto
@@ -10,6 +10,9 @@ from backend.entity.application_submission_entity import ApplicationSubmissionEn
 from backend.entity.job_entity import JobEntity
 from backend.entity.users_entity import UsersEntity
 from backend.common.recruiting_enums import ApplicationStage, JobKind, JobStatus
+from backend.repository.application_assignment_repository import (
+    ApplicationAssignmentRepository,
+)
 
 
 class TestApplicationService(unittest.IsolatedAsyncioTestCase):
@@ -33,6 +36,11 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.users_repo.get_user_by_user_id = AsyncMock(
             return_value=self._user(is_blocked=False)
         )
+        # autospec (not a bare MagicMock) so a caller/repo signature drift
+        # fails the test instead of silently accepting any arity.
+        self.assignment_repo = create_autospec(
+            ApplicationAssignmentRepository, instance=True
+        )
         self.session = AsyncMock()
         self.service = ApplicationService(
             self.app_repo,
@@ -40,6 +48,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             self.job_repo,
             self.users_repo,
             RecruitingMapper(),
+            self.assignment_repo,
         )
 
     def _create_side_effect(self, session, entity):
@@ -86,6 +95,58 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(created_sub.version, 1)
         self.assertEqual(created_sub.submission["personal"]["firstName"], "A")
         self.session.commit.assert_awaited()
+
+    async def test_submit_creates_default_assignment_when_stage_has_default(self):
+        """A stage's configured defaultAssigneeId is only a board display
+        fallback until a real application_assignment row exists (My
+        Evaluations and evaluation submit only see real rows) — so landing
+        on such a stage must materialize it immediately."""
+        job = self._job(
+            pipeline_config={
+                "stages": [{"stage": "recruiter_screening", "defaultAssigneeId": 5}],
+                "ownerIds": [9],
+            }
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        await self.service.submit(self.session, self._ctx(), dto)
+        self.assignment_repo.upsert.assert_awaited_once_with(
+            self.session, 100, ApplicationStage.RECRUITER_SCREENING, 1, 5, 9
+        )
+
+    async def test_submit_skips_assignment_when_no_default_configured(self):
+        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        await self.service.submit(self.session, self._ctx(), dto)
+        self.assignment_repo.upsert.assert_not_awaited()
+
+    async def test_submit_skips_assignment_when_blocked(self):
+        self.users_repo.get_user_by_user_id = AsyncMock(
+            return_value=self._user(is_blocked=True)
+        )
+        job = self._job(
+            pipeline_config={
+                "stages": [{"stage": "recruiter_screening", "defaultAssigneeId": 5}],
+                "ownerIds": [9],
+            }
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        await self.service.submit(self.session, self._ctx(), dto)
+        self.assignment_repo.upsert.assert_not_awaited()
+
+    async def test_submit_skips_assignment_when_no_owner_configured(self):
+        """No owner to attribute assigned_by to (the earlier ownerIds=[]
+        board-visibility gap) — skip rather than violate the assigned_by FK."""
+        job = self._job(
+            pipeline_config={
+                "stages": [{"stage": "recruiter_screening", "defaultAssigneeId": 5}],
+                "ownerIds": [],
+            }
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        await self.service.submit(self.session, self._ctx(), dto)
+        self.assignment_repo.upsert.assert_not_awaited()
 
     async def test_blocked_user_lands_rejected(self):
         self.users_repo.get_user_by_user_id = AsyncMock(
@@ -318,6 +379,35 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(created_sub.version, 2)
         self.assertIn("cold_freeze", result.tags or {})
         self.assertEqual(result.tags["cold_freeze"]["thaw_date"], "2026-04-01")
+
+    async def test_reapply_creates_default_assignment_when_stage_has_default(self):
+        """Reapplying also re-lands on the first stage, so a configured
+        default assignee must be materialized again, same as a fresh
+        application."""
+        job = self._job(
+            pipeline_config={
+                "stages": [{"stage": "recruiter_screening", "defaultAssigneeId": 5}],
+                "ownerIds": [9],
+            }
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        app = ApplicationEntity(
+            job_id=1, user_id=2, stage=ApplicationStage.REJECTED, current_round=1
+        )
+        app.application_id = 100
+        app.created_datetime = datetime(2026, 1, 10, tzinfo=timezone.utc)
+        self.app_repo.get_by_job_and_user = AsyncMock(return_value=app)
+        prior = ApplicationSubmissionEntity(
+            application_id=100, version=1, submission={"v": 1}
+        )
+        prior.submitted_at = datetime(2026, 1, 20, tzinfo=timezone.utc)
+        self.sub_repo.get_current = AsyncMock(return_value=prior)
+        self.service._today = lambda: date(2026, 5, 1)  # outside cooldown
+        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        await self.service.submit(self.session, self._ctx(), dto)
+        self.assignment_repo.upsert.assert_awaited_once_with(
+            self.session, 100, ApplicationStage.RECRUITER_SCREENING, 1, 5, 9
+        )
 
     async def test_reapply_non_activity_uses_updated_timestamp_for_rejected_at(self):
         """For a fixed-cooldown (non-ACTIVITY) job, the thaw must anchor to the
