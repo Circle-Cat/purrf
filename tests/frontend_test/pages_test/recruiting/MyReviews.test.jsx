@@ -60,4 +60,21 @@ describe("MyReviews page", () => {
     );
     expect(api.listMyReviews).toHaveBeenCalledTimes(2);
   });
+
+  it("disables Approve/Reject while a decision is in flight, to prevent a double-submit", async () => {
+    let resolveDecide;
+    api.decideReview.mockReturnValue(
+      new Promise((resolve) => {
+        resolveDecide = resolve;
+      }),
+    );
+    render(<MyReviews />);
+    fireEvent.click(await screen.findByRole("button", { name: "Review" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Approve" }));
+
+    expect(screen.getByRole("button", { name: "Approve" })).toBeDisabled();
+
+    resolveDecide({ data: {} });
+    await waitFor(() => expect(api.listMyReviews).toHaveBeenCalledTimes(2));
+  });
 });

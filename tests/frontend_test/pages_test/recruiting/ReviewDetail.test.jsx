@@ -173,6 +173,26 @@ describe("ReviewDetail", () => {
     expect(screen.getByLabelText("Your name")).toBeInTheDocument();
   });
 
+  it("deciding disables both Approve and Reject, to prevent a double-submit", () => {
+    render(
+      <ReviewDetail
+        review={review}
+        job={job}
+        deciding
+        onApprove={() => {}}
+        onReject={() => {}}
+        onBack={() => {}}
+      />,
+    );
+    // A non-empty comment would otherwise enable Reject -- confirm `deciding`
+    // overrides that, not just coincides with the empty-comment disable.
+    fireEvent.change(screen.getByLabelText("Rejection comment"), {
+      target: { value: "fix it" },
+    });
+    expect(screen.getByRole("button", { name: "Approve" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Reject" })).toBeDisabled();
+  });
+
   it("approve/reject still work for kind=close", () => {
     const onApprove = vi.fn();
     const onReject = vi.fn();

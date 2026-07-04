@@ -26,6 +26,21 @@ describe("PostingsList", () => {
     expect(screen.getByText("Published")).toBeInTheDocument();
   });
 
+  it("disables Close only for the job currently closing, to prevent a double-submit", () => {
+    render(
+      <PostingsList
+        jobs={[
+          job({ id: 1, status: "draft" }),
+          job({ id: 2, status: "draft" }),
+        ]}
+        closingId={1}
+      />,
+    );
+    const closeButtons = screen.getAllByRole("button", { name: "Close" });
+    expect(closeButtons[0]).toBeDisabled();
+    expect(closeButtons[1]).not.toBeDisabled();
+  });
+
   it("offers Edit/Submit/Close/View on a draft and fires callbacks", () => {
     const onEdit = vi.fn(),
       onSubmit = vi.fn(),
