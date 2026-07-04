@@ -55,6 +55,7 @@ const Postings = () => {
   const [approvers, setApprovers] = useState([]);
   const [previewJob, setPreviewJob] = useState(null);
   const [deleteId, setDeleteId] = useState(null);
+  const [closingId, setClosingId] = useState(null);
 
   const refresh = useCallback(async () => {
     const { data } = await listJobs();
@@ -120,6 +121,15 @@ const Postings = () => {
     run(() => action.dispatch(jobId, body), action.successMsg);
   };
 
+  /** Close a draft posting, guarded against a double-submit per job id. */
+  const handleCloseJob = (id) => {
+    if (closingId != null) return;
+    setClosingId(id);
+    run(() => closeJob(id), "Posting closed.").finally(() =>
+      setClosingId(null),
+    );
+  };
+
   const askDelete = (id) => setDeleteId(id);
 
   const confirmDelete = () => {
@@ -152,9 +162,10 @@ const Postings = () => {
       <PostingsList
         jobs={jobs}
         approversById={approversById}
+        closingId={closingId}
         onEdit={(job) => navigate(ROUTE_PATHS.RECRUITING_POSTING_EDIT(job.id))}
         onSubmit={(id) => openReview(id, "submit")}
-        onClose={(id) => run(() => closeJob(id), "Posting closed.")}
+        onClose={handleCloseJob}
         onRequestClose={(id) => openReview(id, "close")}
         onRequestReopen={(id) => openReview(id, "reopen")}
         onDelete={askDelete}

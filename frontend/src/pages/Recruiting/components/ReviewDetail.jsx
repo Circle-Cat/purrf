@@ -7,10 +7,17 @@ import PostingReviewView from "@/pages/Recruiting/components/PostingReviewView";
 /**
  * Reviewer's read-only view of a posting under review, with approve/reject.
  *
- * @param {{review: object, job: object, onApprove: Function,
- *          onReject: Function, onBack: Function}} props
+ * @param {{review: object, job: object, deciding?: boolean,
+ *          onApprove: Function, onReject: Function, onBack: Function}} props
  */
-const ReviewDetail = ({ review, job, onApprove, onReject, onBack }) => {
+const ReviewDetail = ({
+  review,
+  job,
+  deciding = false,
+  onApprove,
+  onReject,
+  onBack,
+}) => {
   const [comment, setComment] = useState("");
   const isClose = review.kind === "close";
   const isReopen = review.kind === "reopen";
@@ -61,10 +68,12 @@ const ReviewDetail = ({ review, job, onApprove, onReject, onBack }) => {
           />
         </div>
         <div className="flex gap-2">
-          <Button onClick={onApprove}>Approve</Button>
+          <Button disabled={deciding} onClick={onApprove}>
+            Approve
+          </Button>
           <Button
             variant="destructive"
-            disabled={!comment.trim()}
+            disabled={!comment.trim() || deciding}
             onClick={() => onReject(comment.trim())}
           >
             Reject

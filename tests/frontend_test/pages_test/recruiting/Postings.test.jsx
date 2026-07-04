@@ -115,6 +115,25 @@ describe("Postings page", () => {
     expect(api.listJobs).toHaveBeenCalledTimes(2);
   });
 
+  it("disables Close while it's in flight, to prevent a double-submit", async () => {
+    let resolveClose;
+    api.closeJob.mockReturnValue(
+      new Promise((resolve) => {
+        resolveClose = resolve;
+      }),
+    );
+    renderPostings();
+    await screen.findByText("SWE");
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+
+    expect(screen.getByRole("button", { name: "Close" })).toBeDisabled();
+
+    resolveClose({ data: {} });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Close" })).not.toBeDisabled(),
+    );
+  });
+
   it("clicking Request close on a published job opens review dialog with title 'Request close', submits requestClose then refetches", async () => {
     api.listJobs.mockResolvedValue({
       data: [

@@ -39,13 +39,15 @@ const VARIANT = {
  * - closed (never published): Delete, View
  *
  * @param {{jobs: object[], approversById?: Record<number, string>,
- *          onEdit?: Function, onSubmit?: Function, onClose?: Function,
- *          onRequestClose?: Function, onRequestReopen?: Function,
- *          onDelete?: Function, onView?: Function}} props
+ *          closingId?: number|null, onEdit?: Function, onSubmit?: Function,
+ *          onClose?: Function, onRequestClose?: Function,
+ *          onRequestReopen?: Function, onDelete?: Function,
+ *          onView?: Function}} props
  */
 const PostingsList = ({
   jobs,
   approversById = {},
+  closingId = null,
   onEdit,
   onSubmit,
   onClose,
@@ -120,6 +122,7 @@ const PostingsList = ({
                 <Button
                   variant="outline"
                   size="sm"
+                  disabled={closingId === job.id}
                   onClick={() => onClose?.(job.id)}
                 >
                   Close
