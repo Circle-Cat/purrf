@@ -1,7 +1,7 @@
 """add current_round to application
 
 Revision ID: 205cf4cb5f2f
-Revises: b0e98c2dd68c
+Revises: 3a0cc23fe442
 Create Date: 2026-07-03 08:00:10.293854
 
 """
@@ -13,7 +13,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = "205cf4cb5f2f"
-down_revision: Union[str, Sequence[str], None] = "b0e98c2dd68c"
+down_revision: Union[str, Sequence[str], None] = "3a0cc23fe442"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
