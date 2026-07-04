@@ -46,9 +46,11 @@ class TestEvaluationService(unittest.IsolatedAsyncioTestCase):
             self.users_repo,
         )
 
-    def _job(self, job_id=1, title="Job 1"):
+    def _job(self, job_id=1, title="Job 1", owner_ids=None):
         job = JobEntity(kind=JobKind.ACTIVITY, title=title, status=JobStatus.PUBLISHED)
         job.job_id = job_id
+        if owner_ids is not None:
+            job.pipeline_config = {"ownerIds": list(owner_ids)}
         return job
 
     def _user(self, user_id=3, first="A", last="B", email="a@b.com"):
@@ -316,6 +318,90 @@ class TestEvaluationService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(by_app[10].applicant_name, "C D")
         self.assertEqual(by_app[10].stage, ApplicationStage.RECRUITER_SCREENING)
         self.assertEqual(by_app[11].stage, ApplicationStage.TECH)
+
+    # -- get_for_application --
+
+    async def test_get_for_application_owner_sees_all_rows(self):
+        application = self._application(job_id=1, stage=ApplicationStage.TECH)
+        job = self._job(job_id=1, owner_ids=(2,))
+        rows = [
+            self._evaluation(
+                evaluation_id=201,
+                stage=ApplicationStage.RECRUITER_SCREENING,
+                evaluator_id=5,
+                is_confirmed=True,
+            ),
+            self._evaluation(
+                evaluation_id=202,
+                stage=ApplicationStage.TECH,
+                evaluator_id=7,
+                is_confirmed=False,
+            ),
+        ]
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.assignment_repo.get = AsyncMock(return_value=None)
+        self.evaluation_repo.list_by_application = AsyncMock(return_value=rows)
+
+        result = await self.service.get_for_application(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertEqual(len(result), 2)
+        self.assertEqual({r.id for r in result}, {201, 202})
+        self.evaluation_repo.list_by_application.assert_awaited_once_with(
+            self.session, 10
+        )
+
+    async def test_get_for_application_current_assignee_sees_rows_including_own_draft(
+        self,
+    ):
+        application = self._application(job_id=1, stage=ApplicationStage.TECH)
+        job = self._job(job_id=1, owner_ids=(9,))  # caller is not an owner
+        assignment = self._assignment(
+            application_id=10, stage=ApplicationStage.TECH, assignee_id=2
+        )
+        own_draft = self._evaluation(
+            evaluation_id=300,
+            stage=ApplicationStage.TECH,
+            evaluator_id=2,
+            is_confirmed=False,
+        )
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.assignment_repo.get = AsyncMock(return_value=assignment)
+        self.evaluation_repo.list_by_application = AsyncMock(return_value=[own_draft])
+
+        result = await self.service.get_for_application(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].id, 300)
+        self.assertFalse(result[0].is_confirmed)
+
+    async def test_get_for_application_third_party_raises(self):
+        application = self._application(job_id=1, stage=ApplicationStage.TECH)
+        job = self._job(job_id=1, owner_ids=(9,))
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.assignment_repo.get = AsyncMock(return_value=None)
+        self.evaluation_repo.list_by_application = AsyncMock()
+
+        with self.assertRaises(ValueError):
+            await self.service.get_for_application(
+                self.session, self._ctx(user_id=2), 10
+            )
+
+        self.evaluation_repo.list_by_application.assert_not_awaited()
+
+    async def test_get_for_application_missing_application_raises(self):
+        self.app_repo.get_by_id = AsyncMock(return_value=None)
+
+        with self.assertRaises(ValueError):
+            await self.service.get_for_application(
+                self.session, self._ctx(user_id=2), 999
+            )
 
 
 if __name__ == "__main__":

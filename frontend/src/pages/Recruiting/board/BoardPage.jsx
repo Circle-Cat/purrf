@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import LoadGate from "@/pages/Recruiting/components/LoadGate";
 import ApplicantCard from "@/pages/Recruiting/board/ApplicantCard";
-import ApplicantDetailDialog from "@/pages/Recruiting/board/ApplicantDetailDialog";
 import {
   Select,
   SelectContent,
@@ -13,6 +13,7 @@ import {
 import { listBoardJobs, getJobBoard } from "@/api/recruitingApi";
 import { humanize } from "@/pages/Recruiting/board/stageFormat";
 import { getStageColors } from "@/pages/Recruiting/board/stageColors";
+import { ROUTE_PATHS } from "@/constants/RoutePaths";
 
 /** Terminal lanes always appended after a job's configured pipeline stages. */
 const TERMINAL_STAGES = ["hired", "rejected"];
@@ -23,13 +24,12 @@ const TERMINAL_STAGES = ["hired", "rejected"];
  * lanes (Hired, Rejected) always shown at the end.
  */
 const BoardPage = () => {
+  const navigate = useNavigate();
   const [jobs, setJobs] = useState(null);
   const [loadError, setLoadError] = useState(false);
   const [selectedJobId, setSelectedJobId] = useState(null);
   const [board, setBoard] = useState(null);
   const [boardError, setBoardError] = useState(false);
-  const [selectedApplicationId, setSelectedApplicationId] = useState(null);
-  const [dialogOpen, setDialogOpen] = useState(false);
 
   /** Fetch (or re-fetch, via Retry) the caller's owned jobs. */
   const loadJobs = useCallback(async () => {
@@ -105,11 +105,13 @@ const BoardPage = () => {
     return [...pipelineLanes, ...terminalLanes];
   }, [selectedJob]);
 
-  /** Open the detail dialog for the clicked card's application. */
-  const handleOpen = useCallback((applicationId) => {
-    setSelectedApplicationId(applicationId);
-    setDialogOpen(true);
-  }, []);
+  /** Navigate to the shared application detail page for the clicked card. */
+  const handleOpen = useCallback(
+    (applicationId) => {
+      navigate(ROUTE_PATHS.RECRUITING_APPLICATION_DETAIL(applicationId));
+    },
+    [navigate],
+  );
 
   if (!jobs) {
     return (
@@ -211,17 +213,6 @@ const BoardPage = () => {
           })}
         </div>
       )}
-
-      <ApplicantDetailDialog
-        applicationId={selectedApplicationId}
-        open={dialogOpen}
-        onOpenChange={setDialogOpen}
-        onChanged={() => loadBoard(selectedJobId)}
-        jobStages={selectedJob?.stages.map((s) => s.stage) ?? []}
-        stageRounds={Object.fromEntries(
-          (selectedJob?.stages ?? []).map((s) => [s.stage, s.rounds]),
-        )}
-      />
     </div>
   );
 };

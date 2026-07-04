@@ -17,6 +17,7 @@ class TestEvaluationController(unittest.IsolatedAsyncioTestCase):
         self.evaluation_service = MagicMock()
         self.evaluation_service.submit = AsyncMock(return_value={"id": 1})
         self.evaluation_service.get_mine = AsyncMock(return_value=[])
+        self.evaluation_service.get_for_application = AsyncMock(return_value=[])
 
         self.controller = EvaluationController(self.evaluation_service, self.database)
 
@@ -72,6 +73,26 @@ class TestEvaluationController(unittest.IsolatedAsyncioTestCase):
         mine_route = routes_by_path["/recruiting/evaluations/mine"]
 
         self.assertIn("GET", mine_route.methods)
+
+    async def test_get_evaluations_for_application_delegates(self):
+        result = [{"id": 1}, {"id": 2}]
+        self.evaluation_service.get_for_application = AsyncMock(return_value=result)
+
+        resp = await self.controller.get_evaluations_for_application(
+            self.ctx, application_id=10
+        )
+
+        self.evaluation_service.get_for_application.assert_awaited_once_with(
+            self.session, self.ctx, 10
+        )
+        self.assertEqual(resp["data"], result)
+
+    def test_evaluations_for_application_route_is_get_and_plain_authenticated(self):
+        routes_by_path = {route.path: route for route in self.controller.router.routes}
+
+        route = routes_by_path["/recruiting/applications/{application_id}/evaluations"]
+
+        self.assertIn("GET", route.methods)
 
 
 if __name__ == "__main__":

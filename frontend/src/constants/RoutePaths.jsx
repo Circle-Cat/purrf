@@ -19,4 +19,6 @@ export const ROUTE_PATHS = {
   RECRUITING_JOB_DETAIL: (jobId) => `/recruiting/jobs/${jobId}`,
   RECRUITING_JOB_APPLY: (jobId) => `/recruiting/jobs/${jobId}/apply`,
   RECRUITING_MY_APPLICATION: (jobId) => `/recruiting/jobs/${jobId}/application`,
+  RECRUITING_APPLICATION_DETAIL: (id) => `/recruiting/applications/${id}`,
+  RECRUITING_MY_EVALUATIONS: "/recruiting/my-evaluations",
 };

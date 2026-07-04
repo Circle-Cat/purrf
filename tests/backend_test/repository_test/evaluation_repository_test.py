@@ -155,6 +155,54 @@ class TestEvaluationRepository(BaseRepositoryTestLib):
         self.assertTrue(fetched.is_confirmed)
         self.assertEqual(fetched.confirmed_at, confirmed_at)
 
+    async def test_list_by_application_returns_all_stages_and_evaluators(self):
+        app1 = await self._seed_application()
+        job2 = JobEntity(kind=JobKind.ACTIVITY, title="T2", status=JobStatus.PUBLISHED)
+        applicant2 = _make_user()
+        await self.insert_entities([job2, applicant2])
+        app2 = ApplicationEntity(
+            job_id=job2.job_id,
+            user_id=applicant2.user_id,
+            stage=ApplicationStage.RECRUITER_SCREENING,
+        )
+        await self.insert_entities([app2])
+        evaluator, other_evaluator = await self._seed_users(2)
+        repo = EvaluationRepository()
+
+        await repo.upsert_draft(
+            self.session,
+            app1.application_id,
+            ApplicationStage.RECRUITER_SCREENING,
+            evaluator.user_id,
+            {"rating": 1},
+        )
+        await repo.upsert_draft(
+            self.session,
+            app1.application_id,
+            ApplicationStage.BEHAVIORAL,
+            other_evaluator.user_id,
+            {"rating": 9},
+        )
+        await repo.upsert_draft(
+            self.session,
+            app2.application_id,
+            ApplicationStage.RECRUITER_SCREENING,
+            evaluator.user_id,
+            {"rating": 2},
+        )
+
+        results = await repo.list_by_application(self.session, app1.application_id)
+
+        self.assertEqual(len(results), 2)
+        self.assertEqual(
+            {(r.stage, r.evaluator_id) for r in results},
+            {
+                (ApplicationStage.RECRUITER_SCREENING, evaluator.user_id),
+                (ApplicationStage.BEHAVIORAL, other_evaluator.user_id),
+            },
+        )
+        self.assertTrue(all(r.application_id == app1.application_id for r in results))
+
     async def test_list_by_assignee_returns_only_that_evaluators_rows(self):
         app1 = await self._seed_application()
         job2 = JobEntity(kind=JobKind.ACTIVITY, title="T2", status=JobStatus.PUBLISHED)

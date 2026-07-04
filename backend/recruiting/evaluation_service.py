@@ -9,6 +9,7 @@ from backend.dto.evaluation_dto import (
 )
 from backend.dto.user_context_dto import UserContextDto
 from backend.recruiting import evaluation_rubric
+from backend.recruiting.pipeline_owners import normalized_owner_ids
 
 
 class EvaluationService:
@@ -161,3 +162,73 @@ class EvaluationService:
                 )
             )
         return result
+
+    async def get_for_application(
+        self,
+        session: AsyncSession,
+        current_user: UserContextDto,
+        application_id: int,
+    ) -> list[EvaluationDto]:
+        """Return every evaluation row for an application, across all stages.
+
+        Authorization mirrors ``BoardService.get_application_detail``: the
+        caller must be either a configured owner of the application's job
+        (``pipeline_owners.normalized_owner_ids``) or the assignee for the
+        application's *current* stage. This is intentionally a duplicated
+        inline check rather than a shared helper with ``board_service`` —
+        the two services don't share enough constructor shape to make a
+        lift clean, and it's a few lines (see task-18 brief / YAGNI).
+
+        Args:
+            session (AsyncSession): Active database async session.
+            current_user (UserContextDto): The authenticated caller.
+            application_id (int): The application whose evaluation rows to list.
+
+        Returns:
+            list[EvaluationDto]: Every evaluator's row for this application,
+                across every stage it has visited (draft and confirmed). The
+                owner's summary shows the full history; a single stage's
+                rubric form filters this list client-side by ``stage``.
+
+        Raises:
+            ValueError: If the application is missing, or the caller is
+                neither an owner of the application's job nor its
+                current-stage assignee. Both cases raise the same generic
+                message so response bodies don't leak which application ids
+                exist to unauthorized callers.
+        """
+        application = await self.application_repository.get_by_id(
+            session, application_id
+        )
+        if application is None:
+            raise ValueError(f"application {application_id} not found")
+        job = await self.job_repository.get_by_job_id(session, application.job_id)
+        is_owner = job is not None and current_user.user_id in normalized_owner_ids(
+            job.pipeline_config
+        )
+        is_assignee = False
+        if not is_owner:
+            assignment = await self.application_assignment_repository.get(
+                session, application_id, application.stage
+            )
+            is_assignee = (
+                assignment is not None
+                and assignment.assignee_id == current_user.user_id
+            )
+        if job is None or not (is_owner or is_assignee):
+            raise ValueError(f"application {application_id} not found")
+        rows = await self.evaluation_repository.list_by_application(
+            session, application_id
+        )
+        return [
+            EvaluationDto(
+                id=row.evaluation_id,
+                application_id=row.application_id,
+                stage=row.stage,
+                evaluator_id=row.evaluator_id,
+                responses=row.responses,
+                is_confirmed=row.is_confirmed,
+                confirmed_at=row.confirmed_at,
+            )
+            for row in rows
+        ]

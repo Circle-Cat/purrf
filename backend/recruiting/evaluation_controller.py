@@ -6,6 +6,7 @@ from backend.dto.evaluation_dto import EvaluationSubmitDto
 from backend.dto.user_context_dto import UserContextDto
 from backend.common.api_endpoints import (
     RECRUITING_APPLICATION_EVALUATION_ENDPOINT,
+    RECRUITING_APPLICATION_EVALUATIONS_ENDPOINT,
     RECRUITING_EVALUATIONS_MINE_ENDPOINT,
 )
 
@@ -40,6 +41,12 @@ class EvaluationController:
             methods=["GET"],
             response_model=None,
         )
+        self.router.add_api_route(
+            RECRUITING_APPLICATION_EVALUATIONS_ENDPOINT,
+            endpoint=authenticate()(self.get_evaluations_for_application),
+            methods=["GET"],
+            response_model=None,
+        )
 
     async def submit_evaluation(
         self,
@@ -59,3 +66,13 @@ class EvaluationController:
         async with self.database.session() as session:
             result = await self.evaluation_service.get_mine(session, current_user)
         return api_response(message="Assignments fetched.", data=result)
+
+    async def get_evaluations_for_application(
+        self, current_user: UserContextDto, application_id: int
+    ):
+        """List every evaluation row for an application, for its owner or assignee."""
+        async with self.database.session() as session:
+            result = await self.evaluation_service.get_for_application(
+                session, current_user, application_id
+            )
+        return api_response(message="Evaluations fetched.", data=result)
