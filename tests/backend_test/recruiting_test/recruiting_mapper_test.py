@@ -91,6 +91,35 @@ class TestRecruitingMapper(unittest.TestCase):
 
         self.assertEqual(dto.round, 2)
 
+    def test_to_board_card_dto_passes_through_reviewer_name(self):
+        application = ApplicationEntity(
+            job_id=1,
+            user_id=2,
+            stage=ApplicationStage.TECH,
+            current_round=1,
+        )
+        application.application_id = 1
+        user = UsersEntity(first_name="A", last_name="B", primary_email="a@b.com")
+        user.user_id = 2
+
+        dto = self.mapper.to_board_card_dto(
+            application, user, reviewer_name="Ivan Interviewer"
+        )
+
+        self.assertEqual(dto.reviewer_name, "Ivan Interviewer")
+
+    def test_to_board_card_dto_reviewer_name_defaults_to_none(self):
+        application = ApplicationEntity(
+            job_id=1, user_id=2, stage=ApplicationStage.TECH, current_round=1
+        )
+        application.application_id = 1
+        user = UsersEntity(first_name="A", last_name="B", primary_email="a@b.com")
+        user.user_id = 2
+
+        dto = self.mapper.to_board_card_dto(application, user)
+
+        self.assertIsNone(dto.reviewer_name)
+
     def test_to_application_dto_includes_current_round(self):
         application = ApplicationEntity(
             job_id=1,

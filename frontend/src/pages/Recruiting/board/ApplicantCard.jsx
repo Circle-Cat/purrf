@@ -1,11 +1,15 @@
 import { Badge } from "@/components/ui/badge";
-import { humanize } from "@/pages/Recruiting/board/stageFormat";
+import {
+  humanize,
+  INTERVIEW_STAGES,
+} from "@/pages/Recruiting/board/stageFormat";
 
 /**
  * One applicant card on the board: applicant name, an optional sub-status
- * badge (pipeline lanes only), tag chips (cold freeze / blacklisted, when
- * present), and the applied date. The whole card is a button so any lane
- * can open the detail view for it.
+ * badge (pipeline lanes only), a reviewer line (interview-stage cards
+ * only), tag chips (cold freeze / blacklisted, when present), and the
+ * applied date. The whole card is a button so any lane can open the detail
+ * view for it.
  *
  * The blacklist tag chip distinguishes two states: `tags.blacklisted` alone
  * just records that this application was once rejected by a blacklist
@@ -18,7 +22,7 @@ import { humanize } from "@/pages/Recruiting/board/stageFormat";
  * @param {{
  *   card: {id: number, applicantName: string, applicantEmail: string,
  *     stage: string, subStatus: string|null, tags: object|null,
- *     appliedAt: string|null, isBlocked: boolean},
+ *     appliedAt: string|null, isBlocked: boolean, reviewerName: string|null},
  *   showStatus: boolean,
  *   onOpen: (id: number) => void,
  * }} props
@@ -36,6 +40,17 @@ const ApplicantCard = ({ card, showStatus, onOpen }) => {
           <Badge variant="outline">{humanize(card.subStatus)}</Badge>
         )}
       </div>
+      {INTERVIEW_STAGES.has(card.stage) && (
+        <p
+          className={
+            card.reviewerName
+              ? "text-sm font-medium text-blue-600"
+              : "text-sm text-slate-400"
+          }
+        >
+          Reviewer: {card.reviewerName ?? "N/A"}
+        </p>
+      )}
       {card.tags?.coldFreeze || card.tags?.blacklisted ? (
         <div className="flex flex-wrap gap-1">
           {card.tags?.coldFreeze && (

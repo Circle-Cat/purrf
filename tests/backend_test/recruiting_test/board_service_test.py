@@ -13,6 +13,7 @@ from backend.dto.board_dto import (
     SubStatusChangeDto,
 )
 from backend.dto.user_context_dto import UserContextDto
+from backend.entity.application_assignment_entity import ApplicationAssignmentEntity
 from backend.entity.application_entity import ApplicationEntity
 from backend.entity.application_submission_entity import ApplicationSubmissionEntity
 from backend.entity.job_entity import JobEntity
@@ -26,9 +27,11 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.app_repo = MagicMock()
         self.sub_repo = MagicMock()
         self.users_repo = MagicMock()
+        self.users_repo.get_all_by_ids = AsyncMock(return_value=[])
         self.resume_storage = MagicMock()
         self.assignment_repo = MagicMock()
         self.assignment_repo.upsert = AsyncMock()
+        self.assignment_repo.list_by_application_ids = AsyncMock(return_value=[])
         self.user_permissions_repo = MagicMock()
         self.session = AsyncMock()
         self.service = BoardService(
@@ -52,6 +55,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         owner_ids=(2,),
         stages=("recruiter_screening", "tech"),
         rounds=None,
+        default_assignees=None,
     ):
         job = JobEntity(
             kind=JobKind.ACTIVITY,
@@ -61,9 +65,21 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         job.job_id = job_id
         job.form_schema = {"questions": [{"id": "q1"}]}
         rounds = rounds or {}
+        default_assignees = default_assignees or {}
         job.pipeline_config = {
             "ownerIds": list(owner_ids),
-            "stages": [{"stage": s, "rounds": rounds.get(s, 1)} for s in stages],
+            "stages": [
+                {
+                    "stage": s,
+                    "rounds": rounds.get(s, 1),
+                    **(
+                        {"defaultAssigneeId": default_assignees[s]}
+                        if s in default_assignees
+                        else {}
+                    ),
+                }
+                for s in stages
+            ],
         }
         return job
 
@@ -91,6 +107,15 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
 
     def _ctx(self, user_id=2):
         return UserContextDto(sub="s", primary_email="owner@b.com", user_id=user_id)
+
+    def _assignment(self, application_id, stage, round, assignee_id, assigned_by=2):
+        return ApplicationAssignmentEntity(
+            application_id=application_id,
+            stage=stage,
+            round=round,
+            assignee_id=assignee_id,
+            assigned_by=assigned_by,
+        )
 
     def _submission(self, application_id=10, is_frozen=False):
         return ApplicationSubmissionEntity(
@@ -168,6 +193,115 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaises(ValueError):
             await self.service.get_board(self.session, self._ctx(user_id=2), 1)
+
+    async def test_get_board_reviewer_uses_explicit_assignment_over_default(self):
+        job = self._job(
+            job_id=1,
+            owner_ids=(2,),
+            stages=("recruiter_screening",),
+            default_assignees={"recruiter_screening": 99},
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        app = self._application(
+            application_id=10, stage=ApplicationStage.RECRUITER_SCREENING
+        )
+        user = self._user(user_id=3)
+        self.app_repo.list_by_job = AsyncMock(return_value=[(app, user)])
+        self.assignment_repo.list_by_application_ids = AsyncMock(
+            return_value=[
+                self._assignment(10, ApplicationStage.RECRUITER_SCREENING, 1, 42)
+            ]
+        )
+        self.users_repo.get_all_by_ids = AsyncMock(
+            return_value=[
+                self._user(user_id=42, first="Explicit", last="Assignee"),
+                self._user(user_id=99, first="Default", last="Person"),
+            ]
+        )
+
+        result = await self.service.get_board(self.session, self._ctx(user_id=2), 1)
+
+        self.assertEqual(
+            result["recruiter_screening"][0].reviewer_name, "Explicit Assignee"
+        )
+
+    async def test_get_board_reviewer_falls_back_to_default_when_no_assignment(self):
+        job = self._job(
+            job_id=1,
+            owner_ids=(2,),
+            stages=("recruiter_screening",),
+            default_assignees={"recruiter_screening": 99},
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        app = self._application(
+            application_id=10, stage=ApplicationStage.RECRUITER_SCREENING
+        )
+        user = self._user(user_id=3)
+        self.app_repo.list_by_job = AsyncMock(return_value=[(app, user)])
+        self.users_repo.get_all_by_ids = AsyncMock(
+            return_value=[self._user(user_id=99, first="Default", last="Person")]
+        )
+
+        result = await self.service.get_board(self.session, self._ctx(user_id=2), 1)
+
+        self.assertEqual(
+            result["recruiter_screening"][0].reviewer_name, "Default Person"
+        )
+
+    async def test_get_board_reviewer_none_when_no_assignment_and_no_default(self):
+        job = self._job(job_id=1, owner_ids=(2,), stages=("recruiter_screening",))
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        app = self._application(
+            application_id=10, stage=ApplicationStage.RECRUITER_SCREENING
+        )
+        user = self._user(user_id=3)
+        self.app_repo.list_by_job = AsyncMock(return_value=[(app, user)])
+
+        result = await self.service.get_board(self.session, self._ctx(user_id=2), 1)
+
+        self.assertIsNone(result["recruiter_screening"][0].reviewer_name)
+
+    async def test_get_board_reviewer_none_at_round_two_even_with_round_one_default(
+        self,
+    ):
+        job = self._job(
+            job_id=1,
+            owner_ids=(2,),
+            stages=("recruiter_screening",),
+            rounds={"recruiter_screening": 2},
+            default_assignees={"recruiter_screening": 99},
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        app = self._application(
+            application_id=10, stage=ApplicationStage.RECRUITER_SCREENING
+        )
+        app.current_round = 2
+        user = self._user(user_id=3)
+        self.app_repo.list_by_job = AsyncMock(return_value=[(app, user)])
+        self.users_repo.get_all_by_ids = AsyncMock(
+            return_value=[self._user(user_id=99, first="Default", last="Person")]
+        )
+
+        result = await self.service.get_board(self.session, self._ctx(user_id=2), 1)
+
+        self.assertIsNone(result["recruiter_screening"][0].reviewer_name)
+
+    async def test_get_board_reviewer_none_for_non_interview_stage(self):
+        job = self._job(job_id=1, owner_ids=(2,), stages=("offer",))
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        app = self._application(application_id=10, stage=ApplicationStage.OFFER)
+        user = self._user(user_id=3)
+        self.app_repo.list_by_job = AsyncMock(return_value=[(app, user)])
+        # Contrived: even if an assignment row happened to exist for this
+        # (application, stage, round), OFFER isn't in INTERVIEW_STAGES, so
+        # it must never surface as a reviewer.
+        self.assignment_repo.list_by_application_ids = AsyncMock(
+            return_value=[self._assignment(10, ApplicationStage.OFFER, 1, 42)]
+        )
+
+        result = await self.service.get_board(self.session, self._ctx(user_id=2), 1)
+
+        self.assertIsNone(result["offer"][0].reviewer_name)
 
     async def test_require_owner_raises_when_job_missing(self):
         self.job_repo.get_by_job_id = AsyncMock(return_value=None)
@@ -480,7 +614,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.app_repo.update.assert_awaited_once()
         self.session.commit.assert_awaited_once()
         self.assignment_repo.upsert.assert_awaited_once_with(
-            self.session, 10, ApplicationStage.TECH, 42, 2
+            self.session, 10, ApplicationStage.TECH, 1, 42, 2
         )
         self.assertEqual(result.current_round, 1)
 
@@ -664,7 +798,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         await self.service.change_stage(self.session, self._ctx(user_id=2), 10, dto)
 
         self.assignment_repo.upsert.assert_awaited_once_with(
-            self.session, 10, ApplicationStage.TECH, 42, 2
+            self.session, 10, ApplicationStage.TECH, 1, 42, 2
         )
 
     async def test_change_stage_to_hired_ignores_assignee_id(self):
@@ -707,10 +841,32 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result.sub_status, "pending")
         self.assignment_repo.upsert.assert_awaited_once_with(
-            self.session, 10, ApplicationStage.TECH, 42, 2
+            self.session, 10, ApplicationStage.TECH, 1, 42, 2
         )
         self.app_repo.update.assert_awaited_once()
         self.session.commit.assert_awaited_once()
+
+    async def test_reassign_targets_the_applications_current_round(self):
+        job = self._job(
+            job_id=1, owner_ids=(2,), stages=("recruiter_screening", "tech")
+        )
+        application = self._application(
+            application_id=10, job_id=1, stage=ApplicationStage.TECH
+        )
+        application.current_round = 2
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+        self.user_permissions_repo.get_active_users_with_permission = AsyncMock(
+            return_value=[self._user(user_id=42)]
+        )
+
+        dto = ReassignDto(assignee_id=42)
+        await self.service.reassign(self.session, self._ctx(user_id=2), 10, dto)
+
+        self.assignment_repo.upsert.assert_awaited_once_with(
+            self.session, 10, ApplicationStage.TECH, 2, 42, 2
+        )
 
     async def test_reassign_on_terminal_stage_raises(self):
         job = self._job(job_id=1, owner_ids=(2,), stages=("tech",))
@@ -1019,13 +1175,19 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
         self.app_repo.get_by_id = AsyncMock(return_value=application)
         self.sub_repo.get_current = AsyncMock(return_value=None)
+        self.user_permissions_repo.get_active_users_with_permission = AsyncMock(
+            return_value=[self._user(user_id=42)]
+        )
 
-        dto = RoundChangeDto(round=2)
+        dto = RoundChangeDto(round=2, assignee_id=42)
         result = await self.service.set_round(
             self.session, self._ctx(user_id=2), 10, dto
         )
 
         self.assertEqual(result.current_round, 2)
+        self.assignment_repo.upsert.assert_awaited_once_with(
+            self.session, 10, ApplicationStage.TECH, 2, 42, 2
+        )
         self.app_repo.update.assert_awaited_once()
         self.session.commit.assert_awaited_once()
 
@@ -1064,13 +1226,73 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
         self.app_repo.get_by_id = AsyncMock(return_value=application)
         self.sub_repo.get_current = AsyncMock(return_value=None)
+        self.user_permissions_repo.get_active_users_with_permission = AsyncMock(
+            return_value=[self._user(user_id=42)]
+        )
 
-        dto = RoundChangeDto(round=2)
+        dto = RoundChangeDto(round=2, assignee_id=42)
         await self.service.set_round(self.session, self._ctx(user_id=2), 10, dto)
 
         self.app_repo.get_by_id.assert_awaited_once_with(
             self.session, 10, for_update=True
         )
+
+    async def test_set_round_to_interview_stage_requires_assignee_id(self):
+        job = self._job(job_id=1, owner_ids=(2,), stages=("tech",), rounds={"tech": 2})
+        application = self._application(
+            application_id=10, job_id=1, stage=ApplicationStage.TECH
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+
+        dto = RoundChangeDto(round=2)  # no assignee_id
+        with self.assertRaisesRegex(ValueError, "assignee"):
+            await self.service.set_round(self.session, self._ctx(user_id=2), 10, dto)
+
+        self.assignment_repo.upsert.assert_not_awaited()
+        self.app_repo.update.assert_not_awaited()
+        self.session.commit.assert_not_awaited()
+
+    async def test_set_round_rejects_unqualified_assignee(self):
+        job = self._job(job_id=1, owner_ids=(2,), stages=("tech",), rounds={"tech": 2})
+        application = self._application(
+            application_id=10, job_id=1, stage=ApplicationStage.TECH
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+        self.user_permissions_repo.get_active_users_with_permission = AsyncMock(
+            return_value=[]
+        )
+
+        dto = RoundChangeDto(round=2, assignee_id=99)
+        with self.assertRaisesRegex(ValueError, "99"):
+            await self.service.set_round(self.session, self._ctx(user_id=2), 10, dto)
+
+        self.assignment_repo.upsert.assert_not_awaited()
+        self.app_repo.update.assert_not_awaited()
+        self.session.commit.assert_not_awaited()
+
+    async def test_set_round_on_non_interview_stage_ignores_missing_assignee(self):
+        job = self._job(
+            job_id=1, owner_ids=(2,), stages=("offer",), rounds={"offer": 2}
+        )
+        application = self._application(
+            application_id=10, job_id=1, stage=ApplicationStage.OFFER
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+
+        dto = RoundChangeDto(round=2)  # no assignee_id — offer isn't assignable
+        result = await self.service.set_round(
+            self.session, self._ctx(user_id=2), 10, dto
+        )
+
+        self.assertEqual(result.current_round, 2)
+        self.assignment_repo.upsert.assert_not_awaited()
+        self.user_permissions_repo.get_active_users_with_permission.assert_not_called()
 
 
 if __name__ == "__main__":

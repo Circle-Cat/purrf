@@ -87,6 +87,14 @@ class TestRoundChangeDto(unittest.TestCase):
         with self.assertRaises(pydantic.ValidationError):
             RoundChangeDto.model_validate({"round": 0})
 
+    def test_assignee_id_defaults_to_none(self):
+        dto = RoundChangeDto.model_validate({"round": 2})
+        self.assertIsNone(dto.assignee_id)
+
+    def test_accepts_an_explicit_assignee_id(self):
+        dto = RoundChangeDto.model_validate({"round": 2, "assigneeId": 7})
+        self.assertEqual(dto.assignee_id, 7)
+
 
 class TestBoardJobDtoStages(unittest.TestCase):
     def test_stages_is_a_list_of_stage_info(self):
@@ -110,6 +118,29 @@ class TestBoardCardDtoRound(unittest.TestCase):
             round=2,
         )
         self.assertEqual(dto.round, 2)
+
+
+class TestBoardCardDtoReviewer(unittest.TestCase):
+    def test_reviewer_name_defaults_to_none(self):
+        dto = BoardCardDto(
+            id=1,
+            applicant_name="A",
+            applicant_email="a@b.com",
+            stage="tech",
+        )
+        self.assertIsNone(dto.reviewer_name)
+
+    def test_reviewer_name_serialises_as_camel_case(self):
+        dto = BoardCardDto(
+            id=1,
+            applicant_name="A",
+            applicant_email="a@b.com",
+            stage="tech",
+            reviewer_name="Ivan Interviewer",
+        )
+        self.assertEqual(
+            dto.model_dump(by_alias=True)["reviewerName"], "Ivan Interviewer"
+        )
 
 
 if __name__ == "__main__":

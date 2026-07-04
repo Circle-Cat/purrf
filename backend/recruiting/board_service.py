@@ -67,7 +67,7 @@ class BoardService:
             resume_storage (ResumeStorage): Content-addressed résumé download,
                 for the owner-facing proxy download route.
             application_assignment_repository (ApplicationAssignmentRepository):
-                Per-(application, stage) interviewer assignment data access.
+                Per-(application, stage, round) interviewer assignment data access.
             user_permissions_repository (UserPermissionsRepository): Used to
                 verify a proposed assignee actively holds
                 ``Permission.RECRUITING_INTERVIEW_EVALUATE``.
@@ -148,6 +148,13 @@ class BoardService:
     ) -> dict[str, list[BoardCardDto]]:
         """Return a job's applications grouped by stage, for the board columns.
 
+        Each interview-stage card's ``reviewer_name`` resolves to: the
+        explicit assignment for that card's ``(stage, current_round)`` if
+        one exists; otherwise, only at round 1 and only for
+        recruiter_screening/behavioral, the job's configured
+        ``default_assignee_id`` for that stage; otherwise None. Non-interview
+        stages always get ``reviewer_name=None``.
+
         Args:
             session (AsyncSession): Active database async session.
             current_user (UserContextDto): The authenticated caller.
@@ -161,11 +168,54 @@ class BoardService:
         Raises:
             ValueError: If the caller is not an owner of the job.
         """
-        await self._require_owner(session, current_user, job_id)
+        job = await self._require_owner(session, current_user, job_id)
         rows = await self.application_repository.list_by_job(session, job_id)
+
+        default_by_stage: dict[ApplicationStage, int] = {}
+        for entry in (job.pipeline_config or {}).get("stages") or []:
+            if not isinstance(entry, dict):
+                continue
+            default_id = entry.get("defaultAssigneeId")
+            if default_id is None:
+                continue
+            try:
+                stage = ApplicationStage(entry.get("stage"))
+            except ValueError:
+                continue
+            default_by_stage[stage] = default_id
+
+        application_ids = [application.application_id for application, _ in rows]
+        assignments = (
+            await self.application_assignment_repository.list_by_application_ids(
+                session, application_ids
+            )
+        )
+        assignment_by_key: dict[tuple[int, ApplicationStage, int], int] = {
+            (a.application_id, a.stage, a.round): a.assignee_id for a in assignments
+        }
+
+        name_ids = {a.assignee_id for a in assignments} | set(default_by_stage.values())
+        reviewers = await self.users_repository.get_all_by_ids(session, list(name_ids))
+        names_by_id = {
+            u.user_id: f"{u.first_name} {u.last_name}".strip() for u in reviewers
+        }
+
         board: dict[str, list[BoardCardDto]] = {}
         for application, user in rows:
-            card = self.recruiting_mapper.to_board_card_dto(application, user)
+            reviewer_name = None
+            if application.stage in INTERVIEW_STAGES:
+                assignee_id = assignment_by_key.get((
+                    application.application_id,
+                    application.stage,
+                    application.current_round,
+                ))
+                if assignee_id is None and application.current_round == 1:
+                    assignee_id = default_by_stage.get(application.stage)
+                if assignee_id is not None:
+                    reviewer_name = names_by_id.get(assignee_id)
+            card = self.recruiting_mapper.to_board_card_dto(
+                application, user, reviewer_name=reviewer_name
+            )
             board.setdefault(application.stage.value, []).append(card)
         return board
 
@@ -365,6 +415,27 @@ class BoardService:
             )
         return current_sub
 
+    async def _validate_interview_assignee(
+        self, session: AsyncSession, assignee_id: int
+    ) -> None:
+        """Assert an assignee is an active RECRUITING_INTERVIEW_EVALUATE holder.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            assignee_id (int): The proposed assignee's user id.
+
+        Raises:
+            ValueError: If ``assignee_id`` is not an active holder of
+                ``Permission.RECRUITING_INTERVIEW_EVALUATE``.
+        """
+        pool = await self.user_permissions_repository.get_active_users_with_permission(
+            session, Permission.RECRUITING_INTERVIEW_EVALUATE.value
+        )
+        if assignee_id not in {u.user_id for u in pool}:
+            raise ValueError(
+                f"assignee {assignee_id} is not an active interview evaluator"
+            )
+
     async def change_stage(
         self,
         session: AsyncSession,
@@ -421,19 +492,14 @@ class BoardService:
                 raise ValueError(
                     f"assignee is required when advancing to {dto.to_stage!s}"
                 )
-            pool = (
-                await self.user_permissions_repository.get_active_users_with_permission(
-                    session, Permission.RECRUITING_INTERVIEW_EVALUATE.value
-                )
-            )
-            if dto.assignee_id not in {u.user_id for u in pool}:
-                raise ValueError(
-                    f"assignee {dto.assignee_id} is not an active interview evaluator"
-                )
+            await self._validate_interview_assignee(session, dto.assignee_id)
+            # The target stage always starts at round 1 (current_round is
+            # reset below), so the assignment is written for round 1.
             await self.application_assignment_repository.upsert(
                 session,
                 application_id,
                 dto.to_stage,
+                1,
                 dto.assignee_id,
                 current_user.user_id,
             )
@@ -473,14 +539,16 @@ class BoardService:
         application_id: int,
         dto: ReassignDto,
     ) -> ApplicationDto:
-        """Change the interviewer responsible for an application's current stage.
+        """Change the interviewer responsible for an application's current stage+round.
 
         Independent of Advance: usable any time the application sits in an
         interview stage, whether or not the outgoing assignee has submitted
-        anything. Resets sub_status to "pending" so the new assignee starts
-        from a clean slate; any evaluation the outgoing assignee already
-        confirmed is untouched (it's a separate row keyed by its own
-        evaluator_id — sub-project #3 slice 1's evaluation feature).
+        anything. Targets the application's current round (``current_round``)
+        within its current stage — other rounds' assignments are untouched.
+        Resets sub_status to "pending" so the new assignee starts from a
+        clean slate; any evaluation the outgoing assignee already confirmed
+        is untouched (it's a separate row keyed by its own evaluator_id —
+        sub-project #3 slice 1's evaluation feature).
 
         Args:
             session (AsyncSession): Active database async session.
@@ -504,17 +572,12 @@ class BoardService:
             raise ValueError(
                 f"application {application_id} is not in an interview stage"
             )
-        pool = await self.user_permissions_repository.get_active_users_with_permission(
-            session, Permission.RECRUITING_INTERVIEW_EVALUATE.value
-        )
-        if dto.assignee_id not in {u.user_id for u in pool}:
-            raise ValueError(
-                f"assignee {dto.assignee_id} is not an active interview evaluator"
-            )
+        await self._validate_interview_assignee(session, dto.assignee_id)
         await self.application_assignment_repository.upsert(
             session,
             application_id,
             application.stage,
+            application.current_round,
             dto.assignee_id,
             current_user.user_id,
         )
@@ -586,20 +649,32 @@ class BoardService:
     ) -> ApplicationDto:
         """Manually advance an application to a round within its current stage.
 
+        When the application's current stage is an interview stage
+        (``INTERVIEW_STAGES``), an assignee must be supplied and must be an
+        active holder of ``Permission.RECRUITING_INTERVIEW_EVALUATE``; the
+        assignment is persisted for the target round via
+        ``application_assignment_repository.upsert``. Non-interview stages
+        (e.g. a multi-round ``offer``) ignore ``dto.assignee_id``.
+
         Args:
             session (AsyncSession): Active database async session.
-            current_user (UserContextDto): The authenticated caller.
+            current_user (UserContextDto): The authenticated caller,
+                recorded as the assignment's ``assigned_by`` when the
+                target stage is an interview stage.
             application_id (int): The application to update.
-            dto (RoundChangeDto): The target round.
+            dto (RoundChangeDto): The target round and, for interview
+                stages, the assignee.
 
         Returns:
             ApplicationDto: The refreshed application.
 
         Raises:
             ValueError: If the application is missing, the caller is not an
-                owner (collapsed "not found" message), or ``dto.round`` is
+                owner (collapsed "not found" message), ``dto.round`` is
                 outside ``1..rounds_for_stage(...)`` for the application's
-                current stage.
+                current stage, or (for interview stages) ``dto.assignee_id``
+                is missing or is not an active holder of
+                ``Permission.RECRUITING_INTERVIEW_EVALUATE``.
         """
         application, job = await self._load_owned_application(
             session, current_user, application_id, for_update=True
@@ -611,6 +686,21 @@ class BoardService:
             raise ValueError(
                 f"round {dto.round} is out of range for stage "
                 f"{application.stage!s} (configured rounds: {max_round})"
+            )
+        if application.stage in INTERVIEW_STAGES:
+            if dto.assignee_id is None:
+                raise ValueError(
+                    f"assignee is required when advancing to round {dto.round} "
+                    f"of {application.stage!s}"
+                )
+            await self._validate_interview_assignee(session, dto.assignee_id)
+            await self.application_assignment_repository.upsert(
+                session,
+                application_id,
+                application.stage,
+                dto.round,
+                dto.assignee_id,
+                current_user.user_id,
             )
         application.current_round = dto.round
 

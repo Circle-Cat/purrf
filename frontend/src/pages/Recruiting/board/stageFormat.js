@@ -11,3 +11,14 @@ export const humanize = (value) => {
   const spaced = value.replaceAll("_", " ");
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 };
+
+/**
+ * Stages that carry an interview assignment/evaluation, mirroring the
+ * backend's `INTERVIEW_STAGES` (backend/recruiting/board_service.py).
+ */
+export const INTERVIEW_STAGES = new Set([
+  "recruiter_screening",
+  "behavioral",
+  "tech",
+  "board_review",
+]);

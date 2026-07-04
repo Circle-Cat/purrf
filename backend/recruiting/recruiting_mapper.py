@@ -114,13 +114,21 @@ class RecruitingMapper:
         )
 
     def to_board_card_dto(
-        self, application: ApplicationEntity, user: UsersEntity
+        self,
+        application: ApplicationEntity,
+        user: UsersEntity,
+        reviewer_name: str | None = None,
     ) -> BoardCardDto:
         """Map an application + its joined applicant to a board card.
 
         Args:
             application (ApplicationEntity): The application to project.
             user (UsersEntity): The applicant, joined by user_id.
+            reviewer_name (str | None): The resolved interviewer name for
+                this card's current stage+round (see
+                ``BoardService.get_board``), or None when there is no
+                reviewer to show (either the stage isn't an interview stage,
+                or nobody is assigned yet).
 
         Returns:
             BoardCardDto: The board's applicant-card projection.
@@ -135,6 +143,7 @@ class RecruitingMapper:
             applied_at=application.created_datetime,
             round=application.current_round,
             is_blocked=bool(user.is_blocked),
+            reviewer_name=reviewer_name,
         )
 
     def to_application_dto(self, application, current_submission=None, editable=False):
