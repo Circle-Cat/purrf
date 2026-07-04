@@ -28,6 +28,7 @@ import JobDetailPage from "@/pages/Recruiting/JobDetailPage";
 import MyApplication from "@/pages/Recruiting/MyApplication";
 import JobsBrowse from "@/pages/Recruiting/JobsBrowse";
 import BoardPage from "@/pages/Recruiting/board/BoardPage";
+import ApplicationDetailPage from "@/pages/Recruiting/applications/ApplicationDetailPage";
 import { AuthProvider } from "@/context/auth";
 import { FlagsProvider, LDIdentifier } from "@/context/flags";
 import { PERMISSIONS } from "@/constants/Permissions";
@@ -186,6 +187,12 @@ function App() {
                     <Route
                       path={ROUTE_PATHS.RECRUITING_BOARD}
                       element={<BoardPage />}
+                    />
+                    <Route
+                      path={ROUTE_PATHS.RECRUITING_APPLICATION_DETAIL(
+                        ":applicationId",
+                      )}
+                      element={<ApplicationDetailPage />}
                     />
                     <Route
                       path="/recruiting/jobs/:jobId"
