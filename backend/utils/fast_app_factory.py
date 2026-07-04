@@ -31,6 +31,7 @@ class FastAppFactory:
         application_controller,
         board_controller,
         blacklist_controller,
+        evaluation_controller,
         launchdarkly_client,
         database,
         logger,
@@ -54,6 +55,7 @@ class FastAppFactory:
             application_controller: An instance of ApplicationController that manages API routes for candidate application submission.
             board_controller: An instance of BoardController that manages API routes for the owner-facing recruiting application board.
             blacklist_controller: An instance of BlacklistController that manages API routes for viewing and clearing the org-wide user blacklist.
+            evaluation_controller: An instance of EvaluationController that manages API routes for assignee-facing interview evaluation scorecards.
             launchdarkly_client: LaunchDarklyClient instance for feature flag lifecycle management.
             database: Database instance for application lifecycle cleanup.
         """
@@ -74,6 +76,7 @@ class FastAppFactory:
         self.application_controller = application_controller
         self.board_controller = board_controller
         self.blacklist_controller = blacklist_controller
+        self.evaluation_controller = evaluation_controller
         self.launchdarkly_client = launchdarkly_client
         self.database = database
         self.logger = logger
@@ -151,6 +154,7 @@ class FastAppFactory:
         app.include_router(self.application_controller.router, prefix="/api")
         app.include_router(self.board_controller.router, prefix="/api")
         app.include_router(self.blacklist_controller.router, prefix="/api")
+        app.include_router(self.evaluation_controller.router, prefix="/api")
 
         @app.get("/fastapi/health")
         def health_check():

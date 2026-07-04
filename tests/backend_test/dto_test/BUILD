@@ -29,3 +29,12 @@ py_test(
         "//backend/dto",
     ],
 )
+
+py_test(
+    name = "evaluation_dto_test",
+    srcs = ["evaluation_dto_test.py"],
+    deps = [
+        "//backend/common:recruiting_enums",
+        "//backend/dto",
+    ],
+)

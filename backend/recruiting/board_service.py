@@ -176,8 +176,9 @@ class BoardService:
         application_id: int,
         *,
         for_update: bool = False,
+        allow_assignee: bool = False,
     ) -> tuple[ApplicationEntity, JobEntity]:
-        """Load an application and assert the caller owns its job.
+        """Load an application and assert the caller may read/write it.
 
         Args:
             session (AsyncSession): Active database async session.
@@ -186,29 +187,48 @@ class BoardService:
             for_update (bool): When True, row-locks the application (``SELECT
                 ... FOR UPDATE``) so a concurrent decision on the same
                 application serialises behind this transaction.
+            allow_assignee (bool): When True, a caller who is the
+                application's current-stage assignee (but not an owner)
+                also passes — used by the read path (``get_application_detail``)
+                now that owners and assignees share one detail page
+                (sub-project #3 slice 1). Mutation paths (``change_stage``,
+                ``set_sub_status``, ``reassign``, ``blacklist``) leave this
+                False and stay owner-only.
 
         Returns:
             tuple[ApplicationEntity, JobEntity]: The application and its job.
 
         Raises:
-            ValueError: If the application is missing, or the caller is not
-                an owner of the application's job. Both cases raise the
-                same generic message (mirroring
-                ``ApplicationService._load_owned``) so response bodies don't
-                leak which application ids exist to non-owners.
+            ValueError: If the application is missing, or the caller is
+                neither an owner of the application's job nor (when
+                ``allow_assignee`` is True) the application's current-stage
+                assignee. All cases raise the same generic message
+                (mirroring ``ApplicationService._load_owned``) so response
+                bodies don't leak which application ids exist to
+                unauthorized callers.
         """
         application = await self.application_repository.get_by_id(
             session, application_id, for_update=for_update
         )
-        # Missing and not-owned must be indistinguishable: a distinct
-        # "not an owner" message would let any authenticated caller probe
-        # which application ids exist.
+        # Missing and not-owned/not-assignee must be indistinguishable: a
+        # distinct message would let any authenticated caller probe which
+        # application ids exist.
         if application is None:
             raise ValueError(f"application {application_id} not found")
         job = await self.job_repository.get_by_job_id(session, application.job_id)
-        if job is None or current_user.user_id not in normalized_owner_ids(
+        is_owner = job is not None and current_user.user_id in normalized_owner_ids(
             job.pipeline_config
-        ):
+        )
+        is_assignee = False
+        if not is_owner and allow_assignee:
+            assignment = await self.application_assignment_repository.get(
+                session, application_id, application.stage
+            )
+            is_assignee = (
+                assignment is not None
+                and assignment.assignee_id == current_user.user_id
+            )
+        if job is None or not (is_owner or is_assignee):
             raise ValueError(f"application {application_id} not found")
         return application, job
 
@@ -218,7 +238,12 @@ class BoardService:
         current_user: UserContextDto,
         application_id: int,
     ) -> ApplicationDetailDto:
-        """Return the owner-facing full view of one application.
+        """Return the full view of one application, for its owner or assignee.
+
+        Readable by either a configured owner of the job, or (as of
+        sub-project #3 slice 1) the application's current-stage assignee —
+        PR 3 merges the owner's board dialog and the assignee's evaluation
+        view into one shared page served by this same read endpoint.
 
         Args:
             session (AsyncSession): Active database async session.
@@ -231,14 +256,15 @@ class BoardService:
                 dialog can label answers by question id).
 
         Raises:
-            ValueError: If the application is missing, or the caller is not
-                an owner of the application's job. Both cases raise the
-                same generic message (mirroring
-                ``ApplicationService._load_owned``) so response bodies don't
-                leak which application ids exist to non-owners.
+            ValueError: If the application is missing, or the caller is
+                neither an owner of the application's job nor its
+                current-stage assignee. All cases raise the same generic
+                message (mirroring ``ApplicationService._load_owned``) so
+                response bodies don't leak which application ids exist to
+                unauthorized callers.
         """
         application, job = await self._load_owned_application(
-            session, current_user, application_id
+            session, current_user, application_id, allow_assignee=True
         )
         user = await self.users_repository.get_user_by_user_id(
             session, application.user_id

@@ -553,6 +553,7 @@ class TestAppDependencyBuilder(TestCase):
             application_controller=ANY,
             board_controller=ANY,
             blacklist_controller=ANY,
+            evaluation_controller=ANY,
             launchdarkly_client=mock_launchdarkly_client_cls.return_value,
             database=mock_database_cls.return_value,
             logger=mock_logger,

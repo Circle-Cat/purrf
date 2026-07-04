@@ -231,6 +231,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         application = self._application(application_id=10, job_id=1, user_id=3)
         self.app_repo.get_by_id = AsyncMock(return_value=application)
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.assignment_repo.get = AsyncMock(return_value=None)
 
         with self.assertRaises(ValueError) as ctx:
             await self.service.get_application_detail(
@@ -239,6 +240,51 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         # Same message as the missing-application case: not-owned must be
         # indistinguishable from nonexistent, or authenticated callers could
         # enumerate which application ids exist.
+        self.assertEqual(str(ctx.exception), "application 10 not found")
+
+    async def test_get_application_detail_succeeds_for_current_stage_assignee(self):
+        """A caller who is the current-stage assignee (but not an owner) can
+        still read the detail view — needed once PR 3 merges the owner's
+        board dialog and the assignee's evaluation view into one shared
+        page served by this same read endpoint."""
+        job = self._job(job_id=1, owner_ids=(9,))
+        application = self._application(
+            application_id=10,
+            job_id=1,
+            user_id=3,
+            stage=ApplicationStage.RECRUITER_SCREENING,
+        )
+        applicant = self._user(user_id=3, first="C", last="D", email="c@d.com")
+        assignment = MagicMock(assignee_id=2)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.assignment_repo.get = AsyncMock(return_value=assignment)
+        self.users_repo.get_user_by_user_id = AsyncMock(return_value=applicant)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+
+        result = await self.service.get_application_detail(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertEqual(result.application.id, 10)
+        self.assignment_repo.get.assert_awaited_once_with(
+            self.session, 10, ApplicationStage.RECRUITER_SCREENING
+        )
+
+    async def test_get_application_detail_raises_when_neither_owner_nor_assignee(
+        self,
+    ):
+        job = self._job(job_id=1, owner_ids=(9,))
+        application = self._application(application_id=10, job_id=1, user_id=3)
+        assignment = MagicMock(assignee_id=99)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.assignment_repo.get = AsyncMock(return_value=assignment)
+
+        with self.assertRaises(ValueError) as ctx:
+            await self.service.get_application_detail(
+                self.session, self._ctx(user_id=2), 10
+            )
         self.assertEqual(str(ctx.exception), "application 10 not found")
 
     # -- get_resume --
@@ -403,6 +449,26 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError) as ctx:
             await self.service.change_stage(self.session, self._ctx(user_id=2), 10, dto)
         self.assertEqual(str(ctx.exception), "application 10 not found")
+
+    async def test_change_stage_assignee_but_not_owner_still_raises(self):
+        """change_stage is a mutation path — it must stay owner-only. Even
+        though the caller is the application's current-stage assignee, that
+        must not satisfy `_load_owned_application` here, proving the
+        `allow_assignee` default (False) didn't leak into this call site."""
+        job = self._job(job_id=1, owner_ids=(9,))
+        application = self._application(
+            application_id=10, job_id=1, stage=ApplicationStage.RECRUITER_SCREENING
+        )
+        assignment = MagicMock(assignee_id=2)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.assignment_repo.get = AsyncMock(return_value=assignment)
+
+        dto = StageChangeDto(to_stage=ApplicationStage.TECH)
+        with self.assertRaises(ValueError) as ctx:
+            await self.service.change_stage(self.session, self._ctx(user_id=2), 10, dto)
+        self.assertEqual(str(ctx.exception), "application 10 not found")
+        self.assignment_repo.get.assert_not_awaited()
 
     async def test_change_stage_missing_application_gets_same_message(self):
         self.app_repo.get_by_id = AsyncMock(return_value=None)
