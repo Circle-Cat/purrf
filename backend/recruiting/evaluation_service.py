@@ -79,7 +79,7 @@ class EvaluationService:
         if application is None:
             raise ValueError(f"application {application_id} not found")
         assignment = await self.application_assignment_repository.get(
-            session, application_id, application.stage
+            session, application_id, application.stage, application.current_round
         )
         if assignment is None or assignment.assignee_id != current_user.user_id:
             raise ValueError(
@@ -209,7 +209,7 @@ class EvaluationService:
         is_assignee = False
         if not is_owner:
             assignment = await self.application_assignment_repository.get(
-                session, application_id, application.stage
+                session, application_id, application.stage, application.current_round
             )
             is_assignee = (
                 assignment is not None
