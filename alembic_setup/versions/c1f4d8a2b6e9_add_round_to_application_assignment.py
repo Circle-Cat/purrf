@@ -1,7 +1,7 @@
 """add round to application assignment
 
 Revision ID: c1f4d8a2b6e9
-Revises: 205cf4cb5f2f
+Revises: 866a9df543ab
 Create Date: 2026-07-04 00:00:00.000000
 
 """
@@ -13,7 +13,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = "c1f4d8a2b6e9"
-down_revision: Union[str, Sequence[str], None] = "205cf4cb5f2f"
+down_revision: Union[str, Sequence[str], None] = "866a9df543ab"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
