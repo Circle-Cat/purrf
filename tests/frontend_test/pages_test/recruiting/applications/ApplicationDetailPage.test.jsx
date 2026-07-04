@@ -216,6 +216,7 @@ describe("ApplicationDetailPage — role-adaptive right column", () => {
           id: 1,
           applicationId: 101,
           stage: "recruiter_screening",
+          round: 1,
           evaluatorId: ASSIGNEE_ID,
           responses: {
             bg_match: { value: true },
@@ -260,6 +261,7 @@ describe("ApplicationDetailPage — role-adaptive right column", () => {
           id: 2,
           applicationId: 101,
           stage: "recruiter_screening",
+          round: 1,
           evaluatorId: ASSIGNEE_ID,
           responses: { bg_strength: { value: 3, notes: "draft note" } },
           isConfirmed: false,
@@ -312,6 +314,7 @@ describe("ApplicationDetailPage — role-adaptive right column", () => {
           id: 3,
           applicationId: 101,
           stage: "recruiter_screening",
+          round: 1,
           evaluatorId: ASSIGNEE_ID,
           responses: { bg_match: { value: true } },
           isConfirmed: true,
@@ -331,6 +334,42 @@ describe("ApplicationDetailPage — role-adaptive right column", () => {
     screen
       .getAllByRole("button", { name: "Pass" })
       .forEach((button) => expect(button).toBeDisabled());
+  });
+
+  it("a round-1-confirmed evaluator on round 2 gets a fresh editable rubric, not the locked round-1 one", async () => {
+    authState.userId = ASSIGNEE_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({
+        isOwner: false,
+        assigneeId: ASSIGNEE_ID,
+        stage: "recruiter_screening",
+        currentRound: 2,
+      }),
+    });
+    api.getEvaluationsForApplication.mockResolvedValue({
+      data: [
+        {
+          id: 4,
+          applicationId: 101,
+          stage: "recruiter_screening",
+          round: 1,
+          evaluatorId: ASSIGNEE_ID,
+          responses: { bg_match: { value: true } },
+          isConfirmed: true,
+        },
+      ],
+    });
+    renderPage();
+    await waitLoaded();
+
+    // Round 2 has no evaluation yet: the rubric must be fresh and editable,
+    // not the round-1 confirmed row (which would render read-only).
+    expect(
+      screen.getByRole("button", { name: "Confirm & Submit" }),
+    ).toBeInTheDocument();
+    screen
+      .getAllByRole("button", { name: "Pass" })
+      .forEach((button) => expect(button).not.toBeDisabled());
   });
 
   it("submits a draft evaluation via submitEvaluation when the assignee saves", async () => {

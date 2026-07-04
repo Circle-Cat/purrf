@@ -39,6 +39,7 @@ class TestEvaluationDto(unittest.TestCase):
             "id": 1,
             "applicationId": 2,
             "stage": ApplicationStage.TECH.value,
+            "round": 2,
             "evaluatorId": 3,
             "responses": {"q1": "hire"},
             "isConfirmed": True,
@@ -47,6 +48,7 @@ class TestEvaluationDto(unittest.TestCase):
         self.assertEqual(dto.id, 1)
         self.assertEqual(dto.application_id, 2)
         self.assertEqual(dto.stage, ApplicationStage.TECH)
+        self.assertEqual(dto.round, 2)
         self.assertEqual(dto.evaluator_id, 3)
         self.assertEqual(dto.responses, {"q1": "hire"})
         self.assertTrue(dto.is_confirmed)
@@ -57,6 +59,7 @@ class TestEvaluationDto(unittest.TestCase):
             "id": 1,
             "applicationId": 2,
             "stage": ApplicationStage.TECH.value,
+            "round": 1,
             "evaluatorId": 3,
             "responses": {},
             "isConfirmed": False,
@@ -71,12 +74,14 @@ class TestMyEvaluationDto(unittest.TestCase):
             "jobTitle": "Software Engineer",
             "applicantName": "Ada Lovelace",
             "stage": ApplicationStage.BEHAVIORAL.value,
+            "round": 1,
             "isConfirmed": False,
         })
         self.assertEqual(dto.application_id, 5)
         self.assertEqual(dto.job_title, "Software Engineer")
         self.assertEqual(dto.applicant_name, "Ada Lovelace")
         self.assertEqual(dto.stage, ApplicationStage.BEHAVIORAL)
+        self.assertEqual(dto.round, 1)
         self.assertFalse(dto.is_confirmed)
 
 
