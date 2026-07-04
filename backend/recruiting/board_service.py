@@ -148,6 +148,13 @@ class BoardService:
     ) -> dict[str, list[BoardCardDto]]:
         """Return a job's applications grouped by stage, for the board columns.
 
+        Each interview-stage card's ``reviewer_name`` resolves to: the
+        explicit assignment for that card's ``(stage, current_round)`` if
+        one exists; otherwise, only at round 1 and only for
+        recruiter_screening/behavioral, the job's configured
+        ``default_assignee_id`` for that stage; otherwise None. Non-interview
+        stages always get ``reviewer_name=None``.
+
         Args:
             session (AsyncSession): Active database async session.
             current_user (UserContextDto): The authenticated caller.
@@ -161,11 +168,56 @@ class BoardService:
         Raises:
             ValueError: If the caller is not an owner of the job.
         """
-        await self._require_owner(session, current_user, job_id)
+        job = await self._require_owner(session, current_user, job_id)
         rows = await self.application_repository.list_by_job(session, job_id)
+
+        default_by_stage: dict[ApplicationStage, int] = {}
+        for entry in (job.pipeline_config or {}).get("stages") or []:
+            if not isinstance(entry, dict):
+                continue
+            default_id = entry.get("defaultAssigneeId")
+            if default_id is None:
+                continue
+            try:
+                stage = ApplicationStage(entry.get("stage"))
+            except ValueError:
+                continue
+            default_by_stage[stage] = default_id
+
+        application_ids = [application.application_id for application, _ in rows]
+        assignments = (
+            await self.application_assignment_repository.list_by_application_ids(
+                session, application_ids
+            )
+        )
+        assignment_by_key: dict[tuple[int, ApplicationStage, int], int] = {
+            (a.application_id, a.stage, a.round): a.assignee_id for a in assignments
+        }
+
+        name_ids = {a.assignee_id for a in assignments} | set(default_by_stage.values())
+        reviewers = await self.users_repository.get_all_by_ids(session, list(name_ids))
+        names_by_id = {
+            u.user_id: f"{u.first_name} {u.last_name}".strip() for u in reviewers
+        }
+
         board: dict[str, list[BoardCardDto]] = {}
         for application, user in rows:
-            card = self.recruiting_mapper.to_board_card_dto(application, user)
+            reviewer_name = None
+            if application.stage in INTERVIEW_STAGES:
+                assignee_id = assignment_by_key.get(
+                    (
+                        application.application_id,
+                        application.stage,
+                        application.current_round,
+                    )
+                )
+                if assignee_id is None and application.current_round == 1:
+                    assignee_id = default_by_stage.get(application.stage)
+                if assignee_id is not None:
+                    reviewer_name = names_by_id.get(assignee_id)
+            card = self.recruiting_mapper.to_board_card_dto(
+                application, user, reviewer_name=reviewer_name
+            )
             board.setdefault(application.stage.value, []).append(card)
         return board
 
