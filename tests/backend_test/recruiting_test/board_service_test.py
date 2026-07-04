@@ -1,6 +1,6 @@
 import unittest
 from datetime import datetime
-from unittest.mock import AsyncMock, MagicMock, call
+from unittest.mock import AsyncMock, MagicMock, call, create_autospec
 
 from backend.recruiting.board_service import BoardService
 from backend.recruiting.recruiting_mapper import RecruitingMapper
@@ -19,6 +19,9 @@ from backend.entity.application_submission_entity import ApplicationSubmissionEn
 from backend.entity.job_entity import JobEntity
 from backend.entity.users_entity import UsersEntity
 from backend.common.recruiting_enums import ApplicationStage, JobKind, JobStatus
+from backend.repository.application_assignment_repository import (
+    ApplicationAssignmentRepository,
+)
 
 
 class TestBoardService(unittest.IsolatedAsyncioTestCase):
@@ -29,9 +32,13 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.users_repo = MagicMock()
         self.users_repo.get_all_by_ids = AsyncMock(return_value=[])
         self.resume_storage = MagicMock()
-        self.assignment_repo = MagicMock()
-        self.assignment_repo.upsert = AsyncMock()
-        self.assignment_repo.list_by_application_ids = AsyncMock(return_value=[])
+        # autospec (not a bare MagicMock) so a caller/repo signature drift
+        # (e.g. a new required param) fails the test instead of silently
+        # accepting any arity.
+        self.assignment_repo = create_autospec(
+            ApplicationAssignmentRepository, instance=True
+        )
+        self.assignment_repo.list_by_application_ids.return_value = []
         self.user_permissions_repo = MagicMock()
         self.session = AsyncMock()
         self.service = BoardService(
@@ -323,7 +330,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         )
         self.app_repo.get_by_id = AsyncMock(return_value=application)
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
-        self.assignment_repo.get = AsyncMock(return_value=None)
+        self.assignment_repo.get.return_value = None
         self.users_repo.get_user_by_user_id = AsyncMock(return_value=applicant)
         self.sub_repo.get_current = AsyncMock(return_value=current_sub)
 
@@ -345,7 +352,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         applicant = self._user(user_id=3)
         self.app_repo.get_by_id = AsyncMock(return_value=application)
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
-        self.assignment_repo.get = AsyncMock(return_value=None)
+        self.assignment_repo.get.return_value = None
         self.users_repo.get_user_by_user_id = AsyncMock(return_value=applicant)
         self.sub_repo.get_current = AsyncMock(return_value=None)
 
@@ -369,7 +376,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         application = self._application(application_id=10, job_id=1, user_id=3)
         self.app_repo.get_by_id = AsyncMock(return_value=application)
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
-        self.assignment_repo.get = AsyncMock(return_value=None)
+        self.assignment_repo.get.return_value = None
 
         with self.assertRaises(ValueError) as ctx:
             await self.service.get_application_detail(
@@ -396,7 +403,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         assignment = MagicMock(assignee_id=2)
         self.app_repo.get_by_id = AsyncMock(return_value=application)
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
-        self.assignment_repo.get = AsyncMock(return_value=assignment)
+        self.assignment_repo.get.return_value = assignment
         self.users_repo.get_user_by_user_id = AsyncMock(return_value=applicant)
         self.sub_repo.get_current = AsyncMock(return_value=None)
 
@@ -411,7 +418,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         # Assert both the args AND the exact count so a future accidental
         # extra call (or a dropped call) doesn't go unnoticed.
         self.assignment_repo.get.assert_has_awaits(
-            [call(self.session, 10, ApplicationStage.RECRUITER_SCREENING)] * 2
+            [call(self.session, 10, ApplicationStage.RECRUITER_SCREENING, 1)] * 2
         )
         self.assertEqual(self.assignment_repo.get.await_count, 2)
 
@@ -423,7 +430,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         assignment = MagicMock(assignee_id=99)
         self.app_repo.get_by_id = AsyncMock(return_value=application)
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
-        self.assignment_repo.get = AsyncMock(return_value=assignment)
+        self.assignment_repo.get.return_value = assignment
 
         with self.assertRaises(ValueError) as ctx:
             await self.service.get_application_detail(
@@ -446,7 +453,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         assignment = MagicMock(assignee_id=7)
         self.app_repo.get_by_id = AsyncMock(return_value=application)
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
-        self.assignment_repo.get = AsyncMock(return_value=assignment)
+        self.assignment_repo.get.return_value = assignment
         self.users_repo.get_user_by_user_id = AsyncMock(return_value=applicant)
         self.sub_repo.get_current = AsyncMock(return_value=None)
 
@@ -472,7 +479,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         assignment = MagicMock(assignee_id=2)
         self.app_repo.get_by_id = AsyncMock(return_value=application)
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
-        self.assignment_repo.get = AsyncMock(return_value=assignment)
+        self.assignment_repo.get.return_value = assignment
         self.users_repo.get_user_by_user_id = AsyncMock(return_value=applicant)
         self.sub_repo.get_current = AsyncMock(return_value=None)
 
@@ -498,7 +505,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         assignment = MagicMock(assignee_id=2)
         self.app_repo.get_by_id = AsyncMock(return_value=application)
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
-        self.assignment_repo.get = AsyncMock(return_value=assignment)
+        self.assignment_repo.get.return_value = assignment
         self.users_repo.get_user_by_user_id = AsyncMock(return_value=applicant)
         self.sub_repo.get_current = AsyncMock(return_value=None)
 
@@ -519,7 +526,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         applicant = self._user(user_id=3, first="C", last="D", email="c@d.com")
         self.app_repo.get_by_id = AsyncMock(return_value=application)
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
-        self.assignment_repo.get = AsyncMock(return_value=None)
+        self.assignment_repo.get.return_value = None
         self.users_repo.get_user_by_user_id = AsyncMock(return_value=applicant)
         self.sub_repo.get_current = AsyncMock(return_value=None)
 
@@ -705,7 +712,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         assignment = MagicMock(assignee_id=2)
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
         self.app_repo.get_by_id = AsyncMock(return_value=application)
-        self.assignment_repo.get = AsyncMock(return_value=assignment)
+        self.assignment_repo.get.return_value = assignment
 
         dto = StageChangeDto(to_stage=ApplicationStage.TECH)
         with self.assertRaises(ValueError) as ctx:

@@ -272,7 +272,7 @@ class BoardService:
         is_assignee = False
         if not is_owner and allow_assignee:
             assignment = await self.application_assignment_repository.get(
-                session, application_id, application.stage
+                session, application_id, application.stage, application.current_round
             )
             is_assignee = (
                 assignment is not None
@@ -327,7 +327,7 @@ class BoardService:
         )
         is_owner = current_user.user_id in normalized_owner_ids(job.pipeline_config)
         assignment = await self.application_assignment_repository.get(
-            session, application_id, application.stage
+            session, application_id, application.stage, application.current_round
         )
         # The embedded ApplicationDto's `editable` is deliberately left at
         # its default (False) here: it encodes the CANDIDATE's edit window
