@@ -19,6 +19,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import LoadGate from "@/pages/Recruiting/components/LoadGate";
 import { RowList } from "@/pages/Recruiting/components/ApplicationSnapshotRows";
 import PeoplePicker from "@/pages/Recruiting/components/PeoplePicker";
@@ -26,6 +27,7 @@ import EvaluationRubricForm from "@/pages/Recruiting/applications/EvaluationRubr
 import { rubricFor } from "@/pages/Recruiting/applications/evaluationRubric";
 import {
   getApplicationDetail,
+  getApplicationActivity,
   getEvaluationsForApplication,
   getJob,
   listInterviewPool,
@@ -223,7 +225,6 @@ const EvaluationSummaryRow = ({ field, entry }) => {
  */
 const EvaluationSummary = ({ evaluations }) => (
   <div className="space-y-4">
-    <h2 className="text-sm font-semibold text-slate-800">Evaluations</h2>
     {evaluations.length === 0 ? (
       <p className="text-sm text-slate-400">No evaluations submitted yet.</p>
     ) : (
@@ -248,6 +249,65 @@ const EvaluationSummary = ({ evaluations }) => (
           ))}
         </div>
       ))
+    )}
+  </div>
+);
+
+/**
+ * Human-readable one-line description of a single activity entry, built
+ * from its `details` payload. Falls back to the raw `eventType` for
+ * anything not explicitly handled, so a future event type still renders
+ * something rather than going blank.
+ *
+ * @param {{eventType: string, details: object}} activity
+ * @returns {string}
+ */
+const describeActivity = ({ eventType, details }) => {
+  switch (eventType) {
+    case "application_submitted":
+      return `Submitted — landed on ${humanize(details.stage)}`;
+    case "auto_rejected":
+      return "Automatically rejected (blocked applicant)";
+    case "stage_changed":
+      return details.reason
+        ? `Rejected from ${humanize(details.fromStage)}${
+            details.note
+              ? `: ${details.reason} — ${details.note}`
+              : `: ${details.reason}`
+          }`
+        : `Advanced from ${humanize(details.fromStage)} to ${humanize(details.toStage)}`;
+    case "reassigned":
+      return `Reassigned on ${humanize(details.stage)}`;
+    case "round_advanced":
+      return `Advanced to round ${details.toRound} of ${humanize(details.stage)}`;
+    default:
+      return humanize(eventType);
+  }
+};
+
+/**
+ * Read-only owner-facing audit timeline for one application: every
+ * submission/stage-change/reassign/round-advance event, newest first, each
+ * attributed to its actor's resolved display name.
+ *
+ * @param {{activity: {id: number, eventType: string, details: object,
+ *          actorName: string, createdAt: string}[]}} props
+ */
+const ActivityTimeline = ({ activity }) => (
+  <div className="space-y-2">
+    {activity.length === 0 ? (
+      <p className="text-sm text-slate-400">No activity yet.</p>
+    ) : (
+      <ul className="space-y-1">
+        {activity.map((entry) => (
+          <li key={entry.id} className="text-sm text-slate-700">
+            <span className="text-slate-500">
+              {new Date(entry.createdAt).toLocaleString()}
+            </span>{" "}
+            — {entry.actorName}: {describeActivity(entry)}
+          </li>
+        ))}
+      </ul>
     )}
   </div>
 );
@@ -294,6 +354,7 @@ const ApplicationDetailPage = () => {
   const [evaluations, setEvaluations] = useState([]);
   const [job, setJob] = useState(null);
   const [interviewPool, setInterviewPool] = useState([]);
+  const [activity, setActivity] = useState([]);
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState(false);
 
@@ -331,16 +392,20 @@ const ApplicationDetailPage = () => {
       .then(async ([{ data: detailData }, { data: evals }]) => {
         setDetail(detailData);
         setEvaluations(evals ?? []);
-        // Job config (per-stage default assignee) and the interview pool are
-        // owner-only reads (both gated on RECRUITING_JOB_WRITE), so only an
-        // owner fetches them; an assignee-only viewer would be rejected.
+        // Job config (per-stage default assignee), the interview pool, and
+        // the activity timeline are all owner-only reads (job/pool gated on
+        // RECRUITING_JOB_WRITE, activity via row-level ownership), so only
+        // an owner fetches them; an assignee-only viewer would be rejected.
         if (detailData.isOwner) {
-          const [{ data: jobData }, { data: pool }] = await Promise.all([
-            getJob(detailData.application.jobId),
-            listInterviewPool(),
-          ]);
+          const [{ data: jobData }, { data: pool }, { data: activityRows }] =
+            await Promise.all([
+              getJob(detailData.application.jobId),
+              listInterviewPool(),
+              getApplicationActivity(applicationId),
+            ]);
           setJob(jobData);
           setInterviewPool(pool ?? []);
+          setActivity(activityRows ?? []);
         }
         setLoaded(true);
       })
@@ -813,7 +878,18 @@ const ApplicationDetailPage = () => {
                 </div>
               )}
 
-              <EvaluationSummary evaluations={evaluations} />
+              <Tabs defaultValue="evaluations">
+                <TabsList>
+                  <TabsTrigger value="evaluations">Evaluations</TabsTrigger>
+                  <TabsTrigger value="timeline">Timeline</TabsTrigger>
+                </TabsList>
+                <TabsContent value="evaluations">
+                  <EvaluationSummary evaluations={evaluations} />
+                </TabsContent>
+                <TabsContent value="timeline">
+                  <ActivityTimeline activity={activity} />
+                </TabsContent>
+              </Tabs>
             </div>
           )}
 

@@ -1,5 +1,6 @@
 import unittest
 from datetime import datetime
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, call, create_autospec
 
 from backend.recruiting.board_service import BoardService
@@ -22,6 +23,9 @@ from backend.common.recruiting_enums import ApplicationStage, JobKind, JobStatus
 from backend.repository.application_assignment_repository import (
     ApplicationAssignmentRepository,
 )
+from backend.repository.application_activity_repository import (
+    ApplicationActivityRepository,
+)
 
 
 class TestBoardService(unittest.IsolatedAsyncioTestCase):
@@ -39,7 +43,14 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             ApplicationAssignmentRepository, instance=True
         )
         self.assignment_repo.list_by_application_ids.return_value = []
+        # Default: no prior assignment on the current stage+round, so
+        # reassign's "fromAssigneeId" activity-log detail defaults to None
+        # unless a test seeds an existing assignment via .get.return_value.
+        self.assignment_repo.get.return_value = None
         self.user_permissions_repo = MagicMock()
+        self.activity_repo = create_autospec(
+            ApplicationActivityRepository, instance=True
+        )
         self.session = AsyncMock()
         self.service = BoardService(
             self.job_repo,
@@ -50,6 +61,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             self.resume_storage,
             self.assignment_repo,
             self.user_permissions_repo,
+            self.activity_repo,
         )
         # Default persistence mocks: echo the entity back, like SQLAlchemy's
         # merge-and-flush does when nothing else stubs them out.
@@ -1356,6 +1368,255 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.current_round, 2)
         self.assignment_repo.upsert.assert_not_awaited()
         self.user_permissions_repo.get_active_users_with_permission.assert_not_called()
+
+    # -- activity timeline logging --
+
+    async def test_change_stage_logs_stage_changed_activity(self):
+        job = self._job(
+            job_id=1, owner_ids=(2,), stages=("recruiter_screening", "tech")
+        )
+        application = self._application(
+            application_id=10, job_id=1, stage=ApplicationStage.RECRUITER_SCREENING
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+        self.user_permissions_repo.get_active_users_with_permission = AsyncMock(
+            return_value=[self._user(user_id=42)]
+        )
+
+        dto = StageChangeDto(to_stage=ApplicationStage.TECH, assignee_id=42)
+        await self.service.change_stage(self.session, self._ctx(user_id=2), 10, dto)
+
+        self.activity_repo.create.assert_awaited_once_with(
+            self.session,
+            10,
+            2,
+            "stage_changed",
+            details={
+                "fromStage": "recruiter_screening",
+                "toStage": "tech",
+                "assigneeId": 42,
+            },
+        )
+
+    async def test_change_stage_reject_logs_reason_and_note_in_activity(self):
+        job = self._job(job_id=1, owner_ids=(2,), stages=("tech",))
+        application = self._application(
+            application_id=10, job_id=1, stage=ApplicationStage.TECH
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+
+        dto = StageChangeDto(
+            to_stage=ApplicationStage.REJECTED,
+            reason=REJECT_REASONS[0],
+            note="not a fit",
+        )
+        await self.service.change_stage(self.session, self._ctx(user_id=2), 10, dto)
+
+        self.activity_repo.create.assert_awaited_once_with(
+            self.session,
+            10,
+            2,
+            "stage_changed",
+            details={
+                "fromStage": "tech",
+                "toStage": "rejected",
+                "reason": REJECT_REASONS[0],
+                "note": "not a fit",
+            },
+        )
+
+    async def test_reassign_logs_activity_with_from_and_to_assignee(self):
+        job = self._job(
+            job_id=1, owner_ids=(2,), stages=("recruiter_screening", "tech")
+        )
+        application = self._application(
+            application_id=10, job_id=1, stage=ApplicationStage.TECH
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+        self.user_permissions_repo.get_active_users_with_permission = AsyncMock(
+            return_value=[self._user(user_id=42)]
+        )
+        self.assignment_repo.get.return_value = ApplicationAssignmentEntity(
+            application_id=10,
+            stage=ApplicationStage.TECH,
+            round=1,
+            assignee_id=7,
+            assigned_by=2,
+        )
+
+        dto = ReassignDto(assignee_id=42)
+        await self.service.reassign(self.session, self._ctx(user_id=2), 10, dto)
+
+        self.activity_repo.create.assert_awaited_once_with(
+            self.session,
+            10,
+            2,
+            "reassigned",
+            details={
+                "stage": "tech",
+                "round": 1,
+                "fromAssigneeId": 7,
+                "toAssigneeId": 42,
+            },
+        )
+
+    async def test_reassign_logs_none_from_assignee_when_stage_was_unassigned(self):
+        job = self._job(
+            job_id=1, owner_ids=(2,), stages=("recruiter_screening", "tech")
+        )
+        application = self._application(
+            application_id=10, job_id=1, stage=ApplicationStage.TECH
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+        self.user_permissions_repo.get_active_users_with_permission = AsyncMock(
+            return_value=[self._user(user_id=42)]
+        )
+
+        dto = ReassignDto(assignee_id=42)
+        await self.service.reassign(self.session, self._ctx(user_id=2), 10, dto)
+
+        self.activity_repo.create.assert_awaited_once_with(
+            self.session,
+            10,
+            2,
+            "reassigned",
+            details={
+                "stage": "tech",
+                "round": 1,
+                "fromAssigneeId": None,
+                "toAssigneeId": 42,
+            },
+        )
+
+    async def test_set_round_logs_round_advanced_activity(self):
+        job = self._job(job_id=1, owner_ids=(2,), stages=("tech",), rounds={"tech": 3})
+        application = self._application(
+            application_id=10, job_id=1, stage=ApplicationStage.TECH
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+        self.user_permissions_repo.get_active_users_with_permission = AsyncMock(
+            return_value=[self._user(user_id=42)]
+        )
+
+        dto = RoundChangeDto(round=2, assignee_id=42)
+        await self.service.set_round(self.session, self._ctx(user_id=2), 10, dto)
+
+        self.activity_repo.create.assert_awaited_once_with(
+            self.session,
+            10,
+            2,
+            "round_advanced",
+            details={
+                "stage": "tech",
+                "fromRound": 1,
+                "toRound": 2,
+                "assigneeId": 42,
+            },
+        )
+
+    # -- get_application_activity --
+
+    async def test_get_application_activity_returns_dtos_with_resolved_actor_names(
+        self,
+    ):
+        job = self._job(job_id=1, owner_ids=(2,))
+        application = self._application(application_id=10, job_id=1)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        row = SimpleNamespace(
+            activity_id=1,
+            application_id=10,
+            actor_id=42,
+            event_type="stage_changed",
+            details={"toStage": "tech"},
+            created_at=datetime(2026, 7, 4, 12, 0, 0),
+        )
+        self.activity_repo.list_by_application = AsyncMock(return_value=[row])
+        self.users_repo.get_all_by_ids = AsyncMock(
+            return_value=[self._user(user_id=42, first="Ivan", last="Interviewer")]
+        )
+
+        result = await self.service.get_application_activity(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].id, 1)
+        self.assertEqual(result[0].event_type, "stage_changed")
+        self.assertEqual(result[0].details, {"toStage": "tech"})
+        self.assertEqual(result[0].actor_id, 42)
+        self.assertEqual(result[0].actor_name, "Ivan Interviewer")
+
+    async def test_get_application_activity_unresolved_actor_falls_back_to_user_id(
+        self,
+    ):
+        job = self._job(job_id=1, owner_ids=(2,))
+        application = self._application(application_id=10, job_id=1)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        row = SimpleNamespace(
+            activity_id=1,
+            application_id=10,
+            actor_id=99,
+            event_type="stage_changed",
+            details={},
+            created_at=datetime(2026, 7, 4, 12, 0, 0),
+        )
+        self.activity_repo.list_by_application = AsyncMock(return_value=[row])
+        self.users_repo.get_all_by_ids = AsyncMock(return_value=[])
+
+        result = await self.service.get_application_activity(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertEqual(result[0].actor_name, "User 99")
+
+    async def test_get_application_activity_non_owner_gets_collapsed_not_found_message(
+        self,
+    ):
+        job = self._job(job_id=1, owner_ids=(2,))
+        application = self._application(application_id=10, job_id=1)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+
+        with self.assertRaises(ValueError):
+            await self.service.get_application_activity(
+                self.session, self._ctx(user_id=99), 10
+            )
+
+        self.activity_repo.list_by_application.assert_not_awaited()
+
+    async def test_get_application_activity_assignee_who_is_not_owner_still_raises(
+        self,
+    ):
+        """Timeline is owner-only, unlike get_application_detail/get_resume —
+        the current-stage assignee alone must not be able to read it."""
+        job = self._job(job_id=1, owner_ids=(2,))
+        application = self._application(application_id=10, job_id=1)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.assignment_repo.get.return_value = ApplicationAssignmentEntity(
+            application_id=10,
+            stage=application.stage,
+            round=1,
+            assignee_id=99,
+            assigned_by=2,
+        )
+
+        with self.assertRaises(ValueError):
+            await self.service.get_application_activity(
+                self.session, self._ctx(user_id=99), 10
+            )
 
 
 if __name__ == "__main__":

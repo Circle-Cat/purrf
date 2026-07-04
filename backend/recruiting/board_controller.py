@@ -20,6 +20,7 @@ from backend.common.api_endpoints import (
     RECRUITING_APPLICATION_ASSIGNMENT_ENDPOINT,
     RECRUITING_APPLICATION_ROUND_ENDPOINT,
     RECRUITING_APPLICATION_RESUME_ENDPOINT,
+    RECRUITING_APPLICATION_ACTIVITY_ENDPOINT,
     RECRUITING_BLACKLIST_ENDPOINT,
 )
 
@@ -71,6 +72,12 @@ class BoardController:
         self.router.add_api_route(
             RECRUITING_APPLICATION_RESUME_ENDPOINT,
             endpoint=authenticate()(self.get_resume),
+            methods=["GET"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            RECRUITING_APPLICATION_ACTIVITY_ENDPOINT,
+            endpoint=authenticate()(self.get_application_activity),
             methods=["GET"],
             response_model=None,
         )
@@ -149,6 +156,16 @@ class BoardController:
                 session, current_user, application_id
             )
         return Response(content=data, media_type="application/pdf")
+
+    async def get_application_activity(
+        self, current_user: UserContextDto, application_id: int
+    ):
+        """Return an application's owner-facing audit timeline, newest first."""
+        async with self.database.session() as session:
+            result = await self.board_service.get_application_activity(
+                session, current_user, application_id
+            )
+        return api_response(message="Application activity fetched.", data=result)
 
     async def change_stage(
         self,

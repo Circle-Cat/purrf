@@ -13,6 +13,9 @@ from backend.common.recruiting_enums import ApplicationStage, JobKind, JobStatus
 from backend.repository.application_assignment_repository import (
     ApplicationAssignmentRepository,
 )
+from backend.repository.application_activity_repository import (
+    ApplicationActivityRepository,
+)
 
 
 class TestApplicationService(unittest.IsolatedAsyncioTestCase):
@@ -41,6 +44,9 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.assignment_repo = create_autospec(
             ApplicationAssignmentRepository, instance=True
         )
+        self.activity_repo = create_autospec(
+            ApplicationActivityRepository, instance=True
+        )
         self.session = AsyncMock()
         self.service = ApplicationService(
             self.app_repo,
@@ -49,6 +55,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             self.users_repo,
             RecruitingMapper(),
             self.assignment_repo,
+            self.activity_repo,
         )
 
     def _create_side_effect(self, session, entity):
@@ -148,6 +155,47 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         await self.service.submit(self.session, self._ctx(), dto)
         self.assignment_repo.upsert.assert_not_awaited()
 
+    async def test_submit_logs_application_submitted_activity(self):
+        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        await self.service.submit(self.session, self._ctx(), dto)
+        self.activity_repo.create.assert_awaited_once_with(
+            self.session,
+            100,
+            2,
+            "application_submitted",
+            details={"stage": "recruiter_screening"},
+        )
+
+    async def test_submit_reapply_logs_application_submitted_activity(self):
+        app = ApplicationEntity(
+            job_id=1,
+            user_id=2,
+            stage=ApplicationStage.REJECTED,
+            sub_status=None,
+            current_round=1,
+        )
+        app.application_id = 100
+        app.created_datetime = datetime.now(timezone.utc)
+        app.updated_timestamp = datetime.now(timezone.utc)
+        self.app_repo.get_by_job_and_user = AsyncMock(return_value=app)
+        current = ApplicationSubmissionEntity(
+            application_id=100, version=1, submission={"personal": {}}
+        )
+        current.submission_id = 5
+        current.is_frozen = False
+        self.sub_repo.get_current = AsyncMock(return_value=current)
+        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+
+        await self.service.submit(self.session, self._ctx(), dto)
+
+        self.activity_repo.create.assert_awaited_once_with(
+            self.session,
+            100,
+            2,
+            "application_submitted",
+            details={"stage": "recruiter_screening"},
+        )
+
     async def test_blocked_user_lands_rejected(self):
         self.users_repo.get_user_by_user_id = AsyncMock(
             return_value=self._user(is_blocked=True)
@@ -156,6 +204,22 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         result = await self.service.submit(self.session, self._ctx(), dto)
         self.assertEqual(result.stage, ApplicationStage.REJECTED)
         self.assertFalse(result.editable)
+
+    async def test_blocked_user_submit_logs_auto_rejected_activity(self):
+        self.users_repo.get_user_by_user_id = AsyncMock(
+            return_value=self._user(is_blocked=True)
+        )
+        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+
+        await self.service.submit(self.session, self._ctx(), dto)
+
+        self.activity_repo.create.assert_awaited_once_with(
+            self.session,
+            100,
+            2,
+            "auto_rejected",
+            details={"reason": "blocked"},
+        )
 
     async def test_blocked_user_reapply_with_existing_application(self):
         """Blocked user attempting to reapply: existing application is updated to REJECTED with sub_status cleared."""

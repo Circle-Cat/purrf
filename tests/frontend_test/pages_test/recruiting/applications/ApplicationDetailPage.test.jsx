@@ -112,6 +112,7 @@ beforeEach(() => {
   api.listInterviewPool.mockResolvedValue({ data: INTERVIEW_POOL });
   api.getJob.mockResolvedValue({ data: JOB });
   api.getEvaluationsForApplication.mockResolvedValue({ data: [] });
+  api.getApplicationActivity.mockResolvedValue({ data: [] });
 });
 
 /** Render the page at the detail route for a given application id. */
@@ -242,10 +243,12 @@ describe("ApplicationDetailPage — role-adaptive right column", () => {
       screen.getByRole("button", { name: "Reassign" }),
     ).toBeInTheDocument();
 
-    // Evaluation summary built from the full list
+    // Evaluation summary built from the full list, in the (default-active)
+    // Evaluations tab
     expect(
-      screen.getByRole("heading", { name: /Evaluations/i }),
+      screen.getByRole("tab", { name: "Evaluations" }),
     ).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Timeline" })).toBeInTheDocument();
     expect(screen.getByText(/solid background/)).toBeInTheDocument();
 
     // No rubric form for a viewer who is not the current-stage assignee
@@ -822,6 +825,135 @@ describe("ApplicationDetailPage — advance round", () => {
     );
     expect(
       screen.queryByRole("button", { name: "Confirm advance round" }),
+    ).not.toBeInTheDocument();
+  });
+});
+
+describe("ApplicationDetailPage — activity timeline", () => {
+  it("shows the activity timeline under its own tab, inactive by default", async () => {
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
+    });
+    api.getApplicationActivity.mockResolvedValue({
+      data: [
+        {
+          id: 1,
+          eventType: "stage_changed",
+          details: { fromStage: "recruiter_screening", toStage: "tech" },
+          actorId: OWNER_ID,
+          actorName: "Owen Owner",
+          createdAt: "2026-07-04T12:00:00Z",
+        },
+      ],
+    });
+    renderPage();
+    await waitLoaded();
+
+    // Not shown until the Timeline tab is selected (Evaluations is default).
+    expect(screen.queryByText(/Advanced from/)).not.toBeInTheDocument();
+  });
+
+  it("clicking the Timeline tab shows each entry described by actor and event", async () => {
+    const user = userEvent.setup();
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
+    });
+    api.getApplicationActivity.mockResolvedValue({
+      data: [
+        {
+          id: 1,
+          eventType: "stage_changed",
+          details: { fromStage: "recruiter_screening", toStage: "tech" },
+          actorId: OWNER_ID,
+          actorName: "Owen Owner",
+          createdAt: "2026-07-04T12:00:00Z",
+        },
+        {
+          id: 2,
+          eventType: "reassigned",
+          details: { stage: "tech", fromAssigneeId: null, toAssigneeId: 11 },
+          actorId: OWNER_ID,
+          actorName: "Owen Owner",
+          createdAt: "2026-07-04T11:00:00Z",
+        },
+      ],
+    });
+    renderPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole("tab", { name: "Timeline" }));
+
+    expect(
+      screen.getByText(/Owen Owner: Advanced from Recruiter screening to Tech/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Owen Owner: Reassigned on Tech/),
+    ).toBeInTheDocument();
+  });
+
+  it("shows a rejection's reason and note in the timeline", async () => {
+    const user = userEvent.setup();
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
+    });
+    api.getApplicationActivity.mockResolvedValue({
+      data: [
+        {
+          id: 1,
+          eventType: "stage_changed",
+          details: {
+            fromStage: "tech",
+            toStage: "rejected",
+            reason: "Did not meet the technical bar",
+            note: "weak on systems design",
+          },
+          actorId: OWNER_ID,
+          actorName: "Owen Owner",
+          createdAt: "2026-07-04T12:00:00Z",
+        },
+      ],
+    });
+    renderPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole("tab", { name: "Timeline" }));
+
+    expect(
+      screen.getByText(
+        /Rejected from Tech: Did not meet the technical bar — weak on systems design/,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("shows an empty state when there's no activity yet", async () => {
+    const user = userEvent.setup();
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
+    });
+    api.getApplicationActivity.mockResolvedValue({ data: [] });
+    renderPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole("tab", { name: "Timeline" }));
+
+    expect(screen.getByText("No activity yet.")).toBeInTheDocument();
+  });
+
+  it("does not fetch or render the timeline for a non-owner viewer", async () => {
+    authState.userId = ASSIGNEE_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: false, assigneeId: ASSIGNEE_ID }),
+    });
+    renderEvaluatorPage();
+    await waitLoaded();
+
+    expect(api.getApplicationActivity).not.toHaveBeenCalled();
+    expect(
+      screen.queryByRole("tab", { name: "Timeline" }),
     ).not.toBeInTheDocument();
   });
 });

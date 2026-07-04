@@ -27,6 +27,7 @@ class ApplicationService:
         users_repository,
         recruiting_mapper,
         application_assignment_repository,
+        application_activity_repository,
         profile_writeback=None,
     ):
         """
@@ -41,6 +42,10 @@ class ApplicationService:
                 Used to materialize a stage's configured default assignee
                 into a real assignment row when an application first lands
                 there (see ``_assign_default_if_configured``).
+            application_activity_repository (ApplicationActivityRepository):
+                Append-only audit log; ``submit`` logs
+                ``"application_submitted"`` or ``"auto_rejected"`` here on
+                every call, attributed to the candidate themselves.
             profile_writeback (callable | None): ``async (session, user_id, dto)``
                 invoked best-effort when save_to_profile is set. Defaults to a
                 no-op (wired in a later task).
@@ -51,6 +56,7 @@ class ApplicationService:
         self.users_repository = users_repository
         self.recruiting_mapper = recruiting_mapper
         self.application_assignment_repository = application_assignment_repository
+        self.application_activity_repository = application_activity_repository
         self._profile_writeback = profile_writeback
 
     @staticmethod
@@ -106,6 +112,11 @@ class ApplicationService:
         dto: ApplicationSubmitDto,
     ) -> ApplicationDto:
         """Create/land an application at Applied (or auto-reject a blocked user).
+
+        Logs an ``"application_submitted"`` (or, for a blocked applicant,
+        ``"auto_rejected"``) entry to the audit timeline on every call,
+        attributed to the candidate themselves — covers a fresh submission,
+        a reapply after cooldown, and a blocked-user auto-reject alike.
 
         Args:
             session (AsyncSession): Active database async session.
@@ -210,6 +221,23 @@ class ApplicationService:
             )
 
         await self._assign_default_if_configured(session, application, job)
+
+        if blocked:
+            await self.application_activity_repository.create(
+                session,
+                application.application_id,
+                current_user.user_id,
+                "auto_rejected",
+                details={"reason": "blocked"},
+            )
+        else:
+            await self.application_activity_repository.create(
+                session,
+                application.application_id,
+                current_user.user_id,
+                "application_submitted",
+                details={"stage": application.stage.value},
+            )
 
         if not blocked and self._profile_writeback and dto.save_to_profile:
             await self._safe_writeback(session, current_user.user_id, dto)
