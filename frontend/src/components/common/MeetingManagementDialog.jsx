@@ -53,7 +53,6 @@ export default function MeetingManagementDialog({ roundId, onBooked }) {
     upcomingMeetings = [],
     cancelMeetings,
     isLoading,
-    refresh,
   } = useMeetingManagement(roundId);
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("schedule");
@@ -70,14 +69,10 @@ export default function MeetingManagementDialog({ roundId, onBooked }) {
   };
   const [formData, setFormData] = useState(initialFormState);
 
-  useEffect(() => {
-    setSelectedIds(new Set());
-  }, [isOpen, activeTab]);
-
   const upcomingLength = upcomingMeetings.length;
   useEffect(() => {
     setSelectedIds(new Set());
-  }, [upcomingLength]);
+  }, [isOpen, activeTab, upcomingMeetings.length]);
 
   const isAllChecked = useMemo(() => {
     return upcomingLength > 0 && selectedIds.size === upcomingLength;
@@ -123,9 +118,6 @@ export default function MeetingManagementDialog({ roundId, onBooked }) {
       toast.success("Meetings cancelled successfully!");
       setSelectedIds(new Set()); // Clear checked states upon success
 
-      if (typeof refresh === "function") {
-        await refresh();
-      }
       await onBooked?.();
     } catch (error) {
       console.error("Failed to delete meetings in UI:", error);
@@ -264,7 +256,7 @@ export default function MeetingManagementDialog({ roundId, onBooked }) {
         </DialogTrigger>
       </div>
 
-      <DialogContent className="w-full max-w-2xl h-auto max-h-[80vh] flex flex-col rounded-xl bg-white shadow-2xl p-0 animate-in fade-in zoom-in-95 duration-200 overflow-hidden ">
+      <DialogContent className="w-full max-w-2xl h-auto max-h-[80vh] flex flex-col rounded-xl bg-white shadow-2xl p-0 animate-in fade-in zoom-in-95 duration-200 ">
         {/* Header */}
         <div className="flex items-center justify-between bg-gray-50/50 px-6 py-4 border-b rounded-t-xl">
           <DialogTitle className="text-xl font-semibold text-gray-900 flex items-center gap-2">
@@ -277,12 +269,13 @@ export default function MeetingManagementDialog({ roundId, onBooked }) {
         <Tabs
           value={activeTab}
           onValueChange={setActiveTab}
-          className="w-full flex flex-col flex-1 min-h-0 overflow-hidden"
+          className="w-full flex flex-col flex-1 min-h-0 overflow-visible"
         >
           <div className="px-6 mt-4 flex-shrink-0">
             <TabsList className="grid w-full grid-cols-2 p-1.5 h-12 bg-gray-100 rounded-lg">
               <TabsTrigger
                 value="schedule"
+                // className="mt-0 focus-visible:outline-none overflow-visible"
                 className="h-full text-sm font-medium rounded-md text-gray-500 transition-all data-[state=active]:bg-white data-[state=active]:text-[#6035F3] data-[state=active]:shadow-sm"
               >
                 Schedule Meeting
@@ -297,11 +290,11 @@ export default function MeetingManagementDialog({ roundId, onBooked }) {
           </div>
 
           {/* Content Area */}
-          <div className="p-6 flex-1 min-h-0 overflow-hidden">
+          <div className="p-6 flex-1 min-h-0 overflow-visible">
             {/* Schedule Meeting Form */}
             <TabsContent
               value="schedule"
-              className="mt-0 focus-visible:outline-none h-full overflow-y-auto pr-1 scrollbar-thin"
+              className="mt-0 focus-visible:outline-none h-full overflow-visible pr-1"
             >
               <form onSubmit={handleSubmit} className="space-y-5">
                 {/* Mentor / Mentee Selection Dropdown */}
@@ -333,11 +326,11 @@ export default function MeetingManagementDialog({ roundId, onBooked }) {
 
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   {/* Timezone */}
-                  <div className="space-y-1.5">
+                  <div className="space-y-1.5 min-w-0">
                     <label className="text-sm font-medium text-gray-700">
                       Timezone
                     </label>
-                    <div className="w-full min-w-0 overflow-visible">
+                    <div className="w-full">
                       <TimezoneSelector
                         value={formData.timezone}
                         onChange={handleTimezoneChange}
@@ -409,7 +402,7 @@ export default function MeetingManagementDialog({ roundId, onBooked }) {
                           }),
                           menu: (provided) => ({
                             ...provided,
-                            zIndex: 50,
+                            zIndex: 9999,
                           }),
                           menuList: (provided) => ({
                             ...provided,
@@ -467,25 +460,30 @@ export default function MeetingManagementDialog({ roundId, onBooked }) {
             {/* Upcoming Tab */}
             <TabsContent
               value="upcoming"
-              className="mt-0 focus-visible:outline-none flex flex-col h-[400px] min-h-0"
+              className="mt-0 focus-visible:outline-none flex flex-col manx-h-[400px] min-h-0"
             >
               {upcomingLength === 0 ? (
                 /* Empty state placeholder text preserved */
-                <div className="flex flex-col items-center justify-center h-64 border-2 border-dashed border-gray-100 rounded-xl bg-gray-50/50 my-auto">
+                <div className="flex flex-col items-center justify-center h-48 border-2 border-dashed border-gray-100 rounded-xl bg-gray-50/50 mt-2">
                   <CalendarDays className="w-12 h-12 text-gray-200 mb-2" />
                   <p className="text-gray-400 font-medium">
                     No upcoming meetings found
                   </p>
                 </div>
               ) : (
-                <div className="flex flex-col h-full min-h-0 justify-between flex-1 overflow-hidden">
-                  <div className="flex flex-col min-h-0 flex-1 overflow-hidden">
+                <div className="flex flex-col min-h-0 justify-between flex-1 overflow-hidden">
+                  <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
                     {/* Top Control Bar: Select All Checkbox */}
                     <div className="flex items-center space-x-3 pb-3 mb-4 border-b border-gray-100 flex-shrink-0">
                       <Checkbox
                         id="select-all-upcoming"
-                        checked={isAllChecked}
-                        indeterminate={isIndeterminate ? "true" : undefined}
+                        checked={
+                          isAllChecked
+                            ? true
+                            : isIndeterminate
+                              ? "indeterminate"
+                              : false
+                        }
                         onCheckedChange={handleToggleAll}
                         disabled={isLoading}
                       />

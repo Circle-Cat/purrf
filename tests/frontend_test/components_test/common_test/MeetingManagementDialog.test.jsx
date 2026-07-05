@@ -183,6 +183,7 @@ describe("MeetingManagementDialog Component", () => {
     const activeMeetings = [
       {
         meetingId: "m-1",
+        partnerId: 1,
         partnerName: "Test Partner",
         startDatetime: "2026-07-02T10:00:00Z",
         endDatetime: "2026-07-02T11:00:00Z",
@@ -222,7 +223,9 @@ describe("MeetingManagementDialog Component", () => {
     await userEvent.click(checkbox);
 
     // Target the delete button once enabled
-    const deleteButton = await screen.findByRole("button", { name: /delete/i });
+    const deleteButton = await screen.findByRole("button", {
+      name: /delete \(1\)/i,
+    });
 
     // Execute the deletion action
     await userEvent.click(deleteButton);
@@ -235,7 +238,7 @@ describe("MeetingManagementDialog Component", () => {
           partnerName: "Test Partner",
         }),
       ]);
-      expect(mockRefresh).toHaveBeenCalled();
+      expect(mockOnBooked).toHaveBeenCalled();
     });
   });
 
@@ -282,7 +285,6 @@ describe("MeetingManagementDialog Component", () => {
     // Validation: Ensure full collection transmission and state synchandlers run successfully
     await waitFor(() => {
       expect(mockCancelMeetings).toHaveBeenCalledWith(mockUpcomingMeetings);
-      expect(mockRefresh).toHaveBeenCalled();
       expect(mockOnBooked).toHaveBeenCalled();
     });
   });
@@ -366,8 +368,6 @@ describe("MeetingManagementDialog Component", () => {
   });
 
   it("should reset selection when upcomingMeetings length changes from outside", async () => {
-    const { rerender } = render(<MeetingManagementDialog roundId={2} />);
-
     // Initialize list with multiple items
     useMeetingManagement.mockReturnValue({
       partners: mockPartners,
@@ -375,6 +375,8 @@ describe("MeetingManagementDialog Component", () => {
       upcomingLength: mockUpcomingMeetings.length,
       isLoading: false,
     });
+
+    const { rerender } = render(<MeetingManagementDialog roundId={2} />);
 
     await userEvent.click(
       screen.getByRole("button", { name: /manage meetings/i }),

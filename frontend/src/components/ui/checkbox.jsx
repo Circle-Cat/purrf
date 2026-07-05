@@ -1,13 +1,16 @@
 import * as React from "react";
 import * as CheckboxPrimitive from "@radix-ui/react-checkbox";
-import { CheckIcon } from "lucide-react";
+import { CheckIcon, Minus } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
-function Checkbox({ className, ...props }) {
+function Checkbox({ className, checked, ...props }) {
+  const isIndeterminate = checked === "indeterminate";
+
   return (
     <CheckboxPrimitive.Root
       data-slot="checkbox"
+      data-indeterminate={isIndeterminate ? "" : undefined}
       className={cn(
         "border-input dark:bg-input/30 dark:hover:bg-input/50",
         "focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-3",
@@ -15,8 +18,10 @@ function Checkbox({ className, ...props }) {
         "peer size-4 shrink-0 rounded-md border bg-transparent transition-colors outline-none select-none",
         "disabled:cursor-not-allowed disabled:opacity-50",
         "data-checked:bg-primary data-checked:text-primary-foreground data-checked:border-primary",
+        "data-[state=indeterminate]:bg-primary data-[state=indeterminate]:text-primary-foreground data-[state=indeterminate]:border-primary",
         className,
       )}
+      checked={checked}
       {...props}
     >
       <CheckboxPrimitive.Indicator
@@ -26,7 +31,11 @@ function Checkbox({ className, ...props }) {
           "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5",
         )}
       >
-        <CheckIcon className="pointer-events-none" />
+        {isIndeterminate ? (
+          <Minus className="pointer-events-none" />
+        ) : (
+          <CheckIcon className="pointer-events-none" />
+        )}
       </CheckboxPrimitive.Indicator>
     </CheckboxPrimitive.Root>
   );
