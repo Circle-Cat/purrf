@@ -10,6 +10,9 @@ from backend.entity.evaluation_entity import EvaluationEntity
 from backend.entity.job_entity import JobEntity
 from backend.entity.users_entity import UsersEntity
 from backend.common.recruiting_enums import ApplicationStage, JobKind, JobStatus
+from backend.repository.application_activity_repository import (
+    ApplicationActivityRepository,
+)
 from backend.repository.application_assignment_repository import (
     ApplicationAssignmentRepository,
 )
@@ -46,6 +49,9 @@ class TestEvaluationService(unittest.IsolatedAsyncioTestCase):
         self.evaluation_repo = create_autospec(EvaluationRepository, instance=True)
         self.job_repo = MagicMock()
         self.users_repo = MagicMock()
+        self.activity_repo = create_autospec(
+            ApplicationActivityRepository, instance=True
+        )
         self.session = AsyncMock()
         self.service = EvaluationService(
             self.app_repo,
@@ -53,6 +59,7 @@ class TestEvaluationService(unittest.IsolatedAsyncioTestCase):
             self.evaluation_repo,
             self.job_repo,
             self.users_repo,
+            self.activity_repo,
         )
 
     def _job(self, job_id=1, title="Job 1", owner_ids=None):
@@ -163,6 +170,7 @@ class TestEvaluationService(unittest.IsolatedAsyncioTestCase):
         self.app_repo.update.assert_not_awaited()
         self.assertEqual(application.sub_status, "pending")
         self.session.commit.assert_awaited_once()
+        self.activity_repo.create.assert_not_awaited()
 
     async def test_submit_on_round_two_scopes_the_key_to_that_round(self):
         """Confirming round 1 must not affect round 2: the evaluation key
@@ -223,6 +231,13 @@ class TestEvaluationService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(application.sub_status, "evaluated")
         self.app_repo.update.assert_awaited_once_with(self.session, application)
         self.session.commit.assert_awaited_once()
+        self.activity_repo.create.assert_awaited_once_with(
+            self.session,
+            10,
+            2,
+            "evaluation_confirmed",
+            details={"stage": ApplicationStage.RECRUITER_SCREENING.value, "round": 1},
+        )
 
     async def test_submit_confirm_with_incomplete_rubric_raises_without_persisting(
         self,

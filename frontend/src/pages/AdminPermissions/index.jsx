@@ -19,19 +19,19 @@ const AdminPermissions = () => {
         <TabsList className="mb-5 gap-1">
           <TabsTrigger
             value="users"
-            className="px-4 data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:font-medium"
+            className="px-4 data-[state=active]:shadow-sm"
           >
             Users
           </TabsTrigger>
           <TabsTrigger
             value="holders"
-            className="px-4 data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:font-medium"
+            className="px-4 data-[state=active]:shadow-sm"
           >
             Permission Holders
           </TabsTrigger>
           <TabsTrigger
             value="audit"
-            className="px-4 data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:font-medium"
+            className="px-4 data-[state=active]:shadow-sm"
           >
             Audit Log
           </TabsTrigger>
