@@ -349,7 +349,10 @@ const ActivityTimeline = ({ activity }) => (
       <ul className="space-y-1">
         {activity.map((entry) => (
           <li key={entry.id} className="text-sm text-slate-700">
-            {describeActivity(entry)}, by {entry.actorName}
+            <span className="text-slate-500">
+              {new Date(entry.createdAt).toLocaleString()}
+            </span>{" "}
+            — {describeActivity(entry)}, by {entry.actorName}
           </li>
         ))}
       </ul>
