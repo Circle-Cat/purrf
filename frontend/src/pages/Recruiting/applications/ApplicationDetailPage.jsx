@@ -282,9 +282,14 @@ const EvaluationSummary = ({ evaluations, interviewPool }) => (
 
 /**
  * Human-readable one-line description of a single activity entry, built
- * from its `details` payload. Falls back to the raw `eventType` for
- * anything not explicitly handled, so a future event type still renders
- * something rather than going blank.
+ * from its `details` payload. `details.assigneeName`/`fromAssigneeName`/
+ * `toAssigneeName` are present only when the corresponding raw id existed
+ * on the underlying event (resolved server-side, read-time only — see
+ * `BoardService.get_application_activity`). Falls back to the raw
+ * `eventType` for anything not explicitly handled, so a future event type
+ * still renders something rather than going blank. The actor is rendered
+ * separately by `ActivityTimeline`, as a shared trailing suffix — not part
+ * of this function's return value.
  *
  * @param {{eventType: string, details: object}} activity
  * @returns {string}
@@ -296,23 +301,32 @@ const describeActivity = ({ eventType, details }) => {
     case "auto_rejected":
       return "Automatically rejected (blocked applicant)";
     case "stage_changed":
-      return details.reason
-        ? `Rejected from ${humanize(details.fromStage)}${
-            details.note
-              ? `: ${details.reason} — ${details.note}`
-              : `: ${details.reason}`
-          }`
-        : `Advanced from ${humanize(details.fromStage)} to ${humanize(details.toStage)}`;
+      if (details.reason) {
+        return `Rejected from ${humanize(details.fromStage)}${
+          details.note
+            ? `: ${details.reason} — ${details.note}`
+            : `: ${details.reason}`
+        }`;
+      }
+      return `Advanced from ${humanize(details.fromStage)} to ${humanize(details.toStage)}${
+        details.assigneeName ? `, assigned to ${details.assigneeName}` : ""
+      }`;
     case "reassigned":
-      return `Reassigned on ${humanize(details.stage)}`;
+      return `Reassigned on ${humanize(details.stage)}${
+        details.fromAssigneeName ? ` from ${details.fromAssigneeName}` : ""
+      } to ${details.toAssigneeName}`;
     case "round_advanced":
-      return `Advanced to round ${details.toRound} of ${humanize(details.stage)}`;
+      return `Advanced to round ${details.toRound} of ${humanize(details.stage)}${
+        details.assigneeName ? `, assigned to ${details.assigneeName}` : ""
+      }`;
     case "sub_status_changed":
       return `Status changed from ${humanize(details.fromSubStatus)} to ${humanize(details.toSubStatus)} on ${humanize(details.stage)}`;
     case "evaluation_confirmed":
       return `Confirmed evaluation for round ${details.round} of ${humanize(details.stage)}`;
     case "blacklisted":
       return `Blacklisted and rejected from ${humanize(details.fromStage)}: ${details.reason}`;
+    case "auto_assigned":
+      return `Automatically assigned to ${details.assigneeName} on ${humanize(details.stage)}`;
     default:
       return humanize(eventType);
   }
@@ -335,10 +349,7 @@ const ActivityTimeline = ({ activity }) => (
       <ul className="space-y-1">
         {activity.map((entry) => (
           <li key={entry.id} className="text-sm text-slate-700">
-            <span className="text-slate-500">
-              {new Date(entry.createdAt).toLocaleString()}
-            </span>{" "}
-            — {entry.actorName}: {describeActivity(entry)}
+            {describeActivity(entry)}, by {entry.actorName}
           </li>
         ))}
       </ul>

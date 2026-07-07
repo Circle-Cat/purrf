@@ -1108,7 +1108,12 @@ describe("ApplicationDetailPage — activity timeline", () => {
         {
           id: 2,
           eventType: "reassigned",
-          details: { stage: "tech", fromAssigneeId: null, toAssigneeId: 11 },
+          details: {
+            stage: "tech",
+            fromAssigneeId: null,
+            toAssigneeId: 11,
+            toAssigneeName: "Ivan Interviewer",
+          },
           actorId: OWNER_ID,
           actorName: "Owen Owner",
           createdAt: "2026-07-04T11:00:00Z",
@@ -1121,10 +1126,10 @@ describe("ApplicationDetailPage — activity timeline", () => {
     await user.click(screen.getByRole("tab", { name: "Timeline" }));
 
     expect(
-      screen.getByText(/Owen Owner: Advanced from Recruiter screening to Tech/),
+      screen.getByText("Advanced from Recruiter screening to Tech, by Owen Owner"),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/Owen Owner: Reassigned on Tech/),
+      screen.getByText("Reassigned on Tech to Ivan Interviewer, by Owen Owner"),
     ).toBeInTheDocument();
   });
 
@@ -1190,6 +1195,147 @@ describe("ApplicationDetailPage — activity timeline", () => {
     expect(
       screen.queryByRole("tab", { name: "Timeline" }),
     ).not.toBeInTheDocument();
+  });
+});
+
+describe("ApplicationDetailPage — activity timeline assignee names", () => {
+  /** Render, open the Timeline tab, and return once it's visible. */
+  const renderTimelineWith = async (entry) => {
+    const user = userEvent.setup();
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
+    });
+    api.getApplicationActivity.mockResolvedValue({ data: [entry] });
+    renderPage();
+    await waitLoaded();
+    await user.click(screen.getByRole("tab", { name: "Timeline" }));
+  };
+
+  it("shows the assignee name when advancing into a stage with one picked", async () => {
+    await renderTimelineWith({
+      id: 1,
+      eventType: "stage_changed",
+      details: {
+        fromStage: "recruiter_screening",
+        toStage: "tech",
+        assigneeId: 11,
+        assigneeName: "Ivan Interviewer",
+      },
+      actorId: OWNER_ID,
+      actorName: "Owen Owner",
+      createdAt: "2026-07-04T12:00:00Z",
+    });
+
+    expect(
+      screen.getByText(
+        "Advanced from Recruiter screening to Tech, assigned to Ivan Interviewer, by Owen Owner",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("shows the assignee name when round-advancing with one picked", async () => {
+    await renderTimelineWith({
+      id: 1,
+      eventType: "round_advanced",
+      details: {
+        stage: "tech",
+        fromRound: 1,
+        toRound: 2,
+        assigneeId: 11,
+        assigneeName: "Ivan Interviewer",
+      },
+      actorId: OWNER_ID,
+      actorName: "Owen Owner",
+      createdAt: "2026-07-04T12:00:00Z",
+    });
+
+    expect(
+      screen.getByText(
+        "Advanced to round 2 of Tech, assigned to Ivan Interviewer, by Owen Owner",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("shows both names when reassigning from a previous assignee", async () => {
+    await renderTimelineWith({
+      id: 1,
+      eventType: "reassigned",
+      details: {
+        stage: "tech",
+        fromAssigneeId: 7,
+        fromAssigneeName: "Eve Evaluator",
+        toAssigneeId: 11,
+        toAssigneeName: "Ivan Interviewer",
+      },
+      actorId: OWNER_ID,
+      actorName: "Owen Owner",
+      createdAt: "2026-07-04T12:00:00Z",
+    });
+
+    expect(
+      screen.getByText(
+        "Reassigned on Tech from Eve Evaluator to Ivan Interviewer, by Owen Owner",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("shows the auto_assigned event with the assignee name and the candidate as actor", async () => {
+    await renderTimelineWith({
+      id: 1,
+      eventType: "auto_assigned",
+      details: {
+        stage: "recruiter_screening",
+        assigneeId: 11,
+        assigneeName: "Ivan Interviewer",
+      },
+      actorId: 5,
+      actorName: "Alice Smith",
+      createdAt: "2026-07-04T12:00:00Z",
+    });
+
+    expect(
+      screen.getByText(
+        "Automatically assigned to Ivan Interviewer on Recruiter screening, by Alice Smith",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("applies the shared by-actor suffix to an event type with no assignee concept", async () => {
+    await renderTimelineWith({
+      id: 1,
+      eventType: "sub_status_changed",
+      details: {
+        stage: "tech",
+        fromSubStatus: "pending",
+        toSubStatus: "in_progress",
+      },
+      actorId: OWNER_ID,
+      actorName: "Owen Owner",
+      createdAt: "2026-07-04T12:00:00Z",
+    });
+
+    expect(
+      screen.getByText(
+        "Status changed from Pending to In progress on Tech, by Owen Owner",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("omits the assignee clause when advancing with no assignee picked", async () => {
+    await renderTimelineWith({
+      id: 1,
+      eventType: "stage_changed",
+      details: { fromStage: "recruiter_screening", toStage: "tech" },
+      actorId: OWNER_ID,
+      actorName: "Owen Owner",
+      createdAt: "2026-07-04T12:00:00Z",
+    });
+
+    expect(
+      screen.getByText("Advanced from Recruiter screening to Tech, by Owen Owner"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/assigned to/)).not.toBeInTheDocument();
   });
 });
 
