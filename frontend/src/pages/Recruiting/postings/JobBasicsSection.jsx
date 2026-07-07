@@ -82,24 +82,22 @@ const JobBasicsSection = ({
         </Select>
       </div>
     )}
-    {kind === "employment" && (
-      <div className="space-y-1">
-        <Label htmlFor="posting-cooldown">Cooldown days</Label>
-        <Input
-          id="posting-cooldown"
-          type="number"
-          min={0}
-          aria-label="Cooldown days"
-          className="w-full max-w-xs"
-          value={cooldownDays ?? ""}
-          onChange={(e) =>
-            onChange({
-              cooldownDays: e.target.value ? Number(e.target.value) : null,
-            })
-          }
-        />
-      </div>
-    )}
+    <div className="space-y-1">
+      <Label htmlFor="posting-cooldown">Cooldown days</Label>
+      <Input
+        id="posting-cooldown"
+        type="number"
+        min={0}
+        aria-label="Cooldown days"
+        className="w-full max-w-xs"
+        value={cooldownDays ?? ""}
+        onChange={(e) =>
+          onChange({
+            cooldownDays: e.target.value ? Number(e.target.value) : null,
+          })
+        }
+      />
+    </div>
   </div>
 );
 
