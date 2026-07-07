@@ -48,7 +48,7 @@ class TestMentorshipAdminController(unittest.IsolatedAsyncioTestCase):
         await self.controller.search_participants(filters=filters)
 
         self.mock_admin_service.search_participants.assert_awaited_once_with(
-            self.mock_session, filters, 100, 0
+            self.mock_session, filters, 100, 0, None, "asc"
         )
         self.mock_api_response.assert_called_once_with(
             message="Successfully retrieved participant search results.",
@@ -68,7 +68,23 @@ class TestMentorshipAdminController(unittest.IsolatedAsyncioTestCase):
         )
 
         self.mock_admin_service.search_participants.assert_awaited_once_with(
-            self.mock_session, filters, 50, 200
+            self.mock_session, filters, 50, 200, None, "asc"
+        )
+
+    async def test_search_participants_custom_sort(self):
+        """Custom sort_by and order are forwarded to the service."""
+        filters = ParticipantSearchFilterDto()
+        mock_result = MagicMock()
+        self.mock_admin_service.search_participants.return_value = mock_result
+
+        await self.controller.search_participants(
+            filters=filters,
+            sort_by="user_id",
+            order="desc",
+        )
+
+        self.mock_admin_service.search_participants.assert_awaited_once_with(
+            self.mock_session, filters, 100, 0, "user_id", "desc"
         )
 
     async def test_get_meeting_log_delegates_to_service(self):

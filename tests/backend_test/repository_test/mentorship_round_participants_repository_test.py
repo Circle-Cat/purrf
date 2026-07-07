@@ -575,6 +575,24 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
             len({r.user_id for r in rows_p1} & {r.user_id for r in rows_p2}), 0
         )
 
+    async def test_search_sort_by_user_id_desc(self):
+        user2 = self._make_user(
+            first_name="Bob", last_name="Jones", email="bob@example.com"
+        )
+        await self.insert_entities([user2])
+
+        rows, _ = await self.repo.search_participants_for_admin(
+            self.session,
+            ParticipantSearchFilterDto(),
+            limit=50,
+            offset=0,
+            sort_by="user_id",
+            order="desc",
+        )
+
+        user_ids = [r.user_id for r in rows]
+        self.assertEqual(user_ids, sorted(user_ids, reverse=True))
+
     async def test_search_row_fields_for_paired_participant(self):
         user2 = self._make_user(
             first_name="Bob", last_name="Jones", email="bob@example.com"
