@@ -89,4 +89,25 @@ describe("SubmitReviewDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Submit" }));
     expect(onSubmit).toHaveBeenCalledWith({ reviewerId: 2, message: "pls" });
   });
+
+  it("disables Submit and ignores clicks while submitting is true", () => {
+    const onSubmit = vi.fn();
+    render(
+      <SubmitReviewDialog
+        open
+        approvers={approvers}
+        currentUserId={1}
+        submitting
+        onSubmit={onSubmit}
+        onOpenChange={() => {}}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("Reviewer"), {
+      target: { value: "2" },
+    });
+    const submitButton = screen.getByRole("button", { name: "Submit" });
+    expect(submitButton).toBeDisabled();
+    fireEvent.click(submitButton);
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
 });
