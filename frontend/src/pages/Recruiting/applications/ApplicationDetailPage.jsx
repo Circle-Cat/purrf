@@ -798,10 +798,24 @@ const ApplicationDetailPage = () => {
                   </div>
                 </div>
               )}
-              {assigneeName && (
-                <p className="text-sm text-slate-700">
-                  Assigned to: {assigneeName}
-                </p>
+              {(assigneeName || isPipelineStage) && (
+                <div className="flex flex-wrap items-center gap-2">
+                  {assigneeName && (
+                    <p className="text-sm text-slate-700">
+                      Assigned to: {assigneeName}
+                    </p>
+                  )}
+                  {isPipelineStage && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setReassignOpen(true)}
+                    >
+                      Reassign
+                    </Button>
+                  )}
+                </div>
               )}
 
               {rejectFormOpen ? (
@@ -842,30 +856,6 @@ const ApplicationDetailPage = () => {
                     </Button>
                   </div>
                 </div>
-              ) : reassignOpen ? (
-                <div className="flex flex-col gap-3">
-                  <PeoplePicker
-                    label="Assignee"
-                    pool={interviewPool}
-                    value={reassignAssigneeId || undefined}
-                    onChange={(v) => setReassignAssigneeId(v ? String(v) : "")}
-                  />
-                  <div className="flex justify-end gap-2">
-                    <Button
-                      variant="outline"
-                      onClick={handleCancelReassign}
-                      disabled={reassigning}
-                    >
-                      Cancel
-                    </Button>
-                    <Button
-                      onClick={handleConfirmReassign}
-                      disabled={!reassignAssigneeId || reassigning}
-                    >
-                      Confirm reassign
-                    </Button>
-                  </div>
-                </div>
               ) : (
                 <div className="flex flex-wrap items-center gap-2">
                   <Button
@@ -878,12 +868,6 @@ const ApplicationDetailPage = () => {
                   </Button>
                   {isPipelineStage && (
                     <>
-                      <Button
-                        variant="outline"
-                        onClick={() => setReassignOpen(true)}
-                      >
-                        Reassign
-                      </Button>
                       <Button
                         variant="outline"
                         onClick={() => setRejectFormOpen(true)}
@@ -1019,6 +1003,40 @@ const ApplicationDetailPage = () => {
               disabled={advancing}
             >
               Confirm advance
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={reassignOpen}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) handleCancelReassign();
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reassign</DialogTitle>
+          </DialogHeader>
+          <PeoplePicker
+            label="Assignee"
+            pool={interviewPool}
+            value={reassignAssigneeId || undefined}
+            onChange={(v) => setReassignAssigneeId(v ? String(v) : "")}
+          />
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={handleCancelReassign}
+              disabled={reassigning}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleConfirmReassign}
+              disabled={!reassignAssigneeId || reassigning}
+            >
+              Confirm reassign
             </Button>
           </DialogFooter>
         </DialogContent>
