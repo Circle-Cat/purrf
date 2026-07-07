@@ -351,17 +351,21 @@ const ActivityTimeline = ({ activity }) => (
  * snapshot, personal info, answers, and the résumé when available) shared by
  * everyone, plus a right column that adapts to the viewer:
  *
- * - Owners (`detail.isOwner`) get the sub-status selector, an Advance Round
- *   action for stages configured for more than one round (via the job's
- *   `pipelineConfig.stages[].rounds`), the current assignee + Reassign
- *   control, the Advance/Reject/Blacklist decision footer (advancing into an
- *   interview stage opens a dialog with an optional assignee picker,
- *   pre-filled from the job's configured `default_assignee_id` for
- *   screening/behavioral targets — leaving it blank just advances
- *   unassigned, to be picked up later via Reassign), and a read-only summary
- *   of all evaluations. This owner view never shows the evaluation-filling
- *   form, even when the owner is also the current-stage assignee — grading
- *   only happens via the evaluator view below.
+ * - Owners (`detail.isOwner`) get the sub-status selector, the current
+ *   assignee + Reassign control, and an "Operate" decision row
+ *   (Blacklist/Reject/Advance). The workflow only ever moves forward one
+ *   step at a time, so Advance is a single button covering both cases:
+ *   round-advance (via the job's `pipelineConfig.stages[].rounds`) while
+ *   rounds remain in the current stage, then stage-advance once they're
+ *   exhausted. Advancing into an interview stage opens a dialog with an
+ *   assignee radio-picker — required for round-advance, optional ("Decide
+ *   later") for stage-advance and pre-filled from the job's configured
+ *   `default_assignee_id` for screening/behavioral stage-advance targets,
+ *   leaving it on "Decide later" just advances unassigned, to be picked up
+ *   later via Reassign — and a read-only summary of all evaluations. This
+ *   owner view never shows the evaluation-filling form, even when the owner
+ *   is also the current-stage assignee — grading only happens via the
+ *   evaluator view below.
  * - The current-stage assignee (`detail.assigneeId === currentUser.userId`)
  *   reaching this page via the `?mode=evaluate` link from My Evaluations
  *   gets ONLY the `EvaluationRubricForm` for the application's stage,
@@ -770,44 +774,6 @@ const ApplicationDetailPage = () => {
                 disabled={switchingSubStatus}
                 onSelect={handleSelectSubStatus}
               />
-              {canAdvanceRound && !roundAdvanceOpen && (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  disabled={advancingRound}
-                  onClick={handleOpenRoundAdvance}
-                >
-                  Advance to Round {(detail.application.currentRound ?? 1) + 1}
-                </Button>
-              )}
-              {roundAdvanceOpen && (
-                <div className="flex flex-col gap-3">
-                  <PeoplePicker
-                    label="Assignee"
-                    pool={interviewPool}
-                    value={roundAdvanceAssigneeId || undefined}
-                    onChange={(v) =>
-                      setRoundAdvanceAssigneeId(v ? String(v) : "")
-                    }
-                  />
-                  <div className="flex justify-end gap-2">
-                    <Button
-                      variant="outline"
-                      onClick={handleCancelRoundAdvance}
-                      disabled={advancingRound}
-                    >
-                      Cancel
-                    </Button>
-                    <Button
-                      onClick={handleConfirmAdvanceRound}
-                      disabled={!roundAdvanceAssigneeId || advancingRound}
-                    >
-                      Confirm advance round
-                    </Button>
-                  </div>
-                </div>
-              )}
               {(assigneeName || isPipelineStage) && (
                 <div className="flex flex-wrap items-center gap-2">
                   {assigneeName && (
@@ -828,81 +794,53 @@ const ApplicationDetailPage = () => {
                 </div>
               )}
 
-              {rejectFormOpen ? (
-                <div className="flex flex-col gap-3">
-                  <Select value={rejectReason} onValueChange={setRejectReason}>
-                    <SelectTrigger
-                      aria-label="Rejection reason"
-                      className="w-full"
-                    >
-                      <SelectValue placeholder="Select a reason…" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {REJECT_REASONS.map((reason) => (
-                        <SelectItem key={reason} value={reason}>
-                          {reason}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Textarea
-                    placeholder="Note (optional)"
-                    value={rejectNote}
-                    onChange={(e) => setRejectNote(e.target.value)}
-                  />
-                  <div className="flex justify-end gap-2">
-                    <Button
-                      variant="outline"
-                      onClick={handleCancelReject}
-                      disabled={rejecting}
-                    >
-                      Cancel
-                    </Button>
-                    <Button
-                      onClick={handleConfirmReject}
-                      disabled={!rejectReason || rejecting}
-                    >
-                      Confirm reject
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm font-medium text-slate-700">
+                  Operate:
+                </span>
+                <Button
+                  variant="outline"
+                  className="mr-auto"
+                  disabled={blacklisting}
+                  onClick={() => setBlacklistConfirmOpen(true)}
+                >
+                  Blacklist
+                </Button>
+                {isPipelineStage && (
                   <Button
                     variant="outline"
-                    className="mr-auto"
-                    disabled={blacklisting}
-                    onClick={() => setBlacklistConfirmOpen(true)}
+                    onClick={() => setRejectFormOpen(true)}
                   >
-                    Blacklist
+                    Reject
                   </Button>
-                  {isPipelineStage && (
-                    <>
-                      <Button
-                        variant="outline"
-                        onClick={() => setRejectFormOpen(true)}
-                      >
-                        Reject
-                      </Button>
-                      {needsAssignee ? (
-                        <Button
-                          disabled={advancing}
-                          onClick={() => setAdvanceOpen(true)}
-                        >
-                          Advance to next step
-                        </Button>
-                      ) : (
-                        <Button
-                          disabled={advancing}
-                          onClick={() => handleAdvance(next)}
-                        >
-                          Advance to {humanize(next)}
-                        </Button>
-                      )}
-                    </>
-                  )}
-                </div>
-              )}
+                )}
+                {canAdvanceRound ? (
+                  <Button
+                    disabled={advancingRound}
+                    onClick={handleOpenRoundAdvance}
+                  >
+                    Advance to Round{" "}
+                    {(detail.application.currentRound ?? 1) + 1}
+                  </Button>
+                ) : (
+                  isPipelineStage &&
+                  (needsAssignee ? (
+                    <Button
+                      disabled={advancing}
+                      onClick={() => setAdvanceOpen(true)}
+                    >
+                      Advance to next step
+                    </Button>
+                  ) : (
+                    <Button
+                      disabled={advancing}
+                      onClick={() => handleAdvance(next)}
+                    >
+                      Advance to {humanize(next)}
+                    </Button>
+                  ))
+                )}
+              </div>
 
               <Tabs defaultValue="evaluations">
                 <TabsList>
@@ -998,6 +936,89 @@ const ApplicationDetailPage = () => {
           <DialogFooter>
             <Button onClick={() => setScheduleAssigneeWarningOpen(false)}>
               OK
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={rejectFormOpen}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) handleCancelReject();
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reject</DialogTitle>
+          </DialogHeader>
+          <Select value={rejectReason} onValueChange={setRejectReason}>
+            <SelectTrigger aria-label="Rejection reason" className="w-full">
+              <SelectValue placeholder="Select a reason…" />
+            </SelectTrigger>
+            <SelectContent className="z-[110]">
+              {REJECT_REASONS.map((reason) => (
+                <SelectItem key={reason} value={reason}>
+                  {reason}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Textarea
+            placeholder="Note (optional)"
+            value={rejectNote}
+            onChange={(e) => setRejectNote(e.target.value)}
+          />
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={handleCancelReject}
+              disabled={rejecting}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleConfirmReject}
+              disabled={!rejectReason || rejecting}
+            >
+              Confirm reject
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={roundAdvanceOpen}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) handleCancelRoundAdvance();
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              Advance to Round {(detail.application.currentRound ?? 1) + 1}
+            </DialogTitle>
+          </DialogHeader>
+          <PeoplePicker
+            label="Assignee"
+            variant="list"
+            allowNone={false}
+            pool={interviewPool}
+            value={roundAdvanceAssigneeId || undefined}
+            onChange={(v) => setRoundAdvanceAssigneeId(v ? String(v) : "")}
+          />
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={handleCancelRoundAdvance}
+              disabled={advancingRound}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleConfirmAdvanceRound}
+              disabled={!roundAdvanceAssigneeId || advancingRound}
+            >
+              Confirm advance round
             </Button>
           </DialogFooter>
         </DialogContent>
