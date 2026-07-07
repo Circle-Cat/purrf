@@ -19,5 +19,6 @@ export default defineConfig({
     css: true,
     setupFiles: ["./setupTests.js"],
     exclude: ["node_modules", "dist", ".git", "bazel-*"],
+    teardownTimeout: 120000,
   },
 });

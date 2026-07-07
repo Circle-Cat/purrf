@@ -779,4 +779,100 @@ describe("ApplicationForm", () => {
     ).not.toBeInTheDocument();
     expect(screen.queryByText("activity")).not.toBeInTheDocument();
   });
+
+  it("shows the résumé-on-file banner when editing an existing application with a résumé attached", async () => {
+    api.resumeUrl.mockImplementation((id) => `/resume/${id}`);
+    api.updateApplication.mockResolvedValue({ data: { id: 7 } });
+    const existingWithResume = {
+      ...FILLED_EXISTING,
+      current: {
+        ...FILLED_EXISTING.current,
+        resumeObjectKey: "resumes/old.pdf",
+      },
+    };
+    render(
+      <ApplicationForm
+        job={JOB}
+        existing={existingWithResume}
+        onSubmitted={vi.fn()}
+      />,
+    );
+
+    expect(
+      await screen.findByText(/on file from your previous application/i),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Expand" }));
+    expect(screen.getByTitle("Your résumé on file")).toHaveAttribute(
+      "src",
+      "/resume/7",
+    );
+  });
+
+  it("shows the résumé-on-file banner when reapplying with a carried-forward résumé, pointed at the prior application's id", async () => {
+    api.resumeUrl.mockImplementation((id) => `/resume/${id}`);
+    api.submitApplication.mockResolvedValue({ data: { id: 101 } });
+    const seedWithResume = {
+      ...FILLED_EXISTING.current,
+      resumeObjectKey: "resumes/old.pdf",
+    };
+    render(
+      <ApplicationForm
+        job={JOB}
+        seed={seedWithResume}
+        seedApplicationId={9}
+        onSubmitted={vi.fn()}
+      />,
+    );
+
+    expect(
+      await screen.findByText(/on file from your previous application/i),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Expand" }));
+    expect(screen.getByTitle("Your résumé on file")).toHaveAttribute(
+      "src",
+      "/resume/9",
+    );
+  });
+
+  it("does not show the résumé-on-file banner when there is no prior résumé reference", async () => {
+    api.submitApplication.mockResolvedValue({ data: { id: 100 } });
+    render(<ApplicationForm job={JOB} onSubmitted={vi.fn()} />);
+    await screen.findByRole("button", { name: /submit/i });
+    expect(
+      screen.queryByText(/on file from your previous application/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("hides the résumé-on-file banner once a fresh file replaces the carried-forward résumé", async () => {
+    api.resumeUrl.mockImplementation((id) => `/resume/${id}`);
+    api.updateApplication.mockResolvedValue({ data: { id: 7 } });
+    api.uploadResume.mockResolvedValue({
+      data: { sha256: "new123", objectKey: "resumes/new123.pdf" },
+    });
+    const existingWithResume = {
+      ...FILLED_EXISTING,
+      current: {
+        ...FILLED_EXISTING.current,
+        resumeObjectKey: "resumes/old.pdf",
+      },
+    };
+    render(
+      <ApplicationForm
+        job={JOB}
+        existing={existingWithResume}
+        onSubmitted={vi.fn()}
+      />,
+    );
+
+    expect(
+      await screen.findByText(/on file from your previous application/i),
+    ).toBeInTheDocument();
+
+    selectResumeFile(pdfFile());
+    await waitFor(() => expect(api.uploadResume).toHaveBeenCalledTimes(1));
+
+    expect(
+      screen.queryByText(/on file from your previous application/i),
+    ).not.toBeInTheDocument();
+  });
 });

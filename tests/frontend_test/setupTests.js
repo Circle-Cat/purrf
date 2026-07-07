@@ -37,3 +37,14 @@ if (typeof Promise.withResolvers !== "function") {
     return { promise, resolve, reject };
   };
 }
+
+// jsdom doesn't implement Blob object URLs. ResumeUpload's session-only
+// résumé preview needs both to exist; the mock returns a distinct string per
+// call so tests can assert on it (and spy on revokeObjectURL for real).
+if (typeof URL.createObjectURL !== "function") {
+  let objectUrlCounter = 0;
+  URL.createObjectURL = () => `blob:mock-${(objectUrlCounter += 1)}`;
+}
+if (typeof URL.revokeObjectURL !== "function") {
+  URL.revokeObjectURL = () => {};
+}

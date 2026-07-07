@@ -9,11 +9,14 @@ vi.mock("@/api/recruitingApi");
 // Keep this page test focused on MyApplication's own load/gating logic;
 // ApplicationForm's submission behavior is covered by its own test suite.
 vi.mock("@/pages/Recruiting/ApplicationForm", () => ({
-  default: ({ job, existing, seed, onSubmitted }) => (
+  default: ({ job, existing, seed, seedApplicationId, onSubmitted }) => (
     <div>
       <p>Editing application for {job.title}</p>
       {existing && <p>Existing id {existing.id}</p>}
       {seed && <p>Seeded from prior submission</p>}
+      {seedApplicationId != null && (
+        <p>Seed application id {seedApplicationId}</p>
+      )}
       <button
         type="button"
         onClick={() =>
@@ -144,6 +147,34 @@ describe("MyApplication", () => {
       ).toBeInTheDocument(),
     );
     expect(screen.queryByText(/existing id/i)).not.toBeInTheDocument();
+  });
+
+  it("passes the rejected application's own id as seedApplicationId when reapplying", async () => {
+    api.getMyApplication.mockResolvedValue({
+      data: {
+        id: 9,
+        stage: "rejected",
+        editable: false,
+        current: {
+          submission: {
+            personal: { firstName: "Ann", lastName: "Lee" },
+            education: [],
+            experience: [],
+            answers: {},
+          },
+        },
+      },
+    });
+    renderAt(5);
+
+    await waitFor(() =>
+      expect(screen.getByText("Status: Rejected")).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /reapply/i }));
+
+    await waitFor(() =>
+      expect(screen.getByText("Seed application id 9")).toBeInTheDocument(),
+    );
   });
 
   it("updates the displayed application after a successful reapply submission", async () => {
