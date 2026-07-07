@@ -113,6 +113,7 @@ beforeEach(() => {
   api.getJob.mockResolvedValue({ data: JOB });
   api.getEvaluationsForApplication.mockResolvedValue({ data: [] });
   api.getApplicationActivity.mockResolvedValue({ data: [] });
+  api.getApplicationComments.mockResolvedValue({ data: [] });
 });
 
 /** Render the page at the detail route for a given application id. */
