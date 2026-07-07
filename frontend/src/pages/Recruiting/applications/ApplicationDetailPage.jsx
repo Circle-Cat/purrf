@@ -305,6 +305,12 @@ const describeActivity = ({ eventType, details }) => {
       return `Reassigned on ${humanize(details.stage)}`;
     case "round_advanced":
       return `Advanced to round ${details.toRound} of ${humanize(details.stage)}`;
+    case "sub_status_changed":
+      return `Status changed from ${humanize(details.fromSubStatus)} to ${humanize(details.toSubStatus)} on ${humanize(details.stage)}`;
+    case "evaluation_confirmed":
+      return `Confirmed evaluation for round ${details.round} of ${humanize(details.stage)}`;
+    case "blacklisted":
+      return `Blacklisted and rejected from ${humanize(details.fromStage)}: ${details.reason}`;
     default:
       return humanize(eventType);
   }
@@ -312,8 +318,9 @@ const describeActivity = ({ eventType, details }) => {
 
 /**
  * Read-only owner-facing audit timeline for one application: every
- * submission/stage-change/reassign/round-advance event, newest first, each
- * attributed to its actor's resolved display name.
+ * submission/stage-change/reassign/round-advance/sub-status-change/
+ * evaluation-confirm/blacklist event, newest first, each attributed to its
+ * actor's resolved display name.
  *
  * @param {{activity: {id: number, eventType: string, details: object,
  *          actorName: string, createdAt: string}[]}} props

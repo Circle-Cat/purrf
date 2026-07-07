@@ -75,8 +75,8 @@ class BoardService:
                 ``Permission.RECRUITING_INTERVIEW_EVALUATE``.
             application_activity_repository (ApplicationActivityRepository):
                 Append-only audit log, written by ``change_stage``/
-                ``reassign``/``set_round`` and read by
-                ``get_application_activity``.
+                ``reassign``/``set_round``/``set_sub_status``/``blacklist``
+                and read by ``get_application_activity``.
         """
         self.job_repository = job_repository
         self.application_repository = application_repository
@@ -722,7 +722,8 @@ class BoardService:
         The first move away from ``"pending"`` freezes the application's
         current submission version (one-way: switching between later
         non-pending values doesn't re-freeze since it's already frozen, and
-        moving back to ``"pending"`` never unfreezes it).
+        moving back to ``"pending"`` never unfreezes it). Logs a
+        ``"sub_status_changed"`` activity entry.
 
         Args:
             session (AsyncSession): Active database async session.
@@ -754,6 +755,17 @@ class BoardService:
         application.sub_status = dto.sub_status
 
         application = await self.application_repository.update(session, application)
+        await self.application_activity_repository.create(
+            session,
+            application_id,
+            current_user.user_id,
+            "sub_status_changed",
+            details={
+                "stage": application.stage.value,
+                "fromSubStatus": current_value,
+                "toSubStatus": dto.sub_status,
+            },
+        )
         await session.commit()
         return self.recruiting_mapper.to_application_dto(
             application, current_sub, editable=False
@@ -866,7 +878,9 @@ class BoardService:
 
         Row-locks the application for the duration of the transaction, same
         as ``change_stage``/``set_sub_status``, and freezes its current
-        submission version since the application is being closed out.
+        submission version since the application is being closed out. Logs
+        a ``"blacklisted"`` activity entry (not ``"stage_changed"`` — this
+        doesn't go through ``change_stage`` and carries its own reason).
 
         Args:
             session (AsyncSession): Active database async session.
@@ -897,6 +911,7 @@ class BoardService:
         if application is None or application.user_id != dto.user_id:
             raise ValueError(f"application {dto.application_id} not found")
 
+        from_stage = application.stage
         application.stage = ApplicationStage.REJECTED
         application.tags = {**(application.tags or {}), "blacklisted": True}
         application.sub_status = None
@@ -904,6 +919,13 @@ class BoardService:
 
         current_sub = await self._freeze_current_submission(session, dto.application_id)
         application = await self.application_repository.update(session, application)
+        await self.application_activity_repository.create(
+            session,
+            dto.application_id,
+            current_user.user_id,
+            "blacklisted",
+            details={"fromStage": from_stage.value, "reason": dto.reason},
+        )
         await session.commit()
         return self.recruiting_mapper.to_application_dto(
             application, current_sub, editable=False
