@@ -157,6 +157,28 @@ describe("BoardPage", () => {
     expect(api.getJobBoard).toHaveBeenCalledWith(1);
   });
 
+  it("always shows an Offer lane between the pipeline lanes and the terminal lanes, regardless of configured stages", async () => {
+    const jobNoStages = {
+      id: 5,
+      title: "No Stages Job",
+      kind: "employment",
+      stages: [],
+    };
+    api.listBoardJobs.mockResolvedValue({ data: [jobNoStages] });
+    api.getJobBoard.mockResolvedValue({ data: {} });
+
+    renderPage();
+
+    await waitFor(() => expect(screen.getByText("Offer")).toBeInTheDocument());
+    expect(screen.getByText("Hired")).toBeInTheDocument();
+    expect(screen.getByText("Rejected")).toBeInTheDocument();
+
+    const laneKeys = screen
+      .getAllByTestId(/^lane-/)
+      .map((el) => el.getAttribute("data-testid"));
+    expect(laneKeys).toEqual(["lane-offer", "lane-hired", "lane-rejected"]);
+  });
+
   it("switches jobs and refetches the board", async () => {
     const user = userEvent.setup();
     api.listBoardJobs.mockResolvedValue({ data: [jobA, jobB] });

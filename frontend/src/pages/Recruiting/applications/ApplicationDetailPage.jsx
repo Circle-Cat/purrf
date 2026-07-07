@@ -81,24 +81,26 @@ const SUB_STATUS_SETS = {
   board_review: ["pending", "in_progress", "evaluated"],
   behavioral: ["pending", "scheduling", "scheduled", "evaluated"],
   tech: ["pending", "scheduling", "scheduled", "evaluated"],
-  offer: ["pending", "evaluated"],
 };
 
 /**
  * Compute the stage an application advances to, mirroring the backend's
- * `stage_machine.advance_target`: the next configured pipeline stage, or
- * "hired" once the current stage is the last one configured. Returns null
- * when the current stage isn't part of the job's configured pipeline (i.e.
- * it's already a terminal stage), meaning there's no advance target.
+ * `stage_machine.advance_target`: the next configured pipeline stage;
+ * "offer" once the current stage is the last one configured (Offer is a
+ * fixed step, never itself configurable); "hired" when the current stage
+ * is "offer"; or null when the current stage isn't part of the job's
+ * configured pipeline and isn't "offer" either (i.e. it's already a
+ * terminal stage).
  *
  * @param {string[]} jobStages The job's configured pipeline stages in order.
  * @param {string} stage The application's current stage.
- * @returns {string|null} The next stage, "hired", or null.
+ * @returns {string|null} The next stage, "offer", "hired", or null.
  */
 const advanceTarget = (jobStages, stage) => {
+  if (stage === "offer") return "hired";
   const index = jobStages.indexOf(stage);
   if (index === -1) return null;
-  return index === jobStages.length - 1 ? "hired" : jobStages[index + 1];
+  return index === jobStages.length - 1 ? "offer" : jobStages[index + 1];
 };
 
 /**
@@ -541,8 +543,9 @@ const ApplicationDetailPage = () => {
    * local `detail` state in place, mirroring `handleSelectSubStatus`'s
    * pattern for mutations that don't change the application's stage (so no
    * full reload of the job config/evaluations is needed). No assignee is
-   * sent — only used for stages outside `INTERVIEW_STAGES` (e.g. a
-   * multi-round `offer`, which has no rubric and isn't assignable).
+   * sent — only used for stages outside `INTERVIEW_STAGES`; currently every
+   * configurable stage is an interview stage, so this path is unused today
+   * but kept for a future non-interview configurable stage.
    */
   const handleAdvanceRoundDirect = () => {
     if (advancingRound) return;
@@ -568,9 +571,9 @@ const ApplicationDetailPage = () => {
    * a dialog with an optional assignee picker, mirroring the advance-to-
    * stage flow's `advanceOpen` dialog — leaving it on "Decide later" just
    * advances the round unassigned, to be picked up later via Reassign;
-   * other multi-round stages (e.g. a multi-round `offer`, which has no
-   * rubric and isn't assignable) advance immediately via
-   * `handleAdvanceRoundDirect`.
+   * any other stage would advance immediately via `handleAdvanceRoundDirect`
+   * instead (currently unreachable, since every configurable stage today
+   * is an interview stage).
    */
   const handleOpenRoundAdvance = () => {
     if (INTERVIEW_STAGES.has(detail.application.stage)) {

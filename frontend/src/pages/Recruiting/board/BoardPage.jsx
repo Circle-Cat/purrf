@@ -15,6 +15,10 @@ import { humanize } from "@/pages/Recruiting/board/stageFormat";
 import { getStageColors } from "@/pages/Recruiting/board/stageColors";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
 
+/** Offer is always inserted between a job's configured pipeline stages and
+ * the terminal lanes — never something a job opts into (see TERMINAL_STAGES,
+ * the same treatment). */
+const OFFER_STAGE = "offer";
 /** Terminal lanes always appended after a job's configured pipeline stages. */
 const TERMINAL_STAGES = ["hired", "rejected"];
 
@@ -96,13 +100,19 @@ const BoardPage = () => {
             },
           ],
     );
+    const offerLane = {
+      key: OFFER_STAGE,
+      stage: OFFER_STAGE,
+      round: null,
+      label: humanize(OFFER_STAGE),
+    };
     const terminalLanes = TERMINAL_STAGES.map((stage) => ({
       key: stage,
       stage,
       round: null,
       label: humanize(stage),
     }));
-    return [...pipelineLanes, ...terminalLanes];
+    return [...pipelineLanes, offerLane, ...terminalLanes];
   }, [selectedJob]);
 
   /** Navigate to the shared application detail page for the clicked card. */
