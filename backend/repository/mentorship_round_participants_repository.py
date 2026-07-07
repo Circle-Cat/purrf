@@ -241,12 +241,18 @@ class MentorshipRoundParticipantsRepository:
 
         return stmt
 
+    _SORT_WHITELIST: dict[str, object] = {
+        "user_id": UsersEntity.user_id,
+    }
+
     async def search_participants_for_admin(
         self,
         session: AsyncSession,
         filters: ParticipantSearchFilterDto,
         limit: int,
         offset: int,
+        sort_by: str | None = None,
+        order: str = "asc",
     ) -> tuple[list[ParticipantSearchRow], int]:
         """
         Run the admin participant search and return paginated results.
@@ -259,6 +265,12 @@ class MentorshipRoundParticipantsRepository:
             filters (ParticipantSearchFilterDto): Filter parameters.
             limit (int): Maximum number of rows to return.
             offset (int): Number of rows to skip.
+            sort_by (str | None): Column to sort by (whitelisted via
+                `_SORT_WHITELIST`). Unknown or None values fall back to the
+                deterministic last_name/first_name/round_id/pair_id/user_id
+                order.
+            order (str): "asc" (default) or "desc". Only applied when
+                `sort_by` resolves to a whitelisted column.
 
         Returns:
             tuple[list[ParticipantSearchRow], int]:
@@ -272,17 +284,26 @@ class MentorshipRoundParticipantsRepository:
             or 0
         )
 
-        data_stmt = (
-            base_stmt.order_by(
+        sort_col = self._SORT_WHITELIST.get(sort_by) if sort_by else None
+        if sort_col is not None:
+            primary_order = sort_col.desc() if order == "desc" else sort_col.asc()
+            # Rows are keyed by (user_id, round_id, pair_id), round_id/pair_id
+            # can break ties for deterministic pagination.
+            order_clauses = [
+                primary_order,
+                MentorshipRoundParticipantsEntity.round_id.asc().nulls_last(),
+                MentorshipPairsEntity.pair_id.asc().nulls_last(),
+            ]
+        else:
+            order_clauses = [
                 UsersEntity.last_name.asc().nulls_last(),
                 UsersEntity.first_name.asc().nulls_last(),
                 MentorshipRoundParticipantsEntity.round_id.asc().nulls_last(),
                 MentorshipPairsEntity.pair_id.asc().nulls_last(),
                 UsersEntity.user_id.asc(),
-            )
-            .limit(limit)
-            .offset(offset)
-        )
+            ]
+
+        data_stmt = base_stmt.order_by(*order_clauses).limit(limit).offset(offset)
         result = await session.execute(data_stmt)
         rows = [
             ParticipantSearchRow(

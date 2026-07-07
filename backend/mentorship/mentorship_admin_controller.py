@@ -38,10 +38,12 @@ class MentorshipAdminController:
         filters: ParticipantSearchFilterDto = Depends(),
         limit: int = 100,
         offset: int = 0,
+        sort_by: str | None = None,
+        order: str = "asc",
     ):
         async with self.database.session() as session:
             result = await self.mentorship_admin_service.search_participants(
-                session, filters, limit, offset
+                session, filters, limit, offset, sort_by, order
             )
         return api_response(
             message="Successfully retrieved participant search results.",
