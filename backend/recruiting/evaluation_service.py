@@ -28,6 +28,7 @@ class EvaluationService:
         evaluation_repository,
         job_repository,
         users_repository,
+        application_activity_repository,
     ):
         """
         Args:
@@ -39,12 +40,16 @@ class EvaluationService:
                 in "My Evaluations".
             users_repository (UsersRepository): Applicant lookups, for
                 applicant names in "My Evaluations".
+            application_activity_repository (ApplicationActivityRepository):
+                Append-only audit log; ``submit`` writes an
+                ``"evaluation_confirmed"`` entry when ``dto.confirm`` is set.
         """
         self.application_repository = application_repository
         self.application_assignment_repository = application_assignment_repository
         self.evaluation_repository = evaluation_repository
         self.job_repository = job_repository
         self.users_repository = users_repository
+        self.application_activity_repository = application_activity_repository
 
     async def submit(
         self,
@@ -56,7 +61,9 @@ class EvaluationService:
         """Save a draft, or confirm (permanently lock) an evaluation.
 
         Confirming also flips the application's sub_status to "evaluated"
-        so the owner knows to come review it.
+        so the owner knows to come review it, and logs an
+        "evaluation_confirmed" activity entry. Saving a draft (confirm=False)
+        logs nothing -- the timeline only records the durable outcome.
 
         Args:
             session (AsyncSession): Active database async session.
@@ -102,6 +109,16 @@ class EvaluationService:
             )
             application.sub_status = "evaluated"
             await self.application_repository.update(session, application)
+            await self.application_activity_repository.create(
+                session,
+                application_id,
+                current_user.user_id,
+                "evaluation_confirmed",
+                details={
+                    "stage": application.stage.value,
+                    "round": application.current_round,
+                },
+            )
         await session.commit()
         return EvaluationDto(
             id=row.evaluation_id,

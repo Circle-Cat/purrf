@@ -1177,6 +1177,31 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.app_repo.update.assert_awaited_once()
         self.session.commit.assert_awaited_once()
 
+    async def test_set_sub_status_logs_activity(self):
+        job = self._job(job_id=1, owner_ids=(2,))
+        application = self._application(
+            application_id=10, job_id=1, stage=ApplicationStage.RECRUITER_SCREENING
+        )
+        application.sub_status = "pending"
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+
+        dto = SubStatusChangeDto(sub_status="in_progress")
+        await self.service.set_sub_status(self.session, self._ctx(user_id=2), 10, dto)
+
+        self.activity_repo.create.assert_awaited_once_with(
+            self.session,
+            10,
+            2,
+            "sub_status_changed",
+            details={
+                "stage": ApplicationStage.RECRUITER_SCREENING.value,
+                "fromSubStatus": "pending",
+                "toSubStatus": "in_progress",
+            },
+        )
+
     async def test_set_sub_status_invalid_value_raises_without_mutating(self):
         job = self._job(job_id=1, owner_ids=(2,))
         application = self._application(
@@ -1314,6 +1339,32 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.app_repo.update.assert_awaited_once()
         self.session.commit.assert_awaited_once()
         self.assertEqual(result.current_round, 1)
+
+    async def test_blacklist_logs_activity(self):
+        user = self._user(user_id=3)
+        application = self._application(
+            application_id=10, job_id=1, user_id=3, stage=ApplicationStage.TECH
+        )
+        current_sub = self._submission(application_id=10, is_frozen=False)
+        self.users_repo.get_user_by_user_id = AsyncMock(return_value=user)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.sub_repo.get_current = AsyncMock(return_value=current_sub)
+
+        dto = BlacklistDto(
+            user_id=3, application_id=10, reason="Fabricated credentials"
+        )
+        await self.service.blacklist(self.session, self._ctx(user_id=99), dto)
+
+        self.activity_repo.create.assert_awaited_once_with(
+            self.session,
+            10,
+            99,
+            "blacklisted",
+            details={
+                "fromStage": ApplicationStage.TECH.value,
+                "reason": "Fabricated credentials",
+            },
+        )
 
     async def test_blacklist_row_locks_the_application(self):
         user = self._user(user_id=3)
