@@ -2,6 +2,7 @@ import unittest
 from http import HTTPStatus
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from backend.common.permissions import Permission
 from backend.dto.job_review_dto import JobReviewDecisionDto, JobSubmitDto
 from backend.dto.user_context_dto import UserContextDto
 from backend.recruiting.recruiting_controller import RecruitingController
@@ -116,6 +117,28 @@ class TestRecruitingController(unittest.IsolatedAsyncioTestCase):
         self.service.list_job_owners = AsyncMock(return_value=["y"])
         result = await self.controller.list_job_owners(self.user)
         self.assertEqual(result["data"], ["y"])
+
+    def _endpoint_permissions(self, endpoint):
+        """Pull the `permissions` list out of an authenticate()-wrapped endpoint."""
+        idx = endpoint.__code__.co_freevars.index("permissions")
+        return endpoint.__closure__[idx].cell_contents
+
+    def test_get_job_route_accepts_read_all(self):
+        routes_by_path = {
+            route.path: route for route in self.controller.router.routes
+        }
+        get_job_route = routes_by_path["/recruiting/jobs/{job_id}"]
+
+        self.assertIn("GET", get_job_route.methods)
+        self.assertEqual(
+            self._endpoint_permissions(get_job_route.endpoint),
+            [
+                Permission.RECRUITING_JOB_READ,
+                Permission.RECRUITING_JOB_WRITE,
+                Permission.RECRUITING_JOB_APPROVE,
+                Permission.RECRUITING_APPLICATION_READ_ALL,
+            ],
+        )
 
 
 if __name__ == "__main__":
