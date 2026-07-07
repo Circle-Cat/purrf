@@ -194,4 +194,46 @@ describe("ResumeUpload with showPreview", () => {
     expect(screen.getByText("Please upload a PDF file.")).toBeInTheDocument();
     expect(screen.getByText(/resume\.pdf · Change/)).toBeInTheDocument();
   });
+
+  it("ignores a second file dropped onto the preview row while a parse is already in flight", async () => {
+    let resolveFirstParse;
+    parseResumeFromPdf.mockReturnValue(
+      new Promise((resolve) => {
+        resolveFirstParse = resolve;
+      }),
+    );
+    const onParsed = vi.fn();
+    render(<ResumeUpload onParsed={onParsed} showPreview />);
+    selectFile(pdfFile());
+    expect(screen.getByText(/resume\.pdf · Parsing…/)).toBeInTheDocument();
+
+    const secondFile = new File(["%PDF-1.4"], "other.pdf", {
+      type: "application/pdf",
+    });
+    selectFile(secondFile);
+
+    // The second pick was ignored: still showing the first file, and
+    // parseResumeFromPdf was never called a second time.
+    expect(screen.getByText(/resume\.pdf · Parsing…/)).toBeInTheDocument();
+    expect(parseResumeFromPdf).toHaveBeenCalledTimes(1);
+
+    resolveFirstParse(PARSED);
+    await waitFor(() => expect(onParsed).toHaveBeenCalledTimes(1));
+  });
+
+  it("revokes the current blob URL on unmount", async () => {
+    const revokeSpy = vi.spyOn(URL, "revokeObjectURL");
+    const { unmount } = render(<ResumeUpload onParsed={vi.fn()} showPreview />);
+    selectFile(pdfFile());
+    await waitFor(() =>
+      expect(screen.getByText(/resume\.pdf · Change/)).toBeInTheDocument(),
+    );
+    const src = screen
+      .getByTitle("Preview of resume.pdf")
+      .getAttribute("src");
+
+    unmount();
+
+    expect(revokeSpy).toHaveBeenCalledWith(src);
+  });
 });

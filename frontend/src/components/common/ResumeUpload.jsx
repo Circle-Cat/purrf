@@ -60,7 +60,7 @@ export default function ResumeUpload({
   }, []);
 
   const handleFile = async (file) => {
-    if (!file) return;
+    if (!file || isParsing) return;
     const isPdf =
       file.type === PDF_TYPE || file.name.toLowerCase().endsWith(".pdf");
     if (!isPdf) {
