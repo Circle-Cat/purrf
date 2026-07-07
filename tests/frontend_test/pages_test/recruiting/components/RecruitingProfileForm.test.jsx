@@ -67,6 +67,42 @@ describe("RecruitingProfileForm", () => {
     );
   });
 
+  it("shows a résumé preview after picking a file (showPreview wired through)", async () => {
+    renderForm({});
+    selectResumeFile(pdfFile());
+    await waitFor(() =>
+      expect(screen.getByTitle("Preview of resume.pdf")).toBeInTheDocument(),
+    );
+  });
+
+  it("does not render the résumé-on-file banner when existingResume is not provided", () => {
+    renderForm({});
+    expect(
+      screen.queryByText(/on file from your previous application/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("renders the résumé-on-file banner and expands to show the iframe", () => {
+    api.resumeUrl.mockImplementation(
+      (id) => `/api/recruiting/applications/${id}/resume`,
+    );
+    renderForm({}, { existingResume: { applicationId: 7 } });
+
+    expect(
+      screen.getByText(/on file from your previous application/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByTitle("Your résumé on file")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Expand" }));
+    expect(screen.getByTitle("Your résumé on file")).toHaveAttribute(
+      "src",
+      "/api/recruiting/applications/7/resume",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Collapse" }));
+    expect(screen.queryByTitle("Your résumé on file")).not.toBeInTheDocument();
+  });
+
   it("toasts an error and does not call onResumeStored when the resume upload fails", async () => {
     api.uploadResume.mockRejectedValue(new Error("upload failed"));
     const onResumeStored = vi.fn();

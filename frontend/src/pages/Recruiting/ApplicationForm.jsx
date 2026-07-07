@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -48,9 +48,16 @@ import { profileToApplicationForm } from "@/pages/Recruiting/profilePrefill";
  * toasts a warning and never fails the submission -- `onSubmitted` still
  * fires.
  *
- * @param {{job: object, existing?: object, seed?: object, onSubmitted: (app: object) => void}} props
+ * @param {{job: object, existing?: object, seed?: object, seedApplicationId?: number,
+ *          onSubmitted: (app: object) => void}} props
  */
-const ApplicationForm = ({ job, existing, seed, onSubmitted }) => {
+const ApplicationForm = ({
+  job,
+  existing,
+  seed,
+  seedApplicationId,
+  onSubmitted,
+}) => {
   const { user } = useAuth();
   const priorSubmission = existing?.current ?? seed ?? {};
   const submissionSeed = priorSubmission.submission ?? {};
@@ -64,6 +71,19 @@ const ApplicationForm = ({ job, existing, seed, onSubmitted }) => {
     sha256: priorSubmission.resumeSha256 ?? null,
     objectKey: priorSubmission.resumeObjectKey ?? null,
   });
+  // Captured once: distinguishes "still showing the inherited résumé
+  // reference" from "candidate picked a new file this session" without
+  // needing separate boolean state.
+  const initialResumeObjectKeyRef = useRef(
+    priorSubmission.resumeObjectKey ?? null,
+  );
+  const resumeApplicationId = existing?.id ?? seedApplicationId ?? null;
+  const existingResume =
+    initialResumeObjectKeyRef.current &&
+    resume.objectKey === initialResumeObjectKeyRef.current &&
+    resumeApplicationId
+      ? { applicationId: resumeApplicationId }
+      : null;
   const [saveToProfile, setSaveToProfile] = useState(!existing);
   const [submitting, setSubmitting] = useState(false);
   const [prefillLoading, setPrefillLoading] = useState(!existing && !seed);
@@ -170,6 +190,7 @@ const ApplicationForm = ({ job, existing, seed, onSubmitted }) => {
         onAnswerChange={(id, v) => setAnswers((a) => ({ ...a, [id]: v }))}
         contactEmail={user?.email ?? ""}
         onResumeStored={setResume}
+        existingResume={existingResume}
       />
       <Label className="flex items-center gap-2 text-sm">
         <Checkbox
