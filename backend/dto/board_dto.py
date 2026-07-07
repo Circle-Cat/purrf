@@ -136,9 +136,10 @@ class RoundChangeDto(BaseRequestDto):
     """Advance an application to a specific round within its current stage."""
 
     round: int
-    # Required when the application's current stage is an interview stage
-    # (INTERVIEW_STAGES in board_service.py); ignored otherwise — e.g. a
-    # multi-round OFFER stage, which has no rubric and is not assignable.
+    # Optional even for an interview stage (INTERVIEW_STAGES in
+    # board_service.py) -- a round can be left unassigned, to be picked up
+    # later via reassign. Ignored entirely for a non-interview stage, e.g.
+    # a multi-round OFFER stage, which has no rubric and is not assignable.
     assignee_id: int | None = None
 
     @field_validator("round")

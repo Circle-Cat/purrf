@@ -915,7 +915,12 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
 
     # -- reassign --
 
-    async def test_reassign_updates_assignment_and_resets_sub_status(self):
+    async def test_reassign_promotes_evaluated_to_scheduled_on_scheduling_stage(self):
+        """TECH uses scheduling/scheduled instead of in_progress -- an
+        "evaluated" application being reassigned means the interview itself
+        already happened, so it drops back to "scheduled" (not
+        "scheduling": no new slot needs booking), leaving the new assignee
+        to submit their own evaluation."""
         job = self._job(
             job_id=1, owner_ids=(2,), stages=("recruiter_screening", "tech")
         )
@@ -936,12 +941,126 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             self.session, self._ctx(user_id=2), 10, dto
         )
 
-        self.assertEqual(result.sub_status, "pending")
+        self.assertEqual(result.sub_status, "scheduled")
         self.assignment_repo.upsert.assert_awaited_once_with(
             self.session, 10, ApplicationStage.TECH, 1, 42, 2
         )
         self.app_repo.update.assert_awaited_once()
         self.session.commit.assert_awaited_once()
+
+    async def test_reassign_promotes_pending_to_scheduling_on_scheduling_stage(self):
+        job = self._job(
+            job_id=1, owner_ids=(2,), stages=("recruiter_screening", "tech")
+        )
+        application = self._application(
+            application_id=10, job_id=1, stage=ApplicationStage.TECH
+        )
+        application.sub_status = "pending"
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+        self.user_permissions_repo.get_active_users_with_permission = AsyncMock(
+            return_value=[self._user(user_id=42)]
+        )
+
+        dto = ReassignDto(assignee_id=42)
+        result = await self.service.reassign(
+            self.session, self._ctx(user_id=2), 10, dto
+        )
+
+        self.assertEqual(result.sub_status, "scheduling")
+
+    async def test_reassign_leaves_scheduling_unchanged_on_scheduling_stage(self):
+        job = self._job(
+            job_id=1, owner_ids=(2,), stages=("recruiter_screening", "tech")
+        )
+        application = self._application(
+            application_id=10, job_id=1, stage=ApplicationStage.TECH
+        )
+        application.sub_status = "scheduling"
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+        self.user_permissions_repo.get_active_users_with_permission = AsyncMock(
+            return_value=[self._user(user_id=42)]
+        )
+
+        dto = ReassignDto(assignee_id=42)
+        result = await self.service.reassign(
+            self.session, self._ctx(user_id=2), 10, dto
+        )
+
+        self.assertEqual(result.sub_status, "scheduling")
+
+    async def test_reassign_promotes_pending_to_in_progress_when_available(self):
+        job = self._job(
+            job_id=1, owner_ids=(2,), stages=("recruiter_screening", "tech")
+        )
+        application = self._application(
+            application_id=10, job_id=1, stage=ApplicationStage.RECRUITER_SCREENING
+        )
+        application.sub_status = "pending"
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+        self.user_permissions_repo.get_active_users_with_permission = AsyncMock(
+            return_value=[self._user(user_id=42)]
+        )
+
+        dto = ReassignDto(assignee_id=42)
+        result = await self.service.reassign(
+            self.session, self._ctx(user_id=2), 10, dto
+        )
+
+        self.assertEqual(result.sub_status, "in_progress")
+
+    async def test_reassign_promotes_evaluated_to_in_progress_when_available(self):
+        """A single "evaluated" isn't enough -- reassigning while evaluated
+        means the new assignee still owes their own evaluation, so it's
+        promoted back to "in_progress" rather than left as if the stage
+        were done."""
+        job = self._job(
+            job_id=1, owner_ids=(2,), stages=("recruiter_screening", "tech")
+        )
+        application = self._application(
+            application_id=10, job_id=1, stage=ApplicationStage.RECRUITER_SCREENING
+        )
+        application.sub_status = "evaluated"
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+        self.user_permissions_repo.get_active_users_with_permission = AsyncMock(
+            return_value=[self._user(user_id=42)]
+        )
+
+        dto = ReassignDto(assignee_id=42)
+        result = await self.service.reassign(
+            self.session, self._ctx(user_id=2), 10, dto
+        )
+
+        self.assertEqual(result.sub_status, "in_progress")
+
+    async def test_reassign_leaves_in_progress_unchanged(self):
+        job = self._job(
+            job_id=1, owner_ids=(2,), stages=("recruiter_screening", "tech")
+        )
+        application = self._application(
+            application_id=10, job_id=1, stage=ApplicationStage.RECRUITER_SCREENING
+        )
+        application.sub_status = "in_progress"
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+        self.user_permissions_repo.get_active_users_with_permission = AsyncMock(
+            return_value=[self._user(user_id=42)]
+        )
+
+        dto = ReassignDto(assignee_id=42)
+        result = await self.service.reassign(
+            self.session, self._ctx(user_id=2), 10, dto
+        )
+
+        self.assertEqual(result.sub_status, "in_progress")
 
     async def test_reassign_targets_the_applications_current_round(self):
         job = self._job(
@@ -1357,7 +1476,11 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             self.session, 10, for_update=True
         )
 
-    async def test_set_round_to_interview_stage_requires_assignee_id(self):
+    async def test_set_round_to_interview_stage_without_assignee_leaves_it_unassigned(
+        self,
+    ):
+        """A round can be left unassigned, mirroring change_stage's
+        optional-assignee advance -- picked up later via reassign."""
         job = self._job(job_id=1, owner_ids=(2,), stages=("tech",), rounds={"tech": 2})
         application = self._application(
             application_id=10, job_id=1, stage=ApplicationStage.TECH
@@ -1367,12 +1490,15 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.sub_repo.get_current = AsyncMock(return_value=None)
 
         dto = RoundChangeDto(round=2)  # no assignee_id
-        with self.assertRaisesRegex(ValueError, "assignee"):
-            await self.service.set_round(self.session, self._ctx(user_id=2), 10, dto)
+        result = await self.service.set_round(
+            self.session, self._ctx(user_id=2), 10, dto
+        )
 
+        self.assertEqual(result.current_round, 2)
         self.assignment_repo.upsert.assert_not_awaited()
-        self.app_repo.update.assert_not_awaited()
-        self.session.commit.assert_not_awaited()
+        self.user_permissions_repo.get_active_users_with_permission.assert_not_called()
+        self.app_repo.update.assert_awaited_once()
+        self.session.commit.assert_awaited_once()
 
     async def test_set_round_rejects_unqualified_assignee(self):
         job = self._job(job_id=1, owner_ids=(2,), stages=("tech",), rounds={"tech": 2})
