@@ -335,12 +335,12 @@ class BoardService:
         current_user: UserContextDto,
         application_id: int,
     ) -> ApplicationDetailDto:
-        """Return the full view of one application, for its owner or assignee.
+        """Return the full view of one application, for its owner, assignee, or read.all holder.
 
-        Readable by either a configured owner of the job, or (as of
-        sub-project #3 slice 1) the application's current-stage assignee —
-        PR 3 merges the owner's board dialog and the assignee's evaluation
-        view into one shared page served by this same read endpoint.
+        Readable by any of: a configured owner of the job, the application's
+        current-stage assignee (as of sub-project #3 slice 1, merging the
+        owner's board dialog and the assignee's evaluation view into one
+        shared page), or a caller holding ``Permission.RECRUITING_APPLICATION_READ_ALL``.
 
         Args:
             session (AsyncSession): Active database async session.
@@ -357,11 +357,11 @@ class BoardService:
 
         Raises:
             ValueError: If the application is missing, or the caller is
-                neither an owner of the application's job nor its
-                current-stage assignee. All cases raise the same generic
-                message (mirroring ``ApplicationService._load_owned``) so
-                response bodies don't leak which application ids exist to
-                unauthorized callers.
+                none of: an owner of the application's job, its current-stage
+                assignee, or a holder of ``Permission.RECRUITING_APPLICATION_READ_ALL``.
+                All cases raise the same generic message (mirroring
+                ``ApplicationService._load_owned``) so response bodies don't leak
+                which application ids exist to unauthorized callers.
         """
         application, job = await self._load_owned_application(
             session,
@@ -444,12 +444,13 @@ class BoardService:
         current_user: UserContextDto,
         application_id: int,
     ) -> list[ApplicationActivityDto]:
-        """Return an application's audit timeline, newest first, owner-only.
+        """Return an application's audit timeline, newest first, owner or read.all only.
 
         Unlike ``get_application_detail``/``get_resume``, this is NOT
         readable by the current-stage assignee — it's an owner-facing audit
         view (mirrors ``EvaluationSummary``'s owner-only placement on the
-        frontend), not something an evaluator needs while grading.
+        frontend), not something an evaluator needs while grading. Accessible
+        to the job's owners or callers holding ``Permission.RECRUITING_APPLICATION_READ_ALL``.
 
         Assignee names (for ``stage_changed``/``round_advanced``/
         ``auto_assigned``'s ``assigneeId``, and ``reassigned``'s
@@ -469,8 +470,9 @@ class BoardService:
                 assignee name(s) merged into a copy of ``details``.
 
         Raises:
-            ValueError: If the application is missing, or the caller is not
-                an owner of the application's job (collapsed "not found"
+            ValueError: If the application is missing, or the caller is neither
+                an owner of the application's job nor a holder of
+                ``Permission.RECRUITING_APPLICATION_READ_ALL`` (collapsed "not found"
                 message, same as the other owner-facing reads).
         """
         await self._load_owned_application(
