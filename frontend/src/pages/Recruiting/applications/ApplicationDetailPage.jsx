@@ -528,9 +528,8 @@ const ApplicationDetailPage = () => {
         // -- the one fetch here that must also run for an assignee-only
         // viewer.
         if (detailData.isOwner || detailData.assigneeId === currentUserId) {
-          const { data: commentRows } = await getApplicationComments(
-            applicationId,
-          );
+          const { data: commentRows } =
+            await getApplicationComments(applicationId);
           setComments(commentRows ?? []);
         }
         setLoaded(true);

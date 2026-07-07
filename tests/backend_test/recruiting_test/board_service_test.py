@@ -55,9 +55,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.activity_repo = create_autospec(
             ApplicationActivityRepository, instance=True
         )
-        self.comment_repo = create_autospec(
-            ApplicationCommentRepository, instance=True
-        )
+        self.comment_repo = create_autospec(ApplicationCommentRepository, instance=True)
         self.session = AsyncMock()
         self.service = BoardService(
             self.job_repo,
@@ -2234,9 +2232,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
 
         dto = CommentCreateDto(body="Sneaking in.")
         with self.assertRaises(ValueError) as ctx:
-            await self.service.add_comment(
-                self.session, self._ctx(user_id=99), 10, dto
-            )
+            await self.service.add_comment(self.session, self._ctx(user_id=99), 10, dto)
         self.assertEqual(str(ctx.exception), "application 10 not found")
         self.comment_repo.create.assert_not_awaited()
 
