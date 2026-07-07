@@ -59,28 +59,43 @@ const MyEvaluations = () => {
         </p>
       ) : (
         <div className="divide-y divide-slate-200 rounded-lg border border-slate-200 bg-white">
-          {evaluations.map((row) => (
-            <Link
-              key={`${row.applicationId}-${row.stage}-${row.round}`}
-              to={`${ROUTE_PATHS.RECRUITING_APPLICATION_DETAIL(row.applicationId)}?mode=evaluate`}
-              className="flex items-center gap-3 p-4 no-underline transition-colors hover:bg-slate-50"
-            >
-              <div className="min-w-0 flex-1">
-                <p className="font-medium text-slate-900">
-                  {row.applicantName}
-                </p>
-                <p className="truncate text-xs text-slate-500">
-                  {row.jobTitle}
-                </p>
+          {evaluations.map((row) => {
+            const key = `${row.applicationId}-${row.stage}-${row.round}`;
+            const rowContent = (
+              <>
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium text-slate-900">
+                    {row.applicantName}
+                  </p>
+                  <p className="truncate text-xs text-slate-500">
+                    {row.jobTitle}
+                  </p>
+                </div>
+                <Badge variant="outline">
+                  {stageLabel(row.stage)} — Round {row.round}
+                </Badge>
+                <Badge variant={row.isConfirmed ? "default" : "secondary"}>
+                  {row.isConfirmed ? "Confirmed" : "Pending"}
+                </Badge>
+                {!row.isCurrent && (
+                  <Badge variant="secondary">No longer assigned</Badge>
+                )}
+              </>
+            );
+            return row.isCurrent ? (
+              <Link
+                key={key}
+                to={`${ROUTE_PATHS.RECRUITING_APPLICATION_DETAIL(row.applicationId)}?mode=evaluate`}
+                className="flex items-center gap-3 p-4 no-underline transition-colors hover:bg-slate-50"
+              >
+                {rowContent}
+              </Link>
+            ) : (
+              <div key={key} className="flex items-center gap-3 p-4">
+                {rowContent}
               </div>
-              <Badge variant="outline">
-                {stageLabel(row.stage)} — Round {row.round}
-              </Badge>
-              <Badge variant={row.isConfirmed ? "default" : "secondary"}>
-                {row.isConfirmed ? "Confirmed" : "Pending"}
-              </Badge>
-            </Link>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

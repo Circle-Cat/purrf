@@ -131,33 +131,86 @@ class EvaluationService:
             confirmed_at=row.confirmed_at,
         )
 
+    async def _job_and_applicant_labels(
+        self, session: AsyncSession, application
+    ) -> tuple[str, str]:
+        """Resolve an application's job title and applicant display name.
+
+        Shared by get_mine's two passes so the "" / "First Last" fallback
+        logic isn't duplicated.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            application (ApplicationEntity): The application to label.
+
+        Returns:
+            tuple[str, str]: (job_title, applicant_name), each "" if the
+                referenced job/user row is missing.
+        """
+        job = await self.job_repository.get_by_job_id(session, application.job_id)
+        user = await self.users_repository.get_user_by_user_id(
+            session, application.user_id
+        )
+        job_title = job.title if job is not None else ""
+        applicant_name = (
+            f"{user.first_name} {user.last_name}".strip() if user is not None else ""
+        )
+        return job_title, applicant_name
+
     async def get_mine(
         self, session: AsyncSession, current_user: UserContextDto
     ) -> list[MyEvaluationDto]:
-        """List every application currently assigned to the caller.
+        """List every application assigned to the caller, current or historical.
+
+        application_assignment keeps only one live row per
+        (application_id, stage, round) -- reassigning overwrites it in
+        place, and advancing to a new round/stage leaves the old row
+        untouched. Two passes merge two different signals to get the right
+        result anyway:
+
+        - Pass 1 walks the caller's live assignments
+          (application_assignment_repository.list_by_assignee). A row
+          still matching the application's current stage+round is always
+          included (the normal, actionable case). A row that's fallen
+          behind -- the application has since advanced past it -- is
+          included only if the caller already confirmed their evaluation
+          for it; otherwise it's dropped, since it was never finished and
+          is no longer actionable.
+        - Pass 2 walks every evaluation row the caller ever wrote
+          (evaluation_repository.list_by_assignee), independent of the
+          current assignment, to recover the case pass 1 can't see at all:
+          the caller was reassigned away from that exact stage+round, so
+          their assignment row was overwritten with the new assignee's id.
+          If they'd already confirmed, that confirmed work should still
+          show up read-only. Rows already surfaced by pass 1 are skipped
+          here via `seen`.
 
         Args:
             session (AsyncSession): Active database async session.
             current_user (UserContextDto): The authenticated caller.
 
         Returns:
-            list[MyEvaluationDto]: One entry per assignment, with
-                is_confirmed reflecting whether that stage's evaluation
-                (if any has been started at all) is locked.
+            list[MyEvaluationDto]: is_current reflects whether this row is
+                still the application's live current-stage assignment for
+                the caller; is_confirmed reflects whether the caller's
+                evaluation for that stage+round was ever confirmed. A row
+                with neither (fallen behind and never finished) is never
+                included.
         """
         assignments = await self.application_assignment_repository.list_by_assignee(
             session, current_user.user_id
         )
         result = []
+        seen = set()
         for assignment in assignments:
             application = await self.application_repository.get_by_id(
                 session, assignment.application_id
             )
             if application is None:
                 continue
-            job = await self.job_repository.get_by_job_id(session, application.job_id)
-            user = await self.users_repository.get_user_by_user_id(
-                session, application.user_id
+            is_current = (
+                assignment.stage == application.stage
+                and assignment.round == application.current_round
             )
             evaluation = await self.evaluation_repository.get(
                 session,
@@ -166,20 +219,50 @@ class EvaluationService:
                 assignment.round,
                 current_user.user_id,
             )
+            is_confirmed = bool(evaluation is not None and evaluation.is_confirmed)
+            if not is_current and not is_confirmed:
+                continue
+            job_title, applicant_name = await self._job_and_applicant_labels(
+                session, application
+            )
             result.append(
                 MyEvaluationDto(
                     application_id=assignment.application_id,
-                    job_title=job.title if job is not None else "",
-                    applicant_name=(
-                        f"{user.first_name} {user.last_name}".strip()
-                        if user is not None
-                        else ""
-                    ),
+                    job_title=job_title,
+                    applicant_name=applicant_name,
                     stage=assignment.stage,
                     round=assignment.round,
-                    is_confirmed=bool(
-                        evaluation is not None and evaluation.is_confirmed
-                    ),
+                    is_confirmed=is_confirmed,
+                    is_current=is_current,
+                )
+            )
+            seen.add((assignment.application_id, assignment.stage, assignment.round))
+
+        for row in await self.evaluation_repository.list_by_assignee(
+            session, current_user.user_id
+        ):
+            if not row.is_confirmed:
+                continue
+            key = (row.application_id, row.stage, row.round)
+            if key in seen:
+                continue
+            application = await self.application_repository.get_by_id(
+                session, row.application_id
+            )
+            if application is None:
+                continue
+            job_title, applicant_name = await self._job_and_applicant_labels(
+                session, application
+            )
+            result.append(
+                MyEvaluationDto(
+                    application_id=row.application_id,
+                    job_title=job_title,
+                    applicant_name=applicant_name,
+                    stage=row.stage,
+                    round=row.round,
+                    is_confirmed=True,
+                    is_current=False,
                 )
             )
         return result

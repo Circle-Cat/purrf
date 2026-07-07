@@ -41,3 +41,4 @@ class MyEvaluationDto(BaseDto):
     stage: ApplicationStage
     round: int
     is_confirmed: bool
+    is_current: bool

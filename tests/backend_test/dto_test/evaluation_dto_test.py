@@ -76,6 +76,7 @@ class TestMyEvaluationDto(unittest.TestCase):
             "stage": ApplicationStage.BEHAVIORAL.value,
             "round": 1,
             "isConfirmed": False,
+            "isCurrent": True,
         })
         self.assertEqual(dto.application_id, 5)
         self.assertEqual(dto.job_title, "Software Engineer")
@@ -83,6 +84,7 @@ class TestMyEvaluationDto(unittest.TestCase):
         self.assertEqual(dto.stage, ApplicationStage.BEHAVIORAL)
         self.assertEqual(dto.round, 1)
         self.assertFalse(dto.is_confirmed)
+        self.assertTrue(dto.is_current)
 
 
 if __name__ == "__main__":

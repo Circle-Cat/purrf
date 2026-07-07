@@ -372,6 +372,8 @@ class TestEvaluationService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(by_app[10].applicant_name, "C D")
         self.assertEqual(by_app[10].stage, ApplicationStage.RECRUITER_SCREENING)
         self.assertEqual(by_app[11].stage, ApplicationStage.TECH)
+        self.assertTrue(by_app[10].is_current)
+        self.assertTrue(by_app[11].is_current)
 
     async def test_get_mine_returns_distinct_rows_for_two_rounds_of_same_application(
         self,
@@ -408,6 +410,104 @@ class TestEvaluationService(unittest.IsolatedAsyncioTestCase):
         by_round = {r.round: r for r in result}
         self.assertTrue(by_round[1].is_confirmed)
         self.assertFalse(by_round[2].is_confirmed)
+        self.assertFalse(by_round[1].is_current)
+        self.assertTrue(by_round[2].is_current)
+
+    async def test_get_mine_excludes_stale_unconfirmed_assignment(self):
+        """An assignment whose round the application has since advanced
+        past, with no confirmed evaluation, is dropped entirely -- it's
+        neither actionable nor a completed record worth keeping."""
+        stale = self._assignment(
+            application_id=10, stage=ApplicationStage.TECH, round=1, assignee_id=2
+        )
+        self.assignment_repo.list_by_assignee = AsyncMock(return_value=[stale])
+        app = self._application(
+            application_id=10, stage=ApplicationStage.TECH, current_round=2
+        )
+        self.app_repo.get_by_id = AsyncMock(return_value=app)
+        self.evaluation_repo.get = AsyncMock(return_value=None)
+        self.evaluation_repo.list_by_assignee = AsyncMock(return_value=[])
+
+        result = await self.service.get_mine(self.session, self._ctx(user_id=2))
+
+        self.assertEqual(result, [])
+
+    async def test_get_mine_recovers_confirmed_evaluation_after_reassignment(self):
+        """Once reassigned, the outgoing assignee's application_assignment
+        row is overwritten and list_by_assignee no longer returns it -- but
+        their already-confirmed evaluation row survives independently and
+        must still show up, read-only."""
+        self.assignment_repo.list_by_assignee = AsyncMock(return_value=[])
+        app = self._application(
+            application_id=10, stage=ApplicationStage.TECH, current_round=1
+        )
+        self.app_repo.get_by_id = AsyncMock(return_value=app)
+        self.job_repo.get_by_job_id = AsyncMock(
+            return_value=self._job(job_id=1, title="Engineer")
+        )
+        self.users_repo.get_user_by_user_id = AsyncMock(
+            return_value=self._user(user_id=3, first="C", last="D")
+        )
+        confirmed_row = self._evaluation(
+            application_id=10,
+            stage=ApplicationStage.TECH,
+            round=1,
+            evaluator_id=2,
+            is_confirmed=True,
+        )
+        self.evaluation_repo.list_by_assignee = AsyncMock(return_value=[confirmed_row])
+
+        result = await self.service.get_mine(self.session, self._ctx(user_id=2))
+
+        self.assertEqual(len(result), 1)
+        self.assertFalse(result[0].is_current)
+        self.assertTrue(result[0].is_confirmed)
+        self.assertEqual(result[0].job_title, "Engineer")
+        self.assertEqual(result[0].applicant_name, "C D")
+
+    async def test_get_mine_excludes_unconfirmed_draft_after_reassignment(self):
+        self.assignment_repo.list_by_assignee = AsyncMock(return_value=[])
+        draft_row = self._evaluation(
+            application_id=10,
+            stage=ApplicationStage.TECH,
+            round=1,
+            evaluator_id=2,
+            is_confirmed=False,
+        )
+        self.evaluation_repo.list_by_assignee = AsyncMock(return_value=[draft_row])
+
+        result = await self.service.get_mine(self.session, self._ctx(user_id=2))
+
+        self.assertEqual(result, [])
+
+    async def test_get_mine_does_not_duplicate_a_row_covered_by_both_passes(self):
+        """A still-current, already-confirmed assignment must appear once,
+        not twice, even though it also matches via
+        evaluation_repository.list_by_assignee."""
+        current = self._assignment(
+            application_id=10, stage=ApplicationStage.TECH, round=1, assignee_id=2
+        )
+        self.assignment_repo.list_by_assignee = AsyncMock(return_value=[current])
+        app = self._application(
+            application_id=10, stage=ApplicationStage.TECH, current_round=1
+        )
+        self.app_repo.get_by_id = AsyncMock(return_value=app)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=self._job(job_id=1))
+        self.users_repo.get_user_by_user_id = AsyncMock(return_value=self._user())
+        confirmed_row = self._evaluation(
+            application_id=10,
+            stage=ApplicationStage.TECH,
+            round=1,
+            evaluator_id=2,
+            is_confirmed=True,
+        )
+        self.evaluation_repo.get = AsyncMock(return_value=confirmed_row)
+        self.evaluation_repo.list_by_assignee = AsyncMock(return_value=[confirmed_row])
+
+        result = await self.service.get_mine(self.session, self._ctx(user_id=2))
+
+        self.assertEqual(len(result), 1)
+        self.assertTrue(result[0].is_current)
 
     # -- get_for_application --
 
