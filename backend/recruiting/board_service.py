@@ -149,7 +149,12 @@ class BoardService:
         ]
 
     async def _require_owner(
-        self, session: AsyncSession, current_user: UserContextDto, job_id: int
+        self,
+        session: AsyncSession,
+        current_user: UserContextDto,
+        job_id: int,
+        *,
+        allow_read_all: bool = False,
     ) -> JobEntity:
         """Load a job and assert the caller is one of its configured owners.
 
@@ -157,17 +162,26 @@ class BoardService:
             session (AsyncSession): Active database async session.
             current_user (UserContextDto): The authenticated caller.
             job_id (int): The posting to load.
+            allow_read_all (bool): When True, a caller who holds
+                ``Permission.RECRUITING_APPLICATION_READ_ALL`` also passes,
+                regardless of ownership.
 
         Returns:
             JobEntity: The loaded job.
 
         Raises:
-            ValueError: If the job is missing or the caller is not an owner.
+            ValueError: If the job is missing, or the caller is neither an
+                owner nor (when ``allow_read_all`` is True) a holder of
+                ``RECRUITING_APPLICATION_READ_ALL``.
         """
         job = await self.job_repository.get_by_job_id(session, job_id)
-        if job is None or current_user.user_id not in normalized_owner_ids(
+        is_owner = job is not None and current_user.user_id in normalized_owner_ids(
             job.pipeline_config
-        ):
+        )
+        is_read_all = allow_read_all and current_user.has_permission(
+            Permission.RECRUITING_APPLICATION_READ_ALL
+        )
+        if job is None or not (is_owner or is_read_all):
             raise ValueError("you are not an owner of this job")
         return job
 
@@ -196,7 +210,9 @@ class BoardService:
         Raises:
             ValueError: If the caller is not an owner of the job.
         """
-        job = await self._require_owner(session, current_user, job_id)
+        job = await self._require_owner(
+            session, current_user, job_id, allow_read_all=True
+        )
         rows = await self.application_repository.list_by_job(session, job_id)
 
         default_by_stage: dict[ApplicationStage, int] = {}

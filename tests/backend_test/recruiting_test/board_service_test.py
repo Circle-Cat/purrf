@@ -335,6 +335,21 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             await self.service.get_board(self.session, self._ctx(user_id=2), 999)
 
+    async def test_get_board_succeeds_for_read_all_non_owner(self):
+        job = self._job(job_id=1, owner_ids=(9,))
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.list_by_job = AsyncMock(return_value=[])
+        ctx = UserContextDto(
+            sub="s",
+            primary_email="hr@b.com",
+            user_id=2,
+            permissions=frozenset({Permission.RECRUITING_APPLICATION_READ_ALL}),
+        )
+
+        result = await self.service.get_board(self.session, ctx, 1)
+
+        self.assertEqual(result, {})
+
     # -- get_application_detail --
 
     async def test_get_application_detail_includes_resume_and_form_schema(self):
