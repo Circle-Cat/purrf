@@ -985,7 +985,9 @@ const ApplicationDetailPage = () => {
             </DialogTitle>
           </DialogHeader>
           <PeoplePicker
-            label="Assignee (optional)"
+            label="Assignee"
+            variant="list"
+            noneLabel="Decide later"
             pool={interviewPool}
             value={advanceAssigneeId || undefined}
             onChange={(v) => setAdvanceAssigneeId(v ? String(v) : "")}
@@ -1020,6 +1022,8 @@ const ApplicationDetailPage = () => {
           </DialogHeader>
           <PeoplePicker
             label="Assignee"
+            variant="list"
+            allowNone={false}
             pool={interviewPool}
             value={reassignAssigneeId || undefined}
             onChange={(v) => setReassignAssigneeId(v ? String(v) : "")}
