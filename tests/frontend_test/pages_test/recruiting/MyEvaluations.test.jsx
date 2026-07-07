@@ -52,6 +52,7 @@ describe("MyEvaluations page", () => {
           stage: "recruiter_screening",
           round: 1,
           isConfirmed: false,
+          isCurrent: true,
         },
         {
           applicationId: 8,
@@ -60,6 +61,7 @@ describe("MyEvaluations page", () => {
           stage: "tech",
           round: 2,
           isConfirmed: true,
+          isCurrent: true,
         },
       ],
     });
@@ -93,6 +95,7 @@ describe("MyEvaluations page", () => {
           stage: "tech",
           round: 1,
           isConfirmed: true,
+          isCurrent: true,
         },
         {
           applicationId: 9,
@@ -101,6 +104,7 @@ describe("MyEvaluations page", () => {
           stage: "tech",
           round: 2,
           isConfirmed: false,
+          isCurrent: true,
         },
       ],
     });
@@ -127,6 +131,7 @@ describe("MyEvaluations page", () => {
             stage: "recruiter_screening",
             round: 1,
             isConfirmed: false,
+            isCurrent: true,
           },
         ],
       });
@@ -140,5 +145,32 @@ describe("MyEvaluations page", () => {
     await waitFor(() =>
       expect(screen.getByText("Ada Lovelace")).toBeInTheDocument(),
     );
+  });
+
+  it("renders a stale-but-confirmed row as non-clickable with a 'No longer assigned' badge", async () => {
+    const user = userEvent.setup();
+    api.listMyEvaluations.mockResolvedValue({
+      data: [
+        {
+          applicationId: 7,
+          jobTitle: "Backend Engineer",
+          applicantName: "Ada Lovelace",
+          stage: "tech",
+          round: 1,
+          isConfirmed: true,
+          isCurrent: false,
+        },
+      ],
+    });
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByText("Ada Lovelace")).toBeInTheDocument(),
+    );
+    expect(screen.getByText("No longer assigned")).toBeInTheDocument();
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
+
+    await user.click(screen.getByText("Ada Lovelace"));
+    expect(screen.queryByText("DETAIL PAGE")).not.toBeInTheDocument();
   });
 });
