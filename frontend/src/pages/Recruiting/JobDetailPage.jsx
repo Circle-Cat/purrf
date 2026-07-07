@@ -15,11 +15,14 @@ import LoadGate from "@/pages/Recruiting/components/LoadGate";
  * `getPublicJob`; while loading shows a placeholder, and on failure toasts
  * the error and shows an inline retryable error state.
  *
- * The apply route additionally checks `getMyApplication` before rendering
- * the form: a candidate who already has an application is redirected to the
+ * `getMyApplication` is checked on both routes: on the apply route, a
+ * candidate who already has an application is redirected to the
  * my-application route instead of dead-ending on a blank form that would
- * 422 on submit. A failed check falls back to showing the form -- the
- * submit path still surfaces backend errors.
+ * 422 on submit; on the summary route, an existing application swaps the
+ * "Apply" action for "Continue application"/"View your application" so a
+ * returning candidate can find their submission instead of only ever
+ * seeing "Apply" again. A failed check falls back to the no-application
+ * behavior on both routes -- the submit path still surfaces backend errors.
  */
 const JobDetailPage = () => {
   const { jobId } = useParams();
@@ -28,8 +31,8 @@ const JobDetailPage = () => {
   const [job, setJob] = useState(null);
   const [loadError, setLoadError] = useState(false);
   const isApplying = location.pathname.endsWith("/apply");
-  const [checkingExisting, setCheckingExisting] = useState(isApplying);
-  const [hasExisting, setHasExisting] = useState(false);
+  const [checkingApplication, setCheckingApplication] = useState(true);
+  const [application, setApplication] = useState(null);
 
   /** Load (or reload, after a failure) the public job into state. */
   const load = useCallback(() => {
@@ -48,32 +51,31 @@ const JobDetailPage = () => {
   }, [load]);
 
   useEffect(() => {
-    if (!isApplying) return;
     let cancelled = false;
-    setCheckingExisting(true);
+    setCheckingApplication(true);
     getMyApplication(jobId)
       .then(({ data }) => {
-        if (!cancelled) setHasExisting(Boolean(data));
+        if (!cancelled) setApplication(data ?? null);
       })
       .catch(() => {
-        // Soft-fail: fall back to showing the form.
-        if (!cancelled) setHasExisting(false);
+        // Soft-fail: fall back to the no-application behavior.
+        if (!cancelled) setApplication(null);
       })
       .finally(() => {
-        if (!cancelled) setCheckingExisting(false);
+        if (!cancelled) setCheckingApplication(false);
       });
     return () => {
       cancelled = true;
     };
-  }, [isApplying, jobId]);
+  }, [jobId]);
 
   useEffect(() => {
-    if (isApplying && hasExisting) {
+    if (isApplying && application) {
       navigate(ROUTE_PATHS.RECRUITING_MY_APPLICATION(jobId), { replace: true });
     }
-  }, [isApplying, hasExisting, jobId, navigate]);
+  }, [isApplying, application, jobId, navigate]);
 
-  if (!job || (isApplying && (checkingExisting || hasExisting))) {
+  if (!job || (isApplying && (checkingApplication || application))) {
     return (
       <LoadGate
         error={loadError}
@@ -107,8 +109,20 @@ const JobDetailPage = () => {
           {job.description}
         </p>
       )}
-      <Button onClick={() => navigate(ROUTE_PATHS.RECRUITING_JOB_APPLY(jobId))}>
-        Apply
+      <Button
+        onClick={() =>
+          navigate(
+            application
+              ? ROUTE_PATHS.RECRUITING_MY_APPLICATION(jobId)
+              : ROUTE_PATHS.RECRUITING_JOB_APPLY(jobId),
+          )
+        }
+      >
+        {application
+          ? application.editable
+            ? "Continue application"
+            : "View your application"
+          : "Apply"}
       </Button>
     </div>
   );

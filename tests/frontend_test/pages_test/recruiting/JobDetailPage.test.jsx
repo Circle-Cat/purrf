@@ -56,10 +56,42 @@ describe("JobDetailPage", () => {
     expect(screen.getByRole("button", { name: /apply/i })).toBeInTheDocument();
   });
 
-  it("does not check for an existing application on the plain job-detail route", async () => {
+  it("checks for an existing application on the plain job-detail route too", async () => {
     renderAt("/recruiting/jobs/5");
     await waitFor(() => expect(screen.getByText("Mentee")).toBeInTheDocument());
-    expect(api.getMyApplication).not.toHaveBeenCalled();
+    expect(api.getMyApplication).toHaveBeenCalledWith("5");
+  });
+
+  it("shows 'Continue application' and goes to the my-application route when an editable application already exists", async () => {
+    api.getMyApplication.mockResolvedValue({
+      data: { id: 7, stage: "applied", editable: true },
+    });
+    const { router } = renderAt("/recruiting/jobs/5");
+    const button = await screen.findByRole("button", {
+      name: "Continue application",
+    });
+    fireEvent.click(button);
+    await waitFor(() =>
+      expect(router.state.location.pathname).toBe(
+        "/recruiting/jobs/5/application",
+      ),
+    );
+  });
+
+  it("shows 'View your application' and goes to the my-application route when a locked application already exists", async () => {
+    api.getMyApplication.mockResolvedValue({
+      data: { id: 7, stage: "recruiter_screening", editable: false },
+    });
+    const { router } = renderAt("/recruiting/jobs/5");
+    const button = await screen.findByRole("button", {
+      name: "View your application",
+    });
+    fireEvent.click(button);
+    await waitFor(() =>
+      expect(router.state.location.pathname).toBe(
+        "/recruiting/jobs/5/application",
+      ),
+    );
   });
 
   it("shows the job kind and description alongside the title", async () => {
