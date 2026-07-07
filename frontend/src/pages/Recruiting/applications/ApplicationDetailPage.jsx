@@ -358,11 +358,11 @@ const ActivityTimeline = ({ activity }) => (
  *   round-advance (via the job's `pipelineConfig.stages[].rounds`) while
  *   rounds remain in the current stage, then stage-advance once they're
  *   exhausted. Advancing into an interview stage opens a dialog with an
- *   assignee radio-picker — required for round-advance, optional ("Decide
- *   later") for stage-advance and pre-filled from the job's configured
- *   `default_assignee_id` for screening/behavioral stage-advance targets,
- *   leaving it on "Decide later" just advances unassigned, to be picked up
- *   later via Reassign — and a read-only summary of all evaluations. This
+ *   optional ("Decide later") assignee radio-picker, pre-filled from the
+ *   job's configured `default_assignee_id` for screening/behavioral
+ *   stage-advance targets; leaving it on "Decide later" just advances
+ *   unassigned, to be picked up later via Reassign (which, unlike Advance,
+ *   always requires a pick) — and a read-only summary of all evaluations. This
  *   owner view never shows the evaluation-filling form, even when the owner
  *   is also the current-stage assignee — grading only happens via the
  *   evaluator view below.
@@ -564,10 +564,12 @@ const ApplicationDetailPage = () => {
   };
 
   /**
-   * Open the round-advance flow. Interview stages (`INTERVIEW_STAGES`) need
-   * an assignee picked up front, mirroring the advance-to-stage flow's
-   * `needsAssignee`; other multi-round stages (e.g. a multi-round `offer`,
-   * which has no rubric and isn't assignable) advance immediately via
+   * Open the round-advance flow. Interview stages (`INTERVIEW_STAGES`) open
+   * a dialog with an optional assignee picker, mirroring the advance-to-
+   * stage flow's `advanceOpen` dialog — leaving it on "Decide later" just
+   * advances the round unassigned, to be picked up later via Reassign;
+   * other multi-round stages (e.g. a multi-round `offer`, which has no
+   * rubric and isn't assignable) advance immediately via
    * `handleAdvanceRoundDirect`.
    */
   const handleOpenRoundAdvance = () => {
@@ -584,13 +586,13 @@ const ApplicationDetailPage = () => {
   };
 
   const handleConfirmAdvanceRound = () => {
-    if (!roundAdvanceAssigneeId || advancingRound) return;
+    if (advancingRound) return;
     const nextRound = (detail.application.currentRound ?? 1) + 1;
     setAdvancingRound(true);
     setApplicationRound(
       applicationId,
       nextRound,
-      Number(roundAdvanceAssigneeId),
+      roundAdvanceAssigneeId ? Number(roundAdvanceAssigneeId) : undefined,
     )
       .then(() => {
         setDetail((prev) =>
@@ -800,7 +802,6 @@ const ApplicationDetailPage = () => {
                 </span>
                 <Button
                   variant="outline"
-                  className="mr-auto"
                   disabled={blacklisting}
                   onClick={() => setBlacklistConfirmOpen(true)}
                 >
@@ -823,22 +824,18 @@ const ApplicationDetailPage = () => {
                     {(detail.application.currentRound ?? 1) + 1}
                   </Button>
                 ) : (
-                  isPipelineStage &&
-                  (needsAssignee ? (
+                  isPipelineStage && (
                     <Button
                       disabled={advancing}
-                      onClick={() => setAdvanceOpen(true)}
-                    >
-                      Advance to next step
-                    </Button>
-                  ) : (
-                    <Button
-                      disabled={advancing}
-                      onClick={() => handleAdvance(next)}
+                      onClick={() =>
+                        needsAssignee
+                          ? setAdvanceOpen(true)
+                          : handleAdvance(next)
+                      }
                     >
                       Advance to {humanize(next)}
                     </Button>
-                  ))
+                  )
                 )}
               </div>
 
@@ -1001,7 +998,7 @@ const ApplicationDetailPage = () => {
           <PeoplePicker
             label="Assignee"
             variant="list"
-            allowNone={false}
+            noneLabel="Decide later"
             pool={interviewPool}
             value={roundAdvanceAssigneeId || undefined}
             onChange={(v) => setRoundAdvanceAssigneeId(v ? String(v) : "")}
@@ -1016,7 +1013,7 @@ const ApplicationDetailPage = () => {
             </Button>
             <Button
               onClick={handleConfirmAdvanceRound}
-              disabled={!roundAdvanceAssigneeId || advancingRound}
+              disabled={advancingRound}
             >
               Confirm advance round
             </Button>

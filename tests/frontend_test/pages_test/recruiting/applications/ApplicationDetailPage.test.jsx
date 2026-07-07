@@ -527,7 +527,7 @@ describe("ApplicationDetailPage — role-adaptive right column", () => {
 });
 
 describe("ApplicationDetailPage — advance-time assignee dialog", () => {
-  it("clicking Advance to next step opens a dialog pre-filled with the configured default", async () => {
+  it("clicking Advance to Behavioral opens a dialog pre-filled with the configured default", async () => {
     const user = userEvent.setup();
     authState.userId = OWNER_ID;
     api.getApplicationDetail.mockResolvedValue({
@@ -541,7 +541,7 @@ describe("ApplicationDetailPage — advance-time assignee dialog", () => {
     await waitLoaded();
 
     await user.click(
-      screen.getByRole("button", { name: "Advance to next step" }),
+      screen.getByRole("button", { name: "Advance to Behavioral" }),
     );
 
     // Advance target is "behavioral" (an interview stage): the dialog's
@@ -571,7 +571,7 @@ describe("ApplicationDetailPage — advance-time assignee dialog", () => {
     await waitLoaded();
 
     await user.click(
-      screen.getByRole("button", { name: "Advance to next step" }),
+      screen.getByRole("button", { name: "Advance to Behavioral" }),
     );
     await user.click(screen.getByRole("button", { name: "Confirm advance" }));
     await waitFor(() =>
@@ -600,9 +600,7 @@ describe("ApplicationDetailPage — advance-time assignee dialog", () => {
     // radio list starts on "Decide later", and Confirm advance is not
     // blocked on it — leaving it there just advances the stage unassigned,
     // to be picked up later via Reassign.
-    await user.click(
-      screen.getByRole("button", { name: "Advance to next step" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Advance to Tech" }));
     expect(screen.getByRole("radio", { name: /decide later/i })).toBeChecked();
     expect(
       screen.getByRole("button", { name: "Confirm advance" }),
@@ -631,7 +629,7 @@ describe("ApplicationDetailPage — advance-time assignee dialog", () => {
     await waitLoaded();
 
     await user.click(
-      screen.getByRole("button", { name: "Advance to next step" }),
+      screen.getByRole("button", { name: "Advance to Behavioral" }),
     );
     await user.click(screen.getByRole("button", { name: "Cancel" }));
 
@@ -669,7 +667,7 @@ describe("ApplicationDetailPage — advance-time assignee dialog", () => {
     // Advancing out of recruiter_screening pre-fills behavioral's default
     // (Ivan, id 11).
     await user.click(
-      screen.getByRole("button", { name: "Advance to next step" }),
+      screen.getByRole("button", { name: "Advance to Behavioral" }),
     );
     await waitFor(() =>
       expect(
@@ -683,12 +681,10 @@ describe("ApplicationDetailPage — advance-time assignee dialog", () => {
     // still show behavioral's stale "Ivan Interviewer" pick.
     await waitFor(() =>
       expect(
-        screen.getByRole("button", { name: "Advance to next step" }),
+        screen.getByRole("button", { name: "Advance to Tech" }),
       ).toBeInTheDocument(),
     );
-    await user.click(
-      screen.getByRole("button", { name: "Advance to next step" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Advance to Tech" }));
     expect(
       screen.getByRole("radio", { name: /ivan interviewer/i }),
     ).not.toBeChecked();
@@ -778,7 +774,7 @@ describe("ApplicationDetailPage — operate row", () => {
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Reject" })).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Advance to next step" }),
+      screen.getByRole("button", { name: "Advance to Behavioral" }),
     ).toBeInTheDocument();
   });
 
@@ -809,7 +805,7 @@ describe("ApplicationDetailPage — operate row", () => {
       screen.getByRole("button", { name: "Advance to Round 2" }),
     ).toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: "Advance to next step" }),
+      screen.queryByRole("button", { name: "Advance to Behavioral" }),
     ).not.toBeInTheDocument();
   });
 });
@@ -933,7 +929,7 @@ describe("ApplicationDetailPage — advance round", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("clicking Advance Round opens a dialog instead of advancing immediately", async () => {
+  it("clicking Advance Round opens a dialog instead of advancing immediately, defaulting to Decide later", async () => {
     const user = userEvent.setup();
     authState.userId = OWNER_ID;
     api.getJob.mockResolvedValue({ data: jobWithTechRounds(3) });
@@ -947,10 +943,34 @@ describe("ApplicationDetailPage — advance round", () => {
       screen.getByRole("button", { name: "Advance to Round 2" }),
     );
 
+    expect(screen.getByRole("radio", { name: /decide later/i })).toBeChecked();
     expect(
       screen.getByRole("button", { name: "Confirm advance round" }),
-    ).toBeDisabled();
+    ).not.toBeDisabled();
     expect(api.setApplicationRound).not.toHaveBeenCalled();
+  });
+
+  it("confirming without picking an assignee advances the round unassigned", async () => {
+    const user = userEvent.setup();
+    authState.userId = OWNER_ID;
+    api.getJob.mockResolvedValue({ data: jobWithTechRounds(3) });
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, stage: "tech", currentRound: 1 }),
+    });
+    api.setApplicationRound.mockResolvedValue({ data: {} });
+    renderPage();
+    await waitLoaded();
+
+    await user.click(
+      screen.getByRole("button", { name: "Advance to Round 2" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Confirm advance round" }),
+    );
+
+    await waitFor(() =>
+      expect(api.setApplicationRound).toHaveBeenCalledWith("101", 2, undefined),
+    );
   });
 
   it("picking an assignee and confirming calls setApplicationRound with the assignee and updates the displayed round", async () => {
@@ -1318,7 +1338,7 @@ describe("ApplicationDetailPage — advance dialog Scheduled hint", () => {
     await waitLoaded();
 
     await user.click(
-      screen.getByRole("button", { name: "Advance to next step" }),
+      screen.getByRole("button", { name: "Advance to Behavioral" }),
     );
 
     expect(screen.getByText(HINT_TEXT)).toBeInTheDocument();
@@ -1337,9 +1357,7 @@ describe("ApplicationDetailPage — advance dialog Scheduled hint", () => {
     renderPage();
     await waitLoaded();
 
-    await user.click(
-      screen.getByRole("button", { name: "Advance to next step" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Advance to Tech" }));
 
     expect(screen.getByText(HINT_TEXT)).toBeInTheDocument();
   });
@@ -1370,7 +1388,7 @@ describe("ApplicationDetailPage — advance dialog Scheduled hint", () => {
     await waitLoaded();
 
     await user.click(
-      screen.getByRole("button", { name: "Advance to next step" }),
+      screen.getByRole("button", { name: "Advance to Board review" }),
     );
 
     expect(screen.queryByText(HINT_TEXT)).not.toBeInTheDocument();
