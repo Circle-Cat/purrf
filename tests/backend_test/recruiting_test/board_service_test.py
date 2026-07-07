@@ -688,7 +688,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(result.current_round, 1)
 
-    async def test_change_stage_last_stage_to_hired_clears_sub_status(self):
+    async def test_change_stage_last_stage_to_offer_clears_sub_status(self):
         job = self._job(job_id=1, owner_ids=(2,), stages=("tech",))
         application = self._application(
             application_id=10, job_id=1, stage=ApplicationStage.TECH
@@ -697,12 +697,12 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.app_repo.get_by_id = AsyncMock(return_value=application)
         self.sub_repo.get_current = AsyncMock(return_value=None)
 
-        dto = StageChangeDto(to_stage=ApplicationStage.HIRED)
+        dto = StageChangeDto(to_stage=ApplicationStage.OFFER)
         result = await self.service.change_stage(
             self.session, self._ctx(user_id=2), 10, dto
         )
 
-        self.assertEqual(result.stage, ApplicationStage.HIRED)
+        self.assertEqual(result.stage, ApplicationStage.OFFER)
         self.assertIsNone(result.sub_status)
 
     async def test_change_stage_offer_to_hired_is_always_allowed(self):
@@ -847,7 +847,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.app_repo.get_by_id = AsyncMock(return_value=application)
         self.sub_repo.get_current = AsyncMock(return_value=None)
 
-        dto = StageChangeDto(to_stage=ApplicationStage.HIRED)
+        dto = StageChangeDto(to_stage=ApplicationStage.OFFER)
         await self.service.change_stage(self.session, self._ctx(user_id=2), 10, dto)
 
         self.app_repo.get_by_id.assert_awaited_once_with(
@@ -924,7 +924,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
     async def test_change_stage_to_hired_ignores_assignee_id(self):
         job = self._job(job_id=1, owner_ids=(2,), stages=("tech",))
         application = self._application(
-            application_id=10, job_id=1, stage=ApplicationStage.TECH
+            application_id=10, job_id=1, stage=ApplicationStage.OFFER
         )
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
         self.app_repo.get_by_id = AsyncMock(return_value=application)
