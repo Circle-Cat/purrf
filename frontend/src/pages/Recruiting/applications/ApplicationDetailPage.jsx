@@ -255,7 +255,8 @@ const EvaluationSummary = ({ evaluations, interviewPool }) => (
               {humanize(evaluation.stage)} — Round {evaluation.round}
             </h3>
             <p className="text-xs text-slate-500">
-              Evaluated by: {evaluatorName(evaluation.evaluatorId, interviewPool)}
+              Evaluated by:{" "}
+              {evaluatorName(evaluation.evaluatorId, interviewPool)}
             </p>
             {(rubricFor(evaluation.stage) ?? []).map((section) => (
               <div key={section.title} className="space-y-2">

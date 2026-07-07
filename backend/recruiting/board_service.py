@@ -670,9 +670,7 @@ class BoardService:
         if application.sub_status in (
             None,
             "pending",
-        ) and "in_progress" in stage_machine.SUB_STATUS_SETS.get(
-            application.stage, ()
-        ):
+        ) and "in_progress" in stage_machine.SUB_STATUS_SETS.get(application.stage, ()):
             application.sub_status = "in_progress"
         application = await self.application_repository.update(session, application)
         await self.application_activity_repository.create(

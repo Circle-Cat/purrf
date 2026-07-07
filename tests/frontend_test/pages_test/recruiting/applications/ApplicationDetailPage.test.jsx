@@ -293,7 +293,7 @@ describe("ApplicationDetailPage — role-adaptive right column", () => {
     expect(notes[1]).toHaveTextContent("older note");
   });
 
-  it("falls back to \"User {id}\" when the evaluator isn't in the interview pool", async () => {
+  it('falls back to "User {id}" when the evaluator isn\'t in the interview pool', async () => {
     authState.userId = OWNER_ID;
     api.getApplicationDetail.mockResolvedValue({
       data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
