@@ -1806,6 +1806,233 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result[0].actor_name, "User 99")
 
+    async def test_get_application_activity_resolves_assignee_name_for_stage_changed(
+        self,
+    ):
+        job = self._job(job_id=1, owner_ids=(2,))
+        application = self._application(application_id=10, job_id=1)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        row = SimpleNamespace(
+            activity_id=1,
+            application_id=10,
+            actor_id=2,
+            event_type="stage_changed",
+            details={
+                "fromStage": "recruiter_screening",
+                "toStage": "tech",
+                "assigneeId": 42,
+            },
+            created_at=datetime(2026, 7, 4, 12, 0, 0),
+        )
+        self.activity_repo.list_by_application = AsyncMock(return_value=[row])
+        self.users_repo.get_all_by_ids = AsyncMock(
+            return_value=[
+                self._user(user_id=2, first="Owen", last="Owner"),
+                self._user(user_id=42, first="Ivan", last="Interviewer"),
+            ]
+        )
+
+        result = await self.service.get_application_activity(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertEqual(result[0].details["assigneeName"], "Ivan Interviewer")
+
+    async def test_get_application_activity_resolves_assignee_name_for_round_advanced(
+        self,
+    ):
+        job = self._job(job_id=1, owner_ids=(2,))
+        application = self._application(application_id=10, job_id=1)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        row = SimpleNamespace(
+            activity_id=1,
+            application_id=10,
+            actor_id=2,
+            event_type="round_advanced",
+            details={"stage": "tech", "fromRound": 1, "toRound": 2, "assigneeId": 42},
+            created_at=datetime(2026, 7, 4, 12, 0, 0),
+        )
+        self.activity_repo.list_by_application = AsyncMock(return_value=[row])
+        self.users_repo.get_all_by_ids = AsyncMock(
+            return_value=[
+                self._user(user_id=2, first="Owen", last="Owner"),
+                self._user(user_id=42, first="Ivan", last="Interviewer"),
+            ]
+        )
+
+        result = await self.service.get_application_activity(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertEqual(result[0].details["assigneeName"], "Ivan Interviewer")
+
+    async def test_get_application_activity_resolves_assignee_name_for_auto_assigned(
+        self,
+    ):
+        job = self._job(job_id=1, owner_ids=(2,))
+        application = self._application(application_id=10, job_id=1)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        row = SimpleNamespace(
+            activity_id=1,
+            application_id=10,
+            actor_id=3,
+            event_type="auto_assigned",
+            details={"stage": "recruiter_screening", "assigneeId": 42},
+            created_at=datetime(2026, 7, 4, 12, 0, 0),
+        )
+        self.activity_repo.list_by_application = AsyncMock(return_value=[row])
+        self.users_repo.get_all_by_ids = AsyncMock(
+            return_value=[
+                self._user(user_id=3, first="Alice", last="Smith"),
+                self._user(user_id=42, first="Ivan", last="Interviewer"),
+            ]
+        )
+
+        result = await self.service.get_application_activity(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertEqual(result[0].actor_name, "Alice Smith")
+        self.assertEqual(result[0].details["assigneeName"], "Ivan Interviewer")
+
+    async def test_get_application_activity_resolves_both_names_for_reassigned(self):
+        job = self._job(job_id=1, owner_ids=(2,))
+        application = self._application(application_id=10, job_id=1)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        row = SimpleNamespace(
+            activity_id=1,
+            application_id=10,
+            actor_id=2,
+            event_type="reassigned",
+            details={
+                "stage": "tech",
+                "round": 1,
+                "fromAssigneeId": 7,
+                "toAssigneeId": 42,
+            },
+            created_at=datetime(2026, 7, 4, 12, 0, 0),
+        )
+        self.activity_repo.list_by_application = AsyncMock(return_value=[row])
+        self.users_repo.get_all_by_ids = AsyncMock(
+            return_value=[
+                self._user(user_id=2, first="Owen", last="Owner"),
+                self._user(user_id=7, first="Eve", last="Evaluator"),
+                self._user(user_id=42, first="Ivan", last="Interviewer"),
+            ]
+        )
+
+        result = await self.service.get_application_activity(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertEqual(result[0].details["fromAssigneeName"], "Eve Evaluator")
+        self.assertEqual(result[0].details["toAssigneeName"], "Ivan Interviewer")
+
+    async def test_get_application_activity_reassigned_null_from_assignee_omits_from_name(
+        self,
+    ):
+        job = self._job(job_id=1, owner_ids=(2,))
+        application = self._application(application_id=10, job_id=1)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        row = SimpleNamespace(
+            activity_id=1,
+            application_id=10,
+            actor_id=2,
+            event_type="reassigned",
+            details={
+                "stage": "tech",
+                "round": 1,
+                "fromAssigneeId": None,
+                "toAssigneeId": 42,
+            },
+            created_at=datetime(2026, 7, 4, 12, 0, 0),
+        )
+        self.activity_repo.list_by_application = AsyncMock(return_value=[row])
+        self.users_repo.get_all_by_ids = AsyncMock(
+            return_value=[
+                self._user(user_id=2, first="Owen", last="Owner"),
+                self._user(user_id=42, first="Ivan", last="Interviewer"),
+            ]
+        )
+
+        result = await self.service.get_application_activity(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertNotIn("fromAssigneeName", result[0].details)
+        self.assertEqual(result[0].details["toAssigneeName"], "Ivan Interviewer")
+
+    async def test_get_application_activity_unresolved_assignee_falls_back_to_user_id(
+        self,
+    ):
+        job = self._job(job_id=1, owner_ids=(2,))
+        application = self._application(application_id=10, job_id=1)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        row = SimpleNamespace(
+            activity_id=1,
+            application_id=10,
+            actor_id=2,
+            event_type="stage_changed",
+            details={"fromStage": "tech", "toStage": "offer", "assigneeId": 999},
+            created_at=datetime(2026, 7, 4, 12, 0, 0),
+        )
+        self.activity_repo.list_by_application = AsyncMock(return_value=[row])
+        self.users_repo.get_all_by_ids = AsyncMock(
+            return_value=[self._user(user_id=2, first="Owen", last="Owner")]
+        )
+
+        result = await self.service.get_application_activity(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertEqual(result[0].details["assigneeName"], "User 999")
+
+    async def test_get_application_activity_does_not_mutate_stored_row_details(self):
+        job = self._job(job_id=1, owner_ids=(2,))
+        application = self._application(application_id=10, job_id=1)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        original_details = {
+            "fromStage": "recruiter_screening",
+            "toStage": "tech",
+            "assigneeId": 42,
+        }
+        row = SimpleNamespace(
+            activity_id=1,
+            application_id=10,
+            actor_id=2,
+            event_type="stage_changed",
+            details=original_details,
+            created_at=datetime(2026, 7, 4, 12, 0, 0),
+        )
+        self.activity_repo.list_by_application = AsyncMock(return_value=[row])
+        self.users_repo.get_all_by_ids = AsyncMock(
+            return_value=[
+                self._user(user_id=2, first="Owen", last="Owner"),
+                self._user(user_id=42, first="Ivan", last="Interviewer"),
+            ]
+        )
+
+        await self.service.get_application_activity(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertNotIn("assigneeName", original_details)
+        self.assertEqual(
+            original_details,
+            {
+                "fromStage": "recruiter_screening",
+                "toStage": "tech",
+                "assigneeId": 42,
+            },
+        )
+
     async def test_get_application_activity_non_owner_gets_collapsed_not_found_message(
         self,
     ):

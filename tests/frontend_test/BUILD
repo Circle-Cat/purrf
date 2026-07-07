@@ -20,6 +20,7 @@ js_library(
 
 vitest_bin.vitest_test(
     name = "frontend_unit_tests",
+    size = "large",
     args = [
         "run",
         "--reporter=verbose",

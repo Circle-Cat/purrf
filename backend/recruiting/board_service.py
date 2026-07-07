@@ -32,6 +32,19 @@ INTERVIEW_STAGES = {
     ApplicationStage.BOARD_REVIEW,
 }
 
+# Per-event-type map of (raw assignee id field in `details`) -> (resolved
+# name field to add). get_application_activity uses this to know which
+# fields to look up and inject, without hardcoding each event type inline.
+_ASSIGNEE_NAME_FIELDS: dict[str, tuple[tuple[str, str], ...]] = {
+    "stage_changed": (("assigneeId", "assigneeName"),),
+    "round_advanced": (("assigneeId", "assigneeName"),),
+    "auto_assigned": (("assigneeId", "assigneeName"),),
+    "reassigned": (
+        ("fromAssigneeId", "fromAssigneeName"),
+        ("toAssigneeId", "toAssigneeName"),
+    ),
+}
+
 
 class BoardService:
     """Owner-facing reads for the recruiting application board (PR2).
@@ -415,6 +428,13 @@ class BoardService:
         view (mirrors ``EvaluationSummary``'s owner-only placement on the
         frontend), not something an evaluator needs while grading.
 
+        Assignee names (for ``stage_changed``/``round_advanced``/
+        ``auto_assigned``'s ``assigneeId``, and ``reassigned``'s
+        ``fromAssigneeId``/``toAssigneeId``) are resolved the same way as
+        ``actor_name`` — read-time only, via one combined batched lookup,
+        never persisted back to the stored row. A raw id with no matching
+        user resolves to ``f"User {id}"``, same fallback as ``actor_name``.
+
         Args:
             session (AsyncSession): Active database async session.
             current_user (UserContextDto): The authenticated caller.
@@ -422,7 +442,8 @@ class BoardService:
 
         Returns:
             list[ApplicationActivityDto]: Newest first, each with the
-                actor's resolved display name.
+                actor's resolved display name and, where applicable, its
+                assignee name(s) merged into a copy of ``details``.
 
         Raises:
             ValueError: If the application is missing, or the caller is not
@@ -433,24 +454,37 @@ class BoardService:
         rows = await self.application_activity_repository.list_by_application(
             session, application_id
         )
-        actors = await self.users_repository.get_all_by_ids(
-            session, list({row.actor_id for row in rows})
+        ids_to_resolve = {row.actor_id for row in rows}
+        for row in rows:
+            for raw_field, _ in _ASSIGNEE_NAME_FIELDS.get(row.event_type, ()):
+                raw_id = row.details.get(raw_field)
+                if raw_id is not None:
+                    ids_to_resolve.add(raw_id)
+        users = await self.users_repository.get_all_by_ids(
+            session, list(ids_to_resolve)
         )
         names_by_id = {
             user.user_id: f"{user.first_name} {user.last_name}".strip()
-            for user in actors
+            for user in users
         }
-        return [
-            ApplicationActivityDto(
-                id=row.activity_id,
-                event_type=row.event_type,
-                details=row.details,
-                actor_id=row.actor_id,
-                actor_name=names_by_id.get(row.actor_id, f"User {row.actor_id}"),
-                created_at=row.created_at,
+        result = []
+        for row in rows:
+            details = {**row.details}
+            for raw_field, name_field in _ASSIGNEE_NAME_FIELDS.get(row.event_type, ()):
+                raw_id = details.get(raw_field)
+                if raw_id is not None:
+                    details[name_field] = names_by_id.get(raw_id, f"User {raw_id}")
+            result.append(
+                ApplicationActivityDto(
+                    id=row.activity_id,
+                    event_type=row.event_type,
+                    details=details,
+                    actor_id=row.actor_id,
+                    actor_name=names_by_id.get(row.actor_id, f"User {row.actor_id}"),
+                    created_at=row.created_at,
+                )
             )
-            for row in rows
-        ]
+        return result
 
     async def _freeze_current_submission(
         self, session: AsyncSession, application_id: int
