@@ -306,7 +306,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(result["recruiter_screening"][0].reviewer_name)
 
     async def test_get_board_reviewer_none_for_non_interview_stage(self):
-        job = self._job(job_id=1, owner_ids=(2,), stages=("offer",))
+        job = self._job(job_id=1, owner_ids=(2,))
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
         app = self._application(application_id=10, stage=ApplicationStage.OFFER)
         user = self._user(user_id=3)
@@ -705,11 +705,11 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.stage, ApplicationStage.HIRED)
         self.assertIsNone(result.sub_status)
 
-    async def test_change_stage_offer_to_hired_when_offer_is_configured_last(self):
-        """Offer is a plain configurable pipeline stage like the interview
-        ones — advancing out of it to Hired needs no special-casing, the
-        owner just uses the same generic Advance action."""
-        job = self._job(job_id=1, owner_ids=(2,), stages=("board_review", "offer"))
+    async def test_change_stage_offer_to_hired_is_always_allowed(self):
+        """Offer is a fixed step before Hired (not a configurable pipeline
+        stage) — advancing out of it uses the same generic Advance action
+        as any other stage, with no special-casing needed."""
+        job = self._job(job_id=1, owner_ids=(2,), stages=("board_review",))
         application = self._application(
             application_id=10, job_id=1, stage=ApplicationStage.OFFER
         )
@@ -727,8 +727,8 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
 
     async def test_change_stage_offer_to_rejected_with_declined_reason(self):
         """The owner rejects from Offer the same generic way as any other
-        configured stage, using the new "candidate declined" reason."""
-        job = self._job(job_id=1, owner_ids=(2,), stages=("board_review", "offer"))
+        stage, using the "candidate declined" reason."""
+        job = self._job(job_id=1, owner_ids=(2,), stages=("board_review",))
         application = self._application(
             application_id=10, job_id=1, stage=ApplicationStage.OFFER
         )
@@ -1593,26 +1593,6 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.assignment_repo.upsert.assert_not_awaited()
         self.app_repo.update.assert_not_awaited()
         self.session.commit.assert_not_awaited()
-
-    async def test_set_round_on_non_interview_stage_ignores_missing_assignee(self):
-        job = self._job(
-            job_id=1, owner_ids=(2,), stages=("offer",), rounds={"offer": 2}
-        )
-        application = self._application(
-            application_id=10, job_id=1, stage=ApplicationStage.OFFER
-        )
-        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
-        self.app_repo.get_by_id = AsyncMock(return_value=application)
-        self.sub_repo.get_current = AsyncMock(return_value=None)
-
-        dto = RoundChangeDto(round=2)  # no assignee_id — offer isn't assignable
-        result = await self.service.set_round(
-            self.session, self._ctx(user_id=2), 10, dto
-        )
-
-        self.assertEqual(result.current_round, 2)
-        self.assignment_repo.upsert.assert_not_awaited()
-        self.user_permissions_repo.get_active_users_with_permission.assert_not_called()
 
     # -- activity timeline logging --
 
