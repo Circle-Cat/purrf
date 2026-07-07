@@ -220,7 +220,9 @@ class ApplicationService:
                 ),
             )
 
-        await self._assign_default_if_configured(session, application, job, current_user)
+        await self._assign_default_if_configured(
+            session, application, job, current_user
+        )
 
         if blocked:
             await self.application_activity_repository.create(

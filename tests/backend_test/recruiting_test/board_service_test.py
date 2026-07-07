@@ -2019,7 +2019,9 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             ]
         )
 
-        await self.service.get_application_activity(self.session, self._ctx(user_id=2), 10)
+        await self.service.get_application_activity(
+            self.session, self._ctx(user_id=2), 10
+        )
 
         self.assertNotIn("assigneeName", original_details)
         self.assertEqual(
