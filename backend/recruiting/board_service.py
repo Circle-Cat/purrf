@@ -256,6 +256,7 @@ class BoardService:
         for_update: bool = False,
         allow_assignee: bool = False,
         allow_self: bool = False,
+        allow_read_all: bool = False,
     ) -> tuple[ApplicationEntity, JobEntity]:
         """Load an application and assert the caller may read/write it.
 
@@ -278,6 +279,11 @@ class BoardService:
                 assignment — used by ``get_resume`` so a candidate can read
                 her own application's résumé bytes. Every other caller
                 leaves this False and stays owner/assignee-only.
+            allow_read_all (bool): When True, a caller who holds
+                ``Permission.RECRUITING_APPLICATION_READ_ALL`` also passes,
+                regardless of ownership/assignment. Read-only call sites opt
+                in explicitly; every mutation path leaves this False, so
+                ``read.all`` never grants a write.
 
         Returns:
             tuple[ApplicationEntity, JobEntity]: The application and its job.
@@ -286,11 +292,13 @@ class BoardService:
             ValueError: If the application is missing, or the caller is
                 none of: an owner of the application's job, (when
                 ``allow_assignee`` is True) the application's current-stage
-                assignee, or (when ``allow_self`` is True) the application's
-                own submitter. All cases raise the same generic message
-                (mirroring ``ApplicationService._load_owned``) so response
-                bodies don't leak which application ids exist to
-                unauthorized callers.
+                assignee, (when ``allow_self`` is True) the application's
+                own submitter, or (when ``allow_read_all`` is True) a holder
+                of ``RECRUITING_APPLICATION_READ_ALL``. All cases raise the
+                same generic message (mirroring
+                ``ApplicationService._load_owned``) so response bodies
+                don't leak which application ids exist to unauthorized
+                callers.
         """
         application = await self.application_repository.get_by_id(
             session, application_id, for_update=for_update
@@ -314,7 +322,10 @@ class BoardService:
                 and assignment.assignee_id == current_user.user_id
             )
         is_self = allow_self and application.user_id == current_user.user_id
-        if job is None or not (is_owner or is_assignee or is_self):
+        is_read_all = allow_read_all and current_user.has_permission(
+            Permission.RECRUITING_APPLICATION_READ_ALL
+        )
+        if job is None or not (is_owner or is_assignee or is_self or is_read_all):
             raise ValueError(f"application {application_id} not found")
         return application, job
 
@@ -353,7 +364,11 @@ class BoardService:
                 unauthorized callers.
         """
         application, job = await self._load_owned_application(
-            session, current_user, application_id, allow_assignee=True
+            session,
+            current_user,
+            application_id,
+            allow_assignee=True,
+            allow_read_all=True,
         )
         user = await self.users_repository.get_user_by_user_id(
             session, application.user_id
@@ -458,7 +473,9 @@ class BoardService:
                 an owner of the application's job (collapsed "not found"
                 message, same as the other owner-facing reads).
         """
-        await self._load_owned_application(session, current_user, application_id)
+        await self._load_owned_application(
+            session, current_user, application_id, allow_read_all=True
+        )
         rows = await self.application_activity_repository.list_by_application(
             session, application_id
         )
