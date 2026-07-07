@@ -1126,7 +1126,9 @@ describe("ApplicationDetailPage — activity timeline", () => {
     await user.click(screen.getByRole("tab", { name: "Timeline" }));
 
     expect(
-      screen.getByText("Advanced from Recruiter screening to Tech, by Owen Owner"),
+      screen.getByText(
+        "Advanced from Recruiter screening to Tech, by Owen Owner",
+      ),
     ).toBeInTheDocument();
     expect(
       screen.getByText("Reassigned on Tech to Ivan Interviewer, by Owen Owner"),
@@ -1333,7 +1335,9 @@ describe("ApplicationDetailPage — activity timeline assignee names", () => {
     });
 
     expect(
-      screen.getByText("Advanced from Recruiter screening to Tech, by Owen Owner"),
+      screen.getByText(
+        "Advanced from Recruiter screening to Tech, by Owen Owner",
+      ),
     ).toBeInTheDocument();
     expect(screen.queryByText(/assigned to/)).not.toBeInTheDocument();
   });
