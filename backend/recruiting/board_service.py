@@ -234,6 +234,7 @@ class BoardService:
         *,
         for_update: bool = False,
         allow_assignee: bool = False,
+        allow_self: bool = False,
     ) -> tuple[ApplicationEntity, JobEntity]:
         """Load an application and assert the caller may read/write it.
 
@@ -251,15 +252,21 @@ class BoardService:
                 (sub-project #3 slice 1). Mutation paths (``change_stage``,
                 ``set_sub_status``, ``reassign``, ``blacklist``) leave this
                 False and stay owner-only.
+            allow_self (bool): When True, a caller who is the application's
+                own submitter also passes, regardless of job ownership or
+                assignment — used by ``get_resume`` so a candidate can read
+                her own application's résumé bytes. Every other caller
+                leaves this False and stays owner/assignee-only.
 
         Returns:
             tuple[ApplicationEntity, JobEntity]: The application and its job.
 
         Raises:
             ValueError: If the application is missing, or the caller is
-                neither an owner of the application's job nor (when
+                none of: an owner of the application's job, (when
                 ``allow_assignee`` is True) the application's current-stage
-                assignee. All cases raise the same generic message
+                assignee, or (when ``allow_self`` is True) the application's
+                own submitter. All cases raise the same generic message
                 (mirroring ``ApplicationService._load_owned``) so response
                 bodies don't leak which application ids exist to
                 unauthorized callers.
@@ -285,7 +292,8 @@ class BoardService:
                 assignment is not None
                 and assignment.assignee_id == current_user.user_id
             )
-        if job is None or not (is_owner or is_assignee):
+        is_self = allow_self and application.user_id == current_user.user_id
+        if job is None or not (is_owner or is_assignee or is_self):
             raise ValueError(f"application {application_id} not found")
         return application, job
 
@@ -378,13 +386,14 @@ class BoardService:
             bytes: The raw PDF bytes, fetched from ``resume_storage``.
 
         Raises:
-            ValueError: If the application is missing, the caller is neither
-                an owner nor its current-stage assignee (collapsed "not
-                found" message, same as ``get_application_detail``), or the
-                application's current submission has no résumé on file.
+            ValueError: If the application is missing, the caller is none
+                of: the job owner, its current-stage assignee, or the
+                application's own submitter (collapsed "not found" message,
+                same as ``get_application_detail``), or the application's
+                current submission has no résumé on file.
         """
         _application, _job = await self._load_owned_application(
-            session, current_user, application_id, allow_assignee=True
+            session, current_user, application_id, allow_assignee=True, allow_self=True
         )
         current_sub = await self.application_submission_repository.get_current(
             session, application_id
