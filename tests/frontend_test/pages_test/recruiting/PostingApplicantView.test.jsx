@@ -90,6 +90,19 @@ describe("PostingApplicantView", () => {
     );
   });
 
+  it("threads existingResume into the profile form's résumé-on-file banner", () => {
+    render(
+      <PostingApplicantView
+        title="T"
+        questions={questions}
+        existingResume={{ applicationId: 7 }}
+      />,
+    );
+    expect(
+      screen.getByText(/on file from your previous application/i),
+    ).toBeInTheDocument();
+  });
+
   it("reveals a showWhen question when its dependency is answered (throwaway state)", () => {
     render(<PostingApplicantView title="T" questions={questions} />);
     expect(screen.queryByLabelText("Referrer name")).not.toBeInTheDocument();

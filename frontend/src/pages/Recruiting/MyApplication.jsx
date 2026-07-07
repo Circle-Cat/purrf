@@ -137,6 +137,7 @@ const MyApplication = () => {
         <ApplicationForm
           job={job}
           seed={application.current}
+          seedApplicationId={application.id}
           onSubmitted={(app) => {
             setApplication(app);
             setReapplying(false);

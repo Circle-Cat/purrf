@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import ResumeUpload from "@/components/common/ResumeUpload";
 import ProfileSection from "@/pages/Profile/components/ProfileSection";
-import { uploadResume } from "@/api/recruitingApi";
+import { resumeUrl, uploadResume } from "@/api/recruitingApi";
 import {
   parsedResumeToProfile,
   mergeParsedIntoProfile,
@@ -82,7 +82,8 @@ const ReqMark = ({ level }) => {
  *          value?: {personal: object, education: object[], experience: object[]},
  *          onChange?: (value: {personal: object, education: object[], experience: object[]}) => void,
  *          contactEmail?: string,
- *          onResumeStored?: (resume: {sha256: string, objectKey: string}) => void}} props
+ *          onResumeStored?: (resume: {sha256: string, objectKey: string}) => void,
+ *          existingResume?: {applicationId: number} | null}} props
  * @returns {JSX.Element}
  */
 const RecruitingProfileForm = ({
@@ -91,12 +92,14 @@ const RecruitingProfileForm = ({
   onChange,
   contactEmail,
   onResumeStored,
+  existingResume,
 }) => {
   const [internal, setInternal] = useState({
     personal: {},
     education: [emptyEducation()],
     experience: [emptyExperience()],
   });
+  const [resumeExpanded, setResumeExpanded] = useState(false);
   const value = controlledValue ?? internal;
   /** Resolve `next` (value or updater fn) against the current value and commit it to the controlling parent or internal state. */
   const setValue = (next) => {
@@ -166,6 +169,27 @@ const RecruitingProfileForm = ({
           {resumeLevel === "off" &&
             " This posting doesn't collect a resume; uploading only saves you time."}
         </p>
+        {existingResume && (
+          <div className="rounded-md border border-muted-foreground/30 p-2 text-sm">
+            <div className="flex items-center justify-between">
+              <span>✓ Résumé on file from your previous application</span>
+              <button
+                type="button"
+                className="text-muted-foreground underline"
+                onClick={() => setResumeExpanded((v) => !v)}
+              >
+                {resumeExpanded ? "Collapse" : "Expand"}
+              </button>
+            </div>
+            {resumeExpanded && (
+              <iframe
+                src={resumeUrl(existingResume.applicationId)}
+                title="Your résumé on file"
+                className="mt-2 h-[400px] w-full rounded border"
+              />
+            )}
+          </div>
+        )}
         <ResumeUpload
           onParsed={handleParsed}
           onFile={handleResumeFile}

@@ -228,9 +228,7 @@ describe("ResumeUpload with showPreview", () => {
     await waitFor(() =>
       expect(screen.getByText(/resume\.pdf · Change/)).toBeInTheDocument(),
     );
-    const src = screen
-      .getByTitle("Preview of resume.pdf")
-      .getAttribute("src");
+    const src = screen.getByTitle("Preview of resume.pdf").getAttribute("src");
 
     unmount();
 
