@@ -56,6 +56,7 @@ const Postings = () => {
   const [previewJob, setPreviewJob] = useState(null);
   const [deleteId, setDeleteId] = useState(null);
   const [closingId, setClosingId] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const refresh = useCallback(async () => {
     const { data } = await listJobs();
@@ -113,12 +114,22 @@ const Postings = () => {
     }
   };
 
-  const handleReviewSubmit = (body) => {
-    setSubmitOpen(false);
-    if (!reviewAction) return;
+  /** Submit the review dialog, guarded against a double-submit; closes the dialog only on success. */
+  const handleReviewSubmit = async (body) => {
+    if (submitting || !reviewAction) return;
     const { kind, jobId } = reviewAction;
     const action = REVIEW_ACTION[kind];
-    run(() => action.dispatch(jobId, body), action.successMsg);
+    setSubmitting(true);
+    try {
+      await action.dispatch(jobId, body);
+      setSubmitOpen(false);
+      await refresh();
+      toast.success(action.successMsg);
+    } catch (e) {
+      toast.error(e.message);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   /** Close a draft posting, guarded against a double-submit per job id. */
@@ -176,6 +187,7 @@ const Postings = () => {
         approvers={approvers}
         currentUserId={user?.userId}
         title={currentTitle}
+        submitting={submitting}
         onSubmit={handleReviewSubmit}
         onOpenChange={setSubmitOpen}
       />

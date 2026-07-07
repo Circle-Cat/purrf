@@ -171,6 +171,43 @@ describe("Postings page", () => {
     expect(api.listJobs).toHaveBeenCalledTimes(2);
   });
 
+  it("disables Submit while a review action is in flight, to prevent a double-submit", async () => {
+    let resolveRequestClose;
+    api.requestClose.mockReturnValue(
+      new Promise((resolve) => {
+        resolveRequestClose = resolve;
+      }),
+    );
+    api.listJobs.mockResolvedValue({
+      data: [{ id: 2, title: "PM", kind: "employment", status: "published" }],
+    });
+
+    renderPostings();
+    await screen.findByText("PM");
+
+    fireEvent.click(screen.getByRole("button", { name: "Request close" }));
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { name: "Request close" }),
+      ).toBeInTheDocument(),
+    );
+    fireEvent.change(screen.getByLabelText("Reviewer"), {
+      target: { value: "2" },
+    });
+
+    const submitButton = screen.getByRole("button", { name: "Submit" });
+    fireEvent.click(submitButton);
+    expect(submitButton).toBeDisabled();
+    fireEvent.click(submitButton);
+    expect(api.requestClose).toHaveBeenCalledTimes(1);
+
+    resolveRequestClose({ data: {} });
+    await waitFor(() => expect(api.listJobs).toHaveBeenCalledTimes(2));
+    expect(
+      screen.queryByRole("heading", { name: "Request close" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("clicking Delete on a never-published closed job shows confirm dialog, confirming calls deleteJob then refetches", async () => {
     api.listJobs.mockResolvedValue({
       data: [
