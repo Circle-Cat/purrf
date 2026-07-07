@@ -623,15 +623,24 @@ class BoardService:
         within its current stage — other rounds' assignments are untouched.
 
         Does NOT reset sub_status to "pending" (a reassignment always means
-        someone now owns it, so it should never read as untouched). Instead,
-        if the current sub_status is "pending" (or unset) and the stage's
-        sub-status set includes "in_progress" (recruiter_screening/
-        board_review), it's promoted to "in_progress". Stages whose
-        sub-status set has no "in_progress" value (behavioral/tech use
-        scheduling/scheduled instead) are left exactly as they were,
-        whatever that was. Any evaluation the outgoing assignee already
-        confirmed is untouched (it's a separate row keyed by its own
-        evaluator_id — sub-project #3 slice 1's evaluation feature).
+        someone now owns it, so it should never read as untouched). Instead
+        it promotes sub_status forward, in a way that reflects the new
+        assignee's actual starting point rather than clearing progress:
+        - recruiter_screening/board_review (sub-status set has
+          "in_progress"): "pending"/unset -> "in_progress"; "evaluated" ->
+          "in_progress" too, since one evaluation isn't enough and the new
+          assignee still has to submit their own.
+        - behavioral/tech (sub-status set uses scheduling/scheduled
+          instead): "pending"/unset -> "scheduling" (the new assignee has
+          to book a slot from scratch); "evaluated" -> "scheduled" (the
+          interview itself already happened, only the evaluation needs
+          redoing, so scheduling isn't required again).
+        Any other current sub_status ("in_progress", "scheduling",
+        "scheduled") is left exactly as it was — it already reflects an
+        in-flight state that reassignment doesn't change. Any evaluation
+        the outgoing assignee already confirmed is untouched (it's a
+        separate row keyed by its own evaluator_id — sub-project #3 slice
+        1's evaluation feature).
 
         Args:
             session (AsyncSession): Active database async session.
@@ -667,11 +676,15 @@ class BoardService:
             dto.assignee_id,
             current_user.user_id,
         )
-        if application.sub_status in (
-            None,
-            "pending",
-        ) and "in_progress" in stage_machine.SUB_STATUS_SETS.get(application.stage, ()):
-            application.sub_status = "in_progress"
+        sub_statuses = stage_machine.SUB_STATUS_SETS.get(application.stage, ())
+        if "in_progress" in sub_statuses:
+            if application.sub_status in (None, "pending", "evaluated"):
+                application.sub_status = "in_progress"
+        elif "scheduling" in sub_statuses:
+            if application.sub_status in (None, "pending"):
+                application.sub_status = "scheduling"
+            elif application.sub_status == "evaluated":
+                application.sub_status = "scheduled"
         application = await self.application_repository.update(session, application)
         await self.application_activity_repository.create(
             session,
