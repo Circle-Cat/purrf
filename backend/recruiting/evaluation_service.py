@@ -10,6 +10,7 @@ from backend.dto.evaluation_dto import (
 from backend.dto.user_context_dto import UserContextDto
 from backend.recruiting import evaluation_rubric
 from backend.recruiting.pipeline_owners import normalized_owner_ids
+from backend.common.permissions import Permission
 
 
 class EvaluationService:
@@ -277,11 +278,12 @@ class EvaluationService:
 
         Authorization mirrors ``BoardService.get_application_detail``: the
         caller must be either a configured owner of the application's job
-        (``pipeline_owners.normalized_owner_ids``) or the assignee for the
-        application's *current* stage. This is intentionally a duplicated
-        inline check rather than a shared helper with ``board_service`` —
-        the two services don't share enough constructor shape to make a
-        lift clean, and it's a few lines (see task-18 brief / YAGNI).
+        (``pipeline_owners.normalized_owner_ids``), the assignee for the
+        application's *current* stage, or hold the ``RECRUITING_APPLICATION_READ_ALL``
+        permission. This is intentionally a duplicated inline check rather than
+        a shared helper with ``board_service`` — the two services don't share
+        enough constructor shape to make a lift clean, and it's a few lines
+        (see task-18 brief / YAGNI).
 
         Args:
             session (AsyncSession): Active database async session.
@@ -296,10 +298,10 @@ class EvaluationService:
 
         Raises:
             ValueError: If the application is missing, or the caller is
-                neither an owner of the application's job nor its
-                current-stage assignee. Both cases raise the same generic
-                message so response bodies don't leak which application ids
-                exist to unauthorized callers.
+                neither an owner of the application's job, its current-stage
+                assignee, nor authorized via ``RECRUITING_APPLICATION_READ_ALL``.
+                Both cases raise the same generic message so response bodies don't
+                leak which application ids exist to unauthorized callers.
         """
         application = await self.application_repository.get_by_id(
             session, application_id
@@ -319,7 +321,10 @@ class EvaluationService:
                 assignment is not None
                 and assignment.assignee_id == current_user.user_id
             )
-        if job is None or not (is_owner or is_assignee):
+        is_read_all = current_user.has_permission(
+            Permission.RECRUITING_APPLICATION_READ_ALL
+        )
+        if job is None or not (is_owner or is_assignee or is_read_all):
             raise ValueError(f"application {application_id} not found")
         rows = await self.evaluation_repository.list_by_application(
             session, application_id
