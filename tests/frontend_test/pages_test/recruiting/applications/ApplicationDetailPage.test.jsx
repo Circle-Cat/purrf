@@ -187,6 +187,17 @@ describe("ApplicationDetailPage — loading & snapshot", () => {
     expect(screen.getByText(/q2/)).toBeInTheDocument();
   });
 
+  it("shows the current stage next to the applicant's name", async () => {
+    authState.userId = ASSIGNEE_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: false, stage: "recruiter_screening" }),
+    });
+    renderPage();
+    await waitLoaded();
+
+    expect(screen.getByText("Recruiter screening")).toBeInTheDocument();
+  });
+
   it("renders the resume iframe only when resumeAvailable is true", async () => {
     authState.userId = ASSIGNEE_ID;
     api.getApplicationDetail.mockResolvedValue({
@@ -684,6 +695,8 @@ describe("ApplicationDetailPage — advance-time assignee dialog", () => {
         screen.getByRole("button", { name: "Advance to Tech" }),
       ).toBeInTheDocument(),
     );
+    // The stage badge confirms the advance actually landed on "behavioral".
+    expect(screen.getByText("Behavioral")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Advance to Tech" }));
     expect(
       screen.getByRole("radio", { name: /ivan interviewer/i }),

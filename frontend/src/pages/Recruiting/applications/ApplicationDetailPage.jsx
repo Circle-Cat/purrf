@@ -741,9 +741,14 @@ const ApplicationDetailPage = () => {
   return (
     <div className="flex flex-col gap-6 p-6">
       <div className="space-y-1">
-        <h1 className="text-xl font-semibold text-slate-900">
-          {detail.applicantName}
-        </h1>
+        <div className="flex flex-wrap items-center gap-2">
+          <h1 className="text-xl font-semibold text-slate-900">
+            {detail.applicantName}
+          </h1>
+          <Badge variant="secondary">
+            {humanize(detail.application.stage)}
+          </Badge>
+        </div>
         <p className="text-sm text-slate-600">{detail.applicantEmail}</p>
       </div>
 
