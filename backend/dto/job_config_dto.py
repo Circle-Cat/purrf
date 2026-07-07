@@ -151,9 +151,7 @@ class FormSchemaDto(BaseRequestDto):
         return self
 
 
-PipelineStage = Literal[
-    "recruiter_screening", "behavioral", "tech", "board_review", "offer"
-]
+PipelineStage = Literal["recruiter_screening", "behavioral", "tech", "board_review"]
 _ASSIGNABLE_DEFAULT_STAGES = {"recruiter_screening", "behavioral"}
 
 

@@ -48,10 +48,23 @@ class TestAdvanceTarget(unittest.TestCase):
             ApplicationStage.TECH,
         )
 
-    def test_advances_from_last_configured_to_hired(self):
+    def test_advances_from_last_configured_to_offer(self):
         cfg = {"stages": [{"stage": "recruiter_screening"}, {"stage": "tech"}]}
         self.assertEqual(
-            advance_target(cfg, ApplicationStage.TECH), ApplicationStage.HIRED
+            advance_target(cfg, ApplicationStage.TECH), ApplicationStage.OFFER
+        )
+
+    def test_advances_from_offer_to_hired(self):
+        cfg = {"stages": [{"stage": "recruiter_screening"}, {"stage": "tech"}]}
+        self.assertEqual(
+            advance_target(cfg, ApplicationStage.OFFER), ApplicationStage.HIRED
+        )
+
+    def test_advances_to_offer_even_for_a_single_stage_pipeline(self):
+        cfg = {"stages": [{"stage": "recruiter_screening"}]}
+        self.assertEqual(
+            advance_target(cfg, ApplicationStage.RECRUITER_SCREENING),
+            ApplicationStage.OFFER,
         )
 
     def test_returns_none_from_terminal_or_unconfigured_current(self):
@@ -70,8 +83,14 @@ class TestValidateTransition(unittest.TestCase):
             self.cfg, ApplicationStage.RECRUITER_SCREENING, ApplicationStage.TECH
         )
 
-    def test_accepts_advance_from_last_to_hired(self):
-        validate_transition(self.cfg, ApplicationStage.TECH, ApplicationStage.HIRED)
+    def test_accepts_advance_from_last_configured_to_offer(self):
+        validate_transition(self.cfg, ApplicationStage.TECH, ApplicationStage.OFFER)
+
+    def test_accepts_advance_from_offer_to_hired(self):
+        validate_transition(self.cfg, ApplicationStage.OFFER, ApplicationStage.HIRED)
+
+    def test_accepts_reject_from_offer(self):
+        validate_transition(self.cfg, ApplicationStage.OFFER, ApplicationStage.REJECTED)
 
     def test_accepts_reject_from_any_configured_pipeline_stage(self):
         validate_transition(
@@ -104,11 +123,14 @@ class TestValidateSubStatus(unittest.TestCase):
         validate_sub_status(ApplicationStage.BOARD_REVIEW, "evaluated")
         validate_sub_status(ApplicationStage.BEHAVIORAL, "scheduling")
         validate_sub_status(ApplicationStage.TECH, "scheduled")
-        validate_sub_status(ApplicationStage.OFFER, "pending")
 
     def test_invalid_value_for_stage_raises(self):
         with self.assertRaises(ValueError):
-            validate_sub_status(ApplicationStage.OFFER, "scheduling")
+            validate_sub_status(ApplicationStage.BEHAVIORAL, "evaluated_wrong")
+
+    def test_offer_has_no_sub_status_set_and_raises(self):
+        with self.assertRaises(ValueError):
+            validate_sub_status(ApplicationStage.OFFER, "pending")
 
     def test_terminal_stage_has_no_set_and_raises(self):
         with self.assertRaises(ValueError):
@@ -131,9 +153,7 @@ class TestValidateSubStatus(unittest.TestCase):
             SUB_STATUS_SETS[ApplicationStage.TECH],
             ("pending", "scheduling", "scheduled", "evaluated"),
         )
-        self.assertEqual(
-            SUB_STATUS_SETS[ApplicationStage.OFFER], ("pending", "evaluated")
-        )
+        self.assertNotIn(ApplicationStage.OFFER, SUB_STATUS_SETS)
 
 
 class TestPipelineOrder(unittest.TestCase):
@@ -145,9 +165,11 @@ class TestPipelineOrder(unittest.TestCase):
                 ApplicationStage.BEHAVIORAL,
                 ApplicationStage.TECH,
                 ApplicationStage.BOARD_REVIEW,
-                ApplicationStage.OFFER,
             ],
         )
+
+    def test_offer_is_not_a_configurable_stage(self):
+        self.assertNotIn(ApplicationStage.OFFER, PIPELINE_ORDER)
 
 
 class TestRoundsForStage(unittest.TestCase):

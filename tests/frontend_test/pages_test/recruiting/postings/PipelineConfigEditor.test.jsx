@@ -30,34 +30,11 @@ describe("PipelineConfigEditor", () => {
     });
   });
 
-  it("adds Offer in canonical order after Board review", async () => {
-    const user = userEvent.setup();
+  it("does not render an Offer checkbox — it's automatic, not configurable", () => {
     const onChange = vi.fn();
-    renderEditor(
-      {
-        stages: [
-          { stage: "board_review", rounds: 1, referralSkippable: false },
-        ],
-      },
-      onChange,
-    );
-    await user.click(screen.getByRole("checkbox", { name: "Offer" }));
-    expect(onChange).toHaveBeenCalledWith({
-      stages: [
-        { stage: "board_review", rounds: 1, referralSkippable: false },
-        { stage: "offer", rounds: 1, referralSkippable: false },
-      ],
-    });
-  });
-
-  it("does not offer a default assignee for Offer (not an interview stage)", () => {
-    const onChange = vi.fn();
-    renderEditor(
-      { stages: [{ stage: "offer", rounds: 1, referralSkippable: false }] },
-      onChange,
-    );
+    renderEditor({ stages: [] }, onChange);
     expect(
-      screen.queryByRole("combobox", { name: "offer assignee" }),
+      screen.queryByRole("checkbox", { name: "Offer" }),
     ).not.toBeInTheDocument();
   });
 

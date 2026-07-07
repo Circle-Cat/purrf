@@ -1062,40 +1062,6 @@ describe("ApplicationDetailPage — advance round", () => {
       expect(toast.error).toHaveBeenCalledWith("Round update failed"),
     );
   });
-
-  it("advances a non-interview stage's round immediately, with no assignee picker", async () => {
-    const user = userEvent.setup();
-    authState.userId = OWNER_ID;
-    // "offer" isn't in INTERVIEW_STAGES (no rubric, not assignable), but the
-    // rounds mechanism itself is stage-agnostic — a job can still configure
-    // it with rounds > 1.
-    api.getJob.mockResolvedValue({
-      data: {
-        ...JOB,
-        pipelineConfig: {
-          ...JOB.pipelineConfig,
-          stages: [...JOB.pipelineConfig.stages, { stage: "offer", rounds: 2 }],
-        },
-      },
-    });
-    api.getApplicationDetail.mockResolvedValue({
-      data: makeDetail({ isOwner: true, stage: "offer", currentRound: 1 }),
-    });
-    api.setApplicationRound.mockResolvedValue({ data: {} });
-    renderPage();
-    await waitLoaded();
-
-    await user.click(
-      screen.getByRole("button", { name: "Advance to Round 2" }),
-    );
-
-    await waitFor(() =>
-      expect(api.setApplicationRound).toHaveBeenCalledWith("101", 2),
-    );
-    expect(
-      screen.queryByRole("button", { name: "Confirm advance round" }),
-    ).not.toBeInTheDocument();
-  });
 });
 
 describe("ApplicationDetailPage — activity timeline", () => {
@@ -1405,5 +1371,100 @@ describe("ApplicationDetailPage — advance dialog Scheduled hint", () => {
     );
 
     expect(screen.queryByText(HINT_TEXT)).not.toBeInTheDocument();
+  });
+});
+
+describe("ApplicationDetailPage — Offer is a fixed step before Hired", () => {
+  it("advances from the last configured stage to Offer, not Hired", async () => {
+    const user = userEvent.setup();
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({
+        isOwner: true,
+        assigneeId: ASSIGNEE_ID,
+        stage: "tech",
+      }),
+    });
+    api.changeApplicationStage.mockResolvedValue({ data: {} });
+    renderPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole("button", { name: "Advance to Offer" }));
+
+    await waitFor(() =>
+      expect(api.changeApplicationStage).toHaveBeenCalledWith("101", {
+        toStage: "offer",
+        assigneeId: undefined,
+      }),
+    );
+  });
+
+  it("advances from Offer to Hired", async () => {
+    const user = userEvent.setup();
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({
+        isOwner: true,
+        assigneeId: ASSIGNEE_ID,
+        stage: "offer",
+      }),
+    });
+    api.changeApplicationStage.mockResolvedValue({ data: {} });
+    renderPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole("button", { name: "Advance to Hired" }));
+
+    await waitFor(() =>
+      expect(api.changeApplicationStage).toHaveBeenCalledWith("101", {
+        toStage: "hired",
+        assigneeId: undefined,
+      }),
+    );
+  });
+
+  it("allows rejecting from Offer with the candidate-declined reason", async () => {
+    const user = userEvent.setup();
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({
+        isOwner: true,
+        assigneeId: ASSIGNEE_ID,
+        stage: "offer",
+      }),
+    });
+    api.changeApplicationStage.mockResolvedValue({ data: {} });
+    renderPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole("button", { name: "Reject" }));
+    await user.click(
+      screen.getByRole("combobox", { name: /rejection reason/i }),
+    );
+    await user.click(await screen.findByText("Candidate declined the offer"));
+    await user.click(screen.getByRole("button", { name: "Confirm reject" }));
+
+    await waitFor(() =>
+      expect(api.changeApplicationStage).toHaveBeenCalledWith("101", {
+        toStage: "rejected",
+        reason: "Candidate declined the offer",
+        note: undefined,
+      }),
+    );
+  });
+
+  it("shows no Status selector for Offer", async () => {
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({
+        isOwner: true,
+        assigneeId: ASSIGNEE_ID,
+        stage: "offer",
+      }),
+    });
+    renderPage();
+    await waitLoaded();
+
+    expect(screen.queryByText("Status:")).not.toBeInTheDocument();
   });
 });

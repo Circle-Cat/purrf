@@ -796,10 +796,12 @@ class BoardService:
         ``application_assignment_repository.upsert``. Supplying no assignee
         is allowed — mirrors ``change_stage``'s optional-assignee advance —
         and simply leaves the target round unassigned, to be picked up later
-        via ``reassign``. Non-interview stages (e.g. a multi-round ``offer``)
-        ignore ``dto.assignee_id`` either way. Resets ``sub_status`` to
-        ``"pending"`` (mirrors ``reassign``/``change_stage``) so the new
-        round doesn't inherit a prior round's ``"evaluated"`` state.
+        via ``reassign``. Non-interview stages ignore ``dto.assignee_id``
+        either way (though every currently-configurable stage is an interview
+        stage — Offer, the one non-interview stage, is a fixed single-round
+        step and cannot be configured with multiple rounds at all). Resets
+        ``sub_status`` to ``"pending"`` (mirrors ``reassign``/``change_stage``)
+        so the new round doesn't inherit a prior round's ``"evaluated"`` state.
 
         Args:
             session (AsyncSession): Active database async session.

@@ -239,13 +239,9 @@ class TestPipelineConfigDto(unittest.TestCase):
         with self.assertRaises(ValidationError):
             PipelineConfigDto.model_validate({"ownerIds": [1, 1], "stages": []})
 
-    def test_offer_is_accepted_pipeline_stage(self):
-        cfg = PipelineConfigDto(stages=[PipelineStageDto(stage="offer", rounds=1)])
-        self.assertEqual(cfg.stages[0].stage, "offer")
-
-    def test_default_assignee_rejected_on_offer(self):
+    def test_offer_is_rejected_as_a_pipeline_stage(self):
         with self.assertRaises(ValidationError):
-            PipelineStageDto(stage="offer", rounds=1, default_assignee_id=9)
+            PipelineStageDto(stage="offer", rounds=1)
 
 
 class TestScreenRulesDto(unittest.TestCase):
