@@ -220,7 +220,7 @@ class ApplicationService:
                 ),
             )
 
-        await self._assign_default_if_configured(session, application, job)
+        await self._assign_default_if_configured(session, application, job, current_user)
 
         if blocked:
             await self.application_activity_repository.create(
@@ -248,7 +248,9 @@ class ApplicationService:
             application, current_sub, editable=editable
         )
 
-    async def _assign_default_if_configured(self, session, application, job):
+    async def _assign_default_if_configured(
+        self, session, application, job, current_user
+    ):
         """Materialize a stage's configured default assignee into a real row.
 
         A stage's ``defaultAssigneeId`` is only a board-display fallback
@@ -265,12 +267,16 @@ class ApplicationService:
         REJECTED landing), a stage with no default configured, or a job with
         no configured owner (nothing sensible to attribute ``assigned_by``
         to — mirrors the pre-existing "no owner" board-visibility gap rather
-        than raising).
+        than raising). Logs an ``"auto_assigned"`` activity entry, attributed
+        to the submitting candidate, only on the path where a row is
+        actually materialized.
 
         Args:
             session (AsyncSession): Active database async session.
             application (ApplicationEntity): The just-landed application.
             job (JobEntity): Its posting, for pipeline_config lookup.
+            current_user (UserContextDto): The submitting candidate, recorded
+                as the activity entry's actor.
         """
         if application.stage not in INTERVIEW_STAGES:
             return
@@ -294,6 +300,13 @@ class ApplicationService:
             application.current_round,
             default_id,
             owner_ids[0],
+        )
+        await self.application_activity_repository.create(
+            session,
+            application.application_id,
+            current_user.user_id,
+            "auto_assigned",
+            details={"stage": application.stage.value, "assigneeId": default_id},
         )
 
     async def edit(

@@ -121,6 +121,26 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             self.session, 100, ApplicationStage.RECRUITER_SCREENING, 1, 5, 9
         )
 
+    async def test_submit_logs_auto_assigned_activity_when_default_configured(self):
+        """The default-assignee materialization is a real, auditable event —
+        not a silent side effect of the assignment row being created."""
+        job = self._job(
+            pipeline_config={
+                "stages": [{"stage": "recruiter_screening", "defaultAssigneeId": 5}],
+                "ownerIds": [9],
+            }
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        await self.service.submit(self.session, self._ctx(), dto)
+        self.activity_repo.create.assert_any_await(
+            self.session,
+            100,
+            2,
+            "auto_assigned",
+            details={"stage": "recruiter_screening", "assigneeId": 5},
+        )
+
     async def test_submit_skips_assignment_when_no_default_configured(self):
         dto = ApplicationSubmitDto.model_validate({"jobId": 1})
         await self.service.submit(self.session, self._ctx(), dto)
