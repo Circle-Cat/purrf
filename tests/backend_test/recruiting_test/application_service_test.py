@@ -438,6 +438,8 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             )
 
     async def test_reapply_after_reject_mints_new_version_and_freezes_prior(self):
+        job = self._job(cooldown_days=90, status=JobStatus.PUBLISHED)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
         app = ApplicationEntity(
             job_id=1, user_id=2, stage=ApplicationStage.REJECTED, current_round=1
         )
@@ -449,7 +451,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         )
         prior.submitted_at = datetime(2026, 1, 20, tzinfo=timezone.utc)
         self.sub_repo.get_current = AsyncMock(return_value=prior)
-        self.service._today = lambda: date(2026, 2, 1)  # inside cooldown (< 2026-04-01)
+        self.service._today = lambda: date(2026, 2, 1)  # inside the 90-day window
         dto = ApplicationSubmitDto.model_validate({
             "jobId": 1,
             "personal": {"firstName": "New"},
@@ -462,7 +464,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         created_sub = self.sub_repo.create.call_args.args[1]
         self.assertEqual(created_sub.version, 2)
         self.assertIn("cold_freeze", result.tags or {})
-        self.assertEqual(result.tags["cold_freeze"]["thaw_date"], "2026-04-01")
+        self.assertEqual(result.tags["cold_freeze"]["thaw_date"], "2026-04-10")
 
     async def test_reapply_creates_default_assignment_when_stage_has_default(self):
         """Reapplying also re-lands on the first stage, so a configured
@@ -494,9 +496,9 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_reapply_non_activity_uses_updated_timestamp_for_rejected_at(self):
-        """For a fixed-cooldown (non-ACTIVITY) job, the thaw must anchor to the
-        application container's last-update time (the actual rejection
-        moment), not the frozen submission's submitted_at."""
+        """The thaw must anchor to the application container's last-update
+        time (the actual rejection moment), not the frozen submission's
+        submitted_at, which can predate it."""
         job = self._job(kind=JobKind.EMPLOYMENT, status=JobStatus.PUBLISHED)
         job.cooldown_days = 90
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
@@ -541,7 +543,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         )
         prior.submitted_at = datetime(2026, 1, 20, tzinfo=timezone.utc)
         self.sub_repo.get_current = AsyncMock(return_value=prior)
-        self.service._today = lambda: date(2026, 5, 1)  # past thaw (>= 2026-04-01)
+        self.service._today = lambda: date(2026, 5, 1)  # past thaw (>= 2026-01-10)
         result = await self.service.submit(
             self.session, self._ctx(), ApplicationSubmitDto.model_validate({"jobId": 1})
         )

@@ -187,19 +187,14 @@ class ApplicationService:
             prior.is_frozen = True
             await self.application_submission_repository.update(session, prior)
 
-            applied_at = (
-                existing.created_datetime or datetime.now(timezone.utc)
-            ).date()
             # Use the application container's last-update time (when it was
             # moved to REJECTED), not the frozen submission's submitted_at —
-            # for fixed-cooldown (non-ACTIVITY) jobs the thaw is anchored to
-            # the actual rejection moment, which submitted_at can predate.
+            # the thaw is anchored to the actual rejection moment, which
+            # submitted_at can predate.
             rejected_at = (
                 existing.updated_timestamp or existing.created_datetime
             ).date()
-            thaw = cooldown.compute_thaw(
-                job.kind, applied_at, rejected_at, job.cooldown_days
-            )
+            thaw = cooldown.compute_thaw(rejected_at, job.cooldown_days)
             tags = (
                 {"cold_freeze": {"thaw_date": thaw.isoformat()}}
                 if cooldown.is_in_cooldown(self._today(), thaw)
