@@ -2,23 +2,24 @@ from backend.common.recruiting_enums import ApplicationStage
 
 # Global ordering of the configurable pipeline stages. A job's pipeline_config
 # selects a subset of these (see configured_stages); APPLIED/REJECTED/HIRED/
-# OFFER_DECLINED/BLACKLISTED are not configurable pipeline steps.
+# OFFER/BLACKLISTED are not configurable pipeline steps. OFFER specifically
+# is a fixed step always inserted between a job's last configured stage and
+# HIRED (see advance_target) — never something an owner opts into per job.
 PIPELINE_ORDER: list[ApplicationStage] = [
     ApplicationStage.RECRUITER_SCREENING,
     ApplicationStage.BEHAVIORAL,
     ApplicationStage.TECH,
     ApplicationStage.BOARD_REVIEW,
-    ApplicationStage.OFFER,
 ]
 
 # Allowed sub_status values per stage. Stages without an entry (terminal
-# stages, or stages outside the configurable pipeline) have no sub-status.
+# stages, OFFER, or stages outside the configurable pipeline) have no
+# sub-status.
 SUB_STATUS_SETS: dict[ApplicationStage, tuple[str, ...]] = {
     ApplicationStage.RECRUITER_SCREENING: ("pending", "in_progress", "evaluated"),
     ApplicationStage.BOARD_REVIEW: ("pending", "in_progress", "evaluated"),
     ApplicationStage.BEHAVIORAL: ("pending", "scheduling", "scheduled", "evaluated"),
     ApplicationStage.TECH: ("pending", "scheduling", "scheduled", "evaluated"),
-    ApplicationStage.OFFER: ("pending", "evaluated"),
 }
 
 
@@ -107,17 +108,21 @@ def advance_target(
 
     Returns:
         ApplicationStage | None: The next configured stage after
-            ``current``; ``ApplicationStage.HIRED`` when ``current`` is the
-            last configured stage; ``None`` when ``current`` is terminal or
-            is not one of the job's configured pipeline stages.
+            ``current``; ``ApplicationStage.OFFER`` when ``current`` is the
+            last configured stage; ``ApplicationStage.HIRED`` when
+            ``current`` is ``ApplicationStage.OFFER``; ``None`` when
+            ``current`` is terminal or is not one of the job's configured
+            pipeline stages.
     """
+    if current == ApplicationStage.OFFER:
+        return ApplicationStage.HIRED
     stages = configured_stages(pipeline_config)
     if current not in stages:
         return None
     index = stages.index(current)
     if index + 1 < len(stages):
         return stages[index + 1]
-    return ApplicationStage.HIRED
+    return ApplicationStage.OFFER
 
 
 def validate_transition(
@@ -136,13 +141,15 @@ def validate_transition(
 
     Raises:
         ValueError: Unless ``to`` is the ``advance_target`` of ``current``,
-            or ``to`` is ``ApplicationStage.REJECTED`` and ``current`` is one
-            of the job's configured pipeline stages.
+            or ``to`` is ``ApplicationStage.REJECTED`` and ``current`` is
+            either one of the job's configured pipeline stages or
+            ``ApplicationStage.OFFER``.
     """
     if to == advance_target(pipeline_config, current):
         return
-    if to == ApplicationStage.REJECTED and current in configured_stages(
-        pipeline_config
+    if to == ApplicationStage.REJECTED and (
+        current == ApplicationStage.OFFER
+        or current in configured_stages(pipeline_config)
     ):
         return
     raise ValueError(
