@@ -166,7 +166,11 @@ const RecruitingProfileForm = ({
           {resumeLevel === "off" &&
             " This posting doesn't collect a resume; uploading only saves you time."}
         </p>
-        <ResumeUpload onParsed={handleParsed} onFile={handleResumeFile} />
+        <ResumeUpload
+          onParsed={handleParsed}
+          onFile={handleResumeFile}
+          showPreview
+        />
       </section>
 
       <ProfileSection

@@ -67,6 +67,14 @@ describe("RecruitingProfileForm", () => {
     );
   });
 
+  it("shows a résumé preview after picking a file (showPreview wired through)", async () => {
+    renderForm({});
+    selectResumeFile(pdfFile());
+    await waitFor(() =>
+      expect(screen.getByTitle("Preview of resume.pdf")).toBeInTheDocument(),
+    );
+  });
+
   it("toasts an error and does not call onResumeStored when the resume upload fails", async () => {
     api.uploadResume.mockRejectedValue(new Error("upload failed"));
     const onResumeStored = vi.fn();
