@@ -149,4 +149,37 @@ describe("JobBasicsSection", () => {
     await user.click(screen.getByRole("option", { name: "None" }));
     expect(onChange).toHaveBeenCalledWith({ mentorshipRole: null });
   });
+
+  it("disables Kind and Mentorship role when kindLocked is true", () => {
+    render(
+      <JobBasicsSection
+        title=""
+        description=""
+        kind="activity"
+        mentorshipRole="mentor"
+        kindLocked
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("combobox", { name: "Kind" })).toBeDisabled();
+    expect(
+      screen.getByRole("combobox", { name: "Mentorship role" }),
+    ).toBeDisabled();
+  });
+
+  it("leaves Kind and Mentorship role enabled when kindLocked is not set", () => {
+    render(
+      <JobBasicsSection
+        title=""
+        description=""
+        kind="activity"
+        mentorshipRole="mentor"
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("combobox", { name: "Kind" })).not.toBeDisabled();
+    expect(
+      screen.getByRole("combobox", { name: "Mentorship role" }),
+    ).not.toBeDisabled();
+  });
 });

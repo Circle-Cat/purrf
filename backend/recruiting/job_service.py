@@ -293,7 +293,8 @@ class JobService:
           pending_payload and the status flips to PUBLISHED_PENDING_REVISION
           for re-review. The live version stays public and unchanged until
           the revision is approved. kind/mentorship_role are not editable
-          once published.
+          once published — the UI disables both fields, and a differing
+          value here raises rather than being silently dropped.
         - CLOSED: same rule as PUBLISHED — any edit parks into pending_payload;
           status is unchanged (still CLOSED). Use request_reopen separately to
           submit the posting (with or without this edit) for a REOPEN review.
@@ -318,7 +319,8 @@ class JobService:
                 current status is not DRAFT, PUBLISHED, or CLOSED (i.e. it is
                 PENDING_REVIEW, PUBLISHED_PENDING_REVISION, PENDING_CLOSE, or
                 PENDING_REOPEN), the posting is CLOSED but was never
-                published, or a pre-configured assignee/owner lacks its
+                published, a PUBLISHED/CLOSED edit tries to change kind or
+                mentorship_role, or a pre-configured assignee/owner lacks its
                 required permission.
         """
         job = await self._require_job(session, job_id)
@@ -339,6 +341,7 @@ class JobService:
             job.profile_config = new_profile
             job.cooldown_days = dto.cooldown_days
         elif job.status == JobStatus.PUBLISHED:
+            self._require_unchanged_kind(job_id, job, dto)
             job.pending_payload = self._build_pending_payload(job, dto)
             job.status = JobStatus.PUBLISHED_PENDING_REVISION
         elif job.status == JobStatus.CLOSED:
@@ -346,12 +349,37 @@ class JobService:
                 raise ValueError(
                     f"Job {job_id} was never published; delete it instead of editing"
                 )
+            self._require_unchanged_kind(job_id, job, dto)
             job.pending_payload = self._build_pending_payload(job, dto)
         else:
             raise ValueError(f"Job {job_id} cannot be edited from {job.status}")
         job = await self.job_repository.update_job(session, job)
         await session.commit()
         return self.recruiting_mapper.to_job_dto(job)
+
+    @staticmethod
+    def _require_unchanged_kind(
+        job_id: int, job: "JobEntity", dto: JobCreateDto
+    ) -> None:
+        """Reject an edit that changes kind or mentorship_role once a posting
+        has left DRAFT — both fields are locked from that point on. The UI
+        disables them; this is the backend's defense in depth for a caller
+        that bypasses it.
+
+        Args:
+            job_id (int): The posting being edited, for the error message.
+            job (JobEntity): The posting's current, live values.
+            dto (JobCreateDto): The incoming edit payload.
+
+        Raises:
+            ValueError: If dto.kind or dto.mentorship_role differs from the
+                posting's current value.
+        """
+        if dto.kind != job.kind or dto.mentorship_role != job.mentorship_role:
+            raise ValueError(
+                f"Job {job_id} cannot change kind or mentorship role once it "
+                "has left draft"
+            )
 
     async def _open_review(
         self,
