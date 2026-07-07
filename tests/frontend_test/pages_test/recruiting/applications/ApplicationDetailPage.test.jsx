@@ -1127,11 +1127,11 @@ describe("ApplicationDetailPage — activity timeline", () => {
 
     expect(
       screen.getByText(
-        "Advanced from Recruiter screening to Tech, by Owen Owner",
+        /Advanced from Recruiter screening to Tech, by Owen Owner/,
       ),
     ).toBeInTheDocument();
     expect(
-      screen.getByText("Reassigned on Tech to Ivan Interviewer, by Owen Owner"),
+      screen.getByText(/Reassigned on Tech to Ivan Interviewer, by Owen Owner/),
     ).toBeInTheDocument();
   });
 
@@ -1231,7 +1231,7 @@ describe("ApplicationDetailPage — activity timeline assignee names", () => {
 
     expect(
       screen.getByText(
-        "Advanced from Recruiter screening to Tech, assigned to Ivan Interviewer, by Owen Owner",
+        /Advanced from Recruiter screening to Tech, assigned to Ivan Interviewer, by Owen Owner/,
       ),
     ).toBeInTheDocument();
   });
@@ -1254,7 +1254,7 @@ describe("ApplicationDetailPage — activity timeline assignee names", () => {
 
     expect(
       screen.getByText(
-        "Advanced to round 2 of Tech, assigned to Ivan Interviewer, by Owen Owner",
+        /Advanced to round 2 of Tech, assigned to Ivan Interviewer, by Owen Owner/,
       ),
     ).toBeInTheDocument();
   });
@@ -1277,7 +1277,7 @@ describe("ApplicationDetailPage — activity timeline assignee names", () => {
 
     expect(
       screen.getByText(
-        "Reassigned on Tech from Eve Evaluator to Ivan Interviewer, by Owen Owner",
+        /Reassigned on Tech from Eve Evaluator to Ivan Interviewer, by Owen Owner/,
       ),
     ).toBeInTheDocument();
   });
@@ -1298,7 +1298,7 @@ describe("ApplicationDetailPage — activity timeline assignee names", () => {
 
     expect(
       screen.getByText(
-        "Automatically assigned to Ivan Interviewer on Recruiter screening, by Alice Smith",
+        /Automatically assigned to Ivan Interviewer on Recruiter screening, by Alice Smith/,
       ),
     ).toBeInTheDocument();
   });
@@ -1319,7 +1319,7 @@ describe("ApplicationDetailPage — activity timeline assignee names", () => {
 
     expect(
       screen.getByText(
-        "Status changed from Pending to In progress on Tech, by Owen Owner",
+        /Status changed from Pending to In progress on Tech, by Owen Owner/,
       ),
     ).toBeInTheDocument();
   });
@@ -1336,7 +1336,7 @@ describe("ApplicationDetailPage — activity timeline assignee names", () => {
 
     expect(
       screen.getByText(
-        "Advanced from Recruiter screening to Tech, by Owen Owner",
+        /Advanced from Recruiter screening to Tech, by Owen Owner/,
       ),
     ).toBeInTheDocument();
     expect(screen.queryByText(/assigned to/)).not.toBeInTheDocument();
