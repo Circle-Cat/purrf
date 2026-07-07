@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { toast } from "sonner";
@@ -545,11 +545,12 @@ describe("ApplicationDetailPage — advance-time assignee dialog", () => {
     );
 
     // Advance target is "behavioral" (an interview stage): the dialog's
-    // picker is pre-filled with behavioral's configured default assignee
-    // (Ivan, id 11), but the picker is optional so Confirm is enabled either
-    // way.
-    const picker = screen.getByRole("combobox", { name: /assignee/i });
-    expect(picker).toHaveTextContent("Ivan Interviewer");
+    // radio list is pre-filled with behavioral's configured default
+    // assignee (Ivan, id 11), but a pick isn't required so Confirm is
+    // enabled either way.
+    expect(
+      screen.getByRole("radio", { name: /ivan interviewer/i }),
+    ).toBeChecked();
     expect(
       screen.getByRole("button", { name: "Confirm advance" }),
     ).not.toBeDisabled();
@@ -596,16 +597,13 @@ describe("ApplicationDetailPage — advance-time assignee dialog", () => {
     await waitLoaded();
 
     // Advance target is "tech" (interview stage, no configured default): the
-    // picker starts unfilled, and Confirm advance is not blocked on it —
-    // leaving it blank just advances the stage unassigned, to be picked up
-    // later via Reassign.
+    // radio list starts on "Decide later", and Confirm advance is not
+    // blocked on it — leaving it there just advances the stage unassigned,
+    // to be picked up later via Reassign.
     await user.click(
       screen.getByRole("button", { name: "Advance to next step" }),
     );
-    const picker = screen.getByRole("combobox", { name: /assignee/i });
-    expect(
-      within(picker).queryByText("Ivan Interviewer"),
-    ).not.toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: /decide later/i })).toBeChecked();
     expect(
       screen.getByRole("button", { name: "Confirm advance" }),
     ).not.toBeDisabled();
@@ -675,14 +673,14 @@ describe("ApplicationDetailPage — advance-time assignee dialog", () => {
     );
     await waitFor(() =>
       expect(
-        screen.getByRole("combobox", { name: /assignee/i }),
-      ).toHaveTextContent("Ivan Interviewer"),
+        screen.getByRole("radio", { name: /ivan interviewer/i }),
+      ).toBeChecked(),
     );
     await user.click(screen.getByRole("button", { name: "Confirm advance" }));
 
     // The page reloads in place onto "behavioral"; its next target is "tech",
     // which carries no configured default. Reopening the dialog must NOT
-    // still show behavioral's stale "Ivan Interviewer" value.
+    // still show behavioral's stale "Ivan Interviewer" pick.
     await waitFor(() =>
       expect(
         screen.getByRole("button", { name: "Advance to next step" }),
@@ -691,10 +689,77 @@ describe("ApplicationDetailPage — advance-time assignee dialog", () => {
     await user.click(
       screen.getByRole("button", { name: "Advance to next step" }),
     );
-    const picker = screen.getByRole("combobox", { name: /assignee/i });
     expect(
-      within(picker).queryByText("Ivan Interviewer"),
+      screen.getByRole("radio", { name: /ivan interviewer/i }),
+    ).not.toBeChecked();
+  });
+});
+
+describe("ApplicationDetailPage — reassign dialog", () => {
+  it("opens on a radio list with no pick and Confirm reassign disabled, and no 'decide later' option", async () => {
+    const user = userEvent.setup();
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
+    });
+    renderPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole("button", { name: "Reassign" }));
+
+    expect(
+      screen.getByRole("radio", { name: /eve evaluator/i }),
+    ).not.toBeChecked();
+    expect(
+      screen.getByRole("radio", { name: /ivan interviewer/i }),
+    ).not.toBeChecked();
+    expect(
+      screen.queryByRole("radio", { name: /decide later/i }),
     ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Confirm reassign" }),
+    ).toBeDisabled();
+  });
+
+  it("picking someone enables Confirm reassign and calls reassignApplication", async () => {
+    const user = userEvent.setup();
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
+    });
+    api.reassignApplication.mockResolvedValue({ data: {} });
+    renderPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole("button", { name: "Reassign" }));
+    await user.click(screen.getByRole("radio", { name: /ivan interviewer/i }));
+    expect(
+      screen.getByRole("button", { name: "Confirm reassign" }),
+    ).not.toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: "Confirm reassign" }));
+    await waitFor(() =>
+      expect(api.reassignApplication).toHaveBeenCalledWith("101", 11),
+    );
+  });
+
+  it("Cancel closes the dialog without calling the API", async () => {
+    const user = userEvent.setup();
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
+    });
+    renderPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole("button", { name: "Reassign" }));
+    await user.click(screen.getByRole("radio", { name: /ivan interviewer/i }));
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(
+      screen.queryByRole("button", { name: "Confirm reassign" }),
+    ).not.toBeInTheDocument();
+    expect(api.reassignApplication).not.toHaveBeenCalled();
   });
 });
 
