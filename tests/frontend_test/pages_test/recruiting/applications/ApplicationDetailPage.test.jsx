@@ -1505,6 +1505,29 @@ describe("ApplicationDetailPage — comments", () => {
       ),
     ).toBeInTheDocument();
   });
+
+  it("keeps the draft text in the textarea when posting a comment fails", async () => {
+    const user = userEvent.setup();
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
+    });
+    api.postComment.mockRejectedValue(new Error("boom"));
+    renderPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole("tab", { name: "Comments" }));
+    await user.type(
+      screen.getByPlaceholderText("Add a comment…"),
+      "Don't lose me",
+    );
+    await user.click(screen.getByRole("button", { name: "Post" }));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+    expect(screen.getByPlaceholderText("Add a comment…")).toHaveValue(
+      "Don't lose me",
+    );
+  });
 });
 
 describe("ApplicationDetailPage — Scheduled requires an assignee", () => {

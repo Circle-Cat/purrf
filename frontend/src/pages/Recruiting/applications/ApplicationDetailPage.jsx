@@ -378,8 +378,10 @@ const CommentsPanel = ({ comments, onPost, posting }) => {
 
   const handlePost = () => {
     if (!draft.trim() || posting) return;
-    onPost(draft.trim());
-    setDraft("");
+    onPost(draft.trim()).then(
+      () => setDraft(""),
+      () => {},
+    );
   };
 
   return (
@@ -803,13 +805,16 @@ const ApplicationDetailPage = () => {
   };
 
   const handlePostComment = (body) => {
-    if (postingComment) return;
+    if (postingComment) return Promise.resolve();
     setPostingComment(true);
-    postComment(applicationId, { body })
+    return postComment(applicationId, { body })
       .then(({ data }) => {
         setComments((prev) => [data, ...prev]);
       })
-      .catch((e) => toast.error(e.message))
+      .catch((e) => {
+        toast.error(e.message);
+        throw e;
+      })
       .finally(() => setPostingComment(false));
   };
 
