@@ -89,6 +89,8 @@ class MentorshipAdminService:
         filters: ParticipantSearchFilterDto,
         limit: int = 100,
         offset: int = 0,
+        sort_by: str | None = None,
+        order: str = "asc",
     ) -> ParticipantSearchDto:
         """
         Search mentorship participants and non-participants for admin with pagination.
@@ -104,12 +106,15 @@ class MentorshipAdminService:
             filters (ParticipantSearchFilterDto): Filter criteria from the request.
             limit (int): Maximum number of rows to return. Defaults to 100.
             offset (int): Number of rows to skip for pagination. Defaults to 0.
+            sort_by (str | None): Column to sort by (whitelisted in the repo).
+                Unknown values fall back to the deterministic default order.
+            order (str): "asc" or "desc" (default "asc").
 
         Returns:
             ParticipantSearchDto: Assembled participant rows and total count.
         """
         rows, total = await self.participants_repository.search_participants_for_admin(
-            session, filters, limit, offset
+            session, filters, limit, offset, sort_by, order
         )
         if not rows:
             return ParticipantSearchDto(participant_rows=[], total=total)
