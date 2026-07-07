@@ -590,6 +590,29 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             await self.service.get_resume(self.session, self._ctx(user_id=2), 10)
         self.assertEqual(str(ctx.exception), "application 10 not found")
 
+    async def test_get_resume_succeeds_for_applications_own_submitter(self):
+        """The candidate herself can read her own application's résumé, even
+        though she is neither the job's owner nor its current-stage
+        assignee — needed so she can preview a résumé reference her
+        application form inherited without a fresh upload."""
+        job = self._job(job_id=1, owner_ids=(9,))  # caller is not an owner
+        application = self._application(application_id=10, job_id=1, user_id=2)
+        current_sub = ApplicationSubmissionEntity(
+            application_id=10,
+            version=1,
+            submission={"answers": {}},
+            resume_object_key="resumes/abc.pdf",
+        )
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.assignment_repo.get.return_value = None  # not the assignee either
+        self.sub_repo.get_current = AsyncMock(return_value=current_sub)
+        self.resume_storage.get = MagicMock(return_value=b"%PDF-1.4 data")
+
+        result = await self.service.get_resume(self.session, self._ctx(user_id=2), 10)
+
+        self.assertEqual(result, b"%PDF-1.4 data")
+
     async def test_get_resume_succeeds_for_current_stage_assignee(self):
         """The shared detail page (#138) lets a non-owner assignee view
         everything else about an application; the résumé must not be the one
