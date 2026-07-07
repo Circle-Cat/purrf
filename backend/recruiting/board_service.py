@@ -621,10 +621,26 @@ class BoardService:
         interview stage, whether or not the outgoing assignee has submitted
         anything. Targets the application's current round (``current_round``)
         within its current stage — other rounds' assignments are untouched.
-        Resets sub_status to "pending" so the new assignee starts from a
-        clean slate; any evaluation the outgoing assignee already confirmed
-        is untouched (it's a separate row keyed by its own evaluator_id —
-        sub-project #3 slice 1's evaluation feature).
+
+        Does NOT reset sub_status to "pending" (a reassignment always means
+        someone now owns it, so it should never read as untouched). Instead
+        it promotes sub_status forward, in a way that reflects the new
+        assignee's actual starting point rather than clearing progress:
+        - recruiter_screening/board_review (sub-status set has
+          "in_progress"): "pending"/unset -> "in_progress"; "evaluated" ->
+          "in_progress" too, since one evaluation isn't enough and the new
+          assignee still has to submit their own.
+        - behavioral/tech (sub-status set uses scheduling/scheduled
+          instead): "pending"/unset -> "scheduling" (the new assignee has
+          to book a slot from scratch); "evaluated" -> "scheduled" (the
+          interview itself already happened, only the evaluation needs
+          redoing, so scheduling isn't required again).
+        Any other current sub_status ("in_progress", "scheduling",
+        "scheduled") is left exactly as it was — it already reflects an
+        in-flight state that reassignment doesn't change. Any evaluation
+        the outgoing assignee already confirmed is untouched (it's a
+        separate row keyed by its own evaluator_id — sub-project #3 slice
+        1's evaluation feature).
 
         Args:
             session (AsyncSession): Active database async session.
@@ -660,7 +676,15 @@ class BoardService:
             dto.assignee_id,
             current_user.user_id,
         )
-        application.sub_status = "pending"
+        sub_statuses = stage_machine.SUB_STATUS_SETS.get(application.stage, ())
+        if "in_progress" in sub_statuses:
+            if application.sub_status in (None, "pending", "evaluated"):
+                application.sub_status = "in_progress"
+        elif "scheduling" in sub_statuses:
+            if application.sub_status in (None, "pending"):
+                application.sub_status = "scheduling"
+            elif application.sub_status == "evaluated":
+                application.sub_status = "scheduled"
         application = await self.application_repository.update(session, application)
         await self.application_activity_repository.create(
             session,
@@ -745,13 +769,16 @@ class BoardService:
         """Manually advance an application to a round within its current stage.
 
         When the application's current stage is an interview stage
-        (``INTERVIEW_STAGES``), an assignee must be supplied and must be an
-        active holder of ``Permission.RECRUITING_INTERVIEW_EVALUATE``; the
-        assignment is persisted for the target round via
-        ``application_assignment_repository.upsert``. Non-interview stages
-        (e.g. a multi-round ``offer``) ignore ``dto.assignee_id``. Resets
-        ``sub_status`` to ``"pending"`` (mirrors ``reassign``/``change_stage``)
-        so the new round doesn't inherit a prior round's ``"evaluated"`` state.
+        (``INTERVIEW_STAGES``) and ``dto.assignee_id`` is supplied, it must
+        be an active holder of ``Permission.RECRUITING_INTERVIEW_EVALUATE``;
+        the assignment is persisted for the target round via
+        ``application_assignment_repository.upsert``. Supplying no assignee
+        is allowed — mirrors ``change_stage``'s optional-assignee advance —
+        and simply leaves the target round unassigned, to be picked up later
+        via ``reassign``. Non-interview stages (e.g. a multi-round ``offer``)
+        ignore ``dto.assignee_id`` either way. Resets ``sub_status`` to
+        ``"pending"`` (mirrors ``reassign``/``change_stage``) so the new
+        round doesn't inherit a prior round's ``"evaluated"`` state.
 
         Args:
             session (AsyncSession): Active database async session.
@@ -769,9 +796,8 @@ class BoardService:
             ValueError: If the application is missing, the caller is not an
                 owner (collapsed "not found" message), ``dto.round`` is
                 outside ``1..rounds_for_stage(...)`` for the application's
-                current stage, or (for interview stages) ``dto.assignee_id``
-                is missing or is not an active holder of
-                ``Permission.RECRUITING_INTERVIEW_EVALUATE``.
+                current stage, or a supplied ``dto.assignee_id`` is not an
+                active holder of ``Permission.RECRUITING_INTERVIEW_EVALUATE``.
         """
         application, job = await self._load_owned_application(
             session, current_user, application_id, for_update=True
@@ -784,12 +810,7 @@ class BoardService:
                 f"round {dto.round} is out of range for stage "
                 f"{application.stage!s} (configured rounds: {max_round})"
             )
-        if application.stage in INTERVIEW_STAGES:
-            if dto.assignee_id is None:
-                raise ValueError(
-                    f"assignee is required when advancing to round {dto.round} "
-                    f"of {application.stage!s}"
-                )
+        if application.stage in INTERVIEW_STAGES and dto.assignee_id is not None:
             await self._validate_interview_assignee(session, dto.assignee_id)
             await self.application_assignment_repository.upsert(
                 session,
