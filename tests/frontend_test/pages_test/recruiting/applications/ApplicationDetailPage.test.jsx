@@ -763,6 +763,122 @@ describe("ApplicationDetailPage — reassign dialog", () => {
   });
 });
 
+describe("ApplicationDetailPage — operate row", () => {
+  it("labels the decision row Operate, with Blacklist/Reject/Advance on it", async () => {
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
+    });
+    renderPage();
+    await waitLoaded();
+
+    expect(screen.getByText("Operate:")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Blacklist" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Reject" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Advance to next step" }),
+    ).toBeInTheDocument();
+  });
+
+  it("shows a single Advance button that advances the round while one remains, not both round and stage buttons", async () => {
+    authState.userId = OWNER_ID;
+    api.getJob.mockResolvedValue({
+      data: {
+        ...JOB,
+        pipelineConfig: {
+          ...JOB.pipelineConfig,
+          stages: JOB.pipelineConfig.stages.map((s) =>
+            s.stage === "recruiter_screening" ? { ...s, rounds: 2 } : s,
+          ),
+        },
+      },
+    });
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({
+        isOwner: true,
+        stage: "recruiter_screening",
+        currentRound: 1,
+      }),
+    });
+    renderPage();
+    await waitLoaded();
+
+    expect(
+      screen.getByRole("button", { name: "Advance to Round 2" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Advance to next step" }),
+    ).not.toBeInTheDocument();
+  });
+});
+
+describe("ApplicationDetailPage — reject dialog", () => {
+  it("opens on a reason picker with Confirm reject disabled until a reason is chosen", async () => {
+    const user = userEvent.setup();
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
+    });
+    renderPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole("button", { name: "Reject" }));
+
+    expect(
+      screen.getByRole("combobox", { name: /rejection reason/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Confirm reject" }),
+    ).toBeDisabled();
+  });
+
+  it("picking a reason and confirming calls changeApplicationStage with toStage rejected", async () => {
+    const user = userEvent.setup();
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
+    });
+    api.changeApplicationStage.mockResolvedValue({ data: {} });
+    renderPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole("button", { name: "Reject" }));
+    await user.click(
+      screen.getByRole("combobox", { name: /rejection reason/i }),
+    );
+    await user.click(await screen.findByText("Insufficient experience"));
+    await user.click(screen.getByRole("button", { name: "Confirm reject" }));
+
+    await waitFor(() =>
+      expect(api.changeApplicationStage).toHaveBeenCalledWith("101", {
+        toStage: "rejected",
+        reason: "Insufficient experience",
+        note: undefined,
+      }),
+    );
+  });
+
+  it("Cancel closes the dialog without calling the API", async () => {
+    const user = userEvent.setup();
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
+    });
+    renderPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole("button", { name: "Reject" }));
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(
+      screen.queryByRole("button", { name: "Confirm reject" }),
+    ).not.toBeInTheDocument();
+    expect(api.changeApplicationStage).not.toHaveBeenCalled();
+  });
+});
+
 describe("ApplicationDetailPage — advance round", () => {
   /** The base JOB fixture with the tech stage's `rounds` overridden. */
   const jobWithTechRounds = (rounds) => ({
@@ -817,7 +933,7 @@ describe("ApplicationDetailPage — advance round", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("clicking Advance Round on an interview stage opens an inline assignee picker instead of advancing immediately", async () => {
+  it("clicking Advance Round opens a dialog instead of advancing immediately", async () => {
     const user = userEvent.setup();
     authState.userId = OWNER_ID;
     api.getJob.mockResolvedValue({ data: jobWithTechRounds(3) });
@@ -835,9 +951,6 @@ describe("ApplicationDetailPage — advance round", () => {
       screen.getByRole("button", { name: "Confirm advance round" }),
     ).toBeDisabled();
     expect(api.setApplicationRound).not.toHaveBeenCalled();
-    expect(
-      screen.queryByRole("button", { name: "Advance to Round 2" }),
-    ).not.toBeInTheDocument();
   });
 
   it("picking an assignee and confirming calls setApplicationRound with the assignee and updates the displayed round", async () => {
@@ -854,8 +967,7 @@ describe("ApplicationDetailPage — advance round", () => {
     await user.click(
       screen.getByRole("button", { name: "Advance to Round 2" }),
     );
-    await user.click(screen.getByRole("combobox", { name: /assignee/i }));
-    await user.click(await screen.findByText(/Ivan Interviewer/));
+    await user.click(screen.getByRole("radio", { name: /ivan interviewer/i }));
     const confirmButton = screen.getByRole("button", {
       name: "Confirm advance round",
     });
@@ -909,8 +1021,7 @@ describe("ApplicationDetailPage — advance round", () => {
     await user.click(
       screen.getByRole("button", { name: "Advance to Round 2" }),
     );
-    await user.click(screen.getByRole("combobox", { name: /assignee/i }));
-    await user.click(await screen.findByText(/Ivan Interviewer/));
+    await user.click(screen.getByRole("radio", { name: /ivan interviewer/i }));
     await user.click(
       screen.getByRole("button", { name: "Confirm advance round" }),
     );
