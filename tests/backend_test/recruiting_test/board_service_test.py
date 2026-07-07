@@ -191,6 +191,21 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result, [])
 
+    async def test_list_my_jobs_returns_all_jobs_for_read_all_holder(self):
+        job_a = self._job(job_id=1, owner_ids=(9,))
+        job_b = self._job(job_id=2, owner_ids=(8,))
+        self.job_repo.list_all = AsyncMock(return_value=[job_a, job_b])
+        ctx = UserContextDto(
+            sub="s",
+            primary_email="hr@b.com",
+            user_id=2,
+            permissions=frozenset({Permission.RECRUITING_APPLICATION_READ_ALL}),
+        )
+
+        result = await self.service.list_my_jobs(self.session, ctx)
+
+        self.assertEqual({j.id for j in result}, {1, 2})
+
     # -- _require_owner / get_board --
 
     async def test_get_board_groups_by_stage(self):

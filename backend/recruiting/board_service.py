@@ -112,11 +112,13 @@ class BoardService:
     async def list_my_jobs(
         self, session: AsyncSession, current_user: UserContextDto
     ) -> list[BoardJobDto]:
-        """List jobs the caller owns, for the board's job switcher.
+        """List jobs the caller may open the board for, for the job switcher.
 
         Fetches every job via the same list-all repository call
-        ``JobService.list_all_jobs`` uses, and filters ownership in Python.
-        That's fine at dogfood scale (a handful of postings); an
+        ``JobService.list_all_jobs`` uses, and filters in Python: a caller
+        who holds ``Permission.RECRUITING_APPLICATION_READ_ALL`` gets every
+        job; everyone else gets only the jobs they're a configured owner
+        of. That's fine at dogfood scale (a handful of postings); an
         owner-indexed query would be worth adding if the job table grows.
 
         Args:
@@ -124,11 +126,14 @@ class BoardService:
             current_user (UserContextDto): The authenticated caller.
 
         Returns:
-            list[BoardJobDto]: Jobs the caller owns, each with its
-                configured pipeline stages (and each stage's configured
-                round count) in global order.
+            list[BoardJobDto]: Jobs the caller may open the board for, each
+                with its configured pipeline stages (and each stage's
+                configured round count) in global order.
         """
         jobs = await self.job_repository.list_all(session)
+        has_read_all = current_user.has_permission(
+            Permission.RECRUITING_APPLICATION_READ_ALL
+        )
         return [
             BoardJobDto(
                 id=job.job_id,
@@ -145,7 +150,8 @@ class BoardService:
                 ],
             )
             for job in jobs
-            if current_user.user_id in normalized_owner_ids(job.pipeline_config)
+            if has_read_all
+            or current_user.user_id in normalized_owner_ids(job.pipeline_config)
         ]
 
     async def _require_owner(
