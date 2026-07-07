@@ -1023,6 +1023,12 @@ const ApplicationDetailPage = () => {
             value={advanceAssigneeId || undefined}
             onChange={(v) => setAdvanceAssigneeId(v ? String(v) : "")}
           />
+          {(next === "behavioral" || next === "tech") && (
+            <p className="text-sm text-slate-500">
+              You can leave this unassigned for now — an assignee will be
+              required before marking this stage as Scheduled.
+            </p>
+          )}
           <DialogFooter>
             <Button
               variant="outline"

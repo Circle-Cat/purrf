@@ -1188,3 +1188,80 @@ describe("ApplicationDetailPage — Scheduled requires an assignee", () => {
     ).not.toBeInTheDocument();
   });
 });
+
+describe("ApplicationDetailPage — advance dialog Scheduled hint", () => {
+  const HINT_TEXT =
+    "You can leave this unassigned for now — an assignee will be required before marking this stage as Scheduled.";
+
+  it("shows the hint when advancing into Behavioral", async () => {
+    const user = userEvent.setup();
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({
+        isOwner: true,
+        assigneeId: ASSIGNEE_ID,
+        stage: "recruiter_screening",
+      }),
+    });
+    renderPage();
+    await waitLoaded();
+
+    await user.click(
+      screen.getByRole("button", { name: "Advance to next step" }),
+    );
+
+    expect(screen.getByText(HINT_TEXT)).toBeInTheDocument();
+  });
+
+  it("shows the hint when advancing into Tech", async () => {
+    const user = userEvent.setup();
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({
+        isOwner: true,
+        assigneeId: ASSIGNEE_ID,
+        stage: "behavioral",
+      }),
+    });
+    renderPage();
+    await waitLoaded();
+
+    await user.click(
+      screen.getByRole("button", { name: "Advance to next step" }),
+    );
+
+    expect(screen.getByText(HINT_TEXT)).toBeInTheDocument();
+  });
+
+  it("does not show the hint when advancing into Board Review", async () => {
+    const user = userEvent.setup();
+    authState.userId = OWNER_ID;
+    api.getJob.mockResolvedValue({
+      data: {
+        ...JOB,
+        pipelineConfig: {
+          ...JOB.pipelineConfig,
+          stages: [
+            ...JOB.pipelineConfig.stages,
+            { stage: "board_review", rounds: 1 },
+          ],
+        },
+      },
+    });
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({
+        isOwner: true,
+        assigneeId: ASSIGNEE_ID,
+        stage: "tech",
+      }),
+    });
+    renderPage();
+    await waitLoaded();
+
+    await user.click(
+      screen.getByRole("button", { name: "Advance to next step" }),
+    );
+
+    expect(screen.queryByText(HINT_TEXT)).not.toBeInTheDocument();
+  });
+});
