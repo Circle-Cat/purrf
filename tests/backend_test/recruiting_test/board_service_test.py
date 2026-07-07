@@ -607,6 +607,65 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.application.id, 10)
         self.assertFalse(result.is_owner)
 
+    async def test_get_application_detail_can_view_true_for_owner(self):
+        job = self._job(job_id=1, owner_ids=(2,))
+        application = self._application(application_id=10, job_id=1, user_id=3)
+        applicant = self._user(user_id=3)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.assignment_repo.get.return_value = None
+        self.users_repo.get_user_by_user_id = AsyncMock(return_value=applicant)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+
+        result = await self.service.get_application_detail(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertTrue(result.can_view)
+
+    async def test_get_application_detail_can_view_true_for_read_all_non_owner(self):
+        job = self._job(job_id=1, owner_ids=(9,))
+        application = self._application(application_id=10, job_id=1, user_id=3)
+        applicant = self._user(user_id=3)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.assignment_repo.get.return_value = None
+        self.users_repo.get_user_by_user_id = AsyncMock(return_value=applicant)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+        ctx = UserContextDto(
+            sub="s",
+            primary_email="hr@b.com",
+            user_id=2,
+            permissions=frozenset({Permission.RECRUITING_APPLICATION_READ_ALL}),
+        )
+
+        result = await self.service.get_application_detail(self.session, ctx, 10)
+
+        self.assertTrue(result.can_view)
+        self.assertFalse(result.is_owner)
+
+    async def test_get_application_detail_can_view_false_for_plain_assignee(self):
+        job = self._job(job_id=1, owner_ids=(9,))
+        application = self._application(application_id=10, job_id=1, user_id=3)
+        applicant = self._user(user_id=3)
+        assignment = self._assignment(
+            application_id=10,
+            stage=ApplicationStage.RECRUITER_SCREENING,
+            round=1,
+            assignee_id=2,
+        )
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.assignment_repo.get.return_value = assignment
+        self.users_repo.get_user_by_user_id = AsyncMock(return_value=applicant)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+
+        result = await self.service.get_application_detail(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertFalse(result.can_view)
+
     # -- get_resume --
 
     async def test_get_resume_returns_bytes_from_storage(self):
