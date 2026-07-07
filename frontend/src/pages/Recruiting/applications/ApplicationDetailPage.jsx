@@ -394,6 +394,8 @@ const ApplicationDetailPage = () => {
   const [advanceAssigneeId, setAdvanceAssigneeId] = useState("");
   const [advanceOpen, setAdvanceOpen] = useState(false);
   const [switchingSubStatus, setSwitchingSubStatus] = useState(false);
+  const [scheduleAssigneeWarningOpen, setScheduleAssigneeWarningOpen] =
+    useState(false);
   const [advancingRound, setAdvancingRound] = useState(false);
   const [roundAdvanceOpen, setRoundAdvanceOpen] = useState(false);
   const [roundAdvanceAssigneeId, setRoundAdvanceAssigneeId] = useState("");
@@ -504,6 +506,14 @@ const ApplicationDetailPage = () => {
 
   const handleSelectSubStatus = (value) => {
     if (switchingSubStatus) return;
+    if (
+      value === "scheduled" &&
+      ["behavioral", "tech"].includes(detail.application.stage) &&
+      detail.assigneeId == null
+    ) {
+      setScheduleAssigneeWarningOpen(true);
+      return;
+    }
     setSwitchingSubStatus(true);
     setApplicationSubStatus(applicationId, value)
       .then(() => {
@@ -973,6 +983,27 @@ const ApplicationDetailPage = () => {
       </Dialog>
 
       <Dialog
+        open={scheduleAssigneeWarningOpen}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) setScheduleAssigneeWarningOpen(false);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Assignee required</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-slate-700">
+            Please assign a reviewer before marking this as Scheduled.
+          </p>
+          <DialogFooter>
+            <Button onClick={() => setScheduleAssigneeWarningOpen(false)}>
+              OK
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
         open={advanceOpen}
         onOpenChange={(nextOpen) => {
           if (!nextOpen) setAdvanceOpen(false);
@@ -992,6 +1023,12 @@ const ApplicationDetailPage = () => {
             value={advanceAssigneeId || undefined}
             onChange={(v) => setAdvanceAssigneeId(v ? String(v) : "")}
           />
+          {(next === "behavioral" || next === "tech") && (
+            <p className="text-sm text-slate-500">
+              You can leave this unassigned for now — an assignee will be
+              required before marking this stage as Scheduled.
+            </p>
+          )}
           <DialogFooter>
             <Button
               variant="outline"
