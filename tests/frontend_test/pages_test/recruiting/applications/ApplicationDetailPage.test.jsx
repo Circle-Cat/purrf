@@ -1082,3 +1082,109 @@ describe("ApplicationDetailPage — activity timeline", () => {
     ).not.toBeInTheDocument();
   });
 });
+
+describe("ApplicationDetailPage — Scheduled requires an assignee", () => {
+  it("blocks marking a behavioral application as Scheduled when unassigned and shows a warning", async () => {
+    const user = userEvent.setup();
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({
+        isOwner: true,
+        assigneeId: null,
+        stage: "behavioral",
+      }),
+    });
+    renderPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole("button", { name: "Scheduled" }));
+
+    expect(
+      screen.getByText(
+        "Please assign a reviewer before marking this as Scheduled.",
+      ),
+    ).toBeInTheDocument();
+    expect(api.setApplicationSubStatus).not.toHaveBeenCalled();
+  });
+
+  it("OK closes the warning dialog", async () => {
+    const user = userEvent.setup();
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({
+        isOwner: true,
+        assigneeId: null,
+        stage: "behavioral",
+      }),
+    });
+    renderPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole("button", { name: "Scheduled" }));
+    await user.click(screen.getByRole("button", { name: "OK" }));
+
+    expect(
+      screen.queryByText(
+        "Please assign a reviewer before marking this as Scheduled.",
+      ),
+    ).not.toBeInTheDocument();
+  });
+
+  it("allows marking a tech application as Scheduled once an assignee is set", async () => {
+    const user = userEvent.setup();
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({
+        isOwner: true,
+        assigneeId: ASSIGNEE_ID,
+        stage: "tech",
+      }),
+    });
+    api.setApplicationSubStatus.mockResolvedValue({ data: {} });
+    renderPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole("button", { name: "Scheduled" }));
+
+    await waitFor(() =>
+      expect(api.setApplicationSubStatus).toHaveBeenCalledWith(
+        "101",
+        "scheduled",
+      ),
+    );
+    expect(
+      screen.queryByText(
+        "Please assign a reviewer before marking this as Scheduled.",
+      ),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not guard other sub-status values even when unassigned", async () => {
+    const user = userEvent.setup();
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({
+        isOwner: true,
+        assigneeId: null,
+        stage: "behavioral",
+      }),
+    });
+    api.setApplicationSubStatus.mockResolvedValue({ data: {} });
+    renderPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole("button", { name: "Scheduling" }));
+
+    await waitFor(() =>
+      expect(api.setApplicationSubStatus).toHaveBeenCalledWith(
+        "101",
+        "scheduling",
+      ),
+    );
+    expect(
+      screen.queryByText(
+        "Please assign a reviewer before marking this as Scheduled.",
+      ),
+    ).not.toBeInTheDocument();
+  });
+});
