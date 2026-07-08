@@ -10,6 +10,7 @@ from backend.entity.evaluation_entity import EvaluationEntity
 from backend.entity.job_entity import JobEntity
 from backend.entity.users_entity import UsersEntity
 from backend.common.recruiting_enums import ApplicationStage, JobKind, JobStatus
+from backend.common.permissions import Permission
 from backend.repository.application_activity_repository import (
     ApplicationActivityRepository,
 )
@@ -591,6 +592,24 @@ class TestEvaluationService(unittest.IsolatedAsyncioTestCase):
             await self.service.get_for_application(
                 self.session, self._ctx(user_id=2), 999
             )
+
+    async def test_get_for_application_succeeds_for_read_all_non_owner(self):
+        application = self._application(job_id=1, stage=ApplicationStage.TECH)
+        job = self._job(job_id=1, owner_ids=(9,))
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.assignment_repo.get.return_value = None
+        self.evaluation_repo.list_by_application.return_value = []
+        ctx = UserContextDto(
+            sub="s",
+            primary_email="hr@b.com",
+            user_id=2,
+            permissions=frozenset({Permission.RECRUITING_APPLICATION_READ_ALL}),
+        )
+
+        result = await self.service.get_for_application(self.session, ctx, 10)
+
+        self.assertEqual(result, [])
 
 
 if __name__ == "__main__":

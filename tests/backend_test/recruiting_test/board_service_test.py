@@ -20,6 +20,7 @@ from backend.entity.application_entity import ApplicationEntity
 from backend.entity.application_submission_entity import ApplicationSubmissionEntity
 from backend.entity.job_entity import JobEntity
 from backend.entity.users_entity import UsersEntity
+from backend.common.permissions import Permission
 from backend.common.recruiting_enums import ApplicationStage, JobKind, JobStatus
 from backend.repository.application_assignment_repository import (
     ApplicationAssignmentRepository,
@@ -190,6 +191,21 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result, [])
 
+    async def test_list_my_jobs_returns_all_jobs_for_read_all_holder(self):
+        job_a = self._job(job_id=1, owner_ids=(9,))
+        job_b = self._job(job_id=2, owner_ids=(8,))
+        self.job_repo.list_all = AsyncMock(return_value=[job_a, job_b])
+        ctx = UserContextDto(
+            sub="s",
+            primary_email="hr@b.com",
+            user_id=2,
+            permissions=frozenset({Permission.RECRUITING_APPLICATION_READ_ALL}),
+        )
+
+        result = await self.service.list_my_jobs(self.session, ctx)
+
+        self.assertEqual({j.id for j in result}, {1, 2})
+
     # -- _require_owner / get_board --
 
     async def test_get_board_groups_by_stage(self):
@@ -333,6 +349,21 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaises(ValueError):
             await self.service.get_board(self.session, self._ctx(user_id=2), 999)
+
+    async def test_get_board_succeeds_for_read_all_non_owner(self):
+        job = self._job(job_id=1, owner_ids=(9,))
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.list_by_job = AsyncMock(return_value=[])
+        ctx = UserContextDto(
+            sub="s",
+            primary_email="hr@b.com",
+            user_id=2,
+            permissions=frozenset({Permission.RECRUITING_APPLICATION_READ_ALL}),
+        )
+
+        result = await self.service.get_board(self.session, ctx, 1)
+
+        self.assertEqual(result, {})
 
     # -- get_application_detail --
 
@@ -554,6 +585,86 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(result.is_owner)
         self.assertIsNone(result.assignee_id)
+
+    async def test_get_application_detail_succeeds_for_read_all_non_owner(self):
+        job = self._job(job_id=1, owner_ids=(9,))
+        application = self._application(application_id=10, job_id=1, user_id=3)
+        applicant = self._user(user_id=3)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.assignment_repo.get.return_value = None
+        self.users_repo.get_user_by_user_id = AsyncMock(return_value=applicant)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+        ctx = UserContextDto(
+            sub="s",
+            primary_email="hr@b.com",
+            user_id=2,
+            permissions=frozenset({Permission.RECRUITING_APPLICATION_READ_ALL}),
+        )
+
+        result = await self.service.get_application_detail(self.session, ctx, 10)
+
+        self.assertEqual(result.application.id, 10)
+        self.assertFalse(result.is_owner)
+
+    async def test_get_application_detail_can_view_true_for_owner(self):
+        job = self._job(job_id=1, owner_ids=(2,))
+        application = self._application(application_id=10, job_id=1, user_id=3)
+        applicant = self._user(user_id=3)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.assignment_repo.get.return_value = None
+        self.users_repo.get_user_by_user_id = AsyncMock(return_value=applicant)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+
+        result = await self.service.get_application_detail(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertTrue(result.can_view)
+
+    async def test_get_application_detail_can_view_true_for_read_all_non_owner(self):
+        job = self._job(job_id=1, owner_ids=(9,))
+        application = self._application(application_id=10, job_id=1, user_id=3)
+        applicant = self._user(user_id=3)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.assignment_repo.get.return_value = None
+        self.users_repo.get_user_by_user_id = AsyncMock(return_value=applicant)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+        ctx = UserContextDto(
+            sub="s",
+            primary_email="hr@b.com",
+            user_id=2,
+            permissions=frozenset({Permission.RECRUITING_APPLICATION_READ_ALL}),
+        )
+
+        result = await self.service.get_application_detail(self.session, ctx, 10)
+
+        self.assertTrue(result.can_view)
+        self.assertFalse(result.is_owner)
+
+    async def test_get_application_detail_can_view_false_for_plain_assignee(self):
+        job = self._job(job_id=1, owner_ids=(9,))
+        application = self._application(application_id=10, job_id=1, user_id=3)
+        applicant = self._user(user_id=3)
+        assignment = self._assignment(
+            application_id=10,
+            stage=ApplicationStage.RECRUITER_SCREENING,
+            round=1,
+            assignee_id=2,
+        )
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.assignment_repo.get.return_value = assignment
+        self.users_repo.get_user_by_user_id = AsyncMock(return_value=applicant)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+
+        result = await self.service.get_application_detail(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertFalse(result.can_view)
 
     # -- get_resume --
 
@@ -2235,6 +2346,27 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             await self.service.add_comment(self.session, self._ctx(user_id=99), 10, dto)
         self.assertEqual(str(ctx.exception), "application 10 not found")
         self.comment_repo.create.assert_not_awaited()
+
+    async def test_get_application_activity_succeeds_for_read_all_non_owner(self):
+        job = self._job(job_id=1, owner_ids=(9,))
+        application = self._application(application_id=10, job_id=1, user_id=3)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.users_repo.get_all_by_ids = AsyncMock(return_value=[])
+        self.activity_repo.list_by_application.return_value = []
+        ctx = UserContextDto(
+            sub="s",
+            primary_email="hr@b.com",
+            user_id=2,
+            permissions=frozenset({Permission.RECRUITING_APPLICATION_READ_ALL}),
+        )
+
+        result = await self.service.get_application_activity(self.session, ctx, 10)
+
+        self.assertEqual(result, [])
+        self.activity_repo.list_by_application.assert_awaited_once_with(
+            self.session, 10
+        )
 
 
 if __name__ == "__main__":

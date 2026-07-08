@@ -112,11 +112,13 @@ class BoardService:
     async def list_my_jobs(
         self, session: AsyncSession, current_user: UserContextDto
     ) -> list[BoardJobDto]:
-        """List jobs the caller owns, for the board's job switcher.
+        """List jobs the caller may open the board for, for the job switcher.
 
         Fetches every job via the same list-all repository call
-        ``JobService.list_all_jobs`` uses, and filters ownership in Python.
-        That's fine at dogfood scale (a handful of postings); an
+        ``JobService.list_all_jobs`` uses, and filters in Python: a caller
+        who holds ``Permission.RECRUITING_APPLICATION_READ_ALL`` gets every
+        job; everyone else gets only the jobs they're a configured owner
+        of. That's fine at dogfood scale (a handful of postings); an
         owner-indexed query would be worth adding if the job table grows.
 
         Args:
@@ -124,11 +126,14 @@ class BoardService:
             current_user (UserContextDto): The authenticated caller.
 
         Returns:
-            list[BoardJobDto]: Jobs the caller owns, each with its
-                configured pipeline stages (and each stage's configured
-                round count) in global order.
+            list[BoardJobDto]: Jobs the caller may open the board for, each
+                with its configured pipeline stages (and each stage's
+                configured round count) in global order.
         """
         jobs = await self.job_repository.list_all(session)
+        has_read_all = current_user.has_permission(
+            Permission.RECRUITING_APPLICATION_READ_ALL
+        )
         return [
             BoardJobDto(
                 id=job.job_id,
@@ -145,11 +150,17 @@ class BoardService:
                 ],
             )
             for job in jobs
-            if current_user.user_id in normalized_owner_ids(job.pipeline_config)
+            if has_read_all
+            or current_user.user_id in normalized_owner_ids(job.pipeline_config)
         ]
 
     async def _require_owner(
-        self, session: AsyncSession, current_user: UserContextDto, job_id: int
+        self,
+        session: AsyncSession,
+        current_user: UserContextDto,
+        job_id: int,
+        *,
+        allow_read_all: bool = False,
     ) -> JobEntity:
         """Load a job and assert the caller is one of its configured owners.
 
@@ -157,17 +168,26 @@ class BoardService:
             session (AsyncSession): Active database async session.
             current_user (UserContextDto): The authenticated caller.
             job_id (int): The posting to load.
+            allow_read_all (bool): When True, a caller who holds
+                ``Permission.RECRUITING_APPLICATION_READ_ALL`` also passes,
+                regardless of ownership.
 
         Returns:
             JobEntity: The loaded job.
 
         Raises:
-            ValueError: If the job is missing or the caller is not an owner.
+            ValueError: If the job is missing, or the caller is neither an
+                owner nor (when ``allow_read_all`` is True) a holder of
+                ``RECRUITING_APPLICATION_READ_ALL``.
         """
         job = await self.job_repository.get_by_job_id(session, job_id)
-        if job is None or current_user.user_id not in normalized_owner_ids(
+        is_owner = job is not None and current_user.user_id in normalized_owner_ids(
             job.pipeline_config
-        ):
+        )
+        is_read_all = allow_read_all and current_user.has_permission(
+            Permission.RECRUITING_APPLICATION_READ_ALL
+        )
+        if job is None or not (is_owner or is_read_all):
             raise ValueError("you are not an owner of this job")
         return job
 
@@ -196,7 +216,9 @@ class BoardService:
         Raises:
             ValueError: If the caller is not an owner of the job.
         """
-        job = await self._require_owner(session, current_user, job_id)
+        job = await self._require_owner(
+            session, current_user, job_id, allow_read_all=True
+        )
         rows = await self.application_repository.list_by_job(session, job_id)
 
         default_by_stage: dict[ApplicationStage, int] = {}
@@ -256,6 +278,7 @@ class BoardService:
         for_update: bool = False,
         allow_assignee: bool = False,
         allow_self: bool = False,
+        allow_read_all: bool = False,
     ) -> tuple[ApplicationEntity, JobEntity]:
         """Load an application and assert the caller may read/write it.
 
@@ -278,6 +301,11 @@ class BoardService:
                 assignment — used by ``get_resume`` so a candidate can read
                 her own application's résumé bytes. Every other caller
                 leaves this False and stays owner/assignee-only.
+            allow_read_all (bool): When True, a caller who holds
+                ``Permission.RECRUITING_APPLICATION_READ_ALL`` also passes,
+                regardless of ownership/assignment. Read-only call sites opt
+                in explicitly; every mutation path leaves this False, so
+                ``read.all`` never grants a write.
 
         Returns:
             tuple[ApplicationEntity, JobEntity]: The application and its job.
@@ -286,11 +314,13 @@ class BoardService:
             ValueError: If the application is missing, or the caller is
                 none of: an owner of the application's job, (when
                 ``allow_assignee`` is True) the application's current-stage
-                assignee, or (when ``allow_self`` is True) the application's
-                own submitter. All cases raise the same generic message
-                (mirroring ``ApplicationService._load_owned``) so response
-                bodies don't leak which application ids exist to
-                unauthorized callers.
+                assignee, (when ``allow_self`` is True) the application's
+                own submitter, or (when ``allow_read_all`` is True) a holder
+                of ``RECRUITING_APPLICATION_READ_ALL``. All cases raise the
+                same generic message (mirroring
+                ``ApplicationService._load_owned``) so response bodies
+                don't leak which application ids exist to unauthorized
+                callers.
         """
         application = await self.application_repository.get_by_id(
             session, application_id, for_update=for_update
@@ -314,7 +344,10 @@ class BoardService:
                 and assignment.assignee_id == current_user.user_id
             )
         is_self = allow_self and application.user_id == current_user.user_id
-        if job is None or not (is_owner or is_assignee or is_self):
+        is_read_all = allow_read_all and current_user.has_permission(
+            Permission.RECRUITING_APPLICATION_READ_ALL
+        )
+        if job is None or not (is_owner or is_assignee or is_self or is_read_all):
             raise ValueError(f"application {application_id} not found")
         return application, job
 
@@ -324,12 +357,12 @@ class BoardService:
         current_user: UserContextDto,
         application_id: int,
     ) -> ApplicationDetailDto:
-        """Return the full view of one application, for its owner or assignee.
+        """Return the full view of one application, for its owner, assignee, or read.all holder.
 
-        Readable by either a configured owner of the job, or (as of
-        sub-project #3 slice 1) the application's current-stage assignee —
-        PR 3 merges the owner's board dialog and the assignee's evaluation
-        view into one shared page served by this same read endpoint.
+        Readable by any of: a configured owner of the job, the application's
+        current-stage assignee (as of sub-project #3 slice 1, merging the
+        owner's board dialog and the assignee's evaluation view into one
+        shared page), or a caller holding ``Permission.RECRUITING_APPLICATION_READ_ALL``.
 
         Args:
             session (AsyncSession): Active database async session.
@@ -339,21 +372,25 @@ class BoardService:
         Returns:
             ApplicationDetailDto: The application, applicant identity,
                 résumé availability, the job's live form schema (so the
-                dialog can label answers by question id), and two role
-                signals — ``is_owner`` and ``assignee_id`` — so the frontend
-                can decide which of the owner-decision area / evaluator
-                rubric area to render without a second round-trip.
+                dialog can label answers by question id), and three role
+                signals — ``is_owner``, ``can_view``, and ``assignee_id`` —
+                so the frontend can decide which of the owner-decision area /
+                evaluator rubric area to render without a second round-trip.
 
         Raises:
             ValueError: If the application is missing, or the caller is
-                neither an owner of the application's job nor its
-                current-stage assignee. All cases raise the same generic
-                message (mirroring ``ApplicationService._load_owned``) so
-                response bodies don't leak which application ids exist to
-                unauthorized callers.
+                none of: an owner of the application's job, its current-stage
+                assignee, or a holder of ``Permission.RECRUITING_APPLICATION_READ_ALL``.
+                All cases raise the same generic message (mirroring
+                ``ApplicationService._load_owned``) so response bodies don't leak
+                which application ids exist to unauthorized callers.
         """
         application, job = await self._load_owned_application(
-            session, current_user, application_id, allow_assignee=True
+            session,
+            current_user,
+            application_id,
+            allow_assignee=True,
+            allow_read_all=True,
         )
         user = await self.users_repository.get_user_by_user_id(
             session, application.user_id
@@ -362,6 +399,9 @@ class BoardService:
             session, application_id
         )
         is_owner = current_user.user_id in normalized_owner_ids(job.pipeline_config)
+        can_view = is_owner or current_user.has_permission(
+            Permission.RECRUITING_APPLICATION_READ_ALL
+        )
         assignment = await self.application_assignment_repository.get(
             session, application_id, application.stage, application.current_round
         )
@@ -386,6 +426,7 @@ class BoardService:
             ),
             form_schema=job.form_schema,
             is_owner=is_owner,
+            can_view=can_view,
             assignee_id=assignment.assignee_id if assignment is not None else None,
         )
 
@@ -429,12 +470,13 @@ class BoardService:
         current_user: UserContextDto,
         application_id: int,
     ) -> list[ApplicationActivityDto]:
-        """Return an application's audit timeline, newest first, owner-only.
+        """Return an application's audit timeline, newest first, owner or read.all only.
 
         Unlike ``get_application_detail``/``get_resume``, this is NOT
         readable by the current-stage assignee — it's an owner-facing audit
         view (mirrors ``EvaluationSummary``'s owner-only placement on the
-        frontend), not something an evaluator needs while grading.
+        frontend), not something an evaluator needs while grading. Accessible
+        to the job's owners or callers holding ``Permission.RECRUITING_APPLICATION_READ_ALL``.
 
         Assignee names (for ``stage_changed``/``round_advanced``/
         ``auto_assigned``'s ``assigneeId``, and ``reassigned``'s
@@ -454,11 +496,14 @@ class BoardService:
                 assignee name(s) merged into a copy of ``details``.
 
         Raises:
-            ValueError: If the application is missing, or the caller is not
-                an owner of the application's job (collapsed "not found"
+            ValueError: If the application is missing, or the caller is neither
+                an owner of the application's job nor a holder of
+                ``Permission.RECRUITING_APPLICATION_READ_ALL`` (collapsed "not found"
                 message, same as the other owner-facing reads).
         """
-        await self._load_owned_application(session, current_user, application_id)
+        await self._load_owned_application(
+            session, current_user, application_id, allow_read_all=True
+        )
         rows = await self.application_activity_repository.list_by_application(
             session, application_id
         )

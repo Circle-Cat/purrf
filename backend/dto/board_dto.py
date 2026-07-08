@@ -80,6 +80,11 @@ class ApplicationDetailDto(BaseDto):
     # the frontend decide which of the owner-decision area / evaluator-rubric
     # area to render, without a second round-trip.
     is_owner: bool = False
+    # Whether the caller may view the owner-facing info panel at all — true
+    # for a real owner or a RECRUITING_APPLICATION_READ_ALL holder. Distinct
+    # from is_owner: a read.all viewer sees everything owners see, minus any
+    # actionable control (those still gate on is_owner specifically).
+    can_view: bool = False
     assignee_id: int | None = None
 
 
