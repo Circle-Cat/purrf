@@ -5,7 +5,10 @@ import * as api from "@/api/adminPermissionsApi";
 
 vi.mock("@/api/adminPermissionsApi");
 
-const catalog = ["permission.manage", "mentorship.round.read"];
+const catalog = [
+  { name: "permission.manage", description: "d1" },
+  { name: "mentorship.round.read", description: "d2" },
+];
 
 beforeEach(() => {
   vi.clearAllMocks();

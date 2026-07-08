@@ -8,7 +8,10 @@ import * as api from "@/api/adminPermissionsApi";
 vi.mock("@/context/auth", () => ({ useAuth: vi.fn() }));
 vi.mock("@/api/adminPermissionsApi");
 
-const catalog = ["mentorship.round.read", "permission.manage"];
+const catalog = [
+  { name: "mentorship.round.read", description: "d1" },
+  { name: "permission.manage", description: "d2" },
+];
 
 describe("UsersTab", () => {
   beforeEach(() => {

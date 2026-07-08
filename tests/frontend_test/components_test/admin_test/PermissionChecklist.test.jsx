@@ -3,9 +3,9 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import PermissionChecklist from "@/pages/AdminPermissions/components/PermissionChecklist";
 
 const catalog = [
-  "mentorship.round.read",
-  "mentorship.round.write",
-  "permission.manage",
+  { name: "mentorship.round.read", description: "d1" },
+  { name: "mentorship.round.write", description: "d2" },
+  { name: "permission.manage", description: "d3" },
 ];
 
 describe("PermissionChecklist", () => {

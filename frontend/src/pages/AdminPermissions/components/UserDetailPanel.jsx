@@ -19,7 +19,7 @@ import {
  *
  * @param {Object} props
  * @param {Object} props.selectedUser - AdminUser (non-null).
- * @param {string[]} props.catalog - Grantable permission names.
+ * @param {{name: string, description: string}[]} props.catalog - Grantable permissions with descriptions.
  * @param {() => Promise<void>} props.onMakeSuperAdmin
  * @param {() => Promise<void>} props.onRevokeSuperAdmin
  */

@@ -97,13 +97,14 @@ class PermissionAdminController:
 
     async def list_permissions(self, current_user: UserContextDto):
         """
-        Return the grantable permission catalog (the code enum).
+        Return the grantable permission catalog, each with its description.
 
         Args:
             current_user (UserContextDto): The authenticated caller (injected).
 
         Returns:
-            A standardized API response wrapping ``{"permissions": [...]}``.
+            A standardized API response wrapping
+            ``{"permissions": [{"name": ..., "description": ...}, ...]}``.
         """
         return api_response(
             message="Permission catalog",

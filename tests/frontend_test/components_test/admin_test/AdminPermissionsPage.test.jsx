@@ -16,7 +16,12 @@ beforeEach(() => {
     permissions: ["permission.manage"],
   });
   api.getPermissionCatalog.mockResolvedValue({
-    data: { permissions: ["permission.manage", "mentorship.round.read"] },
+    data: {
+      permissions: [
+        { name: "permission.manage", description: "d1" },
+        { name: "mentorship.round.read", description: "d2" },
+      ],
+    },
   });
   api.getUsers.mockResolvedValue({
     data: {
@@ -83,5 +88,13 @@ describe("AdminPermissions page", () => {
     const idInput = screen.getByPlaceholderText("User ID");
     await user.type(idInput, "a1b2c3");
     expect(idInput).toHaveValue("123");
+  });
+
+  it("renders the Understand permissions panel trigger", async () => {
+    render(<AdminPermissions />);
+    await waitFor(() => expect(api.getPermissionCatalog).toHaveBeenCalled());
+    expect(
+      screen.getByRole("button", { name: "Understand permissions" }),
+    ).toBeInTheDocument();
   });
 });

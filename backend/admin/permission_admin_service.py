@@ -6,11 +6,13 @@ caller-supplied permission name is validated against it.
 """
 
 from backend.common.identity_type import IdentityType
+from backend.common.permission_descriptions import PERMISSION_DESCRIPTIONS
 from backend.common.permissions import Permission
 from backend.dto.admin_permission_dto import (
     AdminUserDto,
     AuditListDto,
     GrantDto,
+    PermissionCatalogEntryDto,
     UserListDto,
     UserPermissionsViewDto,
 )
@@ -37,9 +39,14 @@ class PermissionAdminService:
         self._users = users_repository
         self._perms = user_permissions_repository
 
-    def list_permission_catalog(self) -> list[str]:
-        """Every permission the admin UI can grant — the code enum, sorted."""
-        return sorted(_VALID_PERMISSION_VALUES)
+    def list_permission_catalog(self) -> list[PermissionCatalogEntryDto]:
+        """Every permission the admin UI can grant, with its description."""
+        return [
+            PermissionCatalogEntryDto(
+                name=name, description=PERMISSION_DESCRIPTIONS[Permission(name)]
+            )
+            for name in sorted(_VALID_PERMISSION_VALUES)
+        ]
 
     async def list_users(
         self,

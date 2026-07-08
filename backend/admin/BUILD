@@ -6,6 +6,7 @@ py_library(
     name = "permission_admin_service",
     srcs = ["permission_admin_service.py"],
     deps = [
+        "//backend/common:permission_descriptions",
         "//backend/common:permissions",
         "//backend/dto",
     ],

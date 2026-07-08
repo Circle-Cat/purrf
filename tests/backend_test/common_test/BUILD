@@ -17,6 +17,15 @@ py_test(
 )
 
 py_test(
+    name = "permission_descriptions_test",
+    srcs = ["permission_descriptions_test.py"],
+    deps = [
+        "//backend/common:permission_descriptions",
+        "//backend/common:permissions",
+    ],
+)
+
+py_test(
     name = "recruiting_enums_test",
     srcs = ["recruiting_enums_test.py"],
     deps = [

@@ -9,7 +9,7 @@ import { Dialog, DialogContent } from "@/components/ui/dialog";
  * permission controls.
  *
  * @param {Object} props
- * @param {string[]} props.catalog - Grantable permission names.
+ * @param {{name: string, description: string}[]} props.catalog - Grantable permissions with descriptions.
  */
 const UsersTab = ({ catalog }) => {
   const {
