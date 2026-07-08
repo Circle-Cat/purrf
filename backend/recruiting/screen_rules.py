@@ -7,7 +7,7 @@ independently unit-testable, called from ApplicationService.submit().
 _ACTION_PRIORITY = ("reject", "auto_hire", "qualify")
 
 
-def _normalized_values(value):
+def _normalized_values(value: str | list[str]) -> list[str]:
     """A condition's value as a lowercased list, whether stored as a
     single string or a list of strings.
 
@@ -21,7 +21,7 @@ def _normalized_values(value):
     return [v.lower() for v in values]
 
 
-def _email_domain_matches(condition, email):
+def _email_domain_matches(condition: dict, email: str) -> bool:
     """True when ``email``'s domain satisfies an email_domain condition.
 
     Args:
@@ -41,7 +41,7 @@ def _email_domain_matches(condition, email):
     return False
 
 
-def _answer_matches(condition, answers):
+def _answer_matches(condition: dict, answers: dict) -> bool:
     """True when the candidate's answer satisfies an answer condition.
 
     A missing/unanswered question never matches — screening only acts on
@@ -70,7 +70,7 @@ def _answer_matches(condition, answers):
     return False
 
 
-def _rule_matches(rule, email, answers):
+def _rule_matches(rule: dict, email: str, answers: dict) -> bool:
     """True when a single rule's condition is satisfied.
 
     Args:
@@ -90,7 +90,7 @@ def _rule_matches(rule, email, answers):
     return False
 
 
-def evaluate(screen_rules, email, answers):
+def evaluate(screen_rules: dict | None, email: str, answers: dict) -> dict:
     """Evaluate a job's screen_rules against one submission.
 
     Args:
