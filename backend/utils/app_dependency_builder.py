@@ -94,6 +94,9 @@ from backend.repository.application_assignment_repository import (
 from backend.repository.application_activity_repository import (
     ApplicationActivityRepository,
 )
+from backend.repository.application_comment_repository import (
+    ApplicationCommentRepository,
+)
 from backend.repository.application_submission_repository import (
     ApplicationSubmissionRepository,
 )
@@ -555,6 +558,7 @@ class AppDependencyBuilder:
         self.application_repository = ApplicationRepository()
         self.application_assignment_repository = ApplicationAssignmentRepository()
         self.application_activity_repository = ApplicationActivityRepository()
+        self.application_comment_repository = ApplicationCommentRepository()
         self.application_submission_repository = ApplicationSubmissionRepository()
         self.resume_storage = ResumeStorage(os.getenv(RESUME_BUCKET))
         self.application_service = ApplicationService(
@@ -582,6 +586,7 @@ class AppDependencyBuilder:
             self.application_assignment_repository,
             self.user_permissions_repository,
             self.application_activity_repository,
+            self.application_comment_repository,
         )
         self.board_controller = BoardController(
             self.board_service,

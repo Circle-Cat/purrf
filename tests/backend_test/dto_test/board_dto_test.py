@@ -6,6 +6,7 @@ from backend.dto.board_dto import (
     BlacklistDto,
     BoardCardDto,
     BoardJobDto,
+    CommentCreateDto,
     PipelineStageInfoDto,
     RoundChangeDto,
     StageChangeDto,
@@ -76,6 +77,24 @@ class TestBlacklistDto(unittest.TestCase):
     def test_missing_reason_is_rejected(self):
         with self.assertRaises(pydantic.ValidationError):
             BlacklistDto.model_validate({"userId": 3, "applicationId": 10})
+
+
+class TestCommentCreateDto(unittest.TestCase):
+    def test_accepts_non_blank_body(self):
+        dto = CommentCreateDto.model_validate({"body": "Looks strong."})
+        self.assertEqual(dto.body, "Looks strong.")
+
+    def test_blank_body_is_rejected(self):
+        with self.assertRaises(pydantic.ValidationError):
+            CommentCreateDto.model_validate({"body": "   "})
+
+    def test_body_over_4000_chars_is_rejected(self):
+        with self.assertRaises(pydantic.ValidationError):
+            CommentCreateDto.model_validate({"body": "x" * 4001})
+
+    def test_body_at_exactly_4000_chars_is_accepted(self):
+        dto = CommentCreateDto.model_validate({"body": "x" * 4000})
+        self.assertEqual(len(dto.body), 4000)
 
 
 class TestRoundChangeDto(unittest.TestCase):

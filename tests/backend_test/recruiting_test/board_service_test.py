@@ -8,6 +8,7 @@ from backend.recruiting.recruiting_mapper import RecruitingMapper
 from backend.dto.board_dto import (
     REJECT_REASONS,
     BlacklistDto,
+    CommentCreateDto,
     ReassignDto,
     RoundChangeDto,
     StageChangeDto,
@@ -25,6 +26,9 @@ from backend.repository.application_assignment_repository import (
 )
 from backend.repository.application_activity_repository import (
     ApplicationActivityRepository,
+)
+from backend.repository.application_comment_repository import (
+    ApplicationCommentRepository,
 )
 
 
@@ -51,6 +55,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.activity_repo = create_autospec(
             ApplicationActivityRepository, instance=True
         )
+        self.comment_repo = create_autospec(ApplicationCommentRepository, instance=True)
         self.session = AsyncMock()
         self.service = BoardService(
             self.job_repo,
@@ -62,6 +67,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             self.assignment_repo,
             self.user_permissions_repo,
             self.activity_repo,
+            self.comment_repo,
         )
         # Default persistence mocks: echo the entity back, like SQLAlchemy's
         # merge-and-flush does when nothing else stubs them out.
@@ -2069,6 +2075,166 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             await self.service.get_application_activity(
                 self.session, self._ctx(user_id=99), 10
             )
+
+    # -- list_comments / add_comment --
+
+    async def test_list_comments_returns_dtos_with_resolved_author_names(self):
+        job = self._job(job_id=1, owner_ids=(2,))
+        application = self._application(application_id=10, job_id=1)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        row = SimpleNamespace(
+            comment_id=1,
+            application_id=10,
+            author_id=42,
+            body="Looks strong.",
+            created_at=datetime(2026, 7, 7, 12, 0, 0),
+        )
+        self.comment_repo.list_by_application = AsyncMock(return_value=[row])
+        self.users_repo.get_all_by_ids = AsyncMock(
+            return_value=[self._user(user_id=42, first="Ivan", last="Interviewer")]
+        )
+
+        result = await self.service.list_comments(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].id, 1)
+        self.assertEqual(result[0].body, "Looks strong.")
+        self.assertEqual(result[0].author_id, 42)
+        self.assertEqual(result[0].author_name, "Ivan Interviewer")
+
+    async def test_list_comments_unresolved_author_falls_back_to_user_id(self):
+        job = self._job(job_id=1, owner_ids=(2,))
+        application = self._application(application_id=10, job_id=1)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        row = SimpleNamespace(
+            comment_id=1,
+            application_id=10,
+            author_id=99,
+            body="Hi.",
+            created_at=datetime(2026, 7, 7, 12, 0, 0),
+        )
+        self.comment_repo.list_by_application = AsyncMock(return_value=[row])
+        self.users_repo.get_all_by_ids = AsyncMock(return_value=[])
+
+        result = await self.service.list_comments(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertEqual(result[0].author_name, "User 99")
+
+    async def test_list_comments_succeeds_for_current_stage_assignee(self):
+        """Unlike get_application_activity, the current-stage assignee (not
+        just the owner) can read comments -- same access as
+        get_application_detail."""
+        job = self._job(job_id=1, owner_ids=(9,))
+        application = self._application(
+            application_id=10,
+            job_id=1,
+            stage=ApplicationStage.RECRUITER_SCREENING,
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.assignment_repo.get.return_value = MagicMock(assignee_id=2)
+        self.comment_repo.list_by_application = AsyncMock(return_value=[])
+
+        result = await self.service.list_comments(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertEqual(result, [])
+
+    async def test_list_comments_non_owner_non_assignee_gets_collapsed_not_found_message(
+        self,
+    ):
+        job = self._job(job_id=1, owner_ids=(2,))
+        application = self._application(application_id=10, job_id=1)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.assignment_repo.get.return_value = None
+
+        with self.assertRaises(ValueError) as ctx:
+            await self.service.list_comments(self.session, self._ctx(user_id=99), 10)
+        self.assertEqual(str(ctx.exception), "application 10 not found")
+        self.comment_repo.list_by_application.assert_not_awaited()
+
+    async def test_add_comment_persists_and_returns_dto_with_authors_own_name(self):
+        job = self._job(job_id=1, owner_ids=(2,))
+        application = self._application(application_id=10, job_id=1)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        created_row = SimpleNamespace(
+            comment_id=5,
+            application_id=10,
+            author_id=2,
+            body="Great candidate.",
+            created_at=datetime(2026, 7, 7, 12, 0, 0),
+        )
+        self.comment_repo.create = AsyncMock(return_value=created_row)
+        self.users_repo.get_user_by_user_id = AsyncMock(
+            return_value=self._user(user_id=2, first="Owen", last="Owner")
+        )
+
+        dto = CommentCreateDto(body="Great candidate.")
+        result = await self.service.add_comment(
+            self.session, self._ctx(user_id=2), 10, dto
+        )
+
+        self.comment_repo.create.assert_awaited_once_with(
+            self.session, 10, 2, "Great candidate."
+        )
+        self.assertEqual(result.id, 5)
+        self.assertEqual(result.body, "Great candidate.")
+        self.assertEqual(result.author_id, 2)
+        self.assertEqual(result.author_name, "Owen Owner")
+        self.session.commit.assert_awaited_once()
+
+    async def test_add_comment_succeeds_for_current_stage_assignee(self):
+        job = self._job(job_id=1, owner_ids=(9,))
+        application = self._application(
+            application_id=10,
+            job_id=1,
+            stage=ApplicationStage.RECRUITER_SCREENING,
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.assignment_repo.get.return_value = MagicMock(assignee_id=2)
+        created_row = SimpleNamespace(
+            comment_id=5,
+            application_id=10,
+            author_id=2,
+            body="On it.",
+            created_at=datetime(2026, 7, 7, 12, 0, 0),
+        )
+        self.comment_repo.create = AsyncMock(return_value=created_row)
+        self.users_repo.get_user_by_user_id = AsyncMock(
+            return_value=self._user(user_id=2, first="Eve", last="Evaluator")
+        )
+
+        dto = CommentCreateDto(body="On it.")
+        result = await self.service.add_comment(
+            self.session, self._ctx(user_id=2), 10, dto
+        )
+
+        self.assertEqual(result.author_name, "Eve Evaluator")
+
+    async def test_add_comment_non_owner_non_assignee_gets_collapsed_not_found_message(
+        self,
+    ):
+        job = self._job(job_id=1, owner_ids=(2,))
+        application = self._application(application_id=10, job_id=1)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.assignment_repo.get.return_value = None
+
+        dto = CommentCreateDto(body="Sneaking in.")
+        with self.assertRaises(ValueError) as ctx:
+            await self.service.add_comment(self.session, self._ctx(user_id=99), 10, dto)
+        self.assertEqual(str(ctx.exception), "application 10 not found")
+        self.comment_repo.create.assert_not_awaited()
 
 
 if __name__ == "__main__":

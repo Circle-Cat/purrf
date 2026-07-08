@@ -9,6 +9,8 @@ from backend.dto.board_dto import (
     BlacklistDto,
     BoardCardDto,
     BoardJobDto,
+    CommentCreateDto,
+    CommentDto,
     PipelineStageInfoDto,
     ReassignDto,
     RoundChangeDto,
@@ -69,6 +71,7 @@ class BoardService:
         application_assignment_repository,
         user_permissions_repository,
         application_activity_repository,
+        application_comment_repository,
     ):
         """
         Args:
@@ -90,6 +93,10 @@ class BoardService:
                 Append-only audit log, written by ``change_stage``/
                 ``reassign``/``set_round``/``set_sub_status``/``blacklist``
                 and read by ``get_application_activity``.
+            application_comment_repository (ApplicationCommentRepository):
+                Append-only free-text discussion thread, written by
+                ``add_comment`` and read by ``list_comments`` -- independent
+                of ``application_activity_repository``.
         """
         self.job_repository = job_repository
         self.application_repository = application_repository
@@ -100,6 +107,7 @@ class BoardService:
         self.application_assignment_repository = application_assignment_repository
         self.user_permissions_repository = user_permissions_repository
         self.application_activity_repository = application_activity_repository
+        self.application_comment_repository = application_comment_repository
 
     async def list_my_jobs(
         self, session: AsyncSession, current_user: UserContextDto
@@ -974,4 +982,110 @@ class BoardService:
         await session.commit()
         return self.recruiting_mapper.to_application_dto(
             application, current_sub, editable=False
+        )
+
+    async def list_comments(
+        self,
+        session: AsyncSession,
+        current_user: UserContextDto,
+        application_id: int,
+    ) -> list[CommentDto]:
+        """Return every comment on an application, newest first.
+
+        Readable by either a configured owner of the job, or the
+        application's current-stage assignee -- same access as
+        ``get_application_detail``. Independent of
+        ``get_application_activity``: comments are free-text discussion,
+        not the structured audit log, and (unlike the activity timeline)
+        are readable by the current-stage assignee too.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            current_user (UserContextDto): The authenticated caller.
+            application_id (int): The application to list comments for.
+
+        Returns:
+            list[CommentDto]: Newest first, each with the author's resolved
+                display name.
+
+        Raises:
+            ValueError: If the application is missing, or the caller is
+                neither an owner of the application's job nor its
+                current-stage assignee. All cases raise the same generic
+                message so response bodies don't leak which application ids
+                exist to unauthorized callers.
+        """
+        await self._load_owned_application(
+            session, current_user, application_id, allow_assignee=True
+        )
+        rows = await self.application_comment_repository.list_by_application(
+            session, application_id
+        )
+        authors = await self.users_repository.get_all_by_ids(
+            session, list({row.author_id for row in rows})
+        )
+        names_by_id = {
+            user.user_id: f"{user.first_name} {user.last_name}".strip()
+            for user in authors
+        }
+        return [
+            CommentDto(
+                id=row.comment_id,
+                application_id=row.application_id,
+                author_id=row.author_id,
+                author_name=names_by_id.get(row.author_id, f"User {row.author_id}"),
+                body=row.body,
+                created_at=row.created_at,
+            )
+            for row in rows
+        ]
+
+    async def add_comment(
+        self,
+        session: AsyncSession,
+        current_user: UserContextDto,
+        application_id: int,
+        dto: CommentCreateDto,
+    ) -> CommentDto:
+        """Post a comment on an application.
+
+        Same access as ``list_comments``: owner or current-stage assignee.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            current_user (UserContextDto): The authenticated caller,
+                recorded as the comment's author.
+            application_id (int): The application to comment on.
+            dto (CommentCreateDto): The comment text.
+
+        Returns:
+            CommentDto: The newly created comment.
+
+        Raises:
+            ValueError: If the application is missing, or the caller is
+                neither an owner of the application's job nor its
+                current-stage assignee (collapsed "not found" message).
+        """
+        await self._load_owned_application(
+            session, current_user, application_id, allow_assignee=True
+        )
+        row = await self.application_comment_repository.create(
+            session, application_id, current_user.user_id, dto.body
+        )
+        await session.commit()
+        author = await self.users_repository.get_user_by_user_id(
+            session, current_user.user_id
+        )
+        author_name = (
+            f"{author.first_name} {author.last_name}".strip()
+            if author is not None
+            else f"User {current_user.user_id}"
+        )
+        return CommentDto(
+            id=row.comment_id,
+            application_id=row.application_id,
+            author_id=row.author_id,
+            author_name=author_name,
+            body=row.body,
+            created_at=row.created_at,
         )

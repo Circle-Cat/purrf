@@ -113,6 +113,7 @@ beforeEach(() => {
   api.getJob.mockResolvedValue({ data: JOB });
   api.getEvaluationsForApplication.mockResolvedValue({ data: [] });
   api.getApplicationActivity.mockResolvedValue({ data: [] });
+  api.getApplicationComments.mockResolvedValue({ data: [] });
 });
 
 /** Render the page at the detail route for a given application id. */
@@ -1340,6 +1341,193 @@ describe("ApplicationDetailPage — activity timeline assignee names", () => {
       ),
     ).toBeInTheDocument();
     expect(screen.queryByText(/assigned to/)).not.toBeInTheDocument();
+  });
+});
+
+describe("ApplicationDetailPage — comments", () => {
+  it("owner view shows a Comments tab alongside Evaluations and Timeline", async () => {
+    const user = userEvent.setup();
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
+    });
+    api.getApplicationComments.mockResolvedValue({
+      data: [
+        {
+          id: 1,
+          authorId: OWNER_ID,
+          authorName: "Owen Owner",
+          body: "Strong candidate.",
+          createdAt: "2026-07-07T12:00:00Z",
+        },
+      ],
+    });
+    renderPage();
+    await waitLoaded();
+
+    expect(screen.getByRole("tab", { name: "Comments" })).toBeInTheDocument();
+    await user.click(screen.getByRole("tab", { name: "Comments" }));
+
+    expect(
+      screen.getByText(/Owen Owner: Strong candidate\./),
+    ).toBeInTheDocument();
+  });
+
+  it("shows an empty state when there are no comments yet", async () => {
+    const user = userEvent.setup();
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
+    });
+    renderPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole("tab", { name: "Comments" }));
+
+    expect(screen.getByText("No comments yet.")).toBeInTheDocument();
+  });
+
+  it("posting a comment prepends it to the list and clears the input", async () => {
+    const user = userEvent.setup();
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
+    });
+    api.postComment.mockResolvedValue({
+      data: {
+        id: 2,
+        authorId: OWNER_ID,
+        authorName: "Owen Owner",
+        body: "New note",
+        createdAt: "2026-07-07T13:00:00Z",
+      },
+    });
+    renderPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole("tab", { name: "Comments" }));
+    await user.type(screen.getByPlaceholderText("Add a comment…"), "New note");
+    await user.click(screen.getByRole("button", { name: "Post" }));
+
+    await waitFor(() =>
+      expect(screen.getByText(/Owen Owner: New note/)).toBeInTheDocument(),
+    );
+    expect(api.postComment).toHaveBeenCalledWith("101", { body: "New note" });
+    expect(screen.getByPlaceholderText("Add a comment…")).toHaveValue("");
+  });
+
+  it("disables the Post button while a comment is being posted", async () => {
+    const user = userEvent.setup();
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
+    });
+    let resolvePost;
+    api.postComment.mockReturnValue(
+      new Promise((resolve) => {
+        resolvePost = resolve;
+      }),
+    );
+    renderPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole("tab", { name: "Comments" }));
+    await user.type(screen.getByPlaceholderText("Add a comment…"), "In flight");
+    await user.click(screen.getByRole("button", { name: "Post" }));
+
+    expect(screen.getByRole("button", { name: "Post" })).toBeDisabled();
+
+    resolvePost({
+      data: {
+        id: 3,
+        authorId: OWNER_ID,
+        authorName: "Owen Owner",
+        body: "In flight",
+        createdAt: "2026-07-07T14:00:00Z",
+      },
+    });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Post" })).not.toBeDisabled(),
+    );
+  });
+
+  it("assignee view shows Your evaluation and Comments tabs, and can post a comment", async () => {
+    const user = userEvent.setup();
+    authState.userId = ASSIGNEE_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: false, assigneeId: ASSIGNEE_ID }),
+    });
+    api.postComment.mockResolvedValue({
+      data: {
+        id: 4,
+        authorId: ASSIGNEE_ID,
+        authorName: "Eve Evaluator",
+        body: "Scheduling now.",
+        createdAt: "2026-07-07T15:00:00Z",
+      },
+    });
+    renderEvaluatorPage();
+    await waitLoaded();
+
+    expect(
+      screen.getByRole("tab", { name: "Your evaluation" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Comments" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("tab", { name: "Comments" }));
+    await user.type(
+      screen.getByPlaceholderText("Add a comment…"),
+      "Scheduling now.",
+    );
+    await user.click(screen.getByRole("button", { name: "Post" }));
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(/Eve Evaluator: Scheduling now\./),
+      ).toBeInTheDocument(),
+    );
+  });
+
+  it("fetches comments (harmless) but shows no Comments tab in the not-currently-assigned explanatory branch", async () => {
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
+    });
+    renderEvaluatorPage();
+    await waitLoaded();
+
+    expect(api.getApplicationComments).toHaveBeenCalled();
+    expect(
+      screen.queryByRole("tab", { name: "Comments" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "You are not currently assigned to evaluate this application.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps the draft text in the textarea when posting a comment fails", async () => {
+    const user = userEvent.setup();
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
+    });
+    api.postComment.mockRejectedValue(new Error("boom"));
+    renderPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole("tab", { name: "Comments" }));
+    await user.type(
+      screen.getByPlaceholderText("Add a comment…"),
+      "Don't lose me",
+    );
+    await user.click(screen.getByRole("button", { name: "Post" }));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+    expect(screen.getByPlaceholderText("Add a comment…")).toHaveValue(
+      "Don't lose me",
+    );
   });
 });
 

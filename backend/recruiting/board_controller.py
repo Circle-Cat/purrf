@@ -5,6 +5,7 @@ from backend.common.permissions import Permission
 from backend.utils.permission_decorators import authenticate
 from backend.dto.board_dto import (
     BlacklistDto,
+    CommentCreateDto,
     ReassignDto,
     RoundChangeDto,
     StageChangeDto,
@@ -21,6 +22,7 @@ from backend.common.api_endpoints import (
     RECRUITING_APPLICATION_ROUND_ENDPOINT,
     RECRUITING_APPLICATION_RESUME_ENDPOINT,
     RECRUITING_APPLICATION_ACTIVITY_ENDPOINT,
+    RECRUITING_APPLICATION_COMMENTS_ENDPOINT,
     RECRUITING_BLACKLIST_ENDPOINT,
 )
 
@@ -38,6 +40,12 @@ class BoardController:
     permission-gated only (``Permission.RECRUITING_BLACKLIST_WRITE``):
     ``BoardService.blacklist`` deliberately performs no job-ownership check,
     since it's an org-level sanction rather than a per-posting decision.
+
+    The comments routes (list/add) are also plain login-gated: like the
+    reads above, access is a row-level owner-or-current-assignee check
+    inside ``BoardService`` -- unlike the other write routes, posting a
+    comment carries no enum permission gate, since anyone who can already
+    view the application may also discuss it.
     """
 
     def __init__(self, board_service, database):
@@ -79,6 +87,18 @@ class BoardController:
             RECRUITING_APPLICATION_ACTIVITY_ENDPOINT,
             endpoint=authenticate()(self.get_application_activity),
             methods=["GET"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            RECRUITING_APPLICATION_COMMENTS_ENDPOINT,
+            endpoint=authenticate()(self.list_comments),
+            methods=["GET"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            RECRUITING_APPLICATION_COMMENTS_ENDPOINT,
+            endpoint=authenticate()(self.add_comment),
+            methods=["POST"],
             response_model=None,
         )
         self.router.add_api_route(
@@ -166,6 +186,27 @@ class BoardController:
                 session, current_user, application_id
             )
         return api_response(message="Application activity fetched.", data=result)
+
+    async def list_comments(self, current_user: UserContextDto, application_id: int):
+        """Return every comment on an application, newest first."""
+        async with self.database.session() as session:
+            result = await self.board_service.list_comments(
+                session, current_user, application_id
+            )
+        return api_response(message="Comments fetched.", data=result)
+
+    async def add_comment(
+        self,
+        current_user: UserContextDto,
+        application_id: int,
+        comment_data: CommentCreateDto,
+    ):
+        """Post a comment on an application."""
+        async with self.database.session() as session:
+            result = await self.board_service.add_comment(
+                session, current_user, application_id, comment_data
+            )
+        return api_response(message="Comment posted.", data=result)
 
     async def change_stage(
         self,
