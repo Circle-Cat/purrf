@@ -1,3 +1,5 @@
+import unittest
+
 from backend.entity.application_entity import ApplicationEntity
 from backend.entity.application_submission_entity import ApplicationSubmissionEntity
 from backend.entity.job_entity import JobEntity
@@ -151,3 +153,7 @@ class TestApplicationRepository(BaseRepositoryTestLib):
                 (app_a2.application_id, job_b.job_id),
             },
         )
+
+
+if __name__ == "__main__":
+    unittest.main()
