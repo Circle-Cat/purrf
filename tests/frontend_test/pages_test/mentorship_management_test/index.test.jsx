@@ -31,6 +31,19 @@ vi.mock("@/pages/MentorshipManagement/components/RoundsManagementCard", () => ({
   ),
 }));
 
+vi.mock(
+  "@/pages/MentorshipManagement/components/ParticipantSearchCard",
+  () => ({
+    default: vi.fn(({ rounds }) => (
+      <div data-testid="mock-participant-search-card">
+        <span data-testid="participant-search-rounds-count">
+          {rounds.length}
+        </span>
+      </div>
+    )),
+  }),
+);
+
 const defaultHookData = {
   sortedRounds: [
     {
@@ -107,4 +120,34 @@ describe("MentorshipManagement", () => {
     ).toBeInTheDocument();
     expect(screen.getByTestId("can-write").textContent).toBe("false");
   });
+
+  it("renders ParticipantSearchCard with sortedRounds when the user has both round-read and participant-read", () => {
+    useAuth.mockReturnValue({
+      permissions: [
+        PERMISSIONS.MENTORSHIP_ROUND_READ,
+        PERMISSIONS.MENTORSHIP_PARTICIPANT_READ,
+      ],
+    });
+    render(<MentorshipManagement />);
+    expect(
+      screen.getByTestId("mock-participant-search-card"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByTestId("participant-search-rounds-count").textContent,
+    ).toBe("1");
+  });
+
+  it.each([
+    [PERMISSIONS.MENTORSHIP_ROUND_READ],
+    [PERMISSIONS.MENTORSHIP_PARTICIPANT_READ],
+  ])(
+    "does not render ParticipantSearchCard unless the user has both round-read and participant-read",
+    (permissions) => {
+      useAuth.mockReturnValue({ permissions });
+      render(<MentorshipManagement />);
+      expect(
+        screen.queryByTestId("mock-participant-search-card"),
+      ).not.toBeInTheDocument();
+    },
+  );
 });
