@@ -52,9 +52,7 @@ describe("ScreenRulesEditor", () => {
         onChange={vi.fn()}
       />,
     );
-    expect(
-      screen.queryByLabelText("Email domains"),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Email domains")).not.toBeInTheDocument();
 
     rerender(
       <ScreenRulesEditor

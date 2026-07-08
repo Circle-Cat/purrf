@@ -278,9 +278,7 @@ class ScreenRuleConditionDto(BaseRequestDto):
             if self.question_id is not None:
                 raise ValueError("email_domain condition must not set question_id")
             if self.operator not in ("equals", "in", "not_in"):
-                raise ValueError(
-                    "email_domain operator must be equals, in, or not_in"
-                )
+                raise ValueError("email_domain operator must be equals, in, or not_in")
             domains = self.value if isinstance(self.value, list) else [self.value]
             if not any(d.strip() for d in domains):
                 raise ValueError("email_domain condition requires a non-empty value")

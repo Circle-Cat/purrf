@@ -78,9 +78,7 @@ const ScreenRulesEditor = ({
   // parent's value arrived after mount, silently wiping saved rules on edit.)
   const rules = value.rules ?? [];
 
-  const emailRules = rules.filter(
-    (r) => r.condition.source === "email_domain",
-  );
+  const emailRules = rules.filter((r) => r.condition.source === "email_domain");
   const answerRules = rules.filter((r) => r.condition.source === "answer");
   const singleChoice = questions.filter((q) => q.type === "single_choice");
 
@@ -181,7 +179,12 @@ const ScreenRulesEditor = ({
             </Button>
           </div>
         ))}
-        <Button type="button" variant="outline" size="sm" onClick={addEmailRule}>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={addEmailRule}
+        >
           Add email domain rule
         </Button>
       </div>
@@ -261,7 +264,12 @@ const ScreenRulesEditor = ({
             </div>
           );
         })}
-        <Button type="button" variant="outline" size="sm" onClick={addAnswerRule}>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={addAnswerRule}
+        >
           Add answer rule
         </Button>
       </div>

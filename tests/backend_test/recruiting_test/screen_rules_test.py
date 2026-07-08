@@ -57,18 +57,14 @@ class TestScreenRulesEvaluate(unittest.TestCase):
 
     def test_email_domain_not_in_matches_excluded_domain(self):
         rules = {
-            "rules": [
-                _rule("r1", "email_domain", "not_in", ["google.com"], "reject")
-            ]
+            "rules": [_rule("r1", "email_domain", "not_in", ["google.com"], "reject")]
         }
         result = screen_rules.evaluate(rules, "a@yahoo.com", {})
         self.assertEqual(result, {"action": "reject", "rule_id": "r1"})
 
     def test_email_domain_not_in_no_match_for_listed_domain(self):
         rules = {
-            "rules": [
-                _rule("r1", "email_domain", "not_in", ["google.com"], "reject")
-            ]
+            "rules": [_rule("r1", "email_domain", "not_in", ["google.com"], "reject")]
         }
         result = screen_rules.evaluate(rules, "a@google.com", {})
         self.assertEqual(result, {"action": None, "rule_id": None})
