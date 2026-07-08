@@ -68,6 +68,67 @@ describe("PostingDetailPage", () => {
     ).toBeInTheDocument();
   });
 
+  it("shows Edit configuration in the Operate row for a draft posting", async () => {
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Edit configuration" }),
+      ).toBeInTheDocument(),
+    );
+  });
+
+  it("hides Edit configuration while a revision is pending re-review", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        status: "published_pending_revision",
+        pipelineConfig: null,
+        screenRules: null,
+        profileConfig: null,
+        reviewerId: null,
+      },
+    });
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Submit for review" }),
+      ).toBeInTheDocument(),
+    );
+    expect(
+      screen.queryByRole("button", { name: "Edit configuration" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("renders the applicant-facing question form on Overview", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        status: "draft",
+        pipelineConfig: null,
+        screenRules: null,
+        profileConfig: null,
+        reviewerId: null,
+        formSchema: {
+          questions: [{ id: "q1", type: "short_text", label: "Why us?" }],
+        },
+      },
+    });
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    await waitFor(() =>
+      expect(screen.getByText("Why us?")).toBeInTheDocument(),
+    );
+  });
+
   it("hides the Operate block for a read-only viewer", async () => {
     authState.permissions = ["recruiting.job.read"];
     renderAt(1);
