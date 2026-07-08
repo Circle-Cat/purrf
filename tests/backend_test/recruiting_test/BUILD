@@ -173,3 +173,13 @@ py_test(
         "//backend/recruiting",
     ],
 )
+
+py_test(
+    name = "audit_controller_test",
+    srcs = ["audit_controller_test.py"],
+    deps = [
+        "//backend/common:permissions",
+        "//backend/dto",
+        "//backend/recruiting",
+    ],
+)
