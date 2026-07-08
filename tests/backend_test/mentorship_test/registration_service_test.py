@@ -60,6 +60,11 @@ class TestRegistrationService(unittest.IsolatedAsyncioTestCase):
         )
         self.mock_training_repo.upsert_training = AsyncMock()
 
+        self.mock_application_repo = MagicMock()
+        self.mock_application_repo.get_hired_activity_application = AsyncMock(
+            return_value=MagicMock()
+        )
+
         self.service = RegistrationService(
             logger=self.mock_logger,
             preferences_repository=self.mock_preference_repo,
@@ -68,6 +73,7 @@ class TestRegistrationService(unittest.IsolatedAsyncioTestCase):
             participation_service=self.mock_participation_service,
             mentorship_mapper=self.mock_mapper,
             training_repository=self.mock_training_repo,
+            application_repository=self.mock_application_repo,
         )
 
         self.sample_dto = RegistrationCreateDto(
@@ -464,6 +470,31 @@ class TestRegistrationService(unittest.IsolatedAsyncioTestCase):
                 )
 
                 self.mock_session.commit.assert_awaited_once()
+
+    async def test_update_registration_info_blocks_without_approved_application(self):
+        """Test: Registration is blocked when the user has no HIRED activity application for their role."""
+        mock_round = MagicMock()
+        mock_round.description = {
+            "mentee_application_deadline_at": "2026-04-27T23:59:59Z"
+        }
+        self.mock_round_repo.get_by_round_id.return_value = mock_round
+        self.mock_participation_service.resolve_participant_role_with_fallback.return_value = ParticipantRole.MENTEE
+        self.mock_application_repo.get_hired_activity_application.return_value = None
+
+        with self.assertRaisesRegex(ValueError, "complete your mentee application"):
+            await self.service.update_registration_info(
+                session=self.mock_session,
+                user_context=self.user_context,
+                round_id=self.mock_round_id,
+                preferences_data=self.sample_dto,
+            )
+
+        self.mock_application_repo.get_hired_activity_application.assert_awaited_once_with(
+            session=self.mock_session,
+            user_id=self.user_context.user_id,
+            mentorship_role=ParticipantRole.MENTEE,
+        )
+        self.mock_session.commit.assert_not_awaited()
 
     async def test_update_preferences_saves_profile_survey(self):
         """When profile_survey is provided, it should be serialized with exclude_none and saved."""
