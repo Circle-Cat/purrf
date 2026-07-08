@@ -77,6 +77,7 @@ const SUBMISSION = {
 /** Build an ApplicationDetailDto-shaped payload for a given role/stage. */
 const makeDetail = ({
   isOwner = false,
+  canView = isOwner,
   assigneeId = ASSIGNEE_ID,
   stage = "recruiter_screening",
   resumeAvailable = true,
@@ -100,6 +101,7 @@ const makeDetail = ({
     questions: [{ id: "q1", label: "Are you authorized to work?" }],
   },
   isOwner,
+  canView,
   assigneeId,
 });
 
@@ -1804,5 +1806,45 @@ describe("ApplicationDetailPage — Offer is a fixed step before Hired", () => {
     await waitLoaded();
 
     expect(screen.queryByText("Status:")).not.toBeInTheDocument();
+  });
+});
+
+describe("ApplicationDetailPage — read.all non-owner view", () => {
+  it("fetches job config, interview pool, and activity for a canView viewer even when not the real owner", async () => {
+    authState.userId = 42;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: false, canView: true }),
+    });
+    renderPage();
+    await waitLoaded();
+
+    expect(api.getJob).toHaveBeenCalled();
+    expect(api.listInterviewPool).toHaveBeenCalled();
+    expect(api.getApplicationActivity).toHaveBeenCalled();
+  });
+
+  it("shows the info panel with every actionable control absent or disabled", async () => {
+    authState.userId = 42;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({
+        isOwner: false,
+        canView: true,
+        assigneeId: ASSIGNEE_ID,
+      }),
+    });
+    renderPage();
+    await waitLoaded();
+
+    expect(screen.getByText("Status:")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Pending" })).toBeDisabled();
+    expect(screen.getByText(/Assigned to: Eve Evaluator/)).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Reassign" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Operate:")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("tab", { name: "Evaluations" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Timeline" })).toBeInTheDocument();
   });
 });

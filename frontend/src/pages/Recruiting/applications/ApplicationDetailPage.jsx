@@ -428,21 +428,26 @@ const CommentsPanel = ({ comments, onPost, posting }) => {
  * snapshot, personal info, answers, and the résumé when available) shared by
  * everyone, plus a right column that adapts to the viewer:
  *
- * - Owners (`detail.isOwner`) get the sub-status selector, the current
- *   assignee + Reassign control, and an "Operate" decision row
- *   (Blacklist/Reject/Advance). The workflow only ever moves forward one
- *   step at a time, so Advance is a single button covering both cases:
- *   round-advance (via the job's `pipelineConfig.stages[].rounds`) while
- *   rounds remain in the current stage, then stage-advance once they're
- *   exhausted. Advancing into an interview stage opens a dialog with an
- *   optional ("Decide later") assignee radio-picker, pre-filled from the
- *   job's configured `default_assignee_id` for screening/behavioral
- *   stage-advance targets; leaving it on "Decide later" just advances
- *   unassigned, to be picked up later via Reassign (which, unlike Advance,
- *   always requires a pick) — and a read-only summary of all evaluations. This
- *   owner view never shows the evaluation-filling form, even when the owner
- *   is also the current-stage assignee — grading only happens via the
- *   evaluator view below.
+ * - Anyone who can view (`detail.canView` — owner OR `read.all`) gets the
+ *   whole info panel: the sub-status selector, the current assignee, the
+ *   evaluations tab, and the timeline tab. Every *actionable* control inside
+ *   that panel is instead gated on real ownership (`detail.isOwner`)
+ *   specifically, so a `read.all` viewer sees the same information an owner
+ *   does but can't act on it: the sub-status buttons render disabled, the
+ *   Reassign trigger and the whole "Operate" decision row (Blacklist/Reject/
+ *   Advance) don't render at all. For an actual owner, the workflow only
+ *   ever moves forward one step at a time, so Advance is a single button
+ *   covering both cases: round-advance (via the job's
+ *   `pipelineConfig.stages[].rounds`) while rounds remain in the current
+ *   stage, then stage-advance once they're exhausted. Advancing into an
+ *   interview stage opens a dialog with an optional ("Decide later")
+ *   assignee radio-picker, pre-filled from the job's configured
+ *   `default_assignee_id` for screening/behavioral stage-advance targets;
+ *   leaving it on "Decide later" just advances unassigned, to be picked up
+ *   later via Reassign (which, unlike Advance, always requires a pick) — and
+ *   a read-only summary of all evaluations. This owner view never shows the
+ *   evaluation-filling form, even when the owner is also the current-stage
+ *   assignee — grading only happens via the evaluator view below.
  * - The current-stage assignee (`detail.assigneeId === currentUser.userId`)
  *   reaching this page via the `?mode=evaluate` link from My Evaluations
  *   gets ONLY the `EvaluationRubricForm` for the application's stage,
@@ -511,10 +516,10 @@ const ApplicationDetailPage = () => {
         setDetail(detailData);
         setEvaluations(evals ?? []);
         // Job config (per-stage default assignee), the interview pool, and
-        // the activity timeline are all owner-only reads (job/pool gated on
-        // RECRUITING_JOB_WRITE, activity via row-level ownership), so only
-        // an owner fetches them; an assignee-only viewer would be rejected.
-        if (detailData.isOwner) {
+        // the activity timeline are all read via canView (owner or
+        // read.all), not raw isOwner — a read.all viewer sees the same
+        // info panel an owner does, just without any action button.
+        if (detailData.canView) {
           const [{ data: jobData }, { data: pool }, { data: activityRows }] =
             await Promise.all([
               getJob(detailData.application.jobId),
@@ -877,12 +882,12 @@ const ApplicationDetailPage = () => {
 
         {/* Right column: role-adaptive. */}
         <div className="space-y-6">
-          {detail.isOwner && !evaluatorMode && (
+          {detail.canView && !evaluatorMode && (
             <div className="space-y-4">
               <SubStatusSelector
                 stage={detail.application.stage}
                 subStatus={detail.application.subStatus}
-                disabled={switchingSubStatus}
+                disabled={switchingSubStatus || !detail.isOwner}
                 onSelect={handleSelectSubStatus}
               />
               {(assigneeName || isPipelineStage) && (
@@ -892,7 +897,7 @@ const ApplicationDetailPage = () => {
                       Assigned to: {assigneeName}
                     </p>
                   )}
-                  {isPipelineStage && (
+                  {isPipelineStage && detail.isOwner && (
                     <Button
                       type="button"
                       size="sm"
@@ -905,48 +910,51 @@ const ApplicationDetailPage = () => {
                 </div>
               )}
 
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-sm font-medium text-slate-700">
-                  Operate:
-                </span>
-                <Button
-                  variant="outline"
-                  disabled={blacklisting}
-                  onClick={() => setBlacklistConfirmOpen(true)}
-                >
-                  Blacklist
-                </Button>
-                {isPipelineStage && (
+              {detail.isOwner && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-medium text-slate-700">
+                    Operate:
+                  </span>
                   <Button
                     variant="outline"
-                    onClick={() => setRejectFormOpen(true)}
+                    className="mr-auto"
+                    disabled={blacklisting}
+                    onClick={() => setBlacklistConfirmOpen(true)}
                   >
-                    Reject
+                    Blacklist
                   </Button>
-                )}
-                {canAdvanceRound ? (
-                  <Button
-                    disabled={advancingRound}
-                    onClick={handleOpenRoundAdvance}
-                  >
-                    Advance to Round{" "}
-                    {(detail.application.currentRound ?? 1) + 1}
-                  </Button>
-                ) : (
-                  isPipelineStage && (
+                  {isPipelineStage && (
                     <Button
-                      disabled={advancing}
-                      onClick={() =>
-                        needsAssignee
-                          ? setAdvanceOpen(true)
-                          : handleAdvance(next)
-                      }
+                      variant="outline"
+                      onClick={() => setRejectFormOpen(true)}
                     >
-                      Advance to {humanize(next)}
+                      Reject
                     </Button>
-                  )
-                )}
-              </div>
+                  )}
+                  {canAdvanceRound ? (
+                    <Button
+                      disabled={advancingRound}
+                      onClick={handleOpenRoundAdvance}
+                    >
+                      Advance to Round{" "}
+                      {(detail.application.currentRound ?? 1) + 1}
+                    </Button>
+                  ) : (
+                    isPipelineStage && (
+                      <Button
+                        disabled={advancing}
+                        onClick={() =>
+                          needsAssignee
+                            ? setAdvanceOpen(true)
+                            : handleAdvance(next)
+                        }
+                      >
+                        Advance to {humanize(next)}
+                      </Button>
+                    )
+                  )}
+                </div>
+              )}
 
               <Tabs defaultValue="evaluations">
                 <TabsList>
