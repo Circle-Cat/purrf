@@ -1184,7 +1184,10 @@ class BoardService:
         """
         ids = set(normalized_owner_ids(job.pipeline_config))
         assignment = await self.application_assignment_repository.get(
-            session, application.application_id, application.stage, application.current_round
+            session,
+            application.application_id,
+            application.stage,
+            application.current_round,
         )
         if assignment is not None:
             ids.add(assignment.assignee_id)
@@ -1292,8 +1295,10 @@ class BoardService:
             for user in authors
         }
         comment_ids = [row.comment_id for row in rows]
-        mention_rows = await self.application_comment_mention_repository.get_by_comment_ids(
-            session, comment_ids
+        mention_rows = (
+            await self.application_comment_mention_repository.get_by_comment_ids(
+                session, comment_ids
+            )
         )
         mentioned_users = await self.users_repository.get_all_by_ids(
             session, list({m.mentioned_user_id for m in mention_rows})

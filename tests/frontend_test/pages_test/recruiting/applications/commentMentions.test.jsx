@@ -52,7 +52,11 @@ describe("renderCommentBody", () => {
 
   it("substitutes a resolved mention token with a highlighted name", () => {
     render(
-      <p>{renderCommentBody("Hey @[42] check this", [{ userId: 42, name: "Eve Evaluator" }])}</p>,
+      <p>
+        {renderCommentBody("Hey @[42] check this", [
+          { userId: 42, name: "Eve Evaluator" },
+        ])}
+      </p>,
     );
     expect(screen.getByText("@Eve Evaluator")).toBeInTheDocument();
     expect(screen.getByText(/Hey/)).toBeInTheDocument();
