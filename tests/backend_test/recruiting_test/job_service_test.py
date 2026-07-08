@@ -14,6 +14,7 @@ from backend.common.recruiting_enums import (
     JobReviewStatus,
     JobStatus,
 )
+from backend.common.mentorship_enums import ParticipantRole
 
 
 class TestJobService(unittest.IsolatedAsyncioTestCase):
@@ -1186,7 +1187,51 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.title, "old title")
         self.assertEqual(result.pending_payload["title"], "new title")
 
-    async def test_update_closed_ignores_kind_and_mentorship_role(self):
+    async def test_update_published_changing_kind_raises(self):
+        """kind is locked once published -- a differing value raises instead
+        of being silently dropped."""
+        job = self._job(status=JobStatus.PUBLISHED, kind=JobKind.ACTIVITY)
+        self.repo.get_by_job_id.return_value = job
+        dto = JobCreateDto(title=job.title, kind=JobKind.EMPLOYMENT)
+
+        with self.assertRaises(ValueError):
+            await self.service.update_job(self.session, job.job_id, dto)
+        self.repo.update_job.assert_not_awaited()
+
+    async def test_update_published_changing_mentorship_role_raises(self):
+        """mentorship_role is locked once published, same as kind."""
+        job = self._job(
+            status=JobStatus.PUBLISHED,
+            kind=JobKind.ACTIVITY,
+            mentorship_role=ParticipantRole.MENTOR,
+        )
+        self.repo.get_by_job_id.return_value = job
+        dto = JobCreateDto(
+            title=job.title, kind=job.kind, mentorship_role=ParticipantRole.MENTEE
+        )
+
+        with self.assertRaises(ValueError):
+            await self.service.update_job(self.session, job.job_id, dto)
+        self.repo.update_job.assert_not_awaited()
+
+    async def test_update_published_same_kind_and_mentorship_role_succeeds(self):
+        """Sending back the same kind/mentorship_role is not a change -- must
+        not false-positive as a lock violation."""
+        job = self._job(
+            status=JobStatus.PUBLISHED,
+            kind=JobKind.ACTIVITY,
+            mentorship_role=ParticipantRole.MENTOR,
+        )
+        self.repo.get_by_job_id.return_value = job
+        dto = JobCreateDto(
+            title="new title", kind=job.kind, mentorship_role=job.mentorship_role
+        )
+
+        result = await self.service.update_job(self.session, job.job_id, dto)
+
+        self.assertEqual(result.status, JobStatus.PUBLISHED_PENDING_REVISION)
+
+    async def test_update_closed_changing_kind_raises(self):
         """kind/mentorship_role stay locked for a CLOSED posting, same as PUBLISHED."""
         job = self._job(
             status=JobStatus.CLOSED,
@@ -1196,9 +1241,9 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         self.repo.get_by_job_id.return_value = job
         dto = JobCreateDto(title=job.title, kind=JobKind.EMPLOYMENT)
 
-        await self.service.update_job(self.session, job.job_id, dto)
-
-        self.assertEqual(job.kind, JobKind.ACTIVITY)
+        with self.assertRaises(ValueError):
+            await self.service.update_job(self.session, job.job_id, dto)
+        self.repo.update_job.assert_not_awaited()
 
     async def test_list_interview_pool(self):
         users = self._make_users(7, 8)

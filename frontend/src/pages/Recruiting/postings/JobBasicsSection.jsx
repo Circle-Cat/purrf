@@ -12,8 +12,13 @@ import {
 /**
  * Title / description / kind fields for a posting.
  *
+ * `kindLocked`, when true, disables the Kind and Mentorship role selects —
+ * both are only editable while a posting is still a draft; the caller
+ * decides when that applies (see `PostingEditor`).
+ *
  * @param {{title: string, description: string, kind: string, cooldownDays: (number|null|undefined),
- *          mentorshipRole: (string|null|undefined), onChange: (patch: object) => void}} props
+ *          mentorshipRole: (string|null|undefined), kindLocked?: boolean,
+ *          onChange: (patch: object) => void}} props
  */
 const JobBasicsSection = ({
   title,
@@ -21,6 +26,7 @@ const JobBasicsSection = ({
   kind,
   cooldownDays,
   mentorshipRole,
+  kindLocked = false,
   onChange,
 }) => (
   <div className="space-y-3">
@@ -44,7 +50,11 @@ const JobBasicsSection = ({
     </div>
     <div className="space-y-1">
       <Label htmlFor="posting-kind">Kind</Label>
-      <Select value={kind} onValueChange={(v) => onChange({ kind: v })}>
+      <Select
+        value={kind}
+        onValueChange={(v) => onChange({ kind: v })}
+        disabled={kindLocked}
+      >
         <SelectTrigger
           id="posting-kind"
           aria-label="Kind"
@@ -66,6 +76,7 @@ const JobBasicsSection = ({
           onValueChange={(v) =>
             onChange({ mentorshipRole: v === "none" ? null : v })
           }
+          disabled={kindLocked}
         >
           <SelectTrigger
             id="posting-mentorship-role"
