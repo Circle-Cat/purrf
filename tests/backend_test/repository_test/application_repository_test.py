@@ -171,8 +171,12 @@ class TestApplicationRepository(BaseRepositoryTestLib):
         )
 
     async def test_count_by_job_and_stage_groups_across_jobs(self):
-        job_a = JobEntity(kind=JobKind.ACTIVITY, title="Job A", status=JobStatus.PUBLISHED)
-        job_b = JobEntity(kind=JobKind.ACTIVITY, title="Job B", status=JobStatus.PUBLISHED)
+        job_a = JobEntity(
+            kind=JobKind.ACTIVITY, title="Job A", status=JobStatus.PUBLISHED
+        )
+        job_b = JobEntity(
+            kind=JobKind.ACTIVITY, title="Job B", status=JobStatus.PUBLISHED
+        )
         user_1 = _make_user("A", "One", "a1@b.com")
         user_2 = _make_user("B", "Two", "b2@b.com")
         user_3 = _make_user("C", "Three", "c3@b.com")
@@ -232,8 +236,12 @@ class TestApplicationRepository(BaseRepositoryTestLib):
         )
 
     async def test_count_by_job_and_stage_filters_by_job_ids(self):
-        job_a = JobEntity(kind=JobKind.ACTIVITY, title="Job A", status=JobStatus.PUBLISHED)
-        job_b = JobEntity(kind=JobKind.ACTIVITY, title="Job B", status=JobStatus.PUBLISHED)
+        job_a = JobEntity(
+            kind=JobKind.ACTIVITY, title="Job A", status=JobStatus.PUBLISHED
+        )
+        job_b = JobEntity(
+            kind=JobKind.ACTIVITY, title="Job B", status=JobStatus.PUBLISHED
+        )
         user = _make_user("A", "One", "a1@b.com")
         await self.insert_entities([job_a, job_b, user])
         await self.session.flush()
@@ -268,7 +276,9 @@ class TestApplicationRepository(BaseRepositoryTestLib):
         )
 
     async def test_count_by_job_and_day_groups_by_calendar_day(self):
-        job = JobEntity(kind=JobKind.ACTIVITY, title="Job A", status=JobStatus.PUBLISHED)
+        job = JobEntity(
+            kind=JobKind.ACTIVITY, title="Job A", status=JobStatus.PUBLISHED
+        )
         user_1 = _make_user("A", "One", "a1@b.com")
         user_2 = _make_user("B", "Two", "b2@b.com")
         user_3 = _make_user("C", "Three", "c3@b.com")
