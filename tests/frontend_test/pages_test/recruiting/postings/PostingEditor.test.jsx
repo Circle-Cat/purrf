@@ -300,4 +300,57 @@ describe("PostingEditor", () => {
     });
     expect(screen.getByRole("heading", { name: "SWE" })).toBeInTheDocument();
   });
+
+  it("locks Kind once a loaded posting is no longer a draft", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 5,
+        title: "Loaded",
+        description: "",
+        kind: "activity",
+        status: "published",
+        cooldownDays: null,
+        formSchema: { questions: [] },
+      },
+    });
+    const router = createMemoryRouter(
+      [
+        { path: "/postings/:id/edit", element: <PostingEditor /> },
+        { path: ROUTE_PATHS.RECRUITING_POSTINGS, element: <div /> },
+      ],
+      { initialEntries: ["/postings/5/edit"] },
+    );
+    render(<RouterProvider router={router} />);
+    expect(await screen.findByDisplayValue("Loaded")).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Kind" })).toBeDisabled();
+  });
+
+  it("leaves Kind editable for a draft posting", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 5,
+        title: "Loaded",
+        description: "",
+        kind: "activity",
+        status: "draft",
+        cooldownDays: null,
+        formSchema: { questions: [] },
+      },
+    });
+    const router = createMemoryRouter(
+      [
+        { path: "/postings/:id/edit", element: <PostingEditor /> },
+        { path: ROUTE_PATHS.RECRUITING_POSTINGS, element: <div /> },
+      ],
+      { initialEntries: ["/postings/5/edit"] },
+    );
+    render(<RouterProvider router={router} />);
+    expect(await screen.findByDisplayValue("Loaded")).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Kind" })).not.toBeDisabled();
+  });
+
+  it("leaves Kind editable for a brand-new posting", () => {
+    renderAt("/postings/new");
+    expect(screen.getByRole("combobox", { name: "Kind" })).not.toBeDisabled();
+  });
 });

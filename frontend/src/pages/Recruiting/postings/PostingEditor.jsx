@@ -58,9 +58,15 @@ const PostingEditor = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const [draft, setDraft] = useState(BLANK);
+  const [jobStatus, setJobStatus] = useState(null);
   const [saving, setSaving] = useState(false);
   const [interviewPool, setInterviewPool] = useState([]);
   const [jobOwners, setJobOwners] = useState([]);
+
+  // Kind/mentorship role are only editable while a posting is still a
+  // draft; a brand-new (not-yet-loaded) posting has no status yet and is
+  // always editable.
+  const kindLocked = Boolean(id) && jobStatus != null && jobStatus !== "draft";
 
   useEffect(() => {
     listInterviewPool()
@@ -80,6 +86,7 @@ const PostingEditor = () => {
         // rather than the live fields so re-editing doesn't silently discard
         // it. kind/mentorshipRole are never part of pendingPayload.
         const source = data.pendingPayload ?? data;
+        setJobStatus(data.status ?? null);
         setDraft({
           title: source.title ?? "",
           description: source.description ?? "",
@@ -146,6 +153,7 @@ const PostingEditor = () => {
             kind={draft.kind}
             cooldownDays={draft.cooldownDays}
             mentorshipRole={draft.mentorshipRole}
+            kindLocked={kindLocked}
             onChange={patch}
           />
           <FormBuilder
