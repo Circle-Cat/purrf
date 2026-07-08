@@ -259,7 +259,7 @@ class ScreenRuleConditionDto(BaseRequestDto):
 
     @model_validator(mode="after")
     def validate_source_shape(self) -> "ScreenRuleConditionDto":
-        """email_domain forbids question_id and not_in; answer requires question_id.
+        """email_domain forbids question_id; answer requires question_id.
 
         Returns:
             ScreenRuleConditionDto: self, when valid.
