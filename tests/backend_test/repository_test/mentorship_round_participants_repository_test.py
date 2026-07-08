@@ -681,9 +681,7 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
 
         rows = await self.repo.list_distinct_user_roles(self.session)
 
-        self.assertEqual(
-            rows, [(mentee_user.user_id, ParticipantRole.MENTEE)]
-        )
+        self.assertEqual(rows, [(mentee_user.user_id, ParticipantRole.MENTEE)])
 
 
 if __name__ == "__main__":
