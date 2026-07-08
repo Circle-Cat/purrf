@@ -163,3 +163,13 @@ py_test(
         "//backend/recruiting",
     ],
 )
+
+py_test(
+    name = "audit_service_test",
+    srcs = ["audit_service_test.py"],
+    deps = [
+        "//backend/common:recruiting_enums",
+        "//backend/entity:entities",
+        "//backend/recruiting",
+    ],
+)
