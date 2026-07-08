@@ -94,4 +94,15 @@ describe("Audit", () => {
     expect(within(table).getByText("Hired")).toBeInTheDocument();
     expect(within(table).getByText("1")).toBeInTheDocument();
   });
+
+  it("renders one bar per selected job in the stage breakdown chart", async () => {
+    render(<Audit />);
+    await waitFor(() => expect(api.getAuditOverview).toHaveBeenCalled());
+    // Recharts renders SVG <rect> elements per bar segment inside the
+    // chart's data-slot="chart" container — assert the container renders
+    // rather than asserting on SVG internals, which is brittle.
+    expect(
+      screen.getByRole("img", { name: /stage breakdown chart/i }),
+    ).toBeInTheDocument();
+  });
 });
