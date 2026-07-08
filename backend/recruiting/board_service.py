@@ -1,3 +1,4 @@
+import re
 from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,6 +12,7 @@ from backend.dto.board_dto import (
     BoardJobDto,
     CommentCreateDto,
     CommentDto,
+    MentionedUserDto,
     OtherApplicationDto,
     PipelineStageInfoDto,
     ReassignDto,
@@ -26,6 +28,8 @@ from backend.entity.application_entity import ApplicationEntity
 from backend.entity.job_entity import JobEntity
 from backend.recruiting import stage_machine
 from backend.recruiting.pipeline_owners import normalized_owner_ids
+
+_MENTION_TOKEN_RE = re.compile(r"@\[(\d+)\]")
 
 # Stages that carry an interview assignment/evaluation (sub-project #3
 # slice 1); OFFER has no rubric and is not assignable.
@@ -74,6 +78,7 @@ class BoardService:
         user_permissions_repository,
         application_activity_repository,
         application_comment_repository,
+        application_comment_mention_repository,
         evaluation_repository,
     ):
         """
@@ -100,6 +105,10 @@ class BoardService:
                 Append-only free-text discussion thread, written by
                 ``add_comment`` and read by ``list_comments`` -- independent
                 of ``application_activity_repository``.
+            application_comment_mention_repository
+                (ApplicationCommentMentionRepository): Append-only
+                @-mention rows, written by ``add_comment`` and read by
+                ``list_comments``/``list_mentionable_users``.
             evaluation_repository (EvaluationRepository): Used by
                 ``get_other_applications`` to include a candidate's other
                 applications' evaluations in the aggregation view.
@@ -114,6 +123,9 @@ class BoardService:
         self.user_permissions_repository = user_permissions_repository
         self.application_activity_repository = application_activity_repository
         self.application_comment_repository = application_comment_repository
+        self.application_comment_mention_repository = (
+            application_comment_mention_repository
+        )
         self.evaluation_repository = evaluation_repository
 
     async def list_my_jobs(
@@ -1151,6 +1163,90 @@ class BoardService:
             application, current_sub, editable=False
         )
 
+    async def _mentionable_user_ids(
+        self, session: AsyncSession, application: ApplicationEntity, job: JobEntity
+    ) -> set[int]:
+        """Owner(s) plus the current-stage assignee, if any.
+
+        The exact same population _load_owned_application's allow_assignee
+        gate already authorizes to see this application's comments -- used
+        both to answer "who can I @mention" and to validate mention tokens
+        on submit.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            application (ApplicationEntity): The application being
+                commented on.
+            job (JobEntity): The application's job (for owner ids).
+
+        Returns:
+            set[int]: Mentionable user ids.
+        """
+        ids = set(normalized_owner_ids(job.pipeline_config))
+        assignment = await self.application_assignment_repository.get(
+            session, application.application_id, application.stage, application.current_round
+        )
+        if assignment is not None:
+            ids.add(assignment.assignee_id)
+        return ids
+
+    def _resolve_mentions(
+        self, body: str, mentionable_ids: set[int]
+    ) -> tuple[str, list[int]]:
+        """Validate every @[id] token in a comment body.
+
+        Args:
+            body (str): The raw submitted comment text.
+            mentionable_ids (set[int]): User ids currently allowed to be
+                mentioned on this application.
+
+        Returns:
+            tuple[str, list[int]]: The body with any unauthorized token
+                removed entirely (no display name exists to fall back to),
+                and the de-duplicated, order-preserved list of validated
+                mentioned ids.
+        """
+        validated_ids = []
+        seen = set()
+        for match in _MENTION_TOKEN_RE.finditer(body):
+            uid = int(match.group(1))
+            if uid in mentionable_ids and uid not in seen:
+                validated_ids.append(uid)
+                seen.add(uid)
+
+        def _strip_invalid(match: re.Match) -> str:
+            return match.group(0) if int(match.group(1)) in mentionable_ids else ""
+
+        cleaned_body = _MENTION_TOKEN_RE.sub(_strip_invalid, body)
+        return cleaned_body, validated_ids
+
+    async def _resolve_mentioned_users(
+        self, session: AsyncSession, mentioned_ids: list[int]
+    ) -> list[MentionedUserDto]:
+        """Resolve mentioned user ids to their current display names.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            mentioned_ids (list[int]): Validated mentioned user ids, in the
+                order they should appear.
+
+        Returns:
+            list[MentionedUserDto]: One entry per id, name resolved fresh
+                (never stored), falling back to "User {id}" if the user
+                record is unexpectedly missing.
+        """
+        if not mentioned_ids:
+            return []
+        users = await self.users_repository.get_all_by_ids(session, mentioned_ids)
+        names_by_id = {
+            user.user_id: f"{user.first_name} {user.last_name}".strip()
+            for user in users
+        }
+        return [
+            MentionedUserDto(user_id=uid, name=names_by_id.get(uid, f"User {uid}"))
+            for uid in mentioned_ids
+        ]
+
     async def list_comments(
         self,
         session: AsyncSession,
@@ -1173,7 +1269,7 @@ class BoardService:
 
         Returns:
             list[CommentDto]: Newest first, each with the author's resolved
-                display name.
+                display name and any @-mentions resolved to current names.
 
         Raises:
             ValueError: If the application is missing, or the caller is
@@ -1195,6 +1291,27 @@ class BoardService:
             user.user_id: f"{user.first_name} {user.last_name}".strip()
             for user in authors
         }
+        comment_ids = [row.comment_id for row in rows]
+        mention_rows = await self.application_comment_mention_repository.get_by_comment_ids(
+            session, comment_ids
+        )
+        mentioned_users = await self.users_repository.get_all_by_ids(
+            session, list({m.mentioned_user_id for m in mention_rows})
+        )
+        mention_names_by_id = {
+            user.user_id: f"{user.first_name} {user.last_name}".strip()
+            for user in mentioned_users
+        }
+        mentions_by_comment: dict[int, list[MentionedUserDto]] = {}
+        for m in mention_rows:
+            mentions_by_comment.setdefault(m.comment_id, []).append(
+                MentionedUserDto(
+                    user_id=m.mentioned_user_id,
+                    name=mention_names_by_id.get(
+                        m.mentioned_user_id, f"User {m.mentioned_user_id}"
+                    ),
+                )
+            )
         return [
             CommentDto(
                 id=row.comment_id,
@@ -1203,6 +1320,7 @@ class BoardService:
                 author_name=names_by_id.get(row.author_id, f"User {row.author_id}"),
                 body=row.body,
                 created_at=row.created_at,
+                mentions=mentions_by_comment.get(row.comment_id, []),
             )
             for row in rows
         ]
@@ -1217,6 +1335,11 @@ class BoardService:
         """Post a comment on an application.
 
         Same access as ``list_comments``: owner or current-stage assignee.
+        Any ``@[userId]`` tokens in the body are validated against the
+        application's mentionable set (see ``_mentionable_user_ids``); an
+        unauthorized token is stripped from the stored body and creates no
+        mention row -- the frontend picker only ever offers valid targets,
+        but the server never trusts that.
 
         Args:
             session (AsyncSession): Active database async session.
@@ -1226,19 +1349,26 @@ class BoardService:
             dto (CommentCreateDto): The comment text.
 
         Returns:
-            CommentDto: The newly created comment.
+            CommentDto: The newly created comment, with any validated
+                mentions resolved to current display names.
 
         Raises:
             ValueError: If the application is missing, or the caller is
                 neither an owner of the application's job nor its
                 current-stage assignee (collapsed "not found" message).
         """
-        await self._load_owned_application(
+        application, job = await self._load_owned_application(
             session, current_user, application_id, allow_assignee=True
         )
+        mentionable_ids = await self._mentionable_user_ids(session, application, job)
+        body, mentioned_ids = self._resolve_mentions(dto.body, mentionable_ids)
         row = await self.application_comment_repository.create(
-            session, application_id, current_user.user_id, dto.body
+            session, application_id, current_user.user_id, body
         )
+        if mentioned_ids:
+            await self.application_comment_mention_repository.create_mentions(
+                session, row.comment_id, mentioned_ids
+            )
         await session.commit()
         author = await self.users_repository.get_user_by_user_id(
             session, current_user.user_id
@@ -1248,6 +1378,7 @@ class BoardService:
             if author is not None
             else f"User {current_user.user_id}"
         )
+        mentions = await self._resolve_mentioned_users(session, mentioned_ids)
         return CommentDto(
             id=row.comment_id,
             application_id=row.application_id,
@@ -1255,4 +1386,45 @@ class BoardService:
             author_name=author_name,
             body=row.body,
             created_at=row.created_at,
+            mentions=mentions,
         )
+
+    async def list_mentionable_users(
+        self,
+        session: AsyncSession,
+        current_user: UserContextDto,
+        application_id: int,
+    ) -> list[MentionedUserDto]:
+        """Everyone who can currently be @-mentioned on this application.
+
+        Same access and same population as the mentionable set enforced by
+        ``add_comment`` -- job owner(s) plus the current-stage assignee.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            current_user (UserContextDto): The authenticated caller.
+            application_id (int): The application to list mentionable users
+                for.
+
+        Returns:
+            list[MentionedUserDto]: One entry per mentionable user.
+
+        Raises:
+            ValueError: If the application is missing, or the caller is
+                neither an owner nor the current-stage assignee (collapsed
+                "not found" message, same as ``list_comments``).
+        """
+        application, job = await self._load_owned_application(
+            session, current_user, application_id, allow_assignee=True
+        )
+        mentionable_ids = await self._mentionable_user_ids(session, application, job)
+        users = await self.users_repository.get_all_by_ids(
+            session, list(mentionable_ids)
+        )
+        return [
+            MentionedUserDto(
+                user_id=user.user_id,
+                name=f"{user.first_name} {user.last_name}".strip(),
+            )
+            for user in users
+        ]
