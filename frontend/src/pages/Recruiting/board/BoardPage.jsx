@@ -144,7 +144,9 @@ const BoardPage = () => {
   return (
     <div className="flex h-full flex-col gap-4 p-6">
       <div className="flex items-center gap-3">
-        <h1 className="text-xl font-semibold text-slate-900">Applications</h1>
+        <h1 className="text-xl font-semibold text-slate-900">
+          Applications Board
+        </h1>
         <Select
           value={String(selectedJobId)}
           onValueChange={(value) => setSelectedJobId(Number(value))}

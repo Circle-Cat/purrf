@@ -63,7 +63,9 @@ const MyReviews = () => {
   return (
     <div className="space-y-4 p-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-slate-900">My reviews</h1>
+        <h1 className="text-xl font-semibold text-slate-900">
+          My Posting Reviews
+        </h1>
         <HowItWorksDialog {...REVIEWS_GUIDE} />
       </div>
       <ReviewQueue reviews={reviews} onOpen={open} />

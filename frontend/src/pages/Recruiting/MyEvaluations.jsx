@@ -52,7 +52,9 @@ const MyEvaluations = () => {
 
   return (
     <div className="space-y-4 p-6">
-      <h1 className="text-xl font-semibold text-slate-900">My Evaluations</h1>
+      <h1 className="text-xl font-semibold text-slate-900">
+        My Interview Evaluations
+      </h1>
       {evaluations.length === 0 ? (
         <p className="text-sm text-muted-foreground">
           You have no assigned evaluations.
