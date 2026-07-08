@@ -9,30 +9,30 @@ vi.mock("@/context/auth", () => ({
 import Sidebar from "@/components/layout/Sidebar";
 
 describe("Sidebar recruiting entries", () => {
-  it("shows Recruiting when the user has job.write", () => {
+  it("shows Job Postings when the user has job.write", () => {
     render(
       <MemoryRouter>
         <Sidebar />
       </MemoryRouter>,
     );
-    expect(screen.getByText("Recruiting")).toBeInTheDocument();
+    expect(screen.getByText("Job Postings")).toBeInTheDocument();
   });
 
-  it("hides My Reviews without job.approve", () => {
+  it("hides My Posting Reviews without job.approve", () => {
     render(
       <MemoryRouter>
         <Sidebar />
       </MemoryRouter>,
     );
-    expect(screen.queryByText("My Reviews")).not.toBeInTheDocument();
+    expect(screen.queryByText("My Posting Reviews")).not.toBeInTheDocument();
   });
 
-  it("shows My Evaluations for any logged-in user regardless of permissions", () => {
+  it("shows My Interview Evaluations for any logged-in user regardless of permissions", () => {
     render(
       <MemoryRouter>
         <Sidebar />
       </MemoryRouter>,
     );
-    expect(screen.getByText("My Evaluations")).toBeInTheDocument();
+    expect(screen.getByText("My Interview Evaluations")).toBeInTheDocument();
   });
 });

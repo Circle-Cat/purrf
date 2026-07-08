@@ -50,10 +50,10 @@ describe("Sidebar Component", () => {
     );
   });
 
-  test("renders Applications for a user with no permissions and links to the board page", () => {
+  test("renders Applications Board for a user with no permissions and links to the board page", () => {
     renderSidebar([]);
 
-    const link = screen.getByText("Applications");
+    const link = screen.getByText("Applications Board");
     expect(link).toBeInTheDocument();
     expect(link.closest("a")).toHaveAttribute(
       "href",

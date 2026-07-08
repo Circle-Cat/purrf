@@ -53,22 +53,22 @@ const Sidebar = () => {
       permissions: [],
     },
     {
-      label: "Applications",
+      label: "Applications Board",
       to: ROUTE_PATHS.RECRUITING_BOARD,
       permissions: [],
     },
     {
-      label: "My Evaluations",
+      label: "My Interview Evaluations",
       to: ROUTE_PATHS.RECRUITING_MY_EVALUATIONS,
       permissions: [],
     },
     {
-      label: "Recruiting",
+      label: "Job Postings",
       to: ROUTE_PATHS.RECRUITING_POSTINGS,
       permissions: [PERMISSIONS.RECRUITING_JOB_WRITE],
     },
     {
-      label: "My Reviews",
+      label: "My Posting Reviews",
       to: ROUTE_PATHS.RECRUITING_REVIEWS,
       permissions: [PERMISSIONS.RECRUITING_JOB_APPROVE],
     },
