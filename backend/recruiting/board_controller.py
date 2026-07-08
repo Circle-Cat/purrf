@@ -22,6 +22,7 @@ from backend.common.api_endpoints import (
     RECRUITING_APPLICATION_ROUND_ENDPOINT,
     RECRUITING_APPLICATION_RESUME_ENDPOINT,
     RECRUITING_APPLICATION_ACTIVITY_ENDPOINT,
+    RECRUITING_APPLICATION_OTHER_APPLICATIONS_ENDPOINT,
     RECRUITING_APPLICATION_COMMENTS_ENDPOINT,
     RECRUITING_BLACKLIST_ENDPOINT,
 )
@@ -86,6 +87,12 @@ class BoardController:
         self.router.add_api_route(
             RECRUITING_APPLICATION_ACTIVITY_ENDPOINT,
             endpoint=authenticate()(self.get_application_activity),
+            methods=["GET"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            RECRUITING_APPLICATION_OTHER_APPLICATIONS_ENDPOINT,
+            endpoint=authenticate()(self.get_other_applications),
             methods=["GET"],
             response_model=None,
         )
@@ -186,6 +193,17 @@ class BoardController:
                 session, current_user, application_id
             )
         return api_response(message="Application activity fetched.", data=result)
+
+    async def get_other_applications(
+        self, current_user: UserContextDto, application_id: int
+    ):
+        """Return a candidate's other applications, for the cross-posting
+        aggregation view on the shared application detail page."""
+        async with self.database.session() as session:
+            result = await self.board_service.get_other_applications(
+                session, current_user, application_id
+            )
+        return api_response(message="Other applications fetched.", data=result)
 
     async def list_comments(self, current_user: UserContextDto, application_id: int):
         """Return every comment on an application, newest first."""

@@ -83,6 +83,19 @@ class TestBoardController(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(resp["data"], activity)
 
+    async def test_get_other_applications_delegates(self):
+        others = [{"application": {"id": 201}}]
+        self.board_service.get_other_applications = AsyncMock(return_value=others)
+
+        resp = await self.controller.get_other_applications(
+            self.ctx, application_id=10
+        )
+
+        self.board_service.get_other_applications.assert_awaited_once_with(
+            self.session, self.ctx, 10
+        )
+        self.assertEqual(resp["data"], others)
+
     async def test_change_stage_delegates(self):
         updated = {"id": 10, "stage": "tech"}
         self.board_service.change_stage = AsyncMock(return_value=updated)
@@ -173,6 +186,15 @@ class TestBoardController(unittest.IsolatedAsyncioTestCase):
         ]
 
         self.assertIn("GET", resume_route.methods)
+
+    def test_other_applications_route_is_get_and_plain_authenticated(self):
+        routes_by_path = {route.path: route for route in self.controller.router.routes}
+
+        route = routes_by_path[
+            "/recruiting/applications/{application_id}/other-applications"
+        ]
+
+        self.assertIn("GET", route.methods)
 
     # -- route registration: PATCH methods + permission gate --
     #
