@@ -103,3 +103,44 @@ class TestApplicationRepository(BaseRepositoryTestLib):
             [user.user_id for _, user in rows], [user_a.user_id, user_b.user_id]
         )
         self.assertTrue(all(app.job_id == job.job_id for app, _ in rows))
+
+    async def test_list_by_user_returns_joined_rows_across_jobs(self):
+        job_a = JobEntity(kind=JobKind.ACTIVITY, title="Job A", status=JobStatus.PUBLISHED)
+        job_b = JobEntity(kind=JobKind.ACTIVITY, title="Job B", status=JobStatus.PUBLISHED)
+        user_a = UsersEntity(first_name="A", last_name="One", primary_email="a1@b.com")
+        user_b = UsersEntity(first_name="B", last_name="Two", primary_email="b2@b.com")
+        await self.insert_entities([job_a, job_b, user_a, user_b])
+        await self.session.flush()
+
+        repo = ApplicationRepository()
+        app_a1 = await repo.create(
+            self.session,
+            ApplicationEntity(
+                job_id=job_a.job_id,
+                user_id=user_a.user_id,
+                stage=ApplicationStage.APPLIED,
+            ),
+        )
+        await repo.create(
+            self.session,
+            ApplicationEntity(
+                job_id=job_a.job_id,
+                user_id=user_b.user_id,
+                stage=ApplicationStage.APPLIED,
+            ),
+        )
+        app_a2 = await repo.create(
+            self.session,
+            ApplicationEntity(
+                job_id=job_b.job_id,
+                user_id=user_a.user_id,
+                stage=ApplicationStage.APPLIED,
+            ),
+        )
+
+        result = await repo.list_by_user(self.session, user_a.user_id)
+
+        self.assertEqual(
+            {(app.application_id, job.job_id) for app, job in result},
+            {(app_a1.application_id, job_a.job_id), (app_a2.application_id, job_b.job_id)},
+        )
