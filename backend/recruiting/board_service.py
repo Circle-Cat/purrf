@@ -1353,15 +1353,24 @@ class BoardService:
                 mentions resolved to current display names.
 
         Raises:
-            ValueError: If the application is missing, or the caller is
+            ValueError: If the application is missing, the caller is
                 neither an owner of the application's job nor its
-                current-stage assignee (collapsed "not found" message).
+                current-stage assignee (collapsed "not found" message), or
+                the body is blank after stripping any unauthorized
+                mention tokens -- e.g. a submission consisting entirely of
+                one invalid ``@[id]`` token passes ``CommentCreateDto``'s
+                raw-body validator (it's non-empty text) but must still be
+                rejected once the invalid mention is stripped out, with the
+                exact same message that validator raises for a blank raw
+                submission.
         """
         application, job = await self._load_owned_application(
             session, current_user, application_id, allow_assignee=True
         )
         mentionable_ids = await self._mentionable_user_ids(session, application, job)
         body, mentioned_ids = self._resolve_mentions(dto.body, mentionable_ids)
+        if not body.strip():
+            raise ValueError("comment text is required")
         row = await self.application_comment_repository.create(
             session, application_id, current_user.user_id, body
         )
@@ -1407,7 +1416,9 @@ class BoardService:
                 for.
 
         Returns:
-            list[MentionedUserDto]: One entry per mentionable user.
+            list[MentionedUserDto]: One entry per mentionable user, sorted
+                by display name (set iteration order is not stable, and a
+                name-sorted list makes for a sane, deterministic picker).
 
         Raises:
             ValueError: If the application is missing, or the caller is
@@ -1421,10 +1432,13 @@ class BoardService:
         users = await self.users_repository.get_all_by_ids(
             session, list(mentionable_ids)
         )
-        return [
-            MentionedUserDto(
-                user_id=user.user_id,
-                name=f"{user.first_name} {user.last_name}".strip(),
-            )
-            for user in users
-        ]
+        return sorted(
+            (
+                MentionedUserDto(
+                    user_id=user.user_id,
+                    name=f"{user.first_name} {user.last_name}".strip(),
+                )
+                for user in users
+            ),
+            key=lambda dto: dto.name,
+        )

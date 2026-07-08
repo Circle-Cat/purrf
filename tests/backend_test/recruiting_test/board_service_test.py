@@ -2489,6 +2489,21 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.comment_mention_repo.create_mentions.assert_not_awaited()
         self.assertEqual(result.mentions, [])
 
+    async def test_add_comment_body_that_is_only_an_invalid_mention_is_rejected(self):
+        job = self._job(job_id=1, owner_ids=(2,))
+        application = self._application(application_id=10, job_id=1)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.assignment_repo.get.return_value = None
+
+        dto = CommentCreateDto(body="@[999]")
+        with self.assertRaises(ValueError) as ctx:
+            await self.service.add_comment(self.session, self._ctx(user_id=2), 10, dto)
+
+        self.assertEqual(str(ctx.exception), "comment text is required")
+        self.comment_repo.create.assert_not_awaited()
+        self.comment_mention_repo.create_mentions.assert_not_awaited()
+
     async def test_add_comment_duplicate_mention_of_same_user_creates_one_row(self):
         job = self._job(job_id=1, owner_ids=(2,))
         application = self._application(application_id=10, job_id=1)
