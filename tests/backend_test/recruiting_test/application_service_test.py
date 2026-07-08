@@ -641,6 +641,50 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             details={"stage": "hired", "screenAutoHireRuleId": "r1"},
         )
 
+    async def test_submit_email_domain_include_and_exclude_rules_together(self):
+        """A posting configured with both an include+auto_hire rule and an
+        exclude+reject rule for the same domain set: matching domains get
+        auto-hired, everyone else gets auto-rejected — proving a posting can
+        express 'approve this domain, reject the rest' with two rules."""
+        job = self._job(
+            screen_rules={
+                "rules": [
+                    {
+                        "id": "r1",
+                        "condition": {
+                            "source": "email_domain",
+                            "operator": "in",
+                            "value": ["circlecat.org"],
+                        },
+                        "action": "auto_hire",
+                    },
+                    {
+                        "id": "r2",
+                        "condition": {
+                            "source": "email_domain",
+                            "operator": "not_in",
+                            "value": ["circlecat.org"],
+                        },
+                        "action": "reject",
+                    },
+                ]
+            }
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+
+        self.users_repo.get_user_by_user_id = AsyncMock(
+            return_value=self._user(email="a@circlecat.org")
+        )
+        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        hired_result = await self.service.submit(self.session, self._ctx(), dto)
+        self.assertEqual(hired_result.stage, ApplicationStage.HIRED)
+
+        self.users_repo.get_user_by_user_id = AsyncMock(
+            return_value=self._user(email="a@yahoo.com")
+        )
+        rejected_result = await self.service.submit(self.session, self._ctx(), dto)
+        self.assertEqual(rejected_result.stage, ApplicationStage.REJECTED)
+
     async def test_submit_auto_hire_skips_default_assignment(self):
         """HIRED is never an interview stage, so no assignment row should
         be materialized even if the job configures a default assignee

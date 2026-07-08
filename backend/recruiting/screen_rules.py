@@ -38,6 +38,8 @@ def _email_domain_matches(condition: dict, email: str) -> bool:
         return domain == values[0]
     if operator == "in":
         return domain in values
+    if operator == "not_in":
+        return domain not in values
     return False
 
 
