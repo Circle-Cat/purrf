@@ -124,9 +124,7 @@ class TestRecruitingController(unittest.IsolatedAsyncioTestCase):
         return endpoint.__closure__[idx].cell_contents
 
     def test_get_job_route_accepts_read_all(self):
-        routes_by_path = {
-            route.path: route for route in self.controller.router.routes
-        }
+        routes_by_path = {route.path: route for route in self.controller.router.routes}
         get_job_route = routes_by_path["/recruiting/jobs/{job_id}"]
 
         self.assertIn("GET", get_job_route.methods)
