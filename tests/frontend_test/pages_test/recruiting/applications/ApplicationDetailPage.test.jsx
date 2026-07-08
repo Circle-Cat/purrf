@@ -74,6 +74,38 @@ const SUBMISSION = {
   answers: { q1: "Yes", q2: "Remote" },
 };
 
+/** A second job's snapshot, for another-application aggregation fixtures. */
+const OTHER_SUBMISSION = {
+  personal: { firstName: "Alice", lastName: "Smith" },
+  education: [],
+  experience: [],
+  answers: { q9: "Yes" },
+};
+
+/** Build an OtherApplicationDto-shaped payload. */
+const makeOtherApplication = ({
+  id = 201,
+  jobTitle = "Backend Engineer",
+  stage = "tech",
+  resumeAvailable = false,
+  evaluations = [],
+} = {}) => ({
+  application: {
+    id,
+    jobId: 2,
+    userId: 5,
+    stage,
+    subStatus: "pending",
+    tags: null,
+    currentRound: 1,
+    current: { version: 1, isFrozen: true, submission: OTHER_SUBMISSION },
+    editable: false,
+  },
+  jobTitle,
+  resumeAvailable,
+  evaluations,
+});
+
 /** Build an ApplicationDetailDto-shaped payload for a given role/stage. */
 const makeDetail = ({
   isOwner = false,
@@ -116,6 +148,7 @@ beforeEach(() => {
   api.getEvaluationsForApplication.mockResolvedValue({ data: [] });
   api.getApplicationActivity.mockResolvedValue({ data: [] });
   api.getApplicationComments.mockResolvedValue({ data: [] });
+  api.getOtherApplications.mockResolvedValue({ data: [] });
 });
 
 /** Render the page at the detail route for a given application id. */
@@ -129,7 +162,7 @@ const renderPage = (applicationId = 101, search = "") => {
     ],
     { initialEntries: [`/recruiting/applications/${applicationId}${search}`] },
   );
-  return render(<RouterProvider router={router} />);
+  return { ...render(<RouterProvider router={router} />), router };
 };
 
 /** Render the page in the evaluator-only view (the My Evaluations link). */
@@ -1846,5 +1879,71 @@ describe("ApplicationDetailPage — read.all non-owner view", () => {
       screen.getByRole("tab", { name: "Evaluations" }),
     ).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Timeline" })).toBeInTheDocument();
+  });
+});
+
+describe("ApplicationDetailPage — candidate aggregation", () => {
+  it("does not render the other-applications section when there are none", async () => {
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true }),
+    });
+    renderPage();
+    await waitLoaded();
+
+    expect(screen.queryByText("Other applications")).not.toBeInTheDocument();
+  });
+
+  it("lists the candidate's other applications inline, without needing a click first", async () => {
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true }),
+    });
+    api.getOtherApplications.mockResolvedValue({
+      data: [
+        makeOtherApplication({ jobTitle: "Backend Engineer", stage: "tech" }),
+      ],
+    });
+    renderPage();
+    await waitLoaded();
+
+    expect(screen.getByText("Other applications")).toBeInTheDocument();
+    expect(screen.getByText(/Backend Engineer — Tech/)).toBeInTheDocument();
+  });
+
+  it("expands a row inline to show its snapshot and evaluations, without navigating", async () => {
+    const user = userEvent.setup();
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true }),
+    });
+    api.getOtherApplications.mockResolvedValue({
+      data: [
+        makeOtherApplication({
+          id: 201,
+          evaluations: [
+            {
+              id: 900,
+              applicationId: 201,
+              stage: "tech",
+              round: 1,
+              evaluatorId: ASSIGNEE_ID,
+              responses: { overall: { value: 5, notes: "Strong" } },
+              isConfirmed: true,
+            },
+          ],
+        }),
+      ],
+    });
+    const { router } = renderPage();
+    await waitLoaded();
+
+    await user.click(screen.getByText(/Backend Engineer — Tech/));
+
+    expect(screen.getByText("Strong")).toBeInTheDocument();
+    // Expanding is in-place, not a route change: createMemoryRouter's own
+    // location (not window.location, which it never touches) must still be
+    // the currently-viewed application's detail route.
+    expect(router.state.location.pathname).toBe("/recruiting/applications/101");
   });
 });

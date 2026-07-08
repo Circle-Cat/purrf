@@ -1,8 +1,12 @@
+import unittest
+from datetime import datetime, timezone
+
 from backend.entity.application_entity import ApplicationEntity
 from backend.entity.application_submission_entity import ApplicationSubmissionEntity
 from backend.entity.job_entity import JobEntity
 from backend.entity.users_entity import UsersEntity
 from backend.common.recruiting_enums import ApplicationStage, JobKind, JobStatus
+from backend.common.mentorship_enums import CommunicationMethod
 from backend.repository.application_repository import ApplicationRepository
 from backend.repository.application_submission_repository import (
     ApplicationSubmissionRepository,
@@ -12,10 +16,24 @@ from tests.backend_test.repository_test.base_repository_test_lib import (
 )
 
 
+def _make_user(first_name: str, last_name: str, primary_email: str) -> UsersEntity:
+    """Build a UsersEntity satisfying every NOT NULL column."""
+    return UsersEntity(
+        first_name=first_name,
+        last_name=last_name,
+        timezone="UTC",
+        timezone_updated_at=datetime.now(timezone.utc),
+        communication_channel=CommunicationMethod.EMAIL,
+        primary_email=primary_email,
+        is_active=True,
+        updated_timestamp=datetime.now(timezone.utc),
+    )
+
+
 class TestApplicationRepository(BaseRepositoryTestLib):
     async def _seed_job_and_user(self):
         job = JobEntity(kind=JobKind.ACTIVITY, title="T", status=JobStatus.PUBLISHED)
-        user = UsersEntity(first_name="A", last_name="B", primary_email="a@b.com")
+        user = _make_user("A", "B", "a@b.com")
         await self.insert_entities([job, user])
         await self.session.flush()
         return job, user
@@ -65,8 +83,8 @@ class TestApplicationRepository(BaseRepositoryTestLib):
         other_job = JobEntity(
             kind=JobKind.ACTIVITY, title="Other", status=JobStatus.PUBLISHED
         )
-        user_a = UsersEntity(first_name="A", last_name="One", primary_email="a1@b.com")
-        user_b = UsersEntity(first_name="B", last_name="Two", primary_email="b2@b.com")
+        user_a = _make_user("A", "One", "a1@b.com")
+        user_b = _make_user("B", "Two", "b2@b.com")
         await self.insert_entities([job, other_job, user_a, user_b])
         await self.session.flush()
 
@@ -103,3 +121,55 @@ class TestApplicationRepository(BaseRepositoryTestLib):
             [user.user_id for _, user in rows], [user_a.user_id, user_b.user_id]
         )
         self.assertTrue(all(app.job_id == job.job_id for app, _ in rows))
+
+    async def test_list_by_user_returns_joined_rows_across_jobs(self):
+        job_a = JobEntity(
+            kind=JobKind.ACTIVITY, title="Job A", status=JobStatus.PUBLISHED
+        )
+        job_b = JobEntity(
+            kind=JobKind.ACTIVITY, title="Job B", status=JobStatus.PUBLISHED
+        )
+        user_a = _make_user("A", "One", "a1@b.com")
+        user_b = _make_user("B", "Two", "b2@b.com")
+        await self.insert_entities([job_a, job_b, user_a, user_b])
+        await self.session.flush()
+
+        repo = ApplicationRepository()
+        app_a1 = await repo.create(
+            self.session,
+            ApplicationEntity(
+                job_id=job_a.job_id,
+                user_id=user_a.user_id,
+                stage=ApplicationStage.APPLIED,
+            ),
+        )
+        await repo.create(
+            self.session,
+            ApplicationEntity(
+                job_id=job_a.job_id,
+                user_id=user_b.user_id,
+                stage=ApplicationStage.APPLIED,
+            ),
+        )
+        app_a2 = await repo.create(
+            self.session,
+            ApplicationEntity(
+                job_id=job_b.job_id,
+                user_id=user_a.user_id,
+                stage=ApplicationStage.APPLIED,
+            ),
+        )
+
+        result = await repo.list_by_user(self.session, user_a.user_id)
+
+        self.assertEqual(
+            {(app.application_id, job.job_id) for app, job in result},
+            {
+                (app_a1.application_id, job_a.job_id),
+                (app_a2.application_id, job_b.job_id),
+            },
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -190,3 +190,7 @@ export const getApplicationComments = (id) =>
 /** body: { body: string } */
 export const postComment = (id, body) =>
   request.post(API_ENDPOINTS.RECRUITING_APPLICATION_COMMENTS(id), body);
+
+/** List a candidate's other applications (OtherApplicationDto[]), for the cross-posting aggregation view. */
+export const getOtherApplications = (id) =>
+  request.get(API_ENDPOINTS.RECRUITING_APPLICATION_OTHER_APPLICATIONS(id));
