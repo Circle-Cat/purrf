@@ -192,7 +192,11 @@ describe("PostingEditor", () => {
     );
     render(<RouterProvider router={router} />);
     const input = await screen.findByLabelText("Cooldown days");
-    expect(input.value).toBe("45");
+    // `findByLabelText` resolves as soon as the input exists in the DOM,
+    // but its value is populated by a later render once the loaded job
+    // data flows into form state — wait for the value itself, not just
+    // the element's presence, to avoid a race under slower test runs.
+    await waitFor(() => expect(input.value).toBe("45"));
     fireEvent.change(input, { target: { value: "30" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(api.updateJob).toHaveBeenCalled());
@@ -221,7 +225,10 @@ describe("PostingEditor", () => {
     render(<RouterProvider router={router} />);
     expect(await screen.findByDisplayValue("Mentor gig")).toBeInTheDocument();
     const select = screen.getByRole("combobox", { name: "Mentorship role" });
-    expect(select).toHaveTextContent("Mentor");
+    // Same race as the cooldown test above: the select exists as soon as
+    // the form renders, but its displayed text is populated by a later
+    // render once the loaded mentorshipRole flows into form state.
+    await waitFor(() => expect(select).toHaveTextContent("Mentor"));
     await user.click(select);
     await user.click(screen.getByRole("option", { name: "Mentee" }));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
