@@ -96,3 +96,33 @@ py_binary(
         "@pypi//sqlalchemy",
     ],
 )
+
+py_library(
+    name = "backfill_activity_application_gate_lib",
+    srcs = ["backfill_activity_application_gate.py"],
+    deps = [
+        "//backend/common:database",
+        "//backend/common:logger",
+        "//backend/common:mentorship_enums",
+        "//backend/common:recruiting_enums",
+        "//backend/entity:entities",
+        "//backend/repository:repositories",
+        "@pypi//asyncpg",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_binary(
+    name = "backfill_activity_application_gate",
+    srcs = ["backfill_activity_application_gate.py"],
+    deps = [
+        "//backend/common:database",
+        "//backend/common:logger",
+        "//backend/common:mentorship_enums",
+        "//backend/common:recruiting_enums",
+        "//backend/entity:entities",
+        "//backend/repository:repositories",
+        "@pypi//asyncpg",
+        "@pypi//sqlalchemy",
+    ],
+)

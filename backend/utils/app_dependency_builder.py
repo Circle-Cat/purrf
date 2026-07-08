@@ -453,6 +453,8 @@ class AppDependencyBuilder:
             MentorshipRoundParticipantsRepository()
         )
         self.preferences_repository = PreferencesRepository()
+        self.job_repository = JobRepository()
+        self.application_repository = ApplicationRepository()
         self.mentorship_mapper = MentorshipMapper()
         self.rounds_service = RoundsService(
             mentorship_round_repository=self.mentorship_round_repository,
@@ -475,6 +477,7 @@ class AppDependencyBuilder:
             participation_service=self.participation_service,
             mentorship_mapper=self.mentorship_mapper,
             training_repository=self.training_repository,
+            application_repository=self.application_repository,
         )
         self.meeting_service = MeetingService(
             logger=self.logger,
@@ -547,7 +550,6 @@ class AppDependencyBuilder:
             self.permission_admin_service,
             database=self.database,
         )
-        self.job_repository = JobRepository()
         self.job_review_repository = JobReviewRepository()
         self.recruiting_mapper = RecruitingMapper()
         self.job_service = JobService(
@@ -560,7 +562,6 @@ class AppDependencyBuilder:
             job_service=self.job_service,
             database=self.database,
         )
-        self.application_repository = ApplicationRepository()
         self.application_assignment_repository = ApplicationAssignmentRepository()
         self.application_activity_repository = ApplicationActivityRepository()
         self.application_comment_repository = ApplicationCommentRepository()

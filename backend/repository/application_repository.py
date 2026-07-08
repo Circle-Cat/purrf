@@ -1,6 +1,7 @@
 from datetime import date
 
-from backend.common.recruiting_enums import ApplicationStage
+from backend.common.mentorship_enums import ParticipantRole
+from backend.common.recruiting_enums import ApplicationStage, JobKind
 from backend.entity.application_entity import ApplicationEntity
 from backend.entity.job_entity import JobEntity
 from backend.entity.users_entity import UsersEntity
@@ -150,6 +151,28 @@ class ApplicationRepository:
             )
         )
         return result.scalar_one_or_none()
+
+    async def get_hired_activity_application(
+        self, session: AsyncSession, user_id: int, mentorship_role: ParticipantRole
+    ) -> ApplicationEntity | None:
+        """Return the user's HIRED application for an ACTIVITY posting with
+        this mentorship_role, or None.
+
+        Used by the mentorship round-registration gate: a user may only
+        register for a round once they have an approved (HIRED) application
+        for the matching mentor/mentee activity posting.
+        """
+        result = await session.execute(
+            select(ApplicationEntity)
+            .join(JobEntity, ApplicationEntity.job_id == JobEntity.job_id)
+            .where(
+                ApplicationEntity.user_id == user_id,
+                ApplicationEntity.stage == ApplicationStage.HIRED,
+                JobEntity.kind == JobKind.ACTIVITY,
+                JobEntity.mentorship_role == mentorship_role,
+            )
+        )
+        return result.scalars().first()
 
     async def get_by_id(
         self,

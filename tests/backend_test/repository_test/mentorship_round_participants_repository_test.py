@@ -640,6 +640,49 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
         self.assertEqual(row.mentor_id, self.user.user_id)
         self.assertEqual(row.mentee_id, user2.user_id)
 
+    async def test_list_distinct_user_roles_dedupes_across_rounds(self):
+        round_a = MentorshipRoundEntity(name="Round A")
+        round_b = MentorshipRoundEntity(name="Round B")
+        mentee_user = UsersEntity(
+            first_name="Bob",
+            last_name="Mentee",
+            timezone="Asia/Shanghai",
+            timezone_updated_at=datetime.now(timezone.utc),
+            communication_channel=CommunicationMethod.EMAIL,
+            primary_email="bob@example.com",
+            is_active=True,
+            updated_timestamp=datetime.now(timezone.utc),
+        )
+        await self.insert_entities([round_a, round_b, mentee_user])
+        await self.session.flush()
+
+        # Same user, same role, two different rounds - must dedupe to one row.
+        await self.repo.upsert_participant(
+            self.session,
+            MentorshipRoundParticipantsEntity(
+                user_id=mentee_user.user_id,
+                round_id=round_a.round_id,
+                participant_role=ParticipantRole.MENTEE,
+                approval_status=ApprovalStatus.SIGNED_UP,
+            ),
+        )
+        await self.repo.upsert_participant(
+            self.session,
+            MentorshipRoundParticipantsEntity(
+                user_id=mentee_user.user_id,
+                round_id=round_b.round_id,
+                participant_role=ParticipantRole.MENTEE,
+                approval_status=ApprovalStatus.SIGNED_UP,
+            ),
+        )
+        # A second, distinct participant already inserted in asyncSetUp
+        # (self.user, no participant row) is not a participant - must not
+        # appear.
+
+        rows = await self.repo.list_distinct_user_roles(self.session)
+
+        self.assertEqual(rows, [(mentee_user.user_id, ParticipantRole.MENTEE)])
+
 
 if __name__ == "__main__":
     unittest.main()

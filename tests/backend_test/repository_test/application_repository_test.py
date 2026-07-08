@@ -6,7 +6,7 @@ from backend.entity.application_submission_entity import ApplicationSubmissionEn
 from backend.entity.job_entity import JobEntity
 from backend.entity.users_entity import UsersEntity
 from backend.common.recruiting_enums import ApplicationStage, JobKind, JobStatus
-from backend.common.mentorship_enums import CommunicationMethod
+from backend.common.mentorship_enums import CommunicationMethod, ParticipantRole
 from backend.repository.application_repository import ApplicationRepository
 from backend.repository.application_submission_repository import (
     ApplicationSubmissionRepository,
@@ -333,6 +333,79 @@ class TestApplicationRepository(BaseRepositoryTestLib):
         )
         self.assertEqual(stage_result, [])
         self.assertEqual(day_result, [])
+
+    async def test_get_hired_activity_application_finds_matching_role_and_stage(self):
+        job = JobEntity(
+            kind=JobKind.ACTIVITY,
+            mentorship_role=ParticipantRole.MENTEE,
+            title="Mentee Activity",
+            status=JobStatus.PUBLISHED,
+        )
+        other_role_job = JobEntity(
+            kind=JobKind.ACTIVITY,
+            mentorship_role=ParticipantRole.MENTOR,
+            title="Mentor Activity",
+            status=JobStatus.PUBLISHED,
+        )
+        user = _make_user("A", "B", "a@b.com")
+        await self.insert_entities([job, other_role_job, user])
+        await self.session.flush()
+
+        repo = ApplicationRepository()
+        hired_mentee = await repo.create(
+            self.session,
+            ApplicationEntity(
+                job_id=job.job_id, user_id=user.user_id, stage=ApplicationStage.HIRED
+            ),
+        )
+        # Same user, HIRED for a different role. Querying both roles below
+        # and asserting each returns its own application (not the other
+        # one) makes this test fail if the mentorship_role filter is ever
+        # dropped, regardless of row insertion order.
+        hired_mentor = await repo.create(
+            self.session,
+            ApplicationEntity(
+                job_id=other_role_job.job_id,
+                user_id=user.user_id,
+                stage=ApplicationStage.HIRED,
+            ),
+        )
+
+        found_mentee = await repo.get_hired_activity_application(
+            self.session, user_id=user.user_id, mentorship_role=ParticipantRole.MENTEE
+        )
+        self.assertEqual(found_mentee.application_id, hired_mentee.application_id)
+
+        found_mentor = await repo.get_hired_activity_application(
+            self.session, user_id=user.user_id, mentorship_role=ParticipantRole.MENTOR
+        )
+        self.assertEqual(found_mentor.application_id, hired_mentor.application_id)
+
+    async def test_get_hired_activity_application_returns_none_when_not_hired(self):
+        job = JobEntity(
+            kind=JobKind.ACTIVITY,
+            mentorship_role=ParticipantRole.MENTOR,
+            title="Mentor Activity",
+            status=JobStatus.PUBLISHED,
+        )
+        user = _make_user("A", "B", "a2@b.com")
+        await self.insert_entities([job, user])
+        await self.session.flush()
+
+        repo = ApplicationRepository()
+        await repo.create(
+            self.session,
+            ApplicationEntity(
+                job_id=job.job_id,
+                user_id=user.user_id,
+                stage=ApplicationStage.RECRUITER_SCREENING,
+            ),
+        )
+
+        found = await repo.get_hired_activity_application(
+            self.session, user_id=user.user_id, mentorship_role=ParticipantRole.MENTOR
+        )
+        self.assertIsNone(found)
 
 
 if __name__ == "__main__":

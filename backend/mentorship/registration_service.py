@@ -41,6 +41,7 @@ class RegistrationService:
         participation_service,
         mentorship_mapper,
         training_repository,
+        application_repository,
     ):
         """
         Initialize the RegistrationService with its dependencies.
@@ -55,6 +56,9 @@ class RegistrationService:
             mentorship_mapper (MentorshipMapper):
                 The mapper for converting mentorship rounds and entities to DTOs.
             training_repository: The repository responsible for handling training data.
+            application_repository: The repository responsible for looking up recruiting
+                                    activity applications, used to gate round registration
+                                    on an approved (HIRED) application for the role.
         """
         self.logger = logger
         self.preferences_repo = preferences_repository
@@ -63,6 +67,7 @@ class RegistrationService:
         self.participation_service = participation_service
         self.mentorship_mapper = mentorship_mapper
         self.training_repo = training_repository
+        self.application_repo = application_repository
 
     async def update_registration_info(
         self,
@@ -136,6 +141,24 @@ class RegistrationService:
             )
             raise ValueError(
                 f"Registration period has ended at {application_deadline}."
+            )
+
+        approved_application = (
+            await self.application_repo.get_hired_activity_application(
+                session=session,
+                user_id=user_context.user_id,
+                mentorship_role=participant_role,
+            )
+        )
+        if not approved_application:
+            self.logger.error(
+                "[RegistrationService] user %s tried to register for round %s as %s without an approved application.",
+                user_context.user_id,
+                round_id,
+                participant_role.value,
+            )
+            raise ValueError(
+                f"Please complete your {participant_role.value} application before registering for a round."
             )
 
         global_pref = await self._update_skill_and_industry_preferences(
