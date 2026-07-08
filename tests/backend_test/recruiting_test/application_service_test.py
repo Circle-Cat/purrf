@@ -77,10 +77,11 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         job.pipeline_config = kw.get(
             "pipeline_config", {"stages": [{"stage": "recruiter_screening"}]}
         )
+        job.screen_rules = kw.get("screen_rules")
         return job
 
-    def _user(self, is_blocked=False):
-        u = UsersEntity(first_name="A", last_name="B", primary_email="a@b.com")
+    def _user(self, is_blocked=False, email="a@b.com"):
+        u = UsersEntity(first_name="A", last_name="B", primary_email=email)
         u.user_id = 2
         u.is_blocked = is_blocked
         return u
@@ -530,6 +531,259 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         created_sub = self.sub_repo.create.call_args.args[1]
         self.assertEqual(created_sub.version, 2)
         self.assertEqual(result.tags["cold_freeze"]["thaw_date"], "2026-05-30")
+
+    async def test_submit_screen_rule_reject_lands_rejected_with_rule_tag(self):
+        job = self._job(
+            screen_rules={
+                "rules": [
+                    {
+                        "id": "r1",
+                        "condition": {
+                            "source": "email_domain",
+                            "operator": "equals",
+                            "value": "spam.com",
+                        },
+                        "action": "reject",
+                    }
+                ]
+            }
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.users_repo.get_user_by_user_id = AsyncMock(
+            return_value=self._user(email="a@spam.com")
+        )
+        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+
+        result = await self.service.submit(self.session, self._ctx(), dto)
+
+        self.assertEqual(result.stage, ApplicationStage.REJECTED)
+        self.assertEqual(result.tags, {"auto_reject": "screen_rule", "rule_id": "r1"})
+        self.activity_repo.create.assert_awaited_once_with(
+            self.session,
+            100,
+            2,
+            "auto_rejected",
+            details={"reason": "screen_rule", "ruleId": "r1"},
+        )
+
+    async def test_submit_screen_rule_qualify_lands_first_stage_with_activity_detail(
+        self,
+    ):
+        job = self._job(
+            screen_rules={
+                "rules": [
+                    {
+                        "id": "r1",
+                        "condition": {
+                            "source": "email_domain",
+                            "operator": "equals",
+                            "value": "google.com",
+                        },
+                        "action": "qualify",
+                    }
+                ]
+            }
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.users_repo.get_user_by_user_id = AsyncMock(
+            return_value=self._user(email="a@google.com")
+        )
+        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+
+        result = await self.service.submit(self.session, self._ctx(), dto)
+
+        self.assertEqual(result.stage, ApplicationStage.RECRUITER_SCREENING)
+        self.assertEqual(result.sub_status, "pending")
+        self.assertIsNone(result.tags)
+        self.activity_repo.create.assert_awaited_once_with(
+            self.session,
+            100,
+            2,
+            "application_submitted",
+            details={
+                "stage": "recruiter_screening",
+                "screenQualifyRuleId": "r1",
+            },
+        )
+
+    async def test_submit_screen_rule_auto_hire_lands_hired_with_no_sub_status(self):
+        job = self._job(
+            screen_rules={
+                "rules": [
+                    {
+                        "id": "r1",
+                        "condition": {
+                            "source": "email_domain",
+                            "operator": "equals",
+                            "value": "circlecat.org",
+                        },
+                        "action": "auto_hire",
+                    }
+                ]
+            }
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.users_repo.get_user_by_user_id = AsyncMock(
+            return_value=self._user(email="a@circlecat.org")
+        )
+        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+
+        result = await self.service.submit(self.session, self._ctx(), dto)
+
+        self.assertEqual(result.stage, ApplicationStage.HIRED)
+        self.assertIsNone(result.sub_status)
+        self.assertIsNone(result.tags)
+        self.activity_repo.create.assert_awaited_once_with(
+            self.session,
+            100,
+            2,
+            "application_submitted",
+            details={"stage": "hired", "screenAutoHireRuleId": "r1"},
+        )
+
+    async def test_submit_auto_hire_skips_default_assignment(self):
+        """HIRED is never an interview stage, so no assignment row should
+        be materialized even if the job configures a default assignee
+        elsewhere in its pipeline."""
+        job = self._job(
+            pipeline_config={
+                "stages": [{"stage": "recruiter_screening", "defaultAssigneeId": 5}],
+                "ownerIds": [9],
+            },
+            screen_rules={
+                "rules": [
+                    {
+                        "id": "r1",
+                        "condition": {
+                            "source": "email_domain",
+                            "operator": "equals",
+                            "value": "circlecat.org",
+                        },
+                        "action": "auto_hire",
+                    }
+                ]
+            },
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.users_repo.get_user_by_user_id = AsyncMock(
+            return_value=self._user(email="a@circlecat.org")
+        )
+        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+
+        await self.service.submit(self.session, self._ctx(), dto)
+
+        self.assignment_repo.upsert.assert_not_awaited()
+
+    async def test_submit_blocked_wins_over_screen_rule_auto_hire(self):
+        """A real blacklist entry is more severe than any configured rule —
+        screen_rules must never even be evaluated for a blocked user."""
+        job = self._job(
+            screen_rules={
+                "rules": [
+                    {
+                        "id": "r1",
+                        "condition": {
+                            "source": "email_domain",
+                            "operator": "equals",
+                            "value": "circlecat.org",
+                        },
+                        "action": "auto_hire",
+                    }
+                ]
+            }
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.users_repo.get_user_by_user_id = AsyncMock(
+            return_value=self._user(is_blocked=True, email="a@circlecat.org")
+        )
+        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+
+        result = await self.service.submit(self.session, self._ctx(), dto)
+
+        self.assertEqual(result.stage, ApplicationStage.REJECTED)
+        self.assertEqual(result.tags, {"auto_reject": "blocked"})
+
+    async def test_reapply_screen_rule_reject_lands_rejected(self):
+        job = self._job(
+            cooldown_days=90,
+            screen_rules={
+                "rules": [
+                    {
+                        "id": "r1",
+                        "condition": {
+                            "source": "email_domain",
+                            "operator": "equals",
+                            "value": "spam.com",
+                        },
+                        "action": "reject",
+                    }
+                ]
+            },
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.users_repo.get_user_by_user_id = AsyncMock(
+            return_value=self._user(email="a@spam.com")
+        )
+        app = ApplicationEntity(
+            job_id=1, user_id=2, stage=ApplicationStage.REJECTED, current_round=1
+        )
+        app.application_id = 100
+        app.created_datetime = datetime(2026, 1, 10, tzinfo=timezone.utc)
+        self.app_repo.get_by_job_and_user = AsyncMock(return_value=app)
+        prior = ApplicationSubmissionEntity(
+            application_id=100, version=1, submission={"v": 1}
+        )
+        prior.submitted_at = datetime(2026, 1, 20, tzinfo=timezone.utc)
+        self.sub_repo.get_current = AsyncMock(return_value=prior)
+        self.service._today = lambda: date(2026, 2, 1)  # inside the 90-day window
+        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+
+        result = await self.service.submit(self.session, self._ctx(), dto)
+
+        self.assertEqual(result.stage, ApplicationStage.REJECTED)
+        # The new reject's tag wins over the prior rejection's cooldown tag.
+        self.assertEqual(result.tags, {"auto_reject": "screen_rule", "rule_id": "r1"})
+
+    async def test_reapply_screen_rule_auto_hire_lands_hired(self):
+        job = self._job(
+            cooldown_days=90,
+            screen_rules={
+                "rules": [
+                    {
+                        "id": "r1",
+                        "condition": {
+                            "source": "email_domain",
+                            "operator": "equals",
+                            "value": "circlecat.org",
+                        },
+                        "action": "auto_hire",
+                    }
+                ]
+            },
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.users_repo.get_user_by_user_id = AsyncMock(
+            return_value=self._user(email="a@circlecat.org")
+        )
+        app = ApplicationEntity(
+            job_id=1, user_id=2, stage=ApplicationStage.REJECTED, current_round=1
+        )
+        app.application_id = 100
+        app.created_datetime = datetime(2026, 1, 10, tzinfo=timezone.utc)
+        self.app_repo.get_by_job_and_user = AsyncMock(return_value=app)
+        prior = ApplicationSubmissionEntity(
+            application_id=100, version=1, submission={"v": 1}
+        )
+        prior.submitted_at = datetime(2026, 1, 20, tzinfo=timezone.utc)
+        self.sub_repo.get_current = AsyncMock(return_value=prior)
+        self.service._today = lambda: date(2026, 2, 1)  # inside the 90-day window
+        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+
+        result = await self.service.submit(self.session, self._ctx(), dto)
+
+        self.assertEqual(result.stage, ApplicationStage.HIRED)
+        self.assertIsNone(result.sub_status)
+        self.assertIsNone(result.tags)
 
     async def test_reapply_after_thaw_has_no_cold_freeze_tag(self):
         app = ApplicationEntity(

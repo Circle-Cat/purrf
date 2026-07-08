@@ -299,10 +299,19 @@ const EvaluationSummary = ({ evaluations, interviewPool }) => (
  */
 const describeActivity = ({ eventType, details }) => {
   switch (eventType) {
-    case "application_submitted":
-      return `Submitted — landed on ${humanize(details.stage)}`;
+    case "application_submitted": {
+      if (details.screenAutoHireRuleId) {
+        return "Submitted — auto-approved by screening rule (landed on Hired)";
+      }
+      const base = `Submitted — landed on ${humanize(details.stage)}`;
+      return details.screenQualifyRuleId
+        ? `${base} (auto-qualified by screening rule)`
+        : base;
+    }
     case "auto_rejected":
-      return "Automatically rejected (blocked applicant)";
+      return details.reason === "screen_rule"
+        ? "Automatically rejected by screening rule"
+        : "Automatically rejected (blocked applicant)";
     case "stage_changed":
       if (details.reason) {
         return `Rejected from ${humanize(details.fromStage)}${

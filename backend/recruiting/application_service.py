@@ -11,7 +11,7 @@ from backend.dto.application_dto import (
 from backend.dto.user_context_dto import UserContextDto
 from backend.entity.application_entity import ApplicationEntity
 from backend.entity.application_submission_entity import ApplicationSubmissionEntity
-from backend.recruiting import cooldown, stage_machine
+from backend.recruiting import cooldown, screen_rules, stage_machine
 from backend.recruiting.board_service import INTERVIEW_STAGES
 from backend.recruiting.pipeline_owners import normalized_owner_ids
 
@@ -105,18 +105,91 @@ class ApplicationService:
             ):
                 raise ValueError(f"question {question['id']} is required")
 
+    @staticmethod
+    def _screened_stage(job, blocked, screen_action):
+        """The stage a submission lands on.
+
+        Args:
+            job (JobEntity): The posting being submitted to.
+            blocked (bool): Whether the applicant is blacklisted.
+            screen_action (str | None): ``"reject"`` | ``"qualify"`` |
+                ``"auto_hire"`` | None — the outcome of
+                ``screen_rules.evaluate()`` (always None when ``blocked``,
+                since a blacklist entry is evaluated first and wins
+                outright).
+
+        Returns:
+            ApplicationStage: ``REJECTED`` when blocked or a ``"reject"``
+                rule matched; ``HIRED`` when an ``"auto_hire"`` rule
+                matched; otherwise the job's first configured pipeline
+                stage (unscreened and ``"qualify"`` both land here
+                identically).
+        """
+        if blocked or screen_action == "reject":
+            return ApplicationStage.REJECTED
+        if screen_action == "auto_hire":
+            return ApplicationStage.HIRED
+        return stage_machine.first_stage(job.pipeline_config)
+
+    @staticmethod
+    def _screened_sub_status(stage):
+        """The sub_status for a just-landed stage.
+
+        Mirrors ``BoardService.change_stage``'s rule: ``"pending"`` for a
+        real configurable pipeline stage, ``None`` for a terminal stage
+        (``REJECTED``/``HIRED`` have no sub-status concept).
+
+        Args:
+            stage (ApplicationStage): The stage just landed on.
+
+        Returns:
+            str | None: ``"pending"`` or ``None``.
+        """
+        if stage in (ApplicationStage.REJECTED, ApplicationStage.HIRED):
+            return None
+        return "pending"
+
+    @staticmethod
+    def _screened_tags(blocked, screen_action, screen_rule_id):
+        """The tags to store for a blocked/screen-rule-rejected outcome.
+
+        Args:
+            blocked (bool): Whether the applicant is blacklisted.
+            screen_action (str | None): See ``_screened_stage``.
+            screen_rule_id (str | None): The matched rule's id, if any.
+
+        Returns:
+            dict | None: ``{"auto_reject": "blocked"}`` when blocked,
+                ``{"auto_reject": "screen_rule", "rule_id": ...}`` when a
+                ``"reject"`` rule matched, else None (the caller falls
+                back to any other tag it would otherwise set, e.g. a
+                cooldown ``cold_freeze`` marker).
+        """
+        if blocked:
+            return {"auto_reject": "blocked"}
+        if screen_action == "reject":
+            return {"auto_reject": "screen_rule", "rule_id": screen_rule_id}
+        return None
+
     async def submit(
         self,
         session: AsyncSession,
         current_user: UserContextDto,
         dto: ApplicationSubmitDto,
     ) -> ApplicationDto:
-        """Create/land an application at Applied (or auto-reject a blocked user).
+        """Create/land an application (or auto-screen it, or auto-reject a
+        blocked user).
 
-        Logs an ``"application_submitted"`` (or, for a blocked applicant,
-        ``"auto_rejected"``) entry to the audit timeline on every call,
-        attributed to the candidate themselves — covers a fresh submission,
-        a reapply after cooldown, and a blocked-user auto-reject alike.
+        Logs an ``"application_submitted"`` (or, for a blocked applicant or
+        a screen-rule ``"reject"`` match, ``"auto_rejected"``) entry to the
+        audit timeline on every call, attributed to the candidate
+        themselves — covers a fresh submission, a reapply after cooldown,
+        and a blocked/screen-rejected outcome alike. Independent of the
+        blacklist check, a matching ``screen_rules`` rule can also land the
+        submission on ``REJECTED`` (a ``"reject"`` match) or ``HIRED`` (an
+        ``"auto_hire"`` match) with zero human review; a ``"qualify"``
+        match proceeds exactly as an unscreened submission would, with a
+        note added to the activity log.
 
         Args:
             session (AsyncSession): Active database async session.
@@ -140,24 +213,32 @@ class ApplicationService:
             session, current_user.user_id
         )
         blocked = bool(user is not None and getattr(user, "is_blocked", False))
+        screen_result = (
+            {"action": None, "rule_id": None}
+            if blocked
+            else screen_rules.evaluate(
+                job.screen_rules,
+                user.primary_email if user is not None else "",
+                dto.answers,
+            )
+        )
+        screen_action = screen_result["action"]
+        screen_rule_id = screen_result["rule_id"]
 
         existing = await self.application_repository.get_by_job_and_user(
             session, dto.job_id, current_user.user_id
         )
 
         if existing is None:
+            stage = self._screened_stage(job, blocked, screen_action)
             application = await self.application_repository.create(
                 session,
                 ApplicationEntity(
                     job_id=dto.job_id,
                     user_id=current_user.user_id,
-                    stage=(
-                        ApplicationStage.REJECTED
-                        if blocked
-                        else stage_machine.first_stage(job.pipeline_config)
-                    ),
-                    sub_status=None if blocked else "pending",
-                    tags={"auto_reject": "blocked"} if blocked else None,
+                    stage=stage,
+                    sub_status=self._screened_sub_status(stage),
+                    tags=self._screened_tags(blocked, screen_action, screen_rule_id),
                 ),
             )
             current_sub = await self._write_version(
@@ -200,9 +281,20 @@ class ApplicationService:
                 if cooldown.is_in_cooldown(self._today(), thaw)
                 else None
             )
-            existing.stage = stage_machine.first_stage(job.pipeline_config)
-            existing.sub_status = "pending"
-            existing.tags = tags
+            stage = self._screened_stage(job, blocked, screen_action)
+            existing.stage = stage
+            existing.sub_status = self._screened_sub_status(stage)
+            # An auto_hire outcome supersedes the cooldown tag outright: it's
+            # a positive terminal landing, so a stale cold_freeze marker from
+            # the prior rejection is no longer relevant and would only
+            # confuse the board. reject/blocked still take precedence over
+            # the cooldown tag (per the design note above); everything else
+            # (qualify, or unscreened) falls back to it unchanged.
+            existing.tags = (
+                None
+                if stage == ApplicationStage.HIRED
+                else self._screened_tags(blocked, screen_action, screen_rule_id) or tags
+            )
             application = await self.application_repository.update(session, existing)
             current_sub = await self.application_submission_repository.create(
                 session,
@@ -227,13 +319,26 @@ class ApplicationService:
                 "auto_rejected",
                 details={"reason": "blocked"},
             )
+        elif screen_action == "reject":
+            await self.application_activity_repository.create(
+                session,
+                application.application_id,
+                current_user.user_id,
+                "auto_rejected",
+                details={"reason": "screen_rule", "ruleId": screen_rule_id},
+            )
         else:
+            details = {"stage": application.stage.value}
+            if screen_action == "qualify":
+                details["screenQualifyRuleId"] = screen_rule_id
+            elif screen_action == "auto_hire":
+                details["screenAutoHireRuleId"] = screen_rule_id
             await self.application_activity_repository.create(
                 session,
                 application.application_id,
                 current_user.user_id,
                 "application_submitted",
-                details={"stage": application.stage.value},
+                details=details,
             )
 
         if not blocked and self._profile_writeback and dto.save_to_profile:

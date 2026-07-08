@@ -10,7 +10,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-const ACTIONS = ["reject", "qualify"];
+const ACTIONS = ["reject", "qualify", "auto_hire"];
 
 /** Next unique rule id (r1, r2, …) given existing rules. */
 const nextRuleId = (rules) => {
