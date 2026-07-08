@@ -97,6 +97,34 @@ describe("ScreenRulesEditor", () => {
     ]);
   });
 
+  it("offers auto_hire as an email-domain rule action", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(<ControlledScreenRules initialRules={[]} onChange={onChange} />);
+    await user.click(
+      screen.getByRole("checkbox", { name: "Screen by email domain" }),
+    );
+    fireEvent.change(screen.getByLabelText("Email domains"), {
+      target: { value: "circlecat.org" },
+    });
+    await user.click(
+      screen.getByRole("combobox", { name: "Email domain action" }),
+    );
+    await user.click(screen.getByRole("option", { name: "auto_hire" }));
+    const last = onChange.mock.calls.at(-1)[0];
+    expect(last.rules).toEqual([
+      {
+        id: "r1",
+        condition: {
+          source: "email_domain",
+          operator: "equals",
+          value: "circlecat.org",
+        },
+        action: "auto_hire",
+      },
+    ]);
+  });
+
   it("emits an email_domain=in rule for multiple comma-separated domains", () => {
     const onChange = vi.fn();
     render(
