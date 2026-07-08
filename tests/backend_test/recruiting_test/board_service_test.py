@@ -18,6 +18,7 @@ from backend.dto.user_context_dto import UserContextDto
 from backend.entity.application_assignment_entity import ApplicationAssignmentEntity
 from backend.entity.application_entity import ApplicationEntity
 from backend.entity.application_submission_entity import ApplicationSubmissionEntity
+from backend.entity.evaluation_entity import EvaluationEntity
 from backend.entity.job_entity import JobEntity
 from backend.entity.users_entity import UsersEntity
 from backend.common.permissions import Permission
@@ -31,6 +32,7 @@ from backend.repository.application_activity_repository import (
 from backend.repository.application_comment_repository import (
     ApplicationCommentRepository,
 )
+from backend.repository.evaluation_repository import EvaluationRepository
 
 
 class TestBoardService(unittest.IsolatedAsyncioTestCase):
@@ -57,6 +59,8 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             ApplicationActivityRepository, instance=True
         )
         self.comment_repo = create_autospec(ApplicationCommentRepository, instance=True)
+        self.evaluation_repo = create_autospec(EvaluationRepository, instance=True)
+        self.evaluation_repo.list_by_application.return_value = []
         self.session = AsyncMock()
         self.service = BoardService(
             self.job_repo,
@@ -69,6 +73,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             self.user_permissions_repo,
             self.activity_repo,
             self.comment_repo,
+            self.evaluation_repo,
         )
         # Default persistence mocks: echo the entity back, like SQLAlchemy's
         # merge-and-flush does when nothing else stubs them out.
@@ -2367,6 +2372,96 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.activity_repo.list_by_application.assert_awaited_once_with(
             self.session, 10
         )
+
+    # -- get_other_applications --
+
+    async def test_get_other_applications_returns_every_sibling_application(self):
+        entry_job = self._job(job_id=1, owner_ids=(2,))
+        other_job = self._job(job_id=2, owner_ids=(9,))
+        entry_app = self._application(
+            application_id=10,
+            job_id=1,
+            user_id=3,
+        )
+        other_app = self._application(
+            application_id=11,
+            job_id=2,
+            user_id=3,
+            stage=ApplicationStage.TECH,
+        )
+        self.app_repo.get_by_id = AsyncMock(return_value=entry_app)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=entry_job)
+        self.assignment_repo.get.return_value = None
+        self.app_repo.list_by_user = AsyncMock(
+            return_value=[(entry_app, entry_job), (other_app, other_job)]
+        )
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+        self.evaluation_repo.list_by_application.return_value = []
+
+        result = await self.service.get_other_applications(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].application.id, 11)
+        self.assertEqual(result[0].job_title, "Job 2")
+        self.app_repo.list_by_user.assert_awaited_once_with(self.session, 3)
+
+    async def test_get_other_applications_includes_evaluations_and_resume_flag(self):
+        entry_job = self._job(job_id=1, owner_ids=(2,))
+        other_job = self._job(job_id=2, owner_ids=(9,))
+        entry_app = self._application(application_id=10, job_id=1, user_id=3)
+        other_app = self._application(
+            application_id=11,
+            job_id=2,
+            user_id=3,
+            stage=ApplicationStage.TECH,
+        )
+        other_sub = ApplicationSubmissionEntity(
+            application_id=11,
+            version=1,
+            submission={"answers": {"q1": "yes"}},
+            resume_object_key="resumes/xyz.pdf",
+        )
+        other_eval = EvaluationEntity(
+            application_id=11,
+            stage=ApplicationStage.TECH,
+            round=1,
+            evaluator_id=7,
+            responses={"overall": {"value": 5}},
+            is_confirmed=True,
+        )
+        other_eval.evaluation_id = 900
+        self.app_repo.get_by_id = AsyncMock(return_value=entry_app)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=entry_job)
+        self.assignment_repo.get.return_value = None
+        self.app_repo.list_by_user = AsyncMock(
+            return_value=[(entry_app, entry_job), (other_app, other_job)]
+        )
+        self.sub_repo.get_current = AsyncMock(return_value=other_sub)
+        self.evaluation_repo.list_by_application.return_value = [other_eval]
+
+        result = await self.service.get_other_applications(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertTrue(result[0].resume_available)
+        self.assertEqual(len(result[0].evaluations), 1)
+        self.assertEqual(result[0].evaluations[0].id, 900)
+
+    async def test_get_other_applications_raises_when_caller_lacks_entry_gate(self):
+        entry_job = self._job(job_id=1, owner_ids=(9,))
+        entry_app = self._application(application_id=10, job_id=1, user_id=3)
+        self.app_repo.get_by_id = AsyncMock(return_value=entry_app)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=entry_job)
+        self.assignment_repo.get.return_value = None
+
+        with self.assertRaises(ValueError):
+            await self.service.get_other_applications(
+                self.session, self._ctx(user_id=2), 10
+            )
+
+        self.app_repo.list_by_user.assert_not_called()
 
 
 if __name__ == "__main__":

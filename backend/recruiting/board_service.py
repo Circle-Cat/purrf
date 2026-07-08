@@ -11,12 +11,14 @@ from backend.dto.board_dto import (
     BoardJobDto,
     CommentCreateDto,
     CommentDto,
+    OtherApplicationDto,
     PipelineStageInfoDto,
     ReassignDto,
     RoundChangeDto,
     StageChangeDto,
     SubStatusChangeDto,
 )
+from backend.dto.evaluation_dto import EvaluationDto
 from backend.dto.user_context_dto import UserContextDto
 from backend.common.permissions import Permission
 from backend.common.recruiting_enums import ApplicationStage
@@ -72,6 +74,7 @@ class BoardService:
         user_permissions_repository,
         application_activity_repository,
         application_comment_repository,
+        evaluation_repository,
     ):
         """
         Args:
@@ -97,6 +100,9 @@ class BoardService:
                 Append-only free-text discussion thread, written by
                 ``add_comment`` and read by ``list_comments`` -- independent
                 of ``application_activity_repository``.
+            evaluation_repository (EvaluationRepository): Used by
+                ``get_other_applications`` to include a candidate's other
+                applications' evaluations in the aggregation view.
         """
         self.job_repository = job_repository
         self.application_repository = application_repository
@@ -108,6 +114,7 @@ class BoardService:
         self.user_permissions_repository = user_permissions_repository
         self.application_activity_repository = application_activity_repository
         self.application_comment_repository = application_comment_repository
+        self.evaluation_repository = evaluation_repository
 
     async def list_my_jobs(
         self, session: AsyncSession, current_user: UserContextDto
@@ -535,6 +542,88 @@ class BoardService:
                     actor_id=row.actor_id,
                     actor_name=names_by_id.get(row.actor_id, f"User {row.actor_id}"),
                     created_at=row.created_at,
+                )
+            )
+        return result
+
+    async def get_other_applications(
+        self,
+        session: AsyncSession,
+        current_user: UserContextDto,
+        application_id: int,
+    ) -> list[OtherApplicationDto]:
+        """Return a candidate's other applications, for the cross-posting
+        aggregation view.
+
+        Reaching ``application_id``'s own detail page already required
+        passing the same check this reuses
+        (``_load_owned_application(allow_assignee=True, allow_read_all=True)``);
+        once that passes, every OTHER application belonging to the same
+        candidate is returned in full — submission snapshot and every
+        evaluation row — regardless of the caller's relationship to those
+        other jobs specifically. There is deliberately no second,
+        per-other-application visibility check.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            current_user (UserContextDto): The authenticated caller.
+            application_id (int): The application the caller is currently
+                viewing; identifies the candidate whose other applications
+                to list.
+
+        Returns:
+            list[OtherApplicationDto]: One entry per other application by
+                the same candidate, each with its job title, full
+                application snapshot, résumé availability, and every
+                evaluation row submitted for it.
+
+        Raises:
+            ValueError: If ``application_id`` is missing, or the caller is
+                neither an owner of its job, its current-stage assignee,
+                nor a holder of ``RECRUITING_APPLICATION_READ_ALL``.
+        """
+        application, _job = await self._load_owned_application(
+            session,
+            current_user,
+            application_id,
+            allow_assignee=True,
+            allow_read_all=True,
+        )
+        rows = await self.application_repository.list_by_user(
+            session, application.user_id
+        )
+        result = []
+        for other_application, other_job in rows:
+            if other_application.application_id == application_id:
+                continue
+            current_sub = await self.application_submission_repository.get_current(
+                session, other_application.application_id
+            )
+            evaluation_rows = await self.evaluation_repository.list_by_application(
+                session, other_application.application_id
+            )
+            result.append(
+                OtherApplicationDto(
+                    application=self.recruiting_mapper.to_application_dto(
+                        other_application, current_sub
+                    ),
+                    job_title=other_job.title,
+                    resume_available=bool(
+                        current_sub is not None and current_sub.resume_object_key
+                    ),
+                    evaluations=[
+                        EvaluationDto(
+                            id=row.evaluation_id,
+                            application_id=row.application_id,
+                            stage=row.stage,
+                            round=row.round,
+                            evaluator_id=row.evaluator_id,
+                            responses=row.responses,
+                            is_confirmed=row.is_confirmed,
+                            confirmed_at=row.confirmed_at,
+                        )
+                        for row in evaluation_rows
+                    ],
                 )
             )
         return result
