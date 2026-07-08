@@ -258,6 +258,19 @@ class TestScreenRulesDto(unittest.TestCase):
             ]
         )
 
+    def test_auto_hire_action_accepted(self):
+        ScreenRulesDto(
+            rules=[
+                ScreenRuleDto(
+                    id="r1",
+                    condition=ScreenRuleConditionDto(
+                        source="email_domain", operator="equals", value="circlecat.org"
+                    ),
+                    action="auto_hire",
+                )
+            ]
+        )
+
     def test_answer_rule_requires_question_id(self):
         with self.assertRaises(ValidationError):
             ScreenRuleDto(

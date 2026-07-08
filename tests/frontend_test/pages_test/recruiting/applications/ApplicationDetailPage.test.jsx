@@ -1947,3 +1947,99 @@ describe("ApplicationDetailPage — candidate aggregation", () => {
     expect(router.state.location.pathname).toBe("/recruiting/applications/101");
   });
 });
+
+describe("ApplicationDetailPage — screen-rule activity messages", () => {
+  it("distinguishes a screen-rule auto-reject from a blocked-applicant auto-reject", async () => {
+    const user = userEvent.setup();
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
+    });
+    api.getApplicationActivity.mockResolvedValue({
+      data: [
+        {
+          id: 1,
+          eventType: "auto_rejected",
+          details: { reason: "screen_rule", ruleId: "r1" },
+          actorId: OWNER_ID,
+          actorName: "Casey Candidate",
+          createdAt: "2026-07-08T12:00:00Z",
+        },
+      ],
+    });
+    renderPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole("tab", { name: "Timeline" }));
+
+    expect(
+      screen.getByText(/Automatically rejected by screening rule/),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/Automatically rejected \(blocked applicant\)/),
+    ).not.toBeInTheDocument();
+  });
+
+  it("notes a screen-rule auto-qualify on the submission entry", async () => {
+    const user = userEvent.setup();
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
+    });
+    api.getApplicationActivity.mockResolvedValue({
+      data: [
+        {
+          id: 1,
+          eventType: "application_submitted",
+          details: {
+            stage: "recruiter_screening",
+            screenQualifyRuleId: "r1",
+          },
+          actorId: OWNER_ID,
+          actorName: "Casey Candidate",
+          createdAt: "2026-07-08T12:00:00Z",
+        },
+      ],
+    });
+    renderPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole("tab", { name: "Timeline" }));
+
+    expect(
+      screen.getByText(
+        /Submitted — landed on Recruiter screening \(auto-qualified by screening rule\)/,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("notes a screen-rule auto-hire distinctly from auto-qualify", async () => {
+    const user = userEvent.setup();
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
+    });
+    api.getApplicationActivity.mockResolvedValue({
+      data: [
+        {
+          id: 1,
+          eventType: "application_submitted",
+          details: { stage: "hired", screenAutoHireRuleId: "r1" },
+          actorId: OWNER_ID,
+          actorName: "Casey Candidate",
+          createdAt: "2026-07-08T12:00:00Z",
+        },
+      ],
+    });
+    renderPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole("tab", { name: "Timeline" }));
+
+    expect(
+      screen.getByText(
+        /Submitted — auto-approved by screening rule \(landed on Hired\)/,
+      ),
+    ).toBeInTheDocument();
+  });
+});
