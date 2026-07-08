@@ -28,6 +28,7 @@ import { rubricFor } from "@/pages/Recruiting/applications/evaluationRubric";
 import {
   getApplicationDetail,
   getApplicationActivity,
+  getApplicationComments,
   getEvaluationsForApplication,
   getJob,
   listInterviewPool,
@@ -37,6 +38,7 @@ import {
   blacklistUser,
   reassignApplication,
   submitEvaluation,
+  postComment,
   resumeUrl,
 } from "@/api/recruitingApi";
 import {
@@ -361,6 +363,65 @@ const ActivityTimeline = ({ activity }) => (
 );
 
 /**
+ * Owner-or-current-assignee discussion thread for one application:
+ * free-text comments, newest first, each attributed to its author and
+ * timestamped. Independent of EvaluationSummary/ActivityTimeline -- posting
+ * a comment does not create a timeline entry, and comments are never
+ * evaluation scores. Comments are immutable once posted (no edit/delete).
+ *
+ * @param {{comments: {id: number, authorName: string, body: string,
+ *          createdAt: string}[], onPost: (body: string) => void,
+ *          posting: boolean}} props
+ */
+const CommentsPanel = ({ comments, onPost, posting }) => {
+  const [draft, setDraft] = useState("");
+
+  const handlePost = () => {
+    if (!draft.trim() || posting) return;
+    onPost(draft.trim()).then(
+      () => setDraft(""),
+      () => {},
+    );
+  };
+
+  return (
+    <div className="space-y-4">
+      {comments.length === 0 ? (
+        <p className="text-sm text-slate-400">No comments yet.</p>
+      ) : (
+        <ul className="space-y-2">
+          {comments.map((comment) => (
+            <li key={comment.id} className="text-sm text-slate-700">
+              <span className="text-slate-500">
+                {new Date(comment.createdAt).toLocaleString()}
+              </span>{" "}
+              — {comment.authorName}: {comment.body}
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="flex flex-col gap-2">
+        <Textarea
+          placeholder="Add a comment…"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          disabled={posting}
+        />
+        <Button
+          type="button"
+          size="sm"
+          className="self-end"
+          disabled={posting}
+          onClick={handlePost}
+        >
+          Post
+        </Button>
+      </div>
+    </div>
+  );
+};
+
+/**
  * Shared, role-adaptive application detail page at
  * `/recruiting/applications/:applicationId`. Fetches the application detail
  * and its evaluations on mount, then renders a left column (applicant
@@ -435,6 +496,9 @@ const ApplicationDetailPage = () => {
 
   const [savingEvaluation, setSavingEvaluation] = useState(false);
 
+  const [comments, setComments] = useState([]);
+  const [postingComment, setPostingComment] = useState(false);
+
   const load = useCallback(() => {
     if (applicationId == null) return;
     setLoadError(false);
@@ -461,13 +525,22 @@ const ApplicationDetailPage = () => {
           setInterviewPool(pool ?? []);
           setActivity(activityRows ?? []);
         }
+        // Comments are readable by the owner AND the current-stage
+        // assignee (unlike job/pool/activity above, which stay owner-only)
+        // -- the one fetch here that must also run for an assignee-only
+        // viewer.
+        if (detailData.isOwner || detailData.assigneeId === currentUserId) {
+          const { data: commentRows } =
+            await getApplicationComments(applicationId);
+          setComments(commentRows ?? []);
+        }
         setLoaded(true);
       })
       .catch((e) => {
         setLoadError(true);
         toast.error(e.message);
       });
-  }, [applicationId]);
+  }, [applicationId, currentUserId]);
 
   useEffect(() => {
     load();
@@ -731,6 +804,20 @@ const ApplicationDetailPage = () => {
       .finally(() => setSavingEvaluation(false));
   };
 
+  const handlePostComment = (body) => {
+    if (postingComment) return Promise.resolve();
+    setPostingComment(true);
+    return postComment(applicationId, { body })
+      .then(({ data }) => {
+        setComments((prev) => [data, ...prev]);
+      })
+      .catch((e) => {
+        toast.error(e.message);
+        throw e;
+      })
+      .finally(() => setPostingComment(false));
+  };
+
   if (!loaded || !detail) {
     return (
       <LoadGate
@@ -865,6 +952,7 @@ const ApplicationDetailPage = () => {
                 <TabsList>
                   <TabsTrigger value="evaluations">Evaluations</TabsTrigger>
                   <TabsTrigger value="timeline">Timeline</TabsTrigger>
+                  <TabsTrigger value="comments">Comments</TabsTrigger>
                 </TabsList>
                 <TabsContent value="evaluations">
                   <EvaluationSummary
@@ -875,28 +963,45 @@ const ApplicationDetailPage = () => {
                 <TabsContent value="timeline">
                   <ActivityTimeline activity={activity} />
                 </TabsContent>
+                <TabsContent value="comments">
+                  <CommentsPanel
+                    comments={comments}
+                    onPost={handlePostComment}
+                    posting={postingComment}
+                  />
+                </TabsContent>
               </Tabs>
             </div>
           )}
 
           {evaluatorMode &&
             (showRubric ? (
-              <div className="space-y-4">
-                <h2 className="text-sm font-semibold text-slate-800">
-                  Your evaluation
-                </h2>
-                <EvaluationRubricForm
-                  key={`eval-${detail.application.stage}-${
-                    myEntry?.isConfirmed ? "confirmed" : "draft"
-                  }`}
-                  stage={detail.application.stage}
-                  initialResponses={myEntry?.responses ?? {}}
-                  readOnly={Boolean(myEntry?.isConfirmed)}
-                  saving={savingEvaluation}
-                  onSaveDraft={handleSaveDraft}
-                  onConfirm={handleConfirmEvaluation}
-                />
-              </div>
+              <Tabs defaultValue="evaluation">
+                <TabsList>
+                  <TabsTrigger value="evaluation">Your evaluation</TabsTrigger>
+                  <TabsTrigger value="comments">Comments</TabsTrigger>
+                </TabsList>
+                <TabsContent value="evaluation">
+                  <EvaluationRubricForm
+                    key={`eval-${detail.application.stage}-${
+                      myEntry?.isConfirmed ? "confirmed" : "draft"
+                    }`}
+                    stage={detail.application.stage}
+                    initialResponses={myEntry?.responses ?? {}}
+                    readOnly={Boolean(myEntry?.isConfirmed)}
+                    saving={savingEvaluation}
+                    onSaveDraft={handleSaveDraft}
+                    onConfirm={handleConfirmEvaluation}
+                  />
+                </TabsContent>
+                <TabsContent value="comments">
+                  <CommentsPanel
+                    comments={comments}
+                    onPost={handlePostComment}
+                    posting={postingComment}
+                  />
+                </TabsContent>
+              </Tabs>
             ) : (
               <p className="text-sm text-slate-500">
                 You are not currently assigned to evaluate this application.

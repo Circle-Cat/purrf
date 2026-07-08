@@ -182,3 +182,11 @@ export const getEvaluationsForApplication = (id) =>
 /** List an application's owner-facing audit timeline (ApplicationActivityDto[]), newest first. */
 export const getApplicationActivity = (id) =>
   request.get(API_ENDPOINTS.RECRUITING_APPLICATION_ACTIVITY(id));
+
+/** List every comment on an application (owner or current-stage assignee), newest first. */
+export const getApplicationComments = (id) =>
+  request.get(API_ENDPOINTS.RECRUITING_APPLICATION_COMMENTS(id));
+
+/** body: { body: string } */
+export const postComment = (id, body) =>
+  request.post(API_ENDPOINTS.RECRUITING_APPLICATION_COMMENTS(id), body);

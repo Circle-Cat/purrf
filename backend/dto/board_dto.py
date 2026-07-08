@@ -175,3 +175,35 @@ class BlacklistDto(BaseRequestDto):
         if not value.strip():
             raise ValueError("a reason is required")
         return value
+
+
+class CommentDto(BaseDto):
+    """One free-text comment on an application, newest first.
+
+    Independent of ApplicationActivityDto -- this is discussion, not the
+    audit log. Readable/writable by an owner or the application's
+    current-stage assignee (BoardService.list_comments/add_comment).
+    """
+
+    id: int
+    application_id: int
+    author_id: int
+    author_name: str
+    body: str
+    created_at: datetime
+
+
+class CommentCreateDto(BaseRequestDto):
+    """Post a free-text comment on an application."""
+
+    body: str
+
+    @field_validator("body")
+    @classmethod
+    def body_must_not_be_blank(cls, value: str) -> str:
+        """A comment must carry non-blank text, capped at a sane length."""
+        if not value.strip():
+            raise ValueError("comment text is required")
+        if len(value) > 4000:
+            raise ValueError("comment text must be 4000 characters or fewer")
+        return value
