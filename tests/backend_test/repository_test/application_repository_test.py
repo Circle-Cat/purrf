@@ -105,8 +105,12 @@ class TestApplicationRepository(BaseRepositoryTestLib):
         self.assertTrue(all(app.job_id == job.job_id for app, _ in rows))
 
     async def test_list_by_user_returns_joined_rows_across_jobs(self):
-        job_a = JobEntity(kind=JobKind.ACTIVITY, title="Job A", status=JobStatus.PUBLISHED)
-        job_b = JobEntity(kind=JobKind.ACTIVITY, title="Job B", status=JobStatus.PUBLISHED)
+        job_a = JobEntity(
+            kind=JobKind.ACTIVITY, title="Job A", status=JobStatus.PUBLISHED
+        )
+        job_b = JobEntity(
+            kind=JobKind.ACTIVITY, title="Job B", status=JobStatus.PUBLISHED
+        )
         user_a = UsersEntity(first_name="A", last_name="One", primary_email="a1@b.com")
         user_b = UsersEntity(first_name="B", last_name="Two", primary_email="b2@b.com")
         await self.insert_entities([job_a, job_b, user_a, user_b])
@@ -142,5 +146,8 @@ class TestApplicationRepository(BaseRepositoryTestLib):
 
         self.assertEqual(
             {(app.application_id, job.job_id) for app, job in result},
-            {(app_a1.application_id, job_a.job_id), (app_a2.application_id, job_b.job_id)},
+            {
+                (app_a1.application_id, job_a.job_id),
+                (app_a2.application_id, job_b.job_id),
+            },
         )
