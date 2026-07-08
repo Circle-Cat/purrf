@@ -1,5 +1,5 @@
 import unittest
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from backend.entity.application_entity import ApplicationEntity
 from backend.entity.application_submission_entity import ApplicationSubmissionEntity
@@ -169,6 +169,160 @@ class TestApplicationRepository(BaseRepositoryTestLib):
                 (app_a2.application_id, job_b.job_id),
             },
         )
+
+    async def test_count_by_job_and_stage_groups_across_jobs(self):
+        job_a = JobEntity(kind=JobKind.ACTIVITY, title="Job A", status=JobStatus.PUBLISHED)
+        job_b = JobEntity(kind=JobKind.ACTIVITY, title="Job B", status=JobStatus.PUBLISHED)
+        user_1 = _make_user("A", "One", "a1@b.com")
+        user_2 = _make_user("B", "Two", "b2@b.com")
+        user_3 = _make_user("C", "Three", "c3@b.com")
+        await self.insert_entities([job_a, job_b, user_1, user_2, user_3])
+        await self.session.flush()
+
+        repo = ApplicationRepository()
+        await repo.create(
+            self.session,
+            ApplicationEntity(
+                job_id=job_a.job_id,
+                user_id=user_1.user_id,
+                stage=ApplicationStage.RECRUITER_SCREENING,
+                created_datetime=datetime(2026, 6, 1, tzinfo=timezone.utc),
+            ),
+        )
+        await repo.create(
+            self.session,
+            ApplicationEntity(
+                job_id=job_a.job_id,
+                user_id=user_2.user_id,
+                stage=ApplicationStage.TECH,
+                created_datetime=datetime(2026, 6, 2, tzinfo=timezone.utc),
+            ),
+        )
+        await repo.create(
+            self.session,
+            ApplicationEntity(
+                job_id=job_b.job_id,
+                user_id=user_1.user_id,
+                stage=ApplicationStage.RECRUITER_SCREENING,
+                created_datetime=datetime(2026, 6, 3, tzinfo=timezone.utc),
+            ),
+        )
+        # Outside the date range — must not be counted.
+        await repo.create(
+            self.session,
+            ApplicationEntity(
+                job_id=job_a.job_id,
+                user_id=user_3.user_id,
+                stage=ApplicationStage.HIRED,
+                created_datetime=datetime(2026, 5, 1, tzinfo=timezone.utc),
+            ),
+        )
+
+        result = await repo.count_by_job_and_stage(
+            self.session, date(2026, 6, 1), date(2026, 6, 30), None
+        )
+
+        self.assertEqual(
+            {(job_id, stage, count) for job_id, stage, count in result},
+            {
+                (job_a.job_id, ApplicationStage.RECRUITER_SCREENING, 1),
+                (job_a.job_id, ApplicationStage.TECH, 1),
+                (job_b.job_id, ApplicationStage.RECRUITER_SCREENING, 1),
+            },
+        )
+
+    async def test_count_by_job_and_stage_filters_by_job_ids(self):
+        job_a = JobEntity(kind=JobKind.ACTIVITY, title="Job A", status=JobStatus.PUBLISHED)
+        job_b = JobEntity(kind=JobKind.ACTIVITY, title="Job B", status=JobStatus.PUBLISHED)
+        user = _make_user("A", "One", "a1@b.com")
+        await self.insert_entities([job_a, job_b, user])
+        await self.session.flush()
+
+        repo = ApplicationRepository()
+        await repo.create(
+            self.session,
+            ApplicationEntity(
+                job_id=job_a.job_id,
+                user_id=user.user_id,
+                stage=ApplicationStage.RECRUITER_SCREENING,
+                created_datetime=datetime(2026, 6, 1, tzinfo=timezone.utc),
+            ),
+        )
+        await repo.create(
+            self.session,
+            ApplicationEntity(
+                job_id=job_b.job_id,
+                user_id=user.user_id,
+                stage=ApplicationStage.RECRUITER_SCREENING,
+                created_datetime=datetime(2026, 6, 1, tzinfo=timezone.utc),
+            ),
+        )
+
+        result = await repo.count_by_job_and_stage(
+            self.session, date(2026, 6, 1), date(2026, 6, 30), [job_a.job_id]
+        )
+
+        self.assertEqual(
+            [(job_id, stage, count) for job_id, stage, count in result],
+            [(job_a.job_id, ApplicationStage.RECRUITER_SCREENING, 1)],
+        )
+
+    async def test_count_by_job_and_day_groups_by_calendar_day(self):
+        job = JobEntity(kind=JobKind.ACTIVITY, title="Job A", status=JobStatus.PUBLISHED)
+        user_1 = _make_user("A", "One", "a1@b.com")
+        user_2 = _make_user("B", "Two", "b2@b.com")
+        user_3 = _make_user("C", "Three", "c3@b.com")
+        await self.insert_entities([job, user_1, user_2, user_3])
+        await self.session.flush()
+
+        repo = ApplicationRepository()
+        await repo.create(
+            self.session,
+            ApplicationEntity(
+                job_id=job.job_id,
+                user_id=user_1.user_id,
+                created_datetime=datetime(2026, 6, 1, 9, 0, tzinfo=timezone.utc),
+            ),
+        )
+        await repo.create(
+            self.session,
+            ApplicationEntity(
+                job_id=job.job_id,
+                user_id=user_2.user_id,
+                created_datetime=datetime(2026, 6, 1, 15, 0, tzinfo=timezone.utc),
+            ),
+        )
+        await repo.create(
+            self.session,
+            ApplicationEntity(
+                job_id=job.job_id,
+                user_id=user_3.user_id,
+                created_datetime=datetime(2026, 6, 2, 9, 0, tzinfo=timezone.utc),
+            ),
+        )
+
+        result = await repo.count_by_job_and_day(
+            self.session, date(2026, 6, 1), date(2026, 6, 30), None
+        )
+
+        self.assertEqual(
+            {(job_id, day, count) for job_id, day, count in result},
+            {
+                (job.job_id, date(2026, 6, 1), 2),
+                (job.job_id, date(2026, 6, 2), 1),
+            },
+        )
+
+    async def test_count_methods_return_empty_for_no_matches(self):
+        repo = ApplicationRepository()
+        stage_result = await repo.count_by_job_and_stage(
+            self.session, date(2026, 1, 1), date(2026, 1, 31), None
+        )
+        day_result = await repo.count_by_job_and_day(
+            self.session, date(2026, 1, 1), date(2026, 1, 31), None
+        )
+        self.assertEqual(stage_result, [])
+        self.assertEqual(day_result, [])
 
 
 if __name__ == "__main__":
