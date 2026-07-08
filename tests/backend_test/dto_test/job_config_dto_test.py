@@ -319,6 +319,20 @@ class TestScreenRulesDto(unittest.TestCase):
                 source="email_domain", operator="bogus", value=["g.com"]
             )
 
+    def test_email_domain_empty_list_value_rejected(self):
+        with self.assertRaises(ValidationError):
+            ScreenRuleConditionDto(source="email_domain", operator="not_in", value=[])
+
+    def test_email_domain_empty_string_value_rejected(self):
+        with self.assertRaises(ValidationError):
+            ScreenRuleConditionDto(source="email_domain", operator="equals", value="")
+
+    def test_email_domain_blank_list_entries_rejected(self):
+        with self.assertRaises(ValidationError):
+            ScreenRuleConditionDto(
+                source="email_domain", operator="in", value=["  ", ""]
+            )
+
 
 class TestProfileConfigDto(unittest.TestCase):
     def test_defaults_optional(self):

@@ -261,11 +261,18 @@ class ScreenRuleConditionDto(BaseRequestDto):
     def validate_source_shape(self) -> "ScreenRuleConditionDto":
         """email_domain forbids question_id; answer requires question_id.
 
+        email_domain also requires a non-empty value: an empty value paired
+        with ``not_in`` would match every domain (``domain not in []`` is
+        always true), which for a ``reject`` action means auto-rejecting
+        every applicant — a dangerous silent-footgun state a blank/cleared
+        "Domains" field could produce.
+
         Returns:
             ScreenRuleConditionDto: self, when valid.
 
         Raises:
-            ValueError: On an illegal source/operator/question_id combination.
+            ValueError: On an illegal source/operator/question_id combination,
+                or an empty email_domain value.
         """
         if self.source == "email_domain":
             if self.question_id is not None:
@@ -274,6 +281,9 @@ class ScreenRuleConditionDto(BaseRequestDto):
                 raise ValueError(
                     "email_domain operator must be equals, in, or not_in"
                 )
+            domains = self.value if isinstance(self.value, list) else [self.value]
+            if not any(d.strip() for d in domains):
+                raise ValueError("email_domain condition requires a non-empty value")
         else:  # answer
             if not self.question_id:
                 raise ValueError("answer condition requires question_id")
