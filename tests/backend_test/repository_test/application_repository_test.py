@@ -16,9 +16,7 @@ from tests.backend_test.repository_test.base_repository_test_lib import (
 )
 
 
-def _make_user(
-    first_name: str, last_name: str, primary_email: str
-) -> UsersEntity:
+def _make_user(first_name: str, last_name: str, primary_email: str) -> UsersEntity:
     """Build a UsersEntity satisfying every NOT NULL column."""
     return UsersEntity(
         first_name=first_name,
