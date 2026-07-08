@@ -20,24 +20,36 @@ class TestScreenRulesEvaluate(unittest.TestCase):
         self.assertEqual(result, {"action": None, "rule_id": None})
 
     def test_email_domain_equals_matches(self):
-        rules = {"rules": [_rule("r1", "email_domain", "equals", "google.com", "reject")]}
+        rules = {
+            "rules": [_rule("r1", "email_domain", "equals", "google.com", "reject")]
+        }
         result = screen_rules.evaluate(rules, "a@google.com", {})
         self.assertEqual(result, {"action": "reject", "rule_id": "r1"})
 
     def test_email_domain_equals_is_case_insensitive(self):
-        rules = {"rules": [_rule("r1", "email_domain", "equals", "Google.com", "reject")]}
+        rules = {
+            "rules": [_rule("r1", "email_domain", "equals", "Google.com", "reject")]
+        }
         result = screen_rules.evaluate(rules, "a@GOOGLE.COM", {})
         self.assertEqual(result, {"action": "reject", "rule_id": "r1"})
 
     def test_email_domain_equals_no_match(self):
-        rules = {"rules": [_rule("r1", "email_domain", "equals", "google.com", "reject")]}
+        rules = {
+            "rules": [_rule("r1", "email_domain", "equals", "google.com", "reject")]
+        }
         result = screen_rules.evaluate(rules, "a@yahoo.com", {})
         self.assertEqual(result, {"action": None, "rule_id": None})
 
     def test_email_domain_in_matches(self):
         rules = {
             "rules": [
-                _rule("r1", "email_domain", "in", ["google.com", "circlecat.org"], "qualify")
+                _rule(
+                    "r1",
+                    "email_domain",
+                    "in",
+                    ["google.com", "circlecat.org"],
+                    "qualify",
+                )
             ]
         }
         result = screen_rules.evaluate(rules, "a@circlecat.org", {})
@@ -45,9 +57,7 @@ class TestScreenRulesEvaluate(unittest.TestCase):
 
     def test_answer_equals_matches(self):
         rules = {
-            "rules": [
-                _rule("r1", "answer", "equals", "no", "reject", question_id="q1")
-            ]
+            "rules": [_rule("r1", "answer", "equals", "no", "reject", question_id="q1")]
         }
         result = screen_rules.evaluate(rules, "a@b.com", {"q1": "no"})
         self.assertEqual(result, {"action": "reject", "rule_id": "r1"})
@@ -72,9 +82,7 @@ class TestScreenRulesEvaluate(unittest.TestCase):
 
     def test_unanswered_question_never_matches(self):
         rules = {
-            "rules": [
-                _rule("r1", "answer", "equals", "no", "reject", question_id="q1")
-            ]
+            "rules": [_rule("r1", "answer", "equals", "no", "reject", question_id="q1")]
         }
         result = screen_rules.evaluate(rules, "a@b.com", {})
         self.assertEqual(result, {"action": None, "rule_id": None})

@@ -557,9 +557,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         result = await self.service.submit(self.session, self._ctx(), dto)
 
         self.assertEqual(result.stage, ApplicationStage.REJECTED)
-        self.assertEqual(
-            result.tags, {"auto_reject": "screen_rule", "rule_id": "r1"}
-        )
+        self.assertEqual(result.tags, {"auto_reject": "screen_rule", "rule_id": "r1"})
         self.activity_repo.create.assert_awaited_once_with(
             self.session,
             100,
@@ -744,9 +742,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result.stage, ApplicationStage.REJECTED)
         # The new reject's tag wins over the prior rejection's cooldown tag.
-        self.assertEqual(
-            result.tags, {"auto_reject": "screen_rule", "rule_id": "r1"}
-        )
+        self.assertEqual(result.tags, {"auto_reject": "screen_rule", "rule_id": "r1"})
 
     async def test_reapply_screen_rule_auto_hire_lands_hired(self):
         job = self._job(
