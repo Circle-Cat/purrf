@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { getPermissionCatalog } from "@/api/adminPermissionsApi";
 
-/** Fetches the grantable-permission catalog once; shared by all three tabs. */
+/** Fetches the grantable-permission catalog ({name, description}[]) once; shared by all three tabs. */
 export const usePermissionCatalog = () => {
   const [catalog, setCatalog] = useState([]);
   const [loading, setLoading] = useState(true);

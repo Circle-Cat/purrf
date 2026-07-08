@@ -23,6 +23,14 @@ py_library(
 )
 
 py_library(
+    name = "permission_descriptions",
+    srcs = ["permission_descriptions.py"],
+    deps = [
+        ":permissions",
+    ],
+)
+
+py_library(
     name = "auth0_client",
     srcs = ["auth0_client.py"],
     deps = [

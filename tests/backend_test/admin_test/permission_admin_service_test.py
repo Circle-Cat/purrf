@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from unittest.mock import AsyncMock
 
 from backend.admin.permission_admin_service import PermissionAdminService
+from backend.common.permission_descriptions import PERMISSION_DESCRIPTIONS
 from backend.common.permissions import Permission
 from backend.entity.user_permissions_entity import UserPermissionsEntity
 from backend.entity.users_entity import UsersEntity
@@ -59,10 +60,15 @@ class TestPermissionAdminService(unittest.IsolatedAsyncioTestCase):
         self.users.get_super_admins.return_value = []
 
     def test_catalog_is_full_enum_sorted(self):
+        catalog = self.service.list_permission_catalog()
         self.assertEqual(
-            self.service.list_permission_catalog(),
+            [entry.name for entry in catalog],
             sorted(str(p) for p in Permission),
         )
+        for entry in catalog:
+            self.assertEqual(
+                entry.description, PERMISSION_DESCRIPTIONS[Permission(entry.name)]
+            )
 
     async def test_get_user_permissions_splits_active_and_history(self):
         self.users.get_user_by_user_id.return_value = UsersEntity(user_id=1)

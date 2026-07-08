@@ -35,6 +35,11 @@ class GrantDto(BaseDto):
     is_super_admin: bool = False
 
 
+class PermissionCatalogEntryDto(BaseDto):
+    name: str
+    description: str
+
+
 class UserPermissionsViewDto(BaseDto):
     user_id: int
     active: list[str]
