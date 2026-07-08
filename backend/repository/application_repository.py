@@ -1,4 +1,5 @@
 from backend.entity.application_entity import ApplicationEntity
+from backend.entity.job_entity import JobEntity
 from backend.entity.users_entity import UsersEntity
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,6 +25,29 @@ class ApplicationRepository:
             select(ApplicationEntity, UsersEntity)
             .join(UsersEntity, ApplicationEntity.user_id == UsersEntity.user_id)
             .where(ApplicationEntity.job_id == job_id)
+            .order_by(ApplicationEntity.application_id)
+        )
+        return [tuple(row) for row in result.all()]
+
+    async def list_by_user(
+        self, session: AsyncSession, user_id: int
+    ) -> list[tuple[ApplicationEntity, JobEntity]]:
+        """Return every application a candidate has ever submitted, joined
+        with its job, for the cross-posting aggregation view.
+
+        Args:
+            session (AsyncSession): The active DB session.
+            user_id (int): The candidate whose applications to list.
+
+        Returns:
+            list[tuple[ApplicationEntity, JobEntity]]: (application, job)
+                pairs ordered by application_id, across every job the
+                candidate has applied to.
+        """
+        result = await session.execute(
+            select(ApplicationEntity, JobEntity)
+            .join(JobEntity, ApplicationEntity.job_id == JobEntity.job_id)
+            .where(ApplicationEntity.user_id == user_id)
             .order_by(ApplicationEntity.application_id)
         )
         return [tuple(row) for row in result.all()]

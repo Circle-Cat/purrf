@@ -561,6 +561,7 @@ class AppDependencyBuilder:
         self.application_comment_repository = ApplicationCommentRepository()
         self.application_submission_repository = ApplicationSubmissionRepository()
         self.resume_storage = ResumeStorage(os.getenv(RESUME_BUCKET))
+        self.evaluation_repository = EvaluationRepository()
         self.application_service = ApplicationService(
             self.application_repository,
             self.application_submission_repository,
@@ -587,6 +588,7 @@ class AppDependencyBuilder:
             self.user_permissions_repository,
             self.application_activity_repository,
             self.application_comment_repository,
+            self.evaluation_repository,
         )
         self.board_controller = BoardController(
             self.board_service,
@@ -597,7 +599,6 @@ class AppDependencyBuilder:
             self.blacklist_service,
             self.database,
         )
-        self.evaluation_repository = EvaluationRepository()
         self.evaluation_service = EvaluationService(
             self.application_repository,
             self.application_assignment_repository,
