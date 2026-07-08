@@ -10,6 +10,7 @@ from datetime import datetime
 from pydantic import field_validator, model_validator
 
 from backend.dto.application_dto import ApplicationDto
+from backend.dto.evaluation_dto import EvaluationDto
 from backend.dto.base_dto import BaseDto
 from backend.dto.base_request_dto import BaseRequestDto
 from backend.common.recruiting_enums import ApplicationStage, JobKind
@@ -86,6 +87,21 @@ class ApplicationDetailDto(BaseDto):
     # actionable control (those still gate on is_owner specifically).
     can_view: bool = False
     assignee_id: int | None = None
+
+
+class OtherApplicationDto(BaseDto):
+    """One of a candidate's other applications, for the cross-posting
+    aggregation view surfaced on the shared application detail page.
+
+    Returned in full (submission snapshot + every evaluation row) to any
+    caller who already passed the entry gate on the application they're
+    currently viewing — see BoardService.get_other_applications.
+    """
+
+    application: ApplicationDto
+    job_title: str
+    resume_available: bool
+    evaluations: list[EvaluationDto]
 
 
 class ApplicationActivityDto(BaseDto):
