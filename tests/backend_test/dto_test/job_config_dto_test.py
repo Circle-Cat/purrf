@@ -308,10 +308,15 @@ class TestScreenRulesDto(unittest.TestCase):
                 ]
             )
 
-    def test_email_domain_operator_restricted(self):
+    def test_email_domain_not_in_accepted(self):
+        ScreenRuleConditionDto(
+            source="email_domain", operator="not_in", value=["g.com"]
+        )
+
+    def test_email_domain_invalid_operator_still_rejected(self):
         with self.assertRaises(ValidationError):
             ScreenRuleConditionDto(
-                source="email_domain", operator="not_in", value=["g.com"]
+                source="email_domain", operator="bogus", value=["g.com"]
             )
 
 
