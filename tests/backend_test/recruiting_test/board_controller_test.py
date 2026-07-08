@@ -87,9 +87,7 @@ class TestBoardController(unittest.IsolatedAsyncioTestCase):
         others = [{"application": {"id": 201}}]
         self.board_service.get_other_applications = AsyncMock(return_value=others)
 
-        resp = await self.controller.get_other_applications(
-            self.ctx, application_id=10
-        )
+        resp = await self.controller.get_other_applications(self.ctx, application_id=10)
 
         self.board_service.get_other_applications.assert_awaited_once_with(
             self.session, self.ctx, 10
