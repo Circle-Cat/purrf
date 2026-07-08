@@ -24,6 +24,7 @@ from backend.common.api_endpoints import (
     RECRUITING_APPLICATION_ACTIVITY_ENDPOINT,
     RECRUITING_APPLICATION_OTHER_APPLICATIONS_ENDPOINT,
     RECRUITING_APPLICATION_COMMENTS_ENDPOINT,
+    RECRUITING_APPLICATION_MENTIONABLE_USERS_ENDPOINT,
     RECRUITING_BLACKLIST_ENDPOINT,
 )
 
@@ -106,6 +107,12 @@ class BoardController:
             RECRUITING_APPLICATION_COMMENTS_ENDPOINT,
             endpoint=authenticate()(self.add_comment),
             methods=["POST"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            RECRUITING_APPLICATION_MENTIONABLE_USERS_ENDPOINT,
+            endpoint=authenticate()(self.list_mentionable_users),
+            methods=["GET"],
             response_model=None,
         )
         self.router.add_api_route(
@@ -225,6 +232,17 @@ class BoardController:
                 session, current_user, application_id, comment_data
             )
         return api_response(message="Comment posted.", data=result)
+
+    async def list_mentionable_users(
+        self, current_user: UserContextDto, application_id: int
+    ):
+        """Return everyone who can currently be @-mentioned on this
+        application (job owner(s) + current-stage assignee)."""
+        async with self.database.session() as session:
+            result = await self.board_service.list_mentionable_users(
+                session, current_user, application_id
+            )
+        return api_response(message="Mentionable users fetched.", data=result)
 
     async def change_stage(
         self,

@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { Check, X } from "lucide-react";
@@ -20,17 +27,35 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Popover,
+  PopoverAnchor,
+  PopoverContent,
+} from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import LoadGate from "@/pages/Recruiting/components/LoadGate";
 import { RowList } from "@/pages/Recruiting/components/ApplicationSnapshotRows";
 import PeoplePicker from "@/pages/Recruiting/components/PeoplePicker";
 import EvaluationRubricForm from "@/pages/Recruiting/applications/EvaluationRubricForm";
 import { rubricFor } from "@/pages/Recruiting/applications/evaluationRubric";
 import {
+  getActiveMentionQuery,
+  insertMention,
+  renderCommentBody,
+} from "@/pages/Recruiting/applications/commentMentions";
+import {
   getApplicationDetail,
   getApplicationActivity,
   getApplicationComments,
   getEvaluationsForApplication,
   getJob,
+  getMentionableUsers,
   getOtherApplications,
   listInterviewPool,
   setApplicationSubStatus,
@@ -373,18 +398,29 @@ const ActivityTimeline = ({ activity }) => (
 );
 
 /**
- * Owner-or-current-assignee discussion thread for one application:
- * free-text comments, newest first, each attributed to its author and
- * timestamped. Independent of EvaluationSummary/ActivityTimeline -- posting
- * a comment does not create a timeline entry, and comments are never
- * evaluation scores. Comments are immutable once posted (no edit/delete).
+ * A comment thread on an application: read-only history plus a composer
+ * that supports @-mentioning the job owner(s) or current-stage assignee.
+ * Independent of ApplicationActivityDto -- posting or reading a comment
+ * does not create a timeline entry, and comments are never evaluation
+ * scores. Comments are immutable once posted (no edit/delete).
  *
  * @param {{comments: {id: number, authorName: string, body: string,
- *          createdAt: string}[], onPost: (body: string) => void,
- *          posting: boolean}} props
+ *          createdAt: string, mentions: {userId: number, name: string}[]}[],
+ *          onPost: (body: string) => void, posting: boolean,
+ *          mentionableUsers: {userId: number, name: string}[]}} props
  */
-const CommentsPanel = ({ comments, onPost, posting }) => {
+const CommentsPanel = ({ comments, onPost, posting, mentionableUsers }) => {
   const [draft, setDraft] = useState("");
+  const [mentionQuery, setMentionQuery] = useState(null);
+  const textareaRef = useRef(null);
+  const pendingCursorRef = useRef(null);
+
+  useLayoutEffect(() => {
+    if (pendingCursorRef.current == null || !textareaRef.current) return;
+    const pos = pendingCursorRef.current;
+    textareaRef.current.setSelectionRange(pos, pos);
+    pendingCursorRef.current = null;
+  }, [draft]);
 
   const handlePost = () => {
     if (!draft.trim() || posting) return;
@@ -392,6 +428,32 @@ const CommentsPanel = ({ comments, onPost, posting }) => {
       () => setDraft(""),
       () => {},
     );
+  };
+
+  const handleDraftChange = (e) => {
+    const value = e.target.value;
+    setDraft(value);
+    setMentionQuery(getActiveMentionQuery(value, e.target.selectionStart));
+  };
+
+  const filteredCandidates = mentionQuery
+    ? mentionableUsers.filter((u) =>
+        u.name.toLowerCase().includes(mentionQuery.query.toLowerCase()),
+      )
+    : [];
+
+  const handleSelectMention = (candidate) => {
+    const cursorPos = textareaRef.current.selectionStart;
+    const { text, cursorPos: nextCursor } = insertMention(
+      draft,
+      mentionQuery.start,
+      cursorPos,
+      candidate.userId,
+    );
+    setDraft(text);
+    setMentionQuery(null);
+    pendingCursorRef.current = nextCursor;
+    textareaRef.current.focus();
   };
 
   return (
@@ -405,18 +467,50 @@ const CommentsPanel = ({ comments, onPost, posting }) => {
               <span className="text-slate-500">
                 {new Date(comment.createdAt).toLocaleString()}
               </span>{" "}
-              — {comment.authorName}: {comment.body}
+              — {comment.authorName}:{" "}
+              {renderCommentBody(comment.body, comment.mentions)}
             </li>
           ))}
         </ul>
       )}
       <div className="flex flex-col gap-2">
-        <Textarea
-          placeholder="Add a comment…"
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          disabled={posting}
-        />
+        <Popover
+          open={Boolean(mentionQuery)}
+          onOpenChange={(open) => {
+            if (!open) setMentionQuery(null);
+          }}
+        >
+          <PopoverAnchor asChild>
+            <Textarea
+              ref={textareaRef}
+              placeholder="Add a comment…"
+              value={draft}
+              onChange={handleDraftChange}
+              disabled={posting}
+            />
+          </PopoverAnchor>
+          <PopoverContent
+            align="start"
+            className="w-64 p-0"
+            onOpenAutoFocus={(e) => e.preventDefault()}
+          >
+            <Command>
+              <CommandList>
+                <CommandEmpty>No one to mention.</CommandEmpty>
+                <CommandGroup>
+                  {filteredCandidates.map((candidate) => (
+                    <CommandItem
+                      key={candidate.userId}
+                      onSelect={() => handleSelectMention(candidate)}
+                    >
+                      {candidate.name}
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              </CommandList>
+            </Command>
+          </PopoverContent>
+        </Popover>
         <Button
           type="button"
           size="sm"
@@ -593,6 +687,7 @@ const ApplicationDetailPage = () => {
 
   const [comments, setComments] = useState([]);
   const [postingComment, setPostingComment] = useState(false);
+  const [mentionableUsers, setMentionableUsers] = useState([]);
 
   const load = useCallback(() => {
     if (applicationId == null) return;
@@ -626,14 +721,18 @@ const ApplicationDetailPage = () => {
           setActivity(activityRows ?? []);
           setOtherApplications(otherApps ?? []);
         }
-        // Comments are readable by the owner AND the current-stage
-        // assignee (unlike job/pool/activity above, which stay owner-only)
-        // -- the one fetch here that must also run for an assignee-only
-        // viewer.
+        // Comments (and who can be @-mentioned in them) are readable by
+        // the owner AND the current-stage assignee (unlike job/pool/
+        // activity above, which stay owner-only) -- the one fetch here
+        // that must also run for an assignee-only viewer.
         if (detailData.isOwner || detailData.assigneeId === currentUserId) {
-          const { data: commentRows } =
-            await getApplicationComments(applicationId);
+          const [{ data: commentRows }, { data: mentionable }] =
+            await Promise.all([
+              getApplicationComments(applicationId),
+              getMentionableUsers(applicationId),
+            ]);
           setComments(commentRows ?? []);
+          setMentionableUsers(mentionable ?? []);
         }
         setLoaded(true);
       })
@@ -1072,6 +1171,7 @@ const ApplicationDetailPage = () => {
                     comments={comments}
                     onPost={handlePostComment}
                     posting={postingComment}
+                    mentionableUsers={mentionableUsers}
                   />
                 </TabsContent>
               </Tabs>
@@ -1114,6 +1214,7 @@ const ApplicationDetailPage = () => {
                     comments={comments}
                     onPost={handlePostComment}
                     posting={postingComment}
+                    mentionableUsers={mentionableUsers}
                   />
                 </TabsContent>
               </Tabs>

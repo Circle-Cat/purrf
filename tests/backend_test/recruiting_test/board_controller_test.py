@@ -34,6 +34,7 @@ class TestBoardController(unittest.IsolatedAsyncioTestCase):
         self.board_service.blacklist = AsyncMock(return_value={"id": 10})
         self.board_service.get_resume = AsyncMock(return_value=b"%PDF-1.4 data")
         self.board_service.get_application_activity = AsyncMock(return_value=[])
+        self.board_service.list_mentionable_users = AsyncMock(return_value=[])
 
         self.controller = BoardController(self.board_service, self.database)
 
@@ -93,6 +94,15 @@ class TestBoardController(unittest.IsolatedAsyncioTestCase):
             self.session, self.ctx, 10
         )
         self.assertEqual(resp["data"], others)
+
+    async def test_list_mentionable_users_delegates(self):
+        users = [{"userId": 7, "name": "Eve Evaluator"}]
+        self.board_service.list_mentionable_users = AsyncMock(return_value=users)
+        resp = await self.controller.list_mentionable_users(self.ctx, 10)
+        self.board_service.list_mentionable_users.assert_awaited_once_with(
+            self.session, self.ctx, 10
+        )
+        self.assertEqual(resp["data"], users)
 
     async def test_change_stage_delegates(self):
         updated = {"id": 10, "stage": "tech"}

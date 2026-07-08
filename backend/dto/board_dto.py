@@ -198,6 +198,13 @@ class BlacklistDto(BaseRequestDto):
         return value
 
 
+class MentionedUserDto(BaseDto):
+    """One user @-mentioned in a comment, or eligible to be."""
+
+    user_id: int
+    name: str
+
+
 class CommentDto(BaseDto):
     """One free-text comment on an application, newest first.
 
@@ -212,6 +219,7 @@ class CommentDto(BaseDto):
     author_name: str
     body: str
     created_at: datetime
+    mentions: list[MentionedUserDto] = []
 
 
 class CommentCreateDto(BaseRequestDto):
