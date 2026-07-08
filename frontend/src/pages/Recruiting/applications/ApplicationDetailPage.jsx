@@ -31,6 +31,7 @@ import {
   getApplicationComments,
   getEvaluationsForApplication,
   getJob,
+  getOtherApplications,
   listInterviewPool,
   setApplicationSubStatus,
   setApplicationRound,
@@ -422,6 +423,83 @@ const CommentsPanel = ({ comments, onPost, posting }) => {
 };
 
 /**
+ * A candidate's other applications, for the cross-posting aggregation view.
+ * Renders nothing when there are none. Each row expands in place — no
+ * navigation — into read-only reuse of this page's own snapshot rendering,
+ * fed from the row's own payload rather than a fresh detail fetch (the
+ * viewer may have no standing on that specific other application's own
+ * detail route, only on the one they're currently viewing).
+ *
+ * @param {{otherApplications: {application: object, jobTitle: string,
+ *          resumeAvailable: boolean, evaluations: object[]}[],
+ *          interviewPool: {userId: number, name: string}[],
+ *          expandedId: number|null, onToggle: (id: number) => void}} props
+ */
+const OtherApplicationsSection = ({
+  otherApplications,
+  interviewPool,
+  expandedId,
+  onToggle,
+}) => {
+  if (otherApplications.length === 0) return null;
+  return (
+    <div className="space-y-2">
+      <h2 className="text-sm font-medium text-slate-700">Other applications</h2>
+      <ul className="space-y-2">
+        {otherApplications.map((other) => {
+          const isExpanded = other.application.id === expandedId;
+          const otherSubmission = other.application.current?.submission ?? {};
+          return (
+            <li key={other.application.id} className="rounded border p-2">
+              <button
+                type="button"
+                className="flex w-full items-center justify-between text-left text-sm"
+                onClick={() => onToggle(other.application.id)}
+              >
+                <span>
+                  {other.jobTitle} — {humanize(other.application.stage)}
+                </span>
+                <span className="text-slate-500">
+                  {isExpanded ? "Hide" : "View"}
+                </span>
+              </button>
+              {isExpanded && (
+                <div className="mt-3 space-y-4 border-t pt-3">
+                  <PersonalSection personal={otherSubmission.personal ?? {}} />
+                  <RowList
+                    title="Education"
+                    rows={otherSubmission.education ?? []}
+                  />
+                  <RowList
+                    title="Experience"
+                    rows={otherSubmission.experience ?? []}
+                  />
+                  <AnswersSection
+                    answers={otherSubmission.answers ?? {}}
+                    questions={[]}
+                  />
+                  {other.resumeAvailable && (
+                    <iframe
+                      src={resumeUrl(other.application.id)}
+                      className="h-[400px] w-full rounded border"
+                      title="Résumé"
+                    />
+                  )}
+                  <EvaluationSummary
+                    evaluations={other.evaluations}
+                    interviewPool={interviewPool}
+                  />
+                </div>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+};
+
+/**
  * Shared, role-adaptive application detail page at
  * `/recruiting/applications/:applicationId`. Fetches the application detail
  * and its evaluations on mount, then renders a left column (applicant
@@ -473,6 +551,9 @@ const ApplicationDetailPage = () => {
   const [job, setJob] = useState(null);
   const [interviewPool, setInterviewPool] = useState([]);
   const [activity, setActivity] = useState([]);
+  const [otherApplications, setOtherApplications] = useState([]);
+  const [expandedOtherApplicationId, setExpandedOtherApplicationId] =
+    useState(null);
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState(false);
 
@@ -520,15 +601,21 @@ const ApplicationDetailPage = () => {
         // read.all), not raw isOwner — a read.all viewer sees the same
         // info panel an owner does, just without any action button.
         if (detailData.canView) {
-          const [{ data: jobData }, { data: pool }, { data: activityRows }] =
-            await Promise.all([
-              getJob(detailData.application.jobId),
-              listInterviewPool(),
-              getApplicationActivity(applicationId),
-            ]);
+          const [
+            { data: jobData },
+            { data: pool },
+            { data: activityRows },
+            { data: otherApps },
+          ] = await Promise.all([
+            getJob(detailData.application.jobId),
+            listInterviewPool(),
+            getApplicationActivity(applicationId),
+            getOtherApplications(applicationId),
+          ]);
           setJob(jobData);
           setInterviewPool(pool ?? []);
           setActivity(activityRows ?? []);
+          setOtherApplications(otherApps ?? []);
         }
         // Comments are readable by the owner AND the current-stage
         // assignee (unlike job/pool/activity above, which stay owner-only)
@@ -979,6 +1066,17 @@ const ApplicationDetailPage = () => {
                   />
                 </TabsContent>
               </Tabs>
+
+              <OtherApplicationsSection
+                otherApplications={otherApplications}
+                interviewPool={interviewPool}
+                expandedId={expandedOtherApplicationId}
+                onToggle={(id) =>
+                  setExpandedOtherApplicationId((prev) =>
+                    prev === id ? null : id,
+                  )
+                }
+              />
             </div>
           )}
 
