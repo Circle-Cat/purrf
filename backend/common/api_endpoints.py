@@ -129,3 +129,6 @@ RECRUITING_APPLICATION_COMMENTS_ENDPOINT = (
     "/recruiting/applications/{application_id}/comments"
 )
 RECRUITING_AUDIT_OVERVIEW_ENDPOINT = "/recruiting/audit/overview"
+RECRUITING_APPLICATION_MENTIONABLE_USERS_ENDPOINT = (
+    "/recruiting/applications/{application_id}/mentionable-users"
+)

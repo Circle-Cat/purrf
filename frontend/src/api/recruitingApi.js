@@ -191,6 +191,10 @@ export const getApplicationComments = (id) =>
 export const postComment = (id, body) =>
   request.post(API_ENDPOINTS.RECRUITING_APPLICATION_COMMENTS(id), body);
 
+/** Everyone who can currently be @-mentioned on this application. */
+export const getMentionableUsers = (id) =>
+  request.get(API_ENDPOINTS.RECRUITING_APPLICATION_MENTIONABLE_USERS(id));
+
 /** List a candidate's other applications (OtherApplicationDto[]), for the cross-posting aggregation view. */
 export const getOtherApplications = (id) =>
   request.get(API_ENDPOINTS.RECRUITING_APPLICATION_OTHER_APPLICATIONS(id));
