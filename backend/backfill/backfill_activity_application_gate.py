@@ -105,7 +105,8 @@ async def main():
             logger.info("Backfill successful!")
         except Exception as e:
             await session.rollback()
-            logger.warning(f"Global backfill failure: {e}")
+            logger.error(f"Global backfill failure: {e}")
+            raise
 
 
 if __name__ == "__main__":
