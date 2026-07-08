@@ -53,8 +53,8 @@ describe("ScreenRulesEditor", () => {
       />,
     );
     expect(
-      screen.getByRole("checkbox", { name: "Screen by email domain" }),
-    ).not.toBeChecked();
+      screen.queryByLabelText("Email domains"),
+    ).not.toBeInTheDocument();
 
     rerender(
       <ScreenRulesEditor
@@ -63,18 +63,15 @@ describe("ScreenRulesEditor", () => {
         onChange={vi.fn()}
       />,
     );
-    expect(
-      screen.getByRole("checkbox", { name: "Screen by email domain" }),
-    ).toBeChecked();
     expect(screen.getByLabelText("Email domains")).toHaveValue("google.com");
   });
 
-  it("emits an email_domain=equals rule for a single domain", async () => {
+  it("adds an email domain rule defaulting to Include mode", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
     render(<ControlledScreenRules initialRules={[]} onChange={onChange} />);
     await user.click(
-      screen.getByRole("checkbox", { name: "Screen by email domain" }),
+      screen.getByRole("button", { name: "Add email domain rule" }),
     );
     fireEvent.change(screen.getByLabelText("Email domains"), {
       target: { value: "google.com" },
@@ -102,7 +99,7 @@ describe("ScreenRulesEditor", () => {
     const onChange = vi.fn();
     render(<ControlledScreenRules initialRules={[]} onChange={onChange} />);
     await user.click(
-      screen.getByRole("checkbox", { name: "Screen by email domain" }),
+      screen.getByRole("button", { name: "Add email domain rule" }),
     );
     fireEvent.change(screen.getByLabelText("Email domains"), {
       target: { value: "circlecat.org" },
@@ -152,6 +149,161 @@ describe("ScreenRulesEditor", () => {
       operator: "in",
       value: ["google.com", "circlecat.org"],
     });
+  });
+
+  it("switches a row to Exclude mode and emits a not_in rule", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <ControlledScreenRules
+        initialRules={[
+          {
+            id: "r1",
+            condition: {
+              source: "email_domain",
+              operator: "equals",
+              value: "google.com",
+            },
+            action: "reject",
+          },
+        ]}
+        onChange={onChange}
+      />,
+    );
+    await user.click(
+      screen.getByRole("combobox", { name: "Email domain mode" }),
+    );
+    await user.click(screen.getByRole("option", { name: "Exclude" }));
+    const last = onChange.mock.calls.at(-1)[0];
+    expect(last.rules[0].condition).toEqual({
+      source: "email_domain",
+      operator: "not_in",
+      value: ["google.com"],
+    });
+  });
+
+  it("loads an existing not_in rule with its mode showing Exclude", () => {
+    render(
+      <ControlledScreenRules
+        initialRules={[
+          {
+            id: "r1",
+            condition: {
+              source: "email_domain",
+              operator: "not_in",
+              value: ["google.com"],
+            },
+            action: "reject",
+          },
+        ]}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByRole("combobox", { name: "Email domain mode" }),
+    ).toHaveTextContent("Exclude");
+  });
+
+  it("supports two independent email domain rules at once", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <ControlledScreenRules
+        initialRules={[
+          {
+            id: "r1",
+            condition: {
+              source: "email_domain",
+              operator: "in",
+              value: ["circlecat.org"],
+            },
+            action: "auto_hire",
+          },
+        ]}
+        onChange={onChange}
+      />,
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Add email domain rule" }),
+    );
+    const domainInputs = screen.getAllByLabelText("Email domains");
+    expect(domainInputs).toHaveLength(2);
+    fireEvent.change(domainInputs[1], {
+      target: { value: "circlecat.org" },
+    });
+    const modeSelects = screen.getAllByRole("combobox", {
+      name: "Email domain mode",
+    });
+    await user.click(modeSelects[1]);
+    await user.click(screen.getByRole("option", { name: "Exclude" }));
+    const last = onChange.mock.calls.at(-1)[0];
+    expect(last.rules).toEqual([
+      {
+        id: "r1",
+        condition: {
+          source: "email_domain",
+          operator: "in",
+          value: ["circlecat.org"],
+        },
+        action: "auto_hire",
+      },
+      {
+        id: "r2",
+        condition: {
+          source: "email_domain",
+          operator: "not_in",
+          value: ["circlecat.org"],
+        },
+        action: "qualify",
+      },
+    ]);
+  });
+
+  it("removes only the targeted email domain rule", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <ControlledScreenRules
+        initialRules={[
+          {
+            id: "r1",
+            condition: {
+              source: "email_domain",
+              operator: "equals",
+              value: "google.com",
+            },
+            action: "qualify",
+          },
+          {
+            id: "r2",
+            condition: {
+              source: "email_domain",
+              operator: "not_in",
+              value: ["google.com"],
+            },
+            action: "reject",
+          },
+        ]}
+        onChange={onChange}
+      />,
+    );
+    const removeButtons = screen.getAllByRole("button", {
+      name: "Remove email domain rule",
+    });
+    expect(removeButtons).toHaveLength(2);
+    await user.click(removeButtons[0]);
+    const last = onChange.mock.calls.at(-1)[0];
+    expect(last.rules).toEqual([
+      {
+        id: "r2",
+        condition: {
+          source: "email_domain",
+          operator: "not_in",
+          value: ["google.com"],
+        },
+        action: "reject",
+      },
+    ]);
   });
 
   it("adds an answer rule limited to single_choice questions and their options", async () => {

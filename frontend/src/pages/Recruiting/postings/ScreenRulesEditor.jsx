@@ -1,5 +1,4 @@
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -11,6 +10,10 @@ import {
 } from "@/components/ui/select";
 
 const ACTIONS = ["reject", "qualify", "auto_hire"];
+const EMAIL_MODES = [
+  { value: "include", label: "Include" },
+  { value: "exclude", label: "Exclude" },
+];
 
 /** Next unique rule id (r1, r2, …) given existing rules. */
 const nextRuleId = (rules) => {
@@ -22,11 +25,14 @@ const nextRuleId = (rules) => {
 };
 
 /** Parse the domains text field into the condition's operator+value. */
-const domainsToCondition = (text) => {
+const domainsToCondition = (text, mode) => {
   const parts = text
     .split(",")
     .map((d) => d.trim())
     .filter(Boolean);
+  if (mode === "exclude") {
+    return { source: "email_domain", operator: "not_in", value: parts };
+  }
   return parts.length <= 1
     ? { source: "email_domain", operator: "equals", value: parts[0] ?? "" }
     : { source: "email_domain", operator: "in", value: parts };
@@ -35,6 +41,10 @@ const domainsToCondition = (text) => {
 /** Render a condition's domain(s) back into the text field. */
 const conditionToDomains = (cond) =>
   Array.isArray(cond.value) ? cond.value.join(", ") : (cond.value ?? "");
+
+/** Whether a condition's operator represents "include" or "exclude". */
+const conditionMode = (cond) =>
+  cond.operator === "not_in" ? "exclude" : "include";
 
 const ActionSelect = ({ label, value, onChange }) => (
   <Select value={value} onValueChange={onChange}>
@@ -52,8 +62,8 @@ const ActionSelect = ({ label, value, onChange }) => (
 );
 
 /**
- * Machine-screening rules editor: a built-in email-domain rule (toggle) plus a
- * list of single_choice answer rules. Produces backend-shaped screen_rules.
+ * Machine-screening rules editor: a list of email-domain rules plus a list
+ * of single_choice answer rules. Produces backend-shaped screen_rules.
  *
  * @param {{value: {rules: object[]}, onChange: (next: object) => void,
  *          questions: object[]}} props
@@ -68,28 +78,25 @@ const ScreenRulesEditor = ({
   // parent's value arrived after mount, silently wiping saved rules on edit.)
   const rules = value.rules ?? [];
 
-  const emailRule = rules.find((r) => r.condition.source === "email_domain");
+  const emailRules = rules.filter(
+    (r) => r.condition.source === "email_domain",
+  );
   const answerRules = rules.filter((r) => r.condition.source === "answer");
   const singleChoice = questions.filter((q) => q.type === "single_choice");
 
   const emit = (nextRules) => onChange({ ...value, rules: nextRules });
 
-  const toggleEmail = (on) => {
-    if (on) {
-      emit([
-        ...rules,
-        {
-          id: nextRuleId(rules),
-          condition: { source: "email_domain", operator: "equals", value: "" },
-          action: "qualify",
-        },
-      ]);
-    } else {
-      emit(rules.filter((r) => r !== emailRule));
-    }
-  };
-  const patchEmail = (fields) =>
-    emit(rules.map((r) => (r === emailRule ? { ...r, ...fields } : r)));
+  const addEmailRule = () =>
+    emit([
+      ...rules,
+      {
+        id: nextRuleId(rules),
+        condition: { source: "email_domain", operator: "equals", value: "" },
+        action: "qualify",
+      },
+    ]);
+  const patchEmailRule = (rule, fields) =>
+    emit(rules.map((r) => (r === rule ? { ...r, ...fields } : r)));
 
   const addAnswerRule = () =>
     emit([
@@ -113,36 +120,70 @@ const ScreenRulesEditor = ({
     <div className="space-y-3">
       <p className="text-sm font-medium text-slate-700">Machine screening</p>
 
-      <div className="space-y-2 rounded-md border border-slate-200 p-3">
-        <Label className="flex items-center gap-2">
-          <Checkbox
-            checked={!!emailRule}
-            onCheckedChange={(on) => toggleEmail(!!on)}
-            aria-label="Screen by email domain"
-          />
-          Screen by email domain
-        </Label>
-        {emailRule && (
-          <div className="flex flex-wrap items-center gap-3 pl-6">
+      <div className="space-y-2">
+        {emailRules.map((rule) => (
+          <div
+            key={rule.id}
+            className="flex flex-wrap items-center gap-3 rounded-md border border-slate-200 p-3"
+          >
+            <Select
+              value={conditionMode(rule.condition)}
+              onValueChange={(mode) =>
+                patchEmailRule(rule, {
+                  condition: domainsToCondition(
+                    conditionToDomains(rule.condition),
+                    mode,
+                  ),
+                })
+              }
+            >
+              <SelectTrigger aria-label="Email domain mode" className="w-28">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {EMAIL_MODES.map((m) => (
+                  <SelectItem key={m.value} value={m.value}>
+                    {m.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <Label className="flex items-center gap-2 text-sm">
               Domains
               <Input
                 aria-label="Email domains"
                 className="w-64"
                 placeholder="google.com, circlecat.org"
-                value={conditionToDomains(emailRule.condition)}
+                value={conditionToDomains(rule.condition)}
                 onChange={(e) =>
-                  patchEmail({ condition: domainsToCondition(e.target.value) })
+                  patchEmailRule(rule, {
+                    condition: domainsToCondition(
+                      e.target.value,
+                      conditionMode(rule.condition),
+                    ),
+                  })
                 }
               />
             </Label>
             <ActionSelect
               label="Email domain action"
-              value={emailRule.action}
-              onChange={(action) => patchEmail({ action })}
+              value={rule.action}
+              onChange={(action) => patchEmailRule(rule, { action })}
             />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              aria-label="Remove email domain rule"
+              onClick={() => removeRule(rule)}
+            >
+              Remove
+            </Button>
           </div>
-        )}
+        ))}
+        <Button type="button" variant="outline" size="sm" onClick={addEmailRule}>
+          Add email domain rule
+        </Button>
       </div>
 
       <div className="space-y-2">
@@ -220,12 +261,7 @@ const ScreenRulesEditor = ({
             </div>
           );
         })}
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={addAnswerRule}
-        >
+        <Button type="button" variant="outline" size="sm" onClick={addAnswerRule}>
           Add answer rule
         </Button>
       </div>
