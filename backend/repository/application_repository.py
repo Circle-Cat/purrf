@@ -81,7 +81,9 @@ class ApplicationRepository:
                 OFFER_DECLINED/BLACKLISTED) are included alongside the
                 configurable pipeline stages.
         """
-        created_date = cast(ApplicationEntity.created_datetime, Date)
+        created_date = cast(
+            func.timezone("UTC", ApplicationEntity.created_datetime), Date
+        )
         stmt = (
             select(
                 ApplicationEntity.job_id,
@@ -120,7 +122,9 @@ class ApplicationRepository:
                 per (job, day) combination with at least one matching
                 application.
         """
-        created_date = cast(ApplicationEntity.created_datetime, Date)
+        created_date = cast(
+            func.timezone("UTC", ApplicationEntity.created_datetime), Date
+        )
         stmt = (
             select(
                 ApplicationEntity.job_id,
