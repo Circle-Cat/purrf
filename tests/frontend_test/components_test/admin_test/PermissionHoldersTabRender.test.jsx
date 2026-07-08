@@ -26,7 +26,11 @@ beforeEach(() => vi.clearAllMocks());
 describe("PermissionHoldersTab render", () => {
   it("disables Search until a permission is chosen", () => {
     usePermissionHolders.mockReturnValue({ ...base });
-    render(<PermissionHoldersTab catalog={[{ name: "permission.manage", description: "d1" }]} />);
+    render(
+      <PermissionHoldersTab
+        catalog={[{ name: "permission.manage", description: "d1" }]}
+      />,
+    );
     expect(screen.getByRole("button", { name: "Search" })).toBeDisabled();
   });
 
@@ -45,7 +49,11 @@ describe("PermissionHoldersTab render", () => {
         },
       ],
     });
-    render(<PermissionHoldersTab catalog={[{ name: "permission.manage", description: "d1" }]} />);
+    render(
+      <PermissionHoldersTab
+        catalog={[{ name: "permission.manage", description: "d1" }]}
+      />,
+    );
     expect(screen.getByText("User ID")).toBeInTheDocument();
     expect(screen.getByText("7")).toBeInTheDocument();
   });
@@ -66,7 +74,11 @@ describe("PermissionHoldersTab render", () => {
         },
       ],
     });
-    render(<PermissionHoldersTab catalog={[{ name: "permission.manage", description: "d1" }]} />);
+    render(
+      <PermissionHoldersTab
+        catalog={[{ name: "permission.manage", description: "d1" }]}
+      />,
+    );
     expect(screen.getByText("super admin")).toBeInTheDocument();
   });
 
@@ -86,7 +98,11 @@ describe("PermissionHoldersTab render", () => {
         },
       ],
     });
-    render(<PermissionHoldersTab catalog={[{ name: "permission.manage", description: "d1" }]} />);
+    render(
+      <PermissionHoldersTab
+        catalog={[{ name: "permission.manage", description: "d1" }]}
+      />,
+    );
     expect(screen.queryByText("super admin")).not.toBeInTheDocument();
   });
 
@@ -98,7 +114,11 @@ describe("PermissionHoldersTab render", () => {
       submitSearch,
     });
     const user = userEvent.setup();
-    render(<PermissionHoldersTab catalog={[{ name: "permission.manage", description: "d1" }]} />);
+    render(
+      <PermissionHoldersTab
+        catalog={[{ name: "permission.manage", description: "d1" }]}
+      />,
+    );
     await user.click(screen.getByRole("button", { name: "Search" }));
     expect(submitSearch).toHaveBeenCalledTimes(1);
   });

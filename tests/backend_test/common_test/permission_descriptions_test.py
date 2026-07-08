@@ -21,9 +21,7 @@ class TestPermissionDescriptions(unittest.TestCase):
         self.assertEqual(_validate_complete(full), full)
 
     def test_validate_complete_raises_on_missing_entry(self):
-        incomplete = {
-            p: "x" for p in Permission if p != Permission.SUPER_ADMIN_REVOKE
-        }
+        incomplete = {p: "x" for p in Permission if p != Permission.SUPER_ADMIN_REVOKE}
         with self.assertRaises(ValueError):
             _validate_complete(incomplete)
 
