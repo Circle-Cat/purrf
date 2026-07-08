@@ -444,7 +444,18 @@ class BoardService:
         application_id: int,
     ) -> bytes:
         """Return an application's résumé bytes, for the proxy download button
-        on the shared application detail page (#138).
+        on the shared application detail page (#138), including from the
+        cross-posting aggregation view.
+
+        Authorization checks every one of the candidate's applications, not
+        just ``application_id`` itself: a caller who has no direct
+        relationship to the requested application's job can still fetch its
+        résumé if they're an owner/assignee/read.all holder on any OTHER
+        application by the same candidate — the same "single entry gate"
+        rule ``get_other_applications`` uses to decide what to show at all.
+        Also preserves the existing ``allow_self`` path (#156): the
+        candidate reading their own résumé still works, since ``application``
+        is itself one of the rows ``candidate_rows`` iterates.
 
         Args:
             session (AsyncSession): Active database async session.
@@ -455,15 +466,37 @@ class BoardService:
             bytes: The raw PDF bytes, fetched from ``resume_storage``.
 
         Raises:
-            ValueError: If the application is missing, the caller is none
-                of: the job owner, its current-stage assignee, or the
-                application's own submitter (collapsed "not found" message,
-                same as ``get_application_detail``), or the application's
-                current submission has no résumé on file.
+            ValueError: If the application is missing, the caller has no
+                owner/assignee/self/read.all standing on it or any other
+                application by the same candidate (collapsed "not found"
+                message, same as ``get_application_detail``), or the
+                application's current submission has no résumé on file.
         """
-        _application, _job = await self._load_owned_application(
-            session, current_user, application_id, allow_assignee=True, allow_self=True
+        application = await self.application_repository.get_by_id(
+            session, application_id
         )
+        if application is None:
+            raise ValueError(f"application {application_id} not found")
+        candidate_rows = await self.application_repository.list_by_user(
+            session, application.user_id
+        )
+        authorized = False
+        for candidate_application, _candidate_job in candidate_rows:
+            try:
+                await self._load_owned_application(
+                    session,
+                    current_user,
+                    candidate_application.application_id,
+                    allow_assignee=True,
+                    allow_self=True,
+                    allow_read_all=True,
+                )
+                authorized = True
+                break
+            except ValueError:
+                continue
+        if not authorized:
+            raise ValueError(f"application {application_id} not found")
         current_sub = await self.application_submission_repository.get_current(
             session, application_id
         )

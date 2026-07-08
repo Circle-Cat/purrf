@@ -683,6 +683,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             resume_object_key="resumes/abc.pdf",
         )
         self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.app_repo.list_by_user = AsyncMock(return_value=[(application, job)])
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
         self.sub_repo.get_current = AsyncMock(return_value=current_sub)
         self.resume_storage.get = MagicMock(return_value=b"%PDF-1.4 data")
@@ -705,6 +706,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         job = self._job(job_id=1, owner_ids=(9,))
         application = self._application(application_id=10, job_id=1, user_id=3)
         self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.app_repo.list_by_user = AsyncMock(return_value=[(application, job)])
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
         self.assignment_repo.get.return_value = None
 
@@ -726,6 +728,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             resume_object_key="resumes/abc.pdf",
         )
         self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.app_repo.list_by_user = AsyncMock(return_value=[(application, job)])
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
         self.assignment_repo.get.return_value = None  # not the assignee either
         self.sub_repo.get_current = AsyncMock(return_value=current_sub)
@@ -751,6 +754,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             resume_object_key="resumes/abc.pdf",
         )
         self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.app_repo.list_by_user = AsyncMock(return_value=[(application, job)])
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
         self.assignment_repo.get.return_value = assignment
         self.sub_repo.get_current = AsyncMock(return_value=current_sub)
@@ -765,12 +769,74 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         application = self._application(application_id=10, job_id=1, user_id=3)
         self.app_repo.get_by_id = AsyncMock(return_value=application)
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.list_by_user = AsyncMock(return_value=[(application, job)])
         self.sub_repo.get_current = AsyncMock(return_value=None)
 
         with self.assertRaises(ValueError) as ctx:
             await self.service.get_resume(self.session, self._ctx(user_id=2), 10)
         self.assertEqual(str(ctx.exception), "no resume on file for application 10")
         self.resume_storage.get.assert_not_called()
+
+    async def test_get_resume_succeeds_via_sibling_application_standing(self):
+        """A caller who owns/is-assigned-to a DIFFERENT application by the
+        same candidate (reached this résumé request via the aggregation
+        view) can still fetch it, even with no direct relationship to the
+        requested application's own job."""
+        requested_job = self._job(job_id=1, owner_ids=(9,))
+        sibling_job = self._job(job_id=2, owner_ids=(2,))
+        requested_app = self._application(application_id=10, job_id=1, user_id=3)
+        sibling_app = self._application(application_id=11, job_id=2, user_id=3)
+        current_sub = ApplicationSubmissionEntity(
+            application_id=10,
+            version=1,
+            submission={},
+            resume_object_key="resumes/abc.pdf",
+        )
+        # Keyed by application_id (like job_repo below): _load_owned_application
+        # re-fetches per candidate row, so a single return_value would wrongly
+        # reuse requested_app's job for the sibling row too.
+        self.app_repo.get_by_id = AsyncMock(
+            side_effect=lambda _session, application_id, for_update=False: {
+                10: requested_app,
+                11: sibling_app,
+            }[application_id]
+        )
+        self.app_repo.list_by_user = AsyncMock(
+            return_value=[(requested_app, requested_job), (sibling_app, sibling_job)]
+        )
+        self.job_repo.get_by_job_id = AsyncMock(
+            side_effect=lambda _session, job_id: {
+                1: requested_job,
+                2: sibling_job,
+            }[job_id]
+        )
+        self.assignment_repo.get.return_value = None
+        self.sub_repo.get_current = AsyncMock(return_value=current_sub)
+        self.resume_storage.get.return_value = b"%PDF-1.4"
+
+        result = await self.service.get_resume(self.session, self._ctx(user_id=2), 10)
+
+        self.assertEqual(result, b"%PDF-1.4")
+
+    async def test_get_resume_raises_with_no_standing_on_any_sibling(self):
+        requested_job = self._job(job_id=1, owner_ids=(9,))
+        other_job = self._job(job_id=2, owner_ids=(8,))
+        requested_app = self._application(application_id=10, job_id=1, user_id=3)
+        other_app = self._application(application_id=11, job_id=2, user_id=3)
+        self.app_repo.get_by_id = AsyncMock(return_value=requested_app)
+        self.app_repo.list_by_user = AsyncMock(
+            return_value=[(requested_app, requested_job), (other_app, other_job)]
+        )
+        self.job_repo.get_by_job_id = AsyncMock(
+            side_effect=lambda _session, job_id: {
+                1: requested_job,
+                2: other_job,
+            }[job_id]
+        )
+        self.assignment_repo.get.return_value = None
+
+        with self.assertRaises(ValueError):
+            await self.service.get_resume(self.session, self._ctx(user_id=2), 10)
 
     # -- change_stage --
 
