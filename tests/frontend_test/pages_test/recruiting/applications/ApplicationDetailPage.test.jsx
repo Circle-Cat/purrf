@@ -148,6 +148,7 @@ beforeEach(() => {
   api.getEvaluationsForApplication.mockResolvedValue({ data: [] });
   api.getApplicationActivity.mockResolvedValue({ data: [] });
   api.getApplicationComments.mockResolvedValue({ data: [] });
+  api.getMentionableUsers.mockResolvedValue({ data: [] });
   api.getOtherApplications.mockResolvedValue({ data: [] });
 });
 
@@ -1435,6 +1436,7 @@ describe("ApplicationDetailPage — comments", () => {
         authorName: "Owen Owner",
         body: "New note",
         createdAt: "2026-07-07T13:00:00Z",
+        mentions: [],
       },
     });
     renderPage();
@@ -1449,6 +1451,55 @@ describe("ApplicationDetailPage — comments", () => {
     );
     expect(api.postComment).toHaveBeenCalledWith("101", { body: "New note" });
     expect(screen.getByPlaceholderText("Add a comment…")).toHaveValue("");
+  });
+
+  it("typing @ opens a picker of mentionable users and inserts a token on selection", async () => {
+    const user = userEvent.setup();
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
+    });
+    api.getMentionableUsers.mockResolvedValue({
+      data: [{ userId: ASSIGNEE_ID, name: "Eve Evaluator" }],
+    });
+    renderPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole("tab", { name: "Comments" }));
+    await user.type(screen.getByPlaceholderText("Add a comment…"), "Hey @Ev");
+
+    expect(await screen.findByText("Eve Evaluator")).toBeInTheDocument();
+    await user.click(screen.getByText("Eve Evaluator"));
+
+    expect(screen.getByPlaceholderText("Add a comment…")).toHaveValue(
+      `Hey @[${ASSIGNEE_ID}] `,
+    );
+  });
+
+  it("renders a resolved mention as highlighted text", async () => {
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
+    });
+    api.getApplicationComments.mockResolvedValue({
+      data: [
+        {
+          id: 1,
+          authorId: OWNER_ID,
+          authorName: "Owen Owner",
+          body: `cc @[${ASSIGNEE_ID}] please review`,
+          createdAt: "2026-07-07T12:00:00Z",
+          mentions: [{ userId: ASSIGNEE_ID, name: "Eve Evaluator" }],
+        },
+      ],
+    });
+    const user = userEvent.setup();
+    renderPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole("tab", { name: "Comments" }));
+
+    expect(screen.getByText("@Eve Evaluator")).toBeInTheDocument();
   });
 
   it("disables the Post button while a comment is being posted", async () => {

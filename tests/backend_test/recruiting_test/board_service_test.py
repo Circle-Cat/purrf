@@ -32,6 +32,9 @@ from backend.repository.application_activity_repository import (
 from backend.repository.application_comment_repository import (
     ApplicationCommentRepository,
 )
+from backend.repository.application_comment_mention_repository import (
+    ApplicationCommentMentionRepository,
+)
 from backend.repository.evaluation_repository import EvaluationRepository
 
 
@@ -59,6 +62,10 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             ApplicationActivityRepository, instance=True
         )
         self.comment_repo = create_autospec(ApplicationCommentRepository, instance=True)
+        self.comment_mention_repo = create_autospec(
+            ApplicationCommentMentionRepository, instance=True
+        )
+        self.comment_mention_repo.get_by_comment_ids.return_value = []
         self.evaluation_repo = create_autospec(EvaluationRepository, instance=True)
         self.evaluation_repo.list_by_application.return_value = []
         self.session = AsyncMock()
@@ -73,6 +80,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             self.user_permissions_repo,
             self.activity_repo,
             self.comment_repo,
+            self.comment_mention_repo,
             self.evaluation_repo,
         )
         # Default persistence mocks: echo the entity back, like SQLAlchemy's
@@ -2417,6 +2425,226 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             await self.service.add_comment(self.session, self._ctx(user_id=99), 10, dto)
         self.assertEqual(str(ctx.exception), "application 10 not found")
         self.comment_repo.create.assert_not_awaited()
+
+    async def test_add_comment_valid_mention_creates_row_and_keeps_token(self):
+        job = self._job(job_id=1, owner_ids=(2,))
+        application = self._application(application_id=10, job_id=1)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.assignment_repo.get.return_value = MagicMock(assignee_id=7)
+        created_row = SimpleNamespace(
+            comment_id=5,
+            application_id=10,
+            author_id=2,
+            body="ping @[7]",
+            created_at=datetime(2026, 7, 7, 12, 0, 0),
+        )
+        self.comment_repo.create = AsyncMock(return_value=created_row)
+        self.users_repo.get_user_by_user_id = AsyncMock(
+            return_value=self._user(user_id=2, first="Owen", last="Owner")
+        )
+        self.users_repo.get_all_by_ids = AsyncMock(
+            return_value=[self._user(user_id=7, first="Eve", last="Evaluator")]
+        )
+
+        dto = CommentCreateDto(body="ping @[7]")
+        result = await self.service.add_comment(
+            self.session, self._ctx(user_id=2), 10, dto
+        )
+
+        self.comment_repo.create.assert_awaited_once_with(
+            self.session, 10, 2, "ping @[7]"
+        )
+        self.comment_mention_repo.create_mentions.assert_awaited_once_with(
+            self.session, 5, [7]
+        )
+        self.assertEqual(len(result.mentions), 1)
+        self.assertEqual(result.mentions[0].user_id, 7)
+        self.assertEqual(result.mentions[0].name, "Eve Evaluator")
+
+    async def test_add_comment_mention_of_unauthorized_id_is_stripped(self):
+        job = self._job(job_id=1, owner_ids=(2,))
+        application = self._application(application_id=10, job_id=1)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.assignment_repo.get.return_value = None
+        created_row = SimpleNamespace(
+            comment_id=5,
+            application_id=10,
+            author_id=2,
+            body="ping ",
+            created_at=datetime(2026, 7, 7, 12, 0, 0),
+        )
+        self.comment_repo.create = AsyncMock(return_value=created_row)
+        self.users_repo.get_user_by_user_id = AsyncMock(
+            return_value=self._user(user_id=2, first="Owen", last="Owner")
+        )
+
+        dto = CommentCreateDto(body="ping @[999]")
+        result = await self.service.add_comment(
+            self.session, self._ctx(user_id=2), 10, dto
+        )
+
+        self.comment_repo.create.assert_awaited_once_with(self.session, 10, 2, "ping ")
+        self.comment_mention_repo.create_mentions.assert_not_awaited()
+        self.assertEqual(result.mentions, [])
+
+    async def test_add_comment_body_that_is_only_an_invalid_mention_is_rejected(self):
+        job = self._job(job_id=1, owner_ids=(2,))
+        application = self._application(application_id=10, job_id=1)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.assignment_repo.get.return_value = None
+
+        dto = CommentCreateDto(body="@[999]")
+        with self.assertRaises(ValueError) as ctx:
+            await self.service.add_comment(self.session, self._ctx(user_id=2), 10, dto)
+
+        self.assertEqual(str(ctx.exception), "comment text is required")
+        self.comment_repo.create.assert_not_awaited()
+        self.comment_mention_repo.create_mentions.assert_not_awaited()
+
+    async def test_add_comment_duplicate_mention_of_same_user_creates_one_row(self):
+        job = self._job(job_id=1, owner_ids=(2,))
+        application = self._application(application_id=10, job_id=1)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.assignment_repo.get.return_value = None
+        created_row = SimpleNamespace(
+            comment_id=5,
+            application_id=10,
+            author_id=2,
+            body="@[2] and @[2] again",
+            created_at=datetime(2026, 7, 7, 12, 0, 0),
+        )
+        self.comment_repo.create = AsyncMock(return_value=created_row)
+        self.users_repo.get_user_by_user_id = AsyncMock(
+            return_value=self._user(user_id=2, first="Owen", last="Owner")
+        )
+        self.users_repo.get_all_by_ids = AsyncMock(
+            return_value=[self._user(user_id=2, first="Owen", last="Owner")]
+        )
+
+        dto = CommentCreateDto(body="@[2] and @[2] again")
+        result = await self.service.add_comment(
+            self.session, self._ctx(user_id=2), 10, dto
+        )
+
+        self.comment_mention_repo.create_mentions.assert_awaited_once_with(
+            self.session, 5, [2]
+        )
+        self.assertEqual(len(result.mentions), 1)
+
+    async def test_add_comment_no_mention_syntax_behaves_as_before(self):
+        """Regression: a plain comment is untouched by the mention parser."""
+        job = self._job(job_id=1, owner_ids=(2,))
+        application = self._application(application_id=10, job_id=1)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.assignment_repo.get.return_value = None
+        created_row = SimpleNamespace(
+            comment_id=5,
+            application_id=10,
+            author_id=2,
+            body="Great candidate.",
+            created_at=datetime(2026, 7, 7, 12, 0, 0),
+        )
+        self.comment_repo.create = AsyncMock(return_value=created_row)
+        self.users_repo.get_user_by_user_id = AsyncMock(
+            return_value=self._user(user_id=2, first="Owen", last="Owner")
+        )
+
+        dto = CommentCreateDto(body="Great candidate.")
+        result = await self.service.add_comment(
+            self.session, self._ctx(user_id=2), 10, dto
+        )
+
+        self.comment_mention_repo.create_mentions.assert_not_awaited()
+        self.assertEqual(result.mentions, [])
+
+    async def test_list_comments_includes_resolved_mentions(self):
+        job = self._job(job_id=1, owner_ids=(2,))
+        application = self._application(application_id=10, job_id=1)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        row = SimpleNamespace(
+            comment_id=1,
+            application_id=10,
+            author_id=42,
+            body="cc @[7]",
+            created_at=datetime(2026, 7, 7, 12, 0, 0),
+        )
+        self.comment_repo.list_by_application = AsyncMock(return_value=[row])
+        self.comment_mention_repo.get_by_comment_ids = AsyncMock(
+            return_value=[SimpleNamespace(comment_id=1, mentioned_user_id=7)]
+        )
+        self.users_repo.get_all_by_ids = AsyncMock(
+            return_value=[
+                self._user(user_id=42, first="Ivan", last="Interviewer"),
+                self._user(user_id=7, first="Eve", last="Evaluator"),
+            ]
+        )
+
+        result = await self.service.list_comments(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertEqual(len(result[0].mentions), 1)
+        self.assertEqual(result[0].mentions[0].user_id, 7)
+        self.assertEqual(result[0].mentions[0].name, "Eve Evaluator")
+
+    # -- list_mentionable_users --
+
+    async def test_list_mentionable_users_returns_owners_and_current_assignee(self):
+        job = self._job(job_id=1, owner_ids=(2, 3))
+        application = self._application(application_id=10, job_id=1)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.assignment_repo.get.return_value = MagicMock(assignee_id=7)
+        self.users_repo.get_all_by_ids = AsyncMock(
+            return_value=[
+                self._user(user_id=2, first="Owen", last="Owner"),
+                self._user(user_id=3, first="Ozzy", last="Owner"),
+                self._user(user_id=7, first="Eve", last="Evaluator"),
+            ]
+        )
+
+        result = await self.service.list_mentionable_users(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertEqual({u.user_id for u in result}, {2, 3, 7})
+
+    async def test_list_mentionable_users_no_assignee_returns_owners_only(self):
+        job = self._job(job_id=1, owner_ids=(2,))
+        application = self._application(application_id=10, job_id=1)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.assignment_repo.get.return_value = None
+        self.users_repo.get_all_by_ids = AsyncMock(
+            return_value=[self._user(user_id=2, first="Owen", last="Owner")]
+        )
+
+        result = await self.service.list_mentionable_users(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertEqual({u.user_id for u in result}, {2})
+
+    async def test_list_mentionable_users_non_owner_non_assignee_gets_collapsed_not_found_message(
+        self,
+    ):
+        job = self._job(job_id=1, owner_ids=(2,))
+        application = self._application(application_id=10, job_id=1)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.assignment_repo.get.return_value = None
+
+        with self.assertRaises(ValueError) as ctx:
+            await self.service.list_mentionable_users(
+                self.session, self._ctx(user_id=99), 10
+            )
+        self.assertEqual(str(ctx.exception), "application 10 not found")
 
     async def test_get_application_activity_succeeds_for_read_all_non_owner(self):
         job = self._job(job_id=1, owner_ids=(9,))
