@@ -69,7 +69,6 @@ class ApplicationStage(StrEnum):
     OFFER = "offer"
     HIRED = "hired"
     REJECTED = "rejected"
-    OFFER_DECLINED = "offer_declined"
     BLACKLISTED = "blacklisted"
 
 
