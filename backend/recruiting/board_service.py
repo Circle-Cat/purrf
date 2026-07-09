@@ -963,6 +963,23 @@ class BoardService:
                 "toAssigneeId": dto.assignee_id,
             },
         )
+        previous_assignee_id = (
+            previous_assignment.assignee_id if previous_assignment is not None else None
+        )
+        if (
+            dto.assignee_id != previous_assignee_id
+            and dto.assignee_id != current_user.user_id
+        ):
+            await self.notification_repository.create(
+                session,
+                NotificationEntity(
+                    user_id=dto.assignee_id,
+                    type=NotificationType.ASSIGNED_TO_EVALUATE,
+                    application_id=application_id,
+                    round=application.current_round,
+                    actor_user_id=current_user.user_id,
+                ),
+            )
         await session.commit()
         current_sub = await self.application_submission_repository.get_current(
             session, application_id

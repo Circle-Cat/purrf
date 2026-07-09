@@ -1420,6 +1420,53 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             self.session, 10, for_update=True
         )
 
+    async def test_reassign_notifies_new_assignee(self):
+        application = self._application(
+            application_id=10, job_id=1, stage=ApplicationStage.TECH
+        )
+        self.job_repo.get_by_job_id = AsyncMock(
+            return_value=self._job(job_id=1, owner_ids=(9,))
+        )
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+        previous = MagicMock()
+        previous.assignee_id = 5
+        self.assignment_repo.get = AsyncMock(return_value=previous)
+        self.user_permissions_repo.get_active_users_with_permission = AsyncMock(
+            return_value=[self._user(user_id=6)]
+        )
+
+        dto = ReassignDto(assignee_id=6)
+        await self.service.reassign(self.session, self._ctx(user_id=9), 10, dto)
+
+        self.notification_repo.create.assert_awaited_once()
+        (_session_arg, entity_arg), _ = self.notification_repo.create.call_args
+        self.assertEqual(entity_arg.user_id, 6)
+        self.assertEqual(entity_arg.type, NotificationType.ASSIGNED_TO_EVALUATE)
+        self.assertEqual(entity_arg.application_id, 10)
+        self.assertEqual(entity_arg.actor_user_id, 9)
+
+    async def test_reassign_to_same_person_does_not_notify(self):
+        application = self._application(
+            application_id=10, job_id=1, stage=ApplicationStage.TECH
+        )
+        self.job_repo.get_by_job_id = AsyncMock(
+            return_value=self._job(job_id=1, owner_ids=(9,))
+        )
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+        previous = MagicMock()
+        previous.assignee_id = 6
+        self.assignment_repo.get = AsyncMock(return_value=previous)
+        self.user_permissions_repo.get_active_users_with_permission = AsyncMock(
+            return_value=[self._user(user_id=6)]
+        )
+
+        dto = ReassignDto(assignee_id=6)
+        await self.service.reassign(self.session, self._ctx(user_id=9), 10, dto)
+
+        self.notification_repo.create.assert_not_awaited()
+
     # -- set_sub_status --
 
     async def test_set_sub_status_valid_switch_freezes_on_first_leave(self):
