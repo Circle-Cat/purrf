@@ -8,6 +8,7 @@ import {
   postMyMentorshipRegistration,
   getMyMentorshipMeetingLog,
   postMyMentorshipMeetingLog,
+  searchParticipants,
 } from "@/api/mentorshipApi";
 import { API_ENDPOINTS } from "@/constants/ApiEndpoints";
 
@@ -137,5 +138,97 @@ describe("Mentorship Service API", () => {
       payload,
     );
     expect(result).toEqual(mockResponse);
+  });
+
+  it("searchParticipants sends filters as camelCase params", async () => {
+    const mockData = { participant_rows: [], total: 0 };
+    request.get.mockResolvedValue(mockData);
+
+    const result = await searchParticipants({
+      userId: 5,
+      name: "Alice",
+      email: "alice@x.com",
+      matchedUser: "Bob Smith",
+      roundId: 3,
+      participantRole: "mentor",
+      approvalStatus: "matched",
+      onboardingStatus: "completed",
+      participationStatus: "participant",
+      limit: 20,
+      offset: 0,
+    });
+
+    expect(request.get).toHaveBeenCalledWith(
+      API_ENDPOINTS.MENTORSHIP_ADMIN_PARTICIPANTS,
+      {
+        params: {
+          userId: 5,
+          name: "Alice",
+          email: "alice@x.com",
+          matchedUser: "Bob Smith",
+          roundId: 3,
+          participantRole: "mentor",
+          approvalStatus: "matched",
+          onboardingStatus: "completed",
+          participationStatus: "participant",
+          limit: 20,
+          offset: 0,
+        },
+      },
+    );
+    expect(result).toEqual(mockData);
+  });
+
+  it("searchParticipants sends sortBy as the sort_by query param", async () => {
+    request.get.mockResolvedValue({ participant_rows: [], total: 0 });
+
+    await searchParticipants({
+      participationStatus: "participant",
+      limit: 20,
+      offset: 0,
+      sortBy: "user_id",
+      order: "desc",
+    });
+
+    expect(request.get).toHaveBeenCalledWith(
+      API_ENDPOINTS.MENTORSHIP_ADMIN_PARTICIPANTS,
+      expect.objectContaining({
+        params: expect.objectContaining({
+          sort_by: "user_id",
+          order: "desc",
+        }),
+      }),
+    );
+  });
+
+  it("searchParticipants omits filters that are not provided", async () => {
+    request.get.mockResolvedValue({ participant_rows: [], total: 0 });
+
+    await searchParticipants({
+      participationStatus: "non_participant",
+      limit: 20,
+      offset: 0,
+    });
+
+    expect(request.get).toHaveBeenCalledWith(
+      API_ENDPOINTS.MENTORSHIP_ADMIN_PARTICIPANTS,
+      {
+        params: {
+          userId: undefined,
+          name: undefined,
+          email: undefined,
+          matchedUser: undefined,
+          roundId: undefined,
+          participantRole: undefined,
+          approvalStatus: undefined,
+          onboardingStatus: undefined,
+          participationStatus: "non_participant",
+          limit: 20,
+          offset: 0,
+          sort_by: undefined,
+          order: undefined,
+        },
+      },
+    );
   });
 });
