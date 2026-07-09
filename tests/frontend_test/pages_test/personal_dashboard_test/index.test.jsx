@@ -4,6 +4,7 @@ import PersonalDashboard from "@/pages/PersonalDashboard";
 import { useMentorshipData } from "@/pages/PersonalDashboard/hooks/useMentorshipData";
 import { useAuth } from "@/context/auth";
 import { useWorkActivityData } from "@/pages/PersonalDashboard/hooks/useWorkActivityData";
+import { useMyApplications } from "@/pages/PersonalDashboard/hooks/useMyApplications";
 import { PERMISSIONS } from "@/constants/Permissions";
 import { MentorshipRoundStatus } from "@/constants/MentorshipRoundStatus";
 import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
@@ -27,6 +28,14 @@ vi.mock("@/context/auth", () => ({
 
 vi.mock("@/pages/PersonalDashboard/hooks/useWorkActivityData", () => ({
   useWorkActivityData: vi.fn(),
+}));
+
+vi.mock("@/pages/PersonalDashboard/hooks/useMyApplications", () => ({
+  useMyApplications: vi.fn(),
+}));
+
+vi.mock("@/pages/PersonalDashboard/components/MyApplicationsCard", () => ({
+  default: () => <div data-testid="mock-my-applications-card">Applications</div>,
 }));
 
 vi.mock("@/pages/PersonalDashboard/components/WorkActivityDataCard", () => ({
@@ -86,6 +95,13 @@ describe("PersonalDashboard", () => {
     vi.clearAllMocks();
     useMentorshipData.mockReturnValue(mockHookData);
     useWorkActivityData.mockReturnValue(defaultWorkActivityMock);
+    useMyApplications.mockReturnValue({
+      applications: [],
+      isLoading: false,
+      loadError: false,
+      load: vi.fn(),
+      hasHiredMentorshipApplication: true,
+    });
     useAuth.mockReturnValue({ permissions: [] });
     vi.mocked(useFeatureFlags).mockReturnValue({
       [FEATURE_FLAGS.CREATE_GOOGLE_MEETING]: true,
@@ -280,5 +296,54 @@ describe("PersonalDashboard", () => {
       const btn = screen.getByTestId("mock-manage-meetings-btn");
       expect(btn.innerHTML).toContain("Round: null");
     });
+  });
+
+  it("always renders the My Applications card", () => {
+    render(<PersonalDashboard />);
+    expect(screen.getByTestId("mock-my-applications-card")).toBeInTheDocument();
+  });
+
+  it("shows the mentorship banner and participants card when hasHiredMentorshipApplication is true", () => {
+    useMyApplications.mockReturnValue({
+      applications: [],
+      isLoading: false,
+      loadError: false,
+      load: vi.fn(),
+      hasHiredMentorshipApplication: true,
+    });
+
+    render(<PersonalDashboard />);
+
+    expect(screen.getByTestId("mock-banner")).toBeInTheDocument();
+    expect(screen.getByTestId("mock-participants-card")).toBeInTheDocument();
+  });
+
+  it("hides the mentorship banner and participants card when hasHiredMentorshipApplication is false", () => {
+    useMyApplications.mockReturnValue({
+      applications: [],
+      isLoading: false,
+      loadError: false,
+      load: vi.fn(),
+      hasHiredMentorshipApplication: false,
+    });
+
+    render(<PersonalDashboard />);
+
+    expect(screen.queryByTestId("mock-banner")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("mock-participants-card")).not.toBeInTheDocument();
+  });
+
+  it("passes hasHiredMentorshipApplication as the enabled option to useMentorshipData", () => {
+    useMyApplications.mockReturnValue({
+      applications: [],
+      isLoading: false,
+      loadError: false,
+      load: vi.fn(),
+      hasHiredMentorshipApplication: false,
+    });
+
+    render(<PersonalDashboard />);
+
+    expect(useMentorshipData).toHaveBeenCalledWith({ enabled: false });
   });
 });
