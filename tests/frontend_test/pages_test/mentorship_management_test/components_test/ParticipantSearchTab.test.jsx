@@ -231,7 +231,7 @@ describe("ParticipantSearchTab", () => {
     expect(screen.queryByLabelText("Round")).not.toBeInTheDocument();
   });
 
-  it("lists the passed-in rounds by name and sends the selected round's id", async () => {
+  it("lists the given rounds by name and sends the selected round's id", async () => {
     searchParticipants.mockResolvedValue({
       data: { participantRows: [participantRow()], total: 1 },
     });

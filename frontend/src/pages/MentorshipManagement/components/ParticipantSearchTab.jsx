@@ -111,10 +111,10 @@ const AlternativeEmailsCell = ({ emails }) => {
  *
  * @param {{
  *   participationStatus: "participant" | "non_participant",
- *   rounds: Array<{ id: number, name: string }>,
+ *   rounds?: Array<{id: number, name: string}>,
  * }} props
  */
-const ParticipantSearchTab = ({ participationStatus, rounds = [] }) => {
+const ParticipantSearchTab = ({ participationStatus, rounds }) => {
   const isParticipant = participationStatus === "participant";
 
   const {

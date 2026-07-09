@@ -1,16 +1,14 @@
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import ParticipantSearchTab from "@/pages/MentorshipManagement/components/ParticipantSearchTab";
+import { useParticipantSearchRounds } from "@/pages/MentorshipManagement/hooks/useParticipantSearchRounds";
 
 /**
  * Displays participant search in separate Participant and Non-participant tabs.
- *
- * @param {{
- *   rounds: Array<{ id: number, name: string }>
- * }} props
- *   Used for the Round filter dropdown in participant search.
  */
-const ParticipantSearchCard = ({ rounds = [] }) => {
+const ParticipantSearchCard = () => {
+  const rounds = useParticipantSearchRounds();
+
   return (
     <Card className="mt-6 border-gray-200">
       <CardHeader>
@@ -39,10 +37,7 @@ const ParticipantSearchCard = ({ rounds = [] }) => {
             />
           </TabsContent>
           <TabsContent value="non_participant">
-            <ParticipantSearchTab
-              participationStatus="non_participant"
-              rounds={rounds}
-            />
+            <ParticipantSearchTab participationStatus="non_participant" />
           </TabsContent>
         </Tabs>
       </CardContent>

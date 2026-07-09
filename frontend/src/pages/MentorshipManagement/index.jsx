@@ -51,9 +51,7 @@ const MentorshipManagement = () => {
           canWriteRounds={canWriteRounds}
         />
       )}
-      {canReadRounds && canReadParticipants && (
-        <ParticipantSearchCard rounds={sortedRounds} />
-      )}
+      {canReadParticipants && <ParticipantSearchCard />}
     </div>
   );
 };
