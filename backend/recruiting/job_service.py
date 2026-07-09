@@ -629,6 +629,9 @@ class JobService:
         - REOPEN: if a pending_payload exists it is applied to live fields
           and cleared, then the posting moves to PUBLISHED.
 
+        Also inserts a JOB_REVIEW_APPROVED notification for the review's
+        submitter, unless the acting user is the submitter themselves.
+
         Args:
             session (AsyncSession): Active database async session.
             review_id (int): The review to approve.
@@ -664,6 +667,17 @@ class JobService:
             job.status = JobStatus.PUBLISHED
             job.was_published = True
         job = await self.job_repository.update_job(session, job)
+        if review.submitted_by != acting_user_id:
+            await self.notification_repository.create(
+                session,
+                NotificationEntity(
+                    user_id=review.submitted_by,
+                    type=NotificationType.JOB_REVIEW_APPROVED,
+                    job_id=job.job_id,
+                    job_review_id=review.review_id,
+                    actor_user_id=acting_user_id,
+                ),
+            )
         await session.commit()
         return self.recruiting_mapper.to_job_dto(job)
 
@@ -677,6 +691,9 @@ class JobService:
         - REVISION: pending_payload is discarded and the posting stays PUBLISHED.
         - CLOSE: the close is aborted and the posting returns to PUBLISHED.
         - REOPEN: the reopen is aborted and the posting remains CLOSED.
+
+        Also inserts a JOB_REVIEW_REJECTED notification for the review's
+        submitter, unless the acting user is the submitter themselves.
 
         Args:
             session (AsyncSession): Active database async session.
@@ -713,6 +730,17 @@ class JobService:
             # INITIAL rejection sends the posting back to DRAFT.
             job.status = JobStatus.DRAFT
         job = await self.job_repository.update_job(session, job)
+        if review.submitted_by != acting_user_id:
+            await self.notification_repository.create(
+                session,
+                NotificationEntity(
+                    user_id=review.submitted_by,
+                    type=NotificationType.JOB_REVIEW_REJECTED,
+                    job_id=job.job_id,
+                    job_review_id=review.review_id,
+                    actor_user_id=acting_user_id,
+                ),
+            )
         await session.commit()
         return self.recruiting_mapper.to_job_dto(job)
 

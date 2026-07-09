@@ -1359,6 +1359,54 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             await self.service.get_published_job_public(self.session, 1)
 
+    async def test_approve_notifies_the_submitter(self):
+        job = JobEntity(kind=JobKind.ACTIVITY, title="T", status=JobStatus.DRAFT)
+        job.job_id = 1
+        review = JobReviewEntity(
+            job_id=1,
+            submitted_by=9,
+            reviewer_id=6,
+            status=JobReviewStatus.PENDING,
+            kind=JobReviewKind.INITIAL,
+        )
+        review.review_id = 100
+        self.review_repo.get = AsyncMock(return_value=review)
+        self.repo.get_by_job_id = AsyncMock(return_value=job)
+
+        await self.service.approve(self.session, 100, acting_user_id=6)
+
+        self.notification_repo.create.assert_awaited_once()
+        (_session_arg, entity_arg), _ = self.notification_repo.create.call_args
+        self.assertEqual(entity_arg.user_id, 9)
+        self.assertEqual(entity_arg.type, NotificationType.JOB_REVIEW_APPROVED)
+        self.assertEqual(entity_arg.job_id, 1)
+        self.assertEqual(entity_arg.job_review_id, 100)
+        self.assertEqual(entity_arg.actor_user_id, 6)
+
+    async def test_reject_notifies_the_submitter(self):
+        job = JobEntity(kind=JobKind.ACTIVITY, title="T", status=JobStatus.DRAFT)
+        job.job_id = 1
+        review = JobReviewEntity(
+            job_id=1,
+            submitted_by=9,
+            reviewer_id=6,
+            status=JobReviewStatus.PENDING,
+            kind=JobReviewKind.INITIAL,
+        )
+        review.review_id = 100
+        self.review_repo.get = AsyncMock(return_value=review)
+        self.repo.get_by_job_id = AsyncMock(return_value=job)
+
+        await self.service.reject(self.session, 100, "needs more detail", acting_user_id=6)
+
+        self.notification_repo.create.assert_awaited_once()
+        (_session_arg, entity_arg), _ = self.notification_repo.create.call_args
+        self.assertEqual(entity_arg.user_id, 9)
+        self.assertEqual(entity_arg.type, NotificationType.JOB_REVIEW_REJECTED)
+        self.assertEqual(entity_arg.job_id, 1)
+        self.assertEqual(entity_arg.job_review_id, 100)
+        self.assertEqual(entity_arg.actor_user_id, 6)
+
     async def test_list_published_returns_public_summaries(self):
         job1 = self._job(status=JobStatus.PUBLISHED)
         job2 = self._job(status=JobStatus.PUBLISHED)
