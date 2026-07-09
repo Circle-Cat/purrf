@@ -47,5 +47,11 @@ export const useMyApplications = () => {
             (a.mentorshipRole === "mentor" || a.mentorshipRole === "mentee"),
         );
 
-  return { applications, isLoading, loadError, load, hasHiredMentorshipApplication };
+  return {
+    applications,
+    isLoading,
+    loadError,
+    load,
+    hasHiredMentorshipApplication,
+  };
 };

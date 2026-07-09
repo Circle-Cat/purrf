@@ -35,7 +35,9 @@ vi.mock("@/pages/PersonalDashboard/hooks/useMyApplications", () => ({
 }));
 
 vi.mock("@/pages/PersonalDashboard/components/MyApplicationsCard", () => ({
-  default: () => <div data-testid="mock-my-applications-card">Applications</div>,
+  default: () => (
+    <div data-testid="mock-my-applications-card">Applications</div>
+  ),
 }));
 
 vi.mock("@/pages/PersonalDashboard/components/WorkActivityDataCard", () => ({
@@ -330,7 +332,9 @@ describe("PersonalDashboard", () => {
     render(<PersonalDashboard />);
 
     expect(screen.queryByTestId("mock-banner")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("mock-participants-card")).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("mock-participants-card"),
+    ).not.toBeInTheDocument();
   });
 
   it("passes hasHiredMentorshipApplication as the enabled option to useMentorshipData", () => {

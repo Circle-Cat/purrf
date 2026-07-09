@@ -193,7 +193,9 @@ describe("JobDetailPage", () => {
         screen.getByRole("button", { name: /submit application/i }),
       ).toBeInTheDocument(),
     );
-    fireEvent.click(screen.getByRole("button", { name: /submit application/i }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /submit application/i }),
+    );
 
     await waitFor(() =>
       expect(screen.getByText("Personal Dashboard")).toBeInTheDocument(),

@@ -25,7 +25,12 @@ const formatStageLabel = (stage) => {
  *   onRetry?: () => void,
  * }} props
  */
-const MyApplicationsCard = ({ applications, isLoading, loadError, onRetry }) => {
+const MyApplicationsCard = ({
+  applications,
+  isLoading,
+  loadError,
+  onRetry,
+}) => {
   const navigate = useNavigate();
 
   return (
@@ -34,9 +39,7 @@ const MyApplicationsCard = ({ applications, isLoading, loadError, onRetry }) => 
         <CardTitle className="text-lg font-semibold">My Applications</CardTitle>
       </CardHeader>
       <CardContent>
-        {isLoading && (
-          <p className="text-sm text-muted-foreground">Loading…</p>
-        )}
+        {isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
         {!isLoading && loadError && (
           <div className="flex flex-col items-start gap-3">
             <p className="text-sm text-muted-foreground">
@@ -46,9 +49,7 @@ const MyApplicationsCard = ({ applications, isLoading, loadError, onRetry }) => 
           </div>
         )}
         {!isLoading && !loadError && applications.length === 0 && (
-          <p className="text-sm text-muted-foreground">
-            No applications yet.
-          </p>
+          <p className="text-sm text-muted-foreground">No applications yet.</p>
         )}
         {!isLoading && !loadError && applications.length > 0 && (
           <ul className="divide-y divide-gray-100">
@@ -61,9 +62,7 @@ const MyApplicationsCard = ({ applications, isLoading, loadError, onRetry }) => 
                     navigate(ROUTE_PATHS.RECRUITING_MY_APPLICATION(app.jobId))
                   }
                 >
-                  <span className="text-sm text-slate-900">
-                    {app.jobTitle}
-                  </span>
+                  <span className="text-sm text-slate-900">{app.jobTitle}</span>
                   <span className="text-sm text-muted-foreground">
                     {formatStageLabel(app.stage)}
                   </span>
