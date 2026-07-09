@@ -87,6 +87,7 @@ from backend.admin.permission_admin_service import PermissionAdminService
 from backend.admin.permission_admin_controller import PermissionAdminController
 from backend.repository.job_repository import JobRepository
 from backend.repository.job_review_repository import JobReviewRepository
+from backend.repository.notification_repository import NotificationRepository
 from backend.repository.application_repository import ApplicationRepository
 from backend.repository.application_assignment_repository import (
     ApplicationAssignmentRepository,
@@ -549,6 +550,7 @@ class AppDependencyBuilder:
             self.permission_admin_service,
             database=self.database,
         )
+        self.notification_repository = NotificationRepository()
         self.job_review_repository = JobReviewRepository()
         self.recruiting_mapper = RecruitingMapper()
         self.job_service = JobService(
@@ -598,6 +600,7 @@ class AppDependencyBuilder:
             self.application_comment_repository,
             self.application_comment_mention_repository,
             self.evaluation_repository,
+            self.notification_repository,
         )
         self.board_controller = BoardController(
             self.board_service,

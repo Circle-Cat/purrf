@@ -23,9 +23,10 @@ from backend.dto.board_dto import (
 from backend.dto.evaluation_dto import EvaluationDto
 from backend.dto.user_context_dto import UserContextDto
 from backend.common.permissions import Permission
-from backend.common.recruiting_enums import ApplicationStage
+from backend.common.recruiting_enums import ApplicationStage, NotificationType
 from backend.entity.application_entity import ApplicationEntity
 from backend.entity.job_entity import JobEntity
+from backend.entity.notification_entity import NotificationEntity
 from backend.recruiting import stage_machine
 from backend.recruiting.pipeline_owners import normalized_owner_ids
 
@@ -80,6 +81,7 @@ class BoardService:
         application_comment_repository,
         application_comment_mention_repository,
         evaluation_repository,
+        notification_repository,
     ):
         """
         Args:
@@ -112,6 +114,11 @@ class BoardService:
             evaluation_repository (EvaluationRepository): Used by
                 ``get_other_applications`` to include a candidate's other
                 applications' evaluations in the aggregation view.
+            notification_repository (NotificationRepository): Written by
+                ``change_stage``/``reassign`` (assignee notified) and
+                ``add_comment`` (mentioned users notified) -- independent,
+                explicit calls, not merged with the activity log (see the
+                notification-system design spec for why).
         """
         self.job_repository = job_repository
         self.application_repository = application_repository
@@ -127,6 +134,7 @@ class BoardService:
             application_comment_mention_repository
         )
         self.evaluation_repository = evaluation_repository
+        self.notification_repository = notification_repository
 
     async def list_my_jobs(
         self, session: AsyncSession, current_user: UserContextDto
@@ -777,10 +785,14 @@ class BoardService:
         from_stage = application.stage
         stage_machine.validate_transition(job.pipeline_config, from_stage, dto.to_stage)
 
+        new_interview_assignee = None
         if dto.to_stage in INTERVIEW_STAGES and dto.assignee_id is not None:
             await self._validate_interview_assignee(session, dto.assignee_id)
             # The target stage always starts at round 1 (current_round is
             # reset below), so the assignment is written for round 1.
+            existing_assignment = await self.application_assignment_repository.get(
+                session, application_id, dto.to_stage, 1
+            )
             await self.application_assignment_repository.upsert(
                 session,
                 application_id,
@@ -789,6 +801,11 @@ class BoardService:
                 dto.assignee_id,
                 current_user.user_id,
             )
+            if (
+                existing_assignment is None
+                or existing_assignment.assignee_id != dto.assignee_id
+            ):
+                new_interview_assignee = dto.assignee_id
 
         if dto.to_stage == ApplicationStage.REJECTED:
             application.tags = {
@@ -830,6 +847,20 @@ class BoardService:
                 ),
             },
         )
+        if (
+            new_interview_assignee is not None
+            and new_interview_assignee != current_user.user_id
+        ):
+            await self.notification_repository.create(
+                session,
+                NotificationEntity(
+                    user_id=new_interview_assignee,
+                    type=NotificationType.ASSIGNED_TO_EVALUATE,
+                    application_id=application_id,
+                    round=1,
+                    actor_user_id=current_user.user_id,
+                ),
+            )
         await session.commit()
         # `editable` encodes the CANDIDATE's edit window (see
         # get_application_detail's note); a fresh stage/sub_status decision
