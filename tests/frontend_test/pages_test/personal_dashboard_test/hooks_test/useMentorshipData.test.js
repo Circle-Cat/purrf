@@ -289,8 +289,9 @@ describe("useMentorshipData Hook", () => {
   });
 
   it("does not fetch mentorship rounds when enabled is false", () => {
-    renderHook(() => useMentorshipData({ enabled: false }));
+    const { result } = renderHook(() => useMentorshipData({ enabled: false }));
     expect(getAllMentorshipRounds).not.toHaveBeenCalled();
+    expect(result.current.isLoading).toBe(false);
   });
 
   it("still fetches mentorship rounds when enabled is true", () => {
