@@ -558,6 +558,7 @@ class AppDependencyBuilder:
             self.recruiting_mapper,
             self.user_permissions_repository,
             self.job_review_repository,
+            self.notification_repository,
         )
         self.recruiting_controller = RecruitingController(
             job_service=self.job_service,
