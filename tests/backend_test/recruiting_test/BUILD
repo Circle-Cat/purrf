@@ -195,3 +195,12 @@ py_test(
         "//backend/repository:repositories",
     ],
 )
+
+py_test(
+    name = "notification_controller_test",
+    srcs = ["notification_controller_test.py"],
+    deps = [
+        "//backend/dto",
+        "//backend/recruiting",
+    ],
+)

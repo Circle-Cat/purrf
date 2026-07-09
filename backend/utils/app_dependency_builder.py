@@ -119,6 +119,8 @@ from backend.recruiting.evaluation_service import EvaluationService
 from backend.recruiting.evaluation_controller import EvaluationController
 from backend.recruiting.audit_service import AuditService
 from backend.recruiting.audit_controller import AuditController
+from backend.recruiting.notification_service import RecruitingNotificationService
+from backend.recruiting.notification_controller import RecruitingNotificationController
 from backend.common.environment_constants import RESUME_BUCKET
 from backend.common.auth0_client import Auth0Client
 from backend.repository.users_repository import UsersRepository
@@ -633,6 +635,16 @@ class AppDependencyBuilder:
             self.audit_service,
             self.database,
         )
+        self.recruiting_notification_service = RecruitingNotificationService(
+            self.notification_repository,
+            self.application_repository,
+            self.job_repository,
+            self.users_repository,
+        )
+        self.recruiting_notification_controller = RecruitingNotificationController(
+            self.recruiting_notification_service,
+            self.database,
+        )
         self.fast_app_factory = FastAppFactory(
             authentication_controller=self.authentication_controller,
             authentication_service=self.authentication_service,
@@ -653,6 +665,7 @@ class AppDependencyBuilder:
             blacklist_controller=self.blacklist_controller,
             evaluation_controller=self.evaluation_controller,
             audit_controller=self.audit_controller,
+            recruiting_notification_controller=self.recruiting_notification_controller,
             launchdarkly_client=self.launchdarkly_client,
             database=self.database,
             logger=self.logger,
