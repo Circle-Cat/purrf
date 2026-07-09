@@ -45,9 +45,14 @@ class RecruitingController:
         )
         self.router.add_api_route(
             RECRUITING_JOBS_ENDPOINT,
-            endpoint=authenticate(permissions=[Permission.RECRUITING_JOB_READ])(
-                self.list_jobs
-            ),
+            endpoint=authenticate(
+                permissions=[
+                    Permission.RECRUITING_JOB_READ,
+                    Permission.RECRUITING_JOB_WRITE,
+                    Permission.RECRUITING_JOB_APPROVE,
+                    Permission.RECRUITING_APPLICATION_READ_ALL,
+                ]
+            )(self.list_jobs),
             methods=["GET"],
             response_model=None,
         )

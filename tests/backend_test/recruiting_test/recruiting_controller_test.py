@@ -138,6 +138,24 @@ class TestRecruitingController(unittest.IsolatedAsyncioTestCase):
             ],
         )
 
+    def test_list_jobs_route_accepts_write_approve_and_read_all(self):
+        """Anyone who can create/approve a job, or has the org-wide read-all
+        override, also needs to browse the postings list (e.g. the Job
+        Postings management page) — not just RECRUITING_JOB_READ holders."""
+        routes_by_path = {route.path: route for route in self.controller.router.routes}
+        list_jobs_route = routes_by_path["/recruiting/jobs"]
+
+        self.assertIn("GET", list_jobs_route.methods)
+        self.assertEqual(
+            self._endpoint_permissions(list_jobs_route.endpoint),
+            [
+                Permission.RECRUITING_JOB_READ,
+                Permission.RECRUITING_JOB_WRITE,
+                Permission.RECRUITING_JOB_APPROVE,
+                Permission.RECRUITING_APPLICATION_READ_ALL,
+            ],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
