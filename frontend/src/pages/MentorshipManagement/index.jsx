@@ -1,15 +1,15 @@
 import { useAuth } from "@/context/auth";
 import { PERMISSIONS } from "@/constants/Permissions";
 import RoundsManagementCard from "@/pages/MentorshipManagement/components/RoundsManagementCard";
+import ParticipantSearchCard from "@/pages/MentorshipManagement/components/ParticipantSearchCard";
 import { useMentorshipManagement } from "@/pages/MentorshipManagement/hooks/useMentorshipManagement";
 
 /**
  * MentorshipManagement
  *
- * Admin page for managing mentorship rounds. Entry is gated on
- * MENTORSHIP_MANAGEMENT_READ (route + sidebar); what is shown inside depends on
- * the finer mentorship permissions: MENTORSHIP_ROUND_READ to view rounds and
- * MENTORSHIP_ROUND_WRITE to create or edit them.
+ * Admin page for managing mentorship rounds and participant search. Entry is
+ * gated on MENTORSHIP_MANAGEMENT_READ (route + sidebar); each section inside
+ * has its own finer-grained permission check.
  *
  * Route: /mentorship-management
  *
@@ -20,6 +20,9 @@ const MentorshipManagement = () => {
   const canReadRounds = permissions.includes(PERMISSIONS.MENTORSHIP_ROUND_READ);
   const canWriteRounds = permissions.includes(
     PERMISSIONS.MENTORSHIP_ROUND_WRITE,
+  );
+  const canReadParticipants = permissions.includes(
+    PERMISSIONS.MENTORSHIP_PARTICIPANT_READ,
   );
 
   const {
@@ -48,6 +51,7 @@ const MentorshipManagement = () => {
           canWriteRounds={canWriteRounds}
         />
       )}
+      {canReadParticipants && <ParticipantSearchCard />}
     </div>
   );
 };

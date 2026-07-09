@@ -31,6 +31,13 @@ vi.mock("@/pages/MentorshipManagement/components/RoundsManagementCard", () => ({
   ),
 }));
 
+vi.mock(
+  "@/pages/MentorshipManagement/components/ParticipantSearchCard",
+  () => ({
+    default: vi.fn(() => <div data-testid="mock-participant-search-card" />),
+  }),
+);
+
 const defaultHookData = {
   sortedRounds: [
     {
@@ -106,5 +113,25 @@ describe("MentorshipManagement", () => {
       screen.getByTestId("mock-rounds-management-card"),
     ).toBeInTheDocument();
     expect(screen.getByTestId("can-write").textContent).toBe("false");
+  });
+
+  it("renders ParticipantSearchCard when the user has participant-read", () => {
+    useAuth.mockReturnValue({
+      permissions: [PERMISSIONS.MENTORSHIP_PARTICIPANT_READ],
+    });
+    render(<MentorshipManagement />);
+    expect(
+      screen.getByTestId("mock-participant-search-card"),
+    ).toBeInTheDocument();
+  });
+
+  it("does not render ParticipantSearchCard when the user lacks participant-read", () => {
+    useAuth.mockReturnValue({
+      permissions: [PERMISSIONS.MENTORSHIP_ROUND_READ],
+    });
+    render(<MentorshipManagement />);
+    expect(
+      screen.queryByTestId("mock-participant-search-card"),
+    ).not.toBeInTheDocument();
   });
 });
