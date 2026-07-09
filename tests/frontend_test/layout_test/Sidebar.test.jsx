@@ -135,4 +135,19 @@ describe("Sidebar Component", () => {
     renderSidebar([PERMISSIONS.RECRUITING_JOB_APPROVE]);
     expect(screen.queryByText("Blacklist")).not.toBeInTheDocument();
   });
+
+  test("renders Recruiting Audit for a user with recruiting.audit.read permission", () => {
+    renderSidebar([PERMISSIONS.RECRUITING_AUDIT_READ]);
+    const link = screen.getByText("Recruiting Audit");
+    expect(link).toBeInTheDocument();
+    expect(link.closest("a")).toHaveAttribute(
+      "href",
+      ROUTE_PATHS.RECRUITING_AUDIT,
+    );
+  });
+
+  test("does not render Recruiting Audit without recruiting.audit.read permission", () => {
+    renderSidebar([PERMISSIONS.RECRUITING_JOB_APPROVE]);
+    expect(screen.queryByText("Recruiting Audit")).not.toBeInTheDocument();
+  });
 });

@@ -30,6 +30,7 @@ import JobsBrowse from "@/pages/Recruiting/JobsBrowse";
 import BoardPage from "@/pages/Recruiting/board/BoardPage";
 import ApplicationDetailPage from "@/pages/Recruiting/applications/ApplicationDetailPage";
 import MyEvaluations from "@/pages/Recruiting/MyEvaluations";
+import Audit from "@/pages/Recruiting/audit/Audit";
 import { AuthProvider } from "@/context/auth";
 import { FlagsProvider, LDIdentifier } from "@/context/flags";
 import { PERMISSIONS } from "@/constants/Permissions";
@@ -178,6 +179,18 @@ function App() {
                           ]}
                         >
                           <Blacklist />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path={ROUTE_PATHS.RECRUITING_AUDIT}
+                      element={
+                        <ProtectedRoute
+                          requiredPermissions={[
+                            PERMISSIONS.RECRUITING_AUDIT_READ,
+                          ]}
+                        >
+                          <Audit />
                         </ProtectedRoute>
                       }
                     />
