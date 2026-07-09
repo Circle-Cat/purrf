@@ -186,3 +186,24 @@ class RecruitingMapper:
             editable=editable,
             current_round=application.current_round,
         )
+
+    def to_my_application_summary_dto(self, application, job):
+        """Map an (application, job) pair to the caller's own-application summary row.
+
+        Args:
+            application (ApplicationEntity): The candidate's application.
+            job (JobEntity): The posting it was submitted to.
+
+        Returns:
+            MyApplicationSummaryDto: The response row.
+        """
+        from backend.dto.application_dto import MyApplicationSummaryDto
+
+        return MyApplicationSummaryDto(
+            application_id=application.application_id,
+            job_id=application.job_id,
+            job_title=job.title,
+            job_kind=job.kind,
+            mentorship_role=job.mentorship_role,
+            stage=application.stage,
+        )

@@ -490,6 +490,25 @@ class ApplicationService:
             application, current_sub, editable=editable
         )
 
+    async def list_mine(self, session, current_user) -> list:
+        """Return every application the caller has ever submitted, any job kind.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            current_user (UserContextDto): The authenticated applicant.
+
+        Returns:
+            list[MyApplicationSummaryDto]: One row per application, in the
+                order `ApplicationRepository.list_by_user` returns them.
+        """
+        rows = await self.application_repository.list_by_user(
+            session, current_user.user_id
+        )
+        return [
+            self.recruiting_mapper.to_my_application_summary_dto(application, job)
+            for application, job in rows
+        ]
+
     def _is_editable(self, application, job, current_submission) -> bool:
         """Whether the candidate may still edit: first-stage, untouched, unfrozen.
 
