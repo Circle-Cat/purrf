@@ -2646,6 +2646,79 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             )
         self.assertEqual(str(ctx.exception), "application 10 not found")
 
+    async def test_list_comments_succeeds_for_read_all_non_owner_non_assignee(self):
+        job = self._job(job_id=1, owner_ids=(9,))
+        application = self._application(
+            application_id=10, job_id=1, stage=ApplicationStage.RECRUITER_SCREENING
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.assignment_repo.get.return_value = None
+        self.comment_repo.list_by_application = AsyncMock(return_value=[])
+        ctx = UserContextDto(
+            sub="s",
+            primary_email="hr@b.com",
+            user_id=2,
+            permissions=frozenset({Permission.RECRUITING_APPLICATION_READ_ALL}),
+        )
+
+        result = await self.service.list_comments(self.session, ctx, 10)
+
+        self.assertEqual(result, [])
+
+    async def test_add_comment_succeeds_for_read_all_non_owner_non_assignee(self):
+        job = self._job(job_id=1, owner_ids=(9,))
+        application = self._application(
+            application_id=10, job_id=1, stage=ApplicationStage.RECRUITER_SCREENING
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.assignment_repo.get.return_value = None
+        created_row = SimpleNamespace(
+            comment_id=5,
+            application_id=10,
+            author_id=2,
+            body="On it.",
+            created_at=datetime(2026, 7, 7, 12, 0, 0),
+        )
+        self.comment_repo.create = AsyncMock(return_value=created_row)
+        self.users_repo.get_user_by_user_id = AsyncMock(
+            return_value=self._user(user_id=2, first="Hank", last="HR")
+        )
+        ctx = UserContextDto(
+            sub="s",
+            primary_email="hr@b.com",
+            user_id=2,
+            permissions=frozenset({Permission.RECRUITING_APPLICATION_READ_ALL}),
+        )
+
+        dto = CommentCreateDto(body="On it.")
+        result = await self.service.add_comment(self.session, ctx, 10, dto)
+
+        self.assertEqual(result.author_name, "Hank HR")
+
+    async def test_list_mentionable_users_succeeds_for_read_all_non_owner_non_assignee(
+        self,
+    ):
+        job = self._job(job_id=1, owner_ids=(9,))
+        application = self._application(application_id=10, job_id=1)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.assignment_repo.get.return_value = None
+        self.users_repo.get_all_by_ids = AsyncMock(
+            return_value=[self._user(user_id=9, first="Owen", last="Owner")]
+        )
+        ctx = UserContextDto(
+            sub="s",
+            primary_email="hr@b.com",
+            user_id=2,
+            permissions=frozenset({Permission.RECRUITING_APPLICATION_READ_ALL}),
+        )
+
+        result = await self.service.list_mentionable_users(self.session, ctx, 10)
+
+        self.assertEqual({u.user_id for u in result}, {9})
+
     async def test_get_application_activity_succeeds_for_read_all_non_owner(self):
         job = self._job(job_id=1, owner_ids=(9,))
         application = self._application(application_id=10, job_id=1, user_id=3)
