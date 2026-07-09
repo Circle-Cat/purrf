@@ -87,6 +87,7 @@ from backend.admin.permission_admin_service import PermissionAdminService
 from backend.admin.permission_admin_controller import PermissionAdminController
 from backend.repository.job_repository import JobRepository
 from backend.repository.job_review_repository import JobReviewRepository
+from backend.repository.notification_repository import NotificationRepository
 from backend.repository.application_repository import ApplicationRepository
 from backend.repository.application_assignment_repository import (
     ApplicationAssignmentRepository,
@@ -118,6 +119,8 @@ from backend.recruiting.evaluation_service import EvaluationService
 from backend.recruiting.evaluation_controller import EvaluationController
 from backend.recruiting.audit_service import AuditService
 from backend.recruiting.audit_controller import AuditController
+from backend.recruiting.notification_service import RecruitingNotificationService
+from backend.recruiting.notification_controller import RecruitingNotificationController
 from backend.common.environment_constants import RESUME_BUCKET
 from backend.common.auth0_client import Auth0Client
 from backend.repository.users_repository import UsersRepository
@@ -549,6 +552,7 @@ class AppDependencyBuilder:
             self.permission_admin_service,
             database=self.database,
         )
+        self.notification_repository = NotificationRepository()
         self.job_review_repository = JobReviewRepository()
         self.recruiting_mapper = RecruitingMapper()
         self.job_service = JobService(
@@ -556,6 +560,7 @@ class AppDependencyBuilder:
             self.recruiting_mapper,
             self.user_permissions_repository,
             self.job_review_repository,
+            self.notification_repository,
         )
         self.recruiting_controller = RecruitingController(
             job_service=self.job_service,
@@ -578,6 +583,7 @@ class AppDependencyBuilder:
             self.recruiting_mapper,
             self.application_assignment_repository,
             self.application_activity_repository,
+            self.notification_repository,
         )
         self.application_controller = ApplicationController(
             self.application_service,
@@ -598,6 +604,7 @@ class AppDependencyBuilder:
             self.application_comment_repository,
             self.application_comment_mention_repository,
             self.evaluation_repository,
+            self.notification_repository,
         )
         self.board_controller = BoardController(
             self.board_service,
@@ -628,6 +635,16 @@ class AppDependencyBuilder:
             self.audit_service,
             self.database,
         )
+        self.recruiting_notification_service = RecruitingNotificationService(
+            self.notification_repository,
+            self.application_repository,
+            self.job_repository,
+            self.users_repository,
+        )
+        self.recruiting_notification_controller = RecruitingNotificationController(
+            self.recruiting_notification_service,
+            self.database,
+        )
         self.fast_app_factory = FastAppFactory(
             authentication_controller=self.authentication_controller,
             authentication_service=self.authentication_service,
@@ -648,6 +665,7 @@ class AppDependencyBuilder:
             blacklist_controller=self.blacklist_controller,
             evaluation_controller=self.evaluation_controller,
             audit_controller=self.audit_controller,
+            recruiting_notification_controller=self.recruiting_notification_controller,
             launchdarkly_client=self.launchdarkly_client,
             database=self.database,
             logger=self.logger,

@@ -2,7 +2,11 @@ from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.common.recruiting_enums import ApplicationStage, JobStatus
+from backend.common.recruiting_enums import (
+    ApplicationStage,
+    JobStatus,
+    NotificationType,
+)
 from backend.dto.application_dto import (
     ApplicationDto,
     ApplicationEditDto,
@@ -11,6 +15,7 @@ from backend.dto.application_dto import (
 from backend.dto.user_context_dto import UserContextDto
 from backend.entity.application_entity import ApplicationEntity
 from backend.entity.application_submission_entity import ApplicationSubmissionEntity
+from backend.entity.notification_entity import NotificationEntity
 from backend.recruiting import cooldown, screen_rules, stage_machine
 from backend.recruiting.board_service import INTERVIEW_STAGES
 from backend.recruiting.pipeline_owners import normalized_owner_ids
@@ -28,6 +33,7 @@ class ApplicationService:
         recruiting_mapper,
         application_assignment_repository,
         application_activity_repository,
+        notification_repository,
         profile_writeback=None,
     ):
         """
@@ -46,6 +52,9 @@ class ApplicationService:
                 Append-only audit log; ``submit`` logs
                 ``"application_submitted"`` or ``"auto_rejected"`` here on
                 every call, attributed to the candidate themselves.
+            notification_repository (NotificationRepository): In-app
+                notification data access; ``_assign_default_if_configured``
+                notifies the materialized default assignee here.
             profile_writeback (callable | None): ``async (session, user_id, dto)``
                 invoked best-effort when save_to_profile is set. Defaults to a
                 no-op (wired in a later task).
@@ -57,6 +66,7 @@ class ApplicationService:
         self.recruiting_mapper = recruiting_mapper
         self.application_assignment_repository = application_assignment_repository
         self.application_activity_repository = application_activity_repository
+        self.notification_repository = notification_repository
         self._profile_writeback = profile_writeback
 
     @staticmethod
@@ -409,6 +419,16 @@ class ApplicationService:
             current_user.user_id,
             "auto_assigned",
             details={"stage": application.stage.value, "assigneeId": default_id},
+        )
+        await self.notification_repository.create(
+            session,
+            NotificationEntity(
+                user_id=default_id,
+                type=NotificationType.ASSIGNED_TO_EVALUATE,
+                application_id=application.application_id,
+                round=application.current_round,
+                actor_user_id=None,
+            ),
         )
 
     async def edit(

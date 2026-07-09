@@ -22,7 +22,12 @@ from backend.entity.evaluation_entity import EvaluationEntity
 from backend.entity.job_entity import JobEntity
 from backend.entity.users_entity import UsersEntity
 from backend.common.permissions import Permission
-from backend.common.recruiting_enums import ApplicationStage, JobKind, JobStatus
+from backend.common.recruiting_enums import (
+    ApplicationStage,
+    JobKind,
+    JobStatus,
+    NotificationType,
+)
 from backend.repository.application_assignment_repository import (
     ApplicationAssignmentRepository,
 )
@@ -36,6 +41,7 @@ from backend.repository.application_comment_mention_repository import (
     ApplicationCommentMentionRepository,
 )
 from backend.repository.evaluation_repository import EvaluationRepository
+from backend.repository.notification_repository import NotificationRepository
 
 
 class TestBoardService(unittest.IsolatedAsyncioTestCase):
@@ -68,6 +74,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.comment_mention_repo.get_by_comment_ids.return_value = []
         self.evaluation_repo = create_autospec(EvaluationRepository, instance=True)
         self.evaluation_repo.list_by_application.return_value = []
+        self.notification_repo = create_autospec(NotificationRepository, instance=True)
         self.session = AsyncMock()
         self.service = BoardService(
             self.job_repo,
@@ -82,6 +89,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             self.comment_repo,
             self.comment_mention_repo,
             self.evaluation_repo,
+            self.notification_repo,
         )
         # Default persistence mocks: echo the entity back, like SQLAlchemy's
         # merge-and-flush does when nothing else stubs them out.
@@ -1117,6 +1125,51 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             self.session, 10, ApplicationStage.TECH, 1, 42, 2
         )
 
+    async def test_change_stage_notifies_new_interview_assignee(self):
+        job = self._job(job_id=1, owner_ids=(9,))
+        application = self._application(
+            application_id=10, job_id=1, stage=ApplicationStage.RECRUITER_SCREENING
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+        self.assignment_repo.get = AsyncMock(return_value=None)
+        self.user_permissions_repo.get_active_users_with_permission = AsyncMock(
+            return_value=[self._user(user_id=5)]
+        )
+
+        dto = StageChangeDto(to_stage=ApplicationStage.TECH, assignee_id=5)
+        await self.service.change_stage(self.session, self._ctx(user_id=9), 10, dto)
+
+        self.notification_repo.create.assert_awaited_once()
+        (session_arg, entity_arg), _ = self.notification_repo.create.call_args
+        self.assertEqual(session_arg, self.session)
+        self.assertEqual(entity_arg.user_id, 5)
+        self.assertEqual(entity_arg.type, NotificationType.ASSIGNED_TO_EVALUATE)
+        self.assertEqual(entity_arg.application_id, 10)
+        self.assertEqual(entity_arg.round, 1)
+        self.assertEqual(entity_arg.actor_user_id, 9)
+
+    async def test_change_stage_does_not_notify_when_reassigning_same_person(self):
+        job = self._job(job_id=1, owner_ids=(9,))
+        application = self._application(
+            application_id=10, job_id=1, stage=ApplicationStage.RECRUITER_SCREENING
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+        existing = MagicMock()
+        existing.assignee_id = 5
+        self.assignment_repo.get = AsyncMock(return_value=existing)
+        self.user_permissions_repo.get_active_users_with_permission = AsyncMock(
+            return_value=[self._user(user_id=5)]
+        )
+
+        dto = StageChangeDto(to_stage=ApplicationStage.TECH, assignee_id=5)
+        await self.service.change_stage(self.session, self._ctx(user_id=9), 10, dto)
+
+        self.notification_repo.create.assert_not_awaited()
+
     async def test_change_stage_to_hired_ignores_assignee_id(self):
         job = self._job(job_id=1, owner_ids=(2,), stages=("tech",))
         application = self._application(
@@ -1371,6 +1424,53 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.app_repo.get_by_id.assert_awaited_once_with(
             self.session, 10, for_update=True
         )
+
+    async def test_reassign_notifies_new_assignee(self):
+        application = self._application(
+            application_id=10, job_id=1, stage=ApplicationStage.TECH
+        )
+        self.job_repo.get_by_job_id = AsyncMock(
+            return_value=self._job(job_id=1, owner_ids=(9,))
+        )
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+        previous = MagicMock()
+        previous.assignee_id = 5
+        self.assignment_repo.get = AsyncMock(return_value=previous)
+        self.user_permissions_repo.get_active_users_with_permission = AsyncMock(
+            return_value=[self._user(user_id=6)]
+        )
+
+        dto = ReassignDto(assignee_id=6)
+        await self.service.reassign(self.session, self._ctx(user_id=9), 10, dto)
+
+        self.notification_repo.create.assert_awaited_once()
+        (_session_arg, entity_arg), _ = self.notification_repo.create.call_args
+        self.assertEqual(entity_arg.user_id, 6)
+        self.assertEqual(entity_arg.type, NotificationType.ASSIGNED_TO_EVALUATE)
+        self.assertEqual(entity_arg.application_id, 10)
+        self.assertEqual(entity_arg.actor_user_id, 9)
+
+    async def test_reassign_to_same_person_does_not_notify(self):
+        application = self._application(
+            application_id=10, job_id=1, stage=ApplicationStage.TECH
+        )
+        self.job_repo.get_by_job_id = AsyncMock(
+            return_value=self._job(job_id=1, owner_ids=(9,))
+        )
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+        previous = MagicMock()
+        previous.assignee_id = 6
+        self.assignment_repo.get = AsyncMock(return_value=previous)
+        self.user_permissions_repo.get_active_users_with_permission = AsyncMock(
+            return_value=[self._user(user_id=6)]
+        )
+
+        dto = ReassignDto(assignee_id=6)
+        await self.service.reassign(self.session, self._ctx(user_id=9), 10, dto)
+
+        self.notification_repo.create.assert_not_awaited()
 
     # -- set_sub_status --
 
@@ -2561,6 +2661,62 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
 
         self.comment_mention_repo.create_mentions.assert_not_awaited()
         self.assertEqual(result.mentions, [])
+
+    async def test_add_comment_notifies_each_mentioned_user(self):
+        job = self._job(job_id=1, owner_ids=(9, 7))
+        application = self._application(
+            application_id=10, job_id=1, stage=ApplicationStage.RECRUITER_SCREENING
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.assignment_repo.get = AsyncMock(return_value=None)
+        comment_row = MagicMock(
+            comment_id=100,
+            application_id=10,
+            author_id=9,
+            body="hi @[7]",
+            created_at=datetime(2026, 7, 7, 12, 0, 0),
+        )
+        self.comment_repo.create = AsyncMock(return_value=comment_row)
+        self.users_repo.get_user_by_user_id = AsyncMock(
+            return_value=self._user(user_id=9)
+        )
+
+        dto = CommentCreateDto(body="hi @[7]")
+        await self.service.add_comment(self.session, self._ctx(user_id=9), 10, dto)
+
+        self.notification_repo.create.assert_awaited_once()
+        (_session_arg, entity_arg), _ = self.notification_repo.create.call_args
+        self.assertEqual(entity_arg.user_id, 7)
+        self.assertEqual(entity_arg.type, NotificationType.MENTIONED)
+        self.assertEqual(entity_arg.application_id, 10)
+        self.assertEqual(entity_arg.comment_id, 100)
+        self.assertEqual(entity_arg.actor_user_id, 9)
+
+    async def test_add_comment_skips_self_mention(self):
+        job = self._job(job_id=1, owner_ids=(9,))
+        application = self._application(
+            application_id=10, job_id=1, stage=ApplicationStage.RECRUITER_SCREENING
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.assignment_repo.get = AsyncMock(return_value=None)
+        comment_row = MagicMock(
+            comment_id=100,
+            application_id=10,
+            author_id=9,
+            body="hi @[9]",
+            created_at=datetime(2026, 7, 7, 12, 0, 0),
+        )
+        self.comment_repo.create = AsyncMock(return_value=comment_row)
+        self.users_repo.get_user_by_user_id = AsyncMock(
+            return_value=self._user(user_id=9)
+        )
+
+        dto = CommentCreateDto(body="hi @[9]")
+        await self.service.add_comment(self.session, self._ctx(user_id=9), 10, dto)
+
+        self.notification_repo.create.assert_not_awaited()
 
     async def test_list_comments_includes_resolved_mentions(self):
         job = self._job(job_id=1, owner_ids=(2,))

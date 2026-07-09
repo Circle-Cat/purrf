@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, create_autospec
 
 from backend.recruiting.job_service import JobService
 from backend.recruiting.recruiting_mapper import RecruitingMapper
@@ -7,12 +7,14 @@ from backend.dto.job_dto import JobCreateDto
 from backend.entity.job_entity import JobEntity
 from backend.entity.job_review_entity import JobReviewEntity
 from backend.entity.users_entity import UsersEntity
+from backend.repository.notification_repository import NotificationRepository
 from backend.common.permissions import Permission
 from backend.common.recruiting_enums import (
     JobKind,
     JobReviewKind,
     JobReviewStatus,
     JobStatus,
+    NotificationType,
 )
 from backend.common.mentorship_enums import ParticipantRole
 
@@ -38,8 +40,13 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         self.review_repo.list_by_reviewer = AsyncMock(return_value=[])
         self.review_repo.get_latest_reviews = AsyncMock(return_value={})
         self.session = AsyncMock()
+        self.notification_repo = create_autospec(NotificationRepository, instance=True)
         self.service = JobService(
-            self.repo, RecruitingMapper(), self.perms, self.review_repo
+            self.repo,
+            RecruitingMapper(),
+            self.perms,
+            self.review_repo,
+            self.notification_repo,
         )
 
     def _job(self, **kw):
@@ -405,6 +412,30 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(created.status, JobReviewStatus.PENDING)
         self.assertEqual(created.reviewer_id, 2)
         self.assertEqual(result.reviewer_id, 2)
+
+    async def test_submit_for_review_notifies_the_reviewer(self):
+        """submit_for_review inserts a JOB_REVIEW_REQUESTED notification for the reviewer."""
+        job = JobEntity(kind=JobKind.ACTIVITY, title="T", status=JobStatus.DRAFT)
+        job.job_id = 1
+        job.pipeline_config = {}
+        self.repo.get_by_job_id = AsyncMock(return_value=job)
+        self.review_repo.get_open_for_job = AsyncMock(return_value=None)
+        approver1 = UsersEntity(first_name="A", last_name="B", primary_email="a@b.com")
+        approver1.user_id = 6
+        approver2 = UsersEntity(first_name="C", last_name="D", primary_email="c@d.com")
+        approver2.user_id = 7
+        self.perms.get_active_users_with_permission = AsyncMock(
+            return_value=[approver1, approver2]
+        )
+
+        await self.service.submit_for_review(self.session, 1, 6, 9, "please review")
+
+        self.notification_repo.create.assert_awaited_once()
+        (_session_arg, entity_arg), _ = self.notification_repo.create.call_args
+        self.assertEqual(entity_arg.user_id, 6)
+        self.assertEqual(entity_arg.type, NotificationType.JOB_REVIEW_REQUESTED)
+        self.assertEqual(entity_arg.job_id, 1)
+        self.assertEqual(entity_arg.actor_user_id, 9)
 
     async def test_submit_revision_keeps_published_pending(self):
         """Submitting a parked revision opens a REVISION review, status unchanged."""
@@ -1331,6 +1362,56 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         )
         with self.assertRaises(ValueError):
             await self.service.get_published_job_public(self.session, 1)
+
+    async def test_approve_notifies_the_submitter(self):
+        job = JobEntity(kind=JobKind.ACTIVITY, title="T", status=JobStatus.DRAFT)
+        job.job_id = 1
+        review = JobReviewEntity(
+            job_id=1,
+            submitted_by=9,
+            reviewer_id=6,
+            status=JobReviewStatus.PENDING,
+            kind=JobReviewKind.INITIAL,
+        )
+        review.review_id = 100
+        self.review_repo.get = AsyncMock(return_value=review)
+        self.repo.get_by_job_id = AsyncMock(return_value=job)
+
+        await self.service.approve(self.session, 100, acting_user_id=6)
+
+        self.notification_repo.create.assert_awaited_once()
+        (_session_arg, entity_arg), _ = self.notification_repo.create.call_args
+        self.assertEqual(entity_arg.user_id, 9)
+        self.assertEqual(entity_arg.type, NotificationType.JOB_REVIEW_APPROVED)
+        self.assertEqual(entity_arg.job_id, 1)
+        self.assertEqual(entity_arg.job_review_id, 100)
+        self.assertEqual(entity_arg.actor_user_id, 6)
+
+    async def test_reject_notifies_the_submitter(self):
+        job = JobEntity(kind=JobKind.ACTIVITY, title="T", status=JobStatus.DRAFT)
+        job.job_id = 1
+        review = JobReviewEntity(
+            job_id=1,
+            submitted_by=9,
+            reviewer_id=6,
+            status=JobReviewStatus.PENDING,
+            kind=JobReviewKind.INITIAL,
+        )
+        review.review_id = 100
+        self.review_repo.get = AsyncMock(return_value=review)
+        self.repo.get_by_job_id = AsyncMock(return_value=job)
+
+        await self.service.reject(
+            self.session, 100, "needs more detail", acting_user_id=6
+        )
+
+        self.notification_repo.create.assert_awaited_once()
+        (_session_arg, entity_arg), _ = self.notification_repo.create.call_args
+        self.assertEqual(entity_arg.user_id, 9)
+        self.assertEqual(entity_arg.type, NotificationType.JOB_REVIEW_REJECTED)
+        self.assertEqual(entity_arg.job_id, 1)
+        self.assertEqual(entity_arg.job_review_id, 100)
+        self.assertEqual(entity_arg.actor_user_id, 6)
 
     async def test_list_published_returns_public_summaries(self):
         job1 = self._job(status=JobStatus.PUBLISHED)
