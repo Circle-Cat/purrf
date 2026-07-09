@@ -10,6 +10,7 @@ from backend.common.api_endpoints import (
     RECRUITING_APPLICATIONS_ENDPOINT,
     RECRUITING_APPLICATION_ENDPOINT,
     RECRUITING_APPLICATIONS_MINE_ENDPOINT,
+    RECRUITING_MY_APPLICATIONS_ENDPOINT,
 )
 
 
@@ -33,6 +34,12 @@ class ApplicationController:
         self.router.add_api_route(
             RECRUITING_APPLICATIONS_MINE_ENDPOINT,
             endpoint=authenticate()(self.get_my_application),
+            methods=["GET"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            RECRUITING_MY_APPLICATIONS_ENDPOINT,
+            endpoint=authenticate()(self.list_my_applications),
             methods=["GET"],
             response_model=None,
         )
@@ -119,3 +126,9 @@ class ApplicationController:
                 session, current_user, job_id
             )
         return api_response(message="Application fetched.", data=result)
+
+    async def list_my_applications(self, current_user: UserContextDto):
+        """Return every application the caller has ever submitted, any job kind."""
+        async with self.database.session() as session:
+            result = await self.application_service.list_mine(session, current_user)
+        return api_response(message="Applications fetched.", data=result)

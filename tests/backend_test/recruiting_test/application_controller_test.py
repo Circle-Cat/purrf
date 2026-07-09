@@ -91,6 +91,12 @@ class TestApplicationController(unittest.IsolatedAsyncioTestCase):
         self.app_service.get_mine.assert_awaited_once_with(self.session, self.ctx, 7)
         self.assertIsNone(resp["data"])
 
+    async def test_list_my_applications_delegates(self):
+        self.app_service.list_mine = AsyncMock(return_value=[{"applicationId": 10}])
+        resp = await self.controller.list_my_applications(self.ctx)
+        self.app_service.list_mine.assert_awaited_once_with(self.session, self.ctx)
+        self.assertEqual(resp["data"], [{"applicationId": 10}])
+
 
 if __name__ == "__main__":
     unittest.main()
