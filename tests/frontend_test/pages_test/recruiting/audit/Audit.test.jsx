@@ -86,8 +86,11 @@ describe("Audit", () => {
 
   it("renders the job x stage table with exact counts", async () => {
     render(<Audit />);
-    await waitFor(() => expect(api.getAuditOverview).toHaveBeenCalled());
-    const table = screen.getByRole("table");
+    // Waiting only for the API call to have fired (as the sibling tests do)
+    // races the mocked response's resolution -- the table itself doesn't
+    // exist until the response lands and the component re-renders out of
+    // its loading state. findByRole polls until the table actually appears.
+    const table = await screen.findByRole("table");
     expect(within(table).getByText("Backend Engineer")).toBeInTheDocument();
     expect(within(table).getByText("Recruiter screening")).toBeInTheDocument();
     expect(within(table).getByText("3")).toBeInTheDocument();
