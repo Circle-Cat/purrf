@@ -1258,8 +1258,9 @@ class BoardService:
     ) -> list[CommentDto]:
         """Return every comment on an application, newest first.
 
-        Readable by either a configured owner of the job, or the
-        application's current-stage assignee -- same access as
+        Readable by either a configured owner of the job, the application's
+        current-stage assignee, or a holder of
+        ``Permission.RECRUITING_APPLICATION_READ_ALL`` -- same access as
         ``get_application_detail``. Independent of
         ``get_application_activity``: comments are free-text discussion,
         not the structured audit log, and (unlike the activity timeline)
@@ -1276,13 +1277,17 @@ class BoardService:
 
         Raises:
             ValueError: If the application is missing, or the caller is
-                neither an owner of the application's job nor its
-                current-stage assignee. All cases raise the same generic
-                message so response bodies don't leak which application ids
-                exist to unauthorized callers.
+                none of: an owner of the application's job, its
+                current-stage assignee, or a ``read.all`` holder. All cases
+                raise the same generic message so response bodies don't
+                leak which application ids exist to unauthorized callers.
         """
         await self._load_owned_application(
-            session, current_user, application_id, allow_assignee=True
+            session,
+            current_user,
+            application_id,
+            allow_assignee=True,
+            allow_read_all=True,
         )
         rows = await self.application_comment_repository.list_by_application(
             session, application_id
@@ -1339,12 +1344,17 @@ class BoardService:
     ) -> CommentDto:
         """Post a comment on an application.
 
-        Same access as ``list_comments``: owner or current-stage assignee.
-        Any ``@[userId]`` tokens in the body are validated against the
-        application's mentionable set (see ``_mentionable_user_ids``); an
-        unauthorized token is stripped from the stored body and creates no
-        mention row -- the frontend picker only ever offers valid targets,
-        but the server never trusts that.
+        Same access as ``list_comments``: owner, current-stage assignee, or
+        a ``read.all`` holder -- the one write action bundled into that
+        otherwise read-only override. Any ``@[userId]`` tokens in the body
+        are validated against the application's mentionable set (see
+        ``_mentionable_user_ids``), which is deliberately narrower than
+        this posting-access check: only the owner(s)/current-stage
+        assignee are mentionable, not every ``read.all`` holder org-wide --
+        an unauthorized token (including one naming a real but
+        non-mentionable ``read.all`` user) is stripped from the stored
+        body and creates no mention row. The frontend picker only ever
+        offers valid targets, but the server never trusts that.
 
         Args:
             session (AsyncSession): Active database async session.
@@ -1358,19 +1368,23 @@ class BoardService:
                 mentions resolved to current display names.
 
         Raises:
-            ValueError: If the application is missing, the caller is
-                neither an owner of the application's job nor its
-                current-stage assignee (collapsed "not found" message), or
-                the body is blank after stripping any unauthorized
-                mention tokens -- e.g. a submission consisting entirely of
-                one invalid ``@[id]`` token passes ``CommentCreateDto``'s
-                raw-body validator (it's non-empty text) but must still be
-                rejected once the invalid mention is stripped out, with the
-                exact same message that validator raises for a blank raw
-                submission.
+            ValueError: If the application is missing, the caller is none
+                of: an owner of the application's job, its current-stage
+                assignee, or a ``read.all`` holder (collapsed "not found"
+                message), or the body is blank after stripping any
+                unauthorized mention tokens -- e.g. a submission
+                consisting entirely of one invalid ``@[id]`` token passes
+                ``CommentCreateDto``'s raw-body validator (it's non-empty
+                text) but must still be rejected once the invalid mention
+                is stripped out, with the exact same message that
+                validator raises for a blank raw submission.
         """
         application, job = await self._load_owned_application(
-            session, current_user, application_id, allow_assignee=True
+            session,
+            current_user,
+            application_id,
+            allow_assignee=True,
+            allow_read_all=True,
         )
         mentionable_ids = await self._mentionable_user_ids(session, application, job)
         body, mentioned_ids = self._resolve_mentions(dto.body, mentionable_ids)
@@ -1411,8 +1425,14 @@ class BoardService:
     ) -> list[MentionedUserDto]:
         """Everyone who can currently be @-mentioned on this application.
 
-        Same access and same population as the mentionable set enforced by
-        ``add_comment`` -- job owner(s) plus the current-stage assignee.
+        Callable by anyone who can see the comment thread -- owner,
+        current-stage assignee, or a ``read.all`` holder, same as
+        ``list_comments`` -- but the returned candidate set itself is
+        narrower: job owner(s) plus the current-stage assignee only (see
+        ``_mentionable_user_ids``). A ``read.all`` holder can view and post
+        comments but is deliberately not itself mentionable -- that set is
+        for who has direct operational responsibility on this specific
+        application, not everyone with org-wide oversight.
 
         Args:
             session (AsyncSession): Active database async session.
@@ -1427,11 +1447,16 @@ class BoardService:
 
         Raises:
             ValueError: If the application is missing, or the caller is
-                neither an owner nor the current-stage assignee (collapsed
-                "not found" message, same as ``list_comments``).
+                none of: an owner, the current-stage assignee, or a
+                ``read.all`` holder (collapsed "not found" message, same
+                as ``list_comments``).
         """
         application, job = await self._load_owned_application(
-            session, current_user, application_id, allow_assignee=True
+            session,
+            current_user,
+            application_id,
+            allow_assignee=True,
+            allow_read_all=True,
         )
         mentionable_ids = await self._mentionable_user_ids(session, application, job)
         users = await self.users_repository.get_all_by_ids(
