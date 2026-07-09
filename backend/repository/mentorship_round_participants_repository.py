@@ -86,6 +86,24 @@ class MentorshipRoundParticipantsRepository:
 
         return result.scalars().one_or_none()
 
+    async def list_distinct_user_roles(
+        self, session: AsyncSession
+    ) -> list[tuple[int, ParticipantRole]]:
+        """Return every distinct (user_id, participant_role) pair that has
+        ever registered for a round.
+
+        Used by the one-time activity-application backfill to find legacy
+        participants who registered before the application/round-
+        registration gate existed.
+        """
+        result = await session.execute(
+            select(
+                MentorshipRoundParticipantsEntity.user_id,
+                MentorshipRoundParticipantsEntity.participant_role,
+            ).distinct()
+        )
+        return [tuple(row) for row in result.all()]
+
     async def get_average_program_rating_by_round_and_role(
         self,
         session: AsyncSession,
