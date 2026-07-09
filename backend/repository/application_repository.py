@@ -79,8 +79,8 @@ class ApplicationRepository:
             list[tuple[int, ApplicationStage, int]]: (job_id, stage, count)
                 rows, one per (job, stage) combination with at least one
                 matching application. Terminal stages (HIRED/REJECTED/
-                OFFER_DECLINED/BLACKLISTED) are included alongside the
-                configurable pipeline stages.
+                BLACKLISTED) are included alongside the configurable
+                pipeline stages.
         """
         created_date = cast(
             func.timezone("UTC", ApplicationEntity.created_datetime), Date
