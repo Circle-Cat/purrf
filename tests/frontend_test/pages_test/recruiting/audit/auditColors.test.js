@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { STAGE_COLORS, categoricalColor } from "@/pages/Recruiting/audit/auditColors";
+import {
+  STAGE_COLORS,
+  categoricalColor,
+} from "@/pages/Recruiting/audit/auditColors";
 
 describe("STAGE_COLORS", () => {
   it("has an entry for every application stage", () => {
