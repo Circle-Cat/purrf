@@ -1445,6 +1445,19 @@ class BoardService:
             await self.application_comment_mention_repository.create_mentions(
                 session, row.comment_id, mentioned_ids
             )
+            for mentioned_id in mentioned_ids:
+                if mentioned_id == current_user.user_id:
+                    continue
+                await self.notification_repository.create(
+                    session,
+                    NotificationEntity(
+                        user_id=mentioned_id,
+                        type=NotificationType.MENTIONED,
+                        application_id=application_id,
+                        comment_id=row.comment_id,
+                        actor_user_id=current_user.user_id,
+                    ),
+                )
         await session.commit()
         author = await self.users_repository.get_user_by_user_id(
             session, current_user.user_id

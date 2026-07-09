@@ -2657,6 +2657,58 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.comment_mention_repo.create_mentions.assert_not_awaited()
         self.assertEqual(result.mentions, [])
 
+    async def test_add_comment_notifies_each_mentioned_user(self):
+        job = self._job(job_id=1, owner_ids=(9, 7))
+        application = self._application(
+            application_id=10, job_id=1, stage=ApplicationStage.RECRUITER_SCREENING
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.assignment_repo.get = AsyncMock(return_value=None)
+        comment_row = MagicMock(
+            comment_id=100,
+            application_id=10,
+            author_id=9,
+            body="hi @[7]",
+            created_at=datetime(2026, 7, 7, 12, 0, 0),
+        )
+        self.comment_repo.create = AsyncMock(return_value=comment_row)
+        self.users_repo.get_user_by_user_id = AsyncMock(return_value=self._user(user_id=9))
+
+        dto = CommentCreateDto(body="hi @[7]")
+        await self.service.add_comment(self.session, self._ctx(user_id=9), 10, dto)
+
+        self.notification_repo.create.assert_awaited_once()
+        (_session_arg, entity_arg), _ = self.notification_repo.create.call_args
+        self.assertEqual(entity_arg.user_id, 7)
+        self.assertEqual(entity_arg.type, NotificationType.MENTIONED)
+        self.assertEqual(entity_arg.application_id, 10)
+        self.assertEqual(entity_arg.comment_id, 100)
+        self.assertEqual(entity_arg.actor_user_id, 9)
+
+    async def test_add_comment_skips_self_mention(self):
+        job = self._job(job_id=1, owner_ids=(9,))
+        application = self._application(
+            application_id=10, job_id=1, stage=ApplicationStage.RECRUITER_SCREENING
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.assignment_repo.get = AsyncMock(return_value=None)
+        comment_row = MagicMock(
+            comment_id=100,
+            application_id=10,
+            author_id=9,
+            body="hi @[9]",
+            created_at=datetime(2026, 7, 7, 12, 0, 0),
+        )
+        self.comment_repo.create = AsyncMock(return_value=comment_row)
+        self.users_repo.get_user_by_user_id = AsyncMock(return_value=self._user(user_id=9))
+
+        dto = CommentCreateDto(body="hi @[9]")
+        await self.service.add_comment(self.session, self._ctx(user_id=9), 10, dto)
+
+        self.notification_repo.create.assert_not_awaited()
+
     async def test_list_comments_includes_resolved_mentions(self):
         job = self._job(job_id=1, owner_ids=(2,))
         application = self._application(application_id=10, job_id=1)
