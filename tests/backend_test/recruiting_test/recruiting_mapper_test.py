@@ -6,6 +6,7 @@ from backend.entity.application_entity import ApplicationEntity
 from backend.entity.job_entity import JobEntity
 from backend.entity.users_entity import UsersEntity
 from backend.common.recruiting_enums import ApplicationStage, JobKind, JobStatus
+from backend.common.mentorship_enums import ParticipantRole
 
 
 class TestRecruitingMapper(unittest.TestCase):
@@ -188,6 +189,25 @@ class TestRecruitingMapper(unittest.TestCase):
         job = self._make_job_entity()
         dto = self.mapper.to_job_dto(job)
         self.assertIsNone(dto.reviewer_id)
+
+    def test_to_my_application_summary_dto_maps_fields(self):
+        application = ApplicationEntity(
+            job_id=5, user_id=2, stage=ApplicationStage.HIRED
+        )
+        application.application_id = 10
+        job = self._make_job_entity(
+            title="CircleCat Mentor", mentorship_role=ParticipantRole.MENTOR
+        )
+        job.job_id = 5
+
+        dto = self.mapper.to_my_application_summary_dto(application, job)
+
+        self.assertEqual(dto.application_id, 10)
+        self.assertEqual(dto.job_id, 5)
+        self.assertEqual(dto.job_title, "CircleCat Mentor")
+        self.assertEqual(dto.job_kind, JobKind.ACTIVITY)
+        self.assertEqual(dto.mentorship_role, ParticipantRole.MENTOR)
+        self.assertEqual(dto.stage, ApplicationStage.HIRED)
 
 
 if __name__ == "__main__":
