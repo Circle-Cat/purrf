@@ -947,6 +947,9 @@ class BoardService:
             elif application.sub_status == "evaluated":
                 application.sub_status = "scheduled"
         application = await self.application_repository.update(session, application)
+        previous_assignee_id = (
+            previous_assignment.assignee_id if previous_assignment is not None else None
+        )
         await self.application_activity_repository.create(
             session,
             application_id,
@@ -955,16 +958,9 @@ class BoardService:
             details={
                 "stage": application.stage.value,
                 "round": application.current_round,
-                "fromAssigneeId": (
-                    previous_assignment.assignee_id
-                    if previous_assignment is not None
-                    else None
-                ),
+                "fromAssigneeId": previous_assignee_id,
                 "toAssigneeId": dto.assignee_id,
             },
-        )
-        previous_assignee_id = (
-            previous_assignment.assignee_id if previous_assignment is not None else None
         )
         if (
             dto.assignee_id != previous_assignee_id

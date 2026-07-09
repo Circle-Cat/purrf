@@ -450,7 +450,7 @@ class JobService:
         if reviewer_id not in {a.user_id for a in approvers}:
             raise ValueError("Reviewer is not an active approver")
 
-        await self.job_review_repository.create(
+        review = await self.job_review_repository.create(
             session,
             JobReviewEntity(
                 job_id=job.job_id,
@@ -468,6 +468,7 @@ class JobService:
                     user_id=reviewer_id,
                     type=NotificationType.JOB_REVIEW_REQUESTED,
                     job_id=job.job_id,
+                    job_review_id=review.review_id,
                     actor_user_id=submitted_by,
                 ),
             )
