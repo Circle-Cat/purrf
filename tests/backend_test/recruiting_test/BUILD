@@ -183,3 +183,24 @@ py_test(
         "//backend/recruiting",
     ],
 )
+
+py_test(
+    name = "notification_service_test",
+    srcs = ["notification_service_test.py"],
+    deps = [
+        "//backend/common:recruiting_enums",
+        "//backend/dto",
+        "//backend/entity:entities",
+        "//backend/recruiting",
+        "//backend/repository:repositories",
+    ],
+)
+
+py_test(
+    name = "notification_controller_test",
+    srcs = ["notification_controller_test.py"],
+    deps = [
+        "//backend/dto",
+        "//backend/recruiting",
+    ],
+)

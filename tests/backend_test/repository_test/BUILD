@@ -201,3 +201,16 @@ py_test(
         "//backend/repository:repositories",
     ],
 )
+
+py_test(
+    name = "notification_repository_test",
+    srcs = ["notification_repository_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        ":base_repository_test_lib",
+        "//backend/common:mentorship_enums",
+        "//backend/common:recruiting_enums",
+        "//backend/entity:entities",
+        "//backend/repository:repositories",
+    ],
+)

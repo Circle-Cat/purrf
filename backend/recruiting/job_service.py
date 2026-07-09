@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 
 from backend.entity.job_entity import JobEntity
 from backend.entity.job_review_entity import JobReviewEntity
+from backend.entity.notification_entity import NotificationEntity
 from backend.repository.job_repository import JobRepository
 from backend.repository.job_review_repository import JobReviewRepository
 from backend.repository.user_permissions_repository import UserPermissionsRepository
@@ -14,6 +15,7 @@ from backend.common.recruiting_enums import (
     JobReviewKind,
     JobReviewStatus,
     JobStatus,
+    NotificationType,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,6 +31,7 @@ class JobService:
         recruiting_mapper: RecruitingMapper,
         user_permissions_repository: UserPermissionsRepository,
         job_review_repository: JobReviewRepository,
+        notification_repository,
     ):
         """
         Initialise the service with its repositories and mapper.
@@ -40,11 +43,15 @@ class JobService:
                 resolve who may approve postings.
             job_review_repository (JobReviewRepository): Data-access layer for
                 JobReviewEntity (the review gate).
+            notification_repository (NotificationRepository): Written by
+                ``_open_review`` (reviewer notified) and ``approve``/
+                ``reject`` (submitter notified of the decision).
         """
         self.job_repository = job_repository
         self.recruiting_mapper = recruiting_mapper
         self.user_permissions_repository = user_permissions_repository
         self.job_review_repository = job_review_repository
+        self.notification_repository = notification_repository
 
     async def list_active_approvers(self, session: AsyncSession) -> list[ApproverDto]:
         """List active users who may approve postings (hold job.approve).
@@ -443,7 +450,7 @@ class JobService:
         if reviewer_id not in {a.user_id for a in approvers}:
             raise ValueError("Reviewer is not an active approver")
 
-        await self.job_review_repository.create(
+        review = await self.job_review_repository.create(
             session,
             JobReviewEntity(
                 job_id=job.job_id,
@@ -454,6 +461,17 @@ class JobService:
                 submit_message=message,
             ),
         )
+        if reviewer_id != submitted_by:
+            await self.notification_repository.create(
+                session,
+                NotificationEntity(
+                    user_id=reviewer_id,
+                    type=NotificationType.JOB_REVIEW_REQUESTED,
+                    job_id=job.job_id,
+                    job_review_id=review.review_id,
+                    actor_user_id=submitted_by,
+                ),
+            )
         if pending_status is not None:
             job.status = pending_status
             job = await self.job_repository.update_job(session, job)
@@ -612,6 +630,9 @@ class JobService:
         - REOPEN: if a pending_payload exists it is applied to live fields
           and cleared, then the posting moves to PUBLISHED.
 
+        Also inserts a JOB_REVIEW_APPROVED notification for the review's
+        submitter, unless the acting user is the submitter themselves.
+
         Args:
             session (AsyncSession): Active database async session.
             review_id (int): The review to approve.
@@ -647,6 +668,17 @@ class JobService:
             job.status = JobStatus.PUBLISHED
             job.was_published = True
         job = await self.job_repository.update_job(session, job)
+        if review.submitted_by != acting_user_id:
+            await self.notification_repository.create(
+                session,
+                NotificationEntity(
+                    user_id=review.submitted_by,
+                    type=NotificationType.JOB_REVIEW_APPROVED,
+                    job_id=job.job_id,
+                    job_review_id=review.review_id,
+                    actor_user_id=acting_user_id,
+                ),
+            )
         await session.commit()
         return self.recruiting_mapper.to_job_dto(job)
 
@@ -660,6 +692,9 @@ class JobService:
         - REVISION: pending_payload is discarded and the posting stays PUBLISHED.
         - CLOSE: the close is aborted and the posting returns to PUBLISHED.
         - REOPEN: the reopen is aborted and the posting remains CLOSED.
+
+        Also inserts a JOB_REVIEW_REJECTED notification for the review's
+        submitter, unless the acting user is the submitter themselves.
 
         Args:
             session (AsyncSession): Active database async session.
@@ -696,6 +731,17 @@ class JobService:
             # INITIAL rejection sends the posting back to DRAFT.
             job.status = JobStatus.DRAFT
         job = await self.job_repository.update_job(session, job)
+        if review.submitted_by != acting_user_id:
+            await self.notification_repository.create(
+                session,
+                NotificationEntity(
+                    user_id=review.submitted_by,
+                    type=NotificationType.JOB_REVIEW_REJECTED,
+                    job_id=job.job_id,
+                    job_review_id=review.review_id,
+                    actor_user_id=acting_user_id,
+                ),
+            )
         await session.commit()
         return self.recruiting_mapper.to_job_dto(job)
 

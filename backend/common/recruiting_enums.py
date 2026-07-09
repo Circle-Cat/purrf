@@ -75,3 +75,11 @@ class ApplicationStage(StrEnum):
 # Work-email domains whose holders are auto-approved as mentors (lowercased, no "@").
 # Add Google subsidiaries (e.g. "youtube.com", "deepmind.com") here if they should qualify.
 MENTOR_ALLOWED_EMAIL_DOMAINS: frozenset[str] = frozenset({"google.com"})
+
+
+class NotificationType(StrEnum):
+    ASSIGNED_TO_EVALUATE = "assigned_to_evaluate"
+    MENTIONED = "mentioned"
+    JOB_REVIEW_REQUESTED = "job_review_requested"
+    JOB_REVIEW_APPROVED = "job_review_approved"
+    JOB_REVIEW_REJECTED = "job_review_rejected"

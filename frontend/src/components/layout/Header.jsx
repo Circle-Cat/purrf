@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { PanelLeft } from "lucide-react";
 import { Root, Trigger, Content, Item } from "@radix-ui/react-dropdown-menu";
 import { Button } from "@/components/ui/button";
+import NotificationBell from "@/components/layout/NotificationBell";
 import logo from "@/assets/logo.png";
 import {
   getCookie,
@@ -79,7 +80,8 @@ const Header = ({ onToggleSidebar, sidebarCollapsed }) => {
         <img src={logo} alt="Purrf Logo" className="h-[35px] w-auto" />
         <span>Purrf</span>
       </div>
-      <div className="flex items-center">
+      <div className="flex items-center gap-1">
+        <NotificationBell />
         <Root>
           <Trigger asChild>
             <Button

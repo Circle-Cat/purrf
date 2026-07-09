@@ -9,13 +9,19 @@ from backend.entity.application_entity import ApplicationEntity
 from backend.entity.application_submission_entity import ApplicationSubmissionEntity
 from backend.entity.job_entity import JobEntity
 from backend.entity.users_entity import UsersEntity
-from backend.common.recruiting_enums import ApplicationStage, JobKind, JobStatus
+from backend.common.recruiting_enums import (
+    ApplicationStage,
+    JobKind,
+    JobStatus,
+    NotificationType,
+)
 from backend.repository.application_assignment_repository import (
     ApplicationAssignmentRepository,
 )
 from backend.repository.application_activity_repository import (
     ApplicationActivityRepository,
 )
+from backend.repository.notification_repository import NotificationRepository
 
 
 class TestApplicationService(unittest.IsolatedAsyncioTestCase):
@@ -47,6 +53,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.activity_repo = create_autospec(
             ApplicationActivityRepository, instance=True
         )
+        self.notification_repo = create_autospec(NotificationRepository, instance=True)
         self.session = AsyncMock()
         self.service = ApplicationService(
             self.app_repo,
@@ -56,6 +63,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             RecruitingMapper(),
             self.assignment_repo,
             self.activity_repo,
+            self.notification_repo,
         )
 
     def _create_side_effect(self, session, entity):
@@ -86,8 +94,8 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         u.is_blocked = is_blocked
         return u
 
-    def _ctx(self):
-        return UserContextDto(sub="s", primary_email="a@b.com", user_id=2)
+    def _ctx(self, user_id=2):
+        return UserContextDto(sub="s", primary_email="a@b.com", user_id=user_id)
 
     async def test_submit_lands_first_stage_with_version_one(self):
         dto = ApplicationSubmitDto.model_validate({
@@ -886,6 +894,33 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         result = await self.service.list_mine(self.session, self._user())
 
         self.assertEqual(result, [])
+
+    async def test_assign_default_if_configured_notifies_default_assignee(self):
+        job = self._job(status=JobStatus.PUBLISHED)
+        job.pipeline_config = {
+            "ownerIds": [9],
+            "stages": [
+                {"stage": "recruiter_screening", "defaultAssigneeId": 5},
+            ],
+        }
+        application = ApplicationEntity(
+            job_id=job.job_id,
+            user_id=3,
+            stage=ApplicationStage.RECRUITER_SCREENING,
+            current_round=1,
+        )
+        application.application_id = 10
+
+        await self.service._assign_default_if_configured(
+            self.session, application, job, self._ctx(user_id=3)
+        )
+
+        self.notification_repo.create.assert_awaited_once()
+        (_session_arg, entity_arg), _ = self.notification_repo.create.call_args
+        self.assertEqual(entity_arg.user_id, 5)
+        self.assertEqual(entity_arg.type, NotificationType.ASSIGNED_TO_EVALUATE)
+        self.assertEqual(entity_arg.application_id, 10)
+        self.assertIsNone(entity_arg.actor_user_id)
 
 
 if __name__ == "__main__":

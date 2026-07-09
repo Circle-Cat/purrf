@@ -23,6 +23,10 @@ vi.mock("@/pages/Profile", () => ({
   default: () => <div data-testid="profile-page">Mocked Profile Page</div>,
 }));
 
+vi.mock("@/components/layout/NotificationBell", () => ({
+  default: () => <div data-testid="notification-bell" />,
+}));
+
 describe("Header Component", () => {
   const setup = (cookieValue = null, userName = "") => {
     getCookie.mockReturnValue(cookieValue);

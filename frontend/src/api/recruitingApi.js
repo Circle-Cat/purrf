@@ -212,3 +212,15 @@ export const getAuditOverview = ({ startDate, endDate, jobIds = [] }) =>
   request.get(API_ENDPOINTS.RECRUITING_AUDIT_OVERVIEW, {
     params: { startDate, endDate, jobIds },
   });
+
+/** List the current user's notifications (newest first) + unreadCount. */
+export const listNotifications = () =>
+  request.get(API_ENDPOINTS.RECRUITING_NOTIFICATIONS);
+
+/** Mark one notification read. Returns { unreadCount }. */
+export const markNotificationRead = (id) =>
+  request.post(API_ENDPOINTS.RECRUITING_NOTIFICATION_READ(id));
+
+/** Mark every notification read. Returns { unreadCount }. */
+export const markAllNotificationsRead = () =>
+  request.post(API_ENDPOINTS.RECRUITING_NOTIFICATIONS_READ_ALL);
