@@ -51,6 +51,7 @@ const renderAt = (jobId) => {
         path: "/recruiting/jobs/:jobId/application",
         element: <MyApplication />,
       },
+      { path: "/dashboard/me", element: <p>Personal Dashboard</p> },
     ],
     { initialEntries: [`/recruiting/jobs/${jobId}/application`] },
   );
@@ -177,7 +178,25 @@ describe("MyApplication", () => {
     );
   });
 
-  it("updates the displayed application after a successful reapply submission", async () => {
+  it("navigates to Personal Dashboard after a fresh submission", async () => {
+    api.getMyApplication.mockResolvedValue({ data: null });
+    renderAt(5);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /submit application/i }),
+      ).toBeInTheDocument(),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: /submit application/i }),
+    );
+
+    await waitFor(() =>
+      expect(screen.getByText("Personal Dashboard")).toBeInTheDocument(),
+    );
+  });
+
+  it("navigates to Personal Dashboard after a successful reapply submission", async () => {
     api.getMyApplication.mockResolvedValue({
       data: {
         id: 9,
@@ -204,15 +223,9 @@ describe("MyApplication", () => {
       screen.getByRole("button", { name: /submit application/i }),
     );
 
-    // The mocked ApplicationForm's onSubmitted resolves to an editable,
-    // recruiter_screening application -- MyApplication should re-render into
-    // the editable-form branch (existing id 9), not stay on the reapply seed.
     await waitFor(() =>
-      expect(screen.getByText("Existing id 9")).toBeInTheDocument(),
+      expect(screen.getByText("Personal Dashboard")).toBeInTheDocument(),
     );
-    expect(
-      screen.queryByText("Seeded from prior submission"),
-    ).not.toBeInTheDocument();
   });
 
   it("does not show a Reapply button for a non-rejected read-only application", async () => {
