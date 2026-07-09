@@ -198,3 +198,17 @@ export const getMentionableUsers = (id) =>
 /** List a candidate's other applications (OtherApplicationDto[]), for the cross-posting aggregation view. */
 export const getOtherApplications = (id) =>
   request.get(API_ENDPOINTS.RECRUITING_APPLICATION_OTHER_APPLICATIONS(id));
+
+/**
+ * Fetch the cross-posting recruiting audit overview: open positions,
+ * every job (for the selector), and the stage/daily-trend breakdown for
+ * the given date range and job selection.
+ *
+ * @param {{startDate: string, endDate: string, jobIds?: number[]}} params
+ *   `startDate`/`endDate` are "yyyy-MM-dd"; `jobIds` omitted/empty means
+ *   every job.
+ */
+export const getAuditOverview = ({ startDate, endDate, jobIds = [] }) =>
+  request.get(API_ENDPOINTS.RECRUITING_AUDIT_OVERVIEW, {
+    params: { startDate, endDate, jobIds },
+  });
