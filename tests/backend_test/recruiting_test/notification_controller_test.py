@@ -18,7 +18,9 @@ class TestRecruitingNotificationController(unittest.IsolatedAsyncioTestCase):
             return_value={"notifications": [], "unreadCount": 0}
         )
         self.notification_service.mark_read = AsyncMock(return_value={"unreadCount": 0})
-        self.notification_service.mark_all_read = AsyncMock(return_value={"unreadCount": 0})
+        self.notification_service.mark_all_read = AsyncMock(
+            return_value={"unreadCount": 0}
+        )
 
         self.controller = RecruitingNotificationController(
             self.notification_service, self.database
@@ -69,7 +71,9 @@ class TestRecruitingNotificationController(unittest.IsolatedAsyncioTestCase):
 
         resp = await self.controller.mark_all_read(self.ctx)
 
-        self.notification_service.mark_all_read.assert_awaited_once_with(self.session, 2)
+        self.notification_service.mark_all_read.assert_awaited_once_with(
+            self.session, 2
+        )
         self.assertEqual(resp["data"], result)
 
     def test_routes_are_registered_and_plain_authenticated(self):

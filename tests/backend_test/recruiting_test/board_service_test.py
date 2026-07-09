@@ -22,7 +22,12 @@ from backend.entity.evaluation_entity import EvaluationEntity
 from backend.entity.job_entity import JobEntity
 from backend.entity.users_entity import UsersEntity
 from backend.common.permissions import Permission
-from backend.common.recruiting_enums import ApplicationStage, JobKind, JobStatus, NotificationType
+from backend.common.recruiting_enums import (
+    ApplicationStage,
+    JobKind,
+    JobStatus,
+    NotificationType,
+)
 from backend.repository.application_assignment_repository import (
     ApplicationAssignmentRepository,
 )
@@ -2673,7 +2678,9 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             created_at=datetime(2026, 7, 7, 12, 0, 0),
         )
         self.comment_repo.create = AsyncMock(return_value=comment_row)
-        self.users_repo.get_user_by_user_id = AsyncMock(return_value=self._user(user_id=9))
+        self.users_repo.get_user_by_user_id = AsyncMock(
+            return_value=self._user(user_id=9)
+        )
 
         dto = CommentCreateDto(body="hi @[7]")
         await self.service.add_comment(self.session, self._ctx(user_id=9), 10, dto)
@@ -2702,7 +2709,9 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             created_at=datetime(2026, 7, 7, 12, 0, 0),
         )
         self.comment_repo.create = AsyncMock(return_value=comment_row)
-        self.users_repo.get_user_by_user_id = AsyncMock(return_value=self._user(user_id=9))
+        self.users_repo.get_user_by_user_id = AsyncMock(
+            return_value=self._user(user_id=9)
+        )
 
         dto = CommentCreateDto(body="hi @[9]")
         await self.service.add_comment(self.session, self._ctx(user_id=9), 10, dto)

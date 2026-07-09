@@ -1,8 +1,13 @@
 import unittest
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock, create_autospec
+from unittest.mock import AsyncMock, create_autospec
 
-from backend.common.recruiting_enums import ApplicationStage, JobKind, JobStatus, NotificationType
+from backend.common.recruiting_enums import (
+    ApplicationStage,
+    JobKind,
+    JobStatus,
+    NotificationType,
+)
 from backend.entity.application_entity import ApplicationEntity
 from backend.entity.job_entity import JobEntity
 from backend.entity.notification_entity import NotificationEntity
@@ -47,7 +52,9 @@ class TestRecruitingNotificationService(unittest.IsolatedAsyncioTestCase):
         row = self._notification()
         self.notification_repo.list_by_user = AsyncMock(return_value=[row])
         self.notification_repo.count_unread = AsyncMock(return_value=1)
-        job = JobEntity(kind=JobKind.ACTIVITY, title="Backend Engineer", status=JobStatus.PUBLISHED)
+        job = JobEntity(
+            kind=JobKind.ACTIVITY, title="Backend Engineer", status=JobStatus.PUBLISHED
+        )
         job.job_id = 1
         application = ApplicationEntity(
             job_id=1, user_id=3, stage=ApplicationStage.RECRUITER_SCREENING
@@ -55,9 +62,13 @@ class TestRecruitingNotificationService(unittest.IsolatedAsyncioTestCase):
         application.application_id = 10
         self.app_repo.get_by_id = AsyncMock(return_value=application)
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
-        applicant = UsersEntity(first_name="Ada", last_name="Lovelace", primary_email="a@b.com")
+        applicant = UsersEntity(
+            first_name="Ada", last_name="Lovelace", primary_email="a@b.com"
+        )
         applicant.user_id = 3
-        actor = UsersEntity(first_name="Grace", last_name="Hopper", primary_email="g@h.com")
+        actor = UsersEntity(
+            first_name="Grace", last_name="Hopper", primary_email="g@h.com"
+        )
         actor.user_id = 9
 
         async def get_user(session, user_id):
@@ -86,10 +97,14 @@ class TestRecruitingNotificationService(unittest.IsolatedAsyncioTestCase):
         )
         self.notification_repo.list_by_user = AsyncMock(return_value=[row])
         self.notification_repo.count_unread = AsyncMock(return_value=0)
-        job = JobEntity(kind=JobKind.ACTIVITY, title="Design Review", status=JobStatus.DRAFT)
+        job = JobEntity(
+            kind=JobKind.ACTIVITY, title="Design Review", status=JobStatus.DRAFT
+        )
         job.job_id = 1
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
-        actor = UsersEntity(first_name="Grace", last_name="Hopper", primary_email="g@h.com")
+        actor = UsersEntity(
+            first_name="Grace", last_name="Hopper", primary_email="g@h.com"
+        )
         actor.user_id = 9
         self.users_repo.get_user_by_user_id = AsyncMock(return_value=actor)
 
@@ -106,7 +121,9 @@ class TestRecruitingNotificationService(unittest.IsolatedAsyncioTestCase):
         self.notification_repo.mark_read = AsyncMock(return_value=self._notification())
         self.notification_repo.count_unread = AsyncMock(return_value=3)
 
-        result = await self.service.mark_read(self.session, user_id=2, notification_id=1)
+        result = await self.service.mark_read(
+            self.session, user_id=2, notification_id=1
+        )
 
         self.notification_repo.mark_read.assert_awaited_once_with(self.session, 1, 2)
         self.assertEqual(result.unread_count, 3)

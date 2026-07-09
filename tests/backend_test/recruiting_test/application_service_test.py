@@ -53,9 +53,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.activity_repo = create_autospec(
             ApplicationActivityRepository, instance=True
         )
-        self.notification_repo = create_autospec(
-            NotificationRepository, instance=True
-        )
+        self.notification_repo = create_autospec(NotificationRepository, instance=True)
         self.session = AsyncMock()
         self.service = ApplicationService(
             self.app_repo,

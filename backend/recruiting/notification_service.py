@@ -1,6 +1,10 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.dto.notification_dto import NotificationDto, NotificationListDto, UnreadCountDto
+from backend.dto.notification_dto import (
+    NotificationDto,
+    NotificationListDto,
+    UnreadCountDto,
+)
 
 
 class RecruitingNotificationService:
@@ -53,7 +57,9 @@ class RecruitingNotificationService:
             )
             if application is not None:
                 job_id = application.job_id
-                job = await self.job_repository.get_by_job_id(session, application.job_id)
+                job = await self.job_repository.get_by_job_id(
+                    session, application.job_id
+                )
                 job_title = job.title if job is not None else ""
                 applicant_name = await self._display_name(session, application.user_id)
         elif row.job_id is not None:
@@ -94,7 +100,9 @@ class RecruitingNotificationService:
             NotificationListDto: The page of notifications and the total
                 unread count (independent of `limit`/`offset`).
         """
-        rows = await self.notification_repository.list_by_user(session, user_id, limit, offset)
+        rows = await self.notification_repository.list_by_user(
+            session, user_id, limit, offset
+        )
         unread_count = await self.notification_repository.count_unread(session, user_id)
         items = [await self._to_dto(session, row) for row in rows]
         return NotificationListDto(notifications=items, unread_count=unread_count)
@@ -117,7 +125,9 @@ class RecruitingNotificationService:
         unread_count = await self.notification_repository.count_unread(session, user_id)
         return UnreadCountDto(unread_count=unread_count)
 
-    async def mark_all_read(self, session: AsyncSession, user_id: int) -> UnreadCountDto:
+    async def mark_all_read(
+        self, session: AsyncSession, user_id: int
+    ) -> UnreadCountDto:
         """Mark every one of user_id's unread notifications read and commit.
 
         Args:

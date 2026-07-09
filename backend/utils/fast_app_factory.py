@@ -162,7 +162,9 @@ class FastAppFactory:
         app.include_router(self.blacklist_controller.router, prefix="/api")
         app.include_router(self.evaluation_controller.router, prefix="/api")
         app.include_router(self.audit_controller.router, prefix="/api")
-        app.include_router(self.recruiting_notification_controller.router, prefix="/api")
+        app.include_router(
+            self.recruiting_notification_controller.router, prefix="/api"
+        )
 
         @app.get("/fastapi/health")
         def health_check():

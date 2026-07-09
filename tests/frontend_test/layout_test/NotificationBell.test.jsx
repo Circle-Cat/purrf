@@ -33,9 +33,7 @@ describe("NotificationBell", () => {
     });
     renderBell();
 
-    await waitFor(() =>
-      expect(api.listNotifications).toHaveBeenCalledTimes(1),
-    );
+    await waitFor(() => expect(api.listNotifications).toHaveBeenCalledTimes(1));
     expect(screen.queryByText("0")).not.toBeInTheDocument();
   });
 
@@ -135,7 +133,9 @@ describe("NotificationBell", () => {
     await waitFor(() => expect(screen.getByText("1")).toBeInTheDocument());
     await user.click(screen.getByRole("button", { name: "Notifications" }));
     await user.click(
-      screen.getByText('Grace Hopper submitted "Design Review" for your review'),
+      screen.getByText(
+        'Grace Hopper submitted "Design Review" for your review',
+      ),
     );
 
     expect(screen.getByText("JOB DETAIL")).toBeInTheDocument();
@@ -174,7 +174,9 @@ describe("NotificationBell", () => {
         ],
       },
     });
-    api.markAllNotificationsRead.mockResolvedValue({ data: { unreadCount: 0 } });
+    api.markAllNotificationsRead.mockResolvedValue({
+      data: { unreadCount: 0 },
+    });
     renderBell();
 
     await waitFor(() => expect(screen.getByText("2")).toBeInTheDocument());
@@ -182,7 +184,9 @@ describe("NotificationBell", () => {
     await user.click(screen.getByRole("button", { name: "Mark all read" }));
 
     expect(api.markAllNotificationsRead).toHaveBeenCalledTimes(1);
-    await waitFor(() => expect(screen.queryByText("2")).not.toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.queryByText("2")).not.toBeInTheDocument(),
+    );
   });
 
   it("shows an inline error when the initial load fails", async () => {
@@ -194,7 +198,9 @@ describe("NotificationBell", () => {
     await user.click(screen.getByRole("button", { name: "Notifications" }));
 
     await waitFor(() =>
-      expect(screen.getByText("Couldn't load notifications.")).toBeInTheDocument(),
+      expect(
+        screen.getByText("Couldn't load notifications."),
+      ).toBeInTheDocument(),
     );
   });
 });

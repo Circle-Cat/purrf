@@ -2,7 +2,11 @@ from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.common.recruiting_enums import ApplicationStage, JobStatus, NotificationType
+from backend.common.recruiting_enums import (
+    ApplicationStage,
+    JobStatus,
+    NotificationType,
+)
 from backend.dto.application_dto import (
     ApplicationDto,
     ApplicationEditDto,

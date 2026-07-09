@@ -99,7 +99,10 @@ class TestNotificationRepository(BaseRepositoryTestLib):
 
         result = await repo.list_by_user(self.session, recipient.user_id)
 
-        self.assertEqual([n.notification_id for n in result], [second.notification_id, first.notification_id])
+        self.assertEqual(
+            [n.notification_id for n in result],
+            [second.notification_id, first.notification_id],
+        )
 
     async def test_count_unread_only_counts_unread_for_that_user(self):
         app, recipient = await self._seed()
@@ -161,7 +164,9 @@ class TestNotificationRepository(BaseRepositoryTestLib):
             ),
         )
 
-        result = await repo.mark_read(self.session, created.notification_id, other.user_id)
+        result = await repo.mark_read(
+            self.session, created.notification_id, other.user_id
+        )
 
         self.assertIsNone(result)
         self.assertEqual(await repo.count_unread(self.session, recipient.user_id), 1)

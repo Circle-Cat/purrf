@@ -42,7 +42,11 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         self.session = AsyncMock()
         self.notification_repo = create_autospec(NotificationRepository, instance=True)
         self.service = JobService(
-            self.repo, RecruitingMapper(), self.perms, self.review_repo, self.notification_repo
+            self.repo,
+            RecruitingMapper(),
+            self.perms,
+            self.review_repo,
+            self.notification_repo,
         )
 
     def _job(self, **kw):
@@ -1397,7 +1401,9 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         self.review_repo.get = AsyncMock(return_value=review)
         self.repo.get_by_job_id = AsyncMock(return_value=job)
 
-        await self.service.reject(self.session, 100, "needs more detail", acting_user_id=6)
+        await self.service.reject(
+            self.session, 100, "needs more detail", acting_user_id=6
+        )
 
         self.notification_repo.create.assert_awaited_once()
         (_session_arg, entity_arg), _ = self.notification_repo.create.call_args
