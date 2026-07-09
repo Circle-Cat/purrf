@@ -556,6 +556,7 @@ class TestAppDependencyBuilder(TestCase):
             blacklist_controller=ANY,
             evaluation_controller=ANY,
             audit_controller=ANY,
+            recruiting_notification_controller=ANY,
             launchdarkly_client=mock_launchdarkly_client_cls.return_value,
             database=mock_database_cls.return_value,
             logger=mock_logger,
