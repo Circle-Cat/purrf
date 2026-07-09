@@ -847,6 +847,46 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         )
         self.assertNotIn("cold_freeze", result.tags or {})
 
+    async def test_list_mine_returns_summaries_across_jobs(self):
+        job_a = self._job(kind=JobKind.ACTIVITY)
+        job_a.job_id = 1
+        job_a.title = "CircleCat Mentor"
+        job_a.mentorship_role = None  # overwritten below via kwargs helper gap
+        from backend.common.mentorship_enums import ParticipantRole
+
+        job_a.mentorship_role = ParticipantRole.MENTOR
+        app_a = ApplicationEntity(job_id=1, user_id=2, stage=ApplicationStage.HIRED)
+        app_a.application_id = 10
+
+        job_b = self._job(kind=JobKind.EMPLOYMENT)
+        job_b.job_id = 2
+        job_b.title = "Backend Engineer"
+        app_b = ApplicationEntity(
+            job_id=2, user_id=2, stage=ApplicationStage.RECRUITER_SCREENING
+        )
+        app_b.application_id = 11
+
+        self.app_repo.list_by_user = AsyncMock(
+            return_value=[(app_a, job_a), (app_b, job_b)]
+        )
+
+        result = await self.service.list_mine(self.session, self._user())
+
+        self.app_repo.list_by_user.assert_awaited_once_with(self.session, 2)
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0].application_id, 10)
+        self.assertEqual(result[0].job_title, "CircleCat Mentor")
+        self.assertEqual(result[0].mentorship_role, ParticipantRole.MENTOR)
+        self.assertEqual(result[1].application_id, 11)
+        self.assertEqual(result[1].mentorship_role, None)
+
+    async def test_list_mine_returns_empty_for_no_applications(self):
+        self.app_repo.list_by_user = AsyncMock(return_value=[])
+
+        result = await self.service.list_mine(self.session, self._user())
+
+        self.assertEqual(result, [])
+
 
 if __name__ == "__main__":
     unittest.main()

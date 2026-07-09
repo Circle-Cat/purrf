@@ -1,7 +1,8 @@
 from datetime import datetime
 from backend.dto.base_dto import BaseDto
 from backend.dto.base_request_dto import BaseRequestDto
-from backend.common.recruiting_enums import ApplicationStage
+from backend.common.recruiting_enums import ApplicationStage, JobKind
+from backend.common.mentorship_enums import ParticipantRole
 
 
 class ApplicationSubmitDto(BaseRequestDto):
@@ -56,3 +57,14 @@ class ApplicationDto(BaseDto):
     # Which round of `stage` the applicant is on; meaningless (always 1)
     # for a stage configured with a single round.
     current_round: int = 1
+
+
+class MyApplicationSummaryDto(BaseDto):
+    """One row of the current user's own application list (any job kind)."""
+
+    application_id: int
+    job_id: int
+    job_title: str
+    job_kind: JobKind
+    mentorship_role: ParticipantRole | None = None
+    stage: ApplicationStage
