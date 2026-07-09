@@ -580,6 +580,7 @@ class AppDependencyBuilder:
             self.recruiting_mapper,
             self.application_assignment_repository,
             self.application_activity_repository,
+            self.notification_repository,
         )
         self.application_controller = ApplicationController(
             self.application_service,
