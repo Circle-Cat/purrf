@@ -40,6 +40,7 @@
     "react-router-dom": "^6.30.2",
     "react-select": "^5.10.2",
     "react-timezone-select": "^3.3.2",
+    "recharts": "3.8.0",
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.4.0",
     "zod": "^4.3.5"

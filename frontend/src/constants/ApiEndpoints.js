@@ -77,6 +77,7 @@ export const API_ENDPOINTS = {
     `/recruiting/applications/${id}/mentionable-users`,
   RECRUITING_APPLICATION_OTHER_APPLICATIONS: (id) =>
     `/recruiting/applications/${id}/other-applications`,
+  RECRUITING_AUDIT_OVERVIEW: "/recruiting/audit/overview",
 };
 
 /**
