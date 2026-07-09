@@ -34,9 +34,7 @@ vi.mock("@/pages/MentorshipManagement/components/RoundsManagementCard", () => ({
 vi.mock(
   "@/pages/MentorshipManagement/components/ParticipantSearchCard",
   () => ({
-    default: vi.fn(() => (
-      <div data-testid="mock-participant-search-card" />
-    )),
+    default: vi.fn(() => <div data-testid="mock-participant-search-card" />),
   }),
 );
 
