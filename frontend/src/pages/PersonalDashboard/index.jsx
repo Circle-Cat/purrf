@@ -31,8 +31,19 @@ const PersonalDashboard = () => {
     isLoading: isApplicationsLoading,
     loadError: applicationsLoadError,
     load: loadApplications,
-    hasHiredMentorshipApplication,
+    hiredMentorshipRole,
   } = useMyApplications();
+
+  // Only show the mentorship section, and only start fetching mentorship
+  // data, once we've actually confirmed a hired mentorship role — not
+  // while the applications fetch is still loading or has errored. This is
+  // a deliberate reversal of the previous fail-open behavior: a slow/failed
+  // fetch now hides the section (the user can retry via My Applications'
+  // own retry button) rather than firing a wasted mentorship-data fetch.
+  const showMentorshipSection =
+    !isApplicationsLoading &&
+    !applicationsLoadError &&
+    hiredMentorshipRole !== null;
 
   const {
     registration, // Registration data for the current or most recent round
@@ -55,7 +66,7 @@ const PersonalDashboard = () => {
     refreshMeetings, // Trigger a refresh of meeting log data for the selected round
     isParticipantCardLoading, // Whether the participant card data is currently loading
     userTimezone, // Current user's IANA timezone string from their profile
-  } = useMentorshipData({ enabled: hasHiredMentorshipApplication });
+  } = useMentorshipData({ enabled: showMentorshipSection });
 
   const { permissions } = useAuth();
   const canViewActivitySummary = permissions?.includes(
@@ -97,7 +108,7 @@ const PersonalDashboard = () => {
         onRetry={loadApplications}
       />
 
-      {hasHiredMentorshipApplication && (
+      {showMentorshipSection && (
         <>
           {/* Mentorship information banner */}
           <MentorshipInfoBanner
@@ -106,6 +117,7 @@ const PersonalDashboard = () => {
             isFeedbackEnabled={isFeedbackEnabled}
             feedbackRoundId={feedbackRoundId}
             feedbackRoundName={feedbackRoundName}
+            hiredMentorshipRole={hiredMentorshipRole}
             onSaveRegistration={saveRegistration}
             pastPartners={pastPartners}
             isPartnersLoading={isPartnersLoading}

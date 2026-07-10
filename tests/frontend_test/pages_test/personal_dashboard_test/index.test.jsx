@@ -1,6 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import PersonalDashboard from "@/pages/PersonalDashboard";
+import MentorshipInfoBanner from "@/pages/PersonalDashboard/components/MentorshipInfoBanner";
 import { useMentorshipData } from "@/pages/PersonalDashboard/hooks/useMentorshipData";
 import { useAuth } from "@/context/auth";
 import { useWorkActivityData } from "@/pages/PersonalDashboard/hooks/useWorkActivityData";
@@ -102,7 +103,7 @@ describe("PersonalDashboard", () => {
       isLoading: false,
       loadError: false,
       load: vi.fn(),
-      hasHiredMentorshipApplication: true,
+      hiredMentorshipRole: "mentee",
     });
     useAuth.mockReturnValue({ permissions: [] });
     vi.mocked(useFeatureFlags).mockReturnValue({
@@ -305,13 +306,13 @@ describe("PersonalDashboard", () => {
     expect(screen.getByTestId("mock-my-applications-card")).toBeInTheDocument();
   });
 
-  it("shows the mentorship banner and participants card when hasHiredMentorshipApplication is true", () => {
+  it("shows the mentorship banner and participants card once a hired mentorship role resolves", () => {
     useMyApplications.mockReturnValue({
       applications: [],
       isLoading: false,
       loadError: false,
       load: vi.fn(),
-      hasHiredMentorshipApplication: true,
+      hiredMentorshipRole: "mentor",
     });
 
     render(<PersonalDashboard />);
@@ -320,13 +321,13 @@ describe("PersonalDashboard", () => {
     expect(screen.getByTestId("mock-participants-card")).toBeInTheDocument();
   });
 
-  it("hides the mentorship banner and participants card when hasHiredMentorshipApplication is false", () => {
+  it("hides the mentorship banner and participants card while applications are still loading", () => {
     useMyApplications.mockReturnValue({
       applications: [],
-      isLoading: false,
+      isLoading: true,
       loadError: false,
       load: vi.fn(),
-      hasHiredMentorshipApplication: false,
+      hiredMentorshipRole: null,
     });
 
     render(<PersonalDashboard />);
@@ -337,17 +338,67 @@ describe("PersonalDashboard", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("passes hasHiredMentorshipApplication as the enabled option to useMentorshipData", () => {
+  it("hides the mentorship banner and participants card when the applications fetch errored", () => {
+    useMyApplications.mockReturnValue({
+      applications: [],
+      isLoading: false,
+      loadError: true,
+      load: vi.fn(),
+      hiredMentorshipRole: null,
+    });
+
+    render(<PersonalDashboard />);
+
+    expect(screen.queryByTestId("mock-banner")).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("mock-participants-card"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("hides the mentorship banner and participants card when there is no hired mentorship role", () => {
     useMyApplications.mockReturnValue({
       applications: [],
       isLoading: false,
       loadError: false,
       load: vi.fn(),
-      hasHiredMentorshipApplication: false,
+      hiredMentorshipRole: null,
+    });
+
+    render(<PersonalDashboard />);
+
+    expect(screen.queryByTestId("mock-banner")).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("mock-participants-card"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("passes showMentorshipSection as the enabled option to useMentorshipData", () => {
+    useMyApplications.mockReturnValue({
+      applications: [],
+      isLoading: false,
+      loadError: false,
+      load: vi.fn(),
+      hiredMentorshipRole: null,
     });
 
     render(<PersonalDashboard />);
 
     expect(useMentorshipData).toHaveBeenCalledWith({ enabled: false });
+  });
+
+  it("passes hiredMentorshipRole through to MentorshipInfoBanner", () => {
+    useMyApplications.mockReturnValue({
+      applications: [],
+      isLoading: false,
+      loadError: false,
+      load: vi.fn(),
+      hiredMentorshipRole: "mentor",
+    });
+
+    render(<PersonalDashboard />);
+
+    expect(MentorshipInfoBanner.mock.calls[0][0]).toEqual(
+      expect.objectContaining({ hiredMentorshipRole: "mentor" }),
+    );
   });
 });
