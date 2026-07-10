@@ -1210,6 +1210,15 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
     # delete_job
     # ---------------------------------------------------------------------------
 
+    async def test_delete_job_draft_succeeds(self):
+        """delete_job now also allows deleting a DRAFT posting."""
+        job = self._job(status=JobStatus.DRAFT)
+        self.repo.get_by_job_id.return_value = job
+
+        await self.service.delete_job(self.session, job.job_id)
+
+        self.repo.delete_job.assert_awaited_once_with(self.session, job)
+
     async def test_delete_job_closed_never_published_calls_repo(self):
         """delete_job on a CLOSED, never-published posting calls repo.delete_job."""
         job = self._job(status=JobStatus.CLOSED)
@@ -1229,10 +1238,10 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             await self.service.delete_job(self.session, job.job_id)
 
-    async def test_delete_job_non_closed_raises(self):
-        """delete_job on a non-CLOSED posting raises ValueError."""
-        job = self._job(status=JobStatus.DRAFT)
-        job.was_published = False
+    async def test_delete_job_non_closed_non_draft_raises(self):
+        """delete_job on a PUBLISHED posting raises ValueError."""
+        job = self._job(status=JobStatus.PUBLISHED)
+        job.was_published = True
         self.repo.get_by_job_id.return_value = job
 
         with self.assertRaises(ValueError):

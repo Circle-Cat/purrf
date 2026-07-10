@@ -850,24 +850,27 @@ class JobService:
         return self.recruiting_mapper.to_job_dto(job)
 
     async def delete_job(self, session: AsyncSession, job_id: int) -> None:
-        """Delete a posting that was never published.
+        """Delete a posting that was never published, or a DRAFT.
 
-        Only a CLOSED posting that was never published (``was_published`` is
-        ``False``) may be deleted. Once a posting has ever been published it
-        cannot be deleted regardless of its current status.
+        Allowed when the posting is a DRAFT, or is CLOSED and was never
+        published (``was_published`` is ``False``). Once a posting has ever
+        been published it cannot be deleted regardless of its current status.
 
         Args:
             session (AsyncSession): Active database async session.
             job_id (int): Identifier of the posting to delete.
 
         Raises:
-            ValueError: If the posting does not exist, is not CLOSED, or has
-                ever been published.
+            ValueError: If the posting does not exist, or is neither a DRAFT
+                nor a never-published CLOSED posting.
         """
         job = await self._require_job(session, job_id)
-        if job.status != JobStatus.CLOSED or job.was_published:
+        is_deletable_draft = job.status == JobStatus.DRAFT
+        is_deletable_closed = job.status == JobStatus.CLOSED and not job.was_published
+        if not (is_deletable_draft or is_deletable_closed):
             raise ValueError(
-                f"Job {job_id} cannot be deleted: only never-published CLOSED postings may be deleted"
+                f"Job {job_id} cannot be deleted: only a draft or a "
+                "never-published closed posting may be deleted"
             )
         await self.job_repository.delete_job(session, job)
         await session.commit()
