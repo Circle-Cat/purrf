@@ -58,9 +58,7 @@ const PostingsList = ({ jobs, ownersById = {}, onRowClick }) => (
             <p className="truncate font-medium text-slate-900">{job.title}</p>
             <p className="text-xs text-slate-500">{job.kind}</p>
             {ownerNames && (
-              <p className="text-xs text-slate-500">
-                Managed by: {ownerNames}
-              </p>
+              <p className="text-xs text-slate-500">Managed by: {ownerNames}</p>
             )}
           </div>
           <div className="flex flex-col items-end gap-1">
