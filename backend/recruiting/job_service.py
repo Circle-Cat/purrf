@@ -478,6 +478,13 @@ class JobService:
                 submit_message=message,
             ),
         )
+        await self.job_activity_repository.create(
+            session,
+            job.job_id,
+            submitted_by,
+            "review_opened",
+            {"kind": kind.value, "reviewerId": reviewer_id, "message": message},
+        )
         if reviewer_id != submitted_by:
             await self.notification_repository.create(
                 session,

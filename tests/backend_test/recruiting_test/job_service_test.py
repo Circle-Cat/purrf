@@ -454,6 +454,22 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(entity_arg.job_id, 1)
         self.assertEqual(entity_arg.actor_user_id, 9)
 
+    async def test_submit_for_review_logs_review_opened_activity(self):
+        """submit_for_review logs a review_opened activity entry."""
+        self._two_approvers()
+        job = self._job(status=JobStatus.DRAFT)
+        self.repo.get_by_job_id.return_value = job
+
+        await self.service.submit_for_review(self.session, job.job_id, 2, 5, "please")
+
+        self.job_activity_repo.create.assert_awaited_once_with(
+            self.session,
+            job.job_id,
+            5,
+            "review_opened",
+            {"kind": "initial", "reviewerId": 2, "message": "please"},
+        )
+
     async def test_submit_revision_keeps_published_pending(self):
         """Submitting a parked revision opens a REVISION review, status unchanged."""
         job = self._job(status=JobStatus.PUBLISHED_PENDING_REVISION)
