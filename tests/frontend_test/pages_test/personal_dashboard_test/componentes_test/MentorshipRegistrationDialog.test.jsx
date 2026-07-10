@@ -137,6 +137,7 @@ describe("MentorshipRegistrationDialog Component", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    sessionStorage.clear();
 
     // Initialize a new userEvent instance for each test
     user = userEvent.setup();
@@ -386,6 +387,10 @@ describe("MentorshipRegistrationDialog Component", () => {
       mapFormToApi.mockReturnValue({ api: "data" });
       mapRegistrationToForm.mockReturnValue(validMenteeForm);
       const onSave = onSaveResolving(false);
+      // Scoped to ordering between the success and training toasts only —
+      // suppress the session-scoped profile-check reminder (tested on its
+      // own below) so the call count/order here stays about those two.
+      sessionStorage.setItem("post-registration-profile-check-shown", "1");
 
       render(
         <MentorshipRegistrationDialog {...defaultProps} onSave={onSave} />,
@@ -403,6 +408,45 @@ describe("MentorshipRegistrationDialog Component", () => {
       expect(showReminderToast.mock.calls[1][0].id).toBe(
         "post-registration-training-toast",
       );
+    });
+
+    it("fires a one-time profile-check reminder on the first successful save this session", async () => {
+      mapFormToApi.mockReturnValue({ api: "data" });
+      mapRegistrationToForm.mockReturnValue(validMenteeForm);
+      const onSave = onSaveResolving(true);
+
+      render(
+        <MentorshipRegistrationDialog {...defaultProps} onSave={onSave} />,
+      );
+      await user.click(screen.getByText("Toggle Dialog"));
+      await user.click(screen.getByText("Register"));
+
+      const reminder = callWithId("post-registration-profile-check-toast");
+      expect(reminder).toBeDefined();
+      expect(reminder.title).toBe("Double-check your profile");
+      expect(reminder.message).toMatch(/match you with the right partner/i);
+      expect(
+        sessionStorage.getItem("post-registration-profile-check-shown"),
+      ).toBe("1");
+    });
+
+    it("does not fire the profile-check reminder again on a second successful save in the same session", async () => {
+      mapFormToApi.mockReturnValue({ api: "data" });
+      mapRegistrationToForm.mockReturnValue(validMenteeForm);
+      const onSave = onSaveResolving(true);
+
+      render(
+        <MentorshipRegistrationDialog {...defaultProps} onSave={onSave} />,
+      );
+      await user.click(screen.getByText("Toggle Dialog"));
+      await user.click(screen.getByText("Register"));
+      await user.click(screen.getByText("Toggle Dialog"));
+      await user.click(screen.getByText("Register"));
+
+      const profileCheckCalls = showReminderToast.mock.calls.filter(
+        ([args]) => args.id === "post-registration-profile-check-toast",
+      );
+      expect(profileCheckCalls).toHaveLength(1);
     });
 
     it("uses the success type and the right title for fresh registration", async () => {

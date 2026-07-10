@@ -24,7 +24,7 @@ js_library(
 # TIMEOUT even though every test passed). Sharding via vitest's built-in
 # --shard flag keeps each process's module graph small enough to close
 # reliably, and lets bazel run shards in parallel.
-_SHARD_COUNT = 4
+_SHARD_COUNT = 10
 
 [
     vitest_bin.vitest_test(

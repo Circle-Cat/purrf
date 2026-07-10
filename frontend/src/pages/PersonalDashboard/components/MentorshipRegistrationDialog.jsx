@@ -33,6 +33,11 @@ import {
 const REGISTRATION_SUCCESS_TOAST_ID = "registration-success-toast";
 const POST_REGISTRATION_TOAST_ID = "post-registration-training-toast";
 const POST_REGISTRATION_TOAST_TITLE = "Complete onboarding training";
+const PROFILE_CHECK_TOAST_ID = "post-registration-profile-check-toast";
+const PROFILE_CHECK_SESSION_KEY = "post-registration-profile-check-shown";
+const PROFILE_CHECK_TOAST_TITLE = "Double-check your profile";
+const PROFILE_CHECK_TOAST_MESSAGE =
+  "We use your profile info to match you with the right partner — please make sure it's up to date in your Profile page.";
 // Mentors can still meet with their mentee while they finish training,
 // so the message is a soft nudge framed around quality of mentorship.
 const POST_REGISTRATION_MENTOR_MESSAGE =
@@ -229,6 +234,19 @@ export default function MentorshipRegistrationDialog({
             ? POST_REGISTRATION_MENTOR_MESSAGE
             : POST_REGISTRATION_MENTEE_MESSAGE,
       });
+    }
+
+    // One-time-per-session nudge to review Profile — deliberately not
+    // gated on actual profile completeness (that would require this pure
+    // form dialog to own a profile-data fetch it otherwise has no need
+    // for), so it fires once regardless of whether anything is missing.
+    if (!sessionStorage.getItem(PROFILE_CHECK_SESSION_KEY)) {
+      showReminderToast({
+        id: PROFILE_CHECK_TOAST_ID,
+        title: PROFILE_CHECK_TOAST_TITLE,
+        message: PROFILE_CHECK_TOAST_MESSAGE,
+      });
+      sessionStorage.setItem(PROFILE_CHECK_SESSION_KEY, "1");
     }
   };
 
