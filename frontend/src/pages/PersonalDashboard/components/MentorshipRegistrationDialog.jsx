@@ -56,6 +56,7 @@ const POST_REGISTRATION_MENTEE_MESSAGE =
  */
 export default function MentorshipRegistrationDialog({
   currentRegistration,
+  hiredMentorshipRole,
   allPastPartners = [],
   isPartnersLoading,
   loadPastPartners,
@@ -65,10 +66,11 @@ export default function MentorshipRegistrationDialog({
 }) {
   const [isOpen, setIsOpen] = useState(false);
 
-  // Determine participant role from current registration
-  const participantRole =
-    currentRegistration?.roundPreferences?.participantRole;
-  const isMentor = participantRole === MentorshipParticipantRoles.MENTOR;
+  // The user's mentor/mentee role comes from their HIRED activity
+  // application, not from `currentRegistration` — a first-time
+  // registrant has no round-preferences yet, so deriving the role from
+  // `currentRegistration` would default them into the wrong form.
+  const isMentor = hiredMentorshipRole === MentorshipParticipantRoles.MENTOR;
   const isUpdating = currentRegistration?.isRegistered;
 
   // Form state
