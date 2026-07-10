@@ -230,7 +230,9 @@ function App() {
                     />
                     <Route
                       path={ROUTE_PATHS.ROOT}
-                      element={<Navigate to={ROUTE_PATHS.PROFILE} replace />}
+                      element={
+                        <Navigate to={ROUTE_PATHS.PERSONAL_DASHBOARD} replace />
+                      }
                     />
                   </Routes>
                 </HardWallGate>
