@@ -10,6 +10,7 @@ export default function MentorshipInfoBanner({
   isFeedbackEnabled,
   feedbackRoundId,
   feedbackRoundName,
+  hiredMentorshipRole,
   onSaveRegistration,
   pastPartners,
   isPartnersLoading,
@@ -56,6 +57,7 @@ export default function MentorshipInfoBanner({
             {/* Registration / view dialog button */}
             <MentorshipRegistrationDialog
               currentRegistration={registration}
+              hiredMentorshipRole={hiredMentorshipRole}
               allPastPartners={pastPartners}
               isPartnersLoading={isPartnersLoading}
               loadPastPartners={onLoadPastPartners}

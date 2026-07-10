@@ -3,20 +3,22 @@ import { listMyApplications } from "@/api/recruitingApi";
 
 /**
  * Fetches every application the current user has ever submitted (any job
- * kind) on mount, and derives whether they have at least one HIRED
- * mentorship (ACTIVITY + mentor/mentee role) application.
+ * kind) on mount, and derives the role of their HIRED mentorship (ACTIVITY
+ * + mentor/mentee role) application, if any.
  *
- * `hasHiredMentorshipApplication` fails open (defaults to `true`) while
- * loading or on a load error, so a slow/failed fetch never hides a real
- * mentor/mentee's participation cards — it only turns `false` once the
- * list has resolved and genuinely contains no hired mentorship application.
+ * `hiredMentorshipRole` has no fail-open default — it is `null` while
+ * loading, on a load error, or when there genuinely is no hired mentorship
+ * application, and only ever `"mentor"`/`"mentee"` once the list has
+ * resolved and actually contains one. Consumers that need to distinguish
+ * "still loading" from "confirmed not a participant" should also check
+ * `isLoading`/`loadError`.
  *
  * @returns {{
  *   applications: Array<{applicationId: number, jobId: number, jobTitle: string, jobKind: string, mentorshipRole: string|null, stage: string}>,
  *   isLoading: boolean,
  *   loadError: boolean,
  *   load: () => void,
- *   hasHiredMentorshipApplication: boolean,
+ *   hiredMentorshipRole: "mentor" | "mentee" | null,
  * }}
  */
 export const useMyApplications = () => {
@@ -37,21 +39,19 @@ export const useMyApplications = () => {
     load();
   }, [load]);
 
-  const hasHiredMentorshipApplication =
-    isLoading || loadError
-      ? true
-      : applications.some(
-          (a) =>
-            a.jobKind === "activity" &&
-            a.stage === "hired" &&
-            (a.mentorshipRole === "mentor" || a.mentorshipRole === "mentee"),
-        );
+  const hiredApplication = applications.find(
+    (a) =>
+      a.jobKind === "activity" &&
+      a.stage === "hired" &&
+      (a.mentorshipRole === "mentor" || a.mentorshipRole === "mentee"),
+  );
+  const hiredMentorshipRole = hiredApplication?.mentorshipRole ?? null;
 
   return {
     applications,
     isLoading,
     loadError,
     load,
-    hasHiredMentorshipApplication,
+    hiredMentorshipRole,
   };
 };

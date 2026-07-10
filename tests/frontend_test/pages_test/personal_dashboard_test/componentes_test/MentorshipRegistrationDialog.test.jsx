@@ -121,9 +121,8 @@ describe("MentorshipRegistrationDialog Component", () => {
   let user;
 
   const defaultProps = {
-    currentRegistration: {
-      roundPreferences: { participantRole: "mentee" },
-    },
+    currentRegistration: {},
+    hiredMentorshipRole: "mentee",
     allPastPartners: [
       { id: "1", preferredName: "Alice" },
       { id: "2", preferredName: "Bob" },
@@ -194,9 +193,7 @@ describe("MentorshipRegistrationDialog Component", () => {
     rerender(
       <MentorshipRegistrationDialog
         {...defaultProps}
-        currentRegistration={{
-          roundPreferences: { participantRole: "mentor" },
-        }}
+        hiredMentorshipRole="mentor"
       />,
     );
 
@@ -209,9 +206,7 @@ describe("MentorshipRegistrationDialog Component", () => {
     render(
       <MentorshipRegistrationDialog
         {...defaultProps}
-        currentRegistration={{
-          roundPreferences: { participantRole: "mentor" },
-        }}
+        hiredMentorshipRole="mentor"
       />,
     );
 
@@ -369,9 +364,7 @@ describe("MentorshipRegistrationDialog Component", () => {
         <MentorshipRegistrationDialog
           {...defaultProps}
           onSave={onSave}
-          currentRegistration={{
-            roundPreferences: { participantRole: "mentor" },
-          }}
+          hiredMentorshipRole="mentor"
         />,
       );
       await user.click(screen.getByText("Toggle Dialog"));
@@ -476,10 +469,8 @@ describe("MentorshipRegistrationDialog Component", () => {
         <MentorshipRegistrationDialog
           {...defaultProps}
           onSave={onSave}
-          currentRegistration={{
-            roundPreferences: { participantRole: "mentee" },
-            isRegistered: true,
-          }}
+          currentRegistration={{ isRegistered: true }}
+          hiredMentorshipRole="mentee"
         />,
       );
       await user.click(screen.getByText("Toggle Dialog"));
@@ -533,10 +524,8 @@ describe("MentorshipRegistrationDialog Component", () => {
       render(
         <MentorshipRegistrationDialog
           {...defaultProps}
-          currentRegistration={{
-            roundPreferences: { participantRole: "mentee" },
-            isOnboardingTrainingCompleted: false,
-          }}
+          currentRegistration={{ isOnboardingTrainingCompleted: false }}
+          hiredMentorshipRole="mentee"
         />,
       );
       await user.click(screen.getByText("Toggle Dialog"));
@@ -649,9 +638,7 @@ describe("MentorshipRegistrationDialog Component", () => {
     render(
       <MentorshipRegistrationDialog
         {...defaultProps}
-        currentRegistration={{
-          roundPreferences: { participantRole: "mentor" },
-        }}
+        hiredMentorshipRole="mentor"
       />,
     );
 
@@ -707,9 +694,7 @@ describe("MentorshipRegistrationDialog Component", () => {
     render(
       <MentorshipRegistrationDialog
         {...defaultProps}
-        currentRegistration={{
-          roundPreferences: { participantRole: "mentor" },
-        }}
+        hiredMentorshipRole="mentor"
       />,
     );
 
@@ -733,9 +718,7 @@ describe("MentorshipRegistrationDialog Component", () => {
     render(
       <MentorshipRegistrationDialog
         {...defaultProps}
-        currentRegistration={{
-          roundPreferences: { participantRole: "mentor" },
-        }}
+        hiredMentorshipRole="mentor"
       />,
     );
 
@@ -794,9 +777,7 @@ describe("MentorshipRegistrationDialog Component", () => {
     render(
       <MentorshipRegistrationDialog
         {...defaultProps}
-        currentRegistration={{
-          roundPreferences: { participantRole: "mentor" },
-        }}
+        hiredMentorshipRole="mentor"
       />,
     );
 
@@ -835,9 +816,7 @@ describe("MentorshipRegistrationDialog Component", () => {
     render(
       <MentorshipRegistrationDialog
         {...defaultProps}
-        currentRegistration={{
-          roundPreferences: { participantRole: "mentor" },
-        }}
+        hiredMentorshipRole="mentor"
       />,
     );
 
@@ -876,9 +855,7 @@ describe("MentorshipRegistrationDialog Component", () => {
     render(
       <MentorshipRegistrationDialog
         {...defaultProps}
-        currentRegistration={{
-          roundPreferences: { participantRole: "mentor" },
-        }}
+        hiredMentorshipRole="mentor"
       />,
     );
 
@@ -951,9 +928,7 @@ describe("MentorshipRegistrationDialog Component", () => {
     render(
       <MentorshipRegistrationDialog
         {...defaultProps}
-        currentRegistration={{
-          roundPreferences: { participantRole: "mentor" },
-        }}
+        hiredMentorshipRole="mentor"
       />,
     );
 
@@ -1002,9 +977,7 @@ describe("MentorshipRegistrationDialog Component", () => {
     render(
       <MentorshipRegistrationDialog
         {...defaultProps}
-        currentRegistration={{
-          roundPreferences: { participantRole: "mentor" },
-        }}
+        hiredMentorshipRole="mentor"
       />,
     );
 
