@@ -49,4 +49,19 @@ describe("PostingsList", () => {
 
     expect(onRowClick).toHaveBeenCalledWith(job);
   });
+
+  it("does not call onRowClick when the Sent back popover trigger is clicked", () => {
+    const onRowClick = vi.fn();
+    render(
+      <PostingsList
+        jobs={[{ ...job, lastRejectComment: "Please fix the salary range." }]}
+        ownersById={{}}
+        onRowClick={onRowClick}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Sent back" }));
+
+    expect(onRowClick).not.toHaveBeenCalled();
+  });
 });
