@@ -1,16 +1,16 @@
 import { useCallback, useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { listMyReviews, getJob, decideReview } from "@/api/recruitingApi";
+import { listMyReviews } from "@/api/recruitingApi";
+import { ROUTE_PATHS } from "@/constants/RoutePaths";
 import ReviewQueue from "@/pages/Recruiting/components/ReviewQueue";
-import ReviewDetail from "@/pages/Recruiting/components/ReviewDetail";
 import HowItWorksDialog from "@/pages/Recruiting/components/HowItWorksDialog";
 import { REVIEWS_GUIDE } from "@/pages/Recruiting/components/guideContent";
 
-/** Reviewer's queue page: list pending reviews and decide on one. */
+/** Reviewer's queue page: list pending reviews, opening one goes to the unified job detail page. */
 const MyReviews = () => {
+  const navigate = useNavigate();
   const [reviews, setReviews] = useState([]);
-  const [active, setActive] = useState(null); // {review, job}
-  const [deciding, setDeciding] = useState(false);
 
   const refresh = useCallback(async () => {
     const { data } = await listMyReviews();
@@ -21,44 +21,9 @@ const MyReviews = () => {
     refresh().catch((e) => toast.error(e.message));
   }, [refresh]);
 
-  const open = async (review) => {
-    try {
-      const { data } = await getJob(review.jobId);
-      setActive({ review, job: data });
-    } catch (e) {
-      toast.error(e.message);
-    }
+  const open = (review) => {
+    navigate(ROUTE_PATHS.RECRUITING_POSTING_DETAIL(review.jobId));
   };
-
-  const decide = async (body, ok) => {
-    if (deciding) return;
-    setDeciding(true);
-    try {
-      await decideReview(active.review.reviewId, body);
-      setActive(null);
-      await refresh();
-      toast.success(ok);
-    } catch (e) {
-      toast.error(e.message);
-    } finally {
-      setDeciding(false);
-    }
-  };
-
-  if (active) {
-    return (
-      <ReviewDetail
-        review={active.review}
-        job={active.job}
-        deciding={deciding}
-        onApprove={() => decide({ decision: "approve" }, "Review approved.")}
-        onReject={(comment) =>
-          decide({ decision: "reject", comment }, "Review rejected.")
-        }
-        onBack={() => setActive(null)}
-      />
-    );
-  }
 
   return (
     <div className="space-y-4 p-6">
