@@ -397,6 +397,9 @@ describe("PersonalDashboard", () => {
 
     render(<PersonalDashboard />);
 
+    // React 19 calls function components as (props, undefined); toHaveBeenCalledWith's
+    // expect.anything() rejects that literal undefined second arg, so assert on the
+    // first call's props directly instead.
     expect(MentorshipInfoBanner.mock.calls[0][0]).toEqual(
       expect.objectContaining({ hiredMentorshipRole: "mentor" }),
     );
