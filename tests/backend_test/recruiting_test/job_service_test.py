@@ -572,6 +572,30 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result.status, JobStatus.PUBLISHED)
 
+    async def test_approve_logs_review_decided_activity(self):
+        """approve logs a review_decided activity entry."""
+        job = self._job(status=JobStatus.PENDING_REVIEW)
+        self.repo.get_by_job_id.return_value = job
+        review = JobReviewEntity(
+            job_id=job.job_id,
+            submitted_by=5,
+            reviewer_id=9,
+            status=JobReviewStatus.PENDING,
+            kind=JobReviewKind.INITIAL,
+        )
+        review.review_id = 3
+        self.review_repo.get.return_value = review
+
+        await self.service.approve(self.session, 3, 9)
+
+        self.job_activity_repo.create.assert_awaited_once_with(
+            self.session,
+            job.job_id,
+            9,
+            "review_decided",
+            {"kind": "initial", "decision": "approved", "comment": None},
+        )
+
     async def test_approve_requires_pending_review(self):
         """An already-decided review cannot be approved again."""
         review = JobReviewEntity(
@@ -683,6 +707,30 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.status, JobStatus.DRAFT)
         self.assertEqual(review.status, JobReviewStatus.REJECTED)
         self.assertEqual(review.reject_comment, "fix the form")
+
+    async def test_reject_logs_review_decided_activity(self):
+        """reject logs a review_decided activity entry with the comment."""
+        job = self._job(status=JobStatus.PENDING_REVIEW)
+        self.repo.get_by_job_id.return_value = job
+        review = JobReviewEntity(
+            job_id=job.job_id,
+            submitted_by=5,
+            reviewer_id=9,
+            status=JobReviewStatus.PENDING,
+            kind=JobReviewKind.INITIAL,
+        )
+        review.review_id = 3
+        self.review_repo.get.return_value = review
+
+        await self.service.reject(self.session, 3, "not ready", 9)
+
+        self.job_activity_repo.create.assert_awaited_once_with(
+            self.session,
+            job.job_id,
+            9,
+            "review_decided",
+            {"kind": "initial", "decision": "rejected", "comment": "not ready"},
+        )
 
     async def test_reject_revision_keeps_published_and_discards_pending(self):
         """Rejecting a REVISION discards the parked draft and stays PUBLISHED."""

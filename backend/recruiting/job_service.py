@@ -675,6 +675,13 @@ class JobService:
         review.decided_at = datetime.now(timezone.utc)
 
         job = await self._require_job(session, review.job_id)
+        await self.job_activity_repository.create(
+            session,
+            job.job_id,
+            acting_user_id,
+            "review_decided",
+            {"kind": review.kind.value, "decision": "approved", "comment": None},
+        )
         if review.kind == JobReviewKind.CLOSE:
             job.status = JobStatus.CLOSED
         elif review.kind == JobReviewKind.REOPEN:
@@ -742,6 +749,13 @@ class JobService:
         review.decided_at = datetime.now(timezone.utc)
 
         job = await self._require_job(session, review.job_id)
+        await self.job_activity_repository.create(
+            session,
+            job.job_id,
+            acting_user_id,
+            "review_decided",
+            {"kind": review.kind.value, "decision": "rejected", "comment": comment},
+        )
         if review.kind == JobReviewKind.REVISION:
             job.pending_payload = None
             job.status = JobStatus.PUBLISHED
