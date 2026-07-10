@@ -19,9 +19,7 @@ const PostingConfigSummary = ({ job }) => {
           Interview pipeline
         </h3>
         {stages.length === 0 ? (
-          <p className="text-sm text-slate-400">
-            No pipeline configured yet.
-          </p>
+          <p className="text-sm text-slate-400">No pipeline configured yet.</p>
         ) : (
           <ul className="space-y-1">
             {stages.map((s) => (
@@ -33,17 +31,16 @@ const PostingConfigSummary = ({ job }) => {
         )}
       </div>
       <div className="space-y-1">
-        <h3 className="text-sm font-medium text-slate-700">
-          Screening rules
-        </h3>
+        <h3 className="text-sm font-medium text-slate-700">Screening rules</h3>
         {rules.length === 0 ? (
           <p className="text-sm text-slate-400">No screening rules.</p>
         ) : (
           <ul className="space-y-1">
             {rules.map((r) => (
               <li key={r.id} className="text-sm text-slate-700">
-                {r.action} if {r.condition?.source} {r.condition?.question_id ?? ""}{" "}
-                matches {JSON.stringify(r.condition?.value)}
+                {r.action} if {r.condition?.source}{" "}
+                {r.condition?.question_id ?? ""} matches{" "}
+                {JSON.stringify(r.condition?.value)}
               </li>
             ))}
           </ul>
