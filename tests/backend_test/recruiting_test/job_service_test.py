@@ -896,27 +896,6 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         )
 
     # ---------------------------------------------------------------------------
-    # close_job
-    # ---------------------------------------------------------------------------
-
-    async def test_close_job_draft_succeeds(self):
-        """close_job transitions a DRAFT posting to CLOSED."""
-        job = self._job(status=JobStatus.DRAFT)
-        self.repo.get_by_job_id.return_value = job
-
-        result = await self.service.close_job(self.session, job.job_id)
-
-        self.assertEqual(result.status, JobStatus.CLOSED)
-
-    async def test_close_job_published_raises(self):
-        """close_job rejects a PUBLISHED posting; must use request_close instead."""
-        job = self._job(status=JobStatus.PUBLISHED)
-        self.repo.get_by_job_id.return_value = job
-
-        with self.assertRaisesRegex(ValueError, "request_close"):
-            await self.service.close_job(self.session, job.job_id)
-
-    # ---------------------------------------------------------------------------
     # reopen_job removed
     # ---------------------------------------------------------------------------
 

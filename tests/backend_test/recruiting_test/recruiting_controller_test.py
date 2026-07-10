@@ -19,7 +19,6 @@ class TestRecruitingController(unittest.IsolatedAsyncioTestCase):
         self.service.reject = AsyncMock(return_value="rejected")
         self.service.list_active_approvers = AsyncMock(return_value=[])
         self.service.list_reviews_for_reviewer = AsyncMock(return_value=[])
-        self.service.close_job = AsyncMock(return_value="closed")
         self.service.request_close = AsyncMock(return_value="close-requested")
         self.service.request_reopen = AsyncMock(return_value="reopen-requested")
         self.service.delete_job = AsyncMock(return_value=None)
@@ -90,10 +89,6 @@ class TestRecruitingController(unittest.IsolatedAsyncioTestCase):
         self.service.list_reviews_for_reviewer.assert_awaited_once_with(
             self.session, 42
         )
-
-    async def test_close_job_direct(self):
-        await self.controller.close_job(current_user=self.user, job_id=8)
-        self.service.close_job.assert_awaited_once_with(self.session, 8)
 
     async def test_request_close_passes_current_user_as_submitter(self):
         body = JobSubmitDto(reviewer_id=7, message="please close")

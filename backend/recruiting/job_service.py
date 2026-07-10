@@ -565,8 +565,8 @@ class JobService:
         """Open a close-review for a PUBLISHED posting.
 
         The posting moves to PENDING_CLOSE while the review is pending. Only a
-        PUBLISHED posting may be closed via review; drafts may be closed
-        directly via ``close_job``.
+        PUBLISHED posting may be closed via review; drafts may instead be
+        deleted directly via ``delete_job``.
 
         Args:
             session (AsyncSession): Active database async session.
@@ -820,34 +820,6 @@ class JobService:
                 f"Only the assigned reviewer may decide review {review_id}"
             )
         return review
-
-    async def close_job(self, session: AsyncSession, job_id: int) -> JobDto:
-        """Directly close a DRAFT posting without a review cycle.
-
-        Only DRAFT postings may be closed directly. Published postings must go
-        through the review gate via ``request_close``; this restriction prevents
-        accidentally bypassing approver oversight for live postings.
-
-        Args:
-            session (AsyncSession): Active database async session.
-            job_id (int): Identifier of the posting to close.
-
-        Returns:
-            JobDto: The posting with status CLOSED.
-
-        Raises:
-            ValueError: If the posting does not exist or is not a DRAFT (use
-                ``request_close`` instead).
-        """
-        job = await self._require_job(session, job_id)
-        if job.status != JobStatus.DRAFT:
-            raise ValueError(
-                f"Job {job_id} is not a draft; use request_close to close a published posting"
-            )
-        job.status = JobStatus.CLOSED
-        job = await self.job_repository.update_job(session, job)
-        await session.commit()
-        return self.recruiting_mapper.to_job_dto(job)
 
     async def delete_job(self, session: AsyncSession, job_id: int) -> None:
         """Delete a posting that was never published, or a DRAFT.
