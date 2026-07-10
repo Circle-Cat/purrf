@@ -3,6 +3,8 @@ import { WorkActivityDataCard } from "@/pages/PersonalDashboard/components/WorkA
 import MentorshipParticipantsCard from "@/pages/PersonalDashboard/components/MentorshipParticipantsCard";
 import { useMentorshipData } from "@/pages/PersonalDashboard/hooks/useMentorshipData";
 import { useWorkActivityData } from "@/pages/PersonalDashboard/hooks/useWorkActivityData";
+import MyApplicationsCard from "@/pages/PersonalDashboard/components/MyApplicationsCard";
+import { useMyApplications } from "@/pages/PersonalDashboard/hooks/useMyApplications";
 import { useAuth } from "@/context/auth";
 import { PERMISSIONS } from "@/constants/Permissions";
 import { MentorshipRoundStatus } from "@/constants/MentorshipRoundStatus";
@@ -25,6 +27,14 @@ import { GoogleMeetingControl } from "@/pages/PersonalDashboard/components/Googl
  */
 const PersonalDashboard = () => {
   const {
+    applications,
+    isLoading: isApplicationsLoading,
+    loadError: applicationsLoadError,
+    load: loadApplications,
+    hasHiredMentorshipApplication,
+  } = useMyApplications();
+
+  const {
     registration, // Registration data for the current or most recent round
     isRegistrationOpen, // Whether the registration period is currently open
     isFeedbackEnabled, // Whether the feedback phase is currently active
@@ -45,7 +55,7 @@ const PersonalDashboard = () => {
     refreshMeetings, // Trigger a refresh of meeting log data for the selected round
     isParticipantCardLoading, // Whether the participant card data is currently loading
     userTimezone, // Current user's IANA timezone string from their profile
-  } = useMentorshipData();
+  } = useMentorshipData({ enabled: hasHiredMentorshipApplication });
 
   const { permissions } = useAuth();
   const canViewActivitySummary = permissions?.includes(
@@ -79,33 +89,45 @@ const PersonalDashboard = () => {
         />
       </div>
 
-      {/* Mentorship information banner */}
-      <MentorshipInfoBanner
-        registration={registration}
-        isRegistrationOpen={isRegistrationOpen}
-        isFeedbackEnabled={isFeedbackEnabled}
-        feedbackRoundId={feedbackRoundId}
-        feedbackRoundName={feedbackRoundName}
-        onSaveRegistration={saveRegistration}
-        pastPartners={pastPartners}
-        isPartnersLoading={isPartnersLoading}
-        onLoadPastPartners={loadPastPartners}
-        refreshRegistration={refreshRegistration}
-        matchResult={matchResult}
-        matchResultRoundName={matchResultRoundName}
-        canViewMatch={canViewMatch}
+      {/* My Applications card */}
+      <MyApplicationsCard
+        applications={applications}
+        isLoading={isApplicationsLoading}
+        loadError={applicationsLoadError}
+        onRetry={loadApplications}
       />
 
-      {/* Mentorship participant card */}
-      <MentorshipParticipantsCard
-        userTimezone={userTimezone}
-        roundSelectionData={roundSelectionData}
-        selectedRoundId={selectedRoundId}
-        onRoundChange={handleRoundChange}
-        isParticipantCardLoading={isParticipantCardLoading}
-        participantDetails={participantDetails}
-        refreshMeetings={refreshMeetings}
-      />
+      {hasHiredMentorshipApplication && (
+        <>
+          {/* Mentorship information banner */}
+          <MentorshipInfoBanner
+            registration={registration}
+            isRegistrationOpen={isRegistrationOpen}
+            isFeedbackEnabled={isFeedbackEnabled}
+            feedbackRoundId={feedbackRoundId}
+            feedbackRoundName={feedbackRoundName}
+            onSaveRegistration={saveRegistration}
+            pastPartners={pastPartners}
+            isPartnersLoading={isPartnersLoading}
+            onLoadPastPartners={loadPastPartners}
+            refreshRegistration={refreshRegistration}
+            matchResult={matchResult}
+            matchResultRoundName={matchResultRoundName}
+            canViewMatch={canViewMatch}
+          />
+
+          {/* Mentorship participant card */}
+          <MentorshipParticipantsCard
+            userTimezone={userTimezone}
+            roundSelectionData={roundSelectionData}
+            selectedRoundId={selectedRoundId}
+            onRoundChange={handleRoundChange}
+            isParticipantCardLoading={isParticipantCardLoading}
+            participantDetails={participantDetails}
+            refreshMeetings={refreshMeetings}
+          />
+        </>
+      )}
 
       {/* Work Activity Data Card */}
       {canViewActivitySummary && (

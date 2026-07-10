@@ -20,6 +20,7 @@ import {
   submitApplication,
   updateApplication,
   getMyApplication,
+  listMyApplications,
   listPublicJobs,
   listBoardJobs,
   getJobBoard,
@@ -186,6 +187,12 @@ describe("recruitingApi", () => {
     expect(request.get).toHaveBeenCalledWith("/recruiting/applications/mine", {
       params: { job_id: 5 },
     });
+  });
+
+  it("listMyApplications GETs /recruiting/my-applications", async () => {
+    request.get.mockResolvedValue({ data: [] });
+    await listMyApplications();
+    expect(request.get).toHaveBeenCalledWith("/recruiting/my-applications");
   });
 
   it("listPublicJobs GETs the public jobs endpoint", async () => {

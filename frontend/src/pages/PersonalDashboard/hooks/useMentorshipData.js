@@ -45,7 +45,7 @@ import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
  *   userTimezone: string | null
  * }}
  */
-export const useMentorshipData = () => {
+export const useMentorshipData = ({ enabled = true } = {}) => {
   const flags = useFeatureFlags();
   const useV2Meetings = !!flags[FEATURE_FLAGS.CREATE_GOOGLE_MEETING];
 
@@ -131,6 +131,11 @@ export const useMentorshipData = () => {
    * @returns {void}
    */
   useEffect(() => {
+    if (!enabled) {
+      setIsLoading(false);
+      return;
+    }
+
     const fetchData = async () => {
       try {
         const now = new Date().toISOString();
@@ -186,7 +191,7 @@ export const useMentorshipData = () => {
     };
 
     fetchData();
-  }, []);
+  }, [enabled]);
 
   /**
    * Lazily load the user's past mentorship partners.
