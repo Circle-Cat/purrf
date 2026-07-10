@@ -9,9 +9,9 @@ from backend.common.api_endpoints import (
     RECRUITING_JOBS_ENDPOINT,
     RECRUITING_JOB_ENDPOINT,
     RECRUITING_JOB_SUBMIT_ENDPOINT,
-    RECRUITING_JOB_CLOSE_ENDPOINT,
     RECRUITING_JOB_REQUEST_CLOSE_ENDPOINT,
     RECRUITING_JOB_REQUEST_REOPEN_ENDPOINT,
+    RECRUITING_JOB_ACTIVITY_ENDPOINT,
     RECRUITING_APPROVERS_ENDPOINT,
     RECRUITING_REVIEWS_ENDPOINT,
     RECRUITING_REVIEW_ENDPOINT,
@@ -62,14 +62,6 @@ class RecruitingController:
                 self.update_job
             ),
             methods=["PUT"],
-            response_model=None,
-        )
-        self.router.add_api_route(
-            RECRUITING_JOB_CLOSE_ENDPOINT,
-            endpoint=authenticate(permissions=[Permission.RECRUITING_JOB_WRITE])(
-                self.close_job
-            ),
-            methods=["POST"],
             response_model=None,
         )
         self.router.add_api_route(
@@ -157,11 +149,25 @@ class RecruitingController:
             methods=["GET"],
             response_model=None,
         )
+        self.router.add_api_route(
+            RECRUITING_JOB_ACTIVITY_ENDPOINT,
+            endpoint=authenticate(
+                permissions=[
+                    Permission.RECRUITING_JOB_READ,
+                    Permission.RECRUITING_JOB_WRITE,
+                    Permission.RECRUITING_JOB_APPROVE,
+                ]
+            )(self.get_job_activity),
+            methods=["GET"],
+            response_model=None,
+        )
 
     async def create_job(self, current_user: UserContextDto, job_data: JobCreateDto):
         """Create a DRAFT posting."""
         async with self.database.session() as session:
-            result = await self.job_service.create_job(session, job_data)
+            result = await self.job_service.create_job(
+                session, job_data, current_user.user_id
+            )
         return api_response(message="Job created.", data=result)
 
     async def list_jobs(self, current_user: UserContextDto):
@@ -177,12 +183,6 @@ class RecruitingController:
         async with self.database.session() as session:
             result = await self.job_service.update_job(session, job_id, job_data)
         return api_response(message="Job updated.", data=result)
-
-    async def close_job(self, current_user: UserContextDto, job_id: int):
-        """Close a posting."""
-        async with self.database.session() as session:
-            result = await self.job_service.close_job(session, job_id)
-        return api_response(message="Job closed.", data=result)
 
     async def request_close(
         self,
@@ -292,3 +292,9 @@ class RecruitingController:
         async with self.database.session() as session:
             result = await self.job_service.get_job(session, job_id)
         return api_response(message="Job fetched.", data=result)
+
+    async def get_job_activity(self, current_user: UserContextDto, job_id: int):
+        """Return a job posting's audit timeline, newest first."""
+        async with self.database.session() as session:
+            result = await self.job_service.get_job_activity(session, job_id)
+        return api_response(message="Job activity fetched.", data=result)

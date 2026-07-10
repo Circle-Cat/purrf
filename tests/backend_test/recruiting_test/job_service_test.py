@@ -1,4 +1,5 @@
 import unittest
+from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, create_autospec
 
 from backend.recruiting.job_service import JobService
@@ -41,12 +42,19 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         self.review_repo.get_latest_reviews = AsyncMock(return_value={})
         self.session = AsyncMock()
         self.notification_repo = create_autospec(NotificationRepository, instance=True)
+        self.users_repo = MagicMock()
+        self.users_repo.get_all_by_ids = AsyncMock(return_value=[])
+        self.job_activity_repo = MagicMock()
+        self.job_activity_repo.create = AsyncMock()
+        self.job_activity_repo.list_by_job = AsyncMock(return_value=[])
         self.service = JobService(
             self.repo,
             RecruitingMapper(),
             self.perms,
             self.review_repo,
             self.notification_repo,
+            self.users_repo,
+            self.job_activity_repo,
         )
 
     def _job(self, **kw):
@@ -86,10 +94,20 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
             kind=JobKind.EMPLOYMENT,
             pipelineConfig={"stages": [{"stage": "tech", "rounds": 1}]},
         )
-        result = await self.service.create_job(self.session, dto)
+        result = await self.service.create_job(self.session, dto, created_by=1)
 
         self.assertEqual(result.pipeline_config["stages"][0]["stage"], "tech")
         self.assertEqual(result.status, JobStatus.DRAFT)
+
+    async def test_create_logs_job_created_activity(self):
+        """create_job writes a job_created activity entry attributed to the creator."""
+        dto = JobCreateDto(title="T", kind=JobKind.ACTIVITY)
+
+        await self.service.create_job(self.session, dto, created_by=7)
+
+        self.job_activity_repo.create.assert_awaited_once_with(
+            self.session, 1, 7, "job_created"
+        )
 
     async def test_get_job_exposes_pending_payload(self):
         """get_job surfaces pending_payload straight through from the entity."""
@@ -204,7 +222,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
                 "resume": "off",
             },
         )
-        await self.service.create_job(self.session, dto)
+        await self.service.create_job(self.session, dto, created_by=1)
         entity = self.repo.create_job.call_args.args[1]
         self.assertEqual(entity.form_schema["questions"][0]["maxWords"], 300)
         self.assertEqual(entity.profile_config["education"], "required")
@@ -225,7 +243,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
             },
         )
         with self.assertRaises(ValueError):
-            await self.service.create_job(self.session, dto)
+            await self.service.create_job(self.session, dto, created_by=1)
 
     async def test_create_job_accepts_qualified_assignee_and_owner(self):
         """create_job succeeds when assignee/owner hold the right permissions."""
@@ -251,7 +269,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
                 ],
             },
         )
-        result = await self.service.create_job(self.session, dto)
+        result = await self.service.create_job(self.session, dto, created_by=1)
         self.assertEqual(result.title, "T")
 
     async def test_create_job_rejects_unqualified_owner(self):
@@ -265,7 +283,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         self.perms.get_active_users_with_permission = AsyncMock(side_effect=pool)
         dto = JobCreateDto(title="T", pipelineConfig={"ownerId": 99, "stages": []})
         with self.assertRaises(ValueError):
-            await self.service.create_job(self.session, dto)
+            await self.service.create_job(self.session, dto, created_by=1)
 
     async def test_create_job_accepts_multiple_qualified_owners(self):
         """create_job succeeds when every listed owner can advance applications."""
@@ -279,7 +297,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         dto = JobCreateDto(
             title="T", pipelineConfig={"ownerIds": [42, 43], "stages": []}
         )
-        result = await self.service.create_job(self.session, dto)
+        result = await self.service.create_job(self.session, dto, created_by=1)
         self.assertEqual(result.title, "T")
 
     async def test_create_job_rejects_any_unqualified_owner_names_offenders(self):
@@ -295,7 +313,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
             title="T", pipelineConfig={"ownerIds": [42, 99], "stages": []}
         )
         with self.assertRaisesRegex(ValueError, "99"):
-            await self.service.create_job(self.session, dto)
+            await self.service.create_job(self.session, dto, created_by=1)
 
     async def test_update_draft_changes_live_directly(self):
         """Editing a DRAFT posting mutates the live fields with no review gate."""
@@ -437,6 +455,22 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(entity_arg.job_id, 1)
         self.assertEqual(entity_arg.actor_user_id, 9)
 
+    async def test_submit_for_review_logs_review_opened_activity(self):
+        """submit_for_review logs a review_opened activity entry."""
+        self._two_approvers()
+        job = self._job(status=JobStatus.DRAFT)
+        self.repo.get_by_job_id.return_value = job
+
+        await self.service.submit_for_review(self.session, job.job_id, 2, 5, "please")
+
+        self.job_activity_repo.create.assert_awaited_once_with(
+            self.session,
+            job.job_id,
+            5,
+            "review_opened",
+            {"kind": "initial", "reviewerId": 2, "message": "please"},
+        )
+
     async def test_submit_revision_keeps_published_pending(self):
         """Submitting a parked revision opens a REVISION review, status unchanged."""
         job = self._job(status=JobStatus.PUBLISHED_PENDING_REVISION)
@@ -538,6 +572,30 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(result.status, JobStatus.PUBLISHED)
+
+    async def test_approve_logs_review_decided_activity(self):
+        """approve logs a review_decided activity entry."""
+        job = self._job(status=JobStatus.PENDING_REVIEW)
+        self.repo.get_by_job_id.return_value = job
+        review = JobReviewEntity(
+            job_id=job.job_id,
+            submitted_by=5,
+            reviewer_id=9,
+            status=JobReviewStatus.PENDING,
+            kind=JobReviewKind.INITIAL,
+        )
+        review.review_id = 3
+        self.review_repo.get.return_value = review
+
+        await self.service.approve(self.session, 3, 9)
+
+        self.job_activity_repo.create.assert_awaited_once_with(
+            self.session,
+            job.job_id,
+            9,
+            "review_decided",
+            {"kind": "initial", "decision": "approved", "comment": None},
+        )
 
     async def test_approve_requires_pending_review(self):
         """An already-decided review cannot be approved again."""
@@ -650,6 +708,30 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.status, JobStatus.DRAFT)
         self.assertEqual(review.status, JobReviewStatus.REJECTED)
         self.assertEqual(review.reject_comment, "fix the form")
+
+    async def test_reject_logs_review_decided_activity(self):
+        """reject logs a review_decided activity entry with the comment."""
+        job = self._job(status=JobStatus.PENDING_REVIEW)
+        self.repo.get_by_job_id.return_value = job
+        review = JobReviewEntity(
+            job_id=job.job_id,
+            submitted_by=5,
+            reviewer_id=9,
+            status=JobReviewStatus.PENDING,
+            kind=JobReviewKind.INITIAL,
+        )
+        review.review_id = 3
+        self.review_repo.get.return_value = review
+
+        await self.service.reject(self.session, 3, "not ready", 9)
+
+        self.job_activity_repo.create.assert_awaited_once_with(
+            self.session,
+            job.job_id,
+            9,
+            "review_decided",
+            {"kind": "initial", "decision": "rejected", "comment": "not ready"},
+        )
 
     async def test_reject_revision_keeps_published_and_discards_pending(self):
         """Rejecting a REVISION discards the parked draft and stays PUBLISHED."""
@@ -812,27 +894,6 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         self.review_repo.list_by_reviewer.assert_awaited_once_with(
             self.session, 2, [JobReviewStatus.PENDING]
         )
-
-    # ---------------------------------------------------------------------------
-    # close_job
-    # ---------------------------------------------------------------------------
-
-    async def test_close_job_draft_succeeds(self):
-        """close_job transitions a DRAFT posting to CLOSED."""
-        job = self._job(status=JobStatus.DRAFT)
-        self.repo.get_by_job_id.return_value = job
-
-        result = await self.service.close_job(self.session, job.job_id)
-
-        self.assertEqual(result.status, JobStatus.CLOSED)
-
-    async def test_close_job_published_raises(self):
-        """close_job rejects a PUBLISHED posting; must use request_close instead."""
-        job = self._job(status=JobStatus.PUBLISHED)
-        self.repo.get_by_job_id.return_value = job
-
-        with self.assertRaisesRegex(ValueError, "request_close"):
-            await self.service.close_job(self.session, job.job_id)
 
     # ---------------------------------------------------------------------------
     # reopen_job removed
@@ -1128,6 +1189,15 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
     # delete_job
     # ---------------------------------------------------------------------------
 
+    async def test_delete_job_draft_succeeds(self):
+        """delete_job now also allows deleting a DRAFT posting."""
+        job = self._job(status=JobStatus.DRAFT)
+        self.repo.get_by_job_id.return_value = job
+
+        await self.service.delete_job(self.session, job.job_id)
+
+        self.repo.delete_job.assert_awaited_once_with(self.session, job)
+
     async def test_delete_job_closed_never_published_calls_repo(self):
         """delete_job on a CLOSED, never-published posting calls repo.delete_job."""
         job = self._job(status=JobStatus.CLOSED)
@@ -1147,10 +1217,10 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             await self.service.delete_job(self.session, job.job_id)
 
-    async def test_delete_job_non_closed_raises(self):
-        """delete_job on a non-CLOSED posting raises ValueError."""
-        job = self._job(status=JobStatus.DRAFT)
-        job.was_published = False
+    async def test_delete_job_non_closed_non_draft_raises(self):
+        """delete_job on a PUBLISHED posting raises ValueError."""
+        job = self._job(status=JobStatus.PUBLISHED)
+        job.was_published = True
         self.repo.get_by_job_id.return_value = job
 
         with self.assertRaises(ValueError):
@@ -1308,7 +1378,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
             "kind": "employment",
             "cooldownDays": 90,
         })
-        result = await self.service.create_job(self.session, dto)
+        result = await self.service.create_job(self.session, dto, created_by=1)
         self.assertEqual(result.cooldown_days, 90)
 
     async def test_get_published_job_rejects_unpublished(self):
@@ -1412,6 +1482,45 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(entity_arg.job_id, 1)
         self.assertEqual(entity_arg.job_review_id, 100)
         self.assertEqual(entity_arg.actor_user_id, 6)
+
+    async def test_get_job_activity_resolves_actor_names(self):
+        """get_job_activity returns rows newest-first with actor names resolved."""
+        row = MagicMock()
+        row.activity_id = 1
+        row.job_id = 9
+        row.actor_id = 7
+        row.event_type = "job_created"
+        row.details = {}
+        row.created_at = datetime(2026, 7, 4, 12, 0, 0)
+        self.job_activity_repo.list_by_job.return_value = [row]
+        actor = MagicMock()
+        actor.user_id = 7
+        actor.first_name = "Ada"
+        actor.last_name = "Lovelace"
+        self.users_repo.get_all_by_ids.return_value = [actor]
+
+        result = await self.service.get_job_activity(self.session, 9)
+
+        self.job_activity_repo.list_by_job.assert_awaited_once_with(self.session, 9)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].actor_name, "Ada Lovelace")
+        self.assertEqual(result[0].event_type, "job_created")
+
+    async def test_get_job_activity_falls_back_for_unresolved_actor(self):
+        """A since-removed actor resolves to a 'User {id}' fallback."""
+        row = MagicMock()
+        row.activity_id = 1
+        row.job_id = 9
+        row.actor_id = 7
+        row.event_type = "job_created"
+        row.details = {}
+        row.created_at = datetime(2026, 7, 4, 12, 0, 0)
+        self.job_activity_repo.list_by_job.return_value = [row]
+        self.users_repo.get_all_by_ids.return_value = []
+
+        result = await self.service.get_job_activity(self.session, 9)
+
+        self.assertEqual(result[0].actor_name, "User 7")
 
     async def test_list_published_returns_public_summaries(self):
         job1 = self._job(status=JobStatus.PUBLISHED)
