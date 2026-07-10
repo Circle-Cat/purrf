@@ -86,6 +86,7 @@ from backend.authentication.email_management_controller import (
 from backend.admin.permission_admin_service import PermissionAdminService
 from backend.admin.permission_admin_controller import PermissionAdminController
 from backend.repository.job_repository import JobRepository
+from backend.repository.job_activity_repository import JobActivityRepository
 from backend.repository.job_review_repository import JobReviewRepository
 from backend.repository.notification_repository import NotificationRepository
 from backend.repository.application_repository import ApplicationRepository
@@ -554,6 +555,7 @@ class AppDependencyBuilder:
         )
         self.notification_repository = NotificationRepository()
         self.job_review_repository = JobReviewRepository()
+        self.job_activity_repository = JobActivityRepository()
         self.recruiting_mapper = RecruitingMapper()
         self.job_service = JobService(
             self.job_repository,
@@ -561,6 +563,8 @@ class AppDependencyBuilder:
             self.user_permissions_repository,
             self.job_review_repository,
             self.notification_repository,
+            self.users_repository,
+            self.job_activity_repository,
         )
         self.recruiting_controller = RecruitingController(
             job_service=self.job_service,

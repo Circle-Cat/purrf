@@ -3,11 +3,14 @@ from datetime import datetime, timezone
 from backend.entity.job_entity import JobEntity
 from backend.entity.job_review_entity import JobReviewEntity
 from backend.entity.notification_entity import NotificationEntity
+from backend.repository.job_activity_repository import JobActivityRepository
 from backend.repository.job_repository import JobRepository
 from backend.repository.job_review_repository import JobReviewRepository
 from backend.repository.user_permissions_repository import UserPermissionsRepository
+from backend.repository.users_repository import UsersRepository
 from backend.recruiting.pipeline_owners import normalized_owner_ids
 from backend.recruiting.recruiting_mapper import RecruitingMapper
+from backend.dto.job_activity_dto import JobActivityDto
 from backend.dto.job_dto import JobCreateDto, JobDto, PublicJobDto, PublicJobSummaryDto
 from backend.dto.job_review_dto import ApproverDto, JobReviewDto
 from backend.common.permissions import Permission
@@ -32,6 +35,8 @@ class JobService:
         user_permissions_repository: UserPermissionsRepository,
         job_review_repository: JobReviewRepository,
         notification_repository,
+        users_repository: UsersRepository,
+        job_activity_repository: JobActivityRepository,
     ):
         """
         Initialise the service with its repositories and mapper.
@@ -46,12 +51,18 @@ class JobService:
             notification_repository (NotificationRepository): Written by
                 ``_open_review`` (reviewer notified) and ``approve``/
                 ``reject`` (submitter notified of the decision).
+            users_repository (UsersRepository): Actor-name resolution for the
+                audit timeline.
+            job_activity_repository (JobActivityRepository): Data-access layer
+                for the append-only audit timeline.
         """
         self.job_repository = job_repository
         self.recruiting_mapper = recruiting_mapper
         self.user_permissions_repository = user_permissions_repository
         self.job_review_repository = job_review_repository
         self.notification_repository = notification_repository
+        self.users_repository = users_repository
+        self.job_activity_repository = job_activity_repository
 
     async def list_active_approvers(self, session: AsyncSession) -> list[ApproverDto]:
         """List active users who may approve postings (hold job.approve).
@@ -257,12 +268,16 @@ class JobService:
             if missing_owners:
                 raise ValueError(f"owners {sorted(missing_owners)} no longer qualify")
 
-    async def create_job(self, session: AsyncSession, dto: JobCreateDto) -> JobDto:
+    async def create_job(
+        self, session: AsyncSession, dto: JobCreateDto, created_by: int
+    ) -> JobDto:
         """Create a DRAFT posting from a JobCreateDto.
 
         Args:
             session (AsyncSession): Active database async session.
             dto (JobCreateDto): Payload with posting fields and config.
+            created_by (int): The authenticated user creating the posting,
+                logged as the ``job_created`` audit entry's actor.
 
         Returns:
             JobDto: The newly created posting, including its assigned id.
@@ -284,6 +299,9 @@ class JobService:
             cooldown_days=dto.cooldown_days,
         )
         job = await self.job_repository.create_job(session, job)
+        await self.job_activity_repository.create(
+            session, job.job_id, created_by, "job_created"
+        )
         await session.commit()
         return self.recruiting_mapper.to_job_dto(job)
 
@@ -461,6 +479,13 @@ class JobService:
                 submit_message=message,
             ),
         )
+        await self.job_activity_repository.create(
+            session,
+            job.job_id,
+            submitted_by,
+            "review_opened",
+            {"kind": kind.value, "reviewerId": reviewer_id, "message": message},
+        )
         if reviewer_id != submitted_by:
             await self.notification_repository.create(
                 session,
@@ -540,8 +565,8 @@ class JobService:
         """Open a close-review for a PUBLISHED posting.
 
         The posting moves to PENDING_CLOSE while the review is pending. Only a
-        PUBLISHED posting may be closed via review; drafts may be closed
-        directly via ``close_job``.
+        PUBLISHED posting may be closed via review; drafts may instead be
+        deleted directly via ``delete_job``.
 
         Args:
             session (AsyncSession): Active database async session.
@@ -651,6 +676,13 @@ class JobService:
         review.decided_at = datetime.now(timezone.utc)
 
         job = await self._require_job(session, review.job_id)
+        await self.job_activity_repository.create(
+            session,
+            job.job_id,
+            acting_user_id,
+            "review_decided",
+            {"kind": review.kind.value, "decision": "approved", "comment": None},
+        )
         if review.kind == JobReviewKind.CLOSE:
             job.status = JobStatus.CLOSED
         elif review.kind == JobReviewKind.REOPEN:
@@ -718,6 +750,13 @@ class JobService:
         review.decided_at = datetime.now(timezone.utc)
 
         job = await self._require_job(session, review.job_id)
+        await self.job_activity_repository.create(
+            session,
+            job.job_id,
+            acting_user_id,
+            "review_decided",
+            {"kind": review.kind.value, "decision": "rejected", "comment": comment},
+        )
         if review.kind == JobReviewKind.REVISION:
             job.pending_payload = None
             job.status = JobStatus.PUBLISHED
@@ -782,53 +821,28 @@ class JobService:
             )
         return review
 
-    async def close_job(self, session: AsyncSession, job_id: int) -> JobDto:
-        """Directly close a DRAFT posting without a review cycle.
-
-        Only DRAFT postings may be closed directly. Published postings must go
-        through the review gate via ``request_close``; this restriction prevents
-        accidentally bypassing approver oversight for live postings.
-
-        Args:
-            session (AsyncSession): Active database async session.
-            job_id (int): Identifier of the posting to close.
-
-        Returns:
-            JobDto: The posting with status CLOSED.
-
-        Raises:
-            ValueError: If the posting does not exist or is not a DRAFT (use
-                ``request_close`` instead).
-        """
-        job = await self._require_job(session, job_id)
-        if job.status != JobStatus.DRAFT:
-            raise ValueError(
-                f"Job {job_id} is not a draft; use request_close to close a published posting"
-            )
-        job.status = JobStatus.CLOSED
-        job = await self.job_repository.update_job(session, job)
-        await session.commit()
-        return self.recruiting_mapper.to_job_dto(job)
-
     async def delete_job(self, session: AsyncSession, job_id: int) -> None:
-        """Delete a posting that was never published.
+        """Delete a posting that was never published, or a DRAFT.
 
-        Only a CLOSED posting that was never published (``was_published`` is
-        ``False``) may be deleted. Once a posting has ever been published it
-        cannot be deleted regardless of its current status.
+        Allowed when the posting is a DRAFT, or is CLOSED and was never
+        published (``was_published`` is ``False``). Once a posting has ever
+        been published it cannot be deleted regardless of its current status.
 
         Args:
             session (AsyncSession): Active database async session.
             job_id (int): Identifier of the posting to delete.
 
         Raises:
-            ValueError: If the posting does not exist, is not CLOSED, or has
-                ever been published.
+            ValueError: If the posting does not exist, or is neither a DRAFT
+                nor a never-published CLOSED posting.
         """
         job = await self._require_job(session, job_id)
-        if job.status != JobStatus.CLOSED or job.was_published:
+        is_deletable_draft = job.status == JobStatus.DRAFT
+        is_deletable_closed = job.status == JobStatus.CLOSED and not job.was_published
+        if not (is_deletable_draft or is_deletable_closed):
             raise ValueError(
-                f"Job {job_id} cannot be deleted: only never-published CLOSED postings may be deleted"
+                f"Job {job_id} cannot be deleted: only a draft or a "
+                "never-published closed posting may be deleted"
             )
         await self.job_repository.delete_job(session, job)
         await session.commit()
@@ -937,6 +951,38 @@ class JobService:
         open_review = await self.job_review_repository.get_open_for_job(session, job_id)
         reviewer_id = open_review.reviewer_id if open_review is not None else None
         return self.recruiting_mapper.to_job_dto(job, reviewer_id=reviewer_id)
+
+    async def get_job_activity(
+        self, session: AsyncSession, job_id: int
+    ) -> list[JobActivityDto]:
+        """Return a job posting's audit timeline, newest first.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            job_id (int): The posting to fetch history for.
+
+        Returns:
+            list[JobActivityDto]: Newest first, each with the actor's
+                resolved display name. An actor no longer resolvable falls
+                back to ``f"User {id}"``.
+        """
+        rows = await self.job_activity_repository.list_by_job(session, job_id)
+        actor_ids = {row.actor_id for row in rows}
+        users = await self.users_repository.get_all_by_ids(session, list(actor_ids))
+        names_by_id = {
+            u.user_id: f"{u.first_name} {u.last_name}".strip() for u in users
+        }
+        return [
+            JobActivityDto(
+                id=row.activity_id,
+                event_type=row.event_type,
+                details=row.details,
+                actor_id=row.actor_id,
+                actor_name=names_by_id.get(row.actor_id, f"User {row.actor_id}"),
+                created_at=row.created_at,
+            )
+            for row in rows
+        ]
 
     async def _require_job(self, session: AsyncSession, job_id: int) -> JobEntity:
         """Return the JobEntity for job_id, or raise ValueError if absent.

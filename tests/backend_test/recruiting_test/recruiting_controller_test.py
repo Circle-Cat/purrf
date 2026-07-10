@@ -3,6 +3,8 @@ from http import HTTPStatus
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from backend.common.permissions import Permission
+from backend.common.recruiting_enums import JobKind
+from backend.dto.job_dto import JobCreateDto
 from backend.dto.job_review_dto import JobReviewDecisionDto, JobSubmitDto
 from backend.dto.user_context_dto import UserContextDto
 from backend.recruiting.recruiting_controller import RecruitingController
@@ -17,10 +19,11 @@ class TestRecruitingController(unittest.IsolatedAsyncioTestCase):
         self.service.reject = AsyncMock(return_value="rejected")
         self.service.list_active_approvers = AsyncMock(return_value=[])
         self.service.list_reviews_for_reviewer = AsyncMock(return_value=[])
-        self.service.close_job = AsyncMock(return_value="closed")
         self.service.request_close = AsyncMock(return_value="close-requested")
         self.service.request_reopen = AsyncMock(return_value="reopen-requested")
         self.service.delete_job = AsyncMock(return_value=None)
+        self.service.create_job = AsyncMock(return_value="created")
+        self.service.get_job_activity = AsyncMock(return_value=[])
 
         self.session = AsyncMock()
         self.database = MagicMock()
@@ -46,6 +49,11 @@ class TestRecruitingController(unittest.IsolatedAsyncioTestCase):
     async def test_list_jobs_uses_list_all(self):
         await self.controller.list_jobs(current_user=self.user)
         self.service.list_all_jobs.assert_awaited_once_with(self.session)
+
+    async def test_create_job_passes_current_user_as_creator(self):
+        body = JobCreateDto(title="T", kind=JobKind.ACTIVITY)
+        await self.controller.create_job(current_user=self.user, job_data=body)
+        self.service.create_job.assert_awaited_once_with(self.session, body, 42)
 
     async def test_submit_passes_current_user_as_submitter(self):
         body = JobSubmitDto(reviewer_id=7, message="please")
@@ -82,10 +90,6 @@ class TestRecruitingController(unittest.IsolatedAsyncioTestCase):
             self.session, 42
         )
 
-    async def test_close_job_direct(self):
-        await self.controller.close_job(current_user=self.user, job_id=8)
-        self.service.close_job.assert_awaited_once_with(self.session, 8)
-
     async def test_request_close_passes_current_user_as_submitter(self):
         body = JobSubmitDto(reviewer_id=7, message="please close")
         await self.controller.request_close(
@@ -117,6 +121,10 @@ class TestRecruitingController(unittest.IsolatedAsyncioTestCase):
         self.service.list_job_owners = AsyncMock(return_value=["y"])
         result = await self.controller.list_job_owners(self.user)
         self.assertEqual(result["data"], ["y"])
+
+    async def test_get_job_activity(self):
+        await self.controller.get_job_activity(current_user=self.user, job_id=9)
+        self.service.get_job_activity.assert_awaited_once_with(self.session, 9)
 
     def _endpoint_permissions(self, endpoint):
         """Pull the `permissions` list out of an authenticate()-wrapped endpoint."""
