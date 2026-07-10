@@ -101,6 +101,7 @@ jobs:
         run: >-
           bazel --max_idle_secs=10 test
           --discard_analysis_cache --nokeep_state_after_build --notrack_incremental_state
+          --test_output=errors
           //tests/frontend_test/...
 
   promotion-guard:
