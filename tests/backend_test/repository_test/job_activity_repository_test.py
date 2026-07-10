@@ -37,7 +37,9 @@ class TestJobActivityRepository(BaseRepositoryTestLib):
         self.job_id = self.job.job_id
 
     async def test_create_and_list_by_job(self):
-        await self.repo.create(self.session, self.job_id, self.user_id, "job_created", {})
+        await self.repo.create(
+            self.session, self.job_id, self.user_id, "job_created", {}
+        )
 
         rows = await self.repo.list_by_job(self.session, self.job_id)
 
@@ -52,9 +54,7 @@ class TestJobActivityRepository(BaseRepositoryTestLib):
 
         rows = await self.repo.list_by_job(self.session, self.job_id)
 
-        self.assertEqual(
-            [r.event_type for r in rows], ["review_opened", "job_created"]
-        )
+        self.assertEqual([r.event_type for r in rows], ["review_opened", "job_created"])
 
 
 if __name__ == "__main__":
