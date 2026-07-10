@@ -42,6 +42,16 @@ _SHARD_COUNT = 10
             "//:npm_deps",
             "//frontend:all_srcs",
         ],
+        # Known vitest/vite-node limitation, not a code bug: worker teardown
+        # occasionally fails to close all its file handles in time (traced
+        # via vitest's hanging-process reporter — every test in the shard
+        # had already passed when this hit). Confirmed no config fix exists
+        # for this repo's setup (pool:"forks" and a version upgrade both
+        # cause unrelated duplicate-React failures here; singleThread
+        # breaks test isolation). A rerun always succeeds, so let bazel
+        # retry automatically instead of relying on a human to notice and
+        # manually rerun CI.
+        flaky = True,
     )
     for i in range(
         1,

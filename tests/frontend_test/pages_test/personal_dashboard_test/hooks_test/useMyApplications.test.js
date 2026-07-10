@@ -10,23 +10,23 @@ describe("useMyApplications", () => {
     vi.clearAllMocks();
   });
 
-  it("defaults hasHiredMentorshipApplication to true while loading", () => {
+  it("is null while loading (no fail-open)", () => {
     api.listMyApplications.mockReturnValue(new Promise(() => {})); // never resolves
     const { result } = renderHook(() => useMyApplications());
 
     expect(result.current.isLoading).toBe(true);
-    expect(result.current.hasHiredMentorshipApplication).toBe(true);
+    expect(result.current.hiredMentorshipRole).toBeNull();
   });
 
-  it("defaults hasHiredMentorshipApplication to true on load failure (fail open)", async () => {
+  it("is null on load failure (no fail-open)", async () => {
     api.listMyApplications.mockRejectedValue(new Error("network error"));
     const { result } = renderHook(() => useMyApplications());
 
     await waitFor(() => expect(result.current.loadError).toBe(true));
-    expect(result.current.hasHiredMentorshipApplication).toBe(true);
+    expect(result.current.hiredMentorshipRole).toBeNull();
   });
 
-  it("is true when a hired activity application has a mentor role", async () => {
+  it("is 'mentor' when a hired activity application has a mentor role", async () => {
     api.listMyApplications.mockResolvedValue({
       data: [
         {
@@ -42,10 +42,10 @@ describe("useMyApplications", () => {
     const { result } = renderHook(() => useMyApplications());
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
-    expect(result.current.hasHiredMentorshipApplication).toBe(true);
+    expect(result.current.hiredMentorshipRole).toBe("mentor");
   });
 
-  it("is true when a hired activity application has a mentee role", async () => {
+  it("is 'mentee' when a hired activity application has a mentee role", async () => {
     api.listMyApplications.mockResolvedValue({
       data: [
         {
@@ -61,10 +61,10 @@ describe("useMyApplications", () => {
     const { result } = renderHook(() => useMyApplications());
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
-    expect(result.current.hasHiredMentorshipApplication).toBe(true);
+    expect(result.current.hiredMentorshipRole).toBe("mentee");
   });
 
-  it("is false when the only hired application is EMPLOYMENT-kind", async () => {
+  it("is null when the only hired application is EMPLOYMENT-kind", async () => {
     api.listMyApplications.mockResolvedValue({
       data: [
         {
@@ -80,10 +80,10 @@ describe("useMyApplications", () => {
     const { result } = renderHook(() => useMyApplications());
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
-    expect(result.current.hasHiredMentorshipApplication).toBe(false);
+    expect(result.current.hiredMentorshipRole).toBeNull();
   });
 
-  it("is false when an activity application has no mentorshipRole even if hired", async () => {
+  it("is null when an activity application has no mentorshipRole even if hired", async () => {
     api.listMyApplications.mockResolvedValue({
       data: [
         {
@@ -99,10 +99,10 @@ describe("useMyApplications", () => {
     const { result } = renderHook(() => useMyApplications());
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
-    expect(result.current.hasHiredMentorshipApplication).toBe(false);
+    expect(result.current.hiredMentorshipRole).toBeNull();
   });
 
-  it("is false when an activity+mentor application exists but isn't hired yet", async () => {
+  it("is null when an activity+mentor application exists but isn't hired yet", async () => {
     api.listMyApplications.mockResolvedValue({
       data: [
         {
@@ -118,15 +118,15 @@ describe("useMyApplications", () => {
     const { result } = renderHook(() => useMyApplications());
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
-    expect(result.current.hasHiredMentorshipApplication).toBe(false);
+    expect(result.current.hiredMentorshipRole).toBeNull();
   });
 
-  it("is false for an empty application list", async () => {
+  it("is null for an empty application list", async () => {
     api.listMyApplications.mockResolvedValue({ data: [] });
     const { result } = renderHook(() => useMyApplications());
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
-    expect(result.current.hasHiredMentorshipApplication).toBe(false);
+    expect(result.current.hiredMentorshipRole).toBeNull();
     expect(result.current.applications).toEqual([]);
   });
 });
