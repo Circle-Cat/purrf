@@ -29,7 +29,13 @@ _SHARD_COUNT = 10
 [
     vitest_bin.vitest_test(
         name = "frontend_unit_tests_%d" % i,
-        size = "large",
+        # "medium" = 300s timeout. Normal runs (even under CI load) finish in
+        # well under 150s; the previous "large" (900s) only mattered for the
+        # known teardown-hang case below, where waiting it out just delays
+        # the flaky retry that resolves it in seconds. This cuts that
+        # worst-case wait roughly 3x without meaningfully risking a false
+        # timeout on a merely-slow-but-passing run.
+        size = "medium",
         args = [
             "run",
             "--reporter=verbose",
