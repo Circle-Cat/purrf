@@ -20,6 +20,10 @@ export const updateJob = (jobId, body) =>
 export const closeJob = (jobId) =>
   request.post(API_ENDPOINTS.RECRUITING_JOB_CLOSE(jobId));
 
+/** Fetch a job posting's audit timeline, newest first. */
+export const listJobActivity = (jobId) =>
+  request.get(API_ENDPOINTS.RECRUITING_JOB_ACTIVITY(jobId));
+
 /** Request close of a published posting via review. body: {reviewerId, message}. */
 export const requestClose = (jobId, body) =>
   request.post(API_ENDPOINTS.RECRUITING_JOB_REQUEST_CLOSE(jobId), body);

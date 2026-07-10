@@ -37,6 +37,7 @@ export const API_ENDPOINTS = {
   RECRUITING_JOB: (jobId) => `/recruiting/jobs/${jobId}`,
   RECRUITING_JOB_SUBMIT: (jobId) => `/recruiting/jobs/${jobId}/submit`,
   RECRUITING_JOB_CLOSE: (jobId) => `/recruiting/jobs/${jobId}/close`,
+  RECRUITING_JOB_ACTIVITY: (jobId) => `/recruiting/jobs/${jobId}/activity`,
   RECRUITING_JOB_REQUEST_CLOSE: (jobId) =>
     `/recruiting/jobs/${jobId}/request-close`,
   RECRUITING_JOB_REQUEST_REOPEN: (jobId) =>
