@@ -1,5 +1,4 @@
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import {
   Popover,
   PopoverContent,
@@ -28,60 +27,54 @@ const VARIANT = {
 };
 
 /**
- * Read-only table of postings with status-driven action buttons.
+ * Read-only, browse-only table of postings — status Badge, "Managed by"
+ * line, and a click-through to the unified job detail page. All lifecycle
+ * actions (Edit/Submit/Delete/Request close/Request reopen) live on that
+ * detail page now, not here, so this list is safe to show to
+ * `RECRUITING_JOB_READ`-only viewers too.
  *
- * Action matrix:
- * - draft: Edit, Submit for review, Close, View
- * - published: Edit, Request close, View
- * - published_pending_revision: Submit for review, View
- * - pending_review / pending_close / pending_reopen: View only
- * - closed + wasPublished: Edit, Request reopen, View
- * - closed (never published): Delete, View
- *
- * @param {{jobs: object[], approversById?: Record<number, string>,
- *          closingId?: number|null, onEdit?: Function, onSubmit?: Function,
- *          onClose?: Function, onRequestClose?: Function,
- *          onRequestReopen?: Function, onDelete?: Function,
- *          onView?: Function}} props
+ * @param {{jobs: object[], ownersById?: Record<number, string>,
+ *          onRowClick: (job: object) => void}} props
  */
-const PostingsList = ({
-  jobs,
-  approversById = {},
-  closingId = null,
-  onEdit,
-  onSubmit,
-  onClose,
-  onRequestClose,
-  onRequestReopen,
-  onDelete,
-  onView,
-}) => (
+const PostingsList = ({ jobs, ownersById = {}, onRowClick }) => (
   <div className="divide-y divide-slate-200 rounded-lg border border-slate-200 bg-white">
     {jobs.length === 0 && (
       <p className="p-6 text-sm text-slate-500">No postings yet.</p>
     )}
     {jobs.map((job) => {
       const isDraft = job.status === "draft";
-      const isPublished = job.status === "published";
-      const isPendingRevision = job.status === "published_pending_revision";
-      const isClosed = job.status === "closed";
-      const reviewerName = job.reviewerId
-        ? (approversById[job.reviewerId] ?? `Reviewer #${job.reviewerId}`)
-        : null;
+      const ownerNames = (job.pipelineConfig?.ownerIds ?? [])
+        .map((id) => ownersById[id] ?? `User ${id}`)
+        .join(", ");
 
       return (
-        <div key={job.id} className="flex items-center gap-3 p-4">
+        <button
+          key={job.id}
+          type="button"
+          className="flex w-full items-center gap-3 p-4 text-left hover:bg-slate-50"
+          onClick={() => onRowClick(job)}
+        >
           <div className="min-w-0 flex-1">
             <p className="truncate font-medium text-slate-900">{job.title}</p>
             <p className="text-xs text-slate-500">{job.kind}</p>
+            {ownerNames && (
+              <p className="text-xs text-slate-500">
+                Managed by: {ownerNames}
+              </p>
+            )}
           </div>
           <div className="flex flex-col items-end gap-1">
             {isDraft && job.lastRejectComment ? (
               <Popover>
                 <PopoverTrigger asChild>
-                  <button type="button" className="cursor-pointer">
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    className="cursor-pointer"
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     <Badge variant="destructive">Sent back</Badge>
-                  </button>
+                  </span>
                 </PopoverTrigger>
                 <PopoverContent className="w-72">
                   <p className="text-sm font-medium text-slate-700">
@@ -97,90 +90,8 @@ const PostingsList = ({
                 {STATUS_LABELS[job.status]}
               </Badge>
             )}
-            {reviewerName && (
-              <p className="text-xs text-slate-500">
-                Assigned to: {reviewerName}
-              </p>
-            )}
           </div>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => onView?.(job)}>
-              View
-            </Button>
-            {isDraft && (
-              <>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => onEdit?.(job)}
-                >
-                  Edit
-                </Button>
-                <Button size="sm" onClick={() => onSubmit?.(job.id)}>
-                  Submit for review
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={closingId === job.id}
-                  onClick={() => onClose?.(job.id)}
-                >
-                  Close
-                </Button>
-              </>
-            )}
-            {isPublished && (
-              <>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => onEdit?.(job)}
-                >
-                  Edit
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => onRequestClose?.(job.id)}
-                >
-                  Request close
-                </Button>
-              </>
-            )}
-            {isPendingRevision && (
-              <Button size="sm" onClick={() => onSubmit?.(job.id)}>
-                Submit for review
-              </Button>
-            )}
-            {isClosed && job.wasPublished && (
-              <>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => onEdit?.(job)}
-                >
-                  Edit
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => onRequestReopen?.(job.id)}
-                >
-                  Request reopen
-                </Button>
-              </>
-            )}
-            {isClosed && !job.wasPublished && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => onDelete?.(job.id)}
-              >
-                Delete
-              </Button>
-            )}
-          </div>
-        </div>
+        </button>
       );
     })}
   </div>
