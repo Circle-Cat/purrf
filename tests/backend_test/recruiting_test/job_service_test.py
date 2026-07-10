@@ -41,12 +41,19 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         self.review_repo.get_latest_reviews = AsyncMock(return_value={})
         self.session = AsyncMock()
         self.notification_repo = create_autospec(NotificationRepository, instance=True)
+        self.users_repo = MagicMock()
+        self.users_repo.get_all_by_ids = AsyncMock(return_value=[])
+        self.job_activity_repo = MagicMock()
+        self.job_activity_repo.create = AsyncMock()
+        self.job_activity_repo.list_by_job = AsyncMock(return_value=[])
         self.service = JobService(
             self.repo,
             RecruitingMapper(),
             self.perms,
             self.review_repo,
             self.notification_repo,
+            self.users_repo,
+            self.job_activity_repo,
         )
 
     def _job(self, **kw):
@@ -86,10 +93,20 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
             kind=JobKind.EMPLOYMENT,
             pipelineConfig={"stages": [{"stage": "tech", "rounds": 1}]},
         )
-        result = await self.service.create_job(self.session, dto)
+        result = await self.service.create_job(self.session, dto, created_by=1)
 
         self.assertEqual(result.pipeline_config["stages"][0]["stage"], "tech")
         self.assertEqual(result.status, JobStatus.DRAFT)
+
+    async def test_create_logs_job_created_activity(self):
+        """create_job writes a job_created activity entry attributed to the creator."""
+        dto = JobCreateDto(title="T", kind=JobKind.ACTIVITY)
+
+        await self.service.create_job(self.session, dto, created_by=7)
+
+        self.job_activity_repo.create.assert_awaited_once_with(
+            self.session, 1, 7, "job_created"
+        )
 
     async def test_get_job_exposes_pending_payload(self):
         """get_job surfaces pending_payload straight through from the entity."""
@@ -204,7 +221,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
                 "resume": "off",
             },
         )
-        await self.service.create_job(self.session, dto)
+        await self.service.create_job(self.session, dto, created_by=1)
         entity = self.repo.create_job.call_args.args[1]
         self.assertEqual(entity.form_schema["questions"][0]["maxWords"], 300)
         self.assertEqual(entity.profile_config["education"], "required")
@@ -225,7 +242,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
             },
         )
         with self.assertRaises(ValueError):
-            await self.service.create_job(self.session, dto)
+            await self.service.create_job(self.session, dto, created_by=1)
 
     async def test_create_job_accepts_qualified_assignee_and_owner(self):
         """create_job succeeds when assignee/owner hold the right permissions."""
@@ -251,7 +268,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
                 ],
             },
         )
-        result = await self.service.create_job(self.session, dto)
+        result = await self.service.create_job(self.session, dto, created_by=1)
         self.assertEqual(result.title, "T")
 
     async def test_create_job_rejects_unqualified_owner(self):
@@ -265,7 +282,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         self.perms.get_active_users_with_permission = AsyncMock(side_effect=pool)
         dto = JobCreateDto(title="T", pipelineConfig={"ownerId": 99, "stages": []})
         with self.assertRaises(ValueError):
-            await self.service.create_job(self.session, dto)
+            await self.service.create_job(self.session, dto, created_by=1)
 
     async def test_create_job_accepts_multiple_qualified_owners(self):
         """create_job succeeds when every listed owner can advance applications."""
@@ -279,7 +296,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         dto = JobCreateDto(
             title="T", pipelineConfig={"ownerIds": [42, 43], "stages": []}
         )
-        result = await self.service.create_job(self.session, dto)
+        result = await self.service.create_job(self.session, dto, created_by=1)
         self.assertEqual(result.title, "T")
 
     async def test_create_job_rejects_any_unqualified_owner_names_offenders(self):
@@ -295,7 +312,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
             title="T", pipelineConfig={"ownerIds": [42, 99], "stages": []}
         )
         with self.assertRaisesRegex(ValueError, "99"):
-            await self.service.create_job(self.session, dto)
+            await self.service.create_job(self.session, dto, created_by=1)
 
     async def test_update_draft_changes_live_directly(self):
         """Editing a DRAFT posting mutates the live fields with no review gate."""
@@ -1308,7 +1325,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
             "kind": "employment",
             "cooldownDays": 90,
         })
-        result = await self.service.create_job(self.session, dto)
+        result = await self.service.create_job(self.session, dto, created_by=1)
         self.assertEqual(result.cooldown_days, 90)
 
     async def test_get_published_job_rejects_unpublished(self):

@@ -161,7 +161,9 @@ class RecruitingController:
     async def create_job(self, current_user: UserContextDto, job_data: JobCreateDto):
         """Create a DRAFT posting."""
         async with self.database.session() as session:
-            result = await self.job_service.create_job(session, job_data)
+            result = await self.job_service.create_job(
+                session, job_data, current_user.user_id
+            )
         return api_response(message="Job created.", data=result)
 
     async def list_jobs(self, current_user: UserContextDto):

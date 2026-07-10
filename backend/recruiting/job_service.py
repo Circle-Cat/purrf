@@ -3,9 +3,11 @@ from datetime import datetime, timezone
 from backend.entity.job_entity import JobEntity
 from backend.entity.job_review_entity import JobReviewEntity
 from backend.entity.notification_entity import NotificationEntity
+from backend.repository.job_activity_repository import JobActivityRepository
 from backend.repository.job_repository import JobRepository
 from backend.repository.job_review_repository import JobReviewRepository
 from backend.repository.user_permissions_repository import UserPermissionsRepository
+from backend.repository.users_repository import UsersRepository
 from backend.recruiting.pipeline_owners import normalized_owner_ids
 from backend.recruiting.recruiting_mapper import RecruitingMapper
 from backend.dto.job_dto import JobCreateDto, JobDto, PublicJobDto, PublicJobSummaryDto
@@ -32,6 +34,8 @@ class JobService:
         user_permissions_repository: UserPermissionsRepository,
         job_review_repository: JobReviewRepository,
         notification_repository,
+        users_repository: UsersRepository,
+        job_activity_repository: JobActivityRepository,
     ):
         """
         Initialise the service with its repositories and mapper.
@@ -46,12 +50,18 @@ class JobService:
             notification_repository (NotificationRepository): Written by
                 ``_open_review`` (reviewer notified) and ``approve``/
                 ``reject`` (submitter notified of the decision).
+            users_repository (UsersRepository): Actor-name resolution for the
+                audit timeline.
+            job_activity_repository (JobActivityRepository): Data-access layer
+                for the append-only audit timeline.
         """
         self.job_repository = job_repository
         self.recruiting_mapper = recruiting_mapper
         self.user_permissions_repository = user_permissions_repository
         self.job_review_repository = job_review_repository
         self.notification_repository = notification_repository
+        self.users_repository = users_repository
+        self.job_activity_repository = job_activity_repository
 
     async def list_active_approvers(self, session: AsyncSession) -> list[ApproverDto]:
         """List active users who may approve postings (hold job.approve).
@@ -257,12 +267,16 @@ class JobService:
             if missing_owners:
                 raise ValueError(f"owners {sorted(missing_owners)} no longer qualify")
 
-    async def create_job(self, session: AsyncSession, dto: JobCreateDto) -> JobDto:
+    async def create_job(
+        self, session: AsyncSession, dto: JobCreateDto, created_by: int
+    ) -> JobDto:
         """Create a DRAFT posting from a JobCreateDto.
 
         Args:
             session (AsyncSession): Active database async session.
             dto (JobCreateDto): Payload with posting fields and config.
+            created_by (int): The authenticated user creating the posting,
+                logged as the ``job_created`` audit entry's actor.
 
         Returns:
             JobDto: The newly created posting, including its assigned id.
@@ -284,6 +298,9 @@ class JobService:
             cooldown_days=dto.cooldown_days,
         )
         job = await self.job_repository.create_job(session, job)
+        await self.job_activity_repository.create(
+            session, job.job_id, created_by, "job_created"
+        )
         await session.commit()
         return self.recruiting_mapper.to_job_dto(job)
 
