@@ -1,4 +1,5 @@
 import unittest
+from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, create_autospec
 
 from backend.recruiting.job_service import JobService
@@ -1493,6 +1494,45 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(entity_arg.job_id, 1)
         self.assertEqual(entity_arg.job_review_id, 100)
         self.assertEqual(entity_arg.actor_user_id, 6)
+
+    async def test_get_job_activity_resolves_actor_names(self):
+        """get_job_activity returns rows newest-first with actor names resolved."""
+        row = MagicMock()
+        row.activity_id = 1
+        row.job_id = 9
+        row.actor_id = 7
+        row.event_type = "job_created"
+        row.details = {}
+        row.created_at = datetime(2026, 7, 4, 12, 0, 0)
+        self.job_activity_repo.list_by_job.return_value = [row]
+        actor = MagicMock()
+        actor.user_id = 7
+        actor.first_name = "Ada"
+        actor.last_name = "Lovelace"
+        self.users_repo.get_all_by_ids.return_value = [actor]
+
+        result = await self.service.get_job_activity(self.session, 9)
+
+        self.job_activity_repo.list_by_job.assert_awaited_once_with(self.session, 9)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].actor_name, "Ada Lovelace")
+        self.assertEqual(result[0].event_type, "job_created")
+
+    async def test_get_job_activity_falls_back_for_unresolved_actor(self):
+        """A since-removed actor resolves to a 'User {id}' fallback."""
+        row = MagicMock()
+        row.activity_id = 1
+        row.job_id = 9
+        row.actor_id = 7
+        row.event_type = "job_created"
+        row.details = {}
+        row.created_at = datetime(2026, 7, 4, 12, 0, 0)
+        self.job_activity_repo.list_by_job.return_value = [row]
+        self.users_repo.get_all_by_ids.return_value = []
+
+        result = await self.service.get_job_activity(self.session, 9)
+
+        self.assertEqual(result[0].actor_name, "User 7")
 
     async def test_list_published_returns_public_summaries(self):
         job1 = self._job(status=JobStatus.PUBLISHED)

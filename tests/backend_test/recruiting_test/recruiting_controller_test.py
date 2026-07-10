@@ -24,6 +24,7 @@ class TestRecruitingController(unittest.IsolatedAsyncioTestCase):
         self.service.request_reopen = AsyncMock(return_value="reopen-requested")
         self.service.delete_job = AsyncMock(return_value=None)
         self.service.create_job = AsyncMock(return_value="created")
+        self.service.get_job_activity = AsyncMock(return_value=[])
 
         self.session = AsyncMock()
         self.database = MagicMock()
@@ -125,6 +126,10 @@ class TestRecruitingController(unittest.IsolatedAsyncioTestCase):
         self.service.list_job_owners = AsyncMock(return_value=["y"])
         result = await self.controller.list_job_owners(self.user)
         self.assertEqual(result["data"], ["y"])
+
+    async def test_get_job_activity(self):
+        await self.controller.get_job_activity(current_user=self.user, job_id=9)
+        self.service.get_job_activity.assert_awaited_once_with(self.session, 9)
 
     def _endpoint_permissions(self, endpoint):
         """Pull the `permissions` list out of an authenticate()-wrapped endpoint."""

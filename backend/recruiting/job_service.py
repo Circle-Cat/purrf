@@ -10,6 +10,7 @@ from backend.repository.user_permissions_repository import UserPermissionsReposi
 from backend.repository.users_repository import UsersRepository
 from backend.recruiting.pipeline_owners import normalized_owner_ids
 from backend.recruiting.recruiting_mapper import RecruitingMapper
+from backend.dto.job_activity_dto import JobActivityDto
 from backend.dto.job_dto import JobCreateDto, JobDto, PublicJobDto, PublicJobSummaryDto
 from backend.dto.job_review_dto import ApproverDto, JobReviewDto
 from backend.common.permissions import Permission
@@ -975,6 +976,38 @@ class JobService:
         open_review = await self.job_review_repository.get_open_for_job(session, job_id)
         reviewer_id = open_review.reviewer_id if open_review is not None else None
         return self.recruiting_mapper.to_job_dto(job, reviewer_id=reviewer_id)
+
+    async def get_job_activity(
+        self, session: AsyncSession, job_id: int
+    ) -> list[JobActivityDto]:
+        """Return a job posting's audit timeline, newest first.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            job_id (int): The posting to fetch history for.
+
+        Returns:
+            list[JobActivityDto]: Newest first, each with the actor's
+                resolved display name. An actor no longer resolvable falls
+                back to ``f"User {id}"``.
+        """
+        rows = await self.job_activity_repository.list_by_job(session, job_id)
+        actor_ids = {row.actor_id for row in rows}
+        users = await self.users_repository.get_all_by_ids(session, list(actor_ids))
+        names_by_id = {
+            u.user_id: f"{u.first_name} {u.last_name}".strip() for u in users
+        }
+        return [
+            JobActivityDto(
+                id=row.activity_id,
+                event_type=row.event_type,
+                details=row.details,
+                actor_id=row.actor_id,
+                actor_name=names_by_id.get(row.actor_id, f"User {row.actor_id}"),
+                created_at=row.created_at,
+            )
+            for row in rows
+        ]
 
     async def _require_job(self, session: AsyncSession, job_id: int) -> JobEntity:
         """Return the JobEntity for job_id, or raise ValueError if absent.
