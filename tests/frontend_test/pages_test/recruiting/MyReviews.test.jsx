@@ -12,7 +12,14 @@ describe("MyReviews", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     api.listMyReviews.mockResolvedValue({
-      data: [{ reviewId: 3, jobId: 7, jobTitle: "Backend Engineer", kind: "initial" }],
+      data: [
+        {
+          reviewId: 3,
+          jobId: 7,
+          jobTitle: "Backend Engineer",
+          kind: "initial",
+        },
+      ],
     });
   });
 
@@ -32,7 +39,9 @@ describe("MyReviews", () => {
     await waitFor(() => screen.getByText("Backend Engineer"));
     fireEvent.click(screen.getByRole("button", { name: "Review" }));
 
-    await waitFor(() => expect(screen.getByText("detail page")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByText("detail page")).toBeInTheDocument(),
+    );
   });
 
   it("shows the How it works guide with review kinds", async () => {
