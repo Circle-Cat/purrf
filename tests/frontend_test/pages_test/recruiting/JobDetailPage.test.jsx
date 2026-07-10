@@ -9,10 +9,22 @@ vi.mock("@/api/recruitingApi");
 // Keep this page test focused on JobDetailPage's own load/gating logic;
 // ApplicationForm's submission behavior is covered by its own test suite.
 vi.mock("@/pages/Recruiting/ApplicationForm", () => ({
-  default: ({ job }) => (
+  default: ({ job, onSubmitted }) => (
     <div>
       <p>Applying to {job.title}</p>
-      <button type="button">Submit application</button>
+      <button
+        type="button"
+        onClick={() =>
+          onSubmitted({
+            id: 1,
+            stage: "recruiter_screening",
+            editable: true,
+            current: { submission: {} },
+          })
+        }
+      >
+        Submit application
+      </button>
     </div>
   ),
 }));
@@ -163,6 +175,30 @@ describe("JobDetailPage", () => {
       expect(
         screen.getByRole("button", { name: /submit application/i }),
       ).toBeInTheDocument(),
+    );
+  });
+
+  it("navigates to Personal Dashboard after a successful submission", async () => {
+    const router = createMemoryRouter(
+      [
+        { path: "/recruiting/jobs/:jobId/apply", element: <JobDetailPage /> },
+        { path: "/dashboard/me", element: <p>Personal Dashboard</p> },
+      ],
+      { initialEntries: ["/recruiting/jobs/5/apply"] },
+    );
+    render(<RouterProvider router={router} />);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /submit application/i }),
+      ).toBeInTheDocument(),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: /submit application/i }),
+    );
+
+    await waitFor(() =>
+      expect(screen.getByText("Personal Dashboard")).toBeInTheDocument(),
     );
   });
 

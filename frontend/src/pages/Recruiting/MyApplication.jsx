@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { getPublicJob, getMyApplication } from "@/api/recruitingApi";
 import ApplicationForm from "@/pages/Recruiting/ApplicationForm";
 import LoadGate from "@/pages/Recruiting/components/LoadGate";
 import { RowList } from "@/pages/Recruiting/components/ApplicationSnapshotRows";
 import { Button } from "@/components/ui/button";
+import { ROUTE_PATHS } from "@/constants/RoutePaths";
 
 /**
  * Human-readable label for an `ApplicationStage` enum value, e.g.
@@ -83,6 +84,7 @@ const ReadOnlySummary = ({ job, application, onReapply }) => {
  */
 const MyApplication = () => {
   const { jobId } = useParams();
+  const navigate = useNavigate();
   const [job, setJob] = useState(null);
   const [application, setApplication] = useState(null);
   const [loaded, setLoaded] = useState(false);
@@ -125,7 +127,7 @@ const MyApplication = () => {
         <ApplicationForm
           job={job}
           existing={application ?? undefined}
-          onSubmitted={setApplication}
+          onSubmitted={() => navigate(ROUTE_PATHS.PERSONAL_DASHBOARD)}
         />
       </div>
     );
@@ -138,10 +140,7 @@ const MyApplication = () => {
           job={job}
           seed={application.current}
           seedApplicationId={application.id}
-          onSubmitted={(app) => {
-            setApplication(app);
-            setReapplying(false);
-          }}
+          onSubmitted={() => navigate(ROUTE_PATHS.PERSONAL_DASHBOARD)}
         />
       </div>
     );

@@ -90,9 +90,7 @@ const JobDetailPage = () => {
       <div className="space-y-4 p-6">
         <ApplicationForm
           job={job}
-          onSubmitted={() =>
-            navigate(ROUTE_PATHS.RECRUITING_MY_APPLICATION(jobId))
-          }
+          onSubmitted={() => navigate(ROUTE_PATHS.PERSONAL_DASHBOARD)}
         />
       </div>
     );

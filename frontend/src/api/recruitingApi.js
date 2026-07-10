@@ -87,6 +87,10 @@ export const getMyApplication = (jobId) =>
     params: { job_id: jobId },
   });
 
+/** Fetch every application the current user has ever submitted, any job kind. */
+export const listMyApplications = () =>
+  request.get(API_ENDPOINTS.RECRUITING_MY_APPLICATIONS);
+
 /**
  * List all jobs accessible to the current recruiter on the board (job switcher).
  */
