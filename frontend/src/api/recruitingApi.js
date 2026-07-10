@@ -16,10 +16,6 @@ export const createJob = (body) =>
 export const updateJob = (jobId, body) =>
   request.put(API_ENDPOINTS.RECRUITING_JOB(jobId), body);
 
-/** Close a draft posting directly (no review required). */
-export const closeJob = (jobId) =>
-  request.post(API_ENDPOINTS.RECRUITING_JOB_CLOSE(jobId));
-
 /** Fetch a job posting's audit timeline, newest first. */
 export const listJobActivity = (jobId) =>
   request.get(API_ENDPOINTS.RECRUITING_JOB_ACTIVITY(jobId));

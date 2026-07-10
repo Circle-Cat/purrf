@@ -5,7 +5,6 @@ import {
   getJob,
   createJob,
   updateJob,
-  closeJob,
   listJobActivity,
   requestClose,
   requestReopen,
@@ -74,12 +73,6 @@ describe("recruitingApi", () => {
     const body = { title: "Y" };
     await updateJob(7, body);
     expect(request.put).toHaveBeenCalledWith("/recruiting/jobs/7", body);
-  });
-
-  it("closeJob POSTs the close endpoint", async () => {
-    request.post.mockResolvedValue({ data: {} });
-    await closeJob(7);
-    expect(request.post).toHaveBeenCalledWith("/recruiting/jobs/7/close");
   });
 
   it("listJobActivity GETs /recruiting/jobs/:jobId/activity", async () => {
