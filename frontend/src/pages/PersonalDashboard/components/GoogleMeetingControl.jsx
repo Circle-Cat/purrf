@@ -1,6 +1,6 @@
 import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
-import MeetingManagementDialog from "@/components/common/MeetingManagementDialog";
+import MeetingManagementDialog from "@/pages/PersonalDashboard/components/MeetingManagementDialog";
 
 export const GoogleMeetingControl = ({ meetingRoundId, onRefresh }) => {
   const { [FEATURE_FLAGS.CREATE_GOOGLE_MEETING]: createGoogleMeeting } =

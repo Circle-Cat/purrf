@@ -30,7 +30,7 @@ import { cn } from "@/lib/utils";
 
 import TimezoneSelector from "@/components/common/TimezoneSelector";
 import { useMeetingManagement } from "@/pages/PersonalDashboard/hooks/useMeetingManagement";
-import { localToUtcIso, todayInTz } from "@/utils/dateTime";
+import { localToUtcIso, todayInTz, formatInTz } from "@/utils/dateTime";
 
 const DURATION_OPTIONS = [
   { value: "30", label: "30 minutes" },
@@ -46,7 +46,11 @@ const TIME_SLOTS = Array.from({ length: 48 }, (_, i) => {
   return { value: timeStr, label: timeStr };
 });
 
-export default function MeetingManagementDialog({ roundId, onBooked }) {
+export default function MeetingManagementDialog({
+  roundId,
+  onBooked,
+  userTimezone,
+}) {
   const {
     partners,
     bookMeeting,
@@ -59,13 +63,15 @@ export default function MeetingManagementDialog({ roundId, onBooked }) {
 
   const [selectedDate, setSelectedDate] = useState(null);
   const [selectedTime, setSelectedTime] = useState("09:00");
+  const [calendarOpen, setCalendarOpen] = useState(false);
 
   const [selectedIds, setSelectedIds] = useState(new Set());
 
   const initialFormState = {
     partnerId: "",
     duration: "30",
-    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    timezone:
+      userTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
   };
   const [formData, setFormData] = useState(initialFormState);
 
@@ -76,10 +82,6 @@ export default function MeetingManagementDialog({ roundId, onBooked }) {
 
   const isAllChecked = useMemo(() => {
     return upcomingLength > 0 && selectedIds.size === upcomingLength;
-  }, [selectedIds, upcomingLength]);
-
-  const isIndeterminate = useMemo(() => {
-    return selectedIds.size > 0 && selectedIds.size < upcomingLength;
   }, [selectedIds, upcomingLength]);
 
   const handleToggleAll = () => {
@@ -126,32 +128,16 @@ export default function MeetingManagementDialog({ roundId, onBooked }) {
   };
 
   // Helper function: Format meeting card details based on user's local timezone
-  const formatCardDetails = (startStr, endStr) => {
-    const start = new Date(startStr);
-    const end = new Date(endStr);
-
-    // Calculate duration in minutes
-    const durationMin = Math.round((end - start) / 1000 / 60);
-    const durationStr = `${durationMin} mins`;
-
-    // Format local date, time, and timezone
-    const userTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    const dateStr = start.toLocaleDateString(undefined, {
-      weekday: "short",
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    });
-
-    const timeStr = `${start.toLocaleTimeString(undefined, {
-      hour: "2-digit",
-      minute: "2-digit",
-    })} - ${end.toLocaleTimeString(undefined, {
-      hour: "2-digit",
-      minute: "2-digit",
-    })}`;
-
-    return { dateStr, timeStr, durationStr, timezoneStr: userTz };
+  const formatCardDetails = (startStr, endStr, userTimezone) => {
+    const durationMin = Math.round(
+      (new Date(endStr) - new Date(startStr)) / 1000 / 60,
+    );
+    return {
+      dateStr: formatInTz(startStr, userTimezone, "EEE, MMM d, yyyy"),
+      timeStr: `${formatInTz(startStr, userTimezone, "HH:mm")} - ${formatInTz(endStr, userTimezone, "HH:mm")}`,
+      durationStr: `${durationMin} mins`,
+      timezoneStr: userTimezone,
+    };
   };
 
   const handleInputChange = (e) => {
@@ -186,6 +172,7 @@ export default function MeetingManagementDialog({ roundId, onBooked }) {
       setSelectedDate(null);
       setSelectedTime("09:00");
       setActiveTab("schedule");
+      setCalendarOpen(false);
     }, 200);
   };
 
@@ -249,14 +236,18 @@ export default function MeetingManagementDialog({ roundId, onBooked }) {
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
       <div key={roundId} title={tooltipText} className="inline-block">
         <DialogTrigger asChild>
-          <Button variant="default" disabled={isDisabled}>
+          <Button
+            variant="default"
+            disabled={isDisabled}
+            onClick={() => console.log("Current meetingRoundId:", roundId)}
+          >
             <CalendarIcon className="w-4 h-4 mr-2" />
             Manage Meetings
           </Button>
         </DialogTrigger>
       </div>
 
-      <DialogContent className="w-full max-w-2xl h-auto max-h-[80vh] flex flex-col rounded-xl bg-white shadow-2xl p-0 animate-in fade-in zoom-in-95 duration-200 ">
+      <DialogContent className="w-full max-w-2xl !h-auto max-h-[80vh] rounded-xl bg-white shadow-2xl p-0 animate-in fade-in zoom-in-95 duration-200 overflow-visible">
         {/* Header */}
         <div className="flex items-center justify-between bg-gray-50/50 px-6 py-4 border-b rounded-t-xl">
           <DialogTitle className="text-xl font-semibold text-gray-900 flex items-center gap-2">
@@ -266,16 +257,11 @@ export default function MeetingManagementDialog({ roundId, onBooked }) {
         </div>
 
         {/* Tabs */}
-        <Tabs
-          value={activeTab}
-          onValueChange={setActiveTab}
-          className="w-full flex flex-col flex-1 min-h-0 overflow-visible"
-        >
-          <div className="px-6 mt-4 flex-shrink-0">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <div className="px-6 mt-4">
             <TabsList className="grid w-full grid-cols-2 p-1.5 h-12 bg-gray-100 rounded-lg">
               <TabsTrigger
                 value="schedule"
-                // className="mt-0 focus-visible:outline-none overflow-visible"
                 className="h-full text-sm font-medium rounded-md text-gray-500 transition-all data-[state=active]:bg-white data-[state=active]:text-[#6035F3] data-[state=active]:shadow-sm"
               >
                 Schedule Meeting
@@ -290,11 +276,11 @@ export default function MeetingManagementDialog({ roundId, onBooked }) {
           </div>
 
           {/* Content Area */}
-          <div className="p-6 flex-1 min-h-0 overflow-visible">
+          <div className="p-6">
             {/* Schedule Meeting Form */}
             <TabsContent
               value="schedule"
-              className="mt-0 focus-visible:outline-none h-full overflow-visible pr-1"
+              className="mt-0 focus-visible:outline-none"
             >
               <form onSubmit={handleSubmit} className="space-y-5">
                 {/* Mentor / Mentee Selection Dropdown */}
@@ -345,7 +331,7 @@ export default function MeetingManagementDialog({ roundId, onBooked }) {
                     <label className="text-sm font-medium text-gray-700">
                       Start Date *
                     </label>
-                    <Popover>
+                    <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
                       <PopoverTrigger asChild>
                         <Button
                           variant="outline"
@@ -366,7 +352,12 @@ export default function MeetingManagementDialog({ roundId, onBooked }) {
                         <Calendar
                           mode="single"
                           selected={selectedDate}
-                          onSelect={setSelectedDate}
+                          onSelect={(date) => {
+                            if (date) {
+                              setSelectedDate(date);
+                              setCalendarOpen(false);
+                            }
+                          }}
                           disabled={{ before: disableBeforeDate }}
                           initialFocus
                         />
@@ -402,7 +393,7 @@ export default function MeetingManagementDialog({ roundId, onBooked }) {
                           }),
                           menu: (provided) => ({
                             ...provided,
-                            zIndex: 9999,
+                            zIndex: 50,
                           }),
                           menuList: (provided) => ({
                             ...provided,
@@ -460,11 +451,11 @@ export default function MeetingManagementDialog({ roundId, onBooked }) {
             {/* Upcoming Tab */}
             <TabsContent
               value="upcoming"
-              className="mt-0 focus-visible:outline-none flex flex-col manx-h-[400px] min-h-0"
+              className="mt-0 focus-visible:outline-none"
             >
               {upcomingLength === 0 ? (
                 /* Empty state placeholder text preserved */
-                <div className="flex flex-col items-center justify-center h-48 border-2 border-dashed border-gray-100 rounded-xl bg-gray-50/50 mt-2">
+                <div className="flex flex-col items-center justify-center h-64 border-2 border-dashed border-gray-100 rounded-xl bg-gray-50/50 my-auto">
                   <CalendarDays className="w-12 h-12 text-gray-200 mb-2" />
                   <p className="text-gray-400 font-medium">
                     No upcoming meetings found
@@ -472,18 +463,12 @@ export default function MeetingManagementDialog({ roundId, onBooked }) {
                 </div>
               ) : (
                 <div className="flex flex-col min-h-0 justify-between flex-1 overflow-hidden">
-                  <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
+                  <div className="overflow-hidden">
                     {/* Top Control Bar: Select All Checkbox */}
                     <div className="flex items-center space-x-3 pb-3 mb-4 border-b border-gray-100 flex-shrink-0">
                       <Checkbox
                         id="select-all-upcoming"
-                        checked={
-                          isAllChecked
-                            ? true
-                            : isIndeterminate
-                              ? "indeterminate"
-                              : false
-                        }
+                        checked={isAllChecked}
                         onCheckedChange={handleToggleAll}
                         disabled={isLoading}
                       />
@@ -496,13 +481,17 @@ export default function MeetingManagementDialog({ roundId, onBooked }) {
                     </div>
 
                     {/* Card List */}
-                    <div className="flex-1 space-y-3 overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-gray-200 min-h-0">
+                    <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-gray-200">
                       {upcomingMeetings.map((meeting) => {
                         const isChecked = selectedIds.has(meeting.meetingId);
                         const { dateStr, timeStr, durationStr, timezoneStr } =
                           formatCardDetails(
                             meeting.startDatetime,
                             meeting.endDatetime,
+                            userTimezone ||
+                              Intl.DateTimeFormat().resolvedOptions()
+                                .timeZone ||
+                              "UTC",
                           );
 
                         return (
@@ -572,7 +561,7 @@ export default function MeetingManagementDialog({ roundId, onBooked }) {
                   </div>
 
                   {/* Delete Button */}
-                  <div className="flex justify-end mt-4 pt-4 border-t border-gray-50 bg-white flex-shrink-0">
+                  <div className="flex justify-end mt-2 pt-2 border-t border-gray-50 bg-white flex-shrink-0">
                     <Button
                       variant="destructive"
                       size="lg"

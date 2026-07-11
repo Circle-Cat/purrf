@@ -1,4 +1,3 @@
-import { useEffect } from "react";
 import TimezoneSelect from "react-timezone-select";
 import { Check } from "lucide-react";
 import timezones from "@/constants/Timezones";
@@ -27,49 +26,11 @@ export default function TimezoneSelector({
   onChange,
   labelSource = "value",
   styles = defaultTimezoneSelectStyles,
-  menuPlacement = "auto",
+  menuPlacement = "top",
   ...props
 }) {
-  // Intercept scroll/touch events globally in the capture phase to bypass Dialog scroll locks
-  useEffect(() => {
-    const handleScroll = (e) => {
-      // Locate the portal-rendered dropdown menu in the DOM
-      const menuEl = document.querySelector(".react-select__menu");
-      if (menuEl && menuEl.contains(e.target)) {
-        e.stopPropagation();
-      }
-    };
-
-    document.addEventListener("wheel", handleScroll, {
-      capture: true,
-      passive: false,
-    });
-    document.addEventListener("touchmove", handleScroll, {
-      capture: true,
-      passive: false,
-    });
-
-    return () => {
-      document.removeEventListener("wheel", handleScroll, { capture: true });
-      document.removeEventListener("touchmove", handleScroll, {
-        capture: true,
-      });
-    };
-  }, []);
-
   const enhancedStyles = {
     ...styles,
-    singleValue: (provided, state) => {
-      const base = styles?.singleValue
-        ? styles.singleValue(provided, state)
-        : provided;
-      return {
-        ...base,
-        whiteSpace: "nowrap",
-        overflow: "hidden",
-        textOverflow: "ellipsis",
-      };
-    },
 
     menu: (provided, state) => {
       const base = styles?.menu ? styles.menu(provided, state) : provided;
@@ -89,7 +50,6 @@ export default function TimezoneSelector({
         ...base,
         maxHeight: "170px",
         paddingBottom: "16px",
-        overscrollBehavior: "contain",
       };
     },
   };
@@ -101,11 +61,6 @@ export default function TimezoneSelector({
       onChange={onChange}
       timezones={timezones}
       menuPlacement={menuPlacement}
-      menuPortalTarget={typeof window !== "undefined" ? document.body : null}
-      classNamePrefix="react-select"
-      captureMenuScroll={true}
-      lockMenuScroll={false}
-      menuShouldScrollIntoView={true}
       formatOptionLabel={(option, { context, selectValue } = {}) => {
         if (typeof option === "string") return option;
         const label = labelSource === "key" ? option.value : option.label;
@@ -113,7 +68,7 @@ export default function TimezoneSelector({
         const isSelected = selectValue?.some((v) => v.value === option.value);
         return (
           <div className="flex w-full items-center justify-between gap-2">
-            <span className="truncate">{label}</span>
+            <span>{label}</span>
             <span className="flex size-4 shrink-0 items-center justify-center">
               {isSelected && <Check className="size-4 pointer-events-none" />}
             </span>

@@ -1,7 +1,7 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import MeetingManagementDialog from "@/components/common/MeetingManagementDialog";
+import MeetingManagementDialog from "@/pages/PersonalDashboard/components/MeetingManagementDialog";
 import { useMeetingManagement } from "@/pages/PersonalDashboard/hooks/useMeetingManagement";
 
 vi.mock("@/pages/PersonalDashboard/hooks/useMeetingManagement", () => ({
