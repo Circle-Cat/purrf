@@ -59,6 +59,13 @@ const STATUS_VARIANT = {
   closed: "secondary",
 };
 
+const REJECT_KIND_LABEL = {
+  initial: "Initial submission rejected",
+  revision: "Revision rejected",
+  close: "Close request rejected",
+  reopen: "Reopen request rejected",
+};
+
 /** Title and dispatch fn per review action kind. */
 const REVIEW_ACTION = {
   submit: {
@@ -280,7 +287,10 @@ const PostingDetailPage = () => {
       <div className="space-y-1">
         <div className="flex flex-wrap items-center gap-2">
           <h1 className="text-xl font-semibold text-slate-900">{job.title}</h1>
-          {isDraft && job.lastRejectComment ? (
+          <Badge variant={STATUS_VARIANT[job.status]}>
+            {STATUS_LABELS[job.status]}
+          </Badge>
+          {job.lastRejectComment && (
             <Popover>
               <PopoverTrigger asChild>
                 <button type="button" className="cursor-pointer">
@@ -289,15 +299,11 @@ const PostingDetailPage = () => {
               </PopoverTrigger>
               <PopoverContent className="w-72">
                 <p className="text-sm font-medium text-slate-700">
-                  Rejection comment
+                  {REJECT_KIND_LABEL[job.lastRejectKind] ?? "Rejected"}
                 </p>
                 <p className="text-sm text-red-600">{job.lastRejectComment}</p>
               </PopoverContent>
             </Popover>
-          ) : (
-            <Badge variant={STATUS_VARIANT[job.status]}>
-              {STATUS_LABELS[job.status]}
-            </Badge>
           )}
         </div>
         <p className="text-sm text-slate-600">{job.description}</p>

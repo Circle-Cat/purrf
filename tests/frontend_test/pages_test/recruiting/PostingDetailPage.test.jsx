@@ -140,6 +140,30 @@ describe("PostingDetailPage", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("shows the status badge alongside a Sent back badge with the reject kind in the popover", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        status: "draft",
+        pipelineConfig: null,
+        screenRules: null,
+        profileConfig: null,
+        lastRejectComment: "Please tighten the screening rules.",
+        lastRejectKind: "initial",
+        reviewerId: null,
+      },
+    });
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    await waitFor(() => expect(screen.getByText("Draft")).toBeInTheDocument());
+    expect(
+      screen.getByRole("button", { name: "Sent back" }),
+    ).toBeInTheDocument();
+  });
+
   it("shows Approve/Reject only for the assigned reviewer", async () => {
     api.getJob.mockResolvedValue({
       data: {

@@ -78,6 +78,7 @@ class JobDto(BaseDto):
     profile_config: dict | None = None
     pending_payload: dict | None = None
     last_reject_comment: str | None = None
+    last_reject_kind: str | None = None
     was_published: bool = False
     cooldown_days: int | None = None
     reviewer_id: int | None = None
