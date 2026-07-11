@@ -34,6 +34,7 @@ import {
 } from "@/api/recruitingApi";
 import SubmitReviewDialog from "@/pages/Recruiting/components/SubmitReviewDialog";
 import PostingConfigSummary from "@/pages/Recruiting/components/PostingConfigSummary";
+import PostingApplicantView from "@/pages/Recruiting/components/PostingApplicantView";
 import LoadGate from "@/pages/Recruiting/components/LoadGate";
 
 /** Human labels + badge variants per JobStatus (mirrors PostingsList). */
@@ -80,10 +81,16 @@ const REVIEW_ACTION = {
  * Unified job posting detail page at `/recruiting/postings/:id`. Visibility
  * is permission-driven, not mode-driven: Overview/Configuration/Review
  * history are shown to every viewer holding any of
- * RECRUITING_JOB_WRITE/RECRUITING_JOB_APPROVE/RECRUITING_JOB_READ; the
- * write-action "Operate:" block only renders for canWrite (and only when
- * the current status has an available action), and Approve/Reject only for
- * the review's actual assigned reviewer.
+ * RECRUITING_JOB_WRITE/RECRUITING_JOB_APPROVE/RECRUITING_JOB_READ. Overview
+ * renders the same applicant-facing view used on the live posting
+ * (description + profile requirements + question form); Configuration is
+ * staff-only rules (pipeline/screening/profile). The write-action
+ * "Operate:" block only renders for canWrite (and only when the current
+ * status has an available action); within it, "Edit configuration" only
+ * shows for the statuses `update_job` actually accepts (DRAFT/PUBLISHED/
+ * CLOSED — not PUBLISHED_PENDING_REVISION, which already has a staged
+ * edit awaiting its own review). Approve/Reject only for the review's
+ * actual assigned reviewer.
  */
 const PostingDetailPage = () => {
   const { id } = useParams();
@@ -166,6 +173,11 @@ const PostingDetailPage = () => {
   const isClosed = job.status === "closed";
   const hasOperateAction =
     isDraft || isPublished || isPendingRevision || isClosed;
+  // Mirrors JobService.update_job's allowed_from check on the backend:
+  // editing is only accepted from DRAFT/PUBLISHED/CLOSED, never from
+  // PUBLISHED_PENDING_REVISION (a revision is already staged and pending
+  // its own review).
+  const canEditConfig = canWrite && (isDraft || isPublished || isClosed);
   const isAssignedReviewer =
     canApprove && myOpenReview != null && job.reviewerId === user?.userId;
   const reviewerName = job.reviewerId
@@ -286,6 +298,17 @@ const PostingDetailPage = () => {
       {canWrite && hasOperateAction && (
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-sm font-medium text-slate-700">Operate:</span>
+          {canEditConfig && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() =>
+                window.location.assign(ROUTE_PATHS.RECRUITING_POSTING_EDIT(id))
+              }
+            >
+              Edit configuration
+            </Button>
+          )}
           {isDraft && (
             <>
               <Button size="sm" onClick={() => openReview("submit")}>
@@ -368,22 +391,14 @@ const PostingDetailPage = () => {
           <TabsTrigger value="history">Review history</TabsTrigger>
         </TabsList>
         <TabsContent value="overview">
-          <p className="text-sm text-slate-600">{job.description}</p>
+          <PostingApplicantView
+            description={job.description}
+            questions={job.formSchema?.questions ?? []}
+            profileConfig={job.profileConfig}
+          />
         </TabsContent>
         <TabsContent value="configuration">
-          <div className="space-y-4">
-            <PostingConfigSummary job={job} />
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={!canWrite}
-              onClick={() =>
-                window.location.assign(ROUTE_PATHS.RECRUITING_POSTING_EDIT(id))
-              }
-            >
-              Edit configuration
-            </Button>
-          </div>
+          <PostingConfigSummary job={job} />
         </TabsContent>
         <TabsContent value="history">
           {activity.length === 0 ? (
