@@ -22,6 +22,7 @@ import SignInSecurity from "@/pages/SignInSecurity";
 import AdminPermissions from "@/pages/AdminPermissions";
 import Postings from "@/pages/Recruiting/Postings";
 import PostingEditor from "@/pages/Recruiting/postings/PostingEditor";
+import PostingDetailPage from "@/pages/Recruiting/PostingDetailPage";
 import MyReviews from "@/pages/Recruiting/MyReviews";
 import Blacklist from "@/pages/Recruiting/Blacklist";
 import JobDetailPage from "@/pages/Recruiting/JobDetailPage";
@@ -128,11 +129,16 @@ function App() {
                         <ProtectedRoute
                           requiredPermissions={[
                             PERMISSIONS.RECRUITING_JOB_WRITE,
+                            PERMISSIONS.RECRUITING_JOB_READ,
                           ]}
                         >
                           <Postings />
                         </ProtectedRoute>
                       }
+                    />
+                    <Route
+                      path={ROUTE_PATHS.RECRUITING_POSTING_DETAIL(":id")}
+                      element={<PostingDetailPage />}
                     />
                     <Route
                       path={ROUTE_PATHS.RECRUITING_POSTING_NEW}

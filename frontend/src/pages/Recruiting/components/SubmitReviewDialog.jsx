@@ -100,7 +100,7 @@ const SubmitReviewDialog = ({
             onClick={handleSubmit}
             disabled={poolTooSmall || !reviewerId || submitting}
           >
-            Submit
+            {title}
           </Button>
         </DialogFooter>
       </DialogContent>
