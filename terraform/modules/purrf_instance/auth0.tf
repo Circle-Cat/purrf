@@ -153,6 +153,21 @@ resource "auth0_prompt_custom_text" "en_login_id" {
   body = jsonencode({
     "login-id" : {
       "description" : "Log in to Purrf to continue your application.",
+      # There's no separate signup flow: any first-time email+OTP or Google
+      # login auto-creates the account (see UserIdentityService.first_login_insert),
+      # so the built-in "Don't have an account? Sign up" affordance is
+      # misleading busywork, not a distinct action.
+      #
+      # Auth0's own default schema for this screen defines signupActionText/
+      # signupActionLinkText as references to footerText/footerLinkText
+      # ("${footerText}" / "${footerLinkText}") -- the widget renders the
+      # latter two directly, so blanking only the alias keys was a no-op
+      # (confirmed live: the link stayed visible). Blank all four so it's
+      # covered regardless of which pair the widget actually reads.
+      "footerText" : "",
+      "footerLinkText" : "",
+      "signupActionText" : "",
+      "signupActionLinkText" : "",
     }
   })
 }
