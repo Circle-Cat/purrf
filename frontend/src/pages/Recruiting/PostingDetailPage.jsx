@@ -121,7 +121,6 @@ const PostingDetailPage = () => {
   const [submitting, setSubmitting] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [confirmActionKind, setConfirmActionKind] = useState(null); // "close" | "reopen"
   const [rejectComment, setRejectComment] = useState("");
   const [deciding, setDeciding] = useState(false);
 
@@ -349,7 +348,7 @@ const PostingDetailPage = () => {
             <Button
               size="sm"
               variant="outline"
-              onClick={() => setConfirmActionKind("close")}
+              onClick={() => openReview("close")}
             >
               Request close
             </Button>
@@ -363,7 +362,7 @@ const PostingDetailPage = () => {
             <Button
               size="sm"
               variant="outline"
-              onClick={() => setConfirmActionKind("reopen")}
+              onClick={() => openReview("reopen")}
             >
               Request reopen
             </Button>
@@ -455,43 +454,6 @@ const PostingDetailPage = () => {
         onSubmit={handleReviewSubmit}
         onOpenChange={setSubmitOpen}
       />
-
-      <Dialog
-        open={confirmActionKind != null}
-        onOpenChange={(o) => !o && setConfirmActionKind(null)}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              {confirmActionKind === "close"
-                ? "Request to close this posting?"
-                : "Request to reopen this posting?"}
-            </DialogTitle>
-          </DialogHeader>
-          <p className="text-sm text-slate-600">
-            {confirmActionKind === "close"
-              ? "This stops new applicants once approved. An approver must sign off first."
-              : "This makes the posting live again once approved. An approver must sign off first."}
-          </p>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setConfirmActionKind(null)}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={() => {
-                const kind = confirmActionKind;
-                setConfirmActionKind(null);
-                openReview(kind);
-              }}
-            >
-              Continue
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       <Dialog
         open={deleteConfirmOpen}
