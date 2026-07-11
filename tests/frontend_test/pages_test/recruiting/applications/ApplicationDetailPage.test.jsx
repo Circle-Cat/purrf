@@ -306,6 +306,68 @@ describe("ApplicationDetailPage — role-adaptive right column", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("owner-only viewer sees the How-it-works guide for reviewing applications", async () => {
+    const user = userEvent.setup();
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
+    });
+    renderPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole("button", { name: "How it works" }));
+
+    expect(
+      screen.getByRole("heading", { name: "How application review works" }),
+    ).toBeInTheDocument();
+  });
+
+  it("assignee-only viewer in evaluator mode sees the How-it-works guide for evaluating", async () => {
+    const user = userEvent.setup();
+    authState.userId = ASSIGNEE_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: false, assigneeId: ASSIGNEE_ID }),
+    });
+    api.getEvaluationsForApplication.mockResolvedValue({
+      data: [
+        {
+          id: 2,
+          applicationId: 101,
+          stage: "recruiter_screening",
+          round: 1,
+          evaluatorId: ASSIGNEE_ID,
+          responses: {},
+          isConfirmed: false,
+        },
+      ],
+    });
+    renderEvaluatorPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole("button", { name: "How it works" }));
+
+    expect(
+      screen.getByRole("heading", { name: "How evaluating works" }),
+    ).toBeInTheDocument();
+  });
+
+  it("a viewer who is neither owner/read.all nor the current-stage assignee sees no How-it-works button", async () => {
+    authState.userId = 999;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({
+        isOwner: false,
+        canView: false,
+        assigneeId: ASSIGNEE_ID,
+      }),
+    });
+    renderPage();
+    await waitLoaded();
+
+    expect(
+      screen.queryByRole("button", { name: "How it works" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("sorts evaluations newest-first by id", async () => {
     authState.userId = OWNER_ID;
     api.getApplicationDetail.mockResolvedValue({

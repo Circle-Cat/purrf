@@ -14,6 +14,8 @@ import { listBoardJobs, getJobBoard } from "@/api/recruitingApi";
 import { humanize } from "@/pages/Recruiting/board/stageFormat";
 import { getStageColors } from "@/pages/Recruiting/board/stageColors";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
+import HowItWorksDialog from "@/pages/Recruiting/components/HowItWorksDialog";
+import { APPLICATIONS_BOARD_GUIDE } from "@/pages/Recruiting/components/guideContent";
 
 /** Offer is always inserted between a job's configured pipeline stages and
  * the terminal lanes — never something a job opts into (see TERMINAL_STAGES,
@@ -143,25 +145,28 @@ const BoardPage = () => {
 
   return (
     <div className="flex h-full flex-col gap-4 p-6">
-      <div className="flex items-center gap-3">
-        <h1 className="text-xl font-semibold text-slate-900">
-          Applications Board
-        </h1>
-        <Select
-          value={String(selectedJobId)}
-          onValueChange={(value) => setSelectedJobId(Number(value))}
-        >
-          <SelectTrigger aria-label="Job" className="w-64">
-            <SelectValue placeholder="Select a job…" />
-          </SelectTrigger>
-          <SelectContent>
-            {jobs.map((job) => (
-              <SelectItem key={job.id} value={String(job.id)}>
-                {job.title}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <h1 className="text-xl font-semibold text-slate-900">
+            Applications Board
+          </h1>
+          <Select
+            value={String(selectedJobId)}
+            onValueChange={(value) => setSelectedJobId(Number(value))}
+          >
+            <SelectTrigger aria-label="Job" className="w-64">
+              <SelectValue placeholder="Select a job…" />
+            </SelectTrigger>
+            <SelectContent>
+              {jobs.map((job) => (
+                <SelectItem key={job.id} value={String(job.id)}>
+                  {job.title}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <HowItWorksDialog {...APPLICATIONS_BOARD_GUIDE} />
       </div>
 
       {!board ? (
