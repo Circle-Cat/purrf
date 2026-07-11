@@ -198,25 +198,30 @@ class Auth0Client:
         )
 
     def get_linked_identity_sub(
-        self, account_root_sub: str, provider: str
+        self, account_root_sub: str, provider: str, email: str
     ) -> str | None:
         """
-        Look up the real per-connection identity id for `provider` on
-        account_root_sub's own Auth0 profile.
+        Look up the real per-connection identity id for `provider` and `email`
+        on account_root_sub's own Auth0 profile.
 
-        Used when an OIDC token has already collapsed to the account root's
-        own sub instead of exposing a linked secondary identity's native id
-        (e.g. a passwordless OTP grant for an email already merged into this
-        same account root) -- reads the account root's own `identities`
-        array via the Management API instead of trusting the token.
+        Used when an OIDC token has already collapsed to the account root's own
+        sub instead of exposing a linked secondary identity's native id (e.g. a
+        passwordless OTP grant for an email already merged into this same
+        account root) -- reads the account root's own `identities` array via
+        the Management API instead of trusting the token. Matching requires
+        both provider and email (via each identity's `profileData.email`) so
+        an account root with more than one linked identity for the same
+        provider (e.g. two different linked passwordless addresses) still
+        resolves to the correct one instead of guessing.
 
         Args:
             account_root_sub (str): Auth0 sub of the account-root user to inspect.
             provider (str): Provider to look for in the identities array (e.g. 'email').
+            email (str): The address this identity's profileData.email must match.
 
         Returns:
-            str | None: ``f"{provider}|{user_id}"`` for the matching identity,
-            or None if the account root has no linked identity for that provider.
+            str | None: ``f"{provider}|{user_id}"`` for the identity matching
+            both provider and email, or None if no such identity is linked.
 
         Raises:
             RateLimitedError: If Auth0 throttles the request (HTTP 429).
@@ -231,8 +236,12 @@ class Auth0Client:
         )
         self._raise_for_auth0_error(response, "get_linked_identity_sub")
         identities = response.json().get("identities") or []
+        normalized = email.lower()
         for identity in identities:
-            if identity.get("provider") == provider:
+            if identity.get("provider") != provider:
+                continue
+            profile_email = (identity.get("profileData") or {}).get("email", "")
+            if profile_email.lower() == normalized:
                 return f"{provider}|{identity['user_id']}"
         return None
 

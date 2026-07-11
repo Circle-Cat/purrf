@@ -129,7 +129,9 @@ class EmailManagementService:
         # array, if Auth0 exposes one.
         self_linked = new_sub == current_sub
         if self_linked:
-            real_sub = self._auth0.get_linked_identity_sub(current_sub, "email")
+            real_sub = self._auth0.get_linked_identity_sub(
+                current_sub, "email", target_email
+            )
             if real_sub is not None:
                 new_sub = real_sub
 

@@ -195,7 +195,7 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
 
         self.auth0.link_identity.assert_not_called()
         self.auth0.get_linked_identity_sub.assert_called_once_with(
-            _CURRENT_SUB, "email"
+            _CURRENT_SUB, "email", _TARGET_EMAIL
         )
         identity_entity = self.user_identities.upsert_identity.call_args.kwargs[
             "entity"
