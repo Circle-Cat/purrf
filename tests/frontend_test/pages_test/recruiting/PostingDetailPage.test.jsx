@@ -52,6 +52,7 @@ describe("PostingDetailPage", () => {
     });
     api.listApprovers.mockResolvedValue({ data: [] });
     api.listJobOwners.mockResolvedValue({ data: [] });
+    api.listInterviewPool.mockResolvedValue({ data: [] });
     api.listJobActivity.mockResolvedValue({ data: [] });
     api.listMyReviews.mockResolvedValue({ data: [] });
   });

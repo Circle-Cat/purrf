@@ -22,8 +22,6 @@ from backend.common.recruiting_enums import (
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 
-MIN_APPROVER_POOL = 2
-
 
 class JobService:
     """Manages recruiting postings (create/edit/close + review gate)."""
@@ -422,9 +420,8 @@ class JobService:
 
         Validates that the job's current status is in ``allowed_from``, that the
         job has no already-open review, that the submitter is not also the
-        reviewer, that the active approver pool has at least ``MIN_APPROVER_POOL``
-        members, and that the chosen reviewer is in that pool. Then creates a
-        PENDING ``JobReviewEntity`` of ``kind``,
+        reviewer, and that the chosen reviewer is an active approver. Then
+        creates a PENDING ``JobReviewEntity`` of ``kind``,
         optionally flips ``job.status`` to ``pending_status`` (when not None),
         persists, commits, and returns the updated JobDto.
 
@@ -447,8 +444,8 @@ class JobService:
 
         Raises:
             ValueError: If the job status is not in ``allowed_from``, the job
-                already has an open review, the submitter picks themselves, the
-                pool is too small, or the reviewer is not an active approver.
+                already has an open review, the submitter picks themselves, or
+                the reviewer is not an active approver.
         """
         if job.status not in allowed_from:
             raise ValueError(
@@ -463,8 +460,6 @@ class JobService:
             raise ValueError("Submitter cannot self-review the posting")
 
         approvers = await self.list_active_approvers(session)
-        if len(approvers) < MIN_APPROVER_POOL:
-            raise ValueError("Approver pool too small to submit for review")
         if reviewer_id not in {a.user_id for a in approvers}:
             raise ValueError("Reviewer is not an active approver")
 
@@ -530,8 +525,8 @@ class JobService:
 
         Raises:
             ValueError: If the posting cannot be submitted from its current
-                status, the submitter picks themselves, the approver pool is
-                too small, or the reviewer is not an active approver.
+                status, the submitter picks themselves, or the reviewer is
+                not an active approver.
         """
         job = await self._require_job(session, job_id)
         await self._revalidate_job_config(session, job)
@@ -581,8 +576,7 @@ class JobService:
 
         Raises:
             ValueError: If the posting is not PUBLISHED, the submitter picks
-                themselves, the pool is too small, or the reviewer is not an
-                active approver.
+                themselves, or the reviewer is not an active approver.
         """
         job = await self._require_job(session, job_id)
         return await self._open_review(
@@ -623,8 +617,7 @@ class JobService:
         Raises:
             ValueError: If the posting is not CLOSED, was never published
                 (use delete_job instead), the submitter picks themselves,
-                the pool is too small, or the reviewer is not an active
-                approver.
+                or the reviewer is not an active approver.
         """
         job = await self._require_job(session, job_id)
         if not job.was_published:
