@@ -73,18 +73,34 @@ describe("SubmitReviewDialog", () => {
     expect(screen.getByRole("option", { name: /Bob/ })).toBeInTheDocument();
   });
 
-  it("disables submit when fewer than 2 approvers are available", () => {
-    // Total pool = 1 (below MIN_APPROVER_POOL=2); gate uses total, not self-excluded count.
+  it("allows submitting with a single eligible approver in the pool", () => {
+    const onSubmit = vi.fn();
     render(
       <SubmitReviewDialog
         open
         approvers={[{ userId: 2, name: "Bob", email: "bob@x.com" }]}
         currentUserId={1}
+        onSubmit={onSubmit}
+        onOpenChange={() => {}}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("Reviewer"), {
+      target: { value: "2" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Submit for review" }));
+    expect(onSubmit).toHaveBeenCalledWith({ reviewerId: 2, message: null });
+  });
+
+  it("disables submit when no eligible reviewer is left to pick", () => {
+    render(
+      <SubmitReviewDialog
+        open
+        approvers={[{ userId: 1, name: "Me", email: "me@x.com" }]}
+        currentUserId={1}
         onSubmit={() => {}}
         onOpenChange={() => {}}
       />,
     );
-    expect(screen.getByText(/at least 2 approvers/i)).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Submit for review" }),
     ).toBeDisabled();

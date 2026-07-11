@@ -351,16 +351,17 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
                 self.session, job.job_id, reviewer_id=1, submitted_by=1, message=None
             )
 
-    async def test_submit_requires_two_approvers(self):
-        """Submission needs an approver pool of at least two."""
+    async def test_submit_allows_single_approver_pool(self):
+        """Submission has no minimum pool size — one eligible approver suffices."""
         job = self._job(status=JobStatus.DRAFT)
         self.repo.get_by_job_id.return_value = job
         self.perms.get_active_users_with_permission.return_value = [self._approver(2)]
 
-        with self.assertRaisesRegex(ValueError, "pool"):
-            await self.service.submit_for_review(
-                self.session, job.job_id, reviewer_id=2, submitted_by=1, message=None
-            )
+        result = await self.service.submit_for_review(
+            self.session, job.job_id, reviewer_id=2, submitted_by=1, message=None
+        )
+
+        self.assertEqual(result.reviewer_id, 2)
 
     async def test_submit_rejects_reviewer_outside_pool(self):
         """The chosen reviewer must hold the approve permission."""
@@ -945,17 +946,6 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(ValueError, "self"):
             await self.service.request_close(
                 self.session, job.job_id, reviewer_id=1, submitted_by=1, message=None
-            )
-
-    async def test_request_close_pool_too_small_raises(self):
-        """request_close blocks when the approver pool is fewer than two."""
-        job = self._job(status=JobStatus.PUBLISHED)
-        self.repo.get_by_job_id.return_value = job
-        self.perms.get_active_users_with_permission.return_value = [self._approver(2)]
-
-        with self.assertRaisesRegex(ValueError, "pool"):
-            await self.service.request_close(
-                self.session, job.job_id, reviewer_id=2, submitted_by=1, message=None
             )
 
     async def test_request_close_reviewer_not_in_pool_raises(self):

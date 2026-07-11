@@ -24,6 +24,7 @@ import {
   getJob,
   listApprovers,
   listJobOwners,
+  listInterviewPool,
   listJobActivity,
   listMyReviews,
   submitForReview,
@@ -101,6 +102,8 @@ const PostingDetailPage = () => {
   const [job, setJob] = useState(null);
   const [approversById, setApproversById] = useState({});
   const [ownersById, setOwnersById] = useState({});
+  const [jobOwners, setJobOwners] = useState([]);
+  const [interviewPool, setInterviewPool] = useState([]);
   const [activity, setActivity] = useState([]);
   const [myOpenReview, setMyOpenReview] = useState(null);
   const [loadError, setLoadError] = useState(false);
@@ -127,26 +130,39 @@ const PostingDetailPage = () => {
       getJob(id),
       listApprovers(),
       listJobOwners(),
+      listInterviewPool(),
       listJobActivity(id),
       canApprove ? listMyReviews() : Promise.resolve({ data: [] }),
     ])
-      .then(([jobRes, approversRes, ownersRes, activityRes, myReviewsRes]) => {
-        setJob(jobRes.data);
-        setApproversById(
-          Object.fromEntries(
-            (approversRes.data ?? []).map((a) => [a.userId, a.name]),
-          ),
-        );
-        setOwnersById(
-          Object.fromEntries(
-            (ownersRes.data ?? []).map((o) => [o.userId, o.name]),
-          ),
-        );
-        setActivity(activityRes.data ?? []);
-        setMyOpenReview(
-          (myReviewsRes.data ?? []).find((r) => r.jobId === Number(id)) ?? null,
-        );
-      })
+      .then(
+        ([
+          jobRes,
+          approversRes,
+          ownersRes,
+          interviewPoolRes,
+          activityRes,
+          myReviewsRes,
+        ]) => {
+          setJob(jobRes.data);
+          setApproversById(
+            Object.fromEntries(
+              (approversRes.data ?? []).map((a) => [a.userId, a.name]),
+            ),
+          );
+          setOwnersById(
+            Object.fromEntries(
+              (ownersRes.data ?? []).map((o) => [o.userId, o.name]),
+            ),
+          );
+          setJobOwners(ownersRes.data ?? []);
+          setInterviewPool(interviewPoolRes.data ?? []);
+          setActivity(activityRes.data ?? []);
+          setMyOpenReview(
+            (myReviewsRes.data ?? []).find((r) => r.jobId === Number(id)) ??
+              null,
+          );
+        },
+      )
       .catch((e) => {
         setLoadError(true);
         toast.error(e.message);
@@ -398,7 +414,11 @@ const PostingDetailPage = () => {
           />
         </TabsContent>
         <TabsContent value="configuration">
-          <PostingConfigSummary job={job} />
+          <PostingConfigSummary
+            job={job}
+            interviewPool={interviewPool}
+            jobOwners={jobOwners}
+          />
         </TabsContent>
         <TabsContent value="history">
           {activity.length === 0 ? (
