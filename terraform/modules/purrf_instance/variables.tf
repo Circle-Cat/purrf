@@ -46,6 +46,12 @@ variable "neon_org_id" {
   type = string
 }
 
+variable "neon_region_id" {
+  description = "Neon project region (immutable after creation - changing it destroys and recreates the project, database, and role). Defaults to the region every environment has used historically; override per-environment to migrate one without affecting the others."
+  type        = string
+  default     = "aws-us-east-1"
+}
+
 variable "cloudflare_account_id" {
   description = "Cloudflare Account ID"
   type        = string

@@ -59,6 +59,10 @@ output "chat_google_events_topic_id" {
   value = module.purrf_instance.chat_google_events_topic_id
 }
 
+output "resume_bucket_name" {
+  value = module.purrf_instance.resume_bucket_name
+}
+
 output "microsoft_chat_notification_url" {
   value = module.purrf_instance.microsoft_chat_notification_url
 }

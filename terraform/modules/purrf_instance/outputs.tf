@@ -74,6 +74,10 @@ output "chat_google_events_topic_id" {
   value = google_pubsub_topic.topics["chat-google-events"].name
 }
 
+output "resume_bucket_name" {
+  value = google_storage_bucket.resumes.name
+}
+
 output "microsoft_chat_notification_url" {
   value = "https://${local.domains.cf}/${local.name_prefix}-microsoft-chat"
 }
