@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { toast } from "sonner";
 import PostingDetailPage from "@/pages/Recruiting/PostingDetailPage";
@@ -257,5 +258,73 @@ describe("PostingDetailPage", () => {
         screen.getByRole("heading", { name: "Request close" }),
       ).toBeInTheDocument(),
     );
+  });
+
+  it("formats the review history timeline into readable copy, not raw event types", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        status: "draft",
+        pipelineConfig: null,
+        screenRules: null,
+        profileConfig: null,
+        lastRejectComment: null,
+        reviewerId: null,
+      },
+    });
+    api.listApprovers.mockResolvedValue({
+      data: [{ userId: 9, name: "Yanpei Wang" }],
+    });
+    api.listJobActivity.mockResolvedValue({
+      data: [
+        {
+          id: 1,
+          eventType: "job_created",
+          details: {},
+          actorId: 3,
+          actorName: "Yuanyuan Huang",
+          createdAt: "2026-07-11T09:19:32Z",
+        },
+        {
+          id: 2,
+          eventType: "review_opened",
+          details: { kind: "initial", reviewerId: 9, message: null },
+          actorId: 3,
+          actorName: "Yuanyuan Huang",
+          createdAt: "2026-07-11T09:20:00Z",
+        },
+        {
+          id: 3,
+          eventType: "review_decided",
+          details: { kind: "initial", decision: "rejected", comment: "Fix the title" },
+          actorId: 9,
+          actorName: "Yanpei Wang",
+          createdAt: "2026-07-11T15:21:39Z",
+        },
+      ],
+    });
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("tab", { name: "Review history" }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/Yuanyuan Huang created this posting as a draft/),
+      ).toBeInTheDocument();
+    });
+    expect(
+      screen.getByText(
+        /Yuanyuan Huang submitted for review, assigned to Yanpei Wang/,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /Yanpei Wang rejected the review.*Fix the title.*sent back to draft/,
+      ),
+    ).toBeInTheDocument();
   });
 });

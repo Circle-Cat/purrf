@@ -209,6 +209,49 @@ const PostingDetailPage = () => {
     .map((oid) => ownersById[oid] ?? `User ${oid}`)
     .join(", ");
 
+  const formatActivity = (entry) => {
+    const { eventType, actorName, details = {} } = entry;
+    const reviewerName = details.reviewerId
+      ? (approversById[details.reviewerId] ?? `Reviewer #${details.reviewerId}`)
+      : null;
+    if (eventType === "job_created") {
+      return `${actorName} created this posting as a draft`;
+    }
+    if (eventType === "review_opened") {
+      const verb = {
+        initial: "submitted for review",
+        revision: "submitted a revision for review",
+        close: "requested to close",
+        reopen: "requested to reopen",
+      }[details.kind] ?? "submitted for review";
+      return reviewerName
+        ? `${actorName} ${verb}, assigned to ${reviewerName}`
+        : `${actorName} ${verb}`;
+    }
+    if (eventType === "review_decided") {
+      const templates = {
+        initial: {
+          approved: `${actorName} approved the review — posting published`,
+          rejected: `${actorName} rejected the review: "${details.comment}" — sent back to draft`,
+        },
+        revision: {
+          approved: `${actorName} approved the revision — changes published`,
+          rejected: `${actorName} rejected the revision: "${details.comment}" — changes discarded`,
+        },
+        close: {
+          approved: `${actorName} approved the close request — posting closed`,
+          rejected: `${actorName} rejected the close request: "${details.comment}" — posting stays published`,
+        },
+        reopen: {
+          approved: `${actorName} approved the reopen request — posting republished`,
+          rejected: `${actorName} rejected the reopen request: "${details.comment}" — posting stays closed`,
+        },
+      };
+      return templates[details.kind]?.[details.decision] ?? `${actorName} ${eventType}`;
+    }
+    return `${actorName} ${eventType}`;
+  };
+
   const openReview = async (kind) => {
     try {
       const { data } = await listApprovers();
@@ -435,7 +478,7 @@ const PostingDetailPage = () => {
                   <span className="text-slate-500">
                     {new Date(entry.createdAt).toLocaleString()}
                   </span>{" "}
-                  — {entry.eventType} by {entry.actorName}
+                  — {formatActivity(entry)}
                 </li>
               ))}
             </ul>
