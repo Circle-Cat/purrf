@@ -114,4 +114,18 @@ describe("PostingConfigSummary", () => {
       ),
     ).toBeInTheDocument();
   });
+
+  it("reads the work-experience requirement from workExperience, not experience", () => {
+    render(
+      <PostingConfigSummary
+        job={{
+          pipelineConfig: null,
+          screenRules: { rules: [] },
+          profileConfig: { workExperience: "required" },
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Work experience: Required")).toBeInTheDocument();
+  });
 });

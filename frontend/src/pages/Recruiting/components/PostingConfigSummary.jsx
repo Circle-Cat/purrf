@@ -7,6 +7,13 @@ const ACTION_LABEL = {
   auto_hire: "Auto-hire",
 };
 
+/** Profile requirement fields, mirroring ProfileConfigEditor's FIELDS keys/labels. */
+const PROFILE_FIELDS = [
+  { key: "education", label: "Education" },
+  { key: "workExperience", label: "Work experience" },
+  { key: "resume", label: "Resume" },
+];
+
 /** "google.com" for a single value, "one of google.com, circlecat.org" for a list. */
 const domainsPhrase = (value) =>
   Array.isArray(value) ? `one of ${value.join(", ")}` : value;
@@ -67,9 +74,9 @@ const PostingConfigSummary = ({ job, interviewPool = [], jobOwners = [] }) => {
           Profile requirements
         </h3>
         <ul className="space-y-1">
-          {["education", "experience", "resume"].map((field) => (
-            <li key={field} className="text-sm text-slate-700">
-              {humanize(field)}: {humanize(profile[field] ?? "off")}
+          {PROFILE_FIELDS.map(({ key, label }) => (
+            <li key={key} className="text-sm text-slate-700">
+              {label}: {humanize(profile[key] ?? "off")}
             </li>
           ))}
         </ul>
