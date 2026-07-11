@@ -70,7 +70,6 @@ export const POSTINGS_GUIDE = {
     },
   ],
   notes: [
-    "At least 2 active approvers must exist before you can submit for review.",
     "You cannot review your own posting.",
     "Only a posting that was never published can be deleted.",
   ],
@@ -187,5 +186,98 @@ export const REVIEWS_GUIDE = {
   notes: [
     "A comment is required when you reject.",
     "You cannot review your own submissions.",
+  ],
+};
+
+/** Owner-facing guide for the Applications Board. */
+export const APPLICATIONS_BOARD_GUIDE = {
+  title: "How the board works",
+  description: "Track applicants through your posting's interview pipeline.",
+  steps: [
+    {
+      title: "Pick a posting",
+      detail:
+        "Switch between postings you own using the dropdown next to the title.",
+    },
+    {
+      title: "Read the lanes",
+      detail:
+        "Each lane is one pipeline stage (multi-round stages split into Round 1, Round 2, ...), followed by fixed Offer, Hired, and Rejected lanes.",
+    },
+    {
+      title: "Open an applicant",
+      detail:
+        "Click any card to see their full application, evaluations, and take action.",
+    },
+  ],
+  notes: [
+    'A "Cold freeze" tag means this applicant is reapplying within the posting\'s cooldown window.',
+    '"Blacklisted" vs "Blacklist Lifted" distinguishes a currently-blocked applicant from one who was blacklisted but has since been unblocked.',
+  ],
+};
+
+/** Owner/read.all-facing guide for the application detail page's operate panel. */
+export const APPLICATION_OWNER_GUIDE = {
+  title: "How application review works",
+  description: "Move an applicant through the pipeline and record decisions.",
+  steps: [
+    {
+      title: "Check status",
+      detail:
+        "Sub-status buttons under the stage badge track where the applicant is within the current stage.",
+    },
+    {
+      title: "Advance",
+      detail:
+        "Moves the applicant to the next stage (or next round, if the stage has more than one). Interview stages let you pick an assignee, or leave it for later.",
+    },
+    {
+      title: "Reassign",
+      detail:
+        "Change who's currently responsible for this stage — always requires picking someone.",
+    },
+    {
+      title: "Reject or Blacklist",
+      detail:
+        "Reject ends this application with a reason. Blacklist also rejects it and blocks the applicant from every future posting.",
+    },
+    {
+      title: "Review evaluations",
+      detail:
+        "The Evaluations tab shows every submitted scorecard; Timeline shows the full history; Comments lets you discuss with other staff.",
+    },
+  ],
+  notes: [
+    "Scheduling an interview stage requires an assignee first.",
+    "read.all viewers see this same panel read-only — they can't act on it.",
+  ],
+};
+
+/** Evaluator-facing guide for the application detail page's rubric view (?mode=evaluate). */
+export const APPLICATION_EVALUATOR_GUIDE = {
+  title: "How evaluating works",
+  description: "Score this candidate's current interview stage.",
+  steps: [
+    {
+      title: "Fill out the rubric",
+      detail: "Each field is Pass/Fail or a 1-5 score, some with notes.",
+    },
+    {
+      title: "Save draft",
+      detail:
+        "Keeps your progress without submitting — you can come back and change it.",
+    },
+    {
+      title: "Confirm & Submit",
+      detail: "Locks your evaluation. It can't be edited after this.",
+    },
+    {
+      title: "Comments",
+      detail:
+        "Discuss the candidate with the owner or other staff — separate from your score.",
+    },
+  ],
+  notes: [
+    "If you've been reassigned away from this stage, you'll see a message instead of the form.",
   ],
 };
