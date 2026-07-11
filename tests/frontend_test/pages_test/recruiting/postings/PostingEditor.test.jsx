@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import {
+  render,
+  screen,
+  fireEvent,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { toast } from "sonner";
@@ -58,10 +64,11 @@ describe("PostingEditor", () => {
   it("shows the How it works guide explaining the form", () => {
     renderAt("/postings/new");
     fireEvent.click(screen.getByRole("button", { name: "How it works" }));
+    const dialog = screen.getByRole("dialog");
     expect(
-      screen.getByRole("heading", { name: "How posting setup works" }),
+      within(dialog).getByRole("heading", { name: "How posting setup works" }),
     ).toBeInTheDocument();
-    expect(screen.getByText("Owner(s)")).toBeInTheDocument();
+    expect(within(dialog).getByText("Managed by")).toBeInTheDocument();
   });
 
   it("creates a new posting from the typed draft", async () => {

@@ -42,7 +42,7 @@ const PipelineSummary = ({
       <p className="text-sm font-medium text-slate-700">Interview pipeline</p>
       {ownerIds.length > 0 && (
         <p className="text-sm text-slate-600">
-          Owner: {personLabels(jobOwners, ownerIds)}
+          Managed by: {personLabels(jobOwners, ownerIds)}
         </p>
       )}
       {stages.length === 0 ? (
