@@ -1,10 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import {
+  render,
+  screen,
+  waitFor,
+  fireEvent,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { toast } from "sonner";
 import PostingDetailPage from "@/pages/Recruiting/PostingDetailPage";
 import * as api from "@/api/recruitingApi";
+import { ROUTE_PATHS } from "@/constants/RoutePaths";
 
 vi.mock("@/api/recruitingApi");
 // Bazel-sandbox module resolution: `vi.mock("sonner", factory)` doesn't
@@ -26,10 +33,14 @@ vi.mock("@/context/auth/AuthContext", () => ({
 
 const renderAt = (jobId) => {
   const router = createMemoryRouter(
-    [{ path: "/recruiting/postings/:id", element: <PostingDetailPage /> }],
+    [
+      { path: "/recruiting/postings/:id", element: <PostingDetailPage /> },
+      { path: "/recruiting/postings", element: <div>Postings list</div> },
+    ],
     { initialEntries: [`/recruiting/postings/${jobId}`] },
   );
-  return render(<RouterProvider router={router} />);
+  const result = render(<RouterProvider router={router} />);
+  return { ...result, router };
 };
 
 describe("PostingDetailPage", () => {
@@ -326,5 +337,45 @@ describe("PostingDetailPage", () => {
         /Yanpei Wang rejected the review.*Fix the title.*sent back to draft/,
       ),
     ).toBeInTheDocument();
+  });
+
+  it("navigates to the postings list after Submit for review succeeds", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        status: "draft",
+        pipelineConfig: null,
+        screenRules: null,
+        profileConfig: null,
+        lastRejectComment: null,
+        reviewerId: null,
+      },
+    });
+    api.listApprovers.mockResolvedValue({ data: [{ userId: 9, name: "Bob" }] });
+    api.submitForReview.mockResolvedValue({ data: { id: 1 } });
+    authState.permissions = ["recruiting.job.write"];
+    const { router } = renderAt(1);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Submit for review" }),
+      ).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Submit for review" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("Reviewer"), {
+      target: { value: "9" },
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Submit for review" }),
+    );
+
+    await waitFor(() =>
+      expect(router.state.location.pathname).toBe(
+        ROUTE_PATHS.RECRUITING_POSTINGS,
+      ),
+    );
   });
 });

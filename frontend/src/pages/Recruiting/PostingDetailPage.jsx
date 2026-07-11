@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -102,6 +102,7 @@ const REVIEW_ACTION = {
  */
 const PostingDetailPage = () => {
   const { id } = useParams();
+  const navigate = useNavigate();
   const { user, permissions = [] } = useAuth();
   const canWrite = permissions.includes(PERMISSIONS.RECRUITING_JOB_WRITE);
   const canApprove = permissions.includes(PERMISSIONS.RECRUITING_JOB_APPROVE);
@@ -269,12 +270,10 @@ const PostingDetailPage = () => {
     setSubmitting(true);
     try {
       await action.dispatch(id, body);
-      setSubmitOpen(false);
-      load();
       toast.success(action.successMsg);
+      navigate(ROUTE_PATHS.RECRUITING_POSTINGS);
     } catch (e) {
       toast.error(e.message);
-    } finally {
       setSubmitting(false);
     }
   };
