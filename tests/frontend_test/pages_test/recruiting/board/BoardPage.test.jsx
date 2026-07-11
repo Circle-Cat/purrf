@@ -204,6 +204,24 @@ describe("BoardPage", () => {
     );
   });
 
+  it("opens the How it works guide with the board's title and steps", async () => {
+    const user = userEvent.setup();
+    api.listBoardJobs.mockResolvedValue({ data: [jobA] });
+    api.getJobBoard.mockResolvedValue({ data: { recruiter_screening: [] } });
+
+    renderPage();
+    await waitFor(() =>
+      expect(screen.getByText("Recruiter screening")).toBeInTheDocument(),
+    );
+
+    await user.click(screen.getByRole("button", { name: "How it works" }));
+
+    expect(
+      screen.getByRole("heading", { name: "How the board works" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Pick a posting")).toBeInTheDocument();
+  });
+
   it("does not show a sub-status badge in terminal lanes and shows one in pipeline lanes", async () => {
     api.listBoardJobs.mockResolvedValue({ data: [jobA] });
     api.getJobBoard.mockResolvedValue({

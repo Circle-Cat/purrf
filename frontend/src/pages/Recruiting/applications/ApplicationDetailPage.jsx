@@ -72,6 +72,11 @@ import {
   INTERVIEW_STAGES,
 } from "@/pages/Recruiting/board/stageFormat";
 import { useAuth } from "@/context/auth/AuthContext";
+import HowItWorksDialog from "@/pages/Recruiting/components/HowItWorksDialog";
+import {
+  APPLICATION_OWNER_GUIDE,
+  APPLICATION_EVALUATOR_GUIDE,
+} from "@/pages/Recruiting/components/guideContent";
 
 /**
  * Advance targets whose assignee picker may be pre-filled from the job's
@@ -1042,6 +1047,14 @@ const ApplicationDetailPage = () => {
     interviewPool.find((u) => u.userId === detail.assigneeId)?.name ??
     (detail.assigneeId != null ? `User ${detail.assigneeId}` : null);
 
+  const guide = evaluatorMode
+    ? showRubric
+      ? APPLICATION_EVALUATOR_GUIDE
+      : null
+    : detail.canView
+      ? APPLICATION_OWNER_GUIDE
+      : null;
+
   return (
     <div className="flex flex-col gap-6 p-6">
       <div className="space-y-1">
@@ -1052,6 +1065,7 @@ const ApplicationDetailPage = () => {
           <Badge variant="secondary">
             {humanize(detail.application.stage)}
           </Badge>
+          {guide && <HowItWorksDialog {...guide} />}
         </div>
         <p className="text-sm text-slate-600">{detail.applicantEmail}</p>
       </div>
