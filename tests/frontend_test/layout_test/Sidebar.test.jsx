@@ -50,8 +50,14 @@ describe("Sidebar Component", () => {
     );
   });
 
-  test("renders Applications Board for a user with no permissions and links to the board page", () => {
+  test("hides Applications Board for a user with no permissions", () => {
     renderSidebar([]);
+
+    expect(screen.queryByText("Applications Board")).not.toBeInTheDocument();
+  });
+
+  test("renders Applications Board for a user with recruiting.application.advance and links to the board page", () => {
+    renderSidebar([PERMISSIONS.RECRUITING_APPLICATION_ADVANCE]);
 
     const link = screen.getByText("Applications Board");
     expect(link).toBeInTheDocument();

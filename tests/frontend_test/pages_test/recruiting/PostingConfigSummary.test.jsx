@@ -48,7 +48,7 @@ describe("PostingConfigSummary", () => {
     );
 
     expect(screen.getByText("Assignee Ann (#7)")).toBeInTheDocument();
-    expect(screen.getByText("Owner: Bo (#2)")).toBeInTheDocument();
+    expect(screen.getByText("Managed by: Bo (#2)")).toBeInTheDocument();
   });
 
   it("describes an answer screen rule with the question's label and chosen value", () => {

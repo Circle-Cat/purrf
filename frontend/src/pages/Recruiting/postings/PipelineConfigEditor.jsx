@@ -13,7 +13,7 @@ const OwnerChip = ({ name, onRemove }) => (
     <button
       type="button"
       onClick={onRemove}
-      aria-label={`Remove owner ${name}`}
+      aria-label={`Remove manager ${name}`}
       className="text-slate-400 hover:text-slate-600"
     >
       ×
@@ -80,7 +80,7 @@ const PipelineConfigEditor = ({
     <div className="space-y-3">
       <p className="text-sm font-medium text-slate-700">Interview pipeline</p>
       <div className="space-y-1">
-        <Label>Owner</Label>
+        <Label>Managed by</Label>
         <div className="flex flex-wrap items-center gap-2">
           {ownerIds.map((id) => (
             <OwnerChip
@@ -91,7 +91,7 @@ const PipelineConfigEditor = ({
           ))}
         </div>
         <PeoplePicker
-          label="Add owner"
+          label="Add manager"
           pool={availableOwners}
           value={undefined}
           onChange={addOwner}

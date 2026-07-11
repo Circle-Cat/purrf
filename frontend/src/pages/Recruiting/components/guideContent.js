@@ -114,7 +114,7 @@ export const POSTING_EDITOR_GUIDE = {
   statusesTitle: "Key concepts",
   statuses: [
     {
-      name: "Owner(s)",
+      name: "Managed by",
       description:
         "Staff who can advance applicants through every stage of this posting's pipeline.",
     },

@@ -36,7 +36,7 @@ const describeCondition = (condition, questions) => {
 /**
  * Read-only summary of a posting's pipeline/screening/profile configuration.
  * Shown to every viewer of the Configuration tab regardless of write access —
- * only the "Edit configuration" button next to it is permission-gated.
+ * only the "Edit" button next to it is permission-gated.
  *
  * @param {{job: {pipelineConfig?: object, screenRules?: object,
  *          profileConfig?: object, formSchema?: {questions?: object[]}},

@@ -17,7 +17,8 @@ const stageLabel = (key) =>
  * per application/stage pairing they're the assignee for. Each row links to
  * the shared application detail page in `?mode=evaluate`, which renders only
  * the rubric form there — no owner actions, even if the caller also owns
- * the job. Requires no recruiting permissions.
+ * the job. Route and nav entry are gated on RECRUITING_INTERVIEW_EVALUATE;
+ * the backend list itself still scopes by assignment, not by permission.
  */
 const MyEvaluations = () => {
   const [evaluations, setEvaluations] = useState(null);
