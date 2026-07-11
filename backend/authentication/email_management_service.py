@@ -120,6 +120,21 @@ class EmailManagementService:
             raise ValueError("Verified email does not match the requested address")
 
         new_sub = id_token_claims["sub"]
+        # Auth0 has already merged this email's passwordless identity into
+        # the caller's own account root when the OTP grant hands back
+        # current_sub itself instead of a distinct 'email|...' sub. Linking
+        # it to itself would fail (Auth0: "Main identity and the new one are
+        # the same"), so skip link_identity in that case and instead pull
+        # the real per-connection id from the account root's own identities
+        # array, if Auth0 exposes one.
+        self_linked = new_sub == current_sub
+        if self_linked:
+            real_sub = self._auth0.get_linked_identity_sub(
+                current_sub, "email", target_email
+            )
+            if real_sub is not None:
+                new_sub = real_sub
+
         existing_identity = await self._user_identities.get_by_subject_identifier(
             session, new_sub
         )
@@ -129,12 +144,13 @@ class EmailManagementService:
         ):
             raise ConflictError("Identity already linked to another account")
 
-        provider, secondary_user_id = self._split_sub(new_sub)
-        self._auth0.link_identity(
-            account_root_sub=current_sub,
-            provider=provider,
-            secondary_user_id=secondary_user_id,
-        )
+        if not self_linked:
+            provider, secondary_user_id = self._split_sub(new_sub)
+            self._auth0.link_identity(
+                account_root_sub=current_sub,
+                provider=provider,
+                secondary_user_id=secondary_user_id,
+            )
 
         await self._confirm_email(session, current_user_id, target_email)
         if existing_identity is None:
