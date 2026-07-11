@@ -837,6 +837,7 @@ class JobService:
                 f"Job {job_id} cannot be deleted: only a draft or a "
                 "never-published closed posting may be deleted"
             )
+        await self.job_review_repository.delete_by_job(session, job_id)
         await self.job_repository.delete_job(session, job)
         await session.commit()
 

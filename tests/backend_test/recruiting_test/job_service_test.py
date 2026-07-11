@@ -40,6 +40,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         self.review_repo.get_open_for_job = AsyncMock(return_value=None)
         self.review_repo.list_by_reviewer = AsyncMock(return_value=[])
         self.review_repo.get_latest_reviews = AsyncMock(return_value={})
+        self.review_repo.delete_by_job = AsyncMock()
         self.session = AsyncMock()
         self.notification_repo = create_autospec(NotificationRepository, instance=True)
         self.users_repo = MagicMock()
@@ -1178,6 +1179,21 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
     # ---------------------------------------------------------------------------
     # delete_job
     # ---------------------------------------------------------------------------
+
+    async def test_delete_job_removes_review_history_before_deleting_the_job(self):
+        """delete_job deletes the job's job_review rows before deleting the job
+        itself, so a Draft posting that was previously submitted and rejected
+        (and so still has a job_review row pointing at it) can be deleted
+        without an FK-violation 500."""
+        job = self._job(status=JobStatus.DRAFT)
+        self.repo.get_by_job_id.return_value = job
+
+        await self.service.delete_job(self.session, job.job_id)
+
+        self.review_repo.delete_by_job.assert_awaited_once_with(
+            self.session, job.job_id
+        )
+        self.repo.delete_job.assert_awaited_once_with(self.session, job)
 
     async def test_delete_job_draft_succeeds(self):
         """delete_job now also allows deleting a DRAFT posting."""
