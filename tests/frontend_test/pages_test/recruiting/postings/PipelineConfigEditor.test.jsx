@@ -106,7 +106,7 @@ describe("PipelineConfigEditor", () => {
     const onChange = vi.fn();
     renderEditor({ ownerIds: [42], stages: [] }, onChange);
     expect(screen.getByText("Bo")).toBeInTheDocument();
-    await user.click(screen.getByRole("combobox", { name: "Add owner" }));
+    await user.click(screen.getByRole("combobox", { name: "Add manager" }));
     await user.click(screen.getByRole("option", { name: /Cy/ }));
     expect(onChange).toHaveBeenCalledWith(
       expect.objectContaining({ ownerIds: [42, 43] }),
@@ -118,7 +118,7 @@ describe("PipelineConfigEditor", () => {
     const onChange = vi.fn();
     renderEditor({ ownerId: 42, stages: [] }, onChange);
     expect(screen.getByText("Bo")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Remove owner Bo" }));
+    await user.click(screen.getByRole("button", { name: "Remove manager Bo" }));
     expect(onChange).toHaveBeenCalledWith(
       expect.objectContaining({ ownerIds: [] }),
     );
@@ -128,7 +128,7 @@ describe("PipelineConfigEditor", () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
     renderEditor({ ownerIds: [42, 43], stages: [] }, onChange);
-    await user.click(screen.getByRole("combobox", { name: "Add owner" }));
+    await user.click(screen.getByRole("combobox", { name: "Add manager" }));
     expect(
       screen.queryByRole("option", { name: /Bo/ }),
     ).not.toBeInTheDocument();

@@ -87,7 +87,7 @@ const REVIEW_ACTION = {
  * (description + profile requirements + question form); Configuration is
  * staff-only rules (pipeline/screening/profile). The write-action
  * "Operate:" block only renders for canWrite (and only when the current
- * status has an available action); within it, "Edit configuration" only
+ * status has an available action); within it, "Edit" only
  * shows for the statuses `update_job` actually accepts (DRAFT/PUBLISHED/
  * CLOSED — not PUBLISHED_PENDING_REVISION, which already has a staged
  * edit awaiting its own review). Approve/Reject only for the review's
@@ -322,7 +322,7 @@ const PostingDetailPage = () => {
                 window.location.assign(ROUTE_PATHS.RECRUITING_POSTING_EDIT(id))
               }
             >
-              Edit configuration
+              Edit
             </Button>
           )}
           {isDraft && (

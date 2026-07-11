@@ -30,7 +30,7 @@ describe("PipelineSummary", () => {
     expect(screen.getByText("2. Tech — 2 round(s)")).toBeInTheDocument();
     expect(screen.getByText("Referral-skippable")).toBeInTheDocument();
     expect(screen.getByText("Assignee #7")).toBeInTheDocument();
-    expect(screen.getByText("Owner: #42")).toBeInTheDocument();
+    expect(screen.getByText("Managed by: #42")).toBeInTheDocument();
   });
 
   it("shows an empty note when there are no stages", () => {
@@ -49,7 +49,7 @@ describe("PipelineSummary", () => {
         interviewPool={[{ userId: 7, name: "Ann", email: "ann@x.com" }]}
       />,
     );
-    expect(screen.getByText("Owner: Bo (#42)")).toBeInTheDocument();
+    expect(screen.getByText("Managed by: Bo (#42)")).toBeInTheDocument();
     expect(screen.getByText("Assignee Ann (#7)")).toBeInTheDocument();
   });
 
@@ -66,6 +66,8 @@ describe("PipelineSummary", () => {
         ]}
       />,
     );
-    expect(screen.getByText("Owner: Bo (#42), Cy (#43)")).toBeInTheDocument();
+    expect(
+      screen.getByText("Managed by: Bo (#42), Cy (#43)"),
+    ).toBeInTheDocument();
   });
 });

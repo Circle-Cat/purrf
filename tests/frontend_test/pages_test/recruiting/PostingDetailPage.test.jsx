@@ -69,18 +69,16 @@ describe("PostingDetailPage", () => {
     ).toBeInTheDocument();
   });
 
-  it("shows Edit configuration in the Operate row for a draft posting", async () => {
+  it("shows Edit in the Operate row for a draft posting", async () => {
     authState.permissions = ["recruiting.job.write"];
     renderAt(1);
 
     await waitFor(() =>
-      expect(
-        screen.getByRole("button", { name: "Edit configuration" }),
-      ).toBeInTheDocument(),
+      expect(screen.getByRole("button", { name: "Edit" })).toBeInTheDocument(),
     );
   });
 
-  it("hides Edit configuration while a revision is pending re-review", async () => {
+  it("hides Edit while a revision is pending re-review", async () => {
     api.getJob.mockResolvedValue({
       data: {
         id: 1,
@@ -102,7 +100,7 @@ describe("PostingDetailPage", () => {
       ).toBeInTheDocument(),
     );
     expect(
-      screen.queryByRole("button", { name: "Edit configuration" }),
+      screen.queryByRole("button", { name: "Edit" }),
     ).not.toBeInTheDocument();
   });
 

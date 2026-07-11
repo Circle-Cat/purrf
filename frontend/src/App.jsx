@@ -206,7 +206,15 @@ function App() {
                     />
                     <Route
                       path={ROUTE_PATHS.RECRUITING_BOARD}
-                      element={<BoardPage />}
+                      element={
+                        <ProtectedRoute
+                          requiredPermissions={[
+                            PERMISSIONS.RECRUITING_APPLICATION_ADVANCE,
+                          ]}
+                        >
+                          <BoardPage />
+                        </ProtectedRoute>
+                      }
                     />
                     <Route
                       path={ROUTE_PATHS.RECRUITING_APPLICATION_DETAIL(
@@ -216,7 +224,15 @@ function App() {
                     />
                     <Route
                       path={ROUTE_PATHS.RECRUITING_MY_EVALUATIONS}
-                      element={<MyEvaluations />}
+                      element={
+                        <ProtectedRoute
+                          requiredPermissions={[
+                            PERMISSIONS.RECRUITING_INTERVIEW_EVALUATE,
+                          ]}
+                        >
+                          <MyEvaluations />
+                        </ProtectedRoute>
+                      }
                     />
                     <Route
                       path="/recruiting/jobs/:jobId"

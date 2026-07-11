@@ -30,7 +30,7 @@ describe("recruiting guide content", () => {
     expect(POSTING_EDITOR_GUIDE.title).toBeTruthy();
     expect(POSTING_EDITOR_GUIDE.statusesTitle).toBe("Key concepts");
     expect(POSTING_EDITOR_GUIDE.statuses.map((s) => s.name)).toEqual(
-      expect.arrayContaining(["Owner(s)", "Stage"]),
+      expect.arrayContaining(["Managed by", "Stage"]),
     );
     expect(POSTING_EDITOR_GUIDE.steps.length).toBeGreaterThan(0);
   });
