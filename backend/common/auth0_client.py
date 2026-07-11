@@ -197,6 +197,45 @@ class Auth0Client:
             "[Auth0Client] link_identity merged %s into account root", secondary_user_id
         )
 
+    def get_linked_identity_sub(
+        self, account_root_sub: str, provider: str
+    ) -> str | None:
+        """
+        Look up the real per-connection identity id for `provider` on
+        account_root_sub's own Auth0 profile.
+
+        Used when an OIDC token has already collapsed to the account root's
+        own sub instead of exposing a linked secondary identity's native id
+        (e.g. a passwordless OTP grant for an email already merged into this
+        same account root) -- reads the account root's own `identities`
+        array via the Management API instead of trusting the token.
+
+        Args:
+            account_root_sub (str): Auth0 sub of the account-root user to inspect.
+            provider (str): Provider to look for in the identities array (e.g. 'email').
+
+        Returns:
+            str | None: ``f"{provider}|{user_id}"`` for the matching identity,
+            or None if the account root has no linked identity for that provider.
+
+        Raises:
+            RateLimitedError: If Auth0 throttles the request (HTTP 429).
+            RuntimeError: For any other non-2xx Auth0 response.
+        """
+        encoded = urllib.parse.quote(account_root_sub, safe="")
+        url = f"https://{self._tenant}/api/v2/users/{encoded}"
+        response = requests.get(
+            url,
+            headers={"Authorization": f"Bearer {self._get_m2m_token()}"},
+            timeout=_HTTP_TIMEOUT_SECONDS,
+        )
+        self._raise_for_auth0_error(response, "get_linked_identity_sub")
+        identities = response.json().get("identities") or []
+        for identity in identities:
+            if identity.get("provider") == provider:
+                return f"{provider}|{identity['user_id']}"
+        return None
+
     def add_alias_email_to_account_root(
         self, account_root_sub: str, email: str
     ) -> None:

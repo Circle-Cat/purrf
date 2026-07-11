@@ -113,6 +113,47 @@ class TestAuth0Client(unittest.TestCase):
                 self.client.link_identity("google-oauth2|1", "email", "abc")
 
     @patch("backend.common.auth0_client.requests")
+    def test_get_linked_identity_sub_found(self, mock_requests):
+        mock_requests.get.return_value = _response(
+            200,
+            {
+                "identities": [
+                    {"provider": "google-oauth2", "user_id": "104820626539067159867"},
+                    {"provider": "email", "user_id": "real123"},
+                ]
+            },
+        )
+        with patch.object(self.client, "_get_m2m_token", return_value="m2m"):
+            result = self.client.get_linked_identity_sub(
+                "google-oauth2|104820626539067159867", "email"
+            )
+        self.assertEqual(result, "email|real123")
+
+    @patch("backend.common.auth0_client.requests")
+    def test_get_linked_identity_sub_not_found(self, mock_requests):
+        mock_requests.get.return_value = _response(
+            200,
+            {"identities": [{"provider": "google-oauth2", "user_id": "x"}]},
+        )
+        with patch.object(self.client, "_get_m2m_token", return_value="m2m"):
+            result = self.client.get_linked_identity_sub("google-oauth2|x", "email")
+        self.assertIsNone(result)
+
+    @patch("backend.common.auth0_client.requests")
+    def test_get_linked_identity_sub_rate_limited(self, mock_requests):
+        mock_requests.get.return_value = _response(429, {"error": "too_many_requests"})
+        with patch.object(self.client, "_get_m2m_token", return_value="m2m"):
+            with self.assertRaises(RateLimitedError):
+                self.client.get_linked_identity_sub("google-oauth2|x", "email")
+
+    @patch("backend.common.auth0_client.requests")
+    def test_get_linked_identity_sub_server_error(self, mock_requests):
+        mock_requests.get.return_value = _response(500, {"error": "server_error"})
+        with patch.object(self.client, "_get_m2m_token", return_value="m2m"):
+            with self.assertRaises(RuntimeError):
+                self.client.get_linked_identity_sub("google-oauth2|x", "email")
+
+    @patch("backend.common.auth0_client.requests")
     def test_add_alias_email_appends_new(self, mock_requests):
         mock_requests.get.return_value = _response(
             200, {"app_metadata": {"alias_emails": ["a@x.com"]}}
