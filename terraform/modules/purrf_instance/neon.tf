@@ -1,7 +1,7 @@
 resource "neon_project" "this" {
   name                      = local.neon_project_name
   pg_version                = 16
-  region_id                 = "aws-us-east-1"
+  region_id                 = var.neon_region_id
   org_id                    = var.neon_org_id
   history_retention_seconds = 21600
 }

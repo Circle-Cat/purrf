@@ -39,6 +39,7 @@ resource "kubernetes_secret" "purrf_app" {
     TAILSCALE_PROXY                   = var.tailscale_proxy
     MENTORSHIP_MENTOR_ONBOARDING_LINK = "https://circle-cat-inc-3811.reach360.com/share/course/3d9db106-543a-4d4d-98c2-7edee343d53f"
     MENTORSHIP_MENTEE_ONBOARDING_LINK = "https://learn.circlecat.cn/course/view.php?id=16"
+    RESUME_BUCKET                     = google_storage_bucket.resumes.name
 
     # Auth0 multi-IdP email OTP / account-link flow, sourced straight from the
     # Auth0 resources in auth0.tf -- no manual values to supply.
