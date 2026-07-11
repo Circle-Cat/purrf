@@ -162,6 +162,86 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         self.auth0.add_alias_email_to_account_root.assert_called_once()
         self.assertEqual(result["linked_sub"], _NEW_SUB)
 
+    async def test_verify_self_linked_records_real_sub(self):
+        """Auth0 already merged this email's passwordless identity into the
+        caller's own account root, so exchange_otp returns current_sub itself
+        instead of a distinct email|... sub. verify() must not try to link
+        the identity to itself, and must record the real per-connection sub
+        fetched from Auth0 instead."""
+        self.auth0.exchange_otp.return_value = {
+            "sub": _CURRENT_SUB,
+            "email": _TARGET_EMAIL,
+            "email_verified": True,
+        }
+        self.auth0.get_linked_identity_sub.return_value = "email|real123"
+
+        def get_by_subject_identifier(session, sub):
+            if sub == _CURRENT_SUB:
+                return UserIdentitiesEntity(
+                    user_id=_USER_ID,
+                    subject_identifier=_CURRENT_SUB,
+                    identity_type=IdentityType.EXTERNAL,
+                    email_claim=None,
+                )
+            return None
+
+        self.user_identities.get_by_subject_identifier.side_effect = (
+            get_by_subject_identifier
+        )
+
+        result = await self.service.verify(
+            self.session, _USER_ID, _CURRENT_SUB, _state(), "123456"
+        )
+
+        self.auth0.link_identity.assert_not_called()
+        self.auth0.get_linked_identity_sub.assert_called_once_with(
+            _CURRENT_SUB, "email", _TARGET_EMAIL
+        )
+        identity_entity = self.user_identities.upsert_identity.call_args.kwargs[
+            "entity"
+        ]
+        self.assertEqual(identity_entity.subject_identifier, "email|real123")
+        email_entity = self.user_emails.upsert_email.call_args.kwargs["entity"]
+        self.assertTrue(email_entity.otp_confirmed)
+        self.session.commit.assert_awaited_once()
+        self.assertEqual(result["linked_sub"], "email|real123")
+
+    async def test_verify_self_linked_no_real_sub_only_confirms_email(self):
+        """Same self-linked case, but Auth0's identities array has nothing
+        for 'email' (defensive fallback): still no link_identity call and no
+        new identity row, but the email confirmation still happens."""
+        self.auth0.exchange_otp.return_value = {
+            "sub": _CURRENT_SUB,
+            "email": _TARGET_EMAIL,
+            "email_verified": True,
+        }
+        self.auth0.get_linked_identity_sub.return_value = None
+
+        def get_by_subject_identifier(session, sub):
+            if sub == _CURRENT_SUB:
+                return UserIdentitiesEntity(
+                    user_id=_USER_ID,
+                    subject_identifier=_CURRENT_SUB,
+                    identity_type=IdentityType.EXTERNAL,
+                    email_claim=None,
+                )
+            return None
+
+        self.user_identities.get_by_subject_identifier.side_effect = (
+            get_by_subject_identifier
+        )
+
+        result = await self.service.verify(
+            self.session, _USER_ID, _CURRENT_SUB, _state(), "123456"
+        )
+
+        self.auth0.link_identity.assert_not_called()
+        self.user_identities.upsert_identity.assert_not_awaited()
+        email_entity = self.user_emails.upsert_email.call_args.kwargs["entity"]
+        self.assertTrue(email_entity.otp_confirmed)
+        self.session.commit.assert_awaited_once()
+        self.assertEqual(result["linked_sub"], _CURRENT_SUB)
+
     async def test_verify_skips_legacy_primary_sync_on_collision(self):
         """If the confirmed email is already another user's users.primary_email,
         the legacy write-through is skipped (uq_users_primary_email) rather than
