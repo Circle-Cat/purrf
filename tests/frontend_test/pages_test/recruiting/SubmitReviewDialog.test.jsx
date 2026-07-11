@@ -39,6 +39,25 @@ describe("SubmitReviewDialog", () => {
       screen.getByRole("heading", { name: "Request close" }),
     ).toBeInTheDocument();
   });
+  it("uses the title prop as the confirm button's own label, not a hardcoded 'Submit'", () => {
+    render(
+      <SubmitReviewDialog
+        open
+        approvers={approvers}
+        currentUserId={1}
+        title="Request close"
+        onSubmit={() => {}}
+        onOpenChange={() => {}}
+      />,
+    );
+    expect(
+      screen.getByRole("button", { name: "Request close" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Submit" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("excludes the current user from the reviewer options", () => {
     render(
       <SubmitReviewDialog
@@ -66,7 +85,9 @@ describe("SubmitReviewDialog", () => {
       />,
     );
     expect(screen.getByText(/at least 2 approvers/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Submit" })).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Submit for review" }),
+    ).toBeDisabled();
   });
 
   it("submits the chosen reviewer and message", () => {
@@ -86,7 +107,7 @@ describe("SubmitReviewDialog", () => {
     fireEvent.change(screen.getByLabelText("Message"), {
       target: { value: "pls" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Submit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Submit for review" }));
     expect(onSubmit).toHaveBeenCalledWith({ reviewerId: 2, message: "pls" });
   });
 
@@ -105,7 +126,9 @@ describe("SubmitReviewDialog", () => {
     fireEvent.change(screen.getByLabelText("Reviewer"), {
       target: { value: "2" },
     });
-    const submitButton = screen.getByRole("button", { name: "Submit" });
+    const submitButton = screen.getByRole("button", {
+      name: "Submit for review",
+    });
     expect(submitButton).toBeDisabled();
     fireEvent.click(submitButton);
     expect(onSubmit).not.toHaveBeenCalled();

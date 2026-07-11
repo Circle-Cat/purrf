@@ -100,12 +100,17 @@ describe("Audit", () => {
 
   it("renders one bar per selected job in the stage breakdown chart", async () => {
     render(<Audit />);
-    await waitFor(() => expect(api.getAuditOverview).toHaveBeenCalled());
+    // Waiting only for the API call to have fired (as some sibling tests do)
+    // races the mocked response's resolution -- the chart itself doesn't
+    // exist until the response lands and the component re-renders out of
+    // its loading state (same class of race already fixed for the table
+    // assertion above). findByRole polls until the chart actually appears.
+    //
     // Recharts renders SVG <rect> elements per bar segment inside the
     // chart's data-slot="chart" container — assert the container renders
     // rather than asserting on SVG internals, which is brittle.
     expect(
-      screen.getByRole("img", { name: /stage breakdown chart/i }),
+      await screen.findByRole("img", { name: /stage breakdown chart/i }),
     ).toBeInTheDocument();
   });
 });
