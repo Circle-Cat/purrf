@@ -475,8 +475,14 @@ describe("PostingDetailPage", () => {
     authState.permissions = ["recruiting.job.write"];
     renderAt(1);
 
+    // A pending edit switches Overview to a two-column Current/Proposed
+    // comparison, so "Backend Engineer" now also renders inside the
+    // Current column's PostingApplicantView (an <h2>) alongside the page
+    // header's <h1> — disambiguate by heading level.
     await waitFor(() =>
-      expect(screen.getByText("Backend Engineer")).toBeInTheDocument(),
+      expect(
+        screen.getByRole("heading", { level: 1, name: "Backend Engineer" }),
+      ).toBeInTheDocument(),
     );
     expect(
       screen.getByRole("button", { name: "Submit for review" }),
@@ -542,8 +548,14 @@ describe("PostingDetailPage", () => {
     authState.permissions = ["recruiting.job.write"];
     renderAt(1);
 
+    // A pending edit switches Overview to a two-column Current/Proposed
+    // comparison, so "Backend Engineer" now also renders inside the
+    // Current column's PostingApplicantView (an <h2>) alongside the page
+    // header's <h1> — disambiguate by heading level.
     await waitFor(() =>
-      expect(screen.getByText("Backend Engineer")).toBeInTheDocument(),
+      expect(
+        screen.getByRole("heading", { level: 1, name: "Backend Engineer" }),
+      ).toBeInTheDocument(),
     );
     expect(
       screen.getByRole("button", { name: "Request reopen" }),
@@ -572,8 +584,14 @@ describe("PostingDetailPage", () => {
     authState.permissions = ["recruiting.job.write"];
     renderAt(1);
 
+    // A pending edit switches Overview to a two-column Current/Proposed
+    // comparison, so "Backend Engineer" now also renders inside the
+    // Current column's PostingApplicantView (an <h2>) alongside the page
+    // header's <h1> — disambiguate by heading level.
     await waitFor(() =>
-      expect(screen.getByText("Backend Engineer")).toBeInTheDocument(),
+      expect(
+        screen.getByRole("heading", { level: 1, name: "Backend Engineer" }),
+      ).toBeInTheDocument(),
     );
     expect(screen.queryByText("Operate:")).not.toBeInTheDocument();
   });
