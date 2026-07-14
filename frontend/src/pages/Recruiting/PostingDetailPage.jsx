@@ -332,9 +332,18 @@ const PostingDetailPage = () => {
       <div className="space-y-1">
         <div className="flex flex-wrap items-center gap-2">
           <h1 className="text-xl font-semibold text-slate-900">{job.title}</h1>
-          <Badge variant={STATUS_VARIANT[job.status]}>
-            {STATUS_LABELS[job.status]}
-          </Badge>
+          {(() => {
+            const staged =
+              job.status === "published_pending_revision" &&
+              job.reviewerId == null;
+            const badgeLabel = staged
+              ? "Edit staged"
+              : STATUS_LABELS[job.status];
+            const badgeVariant = staged
+              ? "secondary"
+              : STATUS_VARIANT[job.status];
+            return <Badge variant={badgeVariant}>{badgeLabel}</Badge>;
+          })()}
           {job.lastRejectComment && (
             <Popover>
               <PopoverTrigger asChild>
