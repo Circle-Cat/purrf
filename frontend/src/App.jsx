@@ -130,6 +130,7 @@ function App() {
                           requiredPermissions={[
                             PERMISSIONS.RECRUITING_JOB_WRITE,
                             PERMISSIONS.RECRUITING_JOB_READ,
+                            PERMISSIONS.RECRUITING_JOB_APPROVE,
                           ]}
                         >
                           <Postings />
