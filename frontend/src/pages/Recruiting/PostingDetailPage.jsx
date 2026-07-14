@@ -464,9 +464,7 @@ const PostingDetailPage = () => {
           {proposedJob ? (
             <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
               <div className="space-y-2">
-                <h3 className="text-sm font-medium text-slate-700">
-                  Current
-                </h3>
+                <h3 className="text-sm font-medium text-slate-700">Current</h3>
                 <PostingApplicantView
                   title={job.title}
                   description={job.description}
@@ -475,9 +473,7 @@ const PostingDetailPage = () => {
                 />
               </div>
               <div className="space-y-2">
-                <h3 className="text-sm font-medium text-slate-700">
-                  Proposed
-                </h3>
+                <h3 className="text-sm font-medium text-slate-700">Proposed</h3>
                 <PostingApplicantView
                   title={proposedJob.title}
                   description={proposedJob.description}
@@ -495,11 +491,32 @@ const PostingDetailPage = () => {
           )}
         </TabsContent>
         <TabsContent value="configuration">
-          <PostingConfigSummary
-            job={job}
-            interviewPool={interviewPool}
-            jobOwners={jobOwners}
-          />
+          {proposedJob ? (
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+              <div className="space-y-2">
+                <h3 className="text-sm font-medium text-slate-700">Current</h3>
+                <PostingConfigSummary
+                  job={job}
+                  interviewPool={interviewPool}
+                  jobOwners={jobOwners}
+                />
+              </div>
+              <div className="space-y-2">
+                <h3 className="text-sm font-medium text-slate-700">Proposed</h3>
+                <PostingConfigSummary
+                  job={proposedJob}
+                  interviewPool={interviewPool}
+                  jobOwners={jobOwners}
+                />
+              </div>
+            </div>
+          ) : (
+            <PostingConfigSummary
+              job={job}
+              interviewPool={interviewPool}
+              jobOwners={jobOwners}
+            />
+          )}
         </TabsContent>
         <TabsContent value="history">
           {activity.length === 0 ? (
