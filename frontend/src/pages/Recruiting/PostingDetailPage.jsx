@@ -208,7 +208,8 @@ const PostingDetailPage = () => {
     ? (approversById[job.reviewerId] ?? `Reviewer #${job.reviewerId}`)
     : null;
   const ownerIds = job.pipelineConfig?.ownerIds ?? [];
-  const staged = isPendingRevision && job.reviewerId == null;
+  const staged =
+    job.status === "published_pending_revision" && job.reviewerId == null;
   const badgeLabel = staged ? "Edit staged" : STATUS_LABELS[job.status];
   const badgeVariant = staged ? "secondary" : STATUS_VARIANT[job.status];
 
