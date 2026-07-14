@@ -243,7 +243,7 @@ class MentorshipAdminService:
         if meeting.get("has_unknown_late"):
             notes.append(MeetingNoteTag.UNKNOWN_LATE)
         else:
-            late_user_ids = meeting.get("late_user_ids") or []
+            late_user_ids = meeting.get("late_user_id") or []
             if mentor_id in late_user_ids:
                 notes.append(MeetingNoteTag.MENTOR_LATE)
             if mentee_id in late_user_ids:

@@ -300,7 +300,7 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
                     "has_unknown_absent": None,
                     "absent_user_id": None,
                     "has_unknown_late": False,
-                    "late_user_ids": [],
+                    "late_user_id": [],
                 },
                 {
                     "meeting_id": "m1",
@@ -312,7 +312,7 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
                     "has_unknown_absent": None,
                     "absent_user_id": 1,
                     "has_unknown_late": False,
-                    "late_user_ids": [2],
+                    "late_user_id": [2],
                 },
             ]
         }
@@ -379,7 +379,7 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
                     "has_unknown_absent": True,
                     "absent_user_id": None,
                     "has_unknown_late": True,
-                    "late_user_ids": [],
+                    "late_user_id": [],
                 },
             ]
         }
@@ -409,7 +409,7 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
                     "has_unknown_absent": False,
                     "absent_user_id": None,
                     "has_unknown_late": False,
-                    "late_user_ids": [],
+                    "late_user_id": [],
                 },
             ]
         }
@@ -438,7 +438,7 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
                     "has_unknown_absent": False,
                     "absent_user_id": 2,
                     "has_unknown_late": False,
-                    "late_user_ids": [1],
+                    "late_user_id": [1],
                 },
             ]
         }
