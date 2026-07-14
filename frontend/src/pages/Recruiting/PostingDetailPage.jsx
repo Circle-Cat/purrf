@@ -175,6 +175,10 @@ const PostingDetailPage = () => {
     ? (approversById[job.reviewerId] ?? `Reviewer #${job.reviewerId}`)
     : null;
   const ownerIds = job.pipelineConfig?.ownerIds ?? [];
+  /** The staged edit merged onto the live job, or null when nothing is staged. */
+  const proposedJob = job.pendingPayload
+    ? { ...job, ...job.pendingPayload }
+    : null;
 
   const formatActivity = (entry) => {
     const { eventType, actorName, details = {} } = entry;
@@ -457,11 +461,38 @@ const PostingDetailPage = () => {
           <TabsTrigger value="history">Review history</TabsTrigger>
         </TabsList>
         <TabsContent value="overview">
-          <PostingApplicantView
-            description={job.description}
-            questions={job.formSchema?.questions ?? []}
-            profileConfig={job.profileConfig}
-          />
+          {proposedJob ? (
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+              <div className="space-y-2">
+                <h3 className="text-sm font-medium text-slate-700">
+                  Current
+                </h3>
+                <PostingApplicantView
+                  title={job.title}
+                  description={job.description}
+                  questions={job.formSchema?.questions ?? []}
+                  profileConfig={job.profileConfig}
+                />
+              </div>
+              <div className="space-y-2">
+                <h3 className="text-sm font-medium text-slate-700">
+                  Proposed
+                </h3>
+                <PostingApplicantView
+                  title={proposedJob.title}
+                  description={proposedJob.description}
+                  questions={proposedJob.formSchema?.questions ?? []}
+                  profileConfig={proposedJob.profileConfig}
+                />
+              </div>
+            </div>
+          ) : (
+            <PostingApplicantView
+              description={job.description}
+              questions={job.formSchema?.questions ?? []}
+              profileConfig={job.profileConfig}
+            />
+          )}
         </TabsContent>
         <TabsContent value="configuration">
           <PostingConfigSummary
