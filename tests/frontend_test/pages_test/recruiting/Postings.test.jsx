@@ -4,16 +4,22 @@ import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import Postings from "@/pages/Recruiting/Postings";
 import * as api from "@/api/recruitingApi";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
+import { PERMISSIONS } from "@/constants/Permissions";
 
 vi.mock("@/api/recruitingApi");
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+const mockUseAuth = vi.fn();
 vi.mock("@/context/auth/AuthContext", () => ({
-  useAuth: () => ({ user: { userId: 5 }, permissions: [] }),
+  useAuth: () => mockUseAuth(),
 }));
 
 describe("Postings", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockUseAuth.mockReturnValue({
+      user: { userId: 5 },
+      permissions: [PERMISSIONS.RECRUITING_JOB_WRITE],
+    });
     api.listJobs.mockResolvedValue({
       data: [
         {
@@ -87,6 +93,13 @@ describe("Postings", () => {
     await waitFor(() =>
       expect(screen.getByText("new posting page")).toBeInTheDocument(),
     );
+  });
+
+  it("disables New posting when the user lacks recruiting.job.write", async () => {
+    mockUseAuth.mockReturnValue({ user: { userId: 5 }, permissions: [] });
+    renderPage();
+    await waitFor(() => screen.getByText("Backend Engineer"));
+    expect(screen.getByRole("button", { name: "New posting" })).toBeDisabled();
   });
 
   it("does not show the Backend Engineer posting when My postings excludes the current user", async () => {
