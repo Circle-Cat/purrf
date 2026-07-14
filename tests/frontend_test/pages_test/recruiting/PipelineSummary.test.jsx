@@ -29,8 +29,8 @@ describe("PipelineSummary", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("2. Tech — 2 round(s)")).toBeInTheDocument();
     expect(screen.getByText("Referral-skippable")).toBeInTheDocument();
-    expect(screen.getByText("Assignee #7")).toBeInTheDocument();
-    expect(screen.getByText("Managed by: #42")).toBeInTheDocument();
+    expect(screen.getByText("Assignee #7 — no permission, remove")).toBeInTheDocument();
+    expect(screen.getByText("Managed by: #42 — no permission, remove")).toBeInTheDocument();
   });
 
   it("shows an empty note when there are no stages", () => {
