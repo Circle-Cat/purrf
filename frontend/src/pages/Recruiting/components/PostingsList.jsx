@@ -52,6 +52,10 @@ const PostingsList = ({ jobs, ownersById = {}, onRowClick }) => (
       const ownerNames = (job.pipelineConfig?.ownerIds ?? [])
         .map((id) => ownersById[id] ?? `User ${id}`)
         .join(", ");
+      const staged =
+        job.status === "published_pending_revision" && job.reviewerId == null;
+      const badgeLabel = staged ? "Edit staged" : STATUS_LABELS[job.status];
+      const badgeVariant = staged ? "secondary" : VARIANT[job.status];
 
       return (
         <button
@@ -68,16 +72,7 @@ const PostingsList = ({ jobs, ownersById = {}, onRowClick }) => (
             )}
           </div>
           <div className="flex flex-col items-end gap-1">
-            {(() => {
-              const staged =
-                job.status === "published_pending_revision" &&
-                job.reviewerId == null;
-              const badgeLabel = staged
-                ? "Edit staged"
-                : STATUS_LABELS[job.status];
-              const badgeVariant = staged ? "secondary" : VARIANT[job.status];
-              return <Badge variant={badgeVariant}>{badgeLabel}</Badge>;
-            })()}
+            <Badge variant={badgeVariant}>{badgeLabel}</Badge>
             {job.lastRejectComment && (
               <Popover>
                 <PopoverTrigger asChild>
