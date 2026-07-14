@@ -230,7 +230,8 @@ class MentorshipMapper:
         """Maps a meeting record and resolved fields to an AdminMeetingDto."""
         return AdminMeetingDto(
             meeting_id=meeting["meeting_id"],
-            time_range=f"{meeting['start_datetime']} - {meeting['end_datetime']}",
+            start_datetime=meeting["start_datetime"],
+            end_datetime=meeting["end_datetime"],
             is_completed=is_completed,
             note=note_tags,
             create_datetime=meeting["created_datetime"],
