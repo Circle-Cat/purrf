@@ -313,11 +313,12 @@ class JobService:
           form_schema, pipeline_config, screen_rules, profile_config,
           cooldown_days) is written live directly.
         - PUBLISHED: any edit — every field, no exceptions — is packed into
-          pending_payload and the status flips to PUBLISHED_PENDING_REVISION
-          for re-review. The live version stays public and unchanged until
-          the revision is approved. kind/mentorship_role are not editable
-          once published — the UI disables both fields, and a differing
-          value here raises rather than being silently dropped.
+          pending_payload. Status is unchanged (mirrors CLOSED below); use
+          submit_for_review separately to open a REVISION review. The live
+          version stays public and unchanged until the revision is approved.
+          kind/mentorship_role are not editable once published — the UI
+          disables both fields, and a differing value here raises rather
+          than being silently dropped.
         - CLOSED: same rule as PUBLISHED — any edit parks into pending_payload;
           status is unchanged (still CLOSED). Use request_reopen separately to
           submit the posting (with or without this edit) for a REOPEN review.
@@ -366,7 +367,9 @@ class JobService:
         elif job.status == JobStatus.PUBLISHED:
             self._require_unchanged_kind(job_id, job, dto)
             job.pending_payload = self._build_pending_payload(job, dto)
-            job.status = JobStatus.PUBLISHED_PENDING_REVISION
+            # status stays PUBLISHED — mirrors the CLOSED branch below;
+            # the submitter calls submit_for_review separately to open
+            # the actual REVISION review.
         elif job.status == JobStatus.CLOSED:
             if not job.was_published:
                 raise ValueError(
@@ -509,8 +512,9 @@ class JobService:
         """Submit a posting for review, opening a pending review cycle.
 
         A DRAFT submission is an INITIAL review and moves the posting to
-        PENDING_REVIEW. Submitting a PUBLISHED_PENDING_REVISION is a REVISION
-        review and leaves the status unchanged (the live version stays public).
+        PENDING_REVIEW. Submitting a PUBLISHED posting with a staged edit is a
+        REVISION review and moves the posting to PUBLISHED_PENDING_REVISION (the
+        live version stays public until approval).
 
         Args:
             session (AsyncSession): Active database async session.
@@ -533,9 +537,11 @@ class JobService:
         if job.status == JobStatus.DRAFT:
             kind = JobReviewKind.INITIAL
             pending_status: JobStatus | None = JobStatus.PENDING_REVIEW
-        elif job.status == JobStatus.PUBLISHED_PENDING_REVISION:
+        elif job.status == JobStatus.PUBLISHED and job.pending_payload is not None:
             kind = JobReviewKind.REVISION
-            pending_status = None  # live version stays public; status unchanged
+            pending_status = JobStatus.PUBLISHED_PENDING_REVISION
+        elif job.status == JobStatus.PUBLISHED:
+            raise ValueError(f"Job {job_id} has nothing staged to submit for review")
         else:
             raise ValueError(f"Job {job_id} cannot be submitted from {job.status}")
         return await self._open_review(
@@ -714,7 +720,9 @@ class JobService:
 
         Review-kind state machine on rejection:
         - INITIAL: posting returns to DRAFT.
-        - REVISION: pending_payload is discarded and the posting stays PUBLISHED.
+        - REVISION: the posting stays PUBLISHED; pending_payload is kept so the
+          submitter can address feedback and resubmit without redoing the edit
+          (mirrors REOPEN).
         - CLOSE: the close is aborted and the posting returns to PUBLISHED.
         - REOPEN: the reopen is aborted and the posting remains CLOSED.
 
@@ -751,7 +759,6 @@ class JobService:
             {"kind": review.kind.value, "decision": "rejected", "comment": comment},
         )
         if review.kind == JobReviewKind.REVISION:
-            job.pending_payload = None
             job.status = JobStatus.PUBLISHED
         elif review.kind == JobReviewKind.CLOSE:
             # Abort the close — posting goes back to PUBLISHED.
