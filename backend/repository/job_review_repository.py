@@ -1,6 +1,6 @@
 from collections.abc import Sequence
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.entity.job_review_entity import JobReviewEntity
@@ -98,3 +98,19 @@ class JobReviewRepository:
             if row.job_id not in latest:
                 latest[row.job_id] = row
         return latest
+
+    async def delete_by_job(self, session: AsyncSession, job_id: int) -> None:
+        """Delete every review row belonging to job_id.
+
+        Called by ``JobService.delete_job`` before the job row itself is
+        deleted — ``job_review.job_id`` has no ``ondelete=CASCADE``, so any
+        leftover review rows (e.g. from a prior rejected submission) would
+        otherwise trigger a foreign-key violation on delete.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            job_id (int): The job whose review rows should be removed.
+        """
+        await session.execute(
+            delete(JobReviewEntity).where(JobReviewEntity.job_id == job_id)
+        )
