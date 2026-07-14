@@ -1405,6 +1405,63 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
             await self.service.update_job(self.session, job.job_id, dto)
         self.repo.update_job.assert_not_awaited()
 
+    # ---------------------------------------------------------------------------
+    # discard_pending_edit
+    # ---------------------------------------------------------------------------
+
+    async def test_discard_pending_edit_from_published_clears_it(self):
+        """Discarding a staged edit on a PUBLISHED posting clears
+        pending_payload; status and live fields are untouched."""
+        job = self._job(status=JobStatus.PUBLISHED, title="live title")
+        job.pending_payload = {"title": "staged title"}
+        self.repo.get_by_job_id.return_value = job
+
+        result = await self.service.discard_pending_edit(
+            self.session, job.job_id, acting_user_id=1
+        )
+
+        self.assertEqual(result.status, JobStatus.PUBLISHED)
+        self.assertEqual(result.title, "live title")
+        self.assertIsNone(result.pending_payload)
+        self.job_activity_repo.create.assert_awaited_once_with(
+            self.session, job.job_id, 1, "pending_edit_discarded", {}
+        )
+
+    async def test_discard_pending_edit_from_closed_clears_it(self):
+        """Discarding a staged edit on a CLOSED posting clears
+        pending_payload; status stays CLOSED."""
+        job = self._job(status=JobStatus.CLOSED, was_published=True)
+        job.pending_payload = {"title": "staged title"}
+        self.repo.get_by_job_id.return_value = job
+
+        result = await self.service.discard_pending_edit(
+            self.session, job.job_id, acting_user_id=1
+        )
+
+        self.assertEqual(result.status, JobStatus.CLOSED)
+        self.assertIsNone(result.pending_payload)
+
+    async def test_discard_pending_edit_raises_when_nothing_staged(self):
+        """Nothing to discard when pending_payload is already None."""
+        job = self._job(status=JobStatus.PUBLISHED)
+        self.repo.get_by_job_id.return_value = job
+
+        with self.assertRaisesRegex(ValueError, "nothing staged"):
+            await self.service.discard_pending_edit(
+                self.session, job.job_id, acting_user_id=1
+            )
+
+    async def test_discard_pending_edit_raises_from_other_status(self):
+        """Only PUBLISHED/CLOSED postings can have a staged edit to discard."""
+        job = self._job(status=JobStatus.DRAFT)
+        job.pending_payload = {"title": "staged title"}
+        self.repo.get_by_job_id.return_value = job
+
+        with self.assertRaisesRegex(ValueError, "cannot discard"):
+            await self.service.discard_pending_edit(
+                self.session, job.job_id, acting_user_id=1
+            )
+
     async def test_list_interview_pool(self):
         users = self._make_users(7, 8)
         for u in users:

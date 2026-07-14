@@ -383,6 +383,40 @@ class JobService:
         await session.commit()
         return self.recruiting_mapper.to_job_dto(job)
 
+    async def discard_pending_edit(
+        self, session: AsyncSession, job_id: int, acting_user_id: int
+    ) -> JobDto:
+        """Discard a posting's staged edit without changing its status.
+
+        Only PUBLISHED and CLOSED postings can carry a staged edit outside
+        of an open review. Clears pending_payload; the live fields and
+        status are untouched.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            job_id (int): Posting whose staged edit is being discarded.
+            acting_user_id (int): User discarding the edit, for the audit log.
+
+        Returns:
+            JobDto: The posting after the staged edit was cleared.
+
+        Raises:
+            ValueError: If the posting is not PUBLISHED/CLOSED, or has no
+                staged edit to discard.
+        """
+        job = await self._require_job(session, job_id)
+        if job.status not in (JobStatus.PUBLISHED, JobStatus.CLOSED):
+            raise ValueError(f"Job {job_id} cannot discard a pending edit from {job.status}")
+        if job.pending_payload is None:
+            raise ValueError(f"Job {job_id} has nothing staged to discard")
+        job.pending_payload = None
+        job = await self.job_repository.update_job(session, job)
+        await self.job_activity_repository.create(
+            session, job.job_id, acting_user_id, "pending_edit_discarded", {}
+        )
+        await session.commit()
+        return self.recruiting_mapper.to_job_dto(job)
+
     @staticmethod
     def _require_unchanged_kind(
         job_id: int, job: "JobEntity", dto: JobCreateDto
