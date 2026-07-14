@@ -2,10 +2,11 @@ import { render, screen, waitFor, within, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import ParticipantSearchTab from "@/pages/MentorshipManagement/components/ParticipantSearchTab";
-import { searchParticipants } from "@/api/mentorshipApi";
+import { searchParticipants, getMeetingLog } from "@/api/mentorshipApi";
 
 vi.mock("@/api/mentorshipApi", () => ({
   searchParticipants: vi.fn(),
+  getMeetingLog: vi.fn(),
 }));
 
 const TEST_ROUNDS = [
@@ -44,6 +45,7 @@ const participantRow = (overrides = {}) => ({
   },
   completedMeetingCount: 2,
   requiredMeetings: 5,
+  pairId: 80,
   ...overrides,
 });
 
@@ -62,6 +64,9 @@ const nonParticipantRow = (overrides = {}) => ({
 describe("ParticipantSearchTab", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    getMeetingLog.mockResolvedValue({
+      data: { roundVersion: "v2", meetings: [] },
+    });
   });
 
   it("does not fetch on mount in participant mode", () => {
@@ -396,5 +401,65 @@ describe("ParticipantSearchTab", () => {
 
     await userEvent.click(screen.getByText("First Name"));
     expect(searchParticipants).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders the Meetings value as a clickable link and opens the dialog on click", async () => {
+    searchParticipants.mockResolvedValue({
+      data: { participantRows: [participantRow()], total: 1 },
+    });
+    renderTab("participant");
+    await search();
+
+    const link = await screen.findByRole("button", { name: "2/5" });
+    expect(getMeetingLog).not.toHaveBeenCalled();
+
+    await userEvent.click(link);
+
+    expect(
+      screen.getByText(
+        "Meeting Log — Alice Doe (Mentor) with Bob Smith (Mentee) · Spring 2026",
+      ),
+    ).toBeInTheDocument();
+    await waitFor(() => expect(getMeetingLog).toHaveBeenCalledWith(80));
+  });
+
+  it("renders a plain dash instead of a link when the participant has no pair", async () => {
+    searchParticipants.mockResolvedValue({
+      data: {
+        participantRows: [
+          participantRow({
+            pairId: null,
+            matchedUser: null,
+            completedMeetingCount: null,
+            requiredMeetings: null,
+          }),
+        ],
+        total: 1,
+      },
+    });
+    renderTab("participant");
+    await search();
+
+    await screen.findByText("Alice");
+    expect(
+      screen.queryByRole("button", { name: /^\d+\/\d+$/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not fetch the meeting log for every row just from rendering the table", async () => {
+    searchParticipants.mockResolvedValue({
+      data: {
+        participantRows: [
+          participantRow({ userId: 1 }),
+          participantRow({ userId: 2, pairId: 81 }),
+        ],
+        total: 2,
+      },
+    });
+    renderTab("participant");
+    await search();
+
+    await screen.findAllByRole("button", { name: "2/5" });
+    expect(getMeetingLog).not.toHaveBeenCalled();
   });
 });

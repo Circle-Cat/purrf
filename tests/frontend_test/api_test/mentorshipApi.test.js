@@ -9,6 +9,7 @@ import {
   getMyMentorshipMeetingLog,
   postMyMentorshipMeetingLog,
   searchParticipants,
+  getMeetingLog,
 } from "@/api/mentorshipApi";
 import { API_ENDPOINTS } from "@/constants/ApiEndpoints";
 
@@ -230,5 +231,18 @@ describe("Mentorship Service API", () => {
         },
       },
     );
+  });
+
+  it("getMeetingLog should call the correct GET endpoint for the given pair", async () => {
+    const pairId = 80;
+    const mockData = { roundVersion: "v2", meetings: [] };
+    request.get.mockResolvedValue(mockData);
+
+    const result = await getMeetingLog(pairId);
+
+    expect(request.get).toHaveBeenCalledWith(
+      API_ENDPOINTS.MENTORSHIP_ADMIN_PAIR_MEETINGS(pairId),
+    );
+    expect(result).toEqual(mockData);
   });
 });

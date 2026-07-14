@@ -125,3 +125,10 @@ export const searchParticipants = ({
       order,
     },
   });
+
+/**
+ * Fetch the mentorship admin view of a pair's meeting log for the round.
+ * @param {number} pairId - The mentorship pair's id.
+ */
+export const getMeetingLog = (pairId) =>
+  request.get(API_ENDPOINTS.MENTORSHIP_ADMIN_PAIR_MEETINGS(pairId));

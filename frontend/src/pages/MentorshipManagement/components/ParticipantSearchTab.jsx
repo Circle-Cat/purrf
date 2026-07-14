@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   Select,
   SelectContent,
@@ -17,6 +18,8 @@ import { useParticipantSearch } from "@/pages/MentorshipManagement/hooks/usePart
 import { MentorshipParticipantRoles } from "@/constants/MentorshipParticipantRoles";
 import { MentorshipApprovalStatus } from "@/constants/MentorshipApprovalStatus";
 import { partnerDisplayName } from "@/utils/partnerName";
+import MeetingLogDialog from "@/pages/MentorshipManagement/components/MeetingLogDialog";
+import { useMeetingLog } from "@/pages/MentorshipManagement/hooks/useMeetingLog";
 
 const ALL_ROUNDS = "__all__";
 const ALL_ROLES = "__all__";
@@ -93,6 +96,78 @@ const AlternativeEmailsCell = ({ emails }) => {
     </span>
   );
 };
+
+/**
+ * Resolves the display name for the row's subject.
+ * Separate from `partnerDisplayName`, which only applies to the partner.
+ */
+function subjectDisplayName(row) {
+  return (
+    row.preferredName?.trim() ||
+    `${row.firstName ?? ""} ${row.lastName ?? ""}`.trim()
+  );
+}
+
+/**
+ * Self-contained trigger and dialog for a matched participant's meeting log.
+ * Owns its open state and only fetches meeting data once the dialog is opened.
+ *
+ * @param {{
+ *   pairId: number|null,
+ *   completedMeetingCount: number|null,
+ *   requiredMeetings: number|null,
+ *   roundName: string,
+ *   subjectName: string,
+ *   subjectRole: string,
+ *   partnerName: string|null,
+ *   partnerRole: string,
+ * }} props
+ */
+function MeetingsCell({
+  pairId,
+  completedMeetingCount,
+  requiredMeetings,
+  roundName,
+  subjectName,
+  subjectRole,
+  partnerName,
+  partnerRole,
+}) {
+  const [open, setOpen] = useState(false);
+  const { meetings, loading, error } = useMeetingLog(pairId, open);
+
+  if (
+    pairId == null ||
+    completedMeetingCount == null ||
+    requiredMeetings == null
+  ) {
+    return "—";
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="text-primary underline hover:opacity-80"
+      >
+        {completedMeetingCount}/{requiredMeetings}
+      </button>
+      <MeetingLogDialog
+        open={open}
+        onOpenChange={setOpen}
+        roundName={roundName}
+        subjectName={subjectName}
+        subjectRole={subjectRole}
+        partnerName={partnerName}
+        partnerRole={partnerRole}
+        meetings={meetings}
+        loading={loading}
+        error={error}
+      />
+    </>
+  );
+}
 
 /**
  * Shared tab for participant and non-participant searches, switched by
@@ -189,10 +264,24 @@ const ParticipantSearchTab = ({ participationStatus, rounds }) => {
           matchedUser: row.matchedUser
             ? partnerDisplayName(row.matchedUser)
             : "—",
-          meetings:
-            row.completedMeetingCount != null && row.requiredMeetings != null
-              ? `${row.completedMeetingCount}/${row.requiredMeetings}`
-              : "—",
+          meetings: (
+            <MeetingsCell
+              pairId={row.pairId}
+              completedMeetingCount={row.completedMeetingCount}
+              requiredMeetings={row.requiredMeetings}
+              roundName={row.roundName}
+              subjectName={subjectDisplayName(row)}
+              subjectRole={row.participantRole}
+              partnerName={
+                row.matchedUser ? partnerDisplayName(row.matchedUser) : null
+              }
+              partnerRole={
+                row.participantRole === MentorshipParticipantRoles.MENTEE
+                  ? MentorshipParticipantRoles.MENTOR
+                  : MentorshipParticipantRoles.MENTEE
+              }
+            />
+          ),
         }),
         ...(!isParticipant && {
           mentorOnboardingStatus: row.mentorOnboardingStatus ?? "—",
