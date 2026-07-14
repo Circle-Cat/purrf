@@ -81,6 +81,9 @@ RECRUITING_JOB_ENDPOINT = "/recruiting/jobs/{job_id}"
 RECRUITING_JOB_SUBMIT_ENDPOINT = "/recruiting/jobs/{job_id}/submit"
 RECRUITING_JOB_REQUEST_CLOSE_ENDPOINT = "/recruiting/jobs/{job_id}/request-close"
 RECRUITING_JOB_REQUEST_REOPEN_ENDPOINT = "/recruiting/jobs/{job_id}/request-reopen"
+RECRUITING_JOB_DISCARD_PENDING_EDIT_ENDPOINT = (
+    "/recruiting/jobs/{job_id}/discard-pending-edit"
+)
 RECRUITING_APPROVERS_ENDPOINT = "/recruiting/approvers"
 RECRUITING_REVIEWS_ENDPOINT = "/recruiting/reviews"
 RECRUITING_REVIEW_ENDPOINT = "/recruiting/reviews/{review_id}"
