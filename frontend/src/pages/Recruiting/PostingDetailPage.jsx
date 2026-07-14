@@ -339,7 +339,9 @@ const PostingDetailPage = () => {
             <Popover>
               <PopoverTrigger asChild>
                 <button type="button" className="cursor-pointer">
-                  <Badge variant="destructive">Sent back</Badge>
+                  <Badge variant="destructive">
+                    {REJECT_KIND_LABEL[job.lastRejectKind] ?? "Sent back"}
+                  </Badge>
                 </button>
               </PopoverTrigger>
               <PopoverContent className="w-72">
