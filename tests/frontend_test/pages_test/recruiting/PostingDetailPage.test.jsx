@@ -118,27 +118,6 @@ describe("PostingDetailPage", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("shows 'Edit staged' badge for published_pending_revision with reviewerId: null", async () => {
-    api.getJob.mockResolvedValue({
-      data: {
-        id: 1,
-        title: "Backend Engineer",
-        description: "desc",
-        status: "published_pending_revision",
-        pipelineConfig: null,
-        screenRules: null,
-        profileConfig: null,
-        reviewerId: null,
-      },
-    });
-    authState.permissions = ["recruiting.job.write"];
-    renderAt(1);
-
-    await waitFor(() =>
-      expect(screen.getByText("Edit staged")).toBeInTheDocument(),
-    );
-  });
-
   it("shows 'Revision pending review' badge for published_pending_revision with reviewerId: 9", async () => {
     api.getJob.mockResolvedValue({
       data: {

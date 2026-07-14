@@ -1,14 +1,8 @@
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
 import {
   Dialog,
   DialogContent,
@@ -35,37 +29,10 @@ import {
   decideReview,
 } from "@/api/recruitingApi";
 import SubmitReviewDialog from "@/pages/Recruiting/components/SubmitReviewDialog";
+import PostingStatusBadges from "@/pages/Recruiting/components/PostingStatusBadges";
 import PostingConfigSummary from "@/pages/Recruiting/components/PostingConfigSummary";
 import PostingApplicantView from "@/pages/Recruiting/components/PostingApplicantView";
 import LoadGate from "@/pages/Recruiting/components/LoadGate";
-
-/** Human labels + badge variants per JobStatus (mirrors PostingsList). */
-const STATUS_LABELS = {
-  draft: "Draft",
-  pending_review: "Pending review",
-  published: "Published",
-  published_pending_revision: "Revision pending review",
-  pending_close: "Pending close",
-  pending_reopen: "Pending reopen",
-  closed: "Closed",
-};
-
-const STATUS_VARIANT = {
-  draft: "secondary",
-  pending_review: "outline",
-  published: "default",
-  published_pending_revision: "outline",
-  pending_close: "outline",
-  pending_reopen: "outline",
-  closed: "secondary",
-};
-
-const REJECT_KIND_LABEL = {
-  initial: "Initial submission rejected",
-  revision: "Revision rejected",
-  close: "Close request rejected",
-  reopen: "Reopen request rejected",
-};
 
 /** Title and dispatch fn per review action kind. */
 const REVIEW_ACTION = {
@@ -208,10 +175,6 @@ const PostingDetailPage = () => {
     ? (approversById[job.reviewerId] ?? `Reviewer #${job.reviewerId}`)
     : null;
   const ownerIds = job.pipelineConfig?.ownerIds ?? [];
-  const staged =
-    job.status === "published_pending_revision" && job.reviewerId == null;
-  const badgeLabel = staged ? "Edit staged" : STATUS_LABELS[job.status];
-  const badgeVariant = staged ? "secondary" : STATUS_VARIANT[job.status];
 
   const formatActivity = (entry) => {
     const { eventType, actorName, details = {} } = entry;
@@ -353,24 +316,7 @@ const PostingDetailPage = () => {
       <div className="space-y-1">
         <div className="flex flex-wrap items-center gap-2">
           <h1 className="text-xl font-semibold text-slate-900">{job.title}</h1>
-          <Badge variant={badgeVariant}>{badgeLabel}</Badge>
-          {job.lastRejectComment && (
-            <Popover>
-              <PopoverTrigger asChild>
-                <button type="button" className="cursor-pointer">
-                  <Badge variant="destructive">
-                    {REJECT_KIND_LABEL[job.lastRejectKind] ?? "Sent back"}
-                  </Badge>
-                </button>
-              </PopoverTrigger>
-              <PopoverContent className="w-72">
-                <p className="text-sm font-medium text-slate-700">
-                  {REJECT_KIND_LABEL[job.lastRejectKind] ?? "Rejected"}
-                </p>
-                <p className="text-sm text-red-600">{job.lastRejectComment}</p>
-              </PopoverContent>
-            </Popover>
-          )}
+          <PostingStatusBadges job={job} />
         </div>
         <p className="text-sm text-slate-600">{job.description}</p>
         {ownerIds.length > 0 && (
