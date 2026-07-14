@@ -102,7 +102,7 @@ describe("Postings", () => {
     expect(screen.getByRole("button", { name: "New posting" })).toBeDisabled();
   });
 
-  it("does not show the Backend Engineer posting when My postings excludes the current user", async () => {
+  it("does not show the Backend Engineer posting when Managed by me excludes the current user", async () => {
     api.listJobs.mockResolvedValue({
       data: [
         {
