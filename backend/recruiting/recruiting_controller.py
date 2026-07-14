@@ -98,25 +98,37 @@ class RecruitingController:
         )
         self.router.add_api_route(
             RECRUITING_APPROVERS_ENDPOINT,
-            endpoint=authenticate(permissions=[Permission.RECRUITING_JOB_WRITE])(
-                self.list_approvers
-            ),
+            endpoint=authenticate(
+                permissions=[
+                    Permission.RECRUITING_JOB_READ,
+                    Permission.RECRUITING_JOB_WRITE,
+                    Permission.RECRUITING_JOB_APPROVE,
+                ]
+            )(self.list_approvers),
             methods=["GET"],
             response_model=None,
         )
         self.router.add_api_route(
             RECRUITING_INTERVIEW_POOL_ENDPOINT,
-            endpoint=authenticate(permissions=[Permission.RECRUITING_JOB_WRITE])(
-                self.list_interview_pool
-            ),
+            endpoint=authenticate(
+                permissions=[
+                    Permission.RECRUITING_JOB_READ,
+                    Permission.RECRUITING_JOB_WRITE,
+                    Permission.RECRUITING_JOB_APPROVE,
+                ]
+            )(self.list_interview_pool),
             methods=["GET"],
             response_model=None,
         )
         self.router.add_api_route(
             RECRUITING_JOB_OWNERS_ENDPOINT,
-            endpoint=authenticate(permissions=[Permission.RECRUITING_JOB_WRITE])(
-                self.list_job_owners
-            ),
+            endpoint=authenticate(
+                permissions=[
+                    Permission.RECRUITING_JOB_READ,
+                    Permission.RECRUITING_JOB_WRITE,
+                    Permission.RECRUITING_JOB_APPROVE,
+                ]
+            )(self.list_job_owners),
             methods=["GET"],
             response_model=None,
         )
