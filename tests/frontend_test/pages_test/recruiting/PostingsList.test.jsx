@@ -65,7 +65,7 @@ describe("PostingsList", () => {
     expect(onRowClick).not.toHaveBeenCalled();
   });
 
-  it("shows the status badge alongside the Sent back badge, not instead of it", () => {
+  it("shows the status badge alongside the reject-reason badge, not instead of it", () => {
     render(
       <PostingsList
         jobs={[
@@ -82,11 +82,11 @@ describe("PostingsList", () => {
 
     expect(screen.getByText("Draft")).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Sent back" }),
+      screen.getByRole("button", { name: "Initial submission rejected" }),
     ).toBeInTheDocument();
   });
 
-  it("shows a close-request-rejected popover title for a published, close-rejected job", () => {
+  it("shows a close-request-rejected badge and popover title for a published, close-rejected job", () => {
     render(
       <PostingsList
         jobs={[
@@ -102,9 +102,32 @@ describe("PostingsList", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Sent back" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Close request rejected" }),
+    );
 
     expect(screen.getByText("Published")).toBeInTheDocument();
-    expect(screen.getByText("Close request rejected")).toBeInTheDocument();
+    // The badge and the popover title now share the same reject-kind label.
+    expect(screen.getAllByText("Close request rejected")).toHaveLength(2);
+  });
+
+  it("falls back to the raw Rejected label in the popover for an unknown reject kind", () => {
+    render(
+      <PostingsList
+        jobs={[
+          {
+            ...job,
+            lastRejectComment: "Please fix the salary range.",
+            lastRejectKind: "some_future_kind",
+          },
+        ]}
+        ownersById={{}}
+        onRowClick={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Sent back" }));
+
+    expect(screen.getByText("Rejected")).toBeInTheDocument();
   });
 });
