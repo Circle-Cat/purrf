@@ -8,6 +8,7 @@ import {
   listJobActivity,
   requestClose,
   requestReopen,
+  discardPendingEdit,
   deleteJob,
   listApprovers,
   listInterviewPool,
@@ -96,6 +97,14 @@ describe("recruitingApi", () => {
     expect(request.post).toHaveBeenCalledWith(
       "/recruiting/jobs/7/request-reopen",
       { reviewerId: 3, message: "reopen please" },
+    );
+  });
+
+  it("discardPendingEdit POSTs the discard-pending-edit endpoint with no body", async () => {
+    request.post.mockResolvedValue({ data: {} });
+    await discardPendingEdit(7);
+    expect(request.post).toHaveBeenCalledWith(
+      "/recruiting/jobs/7/discard-pending-edit",
     );
   });
 
