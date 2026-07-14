@@ -152,7 +152,7 @@ describe("PostingDetailPage", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("shows the status badge alongside a Sent back badge with the reject kind in the popover", async () => {
+  it("shows the status badge alongside a reject-kind badge with the reject kind in the popover", async () => {
     api.getJob.mockResolvedValue({
       data: {
         id: 1,
@@ -171,9 +171,34 @@ describe("PostingDetailPage", () => {
     renderAt(1);
 
     await waitFor(() => expect(screen.getByText("Draft")).toBeInTheDocument());
-    expect(
-      screen.getByRole("button", { name: "Sent back" }),
-    ).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Initial submission rejected" }),
+    );
+    // The badge and the popover title now share the same reject-kind label.
+    expect(screen.getAllByText("Initial submission rejected")).toHaveLength(2);
+  });
+
+  it("falls back to the raw Rejected label in the popover for an unknown reject kind", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        status: "draft",
+        pipelineConfig: null,
+        screenRules: null,
+        profileConfig: null,
+        lastRejectComment: "Please tighten the screening rules.",
+        lastRejectKind: "some_future_kind",
+        reviewerId: null,
+      },
+    });
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    await waitFor(() => expect(screen.getByText("Draft")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "Sent back" }));
+    expect(screen.getByText("Rejected")).toBeInTheDocument();
   });
 
   it("shows Approve/Reject only for the assigned reviewer", async () => {
