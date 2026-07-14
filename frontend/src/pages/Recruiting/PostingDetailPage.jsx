@@ -209,6 +209,9 @@ const PostingDetailPage = () => {
   const ownerNames = (job.pipelineConfig?.ownerIds ?? [])
     .map((oid) => ownersById[oid] ?? `User ${oid}`)
     .join(", ");
+  const staged = isPendingRevision && job.reviewerId == null;
+  const badgeLabel = staged ? "Edit staged" : STATUS_LABELS[job.status];
+  const badgeVariant = staged ? "secondary" : STATUS_VARIANT[job.status];
 
   const formatActivity = (entry) => {
     const { eventType, actorName, details = {} } = entry;
@@ -332,9 +335,7 @@ const PostingDetailPage = () => {
       <div className="space-y-1">
         <div className="flex flex-wrap items-center gap-2">
           <h1 className="text-xl font-semibold text-slate-900">{job.title}</h1>
-          <Badge variant={STATUS_VARIANT[job.status]}>
-            {STATUS_LABELS[job.status]}
-          </Badge>
+          <Badge variant={badgeVariant}>{badgeLabel}</Badge>
           {job.lastRejectComment && (
             <Popover>
               <PopoverTrigger asChild>

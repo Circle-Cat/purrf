@@ -130,4 +130,40 @@ describe("PostingsList", () => {
 
     expect(screen.getByText("Rejected")).toBeInTheDocument();
   });
+
+  it("shows 'Edit staged' badge for published_pending_revision with reviewerId: null", () => {
+    render(
+      <PostingsList
+        jobs={[
+          {
+            ...job,
+            status: "published_pending_revision",
+            reviewerId: null,
+          },
+        ]}
+        ownersById={{}}
+        onRowClick={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Edit staged")).toBeInTheDocument();
+  });
+
+  it("shows 'Revision pending review' badge for published_pending_revision with reviewerId: 9", () => {
+    render(
+      <PostingsList
+        jobs={[
+          {
+            ...job,
+            status: "published_pending_revision",
+            reviewerId: 9,
+          },
+        ]}
+        ownersById={{}}
+        onRowClick={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Revision pending review")).toBeInTheDocument();
+  });
 });
