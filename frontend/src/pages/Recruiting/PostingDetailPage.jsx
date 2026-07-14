@@ -219,12 +219,13 @@ const PostingDetailPage = () => {
       return `${actorName} created this posting as a draft`;
     }
     if (eventType === "review_opened") {
-      const verb = {
-        initial: "submitted for review",
-        revision: "submitted a revision for review",
-        close: "requested to close",
-        reopen: "requested to reopen",
-      }[details.kind] ?? "submitted for review";
+      const verb =
+        {
+          initial: "submitted for review",
+          revision: "submitted a revision for review",
+          close: "requested to close",
+          reopen: "requested to reopen",
+        }[details.kind] ?? "submitted for review";
       return reviewerName
         ? `${actorName} ${verb}, assigned to ${reviewerName}`
         : `${actorName} ${verb}`;
@@ -248,7 +249,10 @@ const PostingDetailPage = () => {
           rejected: `${actorName} rejected the reopen request: "${details.comment}" — posting stays closed`,
         },
       };
-      return templates[details.kind]?.[details.decision] ?? `${actorName} ${eventType}`;
+      return (
+        templates[details.kind]?.[details.decision] ??
+        `${actorName} ${eventType}`
+      );
     }
     return `${actorName} ${eventType}`;
   };

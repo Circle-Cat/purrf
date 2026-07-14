@@ -309,7 +309,11 @@ describe("PostingDetailPage", () => {
         {
           id: 3,
           eventType: "review_decided",
-          details: { kind: "initial", decision: "rejected", comment: "Fix the title" },
+          details: {
+            kind: "initial",
+            decision: "rejected",
+            comment: "Fix the title",
+          },
           actorId: 9,
           actorName: "Yanpei Wang",
           createdAt: "2026-07-11T15:21:39Z",
@@ -320,7 +324,9 @@ describe("PostingDetailPage", () => {
     renderAt(1);
 
     const user = userEvent.setup();
-    await user.click(await screen.findByRole("tab", { name: "Review history" }));
+    await user.click(
+      await screen.findByRole("tab", { name: "Review history" }),
+    );
 
     await waitFor(() => {
       expect(

@@ -178,9 +178,7 @@ describe("PostingConfigSummary", () => {
       profileConfig: null,
     };
 
-    render(
-      <PostingConfigSummary job={{ ...baseJob, cooldownDays: null }} />,
-    );
+    render(<PostingConfigSummary job={{ ...baseJob, cooldownDays: null }} />);
 
     expect(screen.getByText("Cooldown days: —")).toBeInTheDocument();
   });
