@@ -39,6 +39,21 @@ describe("PostingsList", () => {
     expect(screen.queryByText(/Managed by/)).not.toBeInTheDocument();
   });
 
+  it("shows an unresolved owner in red with a 'no permission, remove' suffix, alongside a resolved one", () => {
+    render(
+      <PostingsList
+        jobs={[job]}
+        ownersById={{ 2: "Alice" }}
+        onRowClick={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText(/Alice/)).toBeInTheDocument();
+    expect(
+      screen.getByText("#3 — no permission, remove"),
+    ).toBeInTheDocument();
+  });
+
   it("calls onRowClick with the job when the row is clicked", () => {
     const onRowClick = vi.fn();
     render(
