@@ -181,7 +181,9 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(result.last_reject_kind)
 
     async def test_update_published_any_field_parks_pending_payload(self):
-        """Editing a PUBLISHED posting — any field — parks a full draft, live fields untouched."""
+        """Editing a PUBLISHED posting — any field — parks a full draft, live
+        fields and status untouched (status stays PUBLISHED, mirroring CLOSED;
+        the flip to PUBLISHED_PENDING_REVISION now happens at submit time)."""
         job = self._job(
             status=JobStatus.PUBLISHED,
             title="old title",
@@ -196,7 +198,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
 
         result = await self.service.update_job(self.session, job.job_id, dto)
 
-        self.assertEqual(result.status, JobStatus.PUBLISHED_PENDING_REVISION)
+        self.assertEqual(result.status, JobStatus.PUBLISHED)
         self.assertEqual(result.title, "old title")  # live field untouched
         self.assertEqual(result.pending_payload["title"], "new title")
         self.assertEqual(result.pending_payload["formSchema"], {"questions": []})
@@ -506,9 +508,12 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
             {"kind": "initial", "reviewerId": 2, "message": "please"},
         )
 
-    async def test_submit_revision_keeps_published_pending(self):
-        """Submitting a parked revision opens a REVISION review, status unchanged."""
-        job = self._job(status=JobStatus.PUBLISHED_PENDING_REVISION)
+    async def test_submit_published_with_staged_edit_opens_revision_review(self):
+        """Submitting a PUBLISHED posting with a staged edit opens a REVISION
+        review and flips status to PUBLISHED_PENDING_REVISION — the flip now
+        happens at submit time, not at edit time."""
+        job = self._job(status=JobStatus.PUBLISHED)
+        job.pending_payload = {"title": "new"}
         self.repo.get_by_job_id.return_value = job
         self._two_approvers()
 
@@ -519,6 +524,18 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.status, JobStatus.PUBLISHED_PENDING_REVISION)
         created = self.review_repo.create.await_args.args[1]
         self.assertEqual(created.kind, JobReviewKind.REVISION)
+
+    async def test_submit_published_without_staged_edit_raises(self):
+        """Submitting a PUBLISHED posting with nothing staged is rejected —
+        there is no draft to send for review."""
+        job = self._job(status=JobStatus.PUBLISHED)
+        self.repo.get_by_job_id.return_value = job
+        self._two_approvers()
+
+        with self.assertRaisesRegex(ValueError, "nothing staged"):
+            await self.service.submit_for_review(
+                self.session, job.job_id, reviewer_id=2, submitted_by=1, message=None
+            )
 
     async def test_approve_revision_applies_pending_payload(self):
         """Approving a REVISION applies the full pending_payload and clears it."""
@@ -768,8 +785,10 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
             {"kind": "initial", "decision": "rejected", "comment": "not ready"},
         )
 
-    async def test_reject_revision_keeps_published_and_discards_pending(self):
-        """Rejecting a REVISION discards the parked draft and stays PUBLISHED."""
+    async def test_reject_revision_keeps_published_and_keeps_pending(self):
+        """Rejecting a REVISION reverts to PUBLISHED but keeps the staged
+        draft — matching how rejecting a REOPEN keeps it too — so the
+        submitter can address feedback and resubmit without redoing the edit."""
         job = self._job(
             status=JobStatus.PUBLISHED_PENDING_REVISION,
             form_schema={"a": 1},
@@ -794,7 +813,9 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.status, JobStatus.PUBLISHED)
         self.assertEqual(result.title, "old")
         self.assertEqual(result.form_schema, {"a": 1})
-        self.assertIsNone(result.pending_payload)
+        self.assertEqual(
+            result.pending_payload, {"title": "new", "formSchema": {"a": 2}}
+        )
 
     async def test_publish_job_is_removed(self):
         """Direct publish is gone; publishing only happens through approval."""
@@ -1370,7 +1391,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
 
         result = await self.service.update_job(self.session, job.job_id, dto)
 
-        self.assertEqual(result.status, JobStatus.PUBLISHED_PENDING_REVISION)
+        self.assertEqual(result.status, JobStatus.PUBLISHED)
 
     async def test_update_closed_changing_kind_raises(self):
         """kind/mentorship_role stay locked for a CLOSED posting, same as PUBLISHED."""
@@ -1385,6 +1406,63 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             await self.service.update_job(self.session, job.job_id, dto)
         self.repo.update_job.assert_not_awaited()
+
+    # ---------------------------------------------------------------------------
+    # discard_pending_edit
+    # ---------------------------------------------------------------------------
+
+    async def test_discard_pending_edit_from_published_clears_it(self):
+        """Discarding a staged edit on a PUBLISHED posting clears
+        pending_payload; status and live fields are untouched."""
+        job = self._job(status=JobStatus.PUBLISHED, title="live title")
+        job.pending_payload = {"title": "staged title"}
+        self.repo.get_by_job_id.return_value = job
+
+        result = await self.service.discard_pending_edit(
+            self.session, job.job_id, acting_user_id=1
+        )
+
+        self.assertEqual(result.status, JobStatus.PUBLISHED)
+        self.assertEqual(result.title, "live title")
+        self.assertIsNone(result.pending_payload)
+        self.job_activity_repo.create.assert_awaited_once_with(
+            self.session, job.job_id, 1, "pending_edit_discarded", {}
+        )
+
+    async def test_discard_pending_edit_from_closed_clears_it(self):
+        """Discarding a staged edit on a CLOSED posting clears
+        pending_payload; status stays CLOSED."""
+        job = self._job(status=JobStatus.CLOSED, was_published=True)
+        job.pending_payload = {"title": "staged title"}
+        self.repo.get_by_job_id.return_value = job
+
+        result = await self.service.discard_pending_edit(
+            self.session, job.job_id, acting_user_id=1
+        )
+
+        self.assertEqual(result.status, JobStatus.CLOSED)
+        self.assertIsNone(result.pending_payload)
+
+    async def test_discard_pending_edit_raises_when_nothing_staged(self):
+        """Nothing to discard when pending_payload is already None."""
+        job = self._job(status=JobStatus.PUBLISHED)
+        self.repo.get_by_job_id.return_value = job
+
+        with self.assertRaisesRegex(ValueError, "nothing staged"):
+            await self.service.discard_pending_edit(
+                self.session, job.job_id, acting_user_id=1
+            )
+
+    async def test_discard_pending_edit_raises_from_other_status(self):
+        """Only PUBLISHED/CLOSED postings can have a staged edit to discard."""
+        job = self._job(status=JobStatus.DRAFT)
+        job.pending_payload = {"title": "staged title"}
+        self.repo.get_by_job_id.return_value = job
+
+        with self.assertRaisesRegex(ValueError, "cannot discard"):
+            await self.service.discard_pending_edit(
+                self.session, job.job_id, acting_user_id=1
+            )
 
     async def test_list_interview_pool(self):
         users = self._make_users(7, 8)
