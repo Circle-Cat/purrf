@@ -625,7 +625,8 @@ class TestMentorshipMapper(unittest.TestCase):
 
         self.assertIsInstance(dto, AdminMeetingDto)
         self.assertEqual(dto.meeting_id, "gm-1")
-        self.assertEqual(dto.time_range, "2026-05-05T10:00:00 - 2026-05-05T11:00:00")
+        self.assertEqual(dto.start_datetime, "2026-05-05T10:00:00")
+        self.assertEqual(dto.end_datetime, "2026-05-05T11:00:00")
         self.assertTrue(dto.is_completed)
         self.assertEqual(dto.note, [MeetingNoteTag.MENTOR_LATE])
         self.assertEqual(dto.create_datetime, "2026-05-05T09:55:00")

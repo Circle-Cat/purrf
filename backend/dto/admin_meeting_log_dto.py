@@ -5,7 +5,8 @@ from backend.common.mentorship_enums import MeetingNoteTag
 
 class AdminMeetingDto(BaseDto):
     meeting_id: str
-    time_range: str
+    start_datetime: str
+    end_datetime: str
     is_completed: bool
     note: list[MeetingNoteTag]
     create_datetime: str
