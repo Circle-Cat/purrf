@@ -115,9 +115,7 @@ class TestRecruitingController(unittest.IsolatedAsyncioTestCase):
     async def test_discard_pending_edit_passes_current_user(self):
         self.service.discard_pending_edit = AsyncMock(return_value="discarded")
         await self.controller.discard_pending_edit(current_user=self.user, job_id=3)
-        self.service.discard_pending_edit.assert_awaited_once_with(
-            self.session, 3, 42
-        )
+        self.service.discard_pending_edit.assert_awaited_once_with(self.session, 3, 42)
 
     async def test_list_interview_pool_route(self):
         self.service.list_interview_pool = AsyncMock(return_value=["x"])

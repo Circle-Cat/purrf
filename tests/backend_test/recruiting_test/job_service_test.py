@@ -813,7 +813,9 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.status, JobStatus.PUBLISHED)
         self.assertEqual(result.title, "old")
         self.assertEqual(result.form_schema, {"a": 1})
-        self.assertEqual(result.pending_payload, {"title": "new", "formSchema": {"a": 2}})
+        self.assertEqual(
+            result.pending_payload, {"title": "new", "formSchema": {"a": 2}}
+        )
 
     async def test_publish_job_is_removed(self):
         """Direct publish is gone; publishing only happens through approval."""

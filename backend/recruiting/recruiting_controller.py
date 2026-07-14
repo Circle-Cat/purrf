@@ -239,9 +239,7 @@ class RecruitingController:
             )
         return api_response(message="Reopen requested.", data=result)
 
-    async def discard_pending_edit(
-        self, current_user: UserContextDto, job_id: int
-    ):
+    async def discard_pending_edit(self, current_user: UserContextDto, job_id: int):
         """Discard a posting's staged edit without changing its status."""
         async with self.database.session() as session:
             result = await self.job_service.discard_pending_edit(

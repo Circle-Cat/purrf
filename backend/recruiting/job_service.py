@@ -406,7 +406,9 @@ class JobService:
         """
         job = await self._require_job(session, job_id)
         if job.status not in (JobStatus.PUBLISHED, JobStatus.CLOSED):
-            raise ValueError(f"Job {job_id} cannot discard a pending edit from {job.status}")
+            raise ValueError(
+                f"Job {job_id} cannot discard a pending edit from {job.status}"
+            )
         if job.pending_payload is None:
             raise ValueError(f"Job {job_id} has nothing staged to discard")
         job.pending_payload = None
