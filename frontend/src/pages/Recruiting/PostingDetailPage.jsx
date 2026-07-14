@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -59,6 +59,13 @@ const STATUS_VARIANT = {
   closed: "secondary",
 };
 
+const REJECT_KIND_LABEL = {
+  initial: "Initial submission rejected",
+  revision: "Revision rejected",
+  close: "Close request rejected",
+  reopen: "Reopen request rejected",
+};
+
 /** Title and dispatch fn per review action kind. */
 const REVIEW_ACTION = {
   submit: {
@@ -95,6 +102,7 @@ const REVIEW_ACTION = {
  */
 const PostingDetailPage = () => {
   const { id } = useParams();
+  const navigate = useNavigate();
   const { user, permissions = [] } = useAuth();
   const canWrite = permissions.includes(PERMISSIONS.RECRUITING_JOB_WRITE);
   const canApprove = permissions.includes(PERMISSIONS.RECRUITING_JOB_APPROVE);
@@ -114,7 +122,6 @@ const PostingDetailPage = () => {
   const [submitting, setSubmitting] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [confirmActionKind, setConfirmActionKind] = useState(null); // "close" | "reopen"
   const [rejectComment, setRejectComment] = useState("");
   const [deciding, setDeciding] = useState(false);
 
@@ -203,6 +210,53 @@ const PostingDetailPage = () => {
     .map((oid) => ownersById[oid] ?? `User ${oid}`)
     .join(", ");
 
+  const formatActivity = (entry) => {
+    const { eventType, actorName, details = {} } = entry;
+    const reviewerName = details.reviewerId
+      ? (approversById[details.reviewerId] ?? `Reviewer #${details.reviewerId}`)
+      : null;
+    if (eventType === "job_created") {
+      return `${actorName} created this posting as a draft`;
+    }
+    if (eventType === "review_opened") {
+      const verb =
+        {
+          initial: "submitted for review",
+          revision: "submitted a revision for review",
+          close: "requested to close",
+          reopen: "requested to reopen",
+        }[details.kind] ?? "submitted for review";
+      return reviewerName
+        ? `${actorName} ${verb}, assigned to ${reviewerName}`
+        : `${actorName} ${verb}`;
+    }
+    if (eventType === "review_decided") {
+      const templates = {
+        initial: {
+          approved: `${actorName} approved the review — posting published`,
+          rejected: `${actorName} rejected the review: "${details.comment}" — sent back to draft`,
+        },
+        revision: {
+          approved: `${actorName} approved the revision — changes published`,
+          rejected: `${actorName} rejected the revision: "${details.comment}" — changes discarded`,
+        },
+        close: {
+          approved: `${actorName} approved the close request — posting closed`,
+          rejected: `${actorName} rejected the close request: "${details.comment}" — posting stays published`,
+        },
+        reopen: {
+          approved: `${actorName} approved the reopen request — posting republished`,
+          rejected: `${actorName} rejected the reopen request: "${details.comment}" — posting stays closed`,
+        },
+      };
+      return (
+        templates[details.kind]?.[details.decision] ??
+        `${actorName} ${eventType}`
+      );
+    }
+    return `${actorName} ${eventType}`;
+  };
+
   const openReview = async (kind) => {
     try {
       const { data } = await listApprovers();
@@ -220,12 +274,10 @@ const PostingDetailPage = () => {
     setSubmitting(true);
     try {
       await action.dispatch(id, body);
-      setSubmitOpen(false);
-      load();
       toast.success(action.successMsg);
+      navigate(ROUTE_PATHS.RECRUITING_POSTINGS);
     } catch (e) {
       toast.error(e.message);
-    } finally {
       setSubmitting(false);
     }
   };
@@ -280,7 +332,10 @@ const PostingDetailPage = () => {
       <div className="space-y-1">
         <div className="flex flex-wrap items-center gap-2">
           <h1 className="text-xl font-semibold text-slate-900">{job.title}</h1>
-          {isDraft && job.lastRejectComment ? (
+          <Badge variant={STATUS_VARIANT[job.status]}>
+            {STATUS_LABELS[job.status]}
+          </Badge>
+          {job.lastRejectComment && (
             <Popover>
               <PopoverTrigger asChild>
                 <button type="button" className="cursor-pointer">
@@ -289,15 +344,11 @@ const PostingDetailPage = () => {
               </PopoverTrigger>
               <PopoverContent className="w-72">
                 <p className="text-sm font-medium text-slate-700">
-                  Rejection comment
+                  {REJECT_KIND_LABEL[job.lastRejectKind] ?? "Rejected"}
                 </p>
                 <p className="text-sm text-red-600">{job.lastRejectComment}</p>
               </PopoverContent>
             </Popover>
-          ) : (
-            <Badge variant={STATUS_VARIANT[job.status]}>
-              {STATUS_LABELS[job.status]}
-            </Badge>
           )}
         </div>
         <p className="text-sm text-slate-600">{job.description}</p>
@@ -343,7 +394,7 @@ const PostingDetailPage = () => {
             <Button
               size="sm"
               variant="outline"
-              onClick={() => setConfirmActionKind("close")}
+              onClick={() => openReview("close")}
             >
               Request close
             </Button>
@@ -357,7 +408,7 @@ const PostingDetailPage = () => {
             <Button
               size="sm"
               variant="outline"
-              onClick={() => setConfirmActionKind("reopen")}
+              onClick={() => openReview("reopen")}
             >
               Request reopen
             </Button>
@@ -430,7 +481,7 @@ const PostingDetailPage = () => {
                   <span className="text-slate-500">
                     {new Date(entry.createdAt).toLocaleString()}
                   </span>{" "}
-                  — {entry.eventType} by {entry.actorName}
+                  — {formatActivity(entry)}
                 </li>
               ))}
             </ul>
@@ -449,43 +500,6 @@ const PostingDetailPage = () => {
         onSubmit={handleReviewSubmit}
         onOpenChange={setSubmitOpen}
       />
-
-      <Dialog
-        open={confirmActionKind != null}
-        onOpenChange={(o) => !o && setConfirmActionKind(null)}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              {confirmActionKind === "close"
-                ? "Request to close this posting?"
-                : "Request to reopen this posting?"}
-            </DialogTitle>
-          </DialogHeader>
-          <p className="text-sm text-slate-600">
-            {confirmActionKind === "close"
-              ? "This stops new applicants once approved. An approver must sign off first."
-              : "This makes the posting live again once approved. An approver must sign off first."}
-          </p>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setConfirmActionKind(null)}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={() => {
-                const kind = confirmActionKind;
-                setConfirmActionKind(null);
-                openReview(kind);
-              }}
-            >
-              Continue
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       <Dialog
         open={deleteConfirmOpen}

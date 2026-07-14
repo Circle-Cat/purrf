@@ -856,6 +856,24 @@ class JobService:
         jobs = await self.job_repository.list_published(session)
         return [self.recruiting_mapper.to_public_job_summary_dto(j) for j in jobs]
 
+    @staticmethod
+    def _reject_info(
+        latest: "JobReviewEntity | None",
+    ) -> tuple[str | None, str | None]:
+        """Return (reject_comment, kind.value) if latest is a REJECTED review.
+
+        Args:
+            latest (JobReviewEntity | None): The job's most-recent review, or
+                None if it has never had one.
+
+        Returns:
+            tuple[str | None, str | None]: (comment, kind) when latest is a
+            rejected review, otherwise (None, None).
+        """
+        if latest is None or latest.status != JobReviewStatus.REJECTED:
+            return None, None
+        return latest.reject_comment, latest.kind.value
+
     async def list_all_jobs(self, session: AsyncSession) -> list[JobDto]:
         """List postings of every status (internal/admin view).
 
@@ -882,11 +900,7 @@ class JobService:
         dtos = []
         for j in jobs:
             latest = latest_reviews.get(j.job_id)
-            comment = (
-                latest.reject_comment
-                if latest is not None and latest.status == JobReviewStatus.REJECTED
-                else None
-            )
+            comment, kind = self._reject_info(latest)
             reviewer_id = (
                 latest.reviewer_id
                 if latest is not None and latest.status == JobReviewStatus.PENDING
@@ -894,7 +908,10 @@ class JobService:
             )
             dtos.append(
                 self.recruiting_mapper.to_job_dto(
-                    j, last_reject_comment=comment, reviewer_id=reviewer_id
+                    j,
+                    last_reject_comment=comment,
+                    last_reject_kind=kind,
+                    reviewer_id=reviewer_id,
                 )
             )
         return dtos
@@ -935,8 +952,10 @@ class JobService:
 
         Returns:
             JobDto: The requested posting, with ``reviewer_id`` set to its
-            open (PENDING) review's reviewer when one exists, otherwise
-            ``None``.
+            open (PENDING) review's reviewer when one exists, and
+            ``last_reject_comment``/``last_reject_kind`` set from its
+            most-recent review when that review was a rejection, otherwise
+            ``None`` for all three.
 
         Raises:
             ValueError: If no posting with the given id exists.
@@ -944,7 +963,16 @@ class JobService:
         job = await self._require_job(session, job_id)
         open_review = await self.job_review_repository.get_open_for_job(session, job_id)
         reviewer_id = open_review.reviewer_id if open_review is not None else None
-        return self.recruiting_mapper.to_job_dto(job, reviewer_id=reviewer_id)
+        latest_reviews = await self.job_review_repository.get_latest_reviews(
+            session, [job_id]
+        )
+        comment, kind = self._reject_info(latest_reviews.get(job_id))
+        return self.recruiting_mapper.to_job_dto(
+            job,
+            last_reject_comment=comment,
+            last_reject_kind=kind,
+            reviewer_id=reviewer_id,
+        )
 
     async def get_job_activity(
         self, session: AsyncSession, job_id: int

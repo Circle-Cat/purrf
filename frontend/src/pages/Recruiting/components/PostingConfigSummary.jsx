@@ -49,6 +49,17 @@ const PostingConfigSummary = ({ job, interviewPool = [], jobOwners = [] }) => {
 
   return (
     <div className="space-y-4">
+      <div className="space-y-1">
+        <p className="text-sm text-slate-700">Kind: {humanize(job.kind)}</p>
+        {job.kind === "activity" && (
+          <p className="text-sm text-slate-700">
+            Mentorship role: {humanize(job.mentorshipRole) || "None"}
+          </p>
+        )}
+        <p className="text-sm text-slate-700">
+          Cooldown days: {job.cooldownDays ?? "—"}
+        </p>
+      </div>
       <PipelineSummary
         pipelineConfig={job.pipelineConfig}
         interviewPool={interviewPool}

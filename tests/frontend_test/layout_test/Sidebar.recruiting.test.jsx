@@ -23,6 +23,26 @@ describe("Sidebar recruiting entries", () => {
     expect(screen.getByText("Job Postings")).toBeInTheDocument();
   });
 
+  it("shows Job Postings for a read-only viewer (job.read only)", () => {
+    mockPermissions = ["recruiting.job.read"];
+    render(
+      <MemoryRouter>
+        <Sidebar />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText("Job Postings")).toBeInTheDocument();
+  });
+
+  it("shows Job Postings for an approver-only viewer (job.approve only)", () => {
+    mockPermissions = ["recruiting.job.approve"];
+    render(
+      <MemoryRouter>
+        <Sidebar />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText("Job Postings")).toBeInTheDocument();
+  });
+
   it("hides My Posting Reviews without job.approve", () => {
     render(
       <MemoryRouter>

@@ -128,4 +128,58 @@ describe("PostingConfigSummary", () => {
 
     expect(screen.getByText("Work experience: Required")).toBeInTheDocument();
   });
+
+  it("shows Kind, Mentorship role, and Cooldown days above the pipeline summary", () => {
+    render(
+      <PostingConfigSummary
+        job={{
+          kind: "activity",
+          mentorshipRole: "mentor",
+          cooldownDays: 30,
+          pipelineConfig: null,
+          screenRules: null,
+          profileConfig: null,
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Kind: Activity")).toBeInTheDocument();
+    expect(screen.getByText("Mentorship role: Mentor")).toBeInTheDocument();
+    expect(screen.getByText("Cooldown days: 30")).toBeInTheDocument();
+  });
+
+  it("hides Mentorship role for an employment kind posting", () => {
+    const baseJob = {
+      kind: "activity",
+      mentorshipRole: "mentor",
+      cooldownDays: 30,
+      pipelineConfig: null,
+      screenRules: null,
+      profileConfig: null,
+    };
+
+    render(
+      <PostingConfigSummary
+        job={{ ...baseJob, kind: "employment", mentorshipRole: null }}
+      />,
+    );
+
+    expect(screen.getByText("Kind: Employment")).toBeInTheDocument();
+    expect(screen.queryByText(/Mentorship role/)).not.toBeInTheDocument();
+  });
+
+  it("shows an em dash for a null cooldownDays", () => {
+    const baseJob = {
+      kind: "activity",
+      mentorshipRole: "mentor",
+      cooldownDays: 30,
+      pipelineConfig: null,
+      screenRules: null,
+      profileConfig: null,
+    };
+
+    render(<PostingConfigSummary job={{ ...baseJob, cooldownDays: null }} />);
+
+    expect(screen.getByText("Cooldown days: —")).toBeInTheDocument();
+  });
 });

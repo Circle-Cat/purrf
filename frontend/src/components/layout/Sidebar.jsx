@@ -65,7 +65,11 @@ const Sidebar = () => {
     {
       label: "Job Postings",
       to: ROUTE_PATHS.RECRUITING_POSTINGS,
-      permissions: [PERMISSIONS.RECRUITING_JOB_WRITE],
+      permissions: [
+        PERMISSIONS.RECRUITING_JOB_WRITE,
+        PERMISSIONS.RECRUITING_JOB_READ,
+        PERMISSIONS.RECRUITING_JOB_APPROVE,
+      ],
     },
     {
       label: "My Posting Reviews",

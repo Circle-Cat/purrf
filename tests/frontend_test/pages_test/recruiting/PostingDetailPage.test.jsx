@@ -1,9 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import {
+  render,
+  screen,
+  waitFor,
+  fireEvent,
+  within,
+} from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { toast } from "sonner";
 import PostingDetailPage from "@/pages/Recruiting/PostingDetailPage";
 import * as api from "@/api/recruitingApi";
+import { ROUTE_PATHS } from "@/constants/RoutePaths";
 
 vi.mock("@/api/recruitingApi");
 // Bazel-sandbox module resolution: `vi.mock("sonner", factory)` doesn't
@@ -25,10 +33,14 @@ vi.mock("@/context/auth/AuthContext", () => ({
 
 const renderAt = (jobId) => {
   const router = createMemoryRouter(
-    [{ path: "/recruiting/postings/:id", element: <PostingDetailPage /> }],
+    [
+      { path: "/recruiting/postings/:id", element: <PostingDetailPage /> },
+      { path: "/recruiting/postings", element: <div>Postings list</div> },
+    ],
     { initialEntries: [`/recruiting/postings/${jobId}`] },
   );
-  return render(<RouterProvider router={router} />);
+  const result = render(<RouterProvider router={router} />);
+  return { ...result, router };
 };
 
 describe("PostingDetailPage", () => {
@@ -140,6 +152,30 @@ describe("PostingDetailPage", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("shows the status badge alongside a Sent back badge with the reject kind in the popover", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        status: "draft",
+        pipelineConfig: null,
+        screenRules: null,
+        profileConfig: null,
+        lastRejectComment: "Please tighten the screening rules.",
+        lastRejectKind: "initial",
+        reviewerId: null,
+      },
+    });
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    await waitFor(() => expect(screen.getByText("Draft")).toBeInTheDocument());
+    expect(
+      screen.getByRole("button", { name: "Sent back" }),
+    ).toBeInTheDocument();
+  });
+
   it("shows Approve/Reject only for the assigned reviewer", async () => {
     api.getJob.mockResolvedValue({
       data: {
@@ -198,5 +234,154 @@ describe("PostingDetailPage", () => {
     expect(
       screen.queryByRole("button", { name: "Approve" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("opens the reviewer-picker dialog directly when Request close is clicked, no intermediate confirm dialog", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        status: "published",
+        pipelineConfig: null,
+        screenRules: null,
+        profileConfig: null,
+        lastRejectComment: null,
+        reviewerId: null,
+      },
+    });
+    api.listApprovers.mockResolvedValue({ data: [{ userId: 9, name: "Bob" }] });
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Request close" }),
+      ).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Request close" }));
+
+    expect(
+      screen.queryByText("Request to close this posting?"),
+    ).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { name: "Request close" }),
+      ).toBeInTheDocument(),
+    );
+  });
+
+  it("formats the review history timeline into readable copy, not raw event types", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        status: "draft",
+        pipelineConfig: null,
+        screenRules: null,
+        profileConfig: null,
+        lastRejectComment: null,
+        reviewerId: null,
+      },
+    });
+    api.listApprovers.mockResolvedValue({
+      data: [{ userId: 9, name: "Yanpei Wang" }],
+    });
+    api.listJobActivity.mockResolvedValue({
+      data: [
+        {
+          id: 1,
+          eventType: "job_created",
+          details: {},
+          actorId: 3,
+          actorName: "Yuanyuan Huang",
+          createdAt: "2026-07-11T09:19:32Z",
+        },
+        {
+          id: 2,
+          eventType: "review_opened",
+          details: { kind: "initial", reviewerId: 9, message: null },
+          actorId: 3,
+          actorName: "Yuanyuan Huang",
+          createdAt: "2026-07-11T09:20:00Z",
+        },
+        {
+          id: 3,
+          eventType: "review_decided",
+          details: {
+            kind: "initial",
+            decision: "rejected",
+            comment: "Fix the title",
+          },
+          actorId: 9,
+          actorName: "Yanpei Wang",
+          createdAt: "2026-07-11T15:21:39Z",
+        },
+      ],
+    });
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    const user = userEvent.setup();
+    await user.click(
+      await screen.findByRole("tab", { name: "Review history" }),
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/Yuanyuan Huang created this posting as a draft/),
+      ).toBeInTheDocument();
+    });
+    expect(
+      screen.getByText(
+        /Yuanyuan Huang submitted for review, assigned to Yanpei Wang/,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /Yanpei Wang rejected the review.*Fix the title.*sent back to draft/,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("navigates to the postings list after Submit for review succeeds", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        status: "draft",
+        pipelineConfig: null,
+        screenRules: null,
+        profileConfig: null,
+        lastRejectComment: null,
+        reviewerId: null,
+      },
+    });
+    api.listApprovers.mockResolvedValue({ data: [{ userId: 9, name: "Bob" }] });
+    api.submitForReview.mockResolvedValue({ data: { id: 1 } });
+    authState.permissions = ["recruiting.job.write"];
+    const { router } = renderAt(1);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Submit for review" }),
+      ).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Submit for review" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("Reviewer"), {
+      target: { value: "9" },
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Submit for review" }),
+    );
+
+    await waitFor(() =>
+      expect(router.state.location.pathname).toBe(
+        ROUTE_PATHS.RECRUITING_POSTINGS,
+      ),
+    );
   });
 });

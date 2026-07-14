@@ -119,7 +119,11 @@ const PostingEditor = () => {
       if (id) await updateJob(id, body);
       else await createJob(body);
       toast.success(id ? "Posting updated." : "Posting created.");
-      navigate(ROUTE_PATHS.RECRUITING_POSTINGS);
+      navigate(
+        id
+          ? ROUTE_PATHS.RECRUITING_POSTING_DETAIL(id)
+          : ROUTE_PATHS.RECRUITING_POSTINGS,
+      );
     } catch (e) {
       toast.error(e.message);
       setSaving(false);

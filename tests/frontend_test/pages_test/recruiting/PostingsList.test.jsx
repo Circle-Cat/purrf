@@ -64,4 +64,47 @@ describe("PostingsList", () => {
 
     expect(onRowClick).not.toHaveBeenCalled();
   });
+
+  it("shows the status badge alongside the Sent back badge, not instead of it", () => {
+    render(
+      <PostingsList
+        jobs={[
+          {
+            ...job,
+            lastRejectComment: "Please fix the salary range.",
+            lastRejectKind: "initial",
+          },
+        ]}
+        ownersById={{}}
+        onRowClick={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Draft")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Sent back" }),
+    ).toBeInTheDocument();
+  });
+
+  it("shows a close-request-rejected popover title for a published, close-rejected job", () => {
+    render(
+      <PostingsList
+        jobs={[
+          {
+            ...job,
+            status: "published",
+            lastRejectComment: "Not yet, we still need this role.",
+            lastRejectKind: "close",
+          },
+        ]}
+        ownersById={{}}
+        onRowClick={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Sent back" }));
+
+    expect(screen.getByText("Published")).toBeInTheDocument();
+    expect(screen.getByText("Close request rejected")).toBeInTheDocument();
+  });
 });
