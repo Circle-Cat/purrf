@@ -636,4 +636,66 @@ describe("PostingDetailPage", () => {
     );
     expect(api.getJob).toHaveBeenCalledTimes(2); // initial load + reload after discard
   });
+
+  it("formats a rejected revision as keeping the staged edit, not discarding it", async () => {
+    api.listJobActivity.mockResolvedValue({
+      data: [
+        {
+          id: 1,
+          createdAt: "2026-07-14T00:00:00Z",
+          actorName: "Alex",
+          eventType: "review_decided",
+          details: {
+            kind: "revision",
+            decision: "rejected",
+            comment: "fix the title",
+          },
+        },
+      ],
+    });
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    await waitFor(() =>
+      expect(screen.getByText("Backend Engineer")).toBeInTheDocument(),
+    );
+    const user = userEvent.setup();
+    await user.click(
+      await screen.findByRole("tab", { name: "Review history" }),
+    );
+
+    expect(
+      screen.getByText(
+        /Alex rejected the revision: "fix the title" — posting stays published/,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("formats a discarded staged edit in the activity timeline", async () => {
+    api.listJobActivity.mockResolvedValue({
+      data: [
+        {
+          id: 1,
+          createdAt: "2026-07-14T00:00:00Z",
+          actorName: "Alex",
+          eventType: "pending_edit_discarded",
+          details: {},
+        },
+      ],
+    });
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    await waitFor(() =>
+      expect(screen.getByText("Backend Engineer")).toBeInTheDocument(),
+    );
+    const user = userEvent.setup();
+    await user.click(
+      await screen.findByRole("tab", { name: "Review history" }),
+    );
+
+    expect(
+      screen.getByText(/Alex discarded a staged edit/),
+    ).toBeInTheDocument();
+  });
 });

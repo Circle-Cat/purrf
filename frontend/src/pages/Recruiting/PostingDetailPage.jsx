@@ -240,7 +240,7 @@ const PostingDetailPage = () => {
         },
         revision: {
           approved: `${actorName} approved the revision — changes published`,
-          rejected: `${actorName} rejected the revision: "${details.comment}" — changes discarded`,
+          rejected: `${actorName} rejected the revision: "${details.comment}" — posting stays published`,
         },
         close: {
           approved: `${actorName} approved the close request — posting closed`,
@@ -255,6 +255,9 @@ const PostingDetailPage = () => {
         templates[details.kind]?.[details.decision] ??
         `${actorName} ${eventType}`
       );
+    }
+    if (eventType === "pending_edit_discarded") {
+      return `${actorName} discarded a staged edit`;
     }
     return `${actorName} ${eventType}`;
   };
