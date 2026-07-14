@@ -110,7 +110,7 @@ describe("PostingEditor", () => {
     expect(body.pipelineConfig).toEqual({ ownerId: 9, stages: [] });
     await waitFor(() =>
       expect(router.state.location.pathname).toBe(
-        ROUTE_PATHS.RECRUITING_POSTINGS,
+        ROUTE_PATHS.RECRUITING_POSTING_DETAIL("5"),
       ),
     );
   });

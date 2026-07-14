@@ -26,6 +26,13 @@ const VARIANT = {
   closed: "secondary",
 };
 
+const REJECT_KIND_LABEL = {
+  initial: "Initial submission rejected",
+  revision: "Revision rejected",
+  close: "Close request rejected",
+  reopen: "Reopen request rejected",
+};
+
 /**
  * Read-only, browse-only table of postings — status Badge, "Managed by"
  * line, and a click-through to the unified job detail page. All lifecycle
@@ -42,7 +49,6 @@ const PostingsList = ({ jobs, ownersById = {}, onRowClick }) => (
       <p className="p-6 text-sm text-slate-500">No postings yet.</p>
     )}
     {jobs.map((job) => {
-      const isDraft = job.status === "draft";
       const ownerNames = (job.pipelineConfig?.ownerIds ?? [])
         .map((id) => ownersById[id] ?? `User ${id}`)
         .join(", ");
@@ -62,7 +68,10 @@ const PostingsList = ({ jobs, ownersById = {}, onRowClick }) => (
             )}
           </div>
           <div className="flex flex-col items-end gap-1">
-            {isDraft && job.lastRejectComment ? (
+            <Badge variant={VARIANT[job.status]}>
+              {STATUS_LABELS[job.status]}
+            </Badge>
+            {job.lastRejectComment && (
               <Popover>
                 <PopoverTrigger asChild>
                   <span
@@ -76,17 +85,13 @@ const PostingsList = ({ jobs, ownersById = {}, onRowClick }) => (
                 </PopoverTrigger>
                 <PopoverContent className="w-72">
                   <p className="text-sm font-medium text-slate-700">
-                    Rejection comment
+                    {REJECT_KIND_LABEL[job.lastRejectKind] ?? "Rejected"}
                   </p>
                   <p className="text-sm text-red-600">
                     {job.lastRejectComment}
                   </p>
                 </PopoverContent>
               </Popover>
-            ) : (
-              <Badge variant={VARIANT[job.status]}>
-                {STATUS_LABELS[job.status]}
-              </Badge>
             )}
           </div>
         </button>

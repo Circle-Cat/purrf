@@ -147,6 +147,39 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsNone(result.reviewer_id)
 
+    async def test_get_job_surfaces_last_reject_kind(self):
+        """get_job populates last_reject_comment/last_reject_kind from the job's most-recent rejected review, mirroring list_all_jobs."""
+        job = self._job(status=JobStatus.DRAFT)
+        self.repo.get_by_job_id.return_value = job
+        rejected = JobReviewEntity(
+            review_id=9,
+            job_id=job.job_id,
+            submitted_by=1,
+            reviewer_id=2,
+            status=JobReviewStatus.REJECTED,
+            kind=JobReviewKind.INITIAL,
+            reject_comment="fix the title",
+        )
+        self.review_repo.get_latest_reviews = AsyncMock(
+            return_value={job.job_id: rejected}
+        )
+
+        result = await self.service.get_job(self.session, job.job_id)
+
+        self.assertEqual(result.last_reject_comment, "fix the title")
+        self.assertEqual(result.last_reject_kind, "initial")
+
+    async def test_get_job_no_reject_info_without_rejected_review(self):
+        """get_job leaves last_reject_comment/last_reject_kind None when there's no rejected review."""
+        job = self._job(status=JobStatus.DRAFT)
+        self.repo.get_by_job_id.return_value = job
+        self.review_repo.get_latest_reviews = AsyncMock(return_value={})
+
+        result = await self.service.get_job(self.session, job.job_id)
+
+        self.assertIsNone(result.last_reject_comment)
+        self.assertIsNone(result.last_reject_kind)
+
     async def test_update_published_any_field_parks_pending_payload(self):
         """Editing a PUBLISHED posting — any field — parks a full draft, live fields untouched."""
         job = self._job(
@@ -807,6 +840,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         dto_1 = next(r for r in result if r.id == 1)
         dto_2 = next(r for r in result if r.id == 2)
         self.assertEqual(dto_1.last_reject_comment, "fix the form")
+        self.assertEqual(dto_1.last_reject_kind, rejected_review.kind.value)
         self.assertIsNone(dto_2.last_reject_comment)
 
     async def test_list_all_jobs_no_comment_when_latest_is_approved(self):
