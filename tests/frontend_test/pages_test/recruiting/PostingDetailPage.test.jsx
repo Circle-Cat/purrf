@@ -475,8 +475,14 @@ describe("PostingDetailPage", () => {
     authState.permissions = ["recruiting.job.write"];
     renderAt(1);
 
+    // A pending edit switches Overview to a two-column Current/Proposed
+    // comparison, so "Backend Engineer" now also renders inside the
+    // Current column's PostingApplicantView (an <h2>) alongside the page
+    // header's <h1> — disambiguate by heading level.
     await waitFor(() =>
-      expect(screen.getByText("Backend Engineer")).toBeInTheDocument(),
+      expect(
+        screen.getByRole("heading", { level: 1, name: "Backend Engineer" }),
+      ).toBeInTheDocument(),
     );
     expect(
       screen.getByRole("button", { name: "Submit for review" }),
@@ -542,8 +548,14 @@ describe("PostingDetailPage", () => {
     authState.permissions = ["recruiting.job.write"];
     renderAt(1);
 
+    // A pending edit switches Overview to a two-column Current/Proposed
+    // comparison, so "Backend Engineer" now also renders inside the
+    // Current column's PostingApplicantView (an <h2>) alongside the page
+    // header's <h1> — disambiguate by heading level.
     await waitFor(() =>
-      expect(screen.getByText("Backend Engineer")).toBeInTheDocument(),
+      expect(
+        screen.getByRole("heading", { level: 1, name: "Backend Engineer" }),
+      ).toBeInTheDocument(),
     );
     expect(
       screen.getByRole("button", { name: "Request reopen" }),
@@ -572,8 +584,14 @@ describe("PostingDetailPage", () => {
     authState.permissions = ["recruiting.job.write"];
     renderAt(1);
 
+    // A pending edit switches Overview to a two-column Current/Proposed
+    // comparison, so "Backend Engineer" now also renders inside the
+    // Current column's PostingApplicantView (an <h2>) alongside the page
+    // header's <h1> — disambiguate by heading level.
     await waitFor(() =>
-      expect(screen.getByText("Backend Engineer")).toBeInTheDocument(),
+      expect(
+        screen.getByRole("heading", { level: 1, name: "Backend Engineer" }),
+      ).toBeInTheDocument(),
     );
     expect(screen.queryByText("Operate:")).not.toBeInTheDocument();
   });
@@ -676,5 +694,95 @@ describe("PostingDetailPage", () => {
     expect(
       screen.getByText(/Alex discarded a staged edit/),
     ).toBeInTheDocument();
+  });
+
+  it("shows a two-column Current/Proposed comparison in Overview when a pending edit is staged", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "Original description.",
+        kind: "employment",
+        status: "published",
+        pipelineConfig: null,
+        screenRules: null,
+        profileConfig: null,
+        formSchema: { questions: [] },
+        lastRejectComment: null,
+        reviewerId: null,
+        pendingPayload: {
+          title: "Senior Backend Engineer",
+          description: "Updated description.",
+          cooldownDays: null,
+          screenRules: null,
+          formSchema: { questions: [] },
+          pipelineConfig: null,
+          profileConfig: null,
+        },
+      },
+    });
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    await waitFor(() =>
+      expect(screen.getByText("Current")).toBeInTheDocument(),
+    );
+    expect(screen.getByText("Proposed")).toBeInTheDocument();
+    expect(screen.getAllByText("Original description.")).toHaveLength(2);
+    expect(screen.getByText("Updated description.")).toBeInTheDocument();
+    expect(screen.getByText("Senior Backend Engineer")).toBeInTheDocument();
+  });
+
+  it("does not show a Current/Proposed comparison when there is no pending edit", async () => {
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    await waitFor(() =>
+      expect(screen.getByText("Backend Engineer")).toBeInTheDocument(),
+    );
+    expect(screen.queryByText("Current")).not.toBeInTheDocument();
+    expect(screen.queryByText("Proposed")).not.toBeInTheDocument();
+  });
+
+  it("shows a two-column Current/Proposed comparison in Configuration when a pending edit is staged", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        kind: "employment",
+        status: "published",
+        pipelineConfig: null,
+        screenRules: null,
+        profileConfig: null,
+        cooldownDays: 30,
+        lastRejectComment: null,
+        reviewerId: null,
+        pendingPayload: {
+          title: "Backend Engineer",
+          description: "desc",
+          cooldownDays: 60,
+          screenRules: null,
+          formSchema: null,
+          pipelineConfig: null,
+          profileConfig: null,
+        },
+      },
+    });
+    authState.permissions = ["recruiting.job.write"];
+    const user = userEvent.setup();
+    renderAt(1);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("tab", { name: "Configuration" }),
+      ).toBeInTheDocument(),
+    );
+    await user.click(screen.getByRole("tab", { name: "Configuration" }));
+
+    await waitFor(() =>
+      expect(screen.getByText("Cooldown days: 30")).toBeInTheDocument(),
+    );
+    expect(screen.getByText("Cooldown days: 60")).toBeInTheDocument();
   });
 });
