@@ -164,6 +164,26 @@ class TestRecruitingController(unittest.IsolatedAsyncioTestCase):
             ],
         )
 
+    def test_job_authoring_helper_routes_accept_read_write_and_approve(self):
+        """approvers/interview-pool/job-owners are read-only lookups, so any
+        holder of RECRUITING_JOB_READ/WRITE/APPROVE should be able to load
+        them — not just RECRUITING_JOB_WRITE (job authors)."""
+        routes_by_path = {route.path: route for route in self.controller.router.routes}
+        expected = [
+            Permission.RECRUITING_JOB_READ,
+            Permission.RECRUITING_JOB_WRITE,
+            Permission.RECRUITING_JOB_APPROVE,
+        ]
+        for path in (
+            "/recruiting/approvers",
+            "/recruiting/interview-pool",
+            "/recruiting/job-owners",
+        ):
+            with self.subTest(path=path):
+                route = routes_by_path[path]
+                self.assertIn("GET", route.methods)
+                self.assertEqual(self._endpoint_permissions(route.endpoint), expected)
+
 
 if __name__ == "__main__":
     unittest.main()
