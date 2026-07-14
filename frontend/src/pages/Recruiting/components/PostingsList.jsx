@@ -80,7 +80,9 @@ const PostingsList = ({ jobs, ownersById = {}, onRowClick }) => (
                     className="cursor-pointer"
                     onClick={(e) => e.stopPropagation()}
                   >
-                    <Badge variant="destructive">Sent back</Badge>
+                    <Badge variant="destructive">
+                      {REJECT_KIND_LABEL[job.lastRejectKind] ?? "Sent back"}
+                    </Badge>
                   </span>
                 </PopoverTrigger>
                 <PopoverContent className="w-72">
