@@ -30,6 +30,7 @@ import {
   submitForReview,
   requestClose,
   requestReopen,
+  discardPendingEdit,
   deleteJob,
   decideReview,
 } from "@/api/recruitingApi";
@@ -122,6 +123,8 @@ const PostingDetailPage = () => {
   const [submitting, setSubmitting] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false);
+  const [discarding, setDiscarding] = useState(false);
   const [rejectComment, setRejectComment] = useState("");
   const [deciding, setDeciding] = useState(false);
 
@@ -192,10 +195,8 @@ const PostingDetailPage = () => {
 
   const isDraft = job.status === "draft";
   const isPublished = job.status === "published";
-  const isPendingRevision = job.status === "published_pending_revision";
   const isClosed = job.status === "closed";
-  const hasOperateAction =
-    isDraft || isPublished || isPendingRevision || isClosed;
+  const hasOperateAction = isDraft || isPublished || isClosed;
   // Mirrors JobService.update_job's allowed_from check on the backend:
   // editing is only accepted from DRAFT/PUBLISHED/CLOSED, never from
   // PUBLISHED_PENDING_REVISION (a revision is already staged and pending
@@ -293,6 +294,21 @@ const PostingDetailPage = () => {
     } catch (e) {
       toast.error(e.message);
       setDeleting(false);
+    }
+  };
+
+  const handleDiscard = async () => {
+    if (discarding) return;
+    setDiscarding(true);
+    try {
+      await discardPendingEdit(id);
+      toast.success("Staged edit discarded.");
+      setDiscardConfirmOpen(false);
+      load();
+    } catch (e) {
+      toast.error(e.message);
+    } finally {
+      setDiscarding(false);
     }
   };
 
@@ -405,7 +421,7 @@ const PostingDetailPage = () => {
               </Button>
             </>
           )}
-          {isPublished && (
+          {isPublished && job.pendingPayload == null && (
             <Button
               size="sm"
               variant="outline"
@@ -414,10 +430,19 @@ const PostingDetailPage = () => {
               Request close
             </Button>
           )}
-          {isPendingRevision && (
-            <Button size="sm" onClick={() => openReview("submit")}>
-              Submit for review
-            </Button>
+          {isPublished && job.pendingPayload != null && (
+            <>
+              <Button size="sm" onClick={() => openReview("submit")}>
+                Submit for review
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setDiscardConfirmOpen(true)}
+              >
+                Discard draft
+              </Button>
+            </>
           )}
           {isClosed && job.wasPublished && (
             <Button
@@ -426,6 +451,15 @@ const PostingDetailPage = () => {
               onClick={() => openReview("reopen")}
             >
               Request reopen
+            </Button>
+          )}
+          {isClosed && job.wasPublished && job.pendingPayload != null && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setDiscardConfirmOpen(true)}
+            >
+              Discard draft
             </Button>
           )}
           {isClosed && !job.wasPublished && (
@@ -538,6 +572,35 @@ const PostingDetailPage = () => {
               onClick={handleDelete}
             >
               Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={discardConfirmOpen}
+        onOpenChange={(o) => !o && setDiscardConfirmOpen(false)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Discard your staged edit?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-slate-600">
+            This discards your staged edit; the live posting is unaffected.
+          </p>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setDiscardConfirmOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={discarding}
+              onClick={handleDiscard}
+            >
+              Confirm discard
             </Button>
           </DialogFooter>
         </DialogContent>
