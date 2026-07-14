@@ -49,9 +49,7 @@ describe("PostingsList", () => {
     );
 
     expect(screen.getByText(/Alice/)).toBeInTheDocument();
-    expect(
-      screen.getByText("#3 — no permission, remove"),
-    ).toBeInTheDocument();
+    expect(screen.getByText("#3 — no permission, remove")).toBeInTheDocument();
   });
 
   it("calls onRowClick with the job when the row is clicked", () => {

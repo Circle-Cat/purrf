@@ -70,10 +70,10 @@ describe("Postings", () => {
   it("filters to only the current user's managed postings when toggled", async () => {
     renderPage();
     await waitFor(() => screen.getByText("Backend Engineer"));
-    fireEvent.click(screen.getByRole("checkbox", { name: "My postings" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Managed by me" }));
     expect(screen.getByText("Backend Engineer")).toBeInTheDocument(); // user 5 is an owner
 
-    fireEvent.click(screen.getByRole("checkbox", { name: "My postings" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Managed by me" }));
   });
 
   it("New posting button navigates to the new-posting route", async () => {
@@ -116,7 +116,7 @@ describe("Postings", () => {
     });
     renderPage();
     await waitFor(() => screen.getByText("Backend Engineer"));
-    fireEvent.click(screen.getByRole("checkbox", { name: "My postings" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Managed by me" }));
     await waitFor(() =>
       expect(screen.queryByText("Backend Engineer")).not.toBeInTheDocument(),
     );
