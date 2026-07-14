@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import PostingStatusBadges from "@/pages/Recruiting/components/PostingStatusBadges";
 
 /**
@@ -16,9 +17,7 @@ const PostingsList = ({ jobs, ownersById = {}, onRowClick }) => (
       <p className="p-6 text-sm text-slate-500">No postings yet.</p>
     )}
     {jobs.map((job) => {
-      const ownerNames = (job.pipelineConfig?.ownerIds ?? [])
-        .map((id) => ownersById[id] ?? `User ${id}`)
-        .join(", ");
+      const ownerIds = job.pipelineConfig?.ownerIds ?? [];
 
       return (
         <button
@@ -30,8 +29,22 @@ const PostingsList = ({ jobs, ownersById = {}, onRowClick }) => (
           <div className="min-w-0 flex-1">
             <p className="truncate font-medium text-slate-900">{job.title}</p>
             <p className="text-xs text-slate-500">{job.kind}</p>
-            {ownerNames && (
-              <p className="text-xs text-slate-500">Managed by: {ownerNames}</p>
+            {ownerIds.length > 0 && (
+              <p className="text-xs text-slate-500">
+                Managed by:
+                {ownerIds.map((oid, i) => (
+                  <Fragment key={oid}>
+                    {i === 0 ? " " : ", "}
+                    {ownersById[oid] == null ? (
+                      <span className="text-red-600">
+                        {`#${oid} — no permission, remove`}
+                      </span>
+                    ) : (
+                      ownersById[oid]
+                    )}
+                  </Fragment>
+                ))}
+              </p>
             )}
           </div>
           <div className="flex flex-col items-end gap-1">

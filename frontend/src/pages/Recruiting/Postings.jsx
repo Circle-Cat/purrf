@@ -65,7 +65,7 @@ const Postings = () => {
           checked={myPostingsOnly}
           onCheckedChange={(checked) => setMyPostingsOnly(Boolean(checked))}
         />
-        <Label htmlFor="my-postings">My postings</Label>
+        <Label htmlFor="my-postings">Managed by me</Label>
       </div>
       <PostingsList
         jobs={visibleJobs}
