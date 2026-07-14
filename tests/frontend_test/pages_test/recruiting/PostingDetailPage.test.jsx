@@ -182,6 +182,29 @@ describe("PostingDetailPage", () => {
     );
   });
 
+  it("shows an unresolved owner in red with a 'no permission, remove' suffix", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        status: "draft",
+        pipelineConfig: { ownerIds: [42] },
+        screenRules: null,
+        profileConfig: null,
+        reviewerId: null,
+      },
+    });
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    await waitFor(() =>
+      expect(
+        screen.getByText("#42 — no permission, remove"),
+      ).toBeInTheDocument(),
+    );
+  });
+
   it("hides the Operate block for a read-only viewer", async () => {
     authState.permissions = ["recruiting.job.read"];
     renderAt(1);

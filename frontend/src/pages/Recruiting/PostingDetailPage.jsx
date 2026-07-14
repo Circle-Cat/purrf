@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -206,9 +206,7 @@ const PostingDetailPage = () => {
   const reviewerName = job.reviewerId
     ? (approversById[job.reviewerId] ?? `Reviewer #${job.reviewerId}`)
     : null;
-  const ownerNames = (job.pipelineConfig?.ownerIds ?? [])
-    .map((oid) => ownersById[oid] ?? `User ${oid}`)
-    .join(", ");
+  const ownerIds = job.pipelineConfig?.ownerIds ?? [];
   const staged = isPendingRevision && job.reviewerId == null;
   const badgeLabel = staged ? "Edit staged" : STATUS_LABELS[job.status];
   const badgeVariant = staged ? "secondary" : STATUS_VARIANT[job.status];
@@ -355,8 +353,22 @@ const PostingDetailPage = () => {
           )}
         </div>
         <p className="text-sm text-slate-600">{job.description}</p>
-        {ownerNames && (
-          <p className="text-sm text-slate-500">Managed by: {ownerNames}</p>
+        {ownerIds.length > 0 && (
+          <p className="text-sm text-slate-500">
+            Managed by:
+            {ownerIds.map((oid, i) => (
+              <Fragment key={oid}>
+                {i === 0 ? " " : ", "}
+                {ownersById[oid] == null ? (
+                  <span className="text-red-600">
+                    {`#${oid} — no permission, remove`}
+                  </span>
+                ) : (
+                  ownersById[oid]
+                )}
+              </Fragment>
+            ))}
+          </p>
         )}
         {reviewerName && (
           <p className="text-sm text-slate-500">
