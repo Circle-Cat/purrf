@@ -11,6 +11,7 @@ from backend.common.api_endpoints import (
     RECRUITING_JOB_SUBMIT_ENDPOINT,
     RECRUITING_JOB_REQUEST_CLOSE_ENDPOINT,
     RECRUITING_JOB_REQUEST_REOPEN_ENDPOINT,
+    RECRUITING_JOB_DISCARD_PENDING_EDIT_ENDPOINT,
     RECRUITING_JOB_ACTIVITY_ENDPOINT,
     RECRUITING_APPROVERS_ENDPOINT,
     RECRUITING_REVIEWS_ENDPOINT,
@@ -81,6 +82,14 @@ class RecruitingController:
             response_model=None,
         )
         self.router.add_api_route(
+            RECRUITING_JOB_DISCARD_PENDING_EDIT_ENDPOINT,
+            endpoint=authenticate(permissions=[Permission.RECRUITING_JOB_WRITE])(
+                self.discard_pending_edit
+            ),
+            methods=["POST"],
+            response_model=None,
+        )
+        self.router.add_api_route(
             RECRUITING_JOB_ENDPOINT,
             endpoint=authenticate(permissions=[Permission.RECRUITING_JOB_WRITE])(
                 self.delete_job
@@ -98,25 +107,37 @@ class RecruitingController:
         )
         self.router.add_api_route(
             RECRUITING_APPROVERS_ENDPOINT,
-            endpoint=authenticate(permissions=[Permission.RECRUITING_JOB_WRITE])(
-                self.list_approvers
-            ),
+            endpoint=authenticate(
+                permissions=[
+                    Permission.RECRUITING_JOB_READ,
+                    Permission.RECRUITING_JOB_WRITE,
+                    Permission.RECRUITING_JOB_APPROVE,
+                ]
+            )(self.list_approvers),
             methods=["GET"],
             response_model=None,
         )
         self.router.add_api_route(
             RECRUITING_INTERVIEW_POOL_ENDPOINT,
-            endpoint=authenticate(permissions=[Permission.RECRUITING_JOB_WRITE])(
-                self.list_interview_pool
-            ),
+            endpoint=authenticate(
+                permissions=[
+                    Permission.RECRUITING_JOB_READ,
+                    Permission.RECRUITING_JOB_WRITE,
+                    Permission.RECRUITING_JOB_APPROVE,
+                ]
+            )(self.list_interview_pool),
             methods=["GET"],
             response_model=None,
         )
         self.router.add_api_route(
             RECRUITING_JOB_OWNERS_ENDPOINT,
-            endpoint=authenticate(permissions=[Permission.RECRUITING_JOB_WRITE])(
-                self.list_job_owners
-            ),
+            endpoint=authenticate(
+                permissions=[
+                    Permission.RECRUITING_JOB_READ,
+                    Permission.RECRUITING_JOB_WRITE,
+                    Permission.RECRUITING_JOB_APPROVE,
+                ]
+            )(self.list_job_owners),
             methods=["GET"],
             response_model=None,
         )
@@ -217,6 +238,14 @@ class RecruitingController:
                 submit_data.message,
             )
         return api_response(message="Reopen requested.", data=result)
+
+    async def discard_pending_edit(self, current_user: UserContextDto, job_id: int):
+        """Discard a posting's staged edit without changing its status."""
+        async with self.database.session() as session:
+            result = await self.job_service.discard_pending_edit(
+                session, job_id, current_user.user_id
+            )
+        return api_response(message="Pending edit discarded.", data=result)
 
     async def delete_job(self, current_user: UserContextDto, job_id: int):
         """Delete a never-published CLOSED posting."""

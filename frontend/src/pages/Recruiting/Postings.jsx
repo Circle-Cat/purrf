@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/context/auth/AuthContext";
+import { PERMISSIONS } from "@/constants/Permissions";
 import { listJobs, listJobOwners } from "@/api/recruitingApi";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
 import PostingsList from "@/pages/Recruiting/components/PostingsList";
@@ -13,7 +14,8 @@ import { POSTINGS_GUIDE } from "@/pages/Recruiting/components/guideContent";
 
 /** Postings browse page: status + Managed-by list, click-through to the unified detail page. */
 const Postings = () => {
-  const { user } = useAuth();
+  const { user, permissions = [] } = useAuth();
+  const canWrite = permissions.includes(PERMISSIONS.RECRUITING_JOB_WRITE);
   const navigate = useNavigate();
   const [jobs, setJobs] = useState([]);
   const [ownersById, setOwnersById] = useState({});
@@ -49,7 +51,10 @@ const Postings = () => {
         <h1 className="text-xl font-semibold text-slate-900">Postings</h1>
         <div className="flex items-center gap-2">
           <HowItWorksDialog {...POSTINGS_GUIDE} />
-          <Button onClick={() => navigate(ROUTE_PATHS.RECRUITING_POSTING_NEW)}>
+          <Button
+            disabled={!canWrite}
+            onClick={() => navigate(ROUTE_PATHS.RECRUITING_POSTING_NEW)}
+          >
             New posting
           </Button>
         </div>
@@ -60,7 +65,7 @@ const Postings = () => {
           checked={myPostingsOnly}
           onCheckedChange={(checked) => setMyPostingsOnly(Boolean(checked))}
         />
-        <Label htmlFor="my-postings">My postings</Label>
+        <Label htmlFor="my-postings">Managed by me</Label>
       </div>
       <PostingsList
         jobs={visibleJobs}

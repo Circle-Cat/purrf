@@ -1,37 +1,5 @@
-import { Badge } from "@/components/ui/badge";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-
-/** Human labels + badge variants per JobStatus. */
-const STATUS_LABELS = {
-  draft: "Draft",
-  pending_review: "Pending review",
-  published: "Published",
-  published_pending_revision: "Revision pending review",
-  pending_close: "Pending close",
-  pending_reopen: "Pending reopen",
-  closed: "Closed",
-};
-
-const VARIANT = {
-  draft: "secondary",
-  pending_review: "outline",
-  published: "default",
-  published_pending_revision: "outline",
-  pending_close: "outline",
-  pending_reopen: "outline",
-  closed: "secondary",
-};
-
-const REJECT_KIND_LABEL = {
-  initial: "Initial submission rejected",
-  revision: "Revision rejected",
-  close: "Close request rejected",
-  reopen: "Reopen request rejected",
-};
+import { Fragment } from "react";
+import PostingStatusBadges from "@/pages/Recruiting/components/PostingStatusBadges";
 
 /**
  * Read-only, browse-only table of postings — status Badge, "Managed by"
@@ -49,13 +17,7 @@ const PostingsList = ({ jobs, ownersById = {}, onRowClick }) => (
       <p className="p-6 text-sm text-slate-500">No postings yet.</p>
     )}
     {jobs.map((job) => {
-      const ownerNames = (job.pipelineConfig?.ownerIds ?? [])
-        .map((id) => ownersById[id] ?? `User ${id}`)
-        .join(", ");
-      const staged =
-        job.status === "published_pending_revision" && job.reviewerId == null;
-      const badgeLabel = staged ? "Edit staged" : STATUS_LABELS[job.status];
-      const badgeVariant = staged ? "secondary" : VARIANT[job.status];
+      const ownerIds = job.pipelineConfig?.ownerIds ?? [];
 
       return (
         <button
@@ -67,36 +29,29 @@ const PostingsList = ({ jobs, ownersById = {}, onRowClick }) => (
           <div className="min-w-0 flex-1">
             <p className="truncate font-medium text-slate-900">{job.title}</p>
             <p className="text-xs text-slate-500">{job.kind}</p>
-            {ownerNames && (
-              <p className="text-xs text-slate-500">Managed by: {ownerNames}</p>
+            {ownerIds.length > 0 && (
+              <p className="text-xs text-slate-500">
+                Managed by:
+                {ownerIds.map((oid, i) => (
+                  <Fragment key={oid}>
+                    {i === 0 ? " " : ", "}
+                    {ownersById[oid] == null ? (
+                      <span className="text-red-600">
+                        {`#${oid} — no permission, remove`}
+                      </span>
+                    ) : (
+                      ownersById[oid]
+                    )}
+                  </Fragment>
+                ))}
+              </p>
             )}
           </div>
           <div className="flex flex-col items-end gap-1">
-            <Badge variant={badgeVariant}>{badgeLabel}</Badge>
-            {job.lastRejectComment && (
-              <Popover>
-                <PopoverTrigger asChild>
-                  <span
-                    role="button"
-                    tabIndex={0}
-                    className="cursor-pointer"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <Badge variant="destructive">
-                      {REJECT_KIND_LABEL[job.lastRejectKind] ?? "Sent back"}
-                    </Badge>
-                  </span>
-                </PopoverTrigger>
-                <PopoverContent className="w-72">
-                  <p className="text-sm font-medium text-slate-700">
-                    {REJECT_KIND_LABEL[job.lastRejectKind] ?? "Rejected"}
-                  </p>
-                  <p className="text-sm text-red-600">
-                    {job.lastRejectComment}
-                  </p>
-                </PopoverContent>
-              </Popover>
-            )}
+            <PostingStatusBadges
+              job={job}
+              onRejectBadgeClick={(e) => e.stopPropagation()}
+            />
           </div>
         </button>
       );

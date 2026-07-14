@@ -1,14 +1,8 @@
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
 import {
   Dialog,
   DialogContent,
@@ -30,41 +24,15 @@ import {
   submitForReview,
   requestClose,
   requestReopen,
+  discardPendingEdit,
   deleteJob,
   decideReview,
 } from "@/api/recruitingApi";
 import SubmitReviewDialog from "@/pages/Recruiting/components/SubmitReviewDialog";
+import PostingStatusBadges from "@/pages/Recruiting/components/PostingStatusBadges";
 import PostingConfigSummary from "@/pages/Recruiting/components/PostingConfigSummary";
 import PostingApplicantView from "@/pages/Recruiting/components/PostingApplicantView";
 import LoadGate from "@/pages/Recruiting/components/LoadGate";
-
-/** Human labels + badge variants per JobStatus (mirrors PostingsList). */
-const STATUS_LABELS = {
-  draft: "Draft",
-  pending_review: "Pending review",
-  published: "Published",
-  published_pending_revision: "Revision pending review",
-  pending_close: "Pending close",
-  pending_reopen: "Pending reopen",
-  closed: "Closed",
-};
-
-const STATUS_VARIANT = {
-  draft: "secondary",
-  pending_review: "outline",
-  published: "default",
-  published_pending_revision: "outline",
-  pending_close: "outline",
-  pending_reopen: "outline",
-  closed: "secondary",
-};
-
-const REJECT_KIND_LABEL = {
-  initial: "Initial submission rejected",
-  revision: "Revision rejected",
-  close: "Close request rejected",
-  reopen: "Reopen request rejected",
-};
 
 /** Title and dispatch fn per review action kind. */
 const REVIEW_ACTION = {
@@ -122,6 +90,8 @@ const PostingDetailPage = () => {
   const [submitting, setSubmitting] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false);
+  const [discarding, setDiscarding] = useState(false);
   const [rejectComment, setRejectComment] = useState("");
   const [deciding, setDeciding] = useState(false);
 
@@ -192,10 +162,8 @@ const PostingDetailPage = () => {
 
   const isDraft = job.status === "draft";
   const isPublished = job.status === "published";
-  const isPendingRevision = job.status === "published_pending_revision";
   const isClosed = job.status === "closed";
-  const hasOperateAction =
-    isDraft || isPublished || isPendingRevision || isClosed;
+  const hasOperateAction = isDraft || isPublished || isClosed;
   // Mirrors JobService.update_job's allowed_from check on the backend:
   // editing is only accepted from DRAFT/PUBLISHED/CLOSED, never from
   // PUBLISHED_PENDING_REVISION (a revision is already staged and pending
@@ -207,9 +175,10 @@ const PostingDetailPage = () => {
     ? (approversById[job.reviewerId] ?? `Reviewer #${job.reviewerId}`)
     : null;
   const ownerIds = job.pipelineConfig?.ownerIds ?? [];
-  const staged = isPendingRevision && job.reviewerId == null;
-  const badgeLabel = staged ? "Edit staged" : STATUS_LABELS[job.status];
-  const badgeVariant = staged ? "secondary" : STATUS_VARIANT[job.status];
+  /** The staged edit merged onto the live job, or null when nothing is staged. */
+  const proposedJob = job.pendingPayload
+    ? { ...job, ...job.pendingPayload }
+    : null;
 
   const formatActivity = (entry) => {
     const { eventType, actorName, details = {} } = entry;
@@ -239,7 +208,7 @@ const PostingDetailPage = () => {
         },
         revision: {
           approved: `${actorName} approved the revision — changes published`,
-          rejected: `${actorName} rejected the revision: "${details.comment}" — changes discarded`,
+          rejected: `${actorName} rejected the revision: "${details.comment}" — posting stays published`,
         },
         close: {
           approved: `${actorName} approved the close request — posting closed`,
@@ -254,6 +223,9 @@ const PostingDetailPage = () => {
         templates[details.kind]?.[details.decision] ??
         `${actorName} ${eventType}`
       );
+    }
+    if (eventType === "pending_edit_discarded") {
+      return `${actorName} discarded a staged edit`;
     }
     return `${actorName} ${eventType}`;
   };
@@ -296,6 +268,21 @@ const PostingDetailPage = () => {
     }
   };
 
+  const handleDiscard = async () => {
+    if (discarding) return;
+    setDiscarding(true);
+    try {
+      await discardPendingEdit(id);
+      toast.success("Staged edit discarded.");
+      setDiscardConfirmOpen(false);
+      load();
+    } catch (e) {
+      toast.error(e.message);
+    } finally {
+      setDiscarding(false);
+    }
+  };
+
   const handleApprove = async () => {
     if (deciding || !myOpenReview) return;
     setDeciding(true);
@@ -333,24 +320,7 @@ const PostingDetailPage = () => {
       <div className="space-y-1">
         <div className="flex flex-wrap items-center gap-2">
           <h1 className="text-xl font-semibold text-slate-900">{job.title}</h1>
-          <Badge variant={badgeVariant}>{badgeLabel}</Badge>
-          {job.lastRejectComment && (
-            <Popover>
-              <PopoverTrigger asChild>
-                <button type="button" className="cursor-pointer">
-                  <Badge variant="destructive">
-                    {REJECT_KIND_LABEL[job.lastRejectKind] ?? "Sent back"}
-                  </Badge>
-                </button>
-              </PopoverTrigger>
-              <PopoverContent className="w-72">
-                <p className="text-sm font-medium text-slate-700">
-                  {REJECT_KIND_LABEL[job.lastRejectKind] ?? "Rejected"}
-                </p>
-                <p className="text-sm text-red-600">{job.lastRejectComment}</p>
-              </PopoverContent>
-            </Popover>
-          )}
+          <PostingStatusBadges job={job} />
         </div>
         <p className="text-sm text-slate-600">{job.description}</p>
         {ownerIds.length > 0 && (
@@ -405,7 +375,7 @@ const PostingDetailPage = () => {
               </Button>
             </>
           )}
-          {isPublished && (
+          {isPublished && job.pendingPayload == null && (
             <Button
               size="sm"
               variant="outline"
@@ -414,10 +384,19 @@ const PostingDetailPage = () => {
               Request close
             </Button>
           )}
-          {isPendingRevision && (
-            <Button size="sm" onClick={() => openReview("submit")}>
-              Submit for review
-            </Button>
+          {isPublished && job.pendingPayload != null && (
+            <>
+              <Button size="sm" onClick={() => openReview("submit")}>
+                Submit for review
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setDiscardConfirmOpen(true)}
+              >
+                Discard draft
+              </Button>
+            </>
           )}
           {isClosed && job.wasPublished && (
             <Button
@@ -426,6 +405,15 @@ const PostingDetailPage = () => {
               onClick={() => openReview("reopen")}
             >
               Request reopen
+            </Button>
+          )}
+          {isClosed && job.wasPublished && job.pendingPayload != null && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setDiscardConfirmOpen(true)}
+            >
+              Discard draft
             </Button>
           )}
           {isClosed && !job.wasPublished && (
@@ -473,18 +461,62 @@ const PostingDetailPage = () => {
           <TabsTrigger value="history">Review history</TabsTrigger>
         </TabsList>
         <TabsContent value="overview">
-          <PostingApplicantView
-            description={job.description}
-            questions={job.formSchema?.questions ?? []}
-            profileConfig={job.profileConfig}
-          />
+          {proposedJob ? (
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+              <div className="space-y-2">
+                <h3 className="text-sm font-medium text-slate-700">Current</h3>
+                <PostingApplicantView
+                  title={job.title}
+                  description={job.description}
+                  questions={job.formSchema?.questions ?? []}
+                  profileConfig={job.profileConfig}
+                />
+              </div>
+              <div className="space-y-2">
+                <h3 className="text-sm font-medium text-slate-700">Proposed</h3>
+                <PostingApplicantView
+                  title={proposedJob.title}
+                  description={proposedJob.description}
+                  questions={proposedJob.formSchema?.questions ?? []}
+                  profileConfig={proposedJob.profileConfig}
+                />
+              </div>
+            </div>
+          ) : (
+            <PostingApplicantView
+              description={job.description}
+              questions={job.formSchema?.questions ?? []}
+              profileConfig={job.profileConfig}
+            />
+          )}
         </TabsContent>
         <TabsContent value="configuration">
-          <PostingConfigSummary
-            job={job}
-            interviewPool={interviewPool}
-            jobOwners={jobOwners}
-          />
+          {proposedJob ? (
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+              <div className="space-y-2">
+                <h3 className="text-sm font-medium text-slate-700">Current</h3>
+                <PostingConfigSummary
+                  job={job}
+                  interviewPool={interviewPool}
+                  jobOwners={jobOwners}
+                />
+              </div>
+              <div className="space-y-2">
+                <h3 className="text-sm font-medium text-slate-700">Proposed</h3>
+                <PostingConfigSummary
+                  job={proposedJob}
+                  interviewPool={interviewPool}
+                  jobOwners={jobOwners}
+                />
+              </div>
+            </div>
+          ) : (
+            <PostingConfigSummary
+              job={job}
+              interviewPool={interviewPool}
+              jobOwners={jobOwners}
+            />
+          )}
         </TabsContent>
         <TabsContent value="history">
           {activity.length === 0 ? (
@@ -538,6 +570,35 @@ const PostingDetailPage = () => {
               onClick={handleDelete}
             >
               Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={discardConfirmOpen}
+        onOpenChange={(o) => !o && setDiscardConfirmOpen(false)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Discard your staged edit?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-slate-600">
+            This discards your staged edit; the live posting is unaffected.
+          </p>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setDiscardConfirmOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={discarding}
+              onClick={handleDiscard}
+            >
+              Confirm discard
             </Button>
           </DialogFooter>
         </DialogContent>

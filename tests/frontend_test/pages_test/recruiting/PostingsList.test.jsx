@@ -39,6 +39,19 @@ describe("PostingsList", () => {
     expect(screen.queryByText(/Managed by/)).not.toBeInTheDocument();
   });
 
+  it("shows an unresolved owner in red with a 'no permission, remove' suffix, alongside a resolved one", () => {
+    render(
+      <PostingsList
+        jobs={[job]}
+        ownersById={{ 2: "Alice" }}
+        onRowClick={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText(/Alice/)).toBeInTheDocument();
+    expect(screen.getByText("#3 — no permission, remove")).toBeInTheDocument();
+  });
+
   it("calls onRowClick with the job when the row is clicked", () => {
     const onRowClick = vi.fn();
     render(
@@ -129,24 +142,6 @@ describe("PostingsList", () => {
     fireEvent.click(screen.getByRole("button", { name: "Sent back" }));
 
     expect(screen.getByText("Rejected")).toBeInTheDocument();
-  });
-
-  it("shows 'Edit staged' badge for published_pending_revision with reviewerId: null", () => {
-    render(
-      <PostingsList
-        jobs={[
-          {
-            ...job,
-            status: "published_pending_revision",
-            reviewerId: null,
-          },
-        ]}
-        ownersById={{}}
-        onRowClick={vi.fn()}
-      />,
-    );
-
-    expect(screen.getByText("Edit staged")).toBeInTheDocument();
   });
 
   it("shows 'Revision pending review' badge for published_pending_revision with reviewerId: 9", () => {

@@ -28,6 +28,10 @@ export const requestClose = (jobId, body) =>
 export const requestReopen = (jobId, body) =>
   request.post(API_ENDPOINTS.RECRUITING_JOB_REQUEST_REOPEN(jobId), body);
 
+/** Discard a posting's staged pending edit without changing its status. */
+export const discardPendingEdit = (jobId) =>
+  request.post(API_ENDPOINTS.RECRUITING_JOB_DISCARD_PENDING_EDIT(jobId));
+
 /** Delete a posting (only for never-published closed postings). */
 export const deleteJob = (jobId) =>
   request.delete(API_ENDPOINTS.RECRUITING_JOB(jobId));

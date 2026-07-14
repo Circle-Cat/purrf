@@ -112,6 +112,11 @@ class TestRecruitingController(unittest.IsolatedAsyncioTestCase):
         await self.controller.delete_job(current_user=self.user, job_id=9)
         self.service.delete_job.assert_awaited_once_with(self.session, 9)
 
+    async def test_discard_pending_edit_passes_current_user(self):
+        self.service.discard_pending_edit = AsyncMock(return_value="discarded")
+        await self.controller.discard_pending_edit(current_user=self.user, job_id=3)
+        self.service.discard_pending_edit.assert_awaited_once_with(self.session, 3, 42)
+
     async def test_list_interview_pool_route(self):
         self.service.list_interview_pool = AsyncMock(return_value=["x"])
         result = await self.controller.list_interview_pool(self.user)
@@ -163,6 +168,26 @@ class TestRecruitingController(unittest.IsolatedAsyncioTestCase):
                 Permission.RECRUITING_APPLICATION_READ_ALL,
             ],
         )
+
+    def test_job_authoring_helper_routes_accept_read_write_and_approve(self):
+        """approvers/interview-pool/job-owners are read-only lookups, so any
+        holder of RECRUITING_JOB_READ/WRITE/APPROVE should be able to load
+        them — not just RECRUITING_JOB_WRITE (job authors)."""
+        routes_by_path = {route.path: route for route in self.controller.router.routes}
+        expected = [
+            Permission.RECRUITING_JOB_READ,
+            Permission.RECRUITING_JOB_WRITE,
+            Permission.RECRUITING_JOB_APPROVE,
+        ]
+        for path in (
+            "/recruiting/approvers",
+            "/recruiting/interview-pool",
+            "/recruiting/job-owners",
+        ):
+            with self.subTest(path=path):
+                route = routes_by_path[path]
+                self.assertIn("GET", route.methods)
+                self.assertEqual(self._endpoint_permissions(route.endpoint), expected)
 
 
 if __name__ == "__main__":

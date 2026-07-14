@@ -18,24 +18,12 @@ js_library(
     ]),
 )
 
-# One vitest process running all ~1500 tests grows its worker-teardown time
-# as the suite grows, occasionally exceeding vitest.config.mjs's
-# teardownTimeout under CI load (bazel reports this as a full-target
-# TIMEOUT even though every test passed). Sharding via vitest's built-in
-# --shard flag keeps each process's module graph small enough to close
-# reliably, and lets bazel run shards in parallel.
 _SHARD_COUNT = 10
 
 [
     vitest_bin.vitest_test(
         name = "frontend_unit_tests_%d" % i,
-        # "medium" = 300s timeout. Normal runs (even under CI load) finish in
-        # well under 150s; the previous "large" (900s) only mattered for the
-        # known teardown-hang case below, where waiting it out just delays
-        # the flaky retry that resolves it in seconds. This cuts that
-        # worst-case wait roughly 3x without meaningfully risking a false
-        # timeout on a merely-slow-but-passing run.
-        size = "medium",
+        size = "large",
         args = [
             "run",
             "--reporter=verbose",
@@ -48,15 +36,6 @@ _SHARD_COUNT = 10
             "//:npm_deps",
             "//frontend:all_srcs",
         ],
-        # Known vitest/vite-node limitation, not a code bug: worker teardown
-        # occasionally fails to close all its file handles in time (traced
-        # via vitest's hanging-process reporter — every test in the shard
-        # had already passed when this hit). Confirmed no config fix exists
-        # for this repo's setup (pool:"forks" and a version upgrade both
-        # cause unrelated duplicate-React failures here; singleThread
-        # breaks test isolation). A rerun always succeeds, so let bazel
-        # retry automatically instead of relying on a human to notice and
-        # manually rerun CI.
         flaky = True,
     )
     for i in range(
