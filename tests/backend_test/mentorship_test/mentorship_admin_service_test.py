@@ -48,7 +48,8 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
         self.mock_mapper.map_to_admin_meeting_dto.side_effect = (
             lambda meeting, *, is_completed, note_tags: AdminMeetingDto(
                 meeting_id=meeting["meeting_id"],
-                time_range=f"{meeting['start_datetime']} - {meeting['end_datetime']}",
+                start_datetime=meeting["start_datetime"],
+                end_datetime=meeting["end_datetime"],
                 is_completed=is_completed,
                 note=note_tags,
                 create_datetime=meeting["created_datetime"],
