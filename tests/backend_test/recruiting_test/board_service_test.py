@@ -3198,9 +3198,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual([r.application.id for r in result.other_jobs], [11])
-        self.assertEqual(
-            [r.application.id for r in result.previous_same_job], [9]
-        )
+        self.assertEqual([r.application.id for r in result.previous_same_job], [9])
 
     async def test_aggregate_splits_same_job_history_from_other_jobs(self):
         """Candidate rows: current app (job A), one prior rejected attempt

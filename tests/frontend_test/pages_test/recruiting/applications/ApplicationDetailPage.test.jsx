@@ -2098,9 +2098,7 @@ describe("ApplicationDetailPage — candidate aggregation", () => {
         otherJobs: [
           makeOtherApplication({ jobTitle: "Backend Mentor", stage: "tech" }),
         ],
-        previousSameJob: [
-          makeOtherApplication({ id: 301, stage: "rejected" }),
-        ],
+        previousSameJob: [makeOtherApplication({ id: 301, stage: "rejected" })],
       },
     });
     renderPage();
