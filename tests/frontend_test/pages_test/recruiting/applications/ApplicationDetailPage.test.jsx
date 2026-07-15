@@ -2126,6 +2126,40 @@ describe("ApplicationDetailPage — screen-rule activity messages", () => {
     ).toBeInTheDocument();
   });
 
+  it("shows which rule auto-qualified on the submission entry", async () => {
+    const user = userEvent.setup();
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
+    });
+    api.getApplicationActivity.mockResolvedValue({
+      data: [
+        {
+          id: 1,
+          eventType: "application_submitted",
+          details: {
+            stage: "recruiter_screening",
+            screenQualifyRuleId: "r2",
+            screenQualifyRuleLabel: "answer to q_role equals mentor",
+          },
+          actorId: OWNER_ID,
+          actorName: "Casey Candidate",
+          createdAt: "2026-07-08T12:00:00Z",
+        },
+      ],
+    });
+    renderPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole("tab", { name: "Timeline" }));
+
+    expect(
+      await screen.findByText(
+        /Submitted — landed on Recruiter screening \(auto-qualified by screening rule "answer to q_role equals mentor"\)/,
+      ),
+    ).toBeInTheDocument();
+  });
+
   it("notes a screen-rule auto-hire distinctly from auto-qualify", async () => {
     const user = userEvent.setup();
     authState.userId = OWNER_ID;
@@ -2152,6 +2186,40 @@ describe("ApplicationDetailPage — screen-rule activity messages", () => {
     expect(
       screen.getByText(
         /Submitted — auto-approved by screening rule \(landed on Hired\)/,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("shows which rule auto-hired on the submission entry", async () => {
+    const user = userEvent.setup();
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
+    });
+    api.getApplicationActivity.mockResolvedValue({
+      data: [
+        {
+          id: 1,
+          eventType: "application_submitted",
+          details: {
+            stage: "hired",
+            screenAutoHireRuleId: "r1",
+            screenAutoHireRuleLabel: "email domain in google.com",
+          },
+          actorId: OWNER_ID,
+          actorName: "Casey Candidate",
+          createdAt: "2026-07-08T12:00:00Z",
+        },
+      ],
+    });
+    renderPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole("tab", { name: "Timeline" }));
+
+    expect(
+      await screen.findByText(
+        /Submitted — auto-approved by screening rule "email domain in google\.com" \(landed on Hired\)/,
       ),
     ).toBeInTheDocument();
   });
