@@ -3154,6 +3154,48 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result[0].job_title, "Job 2")
         self.app_repo.list_by_user.assert_awaited_once_with(self.session, 3)
 
+    async def test_get_other_applications_excludes_prior_attempt_on_same_job(self):
+        """A prior rejected attempt on the SAME job is history for the
+        detail page, not this cross-posting panel — it must never appear
+        here even though list_by_user returns every attempt ever made."""
+        entry_job = self._job(job_id=1, owner_ids=(2,))
+        other_job = self._job(job_id=2, owner_ids=(9,))
+        rejected_same_job = self._application(
+            application_id=9,
+            job_id=1,
+            user_id=3,
+            stage=ApplicationStage.REJECTED,
+        )
+        entry_app = self._application(
+            application_id=10,
+            job_id=1,
+            user_id=3,
+        )
+        other_app = self._application(
+            application_id=11,
+            job_id=2,
+            user_id=3,
+            stage=ApplicationStage.TECH,
+        )
+        self.app_repo.get_by_id = AsyncMock(return_value=entry_app)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=entry_job)
+        self.assignment_repo.get.return_value = None
+        self.app_repo.list_by_user = AsyncMock(
+            return_value=[
+                (rejected_same_job, entry_job),
+                (entry_app, entry_job),
+                (other_app, other_job),
+            ]
+        )
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+        self.evaluation_repo.list_by_application.return_value = []
+
+        result = await self.service.get_other_applications(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertEqual([r.application.id for r in result], [11])
+
     async def test_get_other_applications_includes_evaluations_and_resume_flag(self):
         entry_job = self._job(job_id=1, owner_ids=(2,))
         other_job = self._job(job_id=2, owner_ids=(9,))
