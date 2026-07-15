@@ -2155,4 +2155,66 @@ describe("ApplicationDetailPage — screen-rule activity messages", () => {
       ),
     ).toBeInTheDocument();
   });
+
+  it("shows which rule auto-rejected in the timeline", async () => {
+    const user = userEvent.setup();
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
+    });
+    api.getApplicationActivity.mockResolvedValue({
+      data: [
+        {
+          id: 1,
+          eventType: "auto_rejected",
+          details: {
+            reason: "screen_rule",
+            ruleId: "r1",
+            ruleLabel: "email domain not in google.com",
+          },
+          actorId: OWNER_ID,
+          actorName: "Casey Candidate",
+          createdAt: "2026-07-08T12:00:00Z",
+        },
+      ],
+    });
+    renderPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole("tab", { name: "Timeline" }));
+
+    expect(
+      await screen.findByText(
+        /Automatically rejected by screening rule "email domain not in google\.com"/,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("falls back to generic text when no rule label is present", async () => {
+    const user = userEvent.setup();
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
+    });
+    api.getApplicationActivity.mockResolvedValue({
+      data: [
+        {
+          id: 1,
+          eventType: "auto_rejected",
+          details: { reason: "screen_rule", ruleId: "r1" },
+          actorId: OWNER_ID,
+          actorName: "Casey Candidate",
+          createdAt: "2026-07-08T12:00:00Z",
+        },
+      ],
+    });
+    renderPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole("tab", { name: "Timeline" }));
+
+    expect(
+      await screen.findByText(/Automatically rejected by screening rule,/),
+    ).toBeInTheDocument();
+  });
 });
