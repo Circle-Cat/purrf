@@ -125,6 +125,20 @@ describe("RecruitingProfileForm", () => {
     );
   });
 
+  it("does not upload the resume when the posting does not collect one", async () => {
+    const onResumeStored = vi.fn();
+    renderForm({ resume: "off" }, { onResumeStored });
+
+    selectResumeFile(pdfFile());
+
+    // Let the (mocked) parse settle so its state update lands inside `act`.
+    await waitFor(() =>
+      expect(screen.queryByText(/Parsing/i)).not.toBeInTheDocument(),
+    );
+    expect(api.uploadResume).not.toHaveBeenCalled();
+    expect(onResumeStored).not.toHaveBeenCalled();
+  });
+
   it("always renders basic info even when every section is off", () => {
     renderForm({ education: "off", workExperience: "off", resume: "off" });
     expect(screen.getByLabelText("First name")).toBeInTheDocument();
@@ -154,6 +168,13 @@ describe("RecruitingProfileForm", () => {
     expect(
       screen.queryByText(/doesn't collect a resume/i),
     ).not.toBeInTheDocument();
+  });
+
+  it("tells optional-resume applicants the upload is saved", () => {
+    renderForm({ resume: "optional" });
+    expect(
+      screen.getByText(/the file you upload is saved with your application/i),
+    ).toBeInTheDocument();
   });
 
   it("renders the education block with an entry and add control when required", () => {

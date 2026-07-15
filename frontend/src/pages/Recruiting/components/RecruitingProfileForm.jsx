@@ -128,10 +128,12 @@ const RecruitingProfileForm = ({
    * Persist a resume file via `uploadResume` and forward the resulting
    * `{sha256, objectKey}` to the parent through `onResumeStored`. Runs
    * independently of parsing/autofill above -- a failure here only toasts
-   * and never blocks or rolls back the parse-and-autofill flow.
+   * and never blocks or rolls back the parse-and-autofill flow. Skipped
+   * entirely when the posting doesn't collect a resume (`resumeLevel ===
+   * "off"`) -- uploads there are prefill-only and must not be persisted.
    */
   const handleResumeFile = async (file) => {
-    if (!onResumeStored) return;
+    if (!onResumeStored || resumeLevel === "off") return;
     try {
       const res = await uploadResume(file);
       const stored = res?.data ?? res;
@@ -166,8 +168,9 @@ const RecruitingProfileForm = ({
         <p className="text-sm text-muted-foreground">
           Have a resume? Upload it to auto-fill the sections below — you can
           edit everything afterward.
-          {resumeLevel === "off" &&
-            " This posting doesn't collect a resume; uploading only saves you time."}
+          {resumeLevel === "off"
+            ? " This posting doesn't collect a resume; uploading only saves you time and the file itself isn't saved."
+            : " The file you upload is saved with your application."}
         </p>
         {existingResume && (
           <div className="rounded-md border border-muted-foreground/30 p-2 text-sm">
