@@ -204,8 +204,9 @@ class BoardController:
     async def get_other_applications(
         self, current_user: UserContextDto, application_id: int
     ):
-        """Return a candidate's other applications, for the cross-posting
-        aggregation view on the shared application detail page."""
+        """Return a candidate's application aggregation for the shared
+        detail page: ``otherJobs`` (cross-job applications) and
+        ``previousSameJob`` (same-job prior attempts, newest first)."""
         async with self.database.session() as session:
             result = await self.board_service.get_other_applications(
                 session, current_user, application_id

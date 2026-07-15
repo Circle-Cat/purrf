@@ -3149,15 +3149,18 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             self.session, self._ctx(user_id=2), 10
         )
 
-        self.assertEqual(len(result), 1)
-        self.assertEqual(result[0].application.id, 11)
-        self.assertEqual(result[0].job_title, "Job 2")
+        self.assertEqual(len(result.other_jobs), 1)
+        self.assertEqual(result.other_jobs[0].application.id, 11)
+        self.assertEqual(result.other_jobs[0].job_title, "Job 2")
         self.app_repo.list_by_user.assert_awaited_once_with(self.session, 3)
 
-    async def test_get_other_applications_excludes_prior_attempt_on_same_job(self):
+    async def test_get_other_applications_routes_same_job_prior_attempt_to_history(
+        self,
+    ):
         """A prior rejected attempt on the SAME job is history for the
-        detail page, not this cross-posting panel — it must never appear
-        here even though list_by_user returns every attempt ever made."""
+        detail page, not the cross-posting panel — it must never appear in
+        ``other_jobs`` even though list_by_user returns every attempt ever
+        made. It surfaces instead in ``previous_same_job``."""
         entry_job = self._job(job_id=1, owner_ids=(2,))
         other_job = self._job(job_id=2, owner_ids=(9,))
         rejected_same_job = self._application(
@@ -3194,7 +3197,94 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             self.session, self._ctx(user_id=2), 10
         )
 
-        self.assertEqual([r.application.id for r in result], [11])
+        self.assertEqual([r.application.id for r in result.other_jobs], [11])
+        self.assertEqual(
+            [r.application.id for r in result.previous_same_job], [9]
+        )
+
+    async def test_aggregate_splits_same_job_history_from_other_jobs(self):
+        """Candidate rows: current app (job A), one prior rejected attempt
+        (job A), one application to job B — the current application must
+        appear in neither list."""
+        entry_job = self._job(job_id=1, owner_ids=(2,))
+        other_job = self._job(job_id=2, owner_ids=(9,))
+        prior_a = self._application(
+            application_id=9,
+            job_id=1,
+            user_id=3,
+            stage=ApplicationStage.REJECTED,
+        )
+        entry_app = self._application(application_id=10, job_id=1, user_id=3)
+        app_b = self._application(
+            application_id=11,
+            job_id=2,
+            user_id=3,
+            stage=ApplicationStage.TECH,
+        )
+        self.app_repo.get_by_id = AsyncMock(return_value=entry_app)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=entry_job)
+        self.assignment_repo.get.return_value = None
+        self.app_repo.list_by_user = AsyncMock(
+            return_value=[
+                (prior_a, entry_job),
+                (entry_app, entry_job),
+                (app_b, other_job),
+            ]
+        )
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+        self.evaluation_repo.list_by_application.return_value = []
+
+        result = await self.service.get_other_applications(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertEqual(
+            [o.application.id for o in result.previous_same_job],
+            [prior_a.application_id],
+        )
+        self.assertEqual(
+            [o.application.id for o in result.other_jobs],
+            [app_b.application_id],
+        )
+
+    async def test_same_job_history_is_newest_first(self):
+        """Two prior rejected attempts on job A come back newest
+        (higher application_id) first."""
+        entry_job = self._job(job_id=1, owner_ids=(2,))
+        entry_app = self._application(application_id=10, job_id=1, user_id=3)
+        prior_older = self._application(
+            application_id=7,
+            job_id=1,
+            user_id=3,
+            stage=ApplicationStage.REJECTED,
+        )
+        prior_newer = self._application(
+            application_id=9,
+            job_id=1,
+            user_id=3,
+            stage=ApplicationStage.REJECTED,
+        )
+        self.app_repo.get_by_id = AsyncMock(return_value=entry_app)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=entry_job)
+        self.assignment_repo.get.return_value = None
+        self.app_repo.list_by_user = AsyncMock(
+            return_value=[
+                (prior_older, entry_job),
+                (entry_app, entry_job),
+                (prior_newer, entry_job),
+            ]
+        )
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+        self.evaluation_repo.list_by_application.return_value = []
+
+        result = await self.service.get_other_applications(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertEqual(
+            [o.application.id for o in result.previous_same_job],
+            [9, 7],
+        )
 
     async def test_get_other_applications_includes_evaluations_and_resume_flag(self):
         entry_job = self._job(job_id=1, owner_ids=(2,))
@@ -3234,9 +3324,9 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             self.session, self._ctx(user_id=2), 10
         )
 
-        self.assertTrue(result[0].resume_available)
-        self.assertEqual(len(result[0].evaluations), 1)
-        self.assertEqual(result[0].evaluations[0].id, 900)
+        self.assertTrue(result.other_jobs[0].resume_available)
+        self.assertEqual(len(result.other_jobs[0].evaluations), 1)
+        self.assertEqual(result.other_jobs[0].evaluations[0].id, 900)
 
     async def test_get_other_applications_raises_when_caller_lacks_entry_gate(self):
         entry_job = self._job(job_id=1, owner_ids=(9,))
