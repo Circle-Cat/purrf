@@ -149,7 +149,9 @@ beforeEach(() => {
   api.getApplicationActivity.mockResolvedValue({ data: [] });
   api.getApplicationComments.mockResolvedValue({ data: [] });
   api.getMentionableUsers.mockResolvedValue({ data: [] });
-  api.getOtherApplications.mockResolvedValue({ data: [] });
+  api.getOtherApplications.mockResolvedValue({
+    data: { otherJobs: [], previousSameJob: [] },
+  });
 });
 
 /** Render the page at the detail route for a given application id. */
@@ -2013,9 +2015,12 @@ describe("ApplicationDetailPage — candidate aggregation", () => {
       data: makeDetail({ isOwner: true }),
     });
     api.getOtherApplications.mockResolvedValue({
-      data: [
-        makeOtherApplication({ jobTitle: "Backend Engineer", stage: "tech" }),
-      ],
+      data: {
+        otherJobs: [
+          makeOtherApplication({ jobTitle: "Backend Engineer", stage: "tech" }),
+        ],
+        previousSameJob: [],
+      },
     });
     renderPage();
     await waitLoaded();
@@ -2031,22 +2036,25 @@ describe("ApplicationDetailPage — candidate aggregation", () => {
       data: makeDetail({ isOwner: true }),
     });
     api.getOtherApplications.mockResolvedValue({
-      data: [
-        makeOtherApplication({
-          id: 201,
-          evaluations: [
-            {
-              id: 900,
-              applicationId: 201,
-              stage: "tech",
-              round: 1,
-              evaluatorId: ASSIGNEE_ID,
-              responses: { overall: { value: 5, notes: "Strong" } },
-              isConfirmed: true,
-            },
-          ],
-        }),
-      ],
+      data: {
+        otherJobs: [
+          makeOtherApplication({
+            id: 201,
+            evaluations: [
+              {
+                id: 900,
+                applicationId: 201,
+                stage: "tech",
+                round: 1,
+                evaluatorId: ASSIGNEE_ID,
+                responses: { overall: { value: 5, notes: "Strong" } },
+                isConfirmed: true,
+              },
+            ],
+          }),
+        ],
+        previousSameJob: [],
+      },
     });
     const { router } = renderPage();
     await waitLoaded();
@@ -2058,6 +2066,50 @@ describe("ApplicationDetailPage — candidate aggregation", () => {
     // location (not window.location, which it never touches) must still be
     // the currently-viewed application's detail route.
     expect(router.state.location.pathname).toBe("/recruiting/applications/101");
+  });
+
+  it("shows previous applications for the same posting", async () => {
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true }),
+    });
+    api.getOtherApplications.mockResolvedValue({
+      data: {
+        otherJobs: [],
+        previousSameJob: [makeOtherApplication({ id: 301, stage: "rejected" })],
+      },
+    });
+    renderPage();
+    await waitLoaded();
+
+    expect(
+      await screen.findByText("Previous applications for this posting"),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Applied .* — Rejected/)).toBeInTheDocument();
+  });
+
+  it("still shows other-job applications alongside same-posting history", async () => {
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true }),
+    });
+    api.getOtherApplications.mockResolvedValue({
+      data: {
+        otherJobs: [
+          makeOtherApplication({ jobTitle: "Backend Mentor", stage: "tech" }),
+        ],
+        previousSameJob: [
+          makeOtherApplication({ id: 301, stage: "rejected" }),
+        ],
+      },
+    });
+    renderPage();
+    await waitLoaded();
+
+    expect(await screen.findByText(/Backend Mentor — /)).toBeInTheDocument();
+    expect(
+      screen.getByText("Previous applications for this posting"),
+    ).toBeInTheDocument();
   });
 });
 
