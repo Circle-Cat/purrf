@@ -5,9 +5,9 @@
 
 fullnameOverride: purrf-prod
 image:
-  # Kept on the current Terraform-built image (image path unchanged for now);
-  # switching to the CI/GHCR image is a follow-up.
-  repository: us-docker.pkg.dev/k8s-dev-437501/purrf/purrf
+  # CI-built image, promoted from staging (prod never rebuilds; the tag below
+  # is pinned by the prod promotion to the staging-tested build).
+  repository: ghcr.io/circle-cat/purrf
   tag: "7f039590bb4449ee16df7692cae2d9df3977a03a"
 envFrom:
   - secretRef:
