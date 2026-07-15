@@ -1208,7 +1208,8 @@ class BoardService:
         current_user: UserContextDto,
         dto: BlacklistDto,
     ) -> ApplicationDto:
-        """Block a user org-wide and close out the triggering application.
+        """Block a user org-wide and close out the triggering application
+        and every other in-flight application of the user.
 
         Deliberately NOT owner-gated: unlike every other write in this
         service, this does not check whether ``current_user`` owns the
@@ -1267,6 +1268,40 @@ class BoardService:
             "blacklisted",
             details={"fromStage": from_stage.value, "reason": dto.reason},
         )
+
+        # Close out every OTHER in-flight application of the same user: the
+        # org-wide flag already auto-rejects future submissions, and leaving
+        # live applications on other boards after a sanction was the gap
+        # (2026-07-15 decision). Completed outcomes (HIRED) and already-
+        # rejected rows are left untouched. Each row is re-fetched FOR UPDATE
+        # so a concurrent stage decision on it can't interleave.
+        rows = await self.application_repository.list_by_user(session, dto.user_id)
+        for other, _job in rows:
+            if other.application_id == dto.application_id:
+                continue
+            locked = await self.application_repository.get_by_id(
+                session, other.application_id, for_update=True
+            )
+            if locked is None or locked.stage in (
+                ApplicationStage.REJECTED,
+                ApplicationStage.HIRED,
+            ):
+                continue
+            other_from_stage = locked.stage
+            locked.stage = ApplicationStage.REJECTED
+            locked.tags = {**(locked.tags or {}), "blacklisted": True}
+            locked.sub_status = None
+            locked.current_round = 1
+            await self._freeze_current_submission(session, locked.application_id)
+            await self.application_repository.update(session, locked)
+            await self.application_activity_repository.create(
+                session,
+                locked.application_id,
+                current_user.user_id,
+                "blacklisted",
+                details={"fromStage": other_from_stage.value, "reason": dto.reason},
+            )
+
         await session.commit()
         return self.recruiting_mapper.to_application_dto(
             application, current_sub, editable=False

@@ -95,6 +95,9 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         # merge-and-flush does when nothing else stubs them out.
         self.app_repo.update = AsyncMock(side_effect=lambda session, entity: entity)
         self.sub_repo.update = AsyncMock(side_effect=lambda session, entity: entity)
+        # Default: candidate has no other applications, so blacklist's
+        # close-out-the-rest loop is a no-op unless a test seeds siblings.
+        self.app_repo.list_by_user = AsyncMock(return_value=[])
 
     def _job(
         self,
@@ -1750,6 +1753,57 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         await self.service.blacklist(self.session, self._ctx(user_id=42), dto)
 
         self.job_repo.get_by_job_id.assert_not_awaited()
+
+    async def test_blacklist_rejects_other_in_flight_applications(self):
+        """Blacklisting closes out every other in-flight application of the
+        same user (2026-07-15 decision), not just the triggering one.
+        HIRED and already-REJECTED rows are left untouched."""
+        user = self._user(user_id=3)
+        job_a = self._job(job_id=1, owner_ids=(2,))
+        job_b = self._job(job_id=2, owner_ids=(2,))
+        job_c = self._job(job_id=3, owner_ids=(2,))
+        job_d = self._job(job_id=4, owner_ids=(2,))
+        trigger = self._application(
+            application_id=10, job_id=1, user_id=3, stage=ApplicationStage.TECH
+        )
+        second = self._application(
+            application_id=11, job_id=2, user_id=3, stage=ApplicationStage.APPLIED
+        )
+        third = self._application(
+            application_id=12, job_id=3, user_id=3, stage=ApplicationStage.HIRED
+        )
+        fourth = self._application(
+            application_id=13, job_id=4, user_id=3, stage=ApplicationStage.REJECTED
+        )
+        apps_by_id = {10: trigger, 11: second, 12: third, 13: fourth}
+        self.users_repo.get_user_by_user_id = AsyncMock(return_value=user)
+        self.app_repo.get_by_id = AsyncMock(
+            side_effect=lambda _session, application_id, for_update=False: apps_by_id[
+                application_id
+            ]
+        )
+        self.app_repo.list_by_user = AsyncMock(
+            return_value=[
+                (trigger, job_a),
+                (second, job_b),
+                (third, job_c),
+                (fourth, job_d),
+            ]
+        )
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+
+        dto = BlacklistDto(
+            user_id=3, application_id=10, reason="Fabricated credentials"
+        )
+        await self.service.blacklist(self.session, self._ctx(user_id=99), dto)
+
+        self.assertEqual(second.stage, ApplicationStage.REJECTED)
+        self.assertTrue(second.tags["blacklisted"])
+        self.assertIsNone(second.sub_status)
+        self.assertEqual(third.stage, ApplicationStage.HIRED)
+        self.assertIsNone(fourth.tags)
+        self.app_repo.list_by_user.assert_awaited_once_with(self.session, 3)
+        self.assertEqual(self.activity_repo.create.call_count, 2)
 
     # -- set_round --
 
