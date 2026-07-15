@@ -3,10 +3,11 @@ from sqlalchemy import (
     DateTime,
     Enum,
     ForeignKey,
+    Index,
     Integer,
     String,
-    UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
@@ -15,11 +16,22 @@ from backend.common.recruiting_enums import ApplicationStage
 
 
 class ApplicationEntity(Base):
-    """One candidate's application to a posting (unique per job+user)."""
+    """One candidate's application attempt to a posting.
+
+    At most one NON-REJECTED row may exist per (job, user) — enforced by the
+    partial unique index below. REJECTED attempts accumulate as immutable
+    history; a re-apply creates a fresh row (see ApplicationService.submit).
+    """
 
     __tablename__ = "application"
     __table_args__ = (
-        UniqueConstraint("job_id", "user_id", name="uq_application_job_user"),
+        Index(
+            "uq_application_job_user_active",
+            "job_id",
+            "user_id",
+            unique=True,
+            postgresql_where=text("stage != 'rejected'"),
+        ),
     )
 
     application_id: Mapped[int] = mapped_column(

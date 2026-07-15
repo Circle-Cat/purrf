@@ -1,6 +1,8 @@
 import unittest
 from datetime import date, datetime, timezone
 
+from sqlalchemy.exc import IntegrityError
+
 from backend.entity.application_entity import ApplicationEntity
 from backend.entity.application_submission_entity import ApplicationSubmissionEntity
 from backend.entity.job_entity import JobEntity
@@ -406,6 +408,42 @@ class TestApplicationRepository(BaseRepositoryTestLib):
             self.session, user_id=user.user_id, mentorship_role=ParticipantRole.MENTOR
         )
         self.assertIsNone(found)
+
+    async def test_allows_second_application_after_rejection(self):
+        job, user = await self._seed_job_and_user()
+        repo = ApplicationRepository()
+        first = await repo.create(
+            self.session,
+            ApplicationEntity(
+                job_id=job.job_id,
+                user_id=user.user_id,
+                stage=ApplicationStage.REJECTED,
+            ),
+        )
+        second = await repo.create(
+            self.session,
+            ApplicationEntity(
+                job_id=job.job_id, user_id=user.user_id, stage=ApplicationStage.APPLIED
+            ),
+        )
+        self.assertNotEqual(first.application_id, second.application_id)
+
+    async def test_rejects_two_active_applications_for_same_job_and_user(self):
+        job, user = await self._seed_job_and_user()
+        repo = ApplicationRepository()
+        await repo.create(
+            self.session,
+            ApplicationEntity(
+                job_id=job.job_id, user_id=user.user_id, stage=ApplicationStage.APPLIED
+            ),
+        )
+        with self.assertRaises(IntegrityError):
+            await repo.create(
+                self.session,
+                ApplicationEntity(
+                    job_id=job.job_id, user_id=user.user_id, stage=ApplicationStage.TECH
+                ),
+            )
 
 
 if __name__ == "__main__":
