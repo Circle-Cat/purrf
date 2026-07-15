@@ -601,7 +601,9 @@ class BoardService:
         Returns:
             list[ApplicationActivityDto]: Newest first, each with the
                 actor's resolved display name and, where applicable, its
-                assignee name(s) merged into a copy of ``details``.
+                assignee name(s) and screen-rule label(s) merged into a
+                copy of ``details`` (both resolved read-time only, never
+                persisted back to the stored row).
 
         Raises:
             ValueError: If the application is missing, or the caller is neither
