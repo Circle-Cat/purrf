@@ -27,7 +27,7 @@ from backend.repository.notification_repository import NotificationRepository
 class TestApplicationService(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.app_repo = MagicMock()
-        self.app_repo.get_by_job_and_user = AsyncMock(return_value=None)
+        self.app_repo.get_latest_by_job_and_user = AsyncMock(return_value=None)
         self.app_repo.get_by_id = AsyncMock(return_value=None)
         self.app_repo.create = AsyncMock(side_effect=self._create_side_effect)
         self.app_repo.update = AsyncMock(side_effect=lambda s, e: e)
@@ -206,7 +206,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         app.application_id = 100
         app.created_datetime = datetime.now(timezone.utc)
         app.updated_timestamp = datetime.now(timezone.utc)
-        self.app_repo.get_by_job_and_user = AsyncMock(return_value=app)
+        self.app_repo.get_latest_by_job_and_user = AsyncMock(return_value=app)
         current = ApplicationSubmissionEntity(
             application_id=100, version=1, submission={"personal": {}}
         )
@@ -250,8 +250,12 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             details={"reason": "blocked"},
         )
 
-    async def test_blocked_user_reapply_with_existing_application(self):
-        """Blocked user attempting to reapply: existing application is updated to REJECTED with sub_status cleared."""
+    async def test_blocked_user_resubmit_on_active_application_still_errors(self):
+        """A blocked user whose latest attempt is still active (not
+        REJECTED) hits the same "edit it instead" guard as anyone else —
+        the blacklist check never even runs. Post-PR4 this combination
+        shouldn't occur in practice (blacklisting now closes in-flight
+        applications), but the guard order must hold regardless."""
         self.users_repo.get_user_by_user_id = AsyncMock(
             return_value=self._user(is_blocked=True)
         )
@@ -264,13 +268,12 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             current_round=1,
         )
         app.application_id = 100
-        self.app_repo.get_by_job_and_user = AsyncMock(return_value=app)
+        self.app_repo.get_latest_by_job_and_user = AsyncMock(return_value=app)
         dto = ApplicationSubmitDto.model_validate({"jobId": 1})
-        result = await self.service.submit(self.session, self._ctx(), dto)
-        self.assertEqual(result.stage, ApplicationStage.REJECTED)
-        self.assertIsNone(result.sub_status)
-        self.assertEqual(result.tags, {"auto_reject": "blocked"})
-        self.assertFalse(result.editable)
+        with self.assertRaises(ValueError):
+            await self.service.submit(self.session, self._ctx(), dto)
+        self.app_repo.create.assert_not_awaited()
+        self.app_repo.update.assert_not_awaited()
 
     async def test_edit_overwrites_current_version_when_editable(self):
         app = ApplicationEntity(
@@ -329,9 +332,11 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             current_round=1,
         )
         app.application_id = 100
-        self.app_repo.get_by_job_and_user = AsyncMock(return_value=app)
+        self.app_repo.get_latest_by_job_and_user = AsyncMock(return_value=app)
         await self.service.get_mine(self.session, self._ctx(), 1)
-        self.app_repo.get_by_job_and_user.assert_awaited_once_with(self.session, 1, 2)
+        self.app_repo.get_latest_by_job_and_user.assert_awaited_once_with(
+            self.session, 1, 2
+        )
 
     async def test_edit_blocked_when_stage_advanced(self):
         app = ApplicationEntity(
@@ -393,7 +398,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             current_round=1,
         )
         app.application_id = 100
-        self.app_repo.get_by_job_and_user = AsyncMock(return_value=app)
+        self.app_repo.get_latest_by_job_and_user = AsyncMock(return_value=app)
         current = ApplicationSubmissionEntity(
             application_id=100, version=1, submission={"personal": {}}
         )
@@ -411,7 +416,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             current_round=1,
         )
         app.application_id = 100
-        self.app_repo.get_by_job_and_user = AsyncMock(return_value=app)
+        self.app_repo.get_latest_by_job_and_user = AsyncMock(return_value=app)
         current = ApplicationSubmissionEntity(
             application_id=100, version=1, submission={"personal": {}}
         )
@@ -488,34 +493,169 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
                 ApplicationSubmitDto.model_validate({"jobId": 1}),
             )
 
-    async def test_reapply_after_reject_mints_new_version_and_freezes_prior(self):
+    async def test_reapply_creates_new_application_row(self):
+        """A rejected latest attempt is no longer reused: re-applying
+        creates a brand-new ApplicationEntity, distinct from the rejected
+        row, rather than updating it in place."""
         job = self._job(cooldown_days=90, status=JobStatus.PUBLISHED)
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
-        app = ApplicationEntity(
+        rejected_application = ApplicationEntity(
             job_id=1, user_id=2, stage=ApplicationStage.REJECTED, current_round=1
         )
-        app.application_id = 100
-        app.created_datetime = datetime(2026, 1, 10, tzinfo=timezone.utc)
-        self.app_repo.get_by_job_and_user = AsyncMock(return_value=app)
-        prior = ApplicationSubmissionEntity(
-            application_id=100, version=1, submission={"v": 1}
+        rejected_application.application_id = 55
+        rejected_application.created_datetime = datetime(
+            2026, 1, 10, tzinfo=timezone.utc
         )
-        prior.submitted_at = datetime(2026, 1, 20, tzinfo=timezone.utc)
-        self.sub_repo.get_current = AsyncMock(return_value=prior)
+        self.app_repo.get_latest_by_job_and_user = AsyncMock(
+            return_value=rejected_application
+        )
         self.service._today = lambda: date(2026, 2, 1)  # inside the 90-day window
         dto = ApplicationSubmitDto.model_validate({
             "jobId": 1,
             "personal": {"firstName": "New"},
         })
+
         result = await self.service.submit(self.session, self._ctx(), dto)
+
+        self.assertNotEqual(result.id, rejected_application.application_id)
+        self.app_repo.create.assert_awaited_once()
+        self.app_repo.update.assert_not_awaited()
         self.assertEqual(result.stage, ApplicationStage.RECRUITER_SCREENING)
         self.assertEqual(result.sub_status, "pending")
         self.assertTrue(result.editable)
-        self.assertTrue(prior.is_frozen)  # prior version preserved as frozen
+
+    async def test_reapply_new_row_starts_at_version_1(self):
+        """The new row's submission is a fresh version 1, not a bumped
+        version of the prior (now-history) row."""
+        job = self._job(cooldown_days=90, status=JobStatus.PUBLISHED)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        rejected_application = ApplicationEntity(
+            job_id=1, user_id=2, stage=ApplicationStage.REJECTED, current_round=1
+        )
+        rejected_application.application_id = 55
+        rejected_application.created_datetime = datetime(
+            2026, 1, 10, tzinfo=timezone.utc
+        )
+        self.app_repo.get_latest_by_job_and_user = AsyncMock(
+            return_value=rejected_application
+        )
+        self.service._today = lambda: date(2026, 2, 1)  # inside the 90-day window
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": {"firstName": "New"},
+        })
+
+        result = await self.service.submit(self.session, self._ctx(), dto)
+
+        self.sub_repo.create.assert_awaited_once()
         created_sub = self.sub_repo.create.call_args.args[1]
-        self.assertEqual(created_sub.version, 2)
+        self.assertEqual(created_sub.version, 1)
+        self.assertEqual(created_sub.application_id, result.id)
+        self.sub_repo.update.assert_not_awaited()
+
+    async def test_reapply_inside_cooldown_tags_new_row_cold_freeze(self):
+        job = self._job(cooldown_days=90, status=JobStatus.PUBLISHED)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        rejected_application = ApplicationEntity(
+            job_id=1, user_id=2, stage=ApplicationStage.REJECTED, current_round=1
+        )
+        rejected_application.application_id = 55
+        rejected_application.created_datetime = datetime(
+            2026, 1, 10, tzinfo=timezone.utc
+        )
+        self.app_repo.get_latest_by_job_and_user = AsyncMock(
+            return_value=rejected_application
+        )
+        self.service._today = lambda: date(2026, 2, 1)  # inside the 90-day window
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": {"firstName": "New"},
+        })
+
+        result = await self.service.submit(self.session, self._ctx(), dto)
+
         self.assertIn("cold_freeze", result.tags or {})
         self.assertEqual(result.tags["cold_freeze"]["thaw_date"], "2026-04-10")
+
+    async def test_reapply_keeps_prior_row_untouched(self):
+        """The prior rejected row stays exactly as it was rejected: its
+        stage/tags are unchanged and its submissions are never frozen or
+        rewritten — it's now immutable history, not a live row."""
+        job = self._job(cooldown_days=90, status=JobStatus.PUBLISHED)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        rejected_application = ApplicationEntity(
+            job_id=1, user_id=2, stage=ApplicationStage.REJECTED, current_round=1
+        )
+        rejected_application.application_id = 55
+        rejected_application.created_datetime = datetime(
+            2026, 1, 10, tzinfo=timezone.utc
+        )
+        rejected_application.tags = {"auto_reject": "screen_rule", "rule_id": "r1"}
+        self.app_repo.get_latest_by_job_and_user = AsyncMock(
+            return_value=rejected_application
+        )
+        self.service._today = lambda: date(2026, 2, 1)
+        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+
+        await self.service.submit(self.session, self._ctx(), dto)
+
+        self.assertEqual(rejected_application.stage, ApplicationStage.REJECTED)
+        self.assertEqual(
+            rejected_application.tags, {"auto_reject": "screen_rule", "rule_id": "r1"}
+        )
+        self.app_repo.update.assert_not_awaited()
+        self.sub_repo.update.assert_not_awaited()
+
+    async def test_submit_active_application_still_errors(self):
+        """A latest attempt that hasn't been rejected must still block a
+        fresh submit — the candidate should edit it instead."""
+        app = ApplicationEntity(
+            job_id=1,
+            user_id=2,
+            stage=ApplicationStage.APPLIED,
+            current_round=1,
+        )
+        app.application_id = 100
+        self.app_repo.get_latest_by_job_and_user = AsyncMock(return_value=app)
+        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+
+        with self.assertRaises(ValueError):
+            await self.service.submit(self.session, self._ctx(), dto)
+        self.app_repo.create.assert_not_awaited()
+        self.app_repo.update.assert_not_awaited()
+
+    async def test_blocked_reapply_creates_new_auto_rejected_row(self):
+        """A blocked user re-applying after a prior rejection gets a new
+        row too, immediately auto-rejected, not an overwrite of the old
+        one."""
+        self.users_repo.get_user_by_user_id = AsyncMock(
+            return_value=self._user(is_blocked=True)
+        )
+        rejected_application = ApplicationEntity(
+            job_id=1, user_id=2, stage=ApplicationStage.REJECTED, current_round=1
+        )
+        rejected_application.application_id = 55
+        rejected_application.created_datetime = datetime(
+            2026, 1, 10, tzinfo=timezone.utc
+        )
+        self.app_repo.get_latest_by_job_and_user = AsyncMock(
+            return_value=rejected_application
+        )
+        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+
+        result = await self.service.submit(self.session, self._ctx(), dto)
+
+        self.assertNotEqual(result.id, rejected_application.application_id)
+        self.assertEqual(result.stage, ApplicationStage.REJECTED)
+        self.assertEqual(result.tags, {"auto_reject": "blocked"})
+        self.app_repo.update.assert_not_awaited()
+        self.activity_repo.create.assert_awaited_once_with(
+            self.session,
+            result.id,
+            2,
+            "auto_rejected",
+            details={"reason": "blocked"},
+        )
 
     async def test_reapply_creates_default_assignment_when_stage_has_default(self):
         """Reapplying also re-lands on the first stage, so a configured
@@ -528,22 +668,21 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             }
         )
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
-        app = ApplicationEntity(
+        rejected_application = ApplicationEntity(
             job_id=1, user_id=2, stage=ApplicationStage.REJECTED, current_round=1
         )
-        app.application_id = 100
-        app.created_datetime = datetime(2026, 1, 10, tzinfo=timezone.utc)
-        self.app_repo.get_by_job_and_user = AsyncMock(return_value=app)
-        prior = ApplicationSubmissionEntity(
-            application_id=100, version=1, submission={"v": 1}
+        rejected_application.application_id = 55
+        rejected_application.created_datetime = datetime(
+            2026, 1, 10, tzinfo=timezone.utc
         )
-        prior.submitted_at = datetime(2026, 1, 20, tzinfo=timezone.utc)
-        self.sub_repo.get_current = AsyncMock(return_value=prior)
+        self.app_repo.get_latest_by_job_and_user = AsyncMock(
+            return_value=rejected_application
+        )
         self.service._today = lambda: date(2026, 5, 1)  # outside cooldown
         dto = ApplicationSubmitDto.model_validate({"jobId": 1})
-        await self.service.submit(self.session, self._ctx(), dto)
+        result = await self.service.submit(self.session, self._ctx(), dto)
         self.assignment_repo.upsert.assert_awaited_once_with(
-            self.session, 100, ApplicationStage.RECRUITER_SCREENING, 1, 5, 9
+            self.session, result.id, ApplicationStage.RECRUITER_SCREENING, 1, 5, 9
         )
 
     async def test_reapply_non_activity_uses_updated_timestamp_for_rejected_at(self):
@@ -554,20 +693,20 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         job.cooldown_days = 90
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
 
-        app = ApplicationEntity(
+        rejected_application = ApplicationEntity(
             job_id=1, user_id=2, stage=ApplicationStage.REJECTED, current_round=1
         )
-        app.application_id = 100
-        app.created_datetime = datetime(2026, 1, 10, tzinfo=timezone.utc)
-        # Rejection actually happened later than the prior submission.
-        app.updated_timestamp = datetime(2026, 3, 1, tzinfo=timezone.utc)
-        self.app_repo.get_by_job_and_user = AsyncMock(return_value=app)
-
-        prior = ApplicationSubmissionEntity(
-            application_id=100, version=1, submission={"v": 1}
+        rejected_application.application_id = 55
+        rejected_application.created_datetime = datetime(
+            2026, 1, 10, tzinfo=timezone.utc
         )
-        prior.submitted_at = datetime(2026, 1, 20, tzinfo=timezone.utc)
-        self.sub_repo.get_current = AsyncMock(return_value=prior)
+        # Rejection actually happened later than the prior submission.
+        rejected_application.updated_timestamp = datetime(
+            2026, 3, 1, tzinfo=timezone.utc
+        )
+        self.app_repo.get_latest_by_job_and_user = AsyncMock(
+            return_value=rejected_application
+        )
 
         self.service._today = lambda: date(2026, 4, 1)  # inside 90-day window
         dto = ApplicationSubmitDto.model_validate({
@@ -579,7 +718,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.stage, ApplicationStage.RECRUITER_SCREENING)
         self.assertEqual(result.sub_status, "pending")
         created_sub = self.sub_repo.create.call_args.args[1]
-        self.assertEqual(created_sub.version, 2)
+        self.assertEqual(created_sub.version, 1)
         self.assertEqual(result.tags["cold_freeze"]["thaw_date"], "2026-05-30")
 
     async def test_submit_screen_rule_reject_lands_rejected_with_rule_tag(self):
@@ -823,7 +962,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         )
         app.application_id = 100
         app.created_datetime = datetime(2026, 1, 10, tzinfo=timezone.utc)
-        self.app_repo.get_by_job_and_user = AsyncMock(return_value=app)
+        self.app_repo.get_latest_by_job_and_user = AsyncMock(return_value=app)
         prior = ApplicationSubmissionEntity(
             application_id=100, version=1, submission={"v": 1}
         )
@@ -864,7 +1003,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         )
         app.application_id = 100
         app.created_datetime = datetime(2026, 1, 10, tzinfo=timezone.utc)
-        self.app_repo.get_by_job_and_user = AsyncMock(return_value=app)
+        self.app_repo.get_latest_by_job_and_user = AsyncMock(return_value=app)
         prior = ApplicationSubmissionEntity(
             application_id=100, version=1, submission={"v": 1}
         )
@@ -885,7 +1024,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         )
         app.application_id = 100
         app.created_datetime = datetime(2026, 1, 10, tzinfo=timezone.utc)
-        self.app_repo.get_by_job_and_user = AsyncMock(return_value=app)
+        self.app_repo.get_latest_by_job_and_user = AsyncMock(return_value=app)
         prior = ApplicationSubmissionEntity(
             application_id=100, version=1, submission={}
         )

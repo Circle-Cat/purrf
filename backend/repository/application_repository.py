@@ -10,12 +10,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class ApplicationRepository:
-    """Database operations for ApplicationEntity (one row per job+user)."""
+    """Database operations for ApplicationEntity.
+
+    Rejected attempts accumulate as history rows, so this is no longer one
+    row per job+user: a job+user pair may have any number of REJECTED rows
+    plus at most one non-rejected (live) row.
+    """
 
     async def list_by_job(
         self, session: AsyncSession, job_id: int
     ) -> list[tuple[ApplicationEntity, UsersEntity]]:
-        """Return every application for a job, joined with its applicant.
+        """Return each user's latest application for a job, joined with its
+        applicant.
+
+        Each user's latest attempt only — prior rejected attempts are
+        history, surfaced on the application detail page instead of the
+        board.
 
         Args:
             session (AsyncSession): The active DB session.
@@ -25,10 +35,18 @@ class ApplicationRepository:
             list[tuple[ApplicationEntity, UsersEntity]]: (application, user)
                 pairs ordered by application_id (stable board card order).
         """
+        latest_ids = (
+            select(func.max(ApplicationEntity.application_id))
+            .where(ApplicationEntity.job_id == job_id)
+            .group_by(ApplicationEntity.user_id)
+        )
         result = await session.execute(
             select(ApplicationEntity, UsersEntity)
             .join(UsersEntity, ApplicationEntity.user_id == UsersEntity.user_id)
-            .where(ApplicationEntity.job_id == job_id)
+            .where(
+                ApplicationEntity.job_id == job_id,
+                ApplicationEntity.application_id.in_(latest_ids),
+            )
             .order_by(ApplicationEntity.application_id)
         )
         return [tuple(row) for row in result.all()]
@@ -140,17 +158,33 @@ class ApplicationRepository:
         result = await session.execute(stmt)
         return [(row.job_id, row.day, row.count) for row in result.all()]
 
-    async def get_by_job_and_user(
+    async def get_latest_by_job_and_user(
         self, session: AsyncSession, job_id: int, user_id: int
     ) -> ApplicationEntity | None:
-        """Return the application for this job+user, or None."""
+        """Return the user's LATEST application attempt for this job, or None.
+
+        Rejected attempts accumulate as history rows; the newest row (highest
+        application_id) is the live/most-recent attempt.
+
+        Args:
+            session (AsyncSession): The active DB session.
+            job_id (int): The job to look up.
+            user_id (int): The applicant to look up.
+
+        Returns:
+            ApplicationEntity | None: The newest application row for this
+                job+user, or None if the user never applied.
+        """
         result = await session.execute(
-            select(ApplicationEntity).where(
+            select(ApplicationEntity)
+            .where(
                 ApplicationEntity.job_id == job_id,
                 ApplicationEntity.user_id == user_id,
             )
+            .order_by(ApplicationEntity.application_id.desc())
+            .limit(1)
         )
-        return result.scalar_one_or_none()
+        return result.scalars().first()
 
     async def get_hired_activity_application(
         self, session: AsyncSession, user_id: int, mentorship_role: ParticipantRole

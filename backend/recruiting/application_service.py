@@ -218,6 +218,12 @@ class ApplicationService:
         match proceeds exactly as an unscreened submission would, with a
         note added to the activity log.
 
+        A re-apply after rejection creates a fresh application row rather
+        than reusing the rejected one: prior attempts are immutable
+        history, kept exactly as they were rejected (own stage, tags, and
+        submission snapshots untouched), while the new attempt starts a
+        brand-new version-1 submission.
+
         Args:
             session (AsyncSession): Active database async session.
             current_user (UserContextDto): The authenticated applicant.
@@ -228,8 +234,9 @@ class ApplicationService:
 
         Raises:
             ValueError: If the posting is missing or not PUBLISHED, a required
-                résumé/answer is missing, or an existing application is not a
-                REJECTED terminal eligible for re-application.
+                résumé/answer is missing, or the latest existing application
+                for this job is not REJECTED (an active application must be
+                edited instead of resubmitted).
         """
         job = await self.job_repository.get_by_job_id(session, dto.job_id)
         if job is None or job.status != JobStatus.PUBLISHED:
@@ -253,87 +260,43 @@ class ApplicationService:
         screen_action = screen_result["action"]
         screen_rule_id = screen_result["rule_id"]
 
-        existing = await self.application_repository.get_by_job_and_user(
+        existing = await self.application_repository.get_latest_by_job_and_user(
             session, dto.job_id, current_user.user_id
         )
+        if existing is not None and existing.stage != ApplicationStage.REJECTED:
+            raise ValueError(
+                "you already have an application for this job; edit it instead"
+            )
 
-        if existing is None:
-            stage = self._screened_stage(job, blocked, screen_action)
-            application = await self.application_repository.create(
-                session,
-                ApplicationEntity(
-                    job_id=dto.job_id,
-                    user_id=current_user.user_id,
-                    stage=stage,
-                    sub_status=self._screened_sub_status(stage),
-                    tags=self._screened_tags(blocked, screen_action, screen_rule_id),
-                ),
-            )
-            current_sub = await self._write_version(
-                session, application.application_id, 1, None, dto
-            )
-        elif blocked:
-            existing.stage = ApplicationStage.REJECTED
-            existing.sub_status = None
-            existing.tags = {"auto_reject": "blocked"}
-            application = await self.application_repository.update(session, existing)
-            current_sub = await self.application_submission_repository.get_current(
-                session, application.application_id
-            )
-            version = current_sub.version if current_sub is not None else 1
-            current_sub = await self._write_version(
-                session, application.application_id, version, current_sub, dto
-            )
-        else:
-            prior = await self.application_submission_repository.get_current(
-                session, existing.application_id
-            )
-            if existing.stage != ApplicationStage.REJECTED or prior is None:
-                raise ValueError(
-                    "you already have an application for this job; edit it instead"
-                )
-            # Freeze the prior attempt so its snapshot survives for the diff.
-            prior.is_frozen = True
-            await self.application_submission_repository.update(session, prior)
-
-            # Use the application container's last-update time (when it was
-            # moved to REJECTED), not the frozen submission's submitted_at —
-            # the thaw is anchored to the actual rejection moment, which
-            # submitted_at can predate.
+        stage = self._screened_stage(job, blocked, screen_action)
+        tags = self._screened_tags(blocked, screen_action, screen_rule_id)
+        if existing is not None and tags is None and stage != ApplicationStage.HIRED:
+            # Re-apply after a rejection: carry the advisory cold_freeze tag
+            # when the new attempt lands inside the job's cooldown window.
+            # Anchored to the prior row's last-update time (when it was moved
+            # to REJECTED), not its submitted_at, which can predate it. An
+            # auto_hire landing (HIRED) or an auto-reject tag supersedes it,
+            # same precedence as before.
             rejected_at = (
                 existing.updated_timestamp or existing.created_datetime
             ).date()
             thaw = cooldown.compute_thaw(rejected_at, job.cooldown_days)
-            tags = (
-                {"cold_freeze": {"thaw_date": thaw.isoformat()}}
-                if cooldown.is_in_cooldown(self._today(), thaw)
-                else None
-            )
-            stage = self._screened_stage(job, blocked, screen_action)
-            existing.stage = stage
-            existing.sub_status = self._screened_sub_status(stage)
-            # An auto_hire outcome supersedes the cooldown tag outright: it's
-            # a positive terminal landing, so a stale cold_freeze marker from
-            # the prior rejection is no longer relevant and would only
-            # confuse the board. reject/blocked still take precedence over
-            # the cooldown tag (per the design note above); everything else
-            # (qualify, or unscreened) falls back to it unchanged.
-            existing.tags = (
-                None
-                if stage == ApplicationStage.HIRED
-                else self._screened_tags(blocked, screen_action, screen_rule_id) or tags
-            )
-            application = await self.application_repository.update(session, existing)
-            current_sub = await self.application_submission_repository.create(
-                session,
-                ApplicationSubmissionEntity(
-                    application_id=application.application_id,
-                    version=prior.version + 1,
-                    submission=self._snapshot(dto),
-                    resume_object_key=dto.resume_object_key,
-                    resume_sha256=dto.resume_sha256,
-                ),
-            )
+            if cooldown.is_in_cooldown(self._today(), thaw):
+                tags = {"cold_freeze": {"thaw_date": thaw.isoformat()}}
+
+        application = await self.application_repository.create(
+            session,
+            ApplicationEntity(
+                job_id=dto.job_id,
+                user_id=current_user.user_id,
+                stage=stage,
+                sub_status=self._screened_sub_status(stage),
+                tags=tags,
+            ),
+        )
+        current_sub = await self._write_version(
+            session, application.application_id, 1, None, dto
+        )
 
         await self._assign_default_if_configured(
             session, application, job, current_user
@@ -515,7 +478,7 @@ class ApplicationService:
         Returns:
             ApplicationDto | None: The caller's application, or None if absent.
         """
-        application = await self.application_repository.get_by_job_and_user(
+        application = await self.application_repository.get_latest_by_job_and_user(
             session, job_id, current_user.user_id
         )
         if application is None:
