@@ -1769,6 +1769,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         second = self._application(
             application_id=11, job_id=2, user_id=3, stage=ApplicationStage.APPLIED
         )
+        second.current_round = 2
         third = self._application(
             application_id=12, job_id=3, user_id=3, stage=ApplicationStage.HIRED
         )
@@ -1800,10 +1801,25 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(second.stage, ApplicationStage.REJECTED)
         self.assertTrue(second.tags["blacklisted"])
         self.assertIsNone(second.sub_status)
+        self.assertEqual(second.current_round, 1)
         self.assertEqual(third.stage, ApplicationStage.HIRED)
         self.assertIsNone(fourth.tags)
         self.app_repo.list_by_user.assert_awaited_once_with(self.session, 3)
         self.assertEqual(self.activity_repo.create.call_count, 2)
+        second_call = self.activity_repo.create.call_args_list[1]
+        self.assertEqual(
+            second_call.args,
+            (self.session, 11, 99, "blacklisted"),
+        )
+        self.assertEqual(
+            second_call.kwargs,
+            {
+                "details": {
+                    "fromStage": ApplicationStage.APPLIED.value,
+                    "reason": "Fabricated credentials",
+                }
+            },
+        )
 
     # -- set_round --
 
