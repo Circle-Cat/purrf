@@ -318,11 +318,17 @@ const EvaluationSummary = ({ evaluations, interviewPool }) => (
  * from its `details` payload. `details.assigneeName`/`fromAssigneeName`/
  * `toAssigneeName` are present only when the corresponding raw id existed
  * on the underlying event (resolved server-side, read-time only — see
- * `BoardService.get_application_activity`). Falls back to the raw
- * `eventType` for anything not explicitly handled, so a future event type
- * still renders something rather than going blank. The actor is rendered
- * separately by `ActivityTimeline`, as a shared trailing suffix — not part
- * of this function's return value.
+ * `BoardService.get_application_activity`). Similarly,
+ * `details.ruleLabel` (on `auto_rejected`) and
+ * `details.screenQualifyRuleLabel`/`details.screenAutoHireRuleLabel` (on
+ * `application_submitted`) are read-time labels resolved from the
+ * corresponding rule id and are optional — older activity rows or rules
+ * that have since been removed from the screening config may lack them,
+ * in which case the description degrades to the generic unlabeled text.
+ * Falls back to the raw `eventType` for anything not explicitly handled,
+ * so a future event type still renders something rather than going blank.
+ * The actor is rendered separately by `ActivityTimeline`, as a shared
+ * trailing suffix — not part of this function's return value.
  *
  * @param {{eventType: string, details: object}} activity
  * @returns {string}
@@ -331,16 +337,26 @@ const describeActivity = ({ eventType, details }) => {
   switch (eventType) {
     case "application_submitted": {
       if (details.screenAutoHireRuleId) {
-        return "Submitted — auto-approved by screening rule (landed on Hired)";
+        return `Submitted — auto-approved by screening rule${
+          details.screenAutoHireRuleLabel
+            ? ` "${details.screenAutoHireRuleLabel}"`
+            : ""
+        } (landed on Hired)`;
       }
       const base = `Submitted — landed on ${humanize(details.stage)}`;
       return details.screenQualifyRuleId
-        ? `${base} (auto-qualified by screening rule)`
+        ? `${base} (auto-qualified by screening rule${
+            details.screenQualifyRuleLabel
+              ? ` "${details.screenQualifyRuleLabel}"`
+              : ""
+          })`
         : base;
     }
     case "auto_rejected":
       return details.reason === "screen_rule"
-        ? "Automatically rejected by screening rule"
+        ? `Automatically rejected by screening rule${
+            details.ruleLabel ? ` "${details.ruleLabel}"` : ""
+          }`
         : "Automatically rejected (blocked applicant)";
     case "stage_changed":
       if (details.reason) {

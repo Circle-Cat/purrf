@@ -2329,6 +2329,160 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             },
         )
 
+    async def test_activity_resolves_screen_rule_label(self):
+        job = self._job(job_id=1, owner_ids=(2,))
+        job.screen_rules = {
+            "rules": [
+                {
+                    "id": "r1",
+                    "condition": {
+                        "source": "email_domain",
+                        "operator": "not_in",
+                        "value": ["google.com"],
+                    },
+                    "action": "reject",
+                }
+            ]
+        }
+        application = self._application(application_id=10, job_id=1)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        row = SimpleNamespace(
+            activity_id=1,
+            application_id=10,
+            actor_id=2,
+            event_type="auto_rejected",
+            details={"reason": "screen_rule", "ruleId": "r1"},
+            created_at=datetime(2026, 7, 4, 12, 0, 0),
+        )
+        self.activity_repo.list_by_application = AsyncMock(return_value=[row])
+        self.users_repo.get_all_by_ids = AsyncMock(
+            return_value=[self._user(user_id=2, first="Owen", last="Owner")]
+        )
+
+        result = await self.service.get_application_activity(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertEqual(
+            result[0].details["ruleLabel"], "email domain not in google.com"
+        )
+
+    async def test_activity_screen_rule_label_falls_back_when_rule_removed(self):
+        job = self._job(job_id=1, owner_ids=(2,))
+        job.screen_rules = {"rules": []}
+        application = self._application(application_id=10, job_id=1)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        row = SimpleNamespace(
+            activity_id=1,
+            application_id=10,
+            actor_id=2,
+            event_type="auto_rejected",
+            details={"reason": "screen_rule", "ruleId": "r9"},
+            created_at=datetime(2026, 7, 4, 12, 0, 0),
+        )
+        self.activity_repo.list_by_application = AsyncMock(return_value=[row])
+        self.users_repo.get_all_by_ids = AsyncMock(
+            return_value=[self._user(user_id=2, first="Owen", last="Owner")]
+        )
+
+        result = await self.service.get_application_activity(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertEqual(
+            result[0].details["ruleLabel"], "rule r9 (no longer configured)"
+        )
+
+    async def test_activity_resolves_qualify_and_auto_hire_labels(self):
+        job = self._job(job_id=1, owner_ids=(2,))
+        job.screen_rules = {
+            "rules": [
+                {
+                    "id": "r1",
+                    "condition": {
+                        "source": "answer",
+                        "questionId": "q_role",
+                        "operator": "equals",
+                        "value": "mentor",
+                    },
+                    "action": "qualify",
+                }
+            ]
+        }
+        application = self._application(application_id=10, job_id=1)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        row = SimpleNamespace(
+            activity_id=1,
+            application_id=10,
+            actor_id=2,
+            event_type="application_submitted",
+            details={
+                "stage": "recruiter_screening",
+                "screenQualifyRuleId": "r1",
+            },
+            created_at=datetime(2026, 7, 4, 12, 0, 0),
+        )
+        self.activity_repo.list_by_application = AsyncMock(return_value=[row])
+        self.users_repo.get_all_by_ids = AsyncMock(
+            return_value=[self._user(user_id=2, first="Owen", last="Owner")]
+        )
+
+        result = await self.service.get_application_activity(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertEqual(
+            result[0].details["screenQualifyRuleLabel"],
+            "answer to q_role equals mentor",
+        )
+
+    async def test_activity_resolves_auto_hire_label(self):
+        job = self._job(job_id=1, owner_ids=(2,))
+        job.screen_rules = {
+            "rules": [
+                {
+                    "id": "r2",
+                    "condition": {
+                        "source": "answer",
+                        "questionId": "q_experience",
+                        "operator": "equals",
+                        "value": "senior",
+                    },
+                    "action": "auto_hire",
+                }
+            ]
+        }
+        application = self._application(application_id=10, job_id=1)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        row = SimpleNamespace(
+            activity_id=1,
+            application_id=10,
+            actor_id=2,
+            event_type="application_submitted",
+            details={
+                "stage": "hired",
+                "screenAutoHireRuleId": "r2",
+            },
+            created_at=datetime(2026, 7, 4, 12, 0, 0),
+        )
+        self.activity_repo.list_by_application = AsyncMock(return_value=[row])
+        self.users_repo.get_all_by_ids = AsyncMock(
+            return_value=[self._user(user_id=2, first="Owen", last="Owner")]
+        )
+
+        result = await self.service.get_application_activity(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertEqual(
+            result[0].details["screenAutoHireRuleLabel"],
+            "answer to q_experience equals senior",
+        )
+
     async def test_get_application_activity_non_owner_gets_collapsed_not_found_message(
         self,
     ):
