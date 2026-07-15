@@ -676,11 +676,14 @@ class BoardService:
         Reaching ``application_id``'s own detail page already required
         passing the same check this reuses
         (``_load_owned_application(allow_assignee=True, allow_read_all=True)``);
-        once that passes, every OTHER application belonging to the same
-        candidate is returned in full — submission snapshot and every
+        once that passes, every application to OTHER jobs belonging to the
+        same candidate is returned in full — submission snapshot and every
         evaluation row — regardless of the caller's relationship to those
-        other jobs specifically. There is deliberately no second,
-        per-other-application visibility check.
+        other jobs specifically. Same-job prior attempts are the detail
+        page's history, not this panel, so they're excluded even though
+        the underlying query returns every attempt the candidate has ever
+        made. There is deliberately no second, per-other-application
+        visibility check.
 
         Args:
             session (AsyncSession): Active database async session.
@@ -712,7 +715,7 @@ class BoardService:
         )
         result = []
         for other_application, other_job in rows:
-            if other_application.application_id == application_id:
+            if other_application.job_id == application.job_id:
                 continue
             current_sub = await self.application_submission_repository.get_current(
                 session, other_application.application_id

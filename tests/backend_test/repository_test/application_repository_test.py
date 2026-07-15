@@ -1,6 +1,8 @@
 import unittest
 from datetime import date, datetime, timezone
 
+from sqlalchemy.exc import IntegrityError
+
 from backend.entity.application_entity import ApplicationEntity
 from backend.entity.application_submission_entity import ApplicationSubmissionEntity
 from backend.entity.job_entity import JobEntity
@@ -38,7 +40,7 @@ class TestApplicationRepository(BaseRepositoryTestLib):
         await self.session.flush()
         return job, user
 
-    async def test_create_and_get_by_job_and_user(self):
+    async def test_create_and_get_latest_by_job_and_user(self):
         job, user = await self._seed_job_and_user()
         repo = ApplicationRepository()
         created = await repo.create(
@@ -48,11 +50,96 @@ class TestApplicationRepository(BaseRepositoryTestLib):
             ),
         )
         self.assertIsNotNone(created.application_id)
-        found = await repo.get_by_job_and_user(self.session, job.job_id, user.user_id)
+        found = await repo.get_latest_by_job_and_user(
+            self.session, job.job_id, user.user_id
+        )
         self.assertEqual(found.application_id, created.application_id)
         self.assertIsNone(
-            await repo.get_by_job_and_user(self.session, job.job_id, 999999)
+            await repo.get_latest_by_job_and_user(self.session, job.job_id, 999999)
         )
+
+    async def test_get_latest_by_job_and_user_returns_newest_attempt(self):
+        job, user = await self._seed_job_and_user()
+        repo = ApplicationRepository()
+        old = await repo.create(
+            self.session,
+            ApplicationEntity(
+                job_id=job.job_id,
+                user_id=user.user_id,
+                stage=ApplicationStage.REJECTED,
+            ),
+        )
+        new = await repo.create(
+            self.session,
+            ApplicationEntity(
+                job_id=job.job_id, user_id=user.user_id, stage=ApplicationStage.APPLIED
+            ),
+        )
+        got = await repo.get_latest_by_job_and_user(
+            self.session, job.job_id, user.user_id
+        )
+        self.assertEqual(got.application_id, new.application_id)
+        self.assertNotEqual(got.application_id, old.application_id)
+
+    async def test_list_by_job_returns_only_latest_attempt_per_user(self):
+        job = JobEntity(kind=JobKind.ACTIVITY, title="T", status=JobStatus.PUBLISHED)
+        user_a = _make_user("A", "One", "a1@b.com")
+        user_b = _make_user("B", "Two", "b2@b.com")
+        await self.insert_entities([job, user_a, user_b])
+        await self.session.flush()
+
+        repo = ApplicationRepository()
+        old_a = await repo.create(
+            self.session,
+            ApplicationEntity(
+                job_id=job.job_id,
+                user_id=user_a.user_id,
+                stage=ApplicationStage.REJECTED,
+            ),
+        )
+        new_a = await repo.create(
+            self.session,
+            ApplicationEntity(
+                job_id=job.job_id,
+                user_id=user_a.user_id,
+                stage=ApplicationStage.APPLIED,
+            ),
+        )
+        only_b = await repo.create(
+            self.session,
+            ApplicationEntity(
+                job_id=job.job_id,
+                user_id=user_b.user_id,
+                stage=ApplicationStage.APPLIED,
+            ),
+        )
+
+        rows = await repo.list_by_job(self.session, job.job_id)
+
+        listed_ids = {app.application_id for app, _ in rows}
+        self.assertEqual(listed_ids, {new_a.application_id, only_b.application_id})
+        self.assertNotIn(old_a.application_id, listed_ids)
+
+    async def test_two_rejected_rows_coexist_for_same_job_and_user(self):
+        job, user = await self._seed_job_and_user()
+        repo = ApplicationRepository()
+        first = await repo.create(
+            self.session,
+            ApplicationEntity(
+                job_id=job.job_id,
+                user_id=user.user_id,
+                stage=ApplicationStage.REJECTED,
+            ),
+        )
+        second = await repo.create(
+            self.session,
+            ApplicationEntity(
+                job_id=job.job_id,
+                user_id=user.user_id,
+                stage=ApplicationStage.REJECTED,
+            ),
+        )
+        self.assertNotEqual(first.application_id, second.application_id)
 
     async def test_submission_get_current_returns_highest_version(self):
         job, user = await self._seed_job_and_user()
@@ -406,6 +493,42 @@ class TestApplicationRepository(BaseRepositoryTestLib):
             self.session, user_id=user.user_id, mentorship_role=ParticipantRole.MENTOR
         )
         self.assertIsNone(found)
+
+    async def test_allows_second_application_after_rejection(self):
+        job, user = await self._seed_job_and_user()
+        repo = ApplicationRepository()
+        first = await repo.create(
+            self.session,
+            ApplicationEntity(
+                job_id=job.job_id,
+                user_id=user.user_id,
+                stage=ApplicationStage.REJECTED,
+            ),
+        )
+        second = await repo.create(
+            self.session,
+            ApplicationEntity(
+                job_id=job.job_id, user_id=user.user_id, stage=ApplicationStage.APPLIED
+            ),
+        )
+        self.assertNotEqual(first.application_id, second.application_id)
+
+    async def test_rejects_two_active_applications_for_same_job_and_user(self):
+        job, user = await self._seed_job_and_user()
+        repo = ApplicationRepository()
+        await repo.create(
+            self.session,
+            ApplicationEntity(
+                job_id=job.job_id, user_id=user.user_id, stage=ApplicationStage.APPLIED
+            ),
+        )
+        with self.assertRaises(IntegrityError):
+            await repo.create(
+                self.session,
+                ApplicationEntity(
+                    job_id=job.job_id, user_id=user.user_id, stage=ApplicationStage.TECH
+                ),
+            )
 
 
 if __name__ == "__main__":
