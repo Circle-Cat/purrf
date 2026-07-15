@@ -378,17 +378,18 @@ class TestRegistrationService(unittest.IsolatedAsyncioTestCase):
             )
 
     async def test_mentor_expired_blocks_registration(self):
-        """Test: Mentor registering after April 27 deadline is rejected."""
+        """Test: Blocks mentor when mentor deadline has passed even if mentee deadline has not."""
         self.mock_dt.now.return_value = datetime(
             2026, 4, 28, 0, 0, 0, tzinfo=timezone.utc
         )
         mock_round = MagicMock()
         mock_round.description = {
-            "mentor_application_deadline_at": "2026-04-27T23:59:59Z"
+            "mentor_application_deadline_at": "2026-04-27T23:59:59Z",
+            "mentee_application_deadline_at": "2026-05-01T23:59:59Z",
         }
         self.mock_round_repo.get_by_round_id.return_value = mock_round
 
-        with self.assertRaisesRegex(ValueError, "has ended"):
+        with self.assertRaisesRegex(ValueError, "has ended at 2026-04-27"):
             await self.service.update_registration_info(
                 self.mock_session,
                 self.user_context,
@@ -397,18 +398,19 @@ class TestRegistrationService(unittest.IsolatedAsyncioTestCase):
             )
 
     async def test_mentee_expired_blocks_registration(self):
-        """Test: Mentee registering after April 25 deadline is rejected."""
+        """Test: Blocks mentee when mentee deadline has passed even if mentor deadline has not."""
         self.mock_dt.now.return_value = datetime(
             2026, 4, 27, 0, 0, 0, tzinfo=timezone.utc
         )
         mock_round = MagicMock()
         mock_round.description = {
-            "mentee_application_deadline_at": "2026-04-25T23:59:59Z"
+            "mentor_application_deadline_at": "2026-05-01T23:59:59Z",
+            "mentee_application_deadline_at": "2026-04-25T23:59:59Z",
         }
         self.mock_round_repo.get_by_round_id.return_value = mock_round
         self.mock_participation_service.resolve_participant_role_with_fallback.return_value = ParticipantRole.MENTEE
 
-        with self.assertRaisesRegex(ValueError, "has ended"):
+        with self.assertRaisesRegex(ValueError, "has ended at 2026-04-25"):
             await self.service.update_registration_info(
                 self.mock_session,
                 self.user_context,
