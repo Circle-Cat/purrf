@@ -103,6 +103,34 @@ class UserEmailsRepository:
         )
         return result.first() is not None
 
+    async def get_confirmed_by_email(
+        self, session: AsyncSession, email: str
+    ) -> UserEmailsEntity | None:
+        """
+        Fetch the OTP-confirmed row owning `email`, regardless of which user
+        owns it — the needs-link flow uses it to find the account a colliding
+        sign-in should be linked into. At most one confirmed row can exist per
+        address (cross-account claims are blocked at confirm time), so a plain
+        scalar lookup suffices.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            email (str): Normalized (lowercased) address to look up.
+
+        Returns:
+            UserEmailsEntity | None: The confirmed row, or None when the
+            address has never been OTP-confirmed by any account.
+        """
+        result = await session.execute(
+            select(UserEmailsEntity)
+            .where(
+                UserEmailsEntity.email == email,
+                UserEmailsEntity.otp_confirmed.is_(True),
+            )
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
+
     async def has_confirmed(self, session: AsyncSession, user_id: int) -> bool:
         """
         Whether the user has any OTP-confirmed email — the hard-wall predicate:

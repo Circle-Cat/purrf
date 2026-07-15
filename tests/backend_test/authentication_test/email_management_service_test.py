@@ -447,6 +447,177 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         self.session.commit.assert_awaited_once()
         self.assertEqual(result["linked_sub"], _NEW_SUB)
 
+    async def test_initiate_needs_link_locks_to_claim_email(self):
+        """A needs-link session may only verify its own sign-in email; any
+        other address is refused before an OTP is ever sent."""
+        with self.assertRaises(ValueError):
+            await self.service.initiate(
+                self.session,
+                None,
+                _CURRENT_SUB,
+                "other@example.com",
+                needs_link=True,
+                claim_email=_TARGET_EMAIL,
+            )
+        self.auth0.start_passwordless.assert_not_called()
+
+    async def test_initiate_needs_link_skips_other_account_conflict(self):
+        """The address belonging to another account is the situation being
+        resolved, so the other-account guard must not fire; the state is
+        signed with user_id=None."""
+        self.user_emails.exists_confirmed_on_other_user.return_value = True
+        result = await self.service.initiate(
+            self.session,
+            None,
+            _CURRENT_SUB,
+            " Alice@Gmail.com ",
+            needs_link=True,
+            claim_email=_TARGET_EMAIL,
+        )
+        self.auth0.start_passwordless.assert_called_once_with(_TARGET_EMAIL)
+        self.user_emails.exists_confirmed_on_other_user.assert_not_called()
+        claims = jwt.decode(result["state"], _SECRET, algorithms=["HS256"])
+        self.assertIsNone(claims["user_id"])
+        self.assertEqual(claims["sub"], _CURRENT_SUB)
+
+    async def test_verify_needs_link_links_caller_into_owner(self):
+        """Needs-link happy path: the OTP-proved address is confirmed on an
+        existing account, so the caller's sub is linked into that account —
+        no users row is created and the owner's emails are untouched."""
+        self.user_emails.get_confirmed_by_email.return_value = self._email_row(
+            _TARGET_EMAIL, otp_confirmed=True, is_primary=True, user_id=7
+        )
+
+        result = await self.service.verify(
+            self.session,
+            None,
+            _CURRENT_SUB,
+            _state(user_id=None),
+            "123456",
+            needs_link=True,
+            caller_identity_type=IdentityType.EXTERNAL,
+        )
+
+        self.auth0.link_identity.assert_called_once_with(
+            account_root_sub=_CURRENT_SUB, provider="email", secondary_user_id="abc123"
+        )
+        identity_entity = self.user_identities.upsert_identity.call_args.kwargs[
+            "entity"
+        ]
+        self.assertEqual(identity_entity.user_id, 7)
+        self.assertEqual(identity_entity.subject_identifier, _CURRENT_SUB)
+        self.assertEqual(identity_entity.identity_type, IdentityType.EXTERNAL)
+        # The owning account's contact emails are not modified.
+        self.user_emails.upsert_email.assert_not_called()
+        self.session.commit.assert_awaited_once()
+        self.assertEqual(result["linked_sub"], _CURRENT_SUB)
+
+    async def test_verify_needs_link_rejects_unconfirmed_owner(self):
+        """No account has OTP-confirmed the address (e.g. a migrated Google
+        user who has not passed the wall yet): refuse the link and point the
+        user back to their original sign-in method."""
+        self.user_emails.get_confirmed_by_email.return_value = None
+
+        with self.assertRaises(ConflictError):
+            await self.service.verify(
+                self.session,
+                None,
+                _CURRENT_SUB,
+                _state(user_id=None),
+                "123456",
+                needs_link=True,
+                caller_identity_type=IdentityType.EXTERNAL,
+            )
+        self.auth0.link_identity.assert_not_called()
+        self.user_identities.upsert_identity.assert_not_called()
+
+    async def test_verify_needs_link_rejects_third_account_identity(self):
+        """The address's passwordless identity belonging to a *different*
+        account than the confirmed owner is an inconsistent state; refuse."""
+        self.user_emails.get_confirmed_by_email.return_value = self._email_row(
+            _TARGET_EMAIL, otp_confirmed=True, is_primary=True, user_id=7
+        )
+        self.user_identities.get_by_subject_identifier.return_value = (
+            UserIdentitiesEntity(
+                user_id=9,
+                subject_identifier=_NEW_SUB,
+                identity_type=IdentityType.EXTERNAL,
+                email_claim=_TARGET_EMAIL,
+            )
+        )
+
+        with self.assertRaises(ConflictError):
+            await self.service.verify(
+                self.session,
+                None,
+                _CURRENT_SUB,
+                _state(user_id=None),
+                "123456",
+                needs_link=True,
+                caller_identity_type=IdentityType.EXTERNAL,
+            )
+        self.auth0.link_identity.assert_not_called()
+        self.user_identities.upsert_identity.assert_not_called()
+
+    async def test_verify_needs_link_self_sub_skips_auth0_link(self):
+        """A passwordless caller's OTP exchange returns its own sub: there is
+        nothing to link on the Auth0 side, but the DB row is still added."""
+        passwordless_sub = "email|caller"
+        self.auth0.exchange_otp.return_value = {
+            "sub": passwordless_sub,
+            "email": _TARGET_EMAIL,
+            "email_verified": True,
+        }
+        self.user_emails.get_confirmed_by_email.return_value = self._email_row(
+            _TARGET_EMAIL, otp_confirmed=True, is_primary=True, user_id=7
+        )
+        now = int(time.time())
+        state = jwt.encode(
+            {
+                "user_id": None,
+                "sub": passwordless_sub,
+                "email": _TARGET_EMAIL,
+                "flow": "add_email",
+                "iat": now,
+                "exp": now + 600,
+            },
+            _SECRET,
+            algorithm="HS256",
+        )
+
+        result = await self.service.verify(
+            self.session,
+            None,
+            passwordless_sub,
+            state,
+            "123456",
+            needs_link=True,
+            caller_identity_type=IdentityType.EXTERNAL,
+        )
+
+        self.auth0.link_identity.assert_not_called()
+        identity_entity = self.user_identities.upsert_identity.call_args.kwargs[
+            "entity"
+        ]
+        self.assertEqual(identity_entity.user_id, 7)
+        self.assertEqual(identity_entity.subject_identifier, passwordless_sub)
+        self.assertEqual(result["linked_sub"], passwordless_sub)
+
+    async def test_verify_needs_link_rejects_state_with_user_id(self):
+        """A needs-link verify must not accept a state minted for a normal
+        (user-bound) session — cross-mode reuse is a CSRF hole."""
+        with self.assertRaises(ValueError):
+            await self.service.verify(
+                self.session,
+                None,
+                _CURRENT_SUB,
+                _state(user_id=_USER_ID),
+                "123456",
+                needs_link=True,
+                caller_identity_type=IdentityType.EXTERNAL,
+            )
+        self.auth0.exchange_otp.assert_not_called()
+
     async def test_list_emails_and_identities_assembles_view(self):
         added_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
         primary = UserEmailsEntity(

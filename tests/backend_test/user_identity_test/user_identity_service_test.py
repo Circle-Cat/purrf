@@ -102,6 +102,40 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
         self.identities_repo.update_last_login.assert_not_awaited()
 
     # create_or_swap_user — Step 2 swap / Step 3 first-login
+    # email_has_owner — needs-link collision classification (PUR-480)
+    async def test_email_has_owner_confirmed_contact(self):
+        """An OTP-confirmed user_emails row means the address is owned."""
+        self.emails_repo.get_confirmed_by_email.return_value = MagicMock(
+            spec=UserEmailsEntity
+        )
+
+        self.assertTrue(
+            await self.service.email_has_owner(self.session, "a@example.com")
+        )
+        # Short-circuits before the legacy column lookup.
+        self.users_repo.get_user_by_primary_email.assert_not_awaited()
+
+    async def test_email_has_owner_legacy_primary_email(self):
+        """No confirmed contact but a legacy users.primary_email owner still
+        counts — that column is what the first-login unique violation fires on."""
+        self.emails_repo.get_confirmed_by_email.return_value = None
+        self.users_repo.get_user_by_primary_email.return_value = MagicMock(
+            spec=UsersEntity
+        )
+
+        self.assertTrue(
+            await self.service.email_has_owner(self.session, "a@example.com")
+        )
+
+    async def test_email_has_owner_unowned(self):
+        """Neither a confirmed contact nor a legacy owner: not owned."""
+        self.emails_repo.get_confirmed_by_email.return_value = None
+        self.users_repo.get_user_by_primary_email.return_value = None
+
+        self.assertFalse(
+            await self.service.email_has_owner(self.session, "a@example.com")
+        )
+
     async def test_create_or_swap_overwrites_mocked_identity_by_email(self):
         """Migration backfill: a user_identities row with a mocked sub is found
         by email; first real login overwrites the mocked sub in place."""
