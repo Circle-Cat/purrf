@@ -199,23 +199,27 @@ if [ "$CF_PAGES_BRANCH" = "prod" ]; then
   AUTH0_CLIENT=$VITE_AUTH0_CLIENT_ID
   AUTH0_DOMAIN=$VITE_AUTH0_DOMAIN
   LD_CLIENT=$PROD_LAUNCHDARKLY_CLIENT_ID
+  DEPLOY_ENV=prod
 elif [ "$CF_PAGES_BRANCH" = "staging" ]; then
   API_URL=$STAGING_API_BASE_URL
   AUTH0_CLIENT=$STAGING_AUTH0_CLIENT_ID
   AUTH0_DOMAIN=$STAGING_AUTH0_DOMAIN
   LD_CLIENT=$STAGING_LAUNCHDARKLY_CLIENT_ID
+  DEPLOY_ENV=staging
 else
   API_URL=$TEST_API_BASE_URL
   AUTH0_CLIENT=$TEST_AUTH0_CLIENT_ID
   AUTH0_DOMAIN=$TEST_AUTH0_DOMAIN
   LD_CLIENT=$TEST_LAUNCHDARKLY_CLIENT_ID
+  DEPLOY_ENV=test
 fi
 go run github.com/bazelbuild/bazelisk@latest build //frontend:dist \
   --action_env=VITE_API_BASE_URL=$API_URL \
   --action_env=VITE_AUTH0_CLIENT_ID=$AUTH0_CLIENT \
   --action_env=VITE_AUTH0_DOMAIN=$AUTH0_DOMAIN \
   --action_env=VITE_CF_ACCESS_TENANT_DOMAIN=$VITE_CF_ACCESS_TENANT_DOMAIN \
-  --action_env=VITE_LAUNCHDARKLY_CLIENT_ID=$LD_CLIENT
+  --action_env=VITE_LAUNCHDARKLY_CLIENT_ID=$LD_CLIENT \
+  --action_env=VITE_DEPLOY_ENV=$DEPLOY_ENV
 EOF
 
     destination_dir = "bazel-bin/frontend/dist"
@@ -688,11 +692,11 @@ resource "cloudflare_zero_trust_access_application" "purrf_app_test" {
       uri  = "*.purrf.pages.dev"
     },
   ]
-  allowed_idps         = ["762bbddc-6753-4c4b-898e-89e18ecc410c", cloudflare_zero_trust_access_identity_provider.mentorship_login_test.id]
+  allowed_idps         = [cloudflare_zero_trust_access_identity_provider.mentorship_login_test.id]
   session_duration     = "24h"
   app_launcher_visible = true
 
-  auto_redirect_to_identity = false
+  auto_redirect_to_identity = true
   cors_headers = {
     allow_all_methods = true
     allow_credentials = true

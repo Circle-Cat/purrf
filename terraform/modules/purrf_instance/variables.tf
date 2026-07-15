@@ -104,7 +104,14 @@ variable "ingress_class_name" {
 
 variable "image_tag" {
   type        = string
-  description = "Deployed image tag"
+  description = "Deployed image tag. Unused when deploy_via_helm is false."
+  default     = null
+}
+
+variable "deploy_via_helm" {
+  type        = bool
+  description = "Whether Terraform manages the app's helm_release. Set false when the deployment is owned by ArgoCD (e.g. the test environment); Terraform then only provisions the namespace, secret, and workload-identity binding."
+  default     = true
 }
 
 variable "jira_password" {
@@ -140,3 +147,15 @@ variable "tailscale_proxy" {
   type        = string
   default     = ""
 }
+
+variable "auth0_google_client_id" {
+  description = "Client ID of the Google OAuth app backing the Auth0 Google social connection."
+  type        = string
+}
+
+variable "auth0_google_client_secret" {
+  description = "Client secret of the Google OAuth app backing the Auth0 Google social connection."
+  type        = string
+  sensitive   = true
+}
+

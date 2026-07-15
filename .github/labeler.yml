@@ -1,0 +1,41 @@
+# Path -> label rules for actions/labeler (v5). A PR matching several areas gets
+# all matching labels (e.g. a backend+frontend change is labeled both).
+# Only the labels defined here are managed; promoted:* / automation:* / hold:*
+# are never touched by the labeler.
+
+"area:infra":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "terraform/**"
+          - "helm/**"
+          - ".github/**"
+
+# Keep in sync with the deploy workflows' backend-image path filter: these are
+# the inputs baked into the backend image (so they ride the reused image to prod).
+"area:backend":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "backend/**"
+          - "alembic_setup/**"
+          - "alembic.ini"
+          - "requirements.txt"
+          - "MODULE.bazel"
+          - "MODULE.bazel.lock"
+          - "BUILD"
+          - "py_layer.bzl"
+          - ".bazelversion"
+          - ".bazelignore"
+
+# Cloudflare Pages side -- not in the backend image.
+"area:frontend":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "frontend/**"
+          - "package.json"
+          - "pnpm-lock.yaml"
+          - "eslint.config.mjs"
+
+documentation:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "**/*.md"

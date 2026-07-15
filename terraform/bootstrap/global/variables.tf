@@ -8,7 +8,7 @@ locals {
       api_host   = "api.purrf.io"
       origin_web = "purrf.io"
       cf_host    = "cf.purrf.io"
-      gcp_region = "us-west1"
+      gcp_region = "us-east4"
     }
     test = {
       name       = "test"

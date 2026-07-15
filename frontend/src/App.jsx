@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   BrowserRouter as Router,
   Routes,
@@ -6,6 +7,8 @@ import {
 } from "react-router-dom";
 import "@/App.css";
 import Header from "@/components/layout/Header";
+import EnvironmentBanner from "@/components/layout/EnvironmentBanner";
+import { isBannerEnv } from "@/utils/deployEnv";
 import Sidebar from "@/components/layout/Sidebar";
 import ProtectedRoute from "@/components/common/ProtectedRoute";
 import Dashboard from "@/pages/Dashboard";
@@ -20,13 +23,25 @@ import { ROUTE_PATHS } from "@/constants/RoutePaths";
 import { Toaster } from "@/components/ui/sonner";
 
 function App() {
+  const deployEnv = import.meta.env.VITE_DEPLOY_ENV;
+
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  const showEnvBanner = isBannerEnv(deployEnv);
+  const containerClassName = `app-container legacy-styles${
+    showEnvBanner ? " has-env-banner" : ""
+  }${sidebarCollapsed ? " sidebar-collapsed" : ""}`;
   return (
     <FlagsProvider>
       <AuthProvider>
         <LDIdentifier />
         <Router>
-          <div className="app-container legacy-styles">
-            <Header />
+          <div className={containerClassName}>
+            <Header
+              onToggleSidebar={() => setSidebarCollapsed((prev) => !prev)}
+              sidebarCollapsed={sidebarCollapsed}
+            />
+            {showEnvBanner && <EnvironmentBanner env={deployEnv} />}
             <div className="app-body">
               <Sidebar />
               <main className="main-content">

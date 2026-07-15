@@ -36,7 +36,8 @@ class TestMentorshipMapper(unittest.TestCase):
 
         self.test_dates = {
             "promotion_start_at": "2025-07-02T06:59:59Z",
-            "application_deadline_at": "2025-07-16T06:59:59Z",
+            "mentor_application_deadline_at": "2025-07-16T06:59:59Z",
+            "mentee_application_deadline_at": "2025-07-14T06:59:59Z",
             "review_start_at": "2025-07-17T06:59:59Z",
             "acceptance_notification_at": "2025-07-31T06:59:59Z",
             "matching_completed_at": "2025-08-06T06:59:59Z",

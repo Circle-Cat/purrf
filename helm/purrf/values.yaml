@@ -36,10 +36,10 @@ podAnnotations: {}
 podSecurityContext:
   fsGroup: 65532
 
-securityContext: {}
-  # capabilities:
-  #   drop:
-  #   - ALL
+securityContext:
+  capabilities:
+    drop:
+      - NET_RAW
   # readOnlyRootFilesystem: true
   # runAsNonRoot: true
   # runAsUser: 1000

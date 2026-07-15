@@ -2,8 +2,8 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useState } from "react";
-import { format, addDays, isAfter } from "date-fns";
-import { TZDate } from "@date-fns/tz";
+import { addDays, isAfter } from "date-fns";
+import { formatInTz } from "@/utils/dateTime";
 import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
 import { GraduationCap, User, Plus } from "lucide-react";
@@ -57,10 +57,7 @@ export default function MentorshipParticipantsCard({
     participantRole?.toLowerCase() === MentorshipParticipantRoles.MENTEE;
   const canSubmitMeeting = isMentee && manualSubmitMeeting;
 
-  const formatDt = (utcStr) =>
-    utcStr && userTimezone
-      ? format(new TZDate(utcStr, userTimezone), "yyyy-MM-dd")
-      : null;
+  const formatDt = (utcStr) => formatInTz(utcStr, userTimezone, "yyyy-MM-dd");
 
   const hasParticipation =
     !isParticipantCardLoading &&

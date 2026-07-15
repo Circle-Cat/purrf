@@ -197,4 +197,44 @@ describe("Header Component", () => {
 
     expect(performGlobalLogout).toHaveBeenCalled();
   });
+
+  test("does not render the sidebar toggle when onToggleSidebar is not provided", () => {
+    render(
+      <MemoryRouter>
+        <Header />
+      </MemoryRouter>,
+    );
+
+    expect(
+      screen.queryByRole("button", { name: /sidebar/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  test("calls onToggleSidebar when the sidebar toggle is clicked", async () => {
+    const user = userEvent.setup();
+    const onToggleSidebar = vi.fn();
+
+    render(
+      <MemoryRouter>
+        <Header onToggleSidebar={onToggleSidebar} sidebarCollapsed={false} />
+      </MemoryRouter>,
+    );
+
+    const toggle = screen.getByRole("button", { name: "Collapse sidebar" });
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+
+    await user.click(toggle);
+    expect(onToggleSidebar).toHaveBeenCalledTimes(1);
+  });
+
+  test("reflects the collapsed state in the toggle's label and aria-expanded", () => {
+    render(
+      <MemoryRouter>
+        <Header onToggleSidebar={vi.fn()} sidebarCollapsed={true} />
+      </MemoryRouter>,
+    );
+
+    const toggle = screen.getByRole("button", { name: "Expand sidebar" });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+  });
 });

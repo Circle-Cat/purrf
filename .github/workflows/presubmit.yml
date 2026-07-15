@@ -1,0 +1,155 @@
+name: Presubmit
+
+on:
+  pull_request:
+    # Default types only (opened, synchronize, reopened) — title-only edits
+    # must not re-run lint/tests; pr-title.yml handles those.
+    branches: [main, staging, prod]
+  push:
+    branches: [main]
+
+jobs:
+  changes:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      build: ${{ steps.filter.outputs.build }}
+    steps:
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'backend/**'
+              - 'tools/**'
+              - 'alembic_setup/**'
+              - 'alembic.ini'
+              - 'requirements.txt'
+              - 'tests/backend_test/**'
+              - 'tests/tools_test/**'
+            frontend:
+              - 'frontend/**'
+              - 'tests/frontend_test/**'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'eslint.config.mjs'
+            # Files that affect every Bazel target.
+            build:
+              - 'MODULE.bazel'
+              - 'MODULE.bazel.lock'
+              - 'BUILD'
+              - 'py_layer.bzl'
+              - '.bazelversion'
+              - 'lint.sh'
+              - '.github/workflows/presubmit.yml'
+
+  lint-and-test:
+    needs: changes
+    # Skipped entirely for changes outside bazel-built code (helm/, terraform/,
+    # script/, docs). Skipped counts as success for required status checks.
+    if: >-
+      !cancelled() &&
+      (github.event_name == 'push' ||
+       needs.changes.outputs.backend == 'true' ||
+       needs.changes.outputs.frontend == 'true' ||
+       needs.changes.outputs.build == 'true')
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/testdb
+      RUN_BACKEND: ${{ github.event_name == 'push' || needs.changes.outputs.backend == 'true' || needs.changes.outputs.build == 'true' }}
+      RUN_FRONTEND: ${{ github.event_name == 'push' || needs.changes.outputs.frontend == 'true' || needs.changes.outputs.build == 'true' }}
+    services:
+      postgres:
+        image: postgres:18.1-alpine
+        env:
+          POSTGRES_DB: testdb
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: bazel-contrib/setup-bazel@0.19.0
+
+      - name: Lint
+        run: bash lint.sh all_files
+
+      - name: Init postgres
+        if: env.RUN_BACKEND == 'true'
+        run: bazel --max_idle_secs=10 run //tools:init_db
+
+      - name: Backend tests
+        if: env.RUN_BACKEND == 'true'
+        run: >-
+          bazel --max_idle_secs=10 test
+          --discard_analysis_cache --nokeep_state_after_build --notrack_incremental_state
+          //tests/backend_test/... //tests/tools_test/...
+
+      - name: Frontend tests
+        if: env.RUN_FRONTEND == 'true'
+        run: >-
+          bazel --max_idle_secs=10 test
+          --discard_analysis_cache --nokeep_state_after_build --notrack_incremental_state
+          //tests/frontend_test/...
+
+  promotion-guard:
+    if: >-
+      github.event_name == 'pull_request' &&
+      (github.event.pull_request.base.ref == 'staging' || github.event.pull_request.base.ref == 'prod')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify every commit is a cherry-pick from the upstream branch
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          case "$BASE_REF" in
+            staging) UPSTREAM=main ;;
+            prod)    UPSTREAM=staging ;;
+          esac
+
+          failed=0
+          for sha in $(git rev-list --no-merges "$BASE_SHA..$HEAD_SHA"); do
+            # Exempt env image-pin commits: a single commit touching only this
+            # branch's own values-<env>.yaml. These arrive in-branch (staging's
+            # deploy-staging.yml bump PR, or prod's reused-image pin) rather than
+            # via cherry-pick, so they carry no trailer -- but they only set the
+            # image tag for this very environment, never code.
+            changed=$(git diff-tree --no-commit-id --name-only -r "$sha")
+            if [ "$(printf '%s\n' "$changed" | grep -c .)" -eq 1 ] \
+               && [ "$changed" = "helm/purrf/values-$BASE_REF.yaml" ]; then
+              echo "OK (env image pin): $sha touches only values-$BASE_REF.yaml"
+              continue
+            fi
+            # Take the last trailer: staging->prod picks carry one trailer per hop.
+            origin_sha=$(git log -1 --format=%B "$sha" \
+              | grep -oE '\(cherry picked from commit [0-9a-f]{40}\)' \
+              | tail -1 | grep -oE '[0-9a-f]{40}' || true)
+            if [ -z "$origin_sha" ]; then
+              echo "::error::Commit $sha has no '(cherry picked from commit ...)' trailer. Content on $BASE_REF may only arrive via promote.yml cherry-picks from $UPSTREAM."
+              failed=1
+            elif ! git cat-file -e "$origin_sha" 2>/dev/null \
+              || ! git merge-base --is-ancestor "$origin_sha" "origin/$UPSTREAM"; then
+              echo "::error::Commit $sha claims to be cherry-picked from $origin_sha, which is not a commit on $UPSTREAM."
+              failed=1
+            else
+              echo "OK: $sha <- $UPSTREAM/$origin_sha"
+            fi
+          done
+          exit $failed

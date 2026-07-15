@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import TimezoneSelector from "@/components/common/TimezoneSelector";
 import { Calendar as CalendarIcon } from "lucide-react";
 import { format } from "date-fns";
-import { TZDate } from "@date-fns/tz";
+import { todayInTz, nowInTz, localToUtcIso } from "@/utils/dateTime";
 import {
   Dialog,
   DialogContent,
@@ -72,29 +72,31 @@ export default function MeetingSubmissionModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Default to today in the user's profile timezone.
-  const [selectedDate, setSelectedDate] = useState(() => {
-    const now = new TZDate(new Date(), userTimezone);
-    return new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  });
+  const [selectedDate, setSelectedDate] = useState(() =>
+    todayInTz(userTimezone),
+  );
   const [startTime, setStartTime] = useState("");
   const [endTime, setEndTime] = useState("");
   const [slotError, setSlotError] = useState(null);
 
+  const resetForm = () => {
+    setTimezone(userTimezone);
+    setSelectedDate(todayInTz(userTimezone));
+    setStartTime("");
+    setEndTime("");
+    setSlotError(null);
+    setIsSubmitting(false);
+  };
+
+  // Reset form to defaults each time the modal opens.
+  useEffect(() => {
+    if (open) resetForm();
+  }, [open]);
+
   const tzIana = typeof timezone === "string" ? timezone : timezone.value;
 
-  const toUtcIso = (dateObj, timeStr, addDays = 0) => {
-    const [h, m] = timeStr.split(":").map(Number);
-    const d = new TZDate(
-      dateObj.getFullYear(),
-      dateObj.getMonth(),
-      dateObj.getDate() + addDays,
-      h,
-      m,
-      0,
-      tzIana,
-    );
-    return new Date(+d).toISOString().split(".")[0] + "Z";
-  };
+  const toUtcIso = (dateObj, timeStr, addDays = 0) =>
+    localToUtcIso(dateObj, timeStr, tzIana, addDays);
 
   const [startH, startM] = (startTime || "0:0").split(":").map(Number);
   const [endH, endM] = (endTime || "0:0").split(":").map(Number);
@@ -102,12 +104,12 @@ export default function MeetingSubmissionModal({
   const validateTimesNotEqual = () => startH !== endH || startM !== endM;
 
   // Current date/time in the selected timezone.
-  const nowInTz = new TZDate(new Date(), tzIana);
+  const tzNow = nowInTz(tzIana);
 
   const isTodayInTz =
-    format(selectedDate, "yyyy-MM-dd") === format(nowInTz, "yyyy-MM-dd");
+    format(selectedDate, "yyyy-MM-dd") === format(tzNow, "yyyy-MM-dd");
 
-  const currentMinutesInTz = nowInTz.getHours() * 60 + nowInTz.getMinutes();
+  const currentMinutesInTz = tzNow.getHours() * 60 + tzNow.getMinutes();
 
   const isFutureTime = (timeStr, bufferMinutes = 0) => {
     if (!isTodayInTz) return false;
@@ -116,9 +118,9 @@ export default function MeetingSubmissionModal({
   };
 
   const maxSelectableDate = new Date(
-    nowInTz.getFullYear(),
-    nowInTz.getMonth(),
-    nowInTz.getDate(),
+    tzNow.getFullYear(),
+    tzNow.getMonth(),
+    tzNow.getDate(),
     23,
     59,
     59,
@@ -127,8 +129,7 @@ export default function MeetingSubmissionModal({
   const handleTimezoneChange = (newTz) => {
     setTimezone(newTz);
     const newIana = typeof newTz === "string" ? newTz : newTz.value;
-    const now = new TZDate(new Date(), newIana);
-    setSelectedDate(new Date(now.getFullYear(), now.getMonth(), now.getDate()));
+    setSelectedDate(todayInTz(newIana));
     setStartTime("");
     setEndTime("");
   };

@@ -12,6 +12,7 @@ import {
   calculateMentorshipSlots,
   calculateRoundStatus,
 } from "@/pages/PersonalDashboard/utils/mentorshipRounds";
+import { MentorshipParticipantRoles } from "@/constants/MentorshipParticipantRoles";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
@@ -51,12 +52,11 @@ export const useMentorshipData = () => {
   const [roundStatus, setRoundStatus] = useState({
     regRoundId: null,
     feedbackRoundId: null,
-    isRegistrationOpen: false,
     isFeedbackEnabled: false,
-    matchResultRoundId: null,
     matchResultRoundName: "",
     canViewMatch: false,
   });
+  const [isRegistrationOpen, setIsRegistrationOpen] = useState(false);
   const [matchResult, setMatchResult] = useState(null);
   // Current user's registration data for the active round
   const [registration, setRegistration] = useState(null);
@@ -88,6 +88,17 @@ export const useMentorshipData = () => {
   const [isMeetingsLoading, setIsMeetingsLoading] = useState(false);
   // Cache for partners data per round, reset on page mount
   const partnersCacheRef = useRef({});
+  // Monotonic id per refreshMeetings call. A response only writes state when its
+  // id is still the latest, so a slow earlier round can't clobber a newer one
+  // (e.g. fast round switching).
+  const requestSeqRef = useRef(0);
+  // Guards against state updates after the component unmounts.
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   /**
    * refreshRegistration
@@ -122,6 +133,7 @@ export const useMentorshipData = () => {
   useEffect(() => {
     const fetchData = async () => {
       try {
+        const now = new Date().toISOString();
         const { data: rounds } = await getAllMentorshipRounds();
 
         const status = calculateMentorshipSlots(rounds);
@@ -134,6 +146,16 @@ export const useMentorshipData = () => {
             status.regRoundId,
           );
           setRegistration(regData);
+
+          const participantRole = regData?.roundPreferences?.participantRole;
+          const deadlineKey =
+            participantRole === MentorshipParticipantRoles.MENTOR
+              ? "mentorApplicationDeadlineAt"
+              : "menteeApplicationDeadlineAt";
+          const regRound = rounds.find(
+            (r) => r.id?.toString() === status.regRoundId?.toString(),
+          );
+          setIsRegistrationOpen(now < regRound?.timeline?.[deadlineKey]);
 
           if (regData && regData.isRegistered) {
             try {
@@ -195,7 +217,7 @@ export const useMentorshipData = () => {
    */
   const saveRegistration = async (data) => {
     // Only allow saving when registration is open and a valid round exists
-    if (!roundStatus.regRoundId || !roundStatus.isRegistrationOpen) return;
+    if (!roundStatus.regRoundId || !isRegistrationOpen) return;
     return postMyMentorshipRegistration(roundStatus.regRoundId, data);
   };
 
@@ -216,6 +238,7 @@ export const useMentorshipData = () => {
 
   const refreshMeetings = useCallback(async () => {
     if (!selectedRoundId) return;
+    const seq = ++requestSeqRef.current;
     setIsMeetingsLoading(true);
 
     try {
@@ -230,6 +253,10 @@ export const useMentorshipData = () => {
           ? Promise.resolve({ data: partnersCacheRef.current[selectedRoundId] })
           : getMyMentorshipPartners(selectedRoundId),
       ]);
+
+      // A newer round was selected while this request was in flight — drop the
+      // stale response so it can't overwrite the current round's data.
+      if (!isMountedRef.current || seq !== requestSeqRef.current) return;
 
       partnersCacheRef.current[selectedRoundId] ??= partnersInfo;
       setUserTimezone((prev) => prev ?? meetingLog?.userTimezone ?? null);
@@ -284,7 +311,10 @@ export const useMentorshipData = () => {
     } catch (MeetingErr) {
       console.error("Failed to fetch meeting log", MeetingErr);
     } finally {
-      setIsMeetingsLoading(false);
+      // Only the latest in-flight request controls the loading flag.
+      if (isMountedRef.current && seq === requestSeqRef.current) {
+        setIsMeetingsLoading(false);
+      }
     }
   }, [
     selectedRoundId,
@@ -307,6 +337,7 @@ export const useMentorshipData = () => {
 
   return {
     ...roundStatus,
+    isRegistrationOpen,
     // registration
     registration,
     saveRegistration,

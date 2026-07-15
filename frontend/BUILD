@@ -44,6 +44,7 @@ genrule(
       echo "VITE_API_BASE_URL=$${VITE_API_BASE_URL:-}" >> $@
       echo "VITE_AUTH0_CLIENT_ID=$${VITE_AUTH0_CLIENT_ID:-}" >> $@
       echo "VITE_LAUNCHDARKLY_CLIENT_ID=$${VITE_LAUNCHDARKLY_CLIENT_ID:-}" >> $@
+      echo "VITE_DEPLOY_ENV=$${VITE_DEPLOY_ENV:-}" >> $@
     """,
 )
 

@@ -4,7 +4,8 @@ from backend.dto.base_dto import BaseDto
 
 class TimelineDto(BaseDto):
     promotion_start_at: datetime | None = None
-    application_deadline_at: datetime | None = None
+    mentor_application_deadline_at: datetime | None = None
+    mentee_application_deadline_at: datetime | None = None
     review_start_at: datetime | None = None
     acceptance_notification_at: datetime | None = None
     matching_completed_at: datetime | None = None

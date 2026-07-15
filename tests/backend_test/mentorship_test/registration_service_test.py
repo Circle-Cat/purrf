@@ -1,4 +1,5 @@
 import unittest
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 from backend.mentorship.registration_service import RegistrationService
 from backend.dto.registration_create_dto import (
@@ -106,6 +107,19 @@ class TestRegistrationService(unittest.IsolatedAsyncioTestCase):
             spec=UserContextDto, roles=[UserRole.CONTACT_GOOGLE_CHAT]
         )
         self.mock_round_id = 1
+        self.mock_user_identity_service.get_user.return_value = (self.mock_user, False)
+        self.mock_participation_service.resolve_participant_role_with_fallback.return_value = ParticipantRole.MENTOR
+
+        self.fixed_now = datetime(2026, 4, 20, 0, 0, 0, tzinfo=timezone.utc)
+        self.datetime_patcher = patch(
+            "backend.mentorship.registration_service.datetime"
+        )
+        self.mock_dt = self.datetime_patcher.start()
+        self.mock_dt.now.return_value = self.fixed_now
+        self.mock_dt.fromisoformat.side_effect = datetime.fromisoformat
+
+    async def asyncTearDown(self):
+        self.datetime_patcher.stop()
 
     async def test_update_preferences_new_user(self):
         """Test: When the user does not have existing preferences, create a new entity."""
@@ -169,7 +183,6 @@ class TestRegistrationService(unittest.IsolatedAsyncioTestCase):
     async def test_get_registration_info(self):
         """Test: Get registration info, containing global and round preferences."""
         mock_entity = MagicMock(spec=PreferenceEntity)
-        self.mock_user_identity_service.get_user.return_value = (self.mock_user, False)
         self.mock_preference_repo.get_preferences_by_user_id.return_value = mock_entity
         self.mock_mapper.map_to_global_preferences_dto.return_value = (
             self.sample_registration_dto.global_preferences
@@ -236,12 +249,11 @@ class TestRegistrationService(unittest.IsolatedAsyncioTestCase):
     async def test_update_registration_info_success(self):
         """Test: Post registration info, containing updated global and round preferences."""
         mock_round = MagicMock()
-        mock_round.description = {"application_deadline_at": "2099-01-02T07:59:59Z"}
+        mock_round.description = {
+            "mentor_application_deadline_at": "2026-04-27T23:59:59Z"
+        }
         mock_round.name = "test round"
         self.mock_round_repo.get_by_round_id.return_value = mock_round
-
-        self.mock_user_identity_service.get_user.return_value = (self.mock_user, False)
-        self.mock_participation_service.resolve_participant_role_with_fallback.return_value = ParticipantRole.MENTOR
 
         self.mock_mapper.map_to_global_preferences_dto.return_value = (
             self.sample_registration_dto.global_preferences
@@ -294,12 +306,11 @@ class TestRegistrationService(unittest.IsolatedAsyncioTestCase):
     async def test_update_registration_info_training_already_completed(self):
         """Test: When the user already has a completed training, do not create a new one."""
         mock_round = MagicMock()
-        mock_round.description = {"application_deadline_at": "2099-01-02T07:59:59Z"}
+        mock_round.description = {
+            "mentor_application_deadline_at": "2026-04-27T23:59:59Z"
+        }
         mock_round.name = "test round"
         self.mock_round_repo.get_by_round_id.return_value = mock_round
-
-        self.mock_user_identity_service.get_user.return_value = (self.mock_user, False)
-        self.mock_participation_service.resolve_participant_role_with_fallback.return_value = ParticipantRole.MENTOR
 
         self.mock_mapper.map_to_global_preferences_dto.return_value = (
             self.sample_registration_dto.global_preferences
@@ -366,13 +377,40 @@ class TestRegistrationService(unittest.IsolatedAsyncioTestCase):
                 self.mock_session, self.user_context, 999, self.sample_dto
             )
 
-    async def test_update_registration_info_expired(self):
-        """Test: When the registration period has ended, stop registration."""
+    async def test_mentor_expired_blocks_registration(self):
+        """Test: Blocks mentor when mentor deadline has passed even if mentee deadline has not."""
+        self.mock_dt.now.return_value = datetime(
+            2026, 4, 28, 0, 0, 0, tzinfo=timezone.utc
+        )
         mock_round = MagicMock()
-        mock_round.description = {"application_deadline_at": "2024-01-02T07:59:59Z"}
+        mock_round.description = {
+            "mentor_application_deadline_at": "2026-04-27T23:59:59Z",
+            "mentee_application_deadline_at": "2026-05-01T23:59:59Z",
+        }
         self.mock_round_repo.get_by_round_id.return_value = mock_round
 
-        with self.assertRaisesRegex(ValueError, "has ended"):
+        with self.assertRaisesRegex(ValueError, "has ended at 2026-04-27"):
+            await self.service.update_registration_info(
+                self.mock_session,
+                self.user_context,
+                self.mock_round_id,
+                self.sample_dto,
+            )
+
+    async def test_mentee_expired_blocks_registration(self):
+        """Test: Blocks mentee when mentee deadline has passed even if mentor deadline has not."""
+        self.mock_dt.now.return_value = datetime(
+            2026, 4, 27, 0, 0, 0, tzinfo=timezone.utc
+        )
+        mock_round = MagicMock()
+        mock_round.description = {
+            "mentor_application_deadline_at": "2026-05-01T23:59:59Z",
+            "mentee_application_deadline_at": "2026-04-25T23:59:59Z",
+        }
+        self.mock_round_repo.get_by_round_id.return_value = mock_round
+        self.mock_participation_service.resolve_participant_role_with_fallback.return_value = ParticipantRole.MENTEE
+
+        with self.assertRaisesRegex(ValueError, "has ended at 2026-04-25"):
             await self.service.update_registration_info(
                 self.mock_session,
                 self.user_context,
@@ -383,11 +421,11 @@ class TestRegistrationService(unittest.IsolatedAsyncioTestCase):
     async def test_update_registration_info_role_override(self):
         """Test: Overrides user-provided role with fallback logic regardless of frontend input."""
         mock_round = MagicMock()
-        mock_round.description = {"application_deadline_at": "2099-01-02T07:59:59Z"}
+        mock_round.description = {
+            "mentee_application_deadline_at": "2026-04-25T23:59:59Z"
+        }
         mock_round.name = "test round"
         self.mock_round_repo.get_by_round_id.return_value = mock_round
-        self.mock_user_identity_service.get_user.return_value = (self.mock_user, False)
-
         self.mock_participation_service.resolve_participant_role_with_fallback.return_value = ParticipantRole.MENTEE
 
         self.mock_mapper.map_to_global_preferences_dto.return_value = (

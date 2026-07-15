@@ -191,6 +191,74 @@ describe("MeetingSubmissionModal", () => {
     });
   });
 
+  it("should reset form state when the modal is reopened", async () => {
+    const onOpenChange = vi.fn();
+    const props = {
+      onOpenChange,
+      roundId: "1",
+      userTimezone: "Asia/Shanghai",
+      onSuccess: vi.fn(),
+    };
+
+    const { rerender } = render(
+      <MeetingSubmissionModal open={true} {...props} />,
+    );
+
+    selectTimes("10:00", "11:00");
+    expect(screen.getByDisplayValue("10:00")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("11:00")).toBeInTheDocument();
+
+    // simulate closing and reopening the modal
+    rerender(<MeetingSubmissionModal open={false} {...props} />);
+    rerender(<MeetingSubmissionModal open={true} {...props} />);
+
+    expect(screen.queryByDisplayValue("10:00")).not.toBeInTheDocument();
+    expect(screen.queryByDisplayValue("11:00")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Submit" })).not.toBeDisabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Submit" }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("Please select both start time and end time."),
+      ).toBeInTheDocument();
+    });
+  });
+
+  it("should re-enable Submit button when modal is closed while submitting and reopened", async () => {
+    // Keep the promise pending to simulate a slow request
+    postMyMentorshipMeetingLog.mockImplementation(() => new Promise(() => {}));
+
+    const props = {
+      onOpenChange: vi.fn(),
+      roundId: "1",
+      userTimezone: "Asia/Shanghai",
+      onSuccess: vi.fn(),
+    };
+
+    const { rerender } = render(
+      <MeetingSubmissionModal open={true} {...props} />,
+    );
+
+    selectTimes("10:00", "11:00");
+    fireEvent.click(screen.getByRole("button", { name: "Submit" }));
+
+    // Wait for isSubmitting=true (button becomes disabled)
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Submit" })).toBeDisabled();
+    });
+
+    // User closes the modal while the request is still pending (e.g. Escape or clicking outside)
+    rerender(<MeetingSubmissionModal open={false} {...props} />);
+    // User reopens the modal
+    rerender(<MeetingSubmissionModal open={true} {...props} />);
+
+    // Submit button should be re-enabled and form fields cleared
+    expect(screen.getByRole("button", { name: "Submit" })).not.toBeDisabled();
+    expect(screen.queryByDisplayValue("10:00")).not.toBeInTheDocument();
+    expect(screen.queryByDisplayValue("11:00")).not.toBeInTheDocument();
+  });
+
   it("should clear start and end time when timezone changes", async () => {
     render(
       <MeetingSubmissionModal
