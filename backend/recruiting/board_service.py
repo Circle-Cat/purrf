@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.dto.application_dto import ApplicationDto
 from backend.dto.board_dto import (
     ApplicationActivityDto,
+    ApplicationAggregateDto,
     ApplicationDetailDto,
     BlacklistDto,
     BoardCardDto,
@@ -669,21 +670,22 @@ class BoardService:
         session: AsyncSession,
         current_user: UserContextDto,
         application_id: int,
-    ) -> list[OtherApplicationDto]:
-        """Return a candidate's other applications, for the cross-posting
-        aggregation view.
+    ) -> ApplicationAggregateDto:
+        """Return a candidate's other applications, split into cross-job and
+        same-job history, for the aggregation view on the shared
+        application detail page.
 
         Reaching ``application_id``'s own detail page already required
         passing the same check this reuses
         (``_load_owned_application(allow_assignee=True, allow_read_all=True)``);
-        once that passes, every application to OTHER jobs belonging to the
-        same candidate is returned in full — submission snapshot and every
+        once that passes, every OTHER application belonging to the same
+        candidate is returned in full — submission snapshot and every
         evaluation row — regardless of the caller's relationship to those
-        other jobs specifically. Same-job prior attempts are the detail
-        page's history, not this panel, so they're excluded even though
-        the underlying query returns every attempt the candidate has ever
-        made. There is deliberately no second, per-other-application
-        visibility check.
+        other jobs specifically. There is deliberately no second,
+        per-other-application visibility check. Applications to other jobs
+        go in ``other_jobs``; prior attempts on the SAME job (the detail
+        page's own history) go in ``previous_same_job``, newest first. The
+        currently-viewed application itself appears in neither list.
 
         Args:
             session (AsyncSession): Active database async session.
@@ -693,10 +695,11 @@ class BoardService:
                 to list.
 
         Returns:
-            list[OtherApplicationDto]: One entry per other application by
-                the same candidate, each with its job title, full
-                application snapshot, résumé availability, and every
-                evaluation row submitted for it.
+            ApplicationAggregateDto: ``other_jobs`` (cross-job applications)
+                and ``previous_same_job`` (same-job prior attempts, newest
+                first), each entry carrying its job title, full application
+                snapshot, résumé availability, and every evaluation row
+                submitted for it.
 
         Raises:
             ValueError: If ``application_id`` is missing, or the caller is
@@ -713,41 +716,50 @@ class BoardService:
         rows = await self.application_repository.list_by_user(
             session, application.user_id
         )
-        result = []
-        for other_application, other_job in rows:
-            if other_application.job_id == application.job_id:
-                continue
+
+        async def _entry(other_application, other_job) -> OtherApplicationDto:
             current_sub = await self.application_submission_repository.get_current(
                 session, other_application.application_id
             )
             evaluation_rows = await self.evaluation_repository.list_by_application(
                 session, other_application.application_id
             )
-            result.append(
-                OtherApplicationDto(
-                    application=self.recruiting_mapper.to_application_dto(
-                        other_application, current_sub
-                    ),
-                    job_title=other_job.title,
-                    resume_available=bool(
-                        current_sub is not None and current_sub.resume_object_key
-                    ),
-                    evaluations=[
-                        EvaluationDto(
-                            id=row.evaluation_id,
-                            application_id=row.application_id,
-                            stage=row.stage,
-                            round=row.round,
-                            evaluator_id=row.evaluator_id,
-                            responses=row.responses,
-                            is_confirmed=row.is_confirmed,
-                            confirmed_at=row.confirmed_at,
-                        )
-                        for row in evaluation_rows
-                    ],
-                )
+            return OtherApplicationDto(
+                application=self.recruiting_mapper.to_application_dto(
+                    other_application, current_sub
+                ),
+                job_title=other_job.title,
+                resume_available=bool(
+                    current_sub is not None and current_sub.resume_object_key
+                ),
+                evaluations=[
+                    EvaluationDto(
+                        id=row.evaluation_id,
+                        application_id=row.application_id,
+                        stage=row.stage,
+                        round=row.round,
+                        evaluator_id=row.evaluator_id,
+                        responses=row.responses,
+                        is_confirmed=row.is_confirmed,
+                        confirmed_at=row.confirmed_at,
+                    )
+                    for row in evaluation_rows
+                ],
             )
-        return result
+
+        other_jobs: list[OtherApplicationDto] = []
+        previous_same_job: list[OtherApplicationDto] = []
+        for other_application, other_job in rows:
+            if other_application.application_id == application_id:
+                continue
+            if other_application.job_id == application.job_id:
+                previous_same_job.append(await _entry(other_application, other_job))
+            else:
+                other_jobs.append(await _entry(other_application, other_job))
+        previous_same_job.sort(key=lambda o: o.application.id, reverse=True)
+        return ApplicationAggregateDto(
+            other_jobs=other_jobs, previous_same_job=previous_same_job
+        )
 
     async def _freeze_current_submission(
         self, session: AsyncSession, application_id: int
