@@ -334,7 +334,9 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         app.application_id = 100
         self.app_repo.get_latest_by_job_and_user = AsyncMock(return_value=app)
         await self.service.get_mine(self.session, self._ctx(), 1)
-        self.app_repo.get_latest_by_job_and_user.assert_awaited_once_with(self.session, 1, 2)
+        self.app_repo.get_latest_by_job_and_user.assert_awaited_once_with(
+            self.session, 1, 2
+        )
 
     async def test_edit_blocked_when_stage_advanced(self):
         app = ApplicationEntity(
@@ -501,7 +503,9 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             job_id=1, user_id=2, stage=ApplicationStage.REJECTED, current_round=1
         )
         rejected_application.application_id = 55
-        rejected_application.created_datetime = datetime(2026, 1, 10, tzinfo=timezone.utc)
+        rejected_application.created_datetime = datetime(
+            2026, 1, 10, tzinfo=timezone.utc
+        )
         self.app_repo.get_latest_by_job_and_user = AsyncMock(
             return_value=rejected_application
         )
@@ -529,7 +533,9 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             job_id=1, user_id=2, stage=ApplicationStage.REJECTED, current_round=1
         )
         rejected_application.application_id = 55
-        rejected_application.created_datetime = datetime(2026, 1, 10, tzinfo=timezone.utc)
+        rejected_application.created_datetime = datetime(
+            2026, 1, 10, tzinfo=timezone.utc
+        )
         self.app_repo.get_latest_by_job_and_user = AsyncMock(
             return_value=rejected_application
         )
@@ -554,7 +560,9 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             job_id=1, user_id=2, stage=ApplicationStage.REJECTED, current_round=1
         )
         rejected_application.application_id = 55
-        rejected_application.created_datetime = datetime(2026, 1, 10, tzinfo=timezone.utc)
+        rejected_application.created_datetime = datetime(
+            2026, 1, 10, tzinfo=timezone.utc
+        )
         self.app_repo.get_latest_by_job_and_user = AsyncMock(
             return_value=rejected_application
         )
@@ -579,7 +587,9 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             job_id=1, user_id=2, stage=ApplicationStage.REJECTED, current_round=1
         )
         rejected_application.application_id = 55
-        rejected_application.created_datetime = datetime(2026, 1, 10, tzinfo=timezone.utc)
+        rejected_application.created_datetime = datetime(
+            2026, 1, 10, tzinfo=timezone.utc
+        )
         rejected_application.tags = {"auto_reject": "screen_rule", "rule_id": "r1"}
         self.app_repo.get_latest_by_job_and_user = AsyncMock(
             return_value=rejected_application
@@ -625,7 +635,9 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             job_id=1, user_id=2, stage=ApplicationStage.REJECTED, current_round=1
         )
         rejected_application.application_id = 55
-        rejected_application.created_datetime = datetime(2026, 1, 10, tzinfo=timezone.utc)
+        rejected_application.created_datetime = datetime(
+            2026, 1, 10, tzinfo=timezone.utc
+        )
         self.app_repo.get_latest_by_job_and_user = AsyncMock(
             return_value=rejected_application
         )
@@ -660,7 +672,9 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             job_id=1, user_id=2, stage=ApplicationStage.REJECTED, current_round=1
         )
         rejected_application.application_id = 55
-        rejected_application.created_datetime = datetime(2026, 1, 10, tzinfo=timezone.utc)
+        rejected_application.created_datetime = datetime(
+            2026, 1, 10, tzinfo=timezone.utc
+        )
         self.app_repo.get_latest_by_job_and_user = AsyncMock(
             return_value=rejected_application
         )
@@ -683,9 +697,13 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             job_id=1, user_id=2, stage=ApplicationStage.REJECTED, current_round=1
         )
         rejected_application.application_id = 55
-        rejected_application.created_datetime = datetime(2026, 1, 10, tzinfo=timezone.utc)
+        rejected_application.created_datetime = datetime(
+            2026, 1, 10, tzinfo=timezone.utc
+        )
         # Rejection actually happened later than the prior submission.
-        rejected_application.updated_timestamp = datetime(2026, 3, 1, tzinfo=timezone.utc)
+        rejected_application.updated_timestamp = datetime(
+            2026, 3, 1, tzinfo=timezone.utc
+        )
         self.app_repo.get_latest_by_job_and_user = AsyncMock(
             return_value=rejected_application
         )
