@@ -642,9 +642,7 @@ class BoardService:
                 raw_id = details.get(raw_field)
                 if raw_id is not None:
                     details[name_field] = names_by_id.get(raw_id, f"User {raw_id}")
-            for id_field, label_field in _SCREEN_RULE_ID_FIELDS.get(
-                row.event_type, ()
-            ):
+            for id_field, label_field in _SCREEN_RULE_ID_FIELDS.get(row.event_type, ()):
                 rule_id = details.get(id_field)
                 if rule_id is None:
                     continue
