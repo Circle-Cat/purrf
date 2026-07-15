@@ -60,8 +60,10 @@ class ActivityApplicationGateBackfillService:
             if existing_hired:
                 continue
 
-            existing_application = await self.application_repo.get_by_job_and_user(
-                session=session, job_id=job.job_id, user_id=user_id
+            existing_application = (
+                await self.application_repo.get_latest_by_job_and_user(
+                    session=session, job_id=job.job_id, user_id=user_id
+                )
             )
             if existing_application:
                 existing_application.stage = ApplicationStage.HIRED

@@ -253,7 +253,7 @@ class ApplicationService:
         screen_action = screen_result["action"]
         screen_rule_id = screen_result["rule_id"]
 
-        existing = await self.application_repository.get_by_job_and_user(
+        existing = await self.application_repository.get_latest_by_job_and_user(
             session, dto.job_id, current_user.user_id
         )
 
@@ -515,7 +515,7 @@ class ApplicationService:
         Returns:
             ApplicationDto | None: The caller's application, or None if absent.
         """
-        application = await self.application_repository.get_by_job_and_user(
+        application = await self.application_repository.get_latest_by_job_and_user(
             session, job_id, current_user.user_id
         )
         if application is None:

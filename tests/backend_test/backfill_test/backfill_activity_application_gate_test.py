@@ -14,7 +14,7 @@ class TestActivityApplicationGateBackfillService(unittest.IsolatedAsyncioTestCas
     async def asyncSetUp(self):
         self.mock_application_repo = MagicMock()
         self.mock_application_repo.get_hired_activity_application = AsyncMock()
-        self.mock_application_repo.get_by_job_and_user = AsyncMock()
+        self.mock_application_repo.get_latest_by_job_and_user = AsyncMock()
         self.mock_application_repo.create = AsyncMock()
         self.mock_application_repo.update = AsyncMock()
 
@@ -61,7 +61,7 @@ class TestActivityApplicationGateBackfillService(unittest.IsolatedAsyncioTestCas
             (101, ParticipantRole.MENTEE)
         ]
         self.mock_application_repo.get_hired_activity_application.return_value = None
-        self.mock_application_repo.get_by_job_and_user.return_value = None
+        self.mock_application_repo.get_latest_by_job_and_user.return_value = None
 
         await self.service.backfill(self.mock_session)
 
@@ -82,7 +82,7 @@ class TestActivityApplicationGateBackfillService(unittest.IsolatedAsyncioTestCas
             user_id=101,
             stage=ApplicationStage.REJECTED,
         )
-        self.mock_application_repo.get_by_job_and_user.return_value = existing
+        self.mock_application_repo.get_latest_by_job_and_user.return_value = existing
 
         await self.service.backfill(self.mock_session)
 

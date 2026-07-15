@@ -27,7 +27,7 @@ from backend.repository.notification_repository import NotificationRepository
 class TestApplicationService(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.app_repo = MagicMock()
-        self.app_repo.get_by_job_and_user = AsyncMock(return_value=None)
+        self.app_repo.get_latest_by_job_and_user = AsyncMock(return_value=None)
         self.app_repo.get_by_id = AsyncMock(return_value=None)
         self.app_repo.create = AsyncMock(side_effect=self._create_side_effect)
         self.app_repo.update = AsyncMock(side_effect=lambda s, e: e)
@@ -206,7 +206,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         app.application_id = 100
         app.created_datetime = datetime.now(timezone.utc)
         app.updated_timestamp = datetime.now(timezone.utc)
-        self.app_repo.get_by_job_and_user = AsyncMock(return_value=app)
+        self.app_repo.get_latest_by_job_and_user = AsyncMock(return_value=app)
         current = ApplicationSubmissionEntity(
             application_id=100, version=1, submission={"personal": {}}
         )
@@ -264,7 +264,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             current_round=1,
         )
         app.application_id = 100
-        self.app_repo.get_by_job_and_user = AsyncMock(return_value=app)
+        self.app_repo.get_latest_by_job_and_user = AsyncMock(return_value=app)
         dto = ApplicationSubmitDto.model_validate({"jobId": 1})
         result = await self.service.submit(self.session, self._ctx(), dto)
         self.assertEqual(result.stage, ApplicationStage.REJECTED)
@@ -329,9 +329,9 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             current_round=1,
         )
         app.application_id = 100
-        self.app_repo.get_by_job_and_user = AsyncMock(return_value=app)
+        self.app_repo.get_latest_by_job_and_user = AsyncMock(return_value=app)
         await self.service.get_mine(self.session, self._ctx(), 1)
-        self.app_repo.get_by_job_and_user.assert_awaited_once_with(self.session, 1, 2)
+        self.app_repo.get_latest_by_job_and_user.assert_awaited_once_with(self.session, 1, 2)
 
     async def test_edit_blocked_when_stage_advanced(self):
         app = ApplicationEntity(
@@ -393,7 +393,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             current_round=1,
         )
         app.application_id = 100
-        self.app_repo.get_by_job_and_user = AsyncMock(return_value=app)
+        self.app_repo.get_latest_by_job_and_user = AsyncMock(return_value=app)
         current = ApplicationSubmissionEntity(
             application_id=100, version=1, submission={"personal": {}}
         )
@@ -411,7 +411,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             current_round=1,
         )
         app.application_id = 100
-        self.app_repo.get_by_job_and_user = AsyncMock(return_value=app)
+        self.app_repo.get_latest_by_job_and_user = AsyncMock(return_value=app)
         current = ApplicationSubmissionEntity(
             application_id=100, version=1, submission={"personal": {}}
         )
@@ -496,7 +496,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         )
         app.application_id = 100
         app.created_datetime = datetime(2026, 1, 10, tzinfo=timezone.utc)
-        self.app_repo.get_by_job_and_user = AsyncMock(return_value=app)
+        self.app_repo.get_latest_by_job_and_user = AsyncMock(return_value=app)
         prior = ApplicationSubmissionEntity(
             application_id=100, version=1, submission={"v": 1}
         )
@@ -533,7 +533,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         )
         app.application_id = 100
         app.created_datetime = datetime(2026, 1, 10, tzinfo=timezone.utc)
-        self.app_repo.get_by_job_and_user = AsyncMock(return_value=app)
+        self.app_repo.get_latest_by_job_and_user = AsyncMock(return_value=app)
         prior = ApplicationSubmissionEntity(
             application_id=100, version=1, submission={"v": 1}
         )
@@ -561,7 +561,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         app.created_datetime = datetime(2026, 1, 10, tzinfo=timezone.utc)
         # Rejection actually happened later than the prior submission.
         app.updated_timestamp = datetime(2026, 3, 1, tzinfo=timezone.utc)
-        self.app_repo.get_by_job_and_user = AsyncMock(return_value=app)
+        self.app_repo.get_latest_by_job_and_user = AsyncMock(return_value=app)
 
         prior = ApplicationSubmissionEntity(
             application_id=100, version=1, submission={"v": 1}
@@ -823,7 +823,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         )
         app.application_id = 100
         app.created_datetime = datetime(2026, 1, 10, tzinfo=timezone.utc)
-        self.app_repo.get_by_job_and_user = AsyncMock(return_value=app)
+        self.app_repo.get_latest_by_job_and_user = AsyncMock(return_value=app)
         prior = ApplicationSubmissionEntity(
             application_id=100, version=1, submission={"v": 1}
         )
@@ -864,7 +864,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         )
         app.application_id = 100
         app.created_datetime = datetime(2026, 1, 10, tzinfo=timezone.utc)
-        self.app_repo.get_by_job_and_user = AsyncMock(return_value=app)
+        self.app_repo.get_latest_by_job_and_user = AsyncMock(return_value=app)
         prior = ApplicationSubmissionEntity(
             application_id=100, version=1, submission={"v": 1}
         )
@@ -885,7 +885,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         )
         app.application_id = 100
         app.created_datetime = datetime(2026, 1, 10, tzinfo=timezone.utc)
-        self.app_repo.get_by_job_and_user = AsyncMock(return_value=app)
+        self.app_repo.get_latest_by_job_and_user = AsyncMock(return_value=app)
         prior = ApplicationSubmissionEntity(
             application_id=100, version=1, submission={}
         )
