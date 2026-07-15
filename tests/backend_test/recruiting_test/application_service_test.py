@@ -431,6 +431,48 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
                 ApplicationSubmitDto.model_validate({"jobId": 1}),
             )
 
+    async def test_submit_drops_resume_when_posting_collects_none(self):
+        job = self._job(status=JobStatus.PUBLISHED)
+        job.profile_config = {"resume": "off"}
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "resumeObjectKey": "resumes/abc.pdf",
+            "resumeSha256": "abc",
+        })
+        await self.service.submit(self.session, self._ctx(), dto)
+        created_sub = self.sub_repo.create.call_args.args[1]
+        self.assertIsNone(created_sub.resume_object_key)
+        self.assertIsNone(created_sub.resume_sha256)
+
+    async def test_edit_drops_resume_when_posting_collects_none(self):
+        job = self._job(status=JobStatus.PUBLISHED)
+        job.profile_config = {"resume": "off"}
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        app = ApplicationEntity(
+            job_id=1,
+            user_id=2,
+            stage=ApplicationStage.RECRUITER_SCREENING,
+            sub_status="pending",
+            current_round=1,
+        )
+        app.application_id = 100
+        self.app_repo.get_by_id = AsyncMock(return_value=app)
+        current = ApplicationSubmissionEntity(
+            application_id=100, version=1, submission={"personal": {}}
+        )
+        current.submission_id = 5
+        current.is_frozen = False
+        self.sub_repo.get_current = AsyncMock(return_value=current)
+        dto = ApplicationEditDto.model_validate({
+            "resumeObjectKey": "resumes/abc.pdf",
+            "resumeSha256": "abc",
+        })
+        await self.service.edit(self.session, self._ctx(), 100, dto)
+        written_sub = self.sub_repo.update.call_args.args[1]
+        self.assertIsNone(written_sub.resume_object_key)
+        self.assertIsNone(written_sub.resume_sha256)
+
     async def test_submit_requires_answers_to_required_questions(self):
         job = self._job(status=JobStatus.PUBLISHED)
         job.form_schema = {

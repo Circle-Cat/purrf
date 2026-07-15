@@ -116,6 +116,23 @@ class ApplicationService:
                 raise ValueError(f"question {question['id']} is required")
 
     @staticmethod
+    def _strip_uncollected_resume(job, dto) -> None:
+        """Drop resume keys when the posting doesn't collect a resume.
+
+        A ``profile_config.resume == "off"`` posting treats an upload as
+        prefill-only (the parser autofills the form client-side); the file
+        reference must never be persisted onto the submission. Enforced
+        server-side too so a direct API call can't attach one.
+
+        Args:
+            job (JobEntity): The posting the submission is for.
+            dto (ApplicationSubmitDto | ApplicationEditDto): Mutated in place.
+        """
+        if (job.profile_config or {}).get("resume") == "off":
+            dto.resume_object_key = None
+            dto.resume_sha256 = None
+
+    @staticmethod
     def _screened_stage(job, blocked, screen_action):
         """The stage a submission lands on.
 
@@ -218,6 +235,7 @@ class ApplicationService:
         if job is None or job.status != JobStatus.PUBLISHED:
             raise ValueError(f"Published job {dto.job_id} not found")
         self._validate_submission(job, dto)
+        self._strip_uncollected_resume(job, dto)
 
         user = await self.users_repository.get_user_by_user_id(
             session, current_user.user_id
@@ -471,6 +489,7 @@ class ApplicationService:
         if not self._is_editable(application, job, current_sub):
             raise ValueError("application is locked once processing has started")
         self._validate_submission(job, dto)
+        self._strip_uncollected_resume(job, dto)
         version = current_sub.version if current_sub is not None else 1
         current_sub = await self._write_version(
             session, application_id, version, current_sub, dto
