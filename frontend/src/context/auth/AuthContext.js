@@ -15,6 +15,7 @@ export const AuthContext = createContext(null);
  *   user: { sub: string, userId: number, email: string, identityType: string } | null,
  *   isSuperAdmin: boolean,
  *   hasVerifiedEmail: boolean,
+ *   needsLink: boolean,
  *   accessDenied: boolean,
  *   accessDeniedMessage: string,
  *   authError: boolean,

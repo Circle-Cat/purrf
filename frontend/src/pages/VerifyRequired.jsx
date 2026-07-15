@@ -19,9 +19,15 @@ import {
  * verify one here before reaching any other page. Reachable only via the
  * HardWallGate; offers a logout escape hatch so a user with an unreachable
  * address is never trapped.
+ *
+ * Needs-link variant: when the sign-in's email already belongs to an existing
+ * account (`needsLink`), the same OTP proves the mailbox and links this
+ * sign-in method into that account instead — the address is locked to the
+ * sign-in's own email, since verifying any other address cannot resolve the
+ * collision.
  */
 const VerifyRequired = () => {
-  const { user, refreshAuth } = useAuth();
+  const { user, needsLink, refreshAuth } = useAuth();
   const navigate = useNavigate();
 
   const handleVerified = async () => {
@@ -33,10 +39,17 @@ const VerifyRequired = () => {
     <div className="flex min-h-[70vh] items-center justify-center p-6">
       <Card className="w-full max-w-md">
         <CardHeader>
-          <CardTitle>Verify your email to continue</CardTitle>
+          <CardTitle>
+            {needsLink
+              ? "Link this sign-in to your account"
+              : "Verify your email to continue"}
+          </CardTitle>
           <CardDescription>
-            We need a confirmed contact email to deliver application updates and
-            round notifications.
+            {needsLink
+              ? "An account already exists for this email. Verify it once and " +
+                "this sign-in method will be linked to that account."
+              : "We need a confirmed contact email to deliver application " +
+                "updates and round notifications."}
           </CardDescription>
         </CardHeader>
 
@@ -45,6 +58,7 @@ const VerifyRequired = () => {
             initialEmail={user?.email || ""}
             onVerified={handleVerified}
             idPrefix="verify"
+            lockEmail={needsLink}
           />
         </CardContent>
 

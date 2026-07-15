@@ -125,6 +125,44 @@ class TestUserEmailsRepository(BaseRepositoryTestLib):
         self.assertEqual(fetched.email_id, email_row.email_id)
         self.assertEqual(fetched.email, "alice@example.com")
 
+    async def test_get_confirmed_by_email_returns_confirmed_row(self):
+        row = UserEmailsEntity(
+            user_id=self.user.user_id,
+            email="owned@example.com",
+            otp_confirmed=True,
+            is_primary=True,
+        )
+        await self.repo.upsert_email(self.session, row)
+
+        found = await self.repo.get_confirmed_by_email(
+            self.session, "owned@example.com"
+        )
+
+        self.assertIsNotNone(found)
+        self.assertEqual(found.user_id, self.user.user_id)
+        self.assertTrue(found.otp_confirmed)
+
+    async def test_get_confirmed_by_email_ignores_unconfirmed(self):
+        row = UserEmailsEntity(
+            user_id=self.user.user_id,
+            email="unconfirmed@example.com",
+            otp_confirmed=False,
+            is_primary=False,
+        )
+        await self.repo.upsert_email(self.session, row)
+
+        found = await self.repo.get_confirmed_by_email(
+            self.session, "unconfirmed@example.com"
+        )
+
+        self.assertIsNone(found)
+
+    async def test_get_confirmed_by_email_unknown_returns_none(self):
+        found = await self.repo.get_confirmed_by_email(
+            self.session, "nobody@example.com"
+        )
+        self.assertIsNone(found)
+
     async def test_get_by_id_missing_returns_none(self):
         fetched = await self.repo.get_by_id(self.session, 99999999)
         self.assertIsNone(fetched)

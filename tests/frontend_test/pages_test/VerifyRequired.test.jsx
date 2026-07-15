@@ -21,11 +21,12 @@ vi.mock("@/utils/auth", () => ({
 // Surface the props the page wires into the shared form, plus a trigger to
 // drive onVerified without exercising the OTP flow itself.
 vi.mock("@/components/common/OtpVerifyForm", () => ({
-  default: ({ initialEmail, idPrefix, onVerified }) => (
+  default: ({ initialEmail, idPrefix, onVerified, lockEmail }) => (
     <div
       data-testid="otp-form"
       data-initial-email={initialEmail}
       data-idprefix={idPrefix}
+      data-lock-email={String(Boolean(lockEmail))}
     >
       <button onClick={() => onVerified({ ok: true })}>
         simulate verified
@@ -67,6 +68,31 @@ describe("VerifyRequired", () => {
     expect(
       screen.getByText(/We need a confirmed contact email/),
     ).toBeInTheDocument();
+    expect(screen.getByTestId("otp-form")).toHaveAttribute(
+      "data-lock-email",
+      "false",
+    );
+  });
+
+  it("renders the needs-link variant with a locked email", () => {
+    useAuth.mockReturnValue({
+      user: { email: "alice@gmail.com" },
+      needsLink: true,
+      refreshAuth: vi.fn().mockResolvedValue(),
+    });
+
+    renderWall();
+
+    expect(
+      screen.getByText("Link this sign-in to your account"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/An account already exists for this email/),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("otp-form")).toHaveAttribute(
+      "data-lock-email",
+      "true",
+    );
   });
 
   it("prefills the form with the user's email and the verify id prefix", () => {

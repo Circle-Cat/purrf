@@ -34,6 +34,7 @@ def make_user_context(
         last_login_at=last_login_at,
         user_id=None,
         permissions=frozenset(),
+        needs_link=False,
     )
 
 
@@ -85,6 +86,9 @@ class TestAuthMiddleware(unittest.TestCase):
         self.mock_user_identity_service.create_or_swap_user = AsyncMock(
             return_value=None
         )
+        # Default: the colliding email has no owner, so a non-race
+        # IntegrityError re-raises (the pre-needs-link behavior).
+        self.mock_user_identity_service.email_has_owner = AsyncMock(return_value=False)
         self.mock_user_permissions_repository = MagicMock()
         self.mock_user_permissions_repository.get_active_permission_names = AsyncMock(
             return_value=[]
@@ -242,6 +246,35 @@ class TestAuthMiddleware(unittest.TestCase):
 
         with self.assertRaises(IntegrityError):
             asyncio.run(middleware._bootstrap_user(user_context))
+
+    def test_integrity_error_owned_email_marks_needs_link(self):
+        """
+        A non-race IntegrityError whose email IS owned by an existing account
+        (a second sign-in method colliding, PUR-480): no user is created, the
+        request proceeds with user_id=None, needs_link=True and an empty
+        permission set instead of surfacing a 500.
+        """
+        user_context = make_user_context(last_login_at=1700000000)
+        self.mock_auth_service.authenticate_request.return_value = user_context
+        # Both finds miss; the insert's violation is the owned-email collision.
+        self.mock_user_identity_service.find_user_by_sub.side_effect = [None, None]
+        self.mock_user_identity_service.create_or_swap_user.side_effect = (
+            IntegrityError("stmt", "params", Exception("uq_users_primary_email"))
+        )
+        self.mock_user_identity_service.email_has_owner.return_value = True
+
+        client = self._add_middleware()
+        response = client.get(
+            "/protected", headers={"Authorization": "Bearer valid_token"}
+        )
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.assertIsNone(response.json()["user_id"])
+        self.assertTrue(user_context.needs_link)
+        self.assertEqual(user_context.permissions, frozenset())
+        self.mock_user_identity_service.email_has_owner.assert_awaited_once_with(
+            self.mock_session, "test@example.com"
+        )
 
     def test_cron_runner_skips_bootstrap(self):
         """

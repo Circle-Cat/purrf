@@ -243,6 +243,8 @@ class EmailManagementController:
                 current_user_id=current_user.user_id,
                 current_sub=current_user.sub,
                 email=body.email,
+                needs_link=current_user.needs_link,
+                claim_email=current_user.primary_email,
             )
         return api_response(message="OTP sent", data=data)
 
@@ -266,5 +268,7 @@ class EmailManagementController:
                 current_sub=current_user.sub,
                 state=body.state,
                 otp=body.otp,
+                needs_link=current_user.needs_link,
+                caller_identity_type=current_user.identity_type,
             )
         return api_response(message="Email verified and linked", data=data)
