@@ -32,7 +32,17 @@ export const POSTINGS_GUIDE = {
     {
       title: "Revise a published posting",
       detail:
-        "Editing a live posting parks it in published pending revision — resubmit the change for review.",
+        "Editing a live posting stages the change without touching what's live — the posting stays Published, and you can keep re-editing the staged draft as many times as you like before you're ready.",
+    },
+    {
+      title: "Submit or discard the staged edit",
+      detail:
+        "Submit it for review (same reviewer picker as a new posting) or use Discard draft to drop it and leave the live posting untouched. Once submitted, the Operate actions disappear until the reviewer decides.",
+    },
+    {
+      title: "If a revision is rejected",
+      detail:
+        "The staged edit is kept, not discarded — the posting stays published and you can resubmit the same change or discard it from there.",
     },
     {
       title: "Close or reopen",
@@ -108,7 +118,7 @@ export const POSTING_EDITOR_GUIDE = {
     {
       title: "Save",
       detail:
-        "Saving never publishes by itself — it creates or updates a draft (or stages an edit to a live posting). Submit it for review separately from the Postings page when it's ready.",
+        "Saving never publishes by itself — it creates or updates a draft (or stages an edit to a live posting). Submit it for review separately from the posting's detail page when it's ready.",
     },
   ],
   statusesTitle: "Key concepts",
@@ -162,7 +172,7 @@ export const REVIEWS_GUIDE = {
     {
       title: "Reject",
       detail:
-        "Rejecting sends the posting back to its author. A comment is required.",
+        "Always requires a comment. An Initial Request sends the posting back to Draft; a Revision Request leaves it published with the staged edit kept, not discarded, so the author can resubmit or discard it; Close and Reopen Requests just abort, leaving the posting exactly as it was.",
     },
   ],
   statuses: [
