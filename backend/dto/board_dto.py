@@ -104,6 +104,17 @@ class OtherApplicationDto(BaseDto):
     evaluations: list[EvaluationDto]
 
 
+class ApplicationAggregateDto(BaseDto):
+    """Candidate-wide aggregation for the application detail page: the
+    candidate's applications to OTHER jobs, plus their PRIOR attempts on the
+    same job (newest first) — the currently-viewed application appears in
+    neither list. Same entry shape and visibility rule for both lists (see
+    BoardService.get_other_applications)."""
+
+    other_jobs: list[OtherApplicationDto]
+    previous_same_job: list[OtherApplicationDto]
+
+
 class ApplicationActivityDto(BaseDto):
     """One entry in an application's owner-facing audit timeline, newest first.
 

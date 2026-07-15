@@ -554,21 +554,30 @@ const CommentsPanel = ({ comments, onPost, posting, mentionableUsers }) => {
  * viewer may have no standing on that specific other application's own
  * detail route, only on the one they're currently viewing).
  *
- * @param {{otherApplications: {application: object, jobTitle: string,
- *          resumeAvailable: boolean, evaluations: object[]}[],
+ * Generalized to render either the cross-job "Other applications" list or
+ * the same-posting "Previous applications for this posting" history via the
+ * `title`/`labelFor` props, so the two sections share one implementation
+ * while keeping independent expand state (see the two call sites below).
+ *
+ * @param {{title: string, otherApplications: {application: object,
+ *          jobTitle: string, resumeAvailable: boolean,
+ *          evaluations: object[]}[],
  *          interviewPool: {userId: number, name: string}[],
- *          expandedId: number|null, onToggle: (id: number) => void}} props
+ *          expandedId: number|null, onToggle: (id: number) => void,
+ *          labelFor: (other: object) => string}} props
  */
 const OtherApplicationsSection = ({
+  title,
   otherApplications,
   interviewPool,
   expandedId,
   onToggle,
+  labelFor,
 }) => {
   if (otherApplications.length === 0) return null;
   return (
     <div className="space-y-2">
-      <h2 className="text-sm font-medium text-slate-700">Other applications</h2>
+      <h2 className="text-sm font-medium text-slate-700">{title}</h2>
       <ul className="space-y-2">
         {otherApplications.map((other) => {
           const isExpanded = other.application.id === expandedId;
@@ -580,9 +589,7 @@ const OtherApplicationsSection = ({
                 className="flex w-full items-center justify-between text-left text-sm"
                 onClick={() => onToggle(other.application.id)}
               >
-                <span>
-                  {other.jobTitle} — {humanize(other.application.stage)}
-                </span>
+                <span>{labelFor(other)}</span>
                 <span className="text-slate-500">
                   {isExpanded ? "Hide" : "View"}
                 </span>
@@ -678,6 +685,8 @@ const ApplicationDetailPage = () => {
   const [otherApplications, setOtherApplications] = useState([]);
   const [expandedOtherApplicationId, setExpandedOtherApplicationId] =
     useState(null);
+  const [previousApplications, setPreviousApplications] = useState([]);
+  const [expandedPreviousId, setExpandedPreviousId] = useState(null);
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState(false);
 
@@ -730,7 +739,7 @@ const ApplicationDetailPage = () => {
             { data: jobData },
             { data: pool },
             { data: activityRows },
-            { data: otherApps },
+            otherApplicationsRes,
           ] = await Promise.all([
             getJob(detailData.application.jobId),
             listInterviewPool(),
@@ -740,7 +749,9 @@ const ApplicationDetailPage = () => {
           setJob(jobData);
           setInterviewPool(pool ?? []);
           setActivity(activityRows ?? []);
-          setOtherApplications(otherApps ?? []);
+          const aggregate = otherApplicationsRes?.data ?? {};
+          setOtherApplications(aggregate.otherJobs ?? []);
+          setPreviousApplications(aggregate.previousSameJob ?? []);
         }
         // Comments (and who can be @-mentioned in them) are readable by
         // the owner AND the current-stage assignee (unlike job/pool/
@@ -1207,6 +1218,26 @@ const ApplicationDetailPage = () => {
               </Tabs>
 
               <OtherApplicationsSection
+                title="Previous applications for this posting"
+                otherApplications={previousApplications}
+                interviewPool={interviewPool}
+                expandedId={expandedPreviousId}
+                onToggle={(id) =>
+                  setExpandedPreviousId((cur) => (cur === id ? null : id))
+                }
+                labelFor={(other) =>
+                  `Applied ${
+                    other.application.current?.submittedAt
+                      ? new Date(
+                          other.application.current.submittedAt,
+                        ).toLocaleDateString()
+                      : "earlier"
+                  } — ${humanize(other.application.stage)}`
+                }
+              />
+
+              <OtherApplicationsSection
+                title="Other applications"
                 otherApplications={otherApplications}
                 interviewPool={interviewPool}
                 expandedId={expandedOtherApplicationId}
@@ -1214,6 +1245,9 @@ const ApplicationDetailPage = () => {
                   setExpandedOtherApplicationId((prev) =>
                     prev === id ? null : id,
                   )
+                }
+                labelFor={(other) =>
+                  `${other.jobTitle} — ${humanize(other.application.stage)}`
                 }
               />
             </div>
