@@ -54,6 +54,46 @@ _ASSIGNEE_NAME_FIELDS: dict[str, tuple[tuple[str, str], ...]] = {
     ),
 }
 
+# Per-event-type map of (raw screen-rule id field in `details`) -> (resolved
+# human-label field to add). get_application_activity uses this to surface
+# WHICH configured screening rule produced an automated outcome, read-time
+# only — the stored row keeps just the id.
+_SCREEN_RULE_ID_FIELDS: dict[str, tuple[tuple[str, str], ...]] = {
+    "auto_rejected": (("ruleId", "ruleLabel"),),
+    "application_submitted": (
+        ("screenQualifyRuleId", "screenQualifyRuleLabel"),
+        ("screenAutoHireRuleId", "screenAutoHireRuleLabel"),
+    ),
+}
+
+
+def _screen_rule_label(rule: dict) -> str:
+    """A human-readable one-line label for a configured screening rule.
+
+    Rules have no name field (frontend ids are just ``r1, r2, ...``), so the
+    label is synthesized from the condition: e.g.
+    ``"email domain not in google.com"`` or ``"answer to q_role equals
+    mentor"``.
+
+    Args:
+        rule (dict): One entry of the job's ``screen_rules["rules"]``
+            (camelCase keys, per ``ScreenRuleDto``'s serialization).
+
+    Returns:
+        str: The synthesized label.
+    """
+    condition = rule.get("condition") or {}
+    operator = (condition.get("operator") or "").replace("_", " ")
+    value = condition.get("value")
+    values = ", ".join(value) if isinstance(value, list) else str(value or "")
+    if condition.get("source") == "email_domain":
+        subject = "email domain"
+    elif condition.get("source") == "answer":
+        subject = f"answer to {condition.get('questionId')}"
+    else:
+        subject = "condition"
+    return f"{subject} {operator} {values}".strip()
+
 
 class BoardService:
     """Owner-facing reads for the recruiting application board (PR2).
@@ -545,6 +585,14 @@ class BoardService:
         never persisted back to the stored row. A raw id with no matching
         user resolves to ``f"User {id}"``, same fallback as ``actor_name``.
 
+        Screening-rule ids (``auto_rejected``'s ``ruleId``, and
+        ``application_submitted``'s ``screenQualifyRuleId``/
+        ``screenAutoHireRuleId``) are likewise resolved read-time only,
+        against the job's *current* ``screen_rules`` — never persisted back
+        to the stored row. A rule id no longer present in the job's config
+        (edited/removed since the row was written) resolves to
+        ``f"rule {id} (no longer configured)"``.
+
         Args:
             session (AsyncSession): Active database async session.
             current_user (UserContextDto): The authenticated caller.
@@ -553,7 +601,9 @@ class BoardService:
         Returns:
             list[ApplicationActivityDto]: Newest first, each with the
                 actor's resolved display name and, where applicable, its
-                assignee name(s) merged into a copy of ``details``.
+                assignee name(s) and screen-rule label(s) merged into a
+                copy of ``details`` (both resolved read-time only, never
+                persisted back to the stored row).
 
         Raises:
             ValueError: If the application is missing, or the caller is neither
@@ -561,9 +611,14 @@ class BoardService:
                 ``Permission.RECRUITING_APPLICATION_READ_ALL`` (collapsed "not found"
                 message, same as the other owner-facing reads).
         """
-        await self._load_owned_application(
+        _application, job = await self._load_owned_application(
             session, current_user, application_id, allow_read_all=True
         )
+        rules_by_id = {
+            rule.get("id"): rule
+            for rule in ((job.screen_rules or {}).get("rules") or [])
+            if isinstance(rule, dict)
+        }
         rows = await self.application_activity_repository.list_by_application(
             session, application_id
         )
@@ -587,6 +642,16 @@ class BoardService:
                 raw_id = details.get(raw_field)
                 if raw_id is not None:
                     details[name_field] = names_by_id.get(raw_id, f"User {raw_id}")
+            for id_field, label_field in _SCREEN_RULE_ID_FIELDS.get(row.event_type, ()):
+                rule_id = details.get(id_field)
+                if rule_id is None:
+                    continue
+                rule = rules_by_id.get(rule_id)
+                details[label_field] = (
+                    _screen_rule_label(rule)
+                    if rule is not None
+                    else f"rule {rule_id} (no longer configured)"
+                )
             result.append(
                 ApplicationActivityDto(
                     id=row.activity_id,
