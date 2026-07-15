@@ -64,57 +64,6 @@ resource "random_password" "email_otp_state_secret" {
   special = false
 }
 
-# Deployed by Terraform only when this environment is not managed by ArgoCD.
-# The test environment sets deploy_via_helm = false (Argo owns its release).
-moved {
-  from = helm_release.purrf_app
-  to   = helm_release.purrf_app[0]
-}
-
-resource "helm_release" "purrf_app" {
-  count            = var.deploy_via_helm ? 1 : 0
-  name             = local.name_prefix
-  chart            = "${path.module}/../../../helm/purrf"
-  namespace        = local.name_prefix
-  create_namespace = true
-  atomic           = true
-  cleanup_on_fail  = true
-  timeout          = 300
-  depends_on       = [kubernetes_secret.purrf_app]
-  values = [
-    yamlencode({
-
-      fullnameOverride = local.name_prefix
-
-      image = {
-        repository = "us-docker.pkg.dev/k8s-dev-437501/purrf/purrf"
-        tag        = var.image_tag
-      }
-      envFrom = [
-        {
-          secretRef = { name = local.name_prefix }
-        }
-      ]
-
-      ingress = {
-        enabled   = true
-        className = var.ingress_class_name
-        hosts = [
-          {
-            host = local.domains.api
-            paths = [
-              {
-                path     = "/"
-                pathType = "Prefix"
-              }
-            ]
-          }
-        ]
-      }
-    })
-  ]
-}
-
 resource "google_service_account_iam_member" "purrf_service_wi" {
   service_account_id = "projects/purrf-452300/serviceAccounts/purrf-service@purrf-452300.iam.gserviceaccount.com"
   role               = "roles/iam.workloadIdentityUser"

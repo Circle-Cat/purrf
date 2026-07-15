@@ -108,18 +108,6 @@ variable "ingress_class_name" {
   default     = "cloudflare-tunnel"
 }
 
-variable "image_tag" {
-  type        = string
-  description = "Deployed image tag. Unused when deploy_via_helm is false."
-  default     = null
-}
-
-variable "deploy_via_helm" {
-  type        = bool
-  description = "Whether Terraform manages the app's helm_release. Set false when the deployment is owned by ArgoCD (e.g. the test environment); Terraform then only provisions the namespace, secret, and workload-identity binding."
-  default     = true
-}
-
 variable "jira_password" {
   type      = string
   sensitive = true
