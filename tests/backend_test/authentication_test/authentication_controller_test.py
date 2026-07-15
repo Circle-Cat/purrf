@@ -66,6 +66,7 @@ class TestAuthenticationController(unittest.TestCase):
         is_super_admin=False,
         user_id=42,
         identity_type=IdentityType.INTERNAL,
+        needs_link=False,
     ):
         """
         Helper method:
@@ -80,6 +81,7 @@ class TestAuthenticationController(unittest.TestCase):
         mock_user.is_super_admin = is_super_admin
         mock_user.user_id = user_id
         mock_user.identity_type = identity_type
+        mock_user.needs_link = needs_link
 
         @self.app.middleware("http")
         async def mock_auth_middleware(request: Request, call_next):
@@ -116,8 +118,30 @@ class TestAuthenticationController(unittest.TestCase):
         self.assertEqual(json_resp["data"]["identity_type"], "internal")
         self.assertTrue(json_resp["data"]["has_verified_email"])
         self.assertFalse(json_resp["data"]["is_super_admin"])
+        self.assertFalse(json_resp["data"]["needs_link"])
 
         self.mock_api_response.assert_called_once()
+
+    def test_get_my_permissions_needs_link(self):
+        """
+        A needs-link session (no local user yet, PUR-480) reports
+        needs_link=True with user_id None and has_verified_email False, and
+        never queries user_emails (there is no user to query for).
+        """
+        client = self._get_client_with_mock_user(
+            permissions=frozenset(),
+            user_id=None,
+            needs_link=True,
+        )
+
+        response = client.get(MY_PERMISSIONS)
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        json_resp = response.json()
+        self.assertIsNone(json_resp["data"]["user_id"])
+        self.assertTrue(json_resp["data"]["needs_link"])
+        self.assertFalse(json_resp["data"]["has_verified_email"])
+        self.user_emails_repository.has_confirmed.assert_not_called()
 
     def test_get_my_permissions_empty(self):
         """

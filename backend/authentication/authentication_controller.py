@@ -54,9 +54,14 @@ class AuthenticationController:
                         "identity_type": "internal",
                         "permissions": ["internal_activity.read"],
                         "is_super_admin": false,
-                        "has_verified_email": true
+                        "has_verified_email": true,
+                        "needs_link": false
                     }
                 }
+
+        ``needs_link`` is True when the sign-in's email belongs to an existing
+        account (no local user was created); the frontend holds such a session
+        at the verify wall, where the OTP links the sign-in into that account.
         """
         has_verified_email = False
         if current_user.user_id is not None:
@@ -73,6 +78,7 @@ class AuthenticationController:
                 "permissions": sorted(str(p) for p in current_user.permissions),
                 "is_super_admin": current_user.is_super_admin,
                 "has_verified_email": has_verified_email,
+                "needs_link": current_user.needs_link,
             },
             message="Successfully retrieved user permissions",
         )

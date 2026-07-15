@@ -19,6 +19,7 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [hasVerifiedEmail, setHasVerifiedEmail] = useState(false);
+  const [needsLink, setNeedsLink] = useState(false);
   const [accessDenied, setAccessDenied] = useState(false);
   const [accessDeniedMessage, setAccessDeniedMessage] = useState("");
   const [authError, setAuthError] = useState(false);
@@ -41,6 +42,7 @@ export const AuthProvider = ({ children }) => {
       });
       setIsSuperAdmin(Boolean(data.is_super_admin));
       setHasVerifiedEmail(Boolean(data.has_verified_email));
+      setNeedsLink(Boolean(data.needs_link));
       setAccessDenied(false);
       setAccessDeniedMessage("");
       setAuthError(false);
@@ -81,6 +83,7 @@ export const AuthProvider = ({ children }) => {
       user,
       isSuperAdmin,
       hasVerifiedEmail,
+      needsLink,
       accessDenied,
       accessDeniedMessage,
       authError,
@@ -93,6 +96,7 @@ export const AuthProvider = ({ children }) => {
       user,
       isSuperAdmin,
       hasVerifiedEmail,
+      needsLink,
       accessDenied,
       accessDeniedMessage,
       authError,

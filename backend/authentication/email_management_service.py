@@ -67,13 +67,51 @@ class EmailManagementService:
         self._logger = logger
 
     async def initiate(
-        self, session, current_user_id: int, current_sub: str, email: str
+        self,
+        session,
+        current_user_id: int | None,
+        current_sub: str,
+        email: str,
+        needs_link: bool = False,
+        claim_email: str | None = None,
     ) -> dict:
-        """Send an OTP and return a signed state JWT binding it to this session."""
+        """
+        Send an OTP and return a signed state JWT binding it to this session.
+
+        Two modes share the mechanism:
+
+        - Normal (``needs_link=False``): the caller adds a contact email to
+          their own account; an address confirmed by *another* account is
+          refused.
+        - Needs-link (``needs_link=True``, PUR-480): the caller's sign-in
+          collided with an existing account at bootstrap, so no local user
+          exists (``current_user_id`` is None). The address is locked to the
+          sign-in's own email claim — the whole point is to prove THAT mailbox
+          — and the other-account check is skipped, because the address
+          belonging to another account is exactly the situation being resolved.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            current_user_id (int | None): The caller's user_id; None for a
+                needs-link session.
+            current_sub (str): The caller's JWT ``sub``.
+            email (str): The address to send the OTP to.
+            needs_link (bool): True for a needs-link session.
+            claim_email (str | None): The sign-in token's email claim; required
+                in needs-link mode to lock the target address.
+
+        Returns:
+            dict: ``{"state": <signed state JWT>}``.
+        """
         normalized = email.strip().lower()
         if not _EMAIL_PATTERN.match(normalized):
             raise ValueError("Invalid email format")
-        if await self._user_emails.exists_confirmed_on_other_user(
+        if needs_link:
+            if claim_email is None or normalized != claim_email.strip().lower():
+                raise ValueError(
+                    "Verify the email address associated with this sign-in"
+                )
+        elif await self._user_emails.exists_confirmed_on_other_user(
             session, normalized, current_user_id
         ):
             raise ConflictError("Email already verified by another account")
@@ -91,10 +129,12 @@ class EmailManagementService:
     async def verify(
         self,
         session,
-        current_user_id: int,
+        current_user_id: int | None,
         current_sub: str,
         state: str,
         otp: str,
+        needs_link: bool = False,
+        caller_identity_type: IdentityType | None = None,
     ) -> dict:
         """
         Confirm the OTP and persist the result.
@@ -104,11 +144,21 @@ class EmailManagementService:
         Nothing is written until the OTP and the new identity both check out; the
         Auth0 alias index is synced best-effort after commit so a sync hiccup
         never undoes a confirmed email.
+
+        In needs-link mode (``needs_link=True``, PUR-480) the direction
+        reverses: instead of pulling the address's identity into the caller's
+        account, the caller's sign-in ``sub`` is linked into the account that
+        already OTP-confirmed the address — see :meth:`_link_into_owner`.
         """
         claims = self._decode_state(state)
         if claims.get("flow") != _STATE_FLOW:
             raise ValueError(_INVALID_STATE_MESSAGE)
-        if claims.get("user_id") != current_user_id:
+        if needs_link:
+            # CSRF guard for a userless session: the state is bound to the sub
+            # (user_id was signed as None at initiate).
+            if claims.get("user_id") is not None or claims.get("sub") != current_sub:
+                raise ValueError(_INVALID_STATE_MESSAGE)
+        elif claims.get("user_id") != current_user_id:
             # CSRF guard: the state must belong to the caller's session.
             raise ValueError(_INVALID_STATE_MESSAGE)
         target_email = claims["email"]
@@ -118,6 +168,15 @@ class EmailManagementService:
             raise ValueError("Auth0 returned email_verified=false")
         if id_token_claims.get("email", "").lower() != target_email:
             raise ValueError("Verified email does not match the requested address")
+
+        if needs_link:
+            return await self._link_into_owner(
+                session=session,
+                current_sub=current_sub,
+                target_email=target_email,
+                otp_sub=id_token_claims["sub"],
+                caller_identity_type=caller_identity_type,
+            )
 
         new_sub = id_token_claims["sub"]
         # Auth0 has already merged this email's passwordless identity into
@@ -171,6 +230,105 @@ class EmailManagementService:
 
         self._sync_alias_best_effort(current_sub, target_email, current_user_id)
         return {"ok": True, "linked_sub": new_sub, "email": target_email}
+
+    async def _link_into_owner(
+        self,
+        session,
+        current_sub: str,
+        target_email: str,
+        otp_sub: str,
+        caller_identity_type: IdentityType | None,
+    ) -> dict:
+        """
+        Needs-link resolution (PUR-480): the caller signed in with a method
+        whose email belongs to an existing account, and has just OTP-proved
+        the mailbox. Link the caller's ``sub`` into that account.
+
+        The link is allowed only against an account that itself OTP-confirmed
+        the address — that confirmation is the account's trust anchor, and it
+        means whoever controls the mailbox already controls the account (its
+        sign-in or step-up target IS this mailbox), so the link grants nothing
+        new. An owner that never confirmed (e.g. a migrated Google user who
+        has not passed the wall yet) is refused with a pointer back to their
+        original sign-in method.
+
+        No users row is created and nothing on the owning account changes:
+        only a user_identities row for the caller's sub is added (plus a
+        best-effort Auth0-side link so future logins with either method
+        resolve at step 1).
+
+        Args:
+            session (AsyncSession): The active async database session.
+            current_sub (str): The caller's sign-in ``sub`` to link.
+            target_email (str): The OTP-proved address (normalized).
+            otp_sub (str): The passwordless ``sub`` the OTP exchange returned
+                for the address.
+            caller_identity_type (IdentityType | None): The sign-in's identity
+                type from the auth layer; falls back to the email domain.
+
+        Returns:
+            dict: ``{"ok": True, "linked_sub": <caller sub>, "email": ...}``.
+
+        Raises:
+            ConflictError: No account has OTP-confirmed the address, or its
+                passwordless identity belongs to a different account than the
+                confirmed owner.
+        """
+        owner_row = await self._user_emails.get_confirmed_by_email(
+            session, target_email
+        )
+        if owner_row is None:
+            raise ConflictError(
+                "This email's account has not been verified yet. "
+                "Sign in with your original method first."
+            )
+        owner_user_id = owner_row.user_id
+
+        # The address's passwordless identity must not belong to a third
+        # account — only the confirmed owner (or nobody yet) may hold it.
+        otp_identity = await self._user_identities.get_by_subject_identifier(
+            session, otp_sub
+        )
+        if otp_identity is not None and otp_identity.user_id != owner_user_id:
+            raise ConflictError("Identity already linked to another account")
+
+        # When the caller signed in with the passwordless method itself the two
+        # subs coincide and there is nothing to link on the Auth0 side.
+        if otp_sub != current_sub:
+            provider, secondary_user_id = self._split_sub(otp_sub)
+            self._auth0.link_identity(
+                account_root_sub=current_sub,
+                provider=provider,
+                secondary_user_id=secondary_user_id,
+            )
+
+        await self._user_identities.upsert_identity(
+            session=session,
+            entity=UserIdentitiesEntity(
+                user_id=owner_user_id,
+                subject_identifier=current_sub,
+                identity_type=(
+                    caller_identity_type
+                    if caller_identity_type is not None
+                    else (
+                        IdentityType.INTERNAL
+                        if is_company_email(target_email)
+                        else IdentityType.EXTERNAL
+                    )
+                ),
+                email_claim=target_email,
+            ),
+        )
+        await session.commit()
+
+        self._logger.info(
+            "[EmailManagementService] needs-link: linked sub %s into user_id=%s via %s",
+            current_sub,
+            owner_user_id,
+            target_email,
+        )
+        self._sync_alias_best_effort(current_sub, target_email, owner_user_id)
+        return {"ok": True, "linked_sub": current_sub, "email": target_email}
 
     async def list_emails_and_identities(
         self, session, current_user_id: int, current_sub: str

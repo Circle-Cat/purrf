@@ -94,6 +94,31 @@ class UserIdentityService:
 
         return user
 
+    async def email_has_owner(self, session: AsyncSession, email: str) -> bool:
+        """
+        Whether `email` already belongs to some account — either as an
+        OTP-confirmed contact (user_emails) or via the legacy
+        users.primary_email column.
+
+        Used by the bootstrap to classify a first-login unique violation: an
+        owned email means the login is a second sign-in method for an existing
+        account (hold at the verify wall to link, PUR-480), while an unowned
+        one means the violation is a real bug and must surface.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            email (str): Normalized (lowercased) address to check.
+
+        Returns:
+            bool: True when some account owns the address.
+        """
+        if await self.user_emails_repository.get_confirmed_by_email(session, email):
+            return True
+        return (
+            await self.users_repository.get_user_by_primary_email(session, email)
+            is not None
+        )
+
     async def create_or_swap_user(
         self,
         session: AsyncSession,
