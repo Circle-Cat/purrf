@@ -98,15 +98,23 @@ just the fix SHAs to staging.
 
 ### 3. Tag the validated point
 
-When a batch passes, tag the exact staging commit you validated — i.e. the one
-whose `values-staging.yaml` holds the tested image (the commit **after** its
-image-pin PR merged, which is what ArgoCD deployed):
+When a batch passes, run **Cut Release** (Actions → Cut Release → Run
+workflow):
+
+- `sha`: the exact staging commit you validated, or empty for the current
+  staging tip. Must be the commit **after** its image-pin PR merged (what
+  ArgoCD deployed) — the workflow refuses a point whose `values-staging.yaml`
+  has no image pin.
+- `notes`: summary of what's in the release (published as a GitHub Release).
+- `tag`: empty for `release/<YYYY.MM.DD>` (UTC today); pass e.g.
+  `release/2026.07.16.2` for a second cut on the same day.
+
+It validates the point is on `staging`, creates the tag and a GitHub Release,
+and prints the exact Promote inputs for step 4. Equivalent manual fallback:
 
 ```bash
-git fetch origin
-# tag the current validated staging tip (or pass a specific SHA you tested):
-git tag -a release/2026.06.16 origin/staging -m "Release: <summary of what's in it>"
-git push origin release/2026.06.16
+gh release create release/2026.06.16 --target <validated-staging-sha> \
+  --title "Release 2026.06.16" --notes "<summary of what's in it>"
 ```
 
 Convention: `release/<date-or-version>`. The tag is **immutable**, so staging
