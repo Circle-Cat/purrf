@@ -404,4 +404,11 @@ describe("PersonalDashboard", () => {
       expect.objectContaining({ hiredMentorshipRole: "mentor" }),
     );
   });
+
+  it("spaces the dashboard cards vertically", () => {
+    const { container } = render(<PersonalDashboard />);
+    expect(container.querySelector(".personal-dashboard").className).toContain(
+      "space-y-5",
+    );
+  });
 });

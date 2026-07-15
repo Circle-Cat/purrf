@@ -84,9 +84,9 @@ const PersonalDashboard = () => {
     currentSelectedRound?.status === MentorshipRoundStatus.ACTIVE;
 
   return (
-    <div className="personal-dashboard">
+    <div className="personal-dashboard space-y-5">
       {/* Welcome header */}
-      <div className="flex items-start justify-between mb-5 shrink-0">
+      <div className="flex items-start justify-between shrink-0">
         <div className="flex items-center gap-2">
           <span role="img" aria-label="clapping hands" className="text-xl">
             &#x1F44F;
