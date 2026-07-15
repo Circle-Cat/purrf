@@ -1,0 +1,129 @@
+name: Cut Release
+
+# Tags a validated staging commit as an immutable release point and publishes
+# a GitHub Release for it. This is step 3 of the release process (README.md):
+# after acceptance-testing a staging batch, cut the release here, then run
+# Promote with target=prod and the tag this workflow prints.
+#
+# Why a workflow (vs `git tag` locally): it validates the tag target BEFORE
+# creating it -- the commit must be on the staging branch and must carry a
+# pinned image in values-staging.yaml (the prod promotion reads image.tag at
+# the tag and reuses that image verbatim). A tag cut at the wrong point fails
+# here instead of failing later inside the prod promotion.
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: >-
+          Staging commit to release. Leave empty for the current staging tip.
+          Pass the exact SHA you acceptance-tested if staging may have moved
+          on since.
+        required: false
+        default: ''
+      notes:
+        description: Release summary (becomes the GitHub Release notes)
+        required: true
+      tag:
+        description: >-
+          Tag name override. Leave empty for release/<YYYY.MM.DD> (UTC today).
+          Use e.g. release/2026.07.16.2 for a second cut on the same day.
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  cut-release:
+    runs-on: ubuntu-latest
+    steps:
+      # Same GitHub App as promote.yml/deploy-test.yml: the release must be
+      # created by an actor with contents:write, and using the app keeps all
+      # bot-authored refs under one identity.
+      - name: Generate app token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.PURRF_BOT_APP_ID }}
+          private-key: ${{ secrets.PURRF_BOT_PRIVATE_KEY }}
+
+      # Only members of the purrf-maintainers team may cut a release -- the
+      # same gate as promote.yml. github.actor is the triggering user and
+      # cannot be spoofed here.
+      - name: Authorize actor
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          ACTOR: ${{ github.actor }}
+          ORG: ${{ github.repository_owner }}
+        run: |
+          set -o errexit -o pipefail -o nounset
+          # Capture both the body and any error (HTTP 403/404) so a failure
+          # tells us *why* -- a swallowed error reads as "not a member".
+          if ! resp=$(gh api "orgs/$ORG/teams/purrf-maintainers/memberships/$ACTOR" 2>&1); then
+            echo "::error::Membership lookup for $ACTOR failed (token/permission or team slug):"
+            echo "$resp"
+            exit 1
+          fi
+          state=$(echo "$resp" | jq -r '.state // "unknown"')
+          if [ "$state" != "active" ]; then
+            echo "::error::$ACTOR is not an active member of purrf-maintainers (state: $state); cannot cut a release."
+            echo "$resp"
+            exit 1
+          fi
+          echo "$ACTOR authorized (state: active)."
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Validate release point and publish release
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          SHA_INPUT: ${{ inputs.sha }}
+          TAG_INPUT: ${{ inputs.tag }}
+          NOTES: ${{ inputs.notes }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -o errexit -o pipefail -o nounset
+
+          git fetch --tags --force origin staging
+
+          SHA=$(git rev-parse --verify "${SHA_INPUT:-origin/staging}^{commit}")
+          if ! git merge-base --is-ancestor "$SHA" origin/staging; then
+            echo "::error::$SHA is not on the staging branch."
+            exit 1
+          fi
+
+          # The prod promotion reuses the image pinned at the tag; refuse to
+          # tag a point whose values-staging.yaml has no usable pin (e.g. a
+          # commit from before its image-pin PR merged).
+          IMAGE_TAG=$(git show "$SHA:helm/purrf/values-staging.yaml" | yq '.image.tag')
+          if [ -z "$IMAGE_TAG" ] || [ "$IMAGE_TAG" = "null" ]; then
+            echo "::error::no image.tag in values-staging.yaml at $SHA; merge the image-pin PR first or pass the post-pin commit."
+            exit 1
+          fi
+
+          TAG=${TAG_INPUT:-release/$(date -u +%Y.%m.%d)}
+          case "$TAG" in
+            release/*) ;;
+            *) echo "::error::tag must start with 'release/' (got '$TAG')."; exit 1 ;;
+          esac
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            echo "::error::tag '$TAG' already exists (tags are immutable); pass an explicit tag like $TAG.2."
+            exit 1
+          fi
+
+          printf -v BODY '%s\n\nStaging-tested image: `%s`\nRelease point: %s' "$NOTES" "$IMAGE_TAG" "$SHA"
+          gh release create "$TAG" \
+            --repo "$REPO" \
+            --target "$SHA" \
+            --title "Release ${TAG#release/}" \
+            --notes "$BODY"
+
+          {
+            echo "Cut \`$TAG\` at \`$SHA\` (image \`$IMAGE_TAG\`)."
+            echo ""
+            echo "Next: run **Promote** with \`target=prod\`, \`release_tag=$TAG\`."
+          } >> "$GITHUB_STEP_SUMMARY"
