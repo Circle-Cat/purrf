@@ -63,6 +63,13 @@ class TrainingCategory(str, Enum):
     CORPORATE_CULTURE_COURSE = "corporate_culture_course"
 
 
+# Training categories used to identify a mentorship user.
+MENTORSHIP_ONBOARDING_CATEGORIES: frozenset[TrainingCategory] = frozenset({
+    TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING,
+    TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING,
+})
+
+
 class TrainingStatus(str, Enum):
     TO_DO = "to_do"
     IN_PROGRESS = "in_progress"
