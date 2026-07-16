@@ -568,6 +568,10 @@ resource "cloudflare_zero_trust_access_application" "purrf_app" {
       id         = "791a5e24-4a75-4d7e-9f7d-5fafd25a1602"
       precedence = 2
     },
+    { # Uptime Kuma health checks (see the uptime_kuma policy resource).
+      id         = cloudflare_zero_trust_access_policy.uptime_kuma.id
+      precedence = 3
+    },
   ]
 }
 
@@ -655,6 +659,22 @@ resource "cloudflare_zero_trust_access_identity_provider" "mentorship_login_stag
     email_claim_name = "aud"
     pkce_enabled     = true
   }
+}
+
+# Lets Uptime Kuma probe prod through CF Access: a service token presented
+# from the Gerrit host's IP, no user identity. Replaces the app-scoped policy
+# that was hand-created in the dashboard (id 03ae6b7f…), which Terraform
+# could neither reference nor preserve.
+resource "cloudflare_zero_trust_access_policy" "uptime_kuma" {
+  account_id = local.cloudflare_account_id
+  name       = "Uptime Kuma"
+  decision   = "non_identity"
+  include = [{
+    service_token = { token_id = "3bb268f0-15bc-4626-9d18-e34eb46ef15b" }
+  }]
+  require = [{
+    ip = { ip = "140.83.87.89/32" }
+  }]
 }
 
 resource "cloudflare_zero_trust_access_policy" "purrf_auth0_test" {
