@@ -123,13 +123,15 @@ class UserIdentityService:
         self,
         session: AsyncSession,
         user_info: UserContextDto,
-    ) -> UsersEntity:
+    ) -> UsersEntity | None:
         """
         Resolve a user not found by sub lookup.
 
         Tries step 2 (overwrite a migration-backfilled identity found by
-        email) first; on miss, falls through to step 3 (first-login insert).
-        Writes the resolved user_id back onto `user_info` (mutates the DTO).
+        email) first; on miss, checks whether the login's email already
+        belongs to some account and, only when it does not, falls through to
+        step 3 (first-login insert). Writes the resolved user_id back onto
+        `user_info` (mutates the DTO).
 
         Args:
             session (AsyncSession): Active database async session.
@@ -137,7 +139,11 @@ class UserIdentityService:
                 identity_type and last_login_at.
 
         Returns:
-            UsersEntity: The linked or newly created user.
+            UsersEntity | None: The linked or newly created user, or None
+            when the email already belongs to an existing account — the
+            sign-in is a second method for that account, so nothing is
+            created and the caller must hold the session at the verify wall
+            to link (needs-link, PUR-480).
         """
         email = user_info.primary_email.lower()
         login_dt = _iat_as_datetime(user_info.last_login_at)
@@ -159,6 +165,23 @@ class UserIdentityService:
             )
             user_info.user_id = user.user_id
             return user
+
+        # The email already belongs to an account — as an OTP-confirmed
+        # contact or via legacy users.primary_email. Detection cannot rely on
+        # the primary_email unique violation alone: an address confirmed on
+        # an account through Add sign-in method lives only in user_emails and
+        # never collides on insert, so a first-login insert here would create
+        # an orphan account permanently stuck at the verify wall ("Email
+        # already verified by another account"). Create nothing; the
+        # bootstrap marks the session needs_link instead (PUR-480).
+        if await self.email_has_owner(session, email):
+            self.logger.info(
+                "[UserIdentityService] first-login email %s already owned; "
+                "holding sub %s for needs-link",
+                email,
+                user_info.sub,
+            )
+            return None
 
         # Step 3: first login.
         user = await self._first_login_insert(

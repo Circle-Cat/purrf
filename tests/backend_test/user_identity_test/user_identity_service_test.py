@@ -36,6 +36,11 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
 
         self.user = MagicMock(spec=UsersEntity, user_id=10)
 
+        # Default: the login's email is unowned, so first-login creation
+        # proceeds. Ownership tests override these explicitly.
+        self.emails_repo.get_confirmed_by_email.return_value = None
+        self.users_repo.get_user_by_primary_email.return_value = None
+
     # find_user_by_sub — Step 1 sub lookup (single JOIN)
     async def test_find_user_by_sub_hit_without_last_login(self):
         """Sub hit without last_login_at: returns the joined user; update_last_login
@@ -258,6 +263,89 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
         # non-internal identity: no permission grant
         self.permissions_repo.grant.assert_not_awaited()
         self.assertEqual(user_info.user_id, 77)
+
+    async def test_create_or_swap_owned_confirmed_email_returns_none(self):
+        """The login's email is already OTP-confirmed by an existing account
+        (e.g. it was added there via Add sign-in method, so it lives only in
+        user_emails and no unique violation would ever fire): create nothing
+        and return None so the bootstrap holds the session at the verify wall
+        to link (PUR-480) instead of creating an orphan account."""
+        user_info = UserContextDto(
+            sub="google-oauth2|new",
+            primary_email="Owned@Example.com",
+            identity_type="external",
+            last_login_at=self.iat,
+        )
+        self.identities_repo.find_swappable_by_email.return_value = None
+        self.emails_repo.get_confirmed_by_email.return_value = MagicMock(
+            spec=UserEmailsEntity
+        )
+
+        result = await self.service.create_or_swap_user(self.session, user_info)
+
+        self.assertIsNone(result)
+        # checked with the lowercased address
+        self.emails_repo.get_confirmed_by_email.assert_awaited_once_with(
+            self.session, "owned@example.com"
+        )
+        # nothing is created or granted
+        self.users_repo.upsert_users.assert_not_awaited()
+        self.identities_repo.upsert_identity.assert_not_awaited()
+        self.emails_repo.upsert_email.assert_not_awaited()
+        self.permissions_repo.grant.assert_not_awaited()
+        self.assertIsNone(user_info.user_id)
+
+    async def test_create_or_swap_owned_legacy_primary_email_returns_none(self):
+        """A legacy users.primary_email owner counts too: the proactive check
+        classifies the collision before the insert instead of relying on the
+        unique-violation round-trip."""
+        user_info = UserContextDto(
+            sub="email|new",
+            primary_email="legacy@example.com",
+            identity_type="external",
+            last_login_at=self.iat,
+        )
+        self.identities_repo.find_swappable_by_email.return_value = None
+        self.users_repo.get_user_by_primary_email.return_value = MagicMock(
+            spec=UsersEntity
+        )
+
+        result = await self.service.create_or_swap_user(self.session, user_info)
+
+        self.assertIsNone(result)
+        self.users_repo.upsert_users.assert_not_awaited()
+        self.identities_repo.upsert_identity.assert_not_awaited()
+        self.emails_repo.upsert_email.assert_not_awaited()
+        self.assertIsNone(user_info.user_id)
+
+    async def test_create_or_swap_swap_wins_over_owned_email_check(self):
+        """A swappable migration-backfilled identity is resolved before the
+        ownership check: a backfilled user's own first login must swap, not
+        stall at the wall."""
+        user_info = UserContextDto(
+            sub="google-oauth2|abc",
+            primary_email="alice@example.com",
+            identity_type="external",
+            last_login_at=self.iat,
+        )
+        mocked = MagicMock(
+            spec=UserIdentitiesEntity,
+            identity_id=7,
+            user_id=10,
+            subject_identifier="mock|alice@example.com",
+        )
+        self.identities_repo.find_swappable_by_email.return_value = mocked
+        resolved = MagicMock(spec=UsersEntity, user_id=10)
+        self.users_repo.get_user_by_user_id.return_value = resolved
+        # Even with a (theoretical) confirmed owner present, the swap path wins.
+        self.emails_repo.get_confirmed_by_email.return_value = MagicMock(
+            spec=UserEmailsEntity
+        )
+
+        result = await self.service.create_or_swap_user(self.session, user_info)
+
+        self.assertIs(result, resolved)
+        self.emails_repo.get_confirmed_by_email.assert_not_awaited()
 
     async def test_create_or_swap_first_login_internal_grants_permissions(self):
         """First login with an internal identity grants the internal employee

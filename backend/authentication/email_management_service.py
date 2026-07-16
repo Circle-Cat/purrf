@@ -279,8 +279,10 @@ class EmailManagementService:
         )
         if owner_row is None:
             raise ConflictError(
-                "This email's account has not been verified yet. "
-                "Sign in with your original method first."
+                "This email belongs to an existing account that hasn't "
+                "verified it yet. Sign in with that account's original "
+                "method, verify this email there, then try this sign-in "
+                "again."
             )
         owner_user_id = owner_row.user_id
 

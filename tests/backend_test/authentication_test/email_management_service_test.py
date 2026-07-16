@@ -518,7 +518,7 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         user back to their original sign-in method."""
         self.user_emails.get_confirmed_by_email.return_value = None
 
-        with self.assertRaises(ConflictError):
+        with self.assertRaises(ConflictError) as ctx:
             await self.service.verify(
                 self.session,
                 None,
@@ -528,6 +528,14 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
                 needs_link=True,
                 caller_identity_type=IdentityType.EXTERNAL,
             )
+        # The message must tell the user what to actually do: verify the
+        # email from inside the owning account first, then retry.
+        self.assertEqual(
+            str(ctx.exception),
+            "This email belongs to an existing account that hasn't verified "
+            "it yet. Sign in with that account's original method, verify "
+            "this email there, then try this sign-in again.",
+        )
         self.auth0.link_identity.assert_not_called()
         self.user_identities.upsert_identity.assert_not_called()
 
