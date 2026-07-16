@@ -14,7 +14,7 @@ class ProfileQueryService:
 
     def __init__(
         self,
-        user_identity_service,
+        users_repository,
         experience_repository,
         training_repository,
         profile_mapper,
@@ -23,12 +23,12 @@ class ProfileQueryService:
         Initialize ProfileQueryService with required repositories.
 
         Args:
-            user_identity_service: Service responsible for retrieving user identity information.
+            users_repository: Repository handling UsersEntity.
             experience_repository: Repository handling ExperienceEntity.
             training_repository: Repository handling TrainingEntity.
             profile_mapper: Mapper used to convert entities into ProfileDto.
         """
-        self.user_identity_service = user_identity_service
+        self.users_repository = users_repository
         self.experience_repository = experience_repository
         self.training_repository = training_repository
         self.profile_mapper = profile_mapper
@@ -36,38 +36,33 @@ class ProfileQueryService:
     async def get_profile(
         self,
         session: AsyncSession,
-        user_info: UserContextDto,
+        user_context: UserContextDto,
         include_training: bool,
         include_work_history: bool,
         include_education: bool,
-    ) -> tuple[ProfileDto, bool]:
+    ) -> ProfileDto:
         """
         Retrieve a user's profile based on the provided user context.
 
         This method:
-        1. Loads the user entity by `user_info`.
+        1. Loads the user entity by user_context.user_id.
         2. Conditionally loads related experience and training data
         based on the provided include flags.
         3. Maps the loaded entities into a ProfileDto.
 
         Args:
             session (AsyncSession): Active SQLAlchemy async session.
-            user_info (UserContextDto): DTO containing user info (sub, email, roles).
+            user_context (UserContextDto): Authenticated user context; user_id
+                is populated by the auth middleware.
             include_training (bool): Whether to include training information.
             include_work_history (bool): Whether to include work history information.
             include_education (bool): Whether to include education information.
 
         Returns:
-            tuple[ProfileDto, bool]:
-                ProfileDto: DTO containing only the requested fields.
-                should_commit: True if the transaction needs to be committed.
+            ProfileDto: DTO containing only the requested fields.
         """
-
-        (
-            users_entity,
-            should_commit,
-        ) = await self.user_identity_service.get_user(
-            session=session, user_info=user_info
+        users_entity = await self.users_repository.get_user_by_user_id(
+            session=session, user_id=user_context.user_id
         )
 
         user_id = users_entity.user_id
@@ -92,4 +87,4 @@ class ProfileQueryService:
             trainings=training_entities,
             include_work_history=include_work_history,
             include_education=include_education,
-        ), should_commit
+        )

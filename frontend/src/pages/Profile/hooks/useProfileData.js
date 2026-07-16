@@ -8,6 +8,7 @@ import {
 } from "@/pages/Profile/utils";
 import { getDaysSince, formatLocalYmd } from "@/utils/dateTime";
 import { ProfileFields } from "@/constants/ApiEndpoints";
+import { useRequestGuard } from "@/hooks/useRequestGuard";
 
 export const useProfileData = () => {
   const [isLoading, setIsLoading] = useState(true);
@@ -54,16 +55,6 @@ export const useProfileData = () => {
         id: "primary",
         email: user.primaryEmail,
         isPrimary: true,
-      });
-    }
-
-    if (Array.isArray(user.alternativeEmails)) {
-      user.alternativeEmails.forEach((email, idx) => {
-        emailList.push({
-          id: `alt-${idx}`,
-          email,
-          isPrimary: false,
-        });
       });
     }
 
@@ -142,10 +133,13 @@ export const useProfileData = () => {
     setEducationList(mappedEducation);
   }, []);
 
+  const { begin, isCurrent } = useRequestGuard();
+
   /**
    * Fetch profile data from backend.
    */
   const fetchProfileData = useCallback(async () => {
+    const seq = begin();
     setIsLoading(true);
     try {
       const {
@@ -158,6 +152,9 @@ export const useProfileData = () => {
         ],
       });
 
+      // Ignore a superseded/late response (e.g. a refresh raced an earlier load
+      // or the component unmounted).
+      if (!isCurrent(seq)) return;
       if (profile) {
         mapDataToState(profile);
       } else {
@@ -166,9 +163,9 @@ export const useProfileData = () => {
     } catch (error) {
       console.error("Failed to fetch profile:", error);
     } finally {
-      setIsLoading(false);
+      if (isCurrent(seq)) setIsLoading(false);
     }
-  }, [mapDataToState]);
+  }, [mapDataToState, begin, isCurrent]);
 
   /**
    * Generic update handler for profile-related updates.

@@ -12,30 +12,38 @@ from backend.utils.app_dependency_builder import AppDependencyBuilder
 from starlette.datastructures import Headers
 from backend.authentication.authentication_service import AuthenticationService
 from backend.dto.user_context_dto import UserContextDto
-from backend.common.user_role import UserRole
 
 
 class DevAuthenticationService(AuthenticationService):
     """
     Authentication service used exclusively in development mode.
 
-    This service skips real token validation and always returns a
-    predefined super-admin user. It should never be used in production
-    environments.
+    Skips real token validation and returns a fixed, already-verified
+    super-admin user. ``is_super_admin=True`` makes resolve_permissions grant
+    the full Permission set, so every endpoint is reachable; being "verified"
+    (an ``email|`` sub plus ``email_verified=True``) lands a confirmed primary
+    email on first login so the hard wall passes — no Auth0 env or OTP needed to
+    work on unrelated features.
+
+    To exercise the real email-link flow instead, temporarily set ``sub`` to a
+    real Auth0 primary user's sub (e.g. ``google-oauth2|<id>``) and the matching
+    ``primary_email``; link_identity needs a real Auth0 user to merge into.
+    Never use this service in production.
     """
 
     def authenticate_request(self, headers: Headers) -> UserContextDto:
         return UserContextDto(
-            sub="dev_superuser",
+            sub="email|dev-superuser",
             primary_email="admin@dev.local",
-            roles=[
-                UserRole.INFRA_ADMIN,
-                UserRole.MANAGER,
-                UserRole.MENTORSHIP_ADMIN,
-                UserRole.CC_INTERNAL,
-                UserRole.MENTORSHIP,
-                UserRole.CONTACT_GOOGLE_CHAT,
-            ],
+            # Verified, so first login lands a confirmed primary email and the
+            # hard wall passes without touching Auth0.
+            email_verified=True,
+            # Full access in dev; resolve_permissions honors this DTO flag
+            # (only DevAuthenticationService sets it, never production auth).
+            is_super_admin=True,
+            # Stand-in for the Auth0 token iat; bump it to see last_login_at
+            # advance on the next login.
+            last_login_at=1748000000,
         )
 
 

@@ -1,5 +1,4 @@
 import unittest
-import uuid
 from datetime import datetime, timezone
 
 from backend.repository.experience_repository import ExperienceRepository
@@ -40,7 +39,6 @@ class TestExperienceRepository(BaseRepositoryTestLib):
                 primary_email="alice@example.com",
                 is_active=True,
                 updated_timestamp=datetime.now(timezone.utc),
-                subject_identifier=str(uuid.uuid4()),
             ),
             UsersEntity(
                 first_name="Bob",
@@ -51,7 +49,6 @@ class TestExperienceRepository(BaseRepositoryTestLib):
                 primary_email="bob@example.com",
                 is_active=True,
                 updated_timestamp=datetime.now(timezone.utc),
-                subject_identifier=str(uuid.uuid4()),
             ),
             UsersEntity(
                 first_name="Charlie",
@@ -62,7 +59,6 @@ class TestExperienceRepository(BaseRepositoryTestLib):
                 primary_email="charlie@example.com",
                 is_active=False,
                 updated_timestamp=datetime.utcnow(),
-                subject_identifier=str(uuid.uuid4()),
             ),
         ]
 

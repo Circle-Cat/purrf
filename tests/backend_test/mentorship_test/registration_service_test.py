@@ -22,7 +22,6 @@ from backend.entity.preference_entity import PreferenceEntity
 from backend.entity.mentorship_round_participants_entity import (
     MentorshipRoundParticipantsEntity,
 )
-from backend.common.user_role import UserRole
 from backend.common.mentorship_enums import (
     ParticipantRole,
     TrainingStatus,
@@ -53,9 +52,6 @@ class TestRegistrationService(unittest.IsolatedAsyncioTestCase):
             AsyncMock()
         )
 
-        self.mock_user_identity_service = MagicMock()
-        self.mock_user_identity_service.get_user = AsyncMock()
-
         self.mock_mapper = MagicMock()
 
         self.mock_training_repo = MagicMock()
@@ -70,7 +66,6 @@ class TestRegistrationService(unittest.IsolatedAsyncioTestCase):
             mentorship_round_repository=self.mock_round_repo,
             mentorship_round_participants_repository=self.mock_participants_repo,
             participation_service=self.mock_participation_service,
-            user_identity_service=self.mock_user_identity_service,
             mentorship_mapper=self.mock_mapper,
             training_repository=self.mock_training_repo,
         )
@@ -101,13 +96,13 @@ class TestRegistrationService(unittest.IsolatedAsyncioTestCase):
         )
 
         self.user_id = 123
-        self.mock_user = MagicMock()
-        self.mock_user.user_id = self.user_id
-        self.user_context = MagicMock(
-            spec=UserContextDto, roles=[UserRole.CONTACT_GOOGLE_CHAT]
+        self.user_context = UserContextDto(
+            sub="auth0|123",
+            primary_email="user@example.com",
+            identity_type="external",
+            user_id=self.user_id,
         )
         self.mock_round_id = 1
-        self.mock_user_identity_service.get_user.return_value = (self.mock_user, False)
         self.mock_participation_service.resolve_participant_role_with_fallback.return_value = ParticipantRole.MENTOR
 
         self.fixed_now = datetime(2026, 4, 20, 0, 0, 0, tzinfo=timezone.utc)
@@ -201,9 +196,6 @@ class TestRegistrationService(unittest.IsolatedAsyncioTestCase):
             round_id=self.mock_round_id,
         )
 
-        self.mock_user_identity_service.get_user.assert_awaited_once_with(
-            session=self.mock_session, user_info=self.user_context
-        )
         self.mock_participation_service.get_user_round_preferences.assert_awaited_once_with(
             session=self.mock_session,
             user_context=self.user_context,
@@ -436,8 +428,6 @@ class TestRegistrationService(unittest.IsolatedAsyncioTestCase):
         )
 
         self.sample_dto.round_preferences.participant_role = ParticipantRole.MENTOR
-
-        self.user_context.roles = [UserRole.MENTORSHIP]
 
         global_entity = PreferenceEntity(user_id=self.user_id)
         participant_entity = MentorshipRoundParticipantsEntity(

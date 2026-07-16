@@ -9,6 +9,24 @@ py_test(
 )
 
 py_test(
+    name = "permissions_test",
+    srcs = ["permissions_test.py"],
+    deps = [
+        "//backend/common:permissions",
+    ],
+)
+
+py_test(
+    name = "auth0_client_test",
+    srcs = ["auth0_client_test.py"],
+    deps = [
+        "//backend/common:auth0_client",
+        "//backend/common:exceptions",
+        "@pypi//pyjwt",
+    ],
+)
+
+py_test(
     name = "google_client_test",
     srcs = ["google_client_test.py"],
     deps = [
@@ -28,6 +46,7 @@ py_test(
     name = "fast_api_error_handler_test",
     srcs = ["fast_api_error_handler_test.py"],
     deps = [
+        "//backend/common:exceptions",
         "//backend/common:fast_api_error_handler",
         "@pypi//fastapi",
         "@pypi//httpx",

@@ -39,7 +39,6 @@ class RegistrationService:
         mentorship_round_repository,
         mentorship_round_participants_repository,
         participation_service,
-        user_identity_service,
         mentorship_mapper,
         training_repository,
     ):
@@ -53,7 +52,6 @@ class RegistrationService:
             mentorship_round_participants_repository: The repository responsible for handling mentorship
                                                     round participants data.
             participation_service: Service responsible for retrieving participation data.
-            user_identity_service: Service responsible for retrieving user identity information.
             mentorship_mapper (MentorshipMapper):
                 The mapper for converting mentorship rounds and entities to DTOs.
             training_repository: The repository responsible for handling training data.
@@ -63,7 +61,6 @@ class RegistrationService:
         self.mentorship_round_repo = mentorship_round_repository
         self.participants_repo = mentorship_round_participants_repository
         self.participation_service = participation_service
-        self.user_identity_service = user_identity_service
         self.mentorship_mapper = mentorship_mapper
         self.training_repo = training_repository
 
@@ -102,13 +99,11 @@ class RegistrationService:
             )
             raise ValueError(f"Mentorship round {round_id} not found.")
 
-        current_user, _ = await self.user_identity_service.get_user(
-            session=session, user_info=user_context
-        )
-
         participant_role = (
             await self.participation_service.resolve_participant_role_with_fallback(
-                session=session, user_context=user_context, user_id=current_user.user_id
+                session=session,
+                user_context=user_context,
+                user_id=user_context.user_id,
             )
         )
         preferences_data.round_preferences.participant_role = participant_role
@@ -144,11 +139,11 @@ class RegistrationService:
             )
 
         global_pref = await self._update_skill_and_industry_preferences(
-            session=session, user_id=current_user.user_id, data=preferences_data
+            session=session, user_id=user_context.user_id, data=preferences_data
         )
         round_pref = await self._update_user_round_preferences(
             session=session,
-            user_id=current_user.user_id,
+            user_id=user_context.user_id,
             round_id=round_id,
             data=preferences_data,
         )
@@ -160,7 +155,7 @@ class RegistrationService:
         )
         onboarding_training = (
             await self.training_repo.get_training_by_user_id_and_category(
-                session=session, user_id=current_user.user_id, category=category
+                session=session, user_id=user_context.user_id, category=category
             )
         )
         if not onboarding_training:
@@ -172,7 +167,7 @@ class RegistrationService:
             onboarding_training = await self.training_repo.upsert_training(
                 session=session,
                 entity=TrainingEntity(
-                    user_id=current_user.user_id,
+                    user_id=user_context.user_id,
                     category=category,
                     status=TrainingStatus.TO_DO,
                     completed_timestamp=None,
@@ -334,9 +329,8 @@ class RegistrationService:
         Consolidates global and round preferences into a comprehensive registration DTO.
 
         This method:
-        1. Resolves the user ID and handles necessary database commits.
-        2. Retrieves both global and round-specific preferences.
-        3. Combines both preference DTOs into a unified RegistrationDto.
+        1. Retrieves both global and round-specific preferences.
+        2. Combines both preference DTOs into a unified RegistrationDto.
 
         Args:
             session (AsyncSession): Active SQLAlchemy async session.
@@ -346,13 +340,6 @@ class RegistrationService:
         Returns:
             RegistrationDto: A DTO combining GlobalPreferenceDTO and RoundPreferenceDto.
         """
-        (current_user, should_commit) = await self.user_identity_service.get_user(
-            session=session, user_info=user_context
-        )
-
-        if should_commit:
-            await session.commit()
-
         round_entity = await self.mentorship_round_repo.get_by_round_id(
             session=session, round_id=round_id
         )
@@ -363,7 +350,7 @@ class RegistrationService:
             )
             raise ValueError(f"Mentorship round {round_id} not found.")
 
-        current_user_id = current_user.user_id
+        current_user_id = user_context.user_id
 
         global_preferences = await self._get_skill_and_industry_preferences(
             session=session, user_id=current_user_id

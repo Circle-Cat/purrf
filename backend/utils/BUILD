@@ -50,7 +50,10 @@ py_library(
     ],
     deps = [
         "//backend/common:fast_api_response_wrapper",
+        "//backend/common:identity_type",
+        "//backend/common:permissions",
         "@pypi//fastapi",
+        "@pypi//sqlalchemy",
     ],
 )
 
@@ -61,7 +64,8 @@ py_library(
     ],
     deps = [
         "//backend/common:fast_api_response_wrapper",
-        "//backend/common:user_role",
+        "//backend/common:identity_type",
+        "//backend/common:permissions",
         "@pypi//starlette",
     ],
 )
@@ -89,9 +93,14 @@ py_library(
         ":google_chat_message_utils",
         ":microsoft_chat_message_util",
         ":retry_utils",
+        "//backend/admin:permission_admin_controller",
+        "//backend/admin:permission_admin_service",
         "//backend/authentication:authentication_controller",
         "//backend/authentication:authentication_service",
+        "//backend/authentication:email_management_controller",
+        "//backend/authentication:email_management_service",
         "//backend/common:asyncio_event_loop_manager",
+        "//backend/common:auth0_client",
         "//backend/common:database",
         "//backend/common:gerrit_client",
         "//backend/common:jira_client",

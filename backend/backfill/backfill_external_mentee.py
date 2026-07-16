@@ -81,11 +81,6 @@ def _parse_industry(raw: str) -> dict[str, bool]:
     return {key: (key in tags) for key in INDUSTRY_KEYS}
 
 
-def _parse_alternative_emails(raw: str) -> list[str] | None:
-    emails = [e.strip() for e in raw.split(",") if e.strip()]
-    return emails if emails else None
-
-
 def _parse_bool(raw: str) -> bool:
     return raw.strip().lower() in {"true", "1", "yes"}
 
@@ -208,7 +203,6 @@ async def main():
                 if user is None:
                     user = UsersEntity(
                         primary_email=email,
-                        subject_identifier=f"manual|{email}",
                     )
                     session.add(user)
 
@@ -219,9 +213,6 @@ async def main():
                 user.timezone_updated_at = DEFAULT_DATETIME_UTC
                 user.communication_channel = CommunicationMethod.EMAIL
                 user.linkedin_link = row.get("linkedin_link", "").strip() or None
-                user.alternative_emails = _parse_alternative_emails(
-                    row.get("alternative_emails", "")
-                )
                 user.is_active = True
                 user_rows.append((row, user))
 

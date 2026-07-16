@@ -9,7 +9,6 @@ from backend.dto.preference_dto import (
 )
 from backend.dto.registration_dto import GlobalPreferencesDto, RoundPreferencesDto
 from backend.dto.rounds_dto import RoundsDto, TimelineDto
-from backend.dto.partner_dto import PartnerDto
 from backend.dto.meeting_dto import MeetingDto
 from backend.entity.users_entity import UsersEntity
 from backend.entity.preference_entity import PreferenceEntity
@@ -38,12 +37,16 @@ class TestMentorshipMapper(unittest.TestCase):
             "promotion_start_at": "2025-07-02T06:59:59Z",
             "mentor_application_deadline_at": "2025-07-16T06:59:59Z",
             "mentee_application_deadline_at": "2025-07-14T06:59:59Z",
+            "training_notification_at": "2025-07-18T06:59:59Z",
+            "training_deadline_at": "2025-07-25T06:59:59Z",
             "review_start_at": "2025-07-17T06:59:59Z",
             "acceptance_notification_at": "2025-07-31T06:59:59Z",
             "matching_completed_at": "2025-08-06T06:59:59Z",
             "match_notification_at": "2025-08-07T06:59:59Z",
             "first_meeting_deadline_at": "2025-08-21T06:59:59Z",
+            "meeting_log_reminder_at": "2025-09-01T06:59:59Z",
             "meetings_completion_deadline_at": "2025-11-21T07:59:59Z",
+            "feedback_start_at": "2025-11-22T07:59:59Z",
             "feedback_deadline_at": "2025-11-23T07:59:59Z",
         }
 
@@ -167,13 +170,28 @@ class TestMentorshipMapper(unittest.TestCase):
                 primary_email="alice@example.com",
                 is_active=True,
                 updated_timestamp=datetime.now(timezone.utc),
-                subject_identifier=str(uuid.uuid4()),
             )
         ]
 
     def test_map_to_rounds_dto_with_full_data(self):
-        """Test mapping a mentorship round entity with complete timeline data."""
-        dtos = self.mapper.map_to_rounds_dto(self.mentorship_round_entities)
+        """Test mapping mentorship round entities with complete timeline and count data."""
+        pair_stats = {
+            1: {
+                "active_pairs": 5,
+                "matched_participants": 10,
+                "total_completed_meetings": 10,
+            },
+            2: {
+                "active_pairs": 4,
+                "matched_participants": 7,
+                "total_completed_meetings": 6,
+            },
+        }
+
+        dtos = self.mapper.map_to_rounds_dto(
+            self.mentorship_round_entities,
+            pair_stats=pair_stats,
+        )
         dto = dtos[0]
 
         self.assertIsInstance(dto, RoundsDto)
@@ -185,26 +203,15 @@ class TestMentorshipMapper(unittest.TestCase):
         self.assertIsNotNone(dto.timeline)
         self.assertEqual(dto.timeline, expected_timeline)
 
-    def test_map_to_partner_dto_with_full_data(self):
-        """Test mapping users entity has preferred_name to partner dto."""
-        self.users[0].preferred_name = "Amy"
-        dtos = self.mapper.map_to_partner_dto(self.users)
-        dto = dtos[0]
-
-        self.assertIsInstance(dto, PartnerDto)
-        self.assertEqual(dto.id, self.users[0].user_id)
-        self.assertEqual(dto.first_name, self.users[0].first_name)
-        self.assertEqual(dto.last_name, self.users[0].last_name)
-        self.assertEqual(dto.preferred_name, self.users[0].preferred_name)
-        self.assertEqual(dto.primary_email, self.users[0].primary_email)
-
-    def test_map_to_partner_dto_without_preferred_name(self):
-        """Test mapping users entity with no preferred_name to partner dto."""
-        dtos = self.mapper.map_to_partner_dto(self.users)
-        dto = dtos[0]
-
-        self.assertIsInstance(dto, PartnerDto)
-        self.assertEqual(dto.preferred_name, self.users[0].first_name)
+        self.assertEqual(dtos[0].active_pairs, 5)
+        self.assertEqual(dtos[0].matched_participants, 10)
+        self.assertEqual(dtos[0].total_completed_meetings, 10)
+        self.assertEqual(dtos[1].active_pairs, 4)
+        self.assertEqual(dtos[1].matched_participants, 7)
+        self.assertEqual(dtos[1].total_completed_meetings, 6)
+        self.assertIsNone(dtos[2].active_pairs)
+        self.assertIsNone(dtos[2].matched_participants)
+        self.assertIsNone(dtos[2].total_completed_meetings)
 
     def test_map_to_global_preferences_dto_success(self):
         """Test mapping preference entity to global preferences dto correctly."""

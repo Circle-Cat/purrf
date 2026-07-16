@@ -33,11 +33,10 @@ def _make_pair(pair_id, mentor_id, mentee_id, google_meetings):
     return pair
 
 
-def _make_user(user_id, primary_email, alternative_emails=None):
+def _make_user(user_id, primary_email):
     user = MagicMock()
     user.user_id = user_id
     user.primary_email = primary_email
-    user.alternative_emails = alternative_emails or []
     return user
 
 
@@ -48,6 +47,8 @@ def _make_service(**overrides):
         mentorship_pairs_repository=MagicMock(),
         mentorship_round_repository=MagicMock(),
         users_repository=MagicMock(),
+        user_identities_repository=MagicMock(),
+        user_emails_repository=MagicMock(),
     )
     return MeetAttendanceService(**{**defaults, **overrides})
 
@@ -70,6 +71,16 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
         self.mock_users_repo = MagicMock()
         self.mock_users_repo.get_all_by_ids = AsyncMock()
 
+        self.mock_identities_repo = MagicMock()
+        self.mock_identities_repo.get_google_subs_by_user_ids = AsyncMock(
+            return_value={}
+        )
+
+        self.mock_user_emails_repo = MagicMock()
+        self.mock_user_emails_repo.get_non_primary_emails_by_user_ids = AsyncMock(
+            return_value={}
+        )
+
         self.mock_session = AsyncMock()
 
         self.service = _make_service(
@@ -77,6 +88,8 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
             mentorship_pairs_repository=self.mock_pairs_repo,
             mentorship_round_repository=self.mock_round_repo,
             users_repository=self.mock_users_repo,
+            user_identities_repository=self.mock_identities_repo,
+            user_emails_repository=self.mock_user_emails_repo,
         )
 
         self.round_id = 1
@@ -106,6 +119,71 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
                 _make_gm(conference_id=conf_id, start_datetime=start, end_datetime=end)
             ],
         )
+
+    async def test_resolve_identities_local_cache_from_google_identity(self):
+        """A signed-in UID matching a mentor's google-oauth2 sub suffix resolves
+        from the user_identities local cache without a Google API call."""
+        self.mock_identities_repo.get_google_subs_by_user_ids.return_value = {
+            self.mentor.user_id: ["google-oauth2|uid-mentor"],
+        }
+        raw_by_conf = {
+            "conferenceRecords/REC1": [{"signedin_user_id": "uid-mentor"}],
+        }
+
+        result = await self.service._resolve_identities(
+            self.mock_session, raw_by_conf, [self.mentor, self.mentee]
+        )
+
+        self.assertEqual(result, {"uid-mentor": "mentor@example.com"})
+        self.mock_google_service.get_email_by_google_user_id.assert_not_called()
+        self.mock_identities_repo.get_google_subs_by_user_ids.assert_awaited_once_with(
+            self.mock_session, [self.mentor.user_id, self.mentee.user_id]
+        )
+
+    async def test_resolve_identities_resolves_all_google_uids_of_one_user(self):
+        """A user with two linked Google accounts resolves both signed-in UIDs
+        locally, without any Google API call."""
+        self.mock_identities_repo.get_google_subs_by_user_ids.return_value = {
+            self.mentor.user_id: [
+                "google-oauth2|uid-mentor-a",
+                "google-oauth2|uid-mentor-b",
+            ],
+        }
+        raw_by_conf = {
+            "conferenceRecords/REC1": [
+                {"signedin_user_id": "uid-mentor-a"},
+                {"signedin_user_id": "uid-mentor-b"},
+            ],
+        }
+
+        result = await self.service._resolve_identities(
+            self.mock_session, raw_by_conf, [self.mentor, self.mentee]
+        )
+
+        self.assertEqual(
+            result,
+            {
+                "uid-mentor-a": "mentor@example.com",
+                "uid-mentor-b": "mentor@example.com",
+            },
+        )
+        self.mock_google_service.get_email_by_google_user_id.assert_not_called()
+
+    async def test_resolve_identities_falls_back_to_api_when_no_local_match(self):
+        """A UID with no local google identity match is resolved via the Google API."""
+        self.mock_identities_repo.get_google_subs_by_user_ids.return_value = {}
+        self.mock_google_service.get_email_by_google_user_id.return_value = (
+            "looked-up@example.com"
+        )
+        raw_by_conf = {
+            "conferenceRecords/REC1": [{"signedin_user_id": "uid-stranger"}],
+        }
+
+        result = await self.service._resolve_identities(
+            self.mock_session, raw_by_conf, [self.mentor, self.mentee]
+        )
+
+        self.assertEqual(result, {"uid-stranger": "looked-up@example.com"})
 
     async def test_no_active_round_returns_empty(self):
         self.mock_round_repo.get_running_round_id.return_value = None
@@ -676,8 +754,11 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
         mentor_with_alt = _make_user(
             user_id=self.mentor.user_id,
             primary_email="mentor@example.com",
-            alternative_emails=["mentor-alt@example.com"],
         )
+        # The alternative email now lives in user_emails (a non-primary row).
+        self.mock_user_emails_repo.get_non_primary_emails_by_user_ids.return_value = {
+            self.mentor.user_id: ["mentor-alt@example.com"],
+        }
         pair = self._make_active_pair(
             start="2026-04-07T10:00:00+00:00",
             end="2026-04-07T11:00:00+00:00",

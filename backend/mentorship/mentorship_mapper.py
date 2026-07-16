@@ -1,5 +1,4 @@
 from backend.dto.rounds_dto import RoundsDto, TimelineDto
-from backend.dto.partner_dto import PartnerDto
 from backend.dto.preference_dto import (
     SpecificIndustryDto,
     SkillsetsDto,
@@ -13,7 +12,6 @@ from backend.entity.preference_entity import PreferenceEntity
 from backend.entity.mentorship_round_participants_entity import (
     MentorshipRoundParticipantsEntity,
 )
-from backend.entity.users_entity import UsersEntity
 from backend.entity.mentorship_round_entity import MentorshipRoundEntity
 from backend.common.mentorship_enums import ParticipantRole
 
@@ -23,12 +21,24 @@ class MentorshipMapper:
     Mapper for converting mentorship-related database entities to DTOs.
     """
 
-    def map_to_rounds_dto(self, rounds: list[MentorshipRoundEntity]) -> list[RoundsDto]:
+    def map_to_rounds_dto(
+        self,
+        rounds: list[MentorshipRoundEntity],
+        pair_stats: dict[int, dict] | None = None,
+    ) -> list[RoundsDto]:
         """Maps a list of MentorshipRoundEntity objects to a list of RoundsDto objects."""
+        pair_stats = pair_stats or {}
         return [
             RoundsDto(
                 id=r.round_id,
                 name=r.name,
+                active_pairs=pair_stats.get(r.round_id, {}).get("active_pairs"),
+                matched_participants=pair_stats.get(r.round_id, {}).get(
+                    "matched_participants"
+                ),
+                total_completed_meetings=pair_stats.get(r.round_id, {}).get(
+                    "total_completed_meetings"
+                ),
                 mentee_average_score=r.mentee_average_score,
                 mentor_average_score=r.mentor_average_score,
                 expectations=r.expectations,
@@ -54,25 +64,16 @@ class MentorshipMapper:
             mentee_application_deadline_at=d.get("mentee_application_deadline_at"),
             review_start_at=d.get("review_start_at"),
             acceptance_notification_at=d.get("acceptance_notification_at"),
+            training_notification_at=d.get("training_notification_at"),
+            training_deadline_at=d.get("training_deadline_at"),
             matching_completed_at=d.get("matching_completed_at"),
             match_notification_at=d.get("match_notification_at"),
             first_meeting_deadline_at=d.get("first_meeting_deadline_at"),
+            meeting_log_reminder_at=d.get("meeting_log_reminder_at"),
             meetings_completion_deadline_at=d.get("meetings_completion_deadline_at"),
+            feedback_start_at=d.get("feedback_start_at"),
             feedback_deadline_at=d.get("feedback_deadline_at"),
         )
-
-    def map_to_partner_dto(self, user_entities: list[UsersEntity]) -> list[PartnerDto]:
-        """Maps a list of UsersEntity objects to a list of PartnerDto objects."""
-        return [
-            PartnerDto(
-                id=u.user_id,
-                first_name=u.first_name,
-                last_name=u.last_name,
-                preferred_name=u.preferred_name or u.first_name,
-                primary_email=u.primary_email,
-            )
-            for u in user_entities
-        ]
 
     def map_to_global_preferences_dto(
         self, preference_entity: PreferenceEntity

@@ -3,7 +3,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 from backend.common.fast_api_response_wrapper import api_response
 from backend.common.constants import SINGLE_GOOGLE_CHAT_EVENT_TYPES
-from backend.common.user_role import UserRole
+from backend.common.permissions import Permission
 from backend.common.api_endpoints import (
     GOOGLE_CHAT_SUBSCRIBE_ENDPOINT,
     MICROSOFT_CHAT_SUBSCRIBE_ENDPOINT,
@@ -48,7 +48,7 @@ class NotificationController:
 
         self.router.add_api_route(
             MICROSOFT_CHAT_SUBSCRIBE_ENDPOINT,
-            endpoint=authenticate(roles=[UserRole.INFRA_ADMIN])(
+            endpoint=authenticate(permissions=[Permission.SYSTEM_SUBSCRIBE])(
                 self.subscribe_microsoft_chat_messages
             ),
             methods=["POST"],
@@ -56,7 +56,7 @@ class NotificationController:
         )
         self.router.add_api_route(
             GOOGLE_CHAT_SUBSCRIBE_ENDPOINT,
-            endpoint=authenticate(roles=[UserRole.INFRA_ADMIN])(
+            endpoint=authenticate(permissions=[Permission.SYSTEM_SUBSCRIBE])(
                 self.subscribe_google_chat_space
             ),
             methods=["POST"],

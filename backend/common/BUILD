@@ -13,6 +13,27 @@ py_library(
 )
 
 py_library(
+    name = "exceptions",
+    srcs = ["exceptions.py"],
+)
+
+py_library(
+    name = "permissions",
+    srcs = ["permissions.py"],
+)
+
+py_library(
+    name = "auth0_client",
+    srcs = ["auth0_client.py"],
+    deps = [
+        ":environment_constants",
+        ":exceptions",
+        "@pypi//pyjwt",
+        "@pypi//requests",
+    ],
+)
+
+py_library(
     name = "logger",
     srcs = ["logger.py"],
     deps = [
@@ -66,6 +87,7 @@ py_library(
         "fast_api_error_handler.py",
     ],
     deps = [
+        ":exceptions",
         ":fast_api_response_wrapper",
         ":logger",
     ],
@@ -163,9 +185,9 @@ py_library(
 )
 
 py_library(
-    name = "user_role",
+    name = "identity_type",
     srcs = [
-        "user_role.py",
+        "identity_type.py",
     ],
 )
 

@@ -1,5 +1,4 @@
 import unittest
-import uuid
 from datetime import datetime, timezone
 from backend.entity.mentorship_pairs_entity import MentorshipPairsEntity
 from backend.entity.mentorship_round_entity import MentorshipRoundEntity
@@ -34,7 +33,6 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
                 primary_email="alice@example.com",
                 is_active=True,
                 updated_timestamp=self.now,
-                subject_identifier=str(uuid.uuid4()),
             ),
             UsersEntity(
                 first_name="Bob",
@@ -45,7 +43,6 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
                 primary_email="bob@example.com",
                 is_active=True,
                 updated_timestamp=self.now,
-                subject_identifier=str(uuid.uuid4()),
             ),
             UsersEntity(
                 first_name="Charlie",
@@ -56,7 +53,6 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
                 primary_email="charlie@example.com",
                 is_active=False,
                 updated_timestamp=self.now,
-                subject_identifier=str(uuid.uuid4()),
             ),
         ]
 
@@ -158,7 +154,6 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
             primary_email="mentor@example.com",
             is_active=True,
             updated_timestamp=self.now,
-            subject_identifier="mentor-subject",
         )
         self.user_partner = UsersEntity(
             first_name="P",
@@ -169,7 +164,6 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
             primary_email="partner@example.com",
             is_active=True,
             updated_timestamp=self.now,
-            subject_identifier="partner-subject",
         )
 
         self.round = MentorshipRoundEntity(
@@ -209,35 +203,6 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
     async def test_get_pairs_by_user_non_existent(self):
         """Test passing a non-existent user ID returns an empty collection."""
         result = await self.repo.get_all_partner_ids(self.session, 9999)
-
-        self.assertIsNotNone(result)
-        self.assertEqual(result, [])
-
-    async def test_get_partner_ids_by_user_and_round(self):
-        """Test passing both user_id and round_id returns the unique partner IDs."""
-        result = await self.repo.get_partner_ids_by_user_and_round(
-            self.session, self.users[0].user_id, self.rounds[0].round_id
-        )
-
-        self.assertIsNotNone(result)
-        self.assertEqual(len(result), 2)
-        self.assertIn(self.users[1].user_id, result)
-        self.assertIn(self.users[2].user_id, result)
-
-    async def test_get_partner_ids_by_user_and_round_by_user_non_existent(self):
-        """Test passing non-existent user ID and valid rounds ID returns an empty collection."""
-        result = await self.repo.get_partner_ids_by_user_and_round(
-            self.session, 9999, self.rounds[0].round_id
-        )
-
-        self.assertIsNotNone(result)
-        self.assertEqual(result, [])
-
-    async def test_get_partner_ids_by_user_and_round_by_round_non_existent(self):
-        """Test passing valid user ID and non-existent rounds ID returns an empty collection."""
-        result = await self.repo.get_partner_ids_by_user_and_round(
-            self.session, self.users[0].user_id, 9999
-        )
 
         self.assertIsNotNone(result)
         self.assertEqual(result, [])
@@ -919,6 +884,31 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
         )
 
         self.assertEqual(result, [])
+
+    async def test_get_pair_stats(self):
+        """Should only include active pairs and deduplicate matched_participants across pairs in the same round."""
+        result = await self.repo.get_pair_stats(self.session)
+
+        self.assertIsInstance(result, dict)
+
+        # rounds[0]: pairs[2] is INACTIVE and excluded; only pairs[0] counts
+        self.assertEqual(result[self.rounds[0].round_id]["active_pairs"], 1)
+        self.assertEqual(result[self.rounds[0].round_id]["matched_participants"], 2)
+        self.assertEqual(result[self.rounds[0].round_id]["total_completed_meetings"], 5)
+
+        # rounds[2]: users[0] appears as mentor in pairs[3] and pairs[4] → deduped to 1
+        self.assertEqual(result[self.rounds[2].round_id]["active_pairs"], 3)
+        self.assertEqual(result[self.rounds[2].round_id]["matched_participants"], 4)
+        self.assertEqual(result[self.rounds[2].round_id]["total_completed_meetings"], 0)
+
+    async def test_get_pair_stats_empty(self):
+        """Returns an empty dict when there are no active pairs for a round."""
+        empty_round = MentorshipRoundEntity(name="empty-round", required_meetings=5)
+        await self.insert_entities([empty_round])
+
+        result = await self.repo.get_pair_stats(self.session)
+
+        self.assertNotIn(empty_round.round_id, result)
 
 
 if __name__ == "__main__":

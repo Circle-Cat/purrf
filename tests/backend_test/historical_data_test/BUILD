@@ -12,8 +12,9 @@ py_test(
     name = "historical_controller_test",
     srcs = ["historical_controller_test.py"],
     deps = [
+        "//backend/common:permissions",
+        "//backend/dto",
         "//backend/historical_data:historical_controller",
-        "//backend/utils:auth_middleware",
         "@pypi//httpx",
     ],
 )

@@ -1,5 +1,8 @@
 from backend.entity.users_entity import UsersEntity
-from sqlalchemy import select
+from backend.entity.user_emails_entity import UserEmailsEntity
+from backend.entity.user_identities_entity import UserIdentitiesEntity
+from backend.common.identity_type import IdentityType
+from sqlalchemy import exists, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -50,27 +53,41 @@ class UsersRepository:
         )
         return list(result.scalars().all())
 
-    async def get_user_by_subject_identifier(
-        self, session: AsyncSession, sub: str
-    ) -> UsersEntity | None:
+    async def get_users_and_emails_by_ids(
+        self, session: AsyncSession, user_ids: set[int]
+    ) -> tuple[dict[int, UsersEntity], dict[int, list[UserEmailsEntity]]]:
         """
-        Retrieve a users entity by its subject identifier.
-
-        This method expects an externally managed AsyncSession, typically provided
-        by the service layer within a transactional context.
+        Retrieve users and their confirmed email addresses by a set of user IDs.
 
         Args:
             session (AsyncSession): The active async database session.
-            sub (string): The subject identifier of the user to retrieve.
+            user_ids (set[int]): A set of user IDs to retrieve.
 
         Returns:
-            UsersEntity | None: The matching user entity if found; otherwise None.
+            tuple[dict[int, UsersEntity], dict[int, list[UserEmailsEntity]]]:
+                A users map and an emails map both keyed by user_id.
+                Returns empty dicts if user_ids is empty.
         """
-        result = await session.execute(
-            select(UsersEntity).where(UsersEntity.subject_identifier == sub)
-        )
+        if not user_ids:
+            return {}, {}
 
-        return result.scalars().one_or_none()
+        result = await session.execute(
+            select(UsersEntity, UserEmailsEntity)
+            .outerjoin(
+                UserEmailsEntity,
+                UserEmailsEntity.user_id == UsersEntity.user_id,
+            )
+            .where(UsersEntity.user_id.in_(user_ids))
+        )
+        users_map: dict[int, UsersEntity] = {}
+        emails_map: dict[int, list[UserEmailsEntity]] = {}
+        for user, email in result.all():
+            if user.user_id not in users_map:
+                users_map[user.user_id] = user
+                emails_map[user.user_id] = []
+            if email is not None:
+                emails_map[user.user_id].append(email)
+        return users_map, emails_map
 
     async def get_user_by_primary_email(
         self, session: AsyncSession, primary_email: str
@@ -94,6 +111,30 @@ class UsersRepository:
 
         return result.scalars().one_or_none()
 
+    async def update_primary_email(
+        self, session: AsyncSession, user_id: int, email: str
+    ) -> None:
+        """
+        Overwrite the legacy ``users.primary_email`` column for one user.
+
+        Write-through used by EmailManagementService to keep the legacy column in
+        sync with the current primary user_emails row (see the TODO on
+        ``UsersEntity.primary_email``). Flushes but does not commit; the caller
+        owns the transaction boundary. The caller is responsible for not passing
+        an email already owned by another user (``uq_users_primary_email``).
+
+        Args:
+            session (AsyncSession): The active async database session.
+            user_id (int): The user whose primary_email to update.
+            email (str): The new primary email value.
+        """
+        await session.execute(
+            update(UsersEntity)
+            .where(UsersEntity.user_id == user_id)
+            .values(primary_email=email)
+        )
+        await session.flush()
+
     async def upsert_users(
         self, session: AsyncSession, entity: UsersEntity
     ) -> UsersEntity:
@@ -115,3 +156,172 @@ class UsersRepository:
         await session.flush()
 
         return merged_entity
+
+    async def list_users(
+        self,
+        session: AsyncSession,
+        *,
+        search: str | None = None,
+        user_id: int | None = None,
+        limit: int = 20,
+        offset: int = 0,
+        sort_by: str | None = None,
+        order: str = "asc",
+        is_super_admin: bool | None = None,
+        user_type: str | None = None,
+    ) -> tuple[list[tuple[UsersEntity, bool]], int]:
+        """
+        Paginated user list with optional case-insensitive substring search,
+        sorting, and filtering.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            search (str | None): Case-insensitive substring over first_name /
+                last_name / primary_email; None lists everyone.
+            user_id (int | None): When not None, restricts results to the user
+                with this exact ``user_id``. Applied in addition to ``search``.
+            limit (int): Max rows to return.
+            offset (int): Rows to skip (for pagination).
+            sort_by (str | None): Column to sort by. Allowed values:
+                ``"user_id"``, ``"first_name"``, ``"last_name"``,
+                ``"preferred_name"``, ``"is_active"``, ``"is_super_admin"``,
+                ``"user_type"`` (by the derived internal/external flag).
+                Unknown or None values fall back to deterministic ``user_id``
+                order.
+            order (str): ``"asc"`` (default) or ``"desc"``. Only applied when
+                ``sort_by`` resolves to a whitelisted column.
+            is_super_admin (bool | None): When not None, restricts results to
+                users whose ``is_super_admin`` flag matches this value.
+            user_type (str | None): When ``"internal"`` keeps only users that
+                have an INTERNAL identity row; when ``"external"`` keeps only
+                users without one; otherwise no filter.
+
+        Returns:
+            tuple[list[tuple[UsersEntity, bool]], int]: (page rows where each
+            element is (entity, is_internal), total number of rows matching all
+            active filters across all pages).
+        """
+        internal_identity_exists = exists(
+            select(UserIdentitiesEntity.identity_id).where(
+                UserIdentitiesEntity.user_id == UsersEntity.user_id,
+                UserIdentitiesEntity.identity_type == IdentityType.INTERNAL,
+            )
+        )
+
+        # "user_type" sorts by the derived internal/external flag; ascending
+        # puts external (no internal identity) before internal.
+        _SORT_WHITELIST: dict[str, object] = {
+            "user_id": UsersEntity.user_id,
+            "first_name": UsersEntity.first_name,
+            "last_name": UsersEntity.last_name,
+            "preferred_name": UsersEntity.preferred_name,
+            "is_active": UsersEntity.is_active,
+            "is_super_admin": UsersEntity.is_super_admin,
+            "user_type": internal_identity_exists,
+        }
+
+        filters = []
+        if search:
+            pattern = f"%{search.lower()}%"
+            filters.append(
+                or_(
+                    func.lower(UsersEntity.first_name).like(pattern),
+                    func.lower(UsersEntity.last_name).like(pattern),
+                    func.lower(UsersEntity.primary_email).like(pattern),
+                )
+            )
+        if user_id is not None:
+            filters.append(UsersEntity.user_id == user_id)
+        if is_super_admin is not None:
+            filters.append(UsersEntity.is_super_admin == is_super_admin)
+        if user_type == IdentityType.INTERNAL:
+            filters.append(internal_identity_exists)
+        elif user_type == IdentityType.EXTERNAL:
+            filters.append(~internal_identity_exists)
+
+        is_internal_col = internal_identity_exists.label("is_internal")
+
+        # Build ORDER BY: whitelisted column (asc/desc) + user_id tiebreaker.
+        sort_col = _SORT_WHITELIST.get(sort_by) if sort_by else None
+        if sort_col is not None:
+            primary_order = sort_col.desc() if order == "desc" else sort_col.asc()
+            order_clauses = [primary_order, UsersEntity.user_id]
+        else:
+            order_clauses = [UsersEntity.user_id]
+
+        total = await session.scalar(
+            select(func.count()).select_from(UsersEntity).where(*filters)
+        )
+        result = await session.execute(
+            select(UsersEntity, is_internal_col)
+            .where(*filters)
+            .order_by(*order_clauses)
+            .limit(limit)
+            .offset(offset)
+        )
+        return list(result.tuples().all()), int(total or 0)
+
+    async def get_super_admins(self, session: AsyncSession) -> list[UsersEntity]:
+        """
+        All users currently flagged as super admins.
+
+        Super admins hold every permission via the ``is_super_admin`` flag rather
+        than per-permission grant rows, so the permission-holders reverse lookup
+        needs this authoritative set to synthesize derived holders.
+
+        Args:
+            session (AsyncSession): The active async database session.
+
+        Returns:
+            list[UsersEntity]: User rows whose ``is_super_admin`` flag is True.
+        """
+        result = await session.execute(
+            select(UsersEntity).where(UsersEntity.is_super_admin.is_(True))
+        )
+        return list(result.scalars().all())
+
+    async def is_internal(self, session: AsyncSession, user_id: int) -> bool:
+        """
+        Returns True if the user has at least one identity_type='internal' row
+        in user_identities.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            user_id (int): The user to check.
+
+        Returns:
+            bool: True if an INTERNAL identity row exists for this user.
+        """
+        result = await session.scalar(
+            select(
+                exists(
+                    select(UserIdentitiesEntity.identity_id).where(
+                        UserIdentitiesEntity.user_id == user_id,
+                        UserIdentitiesEntity.identity_type == IdentityType.INTERNAL,
+                    )
+                )
+            )
+        )
+        return bool(result)
+
+    async def set_super_admin(
+        self, session: AsyncSession, user_id: int, is_super_admin: bool
+    ) -> int:
+        """
+        Set a user's super-admin flag.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            user_id (int): The user to update.
+            is_super_admin (bool): The new flag value.
+
+        Returns:
+            int: The number of rows updated (0 if no user has ``user_id``).
+        """
+        result = await session.execute(
+            update(UsersEntity)
+            .where(UsersEntity.user_id == user_id)
+            .values(is_super_admin=is_super_admin)
+        )
+        await session.flush()
+        return result.rowcount

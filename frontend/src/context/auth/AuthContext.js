@@ -2,7 +2,7 @@ import { createContext, useContext } from "react";
 
 /**
  * Authentication Context.
- * Provides authentication state (e.g., user roles, loading status) to the component tree.
+ * Provides authentication state (e.g., user permissions, loading status) to the component tree.
  */
 export const AuthContext = createContext(null);
 
@@ -11,13 +11,23 @@ export const AuthContext = createContext(null);
  * A wrapper around useContext to easily retrieve authentication data.
  *
  * @returns {{
- *   roles: string[],
- *   user: { sub: string, email: string } | null,
- *   loading: boolean
- * }} The current authentication state containing user identity, roles, and loading status.
+ *   permissions: string[],
+ *   user: { sub: string, userId: number, email: string, identityType: string } | null,
+ *   isSuperAdmin: boolean,
+ *   hasVerifiedEmail: boolean,
+ *   needsLink: boolean,
+ *   accessDenied: boolean,
+ *   accessDeniedMessage: string,
+ *   authError: boolean,
+ *   sessionExpired: boolean,
+ *   loading: boolean,
+ *   refreshAuth: () => Promise<void>
+ * }} The current authentication state plus a refresher to re-pull it.
+ *   `authError` is true when the auth pull failed for a non-403 reason (401,
+ *   network, timeout, 5xx); `sessionExpired` narrows that to a 401.
  *
  * @example
- * const { roles, loading } = useAuth();
+ * const { permissions, loading } = useAuth();
  */
 export const useAuth = () => {
   return useContext(AuthContext);

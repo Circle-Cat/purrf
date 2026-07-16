@@ -11,6 +11,39 @@ class MentorshipPairsRepository:
     Repository for handling database operations related to MentorshipPairsEntity.
     """
 
+    async def get_pair_stats(self, session: AsyncSession) -> dict[int, dict]:
+        """
+        Retrieve matched participant count and completed meeting count per round,
+        considering only active pairs.
+
+        Returns:
+            dict[int, dict]: Mapping of round_id to
+                {"active_pairs": int, "matched_participants": int, "total_completed_meetings": int}.
+        """
+        result = await session.execute(
+            select(
+                MentorshipPairsEntity.round_id,
+                func.count().label("active_pairs"),
+                (
+                    func.count(func.distinct(MentorshipPairsEntity.mentor_id))
+                    + func.count(func.distinct(MentorshipPairsEntity.mentee_id))
+                ).label("matched_participants"),
+                func.sum(MentorshipPairsEntity.completed_count).label(
+                    "total_completed_meetings"
+                ),
+            )
+            .where(MentorshipPairsEntity.status == PairStatus.ACTIVE)
+            .group_by(MentorshipPairsEntity.round_id)
+        )
+        return {
+            row.round_id: {
+                "active_pairs": row.active_pairs,
+                "matched_participants": row.matched_participants,
+                "total_completed_meetings": row.total_completed_meetings or 0,
+            }
+            for row in result.all()
+        }
+
     async def get_all_partner_ids(
         self, session: AsyncSession, user_id: int
     ) -> list[int]:
@@ -47,51 +80,6 @@ class MentorshipPairsRepository:
                     MentorshipPairsEntity.mentor_id == user_id,
                     MentorshipPairsEntity.mentee_id == user_id,
                 )
-            )
-            .distinct()
-        )
-
-        return result.scalars().all()
-
-    async def get_partner_ids_by_user_and_round(
-        self, session: AsyncSession, user_id: int, round_id: int
-    ) -> list[int]:
-        """
-        Retrieve a list of unique partner IDs (mentors or mentees) for a given user ID
-        within a specific mentorship round.
-
-        This method identifies the user's role in each relationship for the given round:
-        - If the user is the mentor, it returns the associated mentee's ID.
-        - If the user is the mentee, it returns the associated mentor's ID.
-
-        Args:
-            session (AsyncSession): The active async database session.
-            user_id (int): The ID of the user whose partners are being retrieved.
-            round_id (int): The ID of the mentorship round to filter by.
-
-        Returns:
-            list[int]: A list of unique partner IDs whthin the specific round. Returns
-                    an empty list if no partners are found or user_id/round_id is invalid.
-        """
-        if not user_id or not round_id:
-            return []
-
-        partner_id_case = case(
-            (
-                MentorshipPairsEntity.mentor_id == user_id,
-                MentorshipPairsEntity.mentee_id,
-            ),
-            else_=MentorshipPairsEntity.mentor_id,
-        ).label("partner_id")
-
-        result = await session.execute(
-            select(partner_id_case)
-            .where(
-                or_(
-                    MentorshipPairsEntity.mentor_id == user_id,
-                    MentorshipPairsEntity.mentee_id == user_id,
-                ),
-                MentorshipPairsEntity.round_id == round_id,
             )
             .distinct()
         )

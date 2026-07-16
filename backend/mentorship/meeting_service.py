@@ -13,7 +13,7 @@ from backend.dto.google_meeting_response_detail_dto import (
     GoogleMeetingResponseDetailDto,
 )
 from backend.dto.user_context_dto import UserContextDto
-from backend.common.user_role import UserRole
+from backend.common.permissions import Permission
 from backend.dto.google_meeting_delete_response_dto import (
     GoogleMeetingDeleteResponseDto,
 )
@@ -25,13 +25,13 @@ class MeetingService:
         logger,
         mentorship_pairs_repository,
         mentorship_mapper,
-        user_identity_service,
+        users_repository,
         google_service,
     ):
         self.logger = logger
         self.mentorship_pairs_repository = mentorship_pairs_repository
         self.mentorship_mapper = mentorship_mapper
-        self.user_identity_service = user_identity_service
+        self.users_repository = users_repository
         self.google_service = google_service
 
     async def get_meetings_by_user_and_round(
@@ -51,12 +51,9 @@ class MeetingService:
         Returns:
             MeetingDto: A DTO containing meeting information and partner roles.
         """
-        (current_user, should_commit) = await self.user_identity_service.get_user(
-            session=session, user_info=user_context
+        current_user = await self.users_repository.get_user_by_user_id(
+            session=session, user_id=user_context.user_id
         )
-
-        if should_commit:
-            await session.commit()
 
         pair_entity = (
             await self.mentorship_pairs_repository.get_pairs_by_user_and_round(
@@ -106,8 +103,8 @@ class MeetingService:
         Returns:
             MeetingDto: The updated meeting logs after the upsert operation.
         """
-        current_user, _ = await self.user_identity_service.get_user(
-            session=session, user_info=user_context
+        current_user = await self.users_repository.get_user_by_user_id(
+            session=session, user_id=user_context.user_id
         )
 
         pair_entity = (
@@ -209,8 +206,8 @@ class MeetingService:
             ValueError: If the partner is not found.
         """
         # Resolve current user
-        current_user, _ = await self.user_identity_service.get_user(
-            session=session, user_info=user_context
+        current_user = await self.users_repository.get_user_by_user_id(
+            session=session, user_id=user_context.user_id
         )
 
         # Get pair and partner info
@@ -344,18 +341,13 @@ class MeetingService:
         if not deletions:
             raise ValueError("deletions must not be empty.")
 
-        current_user, _ = await self.user_identity_service.get_user(
-            session=session,
-            user_info=user_context,
-        )
-
         all_meeting_ids: list[str] = []
 
         for deletion in deletions:
             all_exist = (
                 await self.mentorship_pairs_repository.do_google_meetings_exist_in_log(
                     session=session,
-                    user_id=current_user.user_id,
+                    user_id=user_context.user_id,
                     round_id=deletion["round_id"],
                     partner_id=deletion["partner_id"],
                     meeting_ids=deletion["meeting_ids"],
@@ -378,7 +370,7 @@ class MeetingService:
         if succeeded_event_ids:
             await self.mentorship_pairs_repository.remove_meetings_from_log(
                 session=session,
-                user_id=current_user.user_id,
+                user_id=user_context.user_id,
                 meeting_ids=list(dict.fromkeys(succeeded_event_ids)),
             )
 
@@ -386,7 +378,7 @@ class MeetingService:
 
         self.logger.info(
             "[MeetingService] Deleted Google meetings for user_id=%s. succeeded=%s, failed=%s",
-            current_user.user_id,
+            user_context.user_id,
             succeeded_event_ids,
             failed_event_ids,
         )
@@ -429,14 +421,11 @@ class MeetingService:
         fetches the user's mentorship pairs for the given round, and maps the result into a
         MeetingDto.
         """
-        (current_user, should_commit) = await self.user_identity_service.get_user(
-            session=session, user_info=user_context
+        current_user = await self.users_repository.get_user_by_user_id(
+            session=session, user_id=user_context.user_id
         )
 
-        if should_commit:
-            await session.commit()
-
-        is_admin = UserRole.MENTORSHIP_ADMIN in (user_context.roles or [])
+        is_admin = user_context.has_permission(Permission.MENTORSHIP_ROUND_WRITE)
         is_detail_allowed = include_details and is_admin
 
         pair_entity = (

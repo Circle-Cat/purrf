@@ -79,7 +79,17 @@ from backend.common.asyncio_event_loop_manager import AsyncioEventLoopManager
 from backend.utils.fast_app_factory import FastAppFactory
 from backend.authentication.authentication_controller import AuthenticationController
 from backend.authentication.authentication_service import AuthenticationService
+from backend.authentication.email_management_service import EmailManagementService
+from backend.authentication.email_management_controller import (
+    EmailManagementController,
+)
+from backend.admin.permission_admin_service import PermissionAdminService
+from backend.admin.permission_admin_controller import PermissionAdminController
+from backend.common.auth0_client import Auth0Client
 from backend.repository.users_repository import UsersRepository
+from backend.repository.user_identities_repository import UserIdentitiesRepository
+from backend.repository.user_emails_repository import UserEmailsRepository
+from backend.repository.user_permissions_repository import UserPermissionsRepository
 from backend.repository.experience_repository import ExperienceRepository
 from backend.repository.training_repository import TrainingRepository
 from backend.repository.mentorship_round_repository import MentorshipRoundRepository
@@ -90,6 +100,8 @@ from backend.repository.mentorship_round_participants_repository import (
 from backend.repository.preferences_repository import PreferencesRepository
 from backend.mentorship.mentorship_mapper import MentorshipMapper
 from backend.mentorship.mentorship_controller import MentorshipController
+from backend.mentorship.mentorship_admin_service import MentorshipAdminService
+from backend.mentorship.mentorship_admin_controller import MentorshipAdminController
 from backend.mentorship.rounds_service import RoundsService
 from backend.mentorship.participation_service import ParticipationService
 from backend.mentorship.registration_service import RegistrationService
@@ -375,12 +387,31 @@ class AppDependencyBuilder:
             launchdarkly_service=self.launchdarkly_service,
         )
         self.users_repository = UsersRepository()
+        self.user_identities_repository = UserIdentitiesRepository()
+        self.user_emails_repository = UserEmailsRepository()
+        self.user_permissions_repository = UserPermissionsRepository()
         self.training_repository = TrainingRepository()
+        self.database = Database(echo=False)
         self.user_identity_service = UserIdentityService(
-            logger=self.logger, users_repository=self.users_repository
+            logger=self.logger,
+            users_repository=self.users_repository,
+            user_identities_repository=self.user_identities_repository,
+            user_emails_repository=self.user_emails_repository,
+            user_permissions_repository=self.user_permissions_repository,
         )
         self.authentication_service = AuthenticationService(logger=self.logger)
-        self.authentication_controller = AuthenticationController()
+        self.authentication_controller = AuthenticationController(
+            user_emails_repository=self.user_emails_repository,
+            database=self.database,
+        )
+        self.auth0_client = Auth0Client(logger=self.logger)
+        self.email_management_service = EmailManagementService(
+            auth0_client=self.auth0_client,
+            user_emails_repository=self.user_emails_repository,
+            user_identities_repository=self.user_identities_repository,
+            users_repository=self.users_repository,
+            logger=self.logger,
+        )
         self.mentorship_round_repository = MentorshipRoundRepository()
         self.mentorship_pairs_repository = MentorshipPairsRepository()
         self.mentorship_round_participants_repo = (
@@ -388,10 +419,10 @@ class AppDependencyBuilder:
         )
         self.preferences_repository = PreferencesRepository()
         self.mentorship_mapper = MentorshipMapper()
-        self.database = Database(echo=False)
         self.rounds_service = RoundsService(
             mentorship_round_repository=self.mentorship_round_repository,
             mentorship_mapper=self.mentorship_mapper,
+            mentorship_pairs_repository=self.mentorship_pairs_repository,
         )
         self.participation_service = ParticipationService(
             logger=self.logger,
@@ -400,7 +431,6 @@ class AppDependencyBuilder:
             mentorship_round_participants_repo=self.mentorship_round_participants_repo,
             mentorship_round_repository=self.mentorship_round_repository,
             mentorship_mapper=self.mentorship_mapper,
-            user_identity_service=self.user_identity_service,
         )
         self.registration_service = RegistrationService(
             logger=self.logger,
@@ -408,7 +438,6 @@ class AppDependencyBuilder:
             mentorship_round_repository=self.mentorship_round_repository,
             mentorship_round_participants_repository=self.mentorship_round_participants_repo,
             participation_service=self.participation_service,
-            user_identity_service=self.user_identity_service,
             mentorship_mapper=self.mentorship_mapper,
             training_repository=self.training_repository,
         )
@@ -416,7 +445,7 @@ class AppDependencyBuilder:
             logger=self.logger,
             mentorship_pairs_repository=self.mentorship_pairs_repository,
             mentorship_mapper=self.mentorship_mapper,
-            user_identity_service=self.user_identity_service,
+            users_repository=self.users_repository,
             google_service=self.google_service,
         )
         self.meet_attendance_service = MeetAttendanceService(
@@ -425,6 +454,8 @@ class AppDependencyBuilder:
             mentorship_pairs_repository=self.mentorship_pairs_repository,
             mentorship_round_repository=self.mentorship_round_repository,
             users_repository=self.users_repository,
+            user_identities_repository=self.user_identities_repository,
+            user_emails_repository=self.user_emails_repository,
         )
         self.mentorship_controller = MentorshipController(
             rounds_service=self.rounds_service,
@@ -435,10 +466,20 @@ class AppDependencyBuilder:
             database=self.database,
             meet_attendance_sync_service=self.meet_attendance_service,
         )
+        self.mentorship_admin_service = MentorshipAdminService(
+            users_repository=self.users_repository,
+            participants_repository=self.mentorship_round_participants_repo,
+            rounds_repository=self.mentorship_round_repository,
+            training_repository=self.training_repository,
+        )
+        self.mentorship_admin_controller = MentorshipAdminController(
+            mentorship_admin_service=self.mentorship_admin_service,
+            database=self.database,
+        )
         self.experience_repository = ExperienceRepository()
         self.profile_mapper = ProfileMapper()
         self.profile_query_service = ProfileQueryService(
-            user_identity_service=self.user_identity_service,
+            users_repository=self.users_repository,
             experience_repository=self.experience_repository,
             training_repository=self.training_repository,
             profile_mapper=self.profile_mapper,
@@ -451,21 +492,39 @@ class AppDependencyBuilder:
         self.profile_service = ProfileService(
             query_service=self.profile_query_service,
             command_service=self.profile_command_service,
-            user_identity_service=self.user_identity_service,
+            users_repository=self.users_repository,
         )
         self.profile_controller = ProfileController(
             profile_service=self.profile_service,
             database=self.database,
         )
+        self.email_management_controller = EmailManagementController(
+            email_management_service=self.email_management_service,
+            database=self.database,
+        )
+        self.permission_admin_service = PermissionAdminService(
+            self.users_repository,
+            self.user_permissions_repository,
+        )
+        self.permission_admin_controller = PermissionAdminController(
+            self.permission_admin_service,
+            database=self.database,
+        )
         self.fast_app_factory = FastAppFactory(
             authentication_controller=self.authentication_controller,
             authentication_service=self.authentication_service,
+            user_identity_service=self.user_identity_service,
+            user_permissions_repository=self.user_permissions_repository,
             notification_controller=self.notification_controller,
             historical_controller=self.historical_controller,
             consumer_controller=self.consumer_controller,
             internal_activity_controller=self.internal_activity_controller,
             profile_controller=self.profile_controller,
             mentorship_controller=self.mentorship_controller,
+            mentorship_admin_controller=self.mentorship_admin_controller,
+            email_management_controller=self.email_management_controller,
+            permission_admin_controller=self.permission_admin_controller,
             launchdarkly_client=self.launchdarkly_client,
             database=self.database,
+            logger=self.logger,
         )

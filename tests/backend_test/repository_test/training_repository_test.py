@@ -1,5 +1,4 @@
 import unittest
-import uuid
 from datetime import datetime, timedelta, timezone
 
 from backend.repository.training_repository import TrainingRepository
@@ -32,7 +31,6 @@ class TestTrainingRepository(BaseRepositoryTestLib):
                 primary_email="alice@example.com",
                 is_active=True,
                 updated_timestamp=self.now,
-                subject_identifier=str(uuid.uuid4()),
             ),
             UsersEntity(
                 first_name="Bob",
@@ -41,10 +39,8 @@ class TestTrainingRepository(BaseRepositoryTestLib):
                 timezone_updated_at=self.now,
                 communication_channel=CommunicationMethod.EMAIL,
                 primary_email="bob@example.com",
-                alternative_emails=["b1@example.com", "b2@example.com"],
                 is_active=True,
                 updated_timestamp=self.now,
-                subject_identifier=str(uuid.uuid4()),
             ),
         ]
         await self.insert_entities(dummy_users)
@@ -149,6 +145,30 @@ class TestTrainingRepository(BaseRepositoryTestLib):
 
         self.assertEqual(updated.status, TrainingStatus.DONE)
         self.assertIsNotNone(updated.completed_timestamp)
+
+    async def test_get_training_by_user_ids_empty_list(self):
+        result = await self.repo.get_training_by_user_ids(self.session, [])
+        self.assertEqual(result, {})
+
+    async def test_get_training_by_user_ids_existing(self):
+        result = await self.repo.get_training_by_user_ids(
+            self.session, [self.user1.user_id, self.user2.user_id]
+        )
+        self.assertIn(self.user1.user_id, result)
+        self.assertIn(self.user2.user_id, result)
+        self.assertEqual(len(result[self.user1.user_id]), 2)
+        self.assertEqual(len(result[self.user2.user_id]), 1)
+
+    async def test_get_training_by_user_ids_partial_ids(self):
+        result = await self.repo.get_training_by_user_ids(
+            self.session, [self.user1.user_id]
+        )
+        self.assertIn(self.user1.user_id, result)
+        self.assertNotIn(self.user2.user_id, result)
+
+    async def test_get_training_by_user_ids_unknown_id_excluded(self):
+        result = await self.repo.get_training_by_user_ids(self.session, [999])
+        self.assertEqual(result, {})
 
 
 if __name__ == "__main__":

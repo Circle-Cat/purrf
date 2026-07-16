@@ -5,8 +5,8 @@ import {
   postMyMentorshipRegistration,
   getMyMentorshipMatchResult,
   getMyMentorshipMeetingLog,
-  getMyMentorshipMeetingsV2,
 } from "@/api/mentorshipApi";
+import { getMyMentorshipMeetingsV2 } from "@/api/meetingApi";
 
 import {
   calculateMentorshipSlots,
@@ -292,6 +292,7 @@ export const useMentorshipData = () => {
         return {
           partnerId: partner.id,
           preferredName: partner.preferredName,
+          partnerEmail: partner.primaryEmail,
           requiredMeetings,
           completedCount,
           completedRate,

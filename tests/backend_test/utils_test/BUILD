@@ -56,8 +56,12 @@ py_test(
     name = "auth_middleware_test",
     srcs = ["auth_middleware_test.py"],
     deps = [
+        "//backend/common:identity_type",
+        "//backend/common:permissions",
         "//backend/utils:auth_middleware",
         "@pypi//httpx",
+        "@pypi//sqlalchemy",
+        "@pypi//starlette",
     ],
 )
 
@@ -65,6 +69,7 @@ py_test(
     name = "permission_decorators_test",
     srcs = ["permission_decorators_test.py"],
     deps = [
+        "//backend/common:permissions",
         "//backend/utils:permission_decorators",
         "@pypi//httpx",
     ],

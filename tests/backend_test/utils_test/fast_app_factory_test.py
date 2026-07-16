@@ -15,14 +15,20 @@ class TestFastAppFactory(unittest.TestCase):
         self.factory = FastAppFactory(
             authentication_controller=self.mock_controller,
             authentication_service=self.mock_service,
+            user_identity_service=MagicMock(),
+            user_permissions_repository=MagicMock(),
             notification_controller=self.mock_controller,
             historical_controller=self.mock_controller,
             consumer_controller=self.mock_controller,
             internal_activity_controller=self.mock_controller,
             profile_controller=self.mock_profile_controller,
             mentorship_controller=self.mock_controller,
+            mentorship_admin_controller=self.mock_controller,
+            email_management_controller=self.mock_controller,
+            permission_admin_controller=self.mock_controller,
             launchdarkly_client=MagicMock(),
             database=MagicMock(),
+            logger=MagicMock(),
         )
 
     def test_factory_initialization(self):
@@ -83,14 +89,20 @@ class TestFastAppFactoryLifespan(unittest.IsolatedAsyncioTestCase):
         self.factory = FastAppFactory(
             authentication_controller=self.mock_controller,
             authentication_service=self.mock_service,
+            user_identity_service=MagicMock(),
+            user_permissions_repository=MagicMock(),
             notification_controller=self.mock_controller,
             historical_controller=self.mock_controller,
             consumer_controller=self.mock_controller,
             internal_activity_controller=self.mock_controller,
             profile_controller=self.mock_profile_controller,
             mentorship_controller=self.mock_controller,
+            mentorship_admin_controller=self.mock_controller,
+            email_management_controller=self.mock_controller,
+            permission_admin_controller=self.mock_controller,
             launchdarkly_client=self.mock_launchdarkly_client,
             database=self.mock_database,
+            logger=MagicMock(),
         )
 
     async def test_lifespan_closes_database_on_shutdown(self):

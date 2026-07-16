@@ -57,7 +57,6 @@ class TestProfileController(unittest.TestCase):
         mock_user = UserContextDto(
             sub="sub-123",
             primary_email="user@example.com",
-            roles=["user"],
         )
 
         @self.app.middleware("http")
@@ -78,7 +77,6 @@ class TestProfileController(unittest.TestCase):
             updated_timestamp=datetime.now(),
             primary_email="alice@example.com",
             preferred_name="Ally",
-            alternative_emails=[],
             linkedin_link=None,
         )
 
@@ -105,9 +103,7 @@ class TestProfileController(unittest.TestCase):
         self.assertEqual(response_json["message"], "Profile retrieved successfully")
         self.mock_profile_service.get_profile.assert_called_once_with(
             self.mock_session,
-            UserContextDto(
-                sub="sub-123", primary_email="user@example.com", roles=["user"]
-            ),
+            UserContextDto(sub="sub-123", primary_email="user@example.com"),
             None,
         )
 
@@ -162,7 +158,6 @@ class TestProfileController(unittest.TestCase):
             user_context=UserContextDto(
                 sub="sub-123",
                 primary_email="user@example.com",
-                roles=["user"],
             ),
             profile=ProfileCreateDto(**update_payload),
         )

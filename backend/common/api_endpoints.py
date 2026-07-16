@@ -1,4 +1,19 @@
-MY_ROLES = "/roles/me"
+MY_PERMISSIONS = "/permissions/me"
+EMAIL_MANAGEMENT_LIST_ENDPOINT = "/auth/emails"
+EMAIL_MANAGEMENT_INITIATE_ENDPOINT = "/auth/emails/initiate"
+EMAIL_MANAGEMENT_VERIFY_ENDPOINT = "/auth/emails/verify"
+EMAIL_MANAGEMENT_SET_PRIMARY_INITIATE_ENDPOINT = (
+    "/auth/emails/{email_id}/primary/initiate"
+)
+EMAIL_MANAGEMENT_SET_PRIMARY_CONFIRM_ENDPOINT = (
+    "/auth/emails/{email_id}/primary/confirm"
+)
+EMAIL_MANAGEMENT_UNLINK_INITIATE_ENDPOINT = (
+    "/auth/identities/{identity_id}/unlink/initiate"
+)
+EMAIL_MANAGEMENT_UNLINK_CONFIRM_ENDPOINT = (
+    "/auth/identities/{identity_id}/unlink/confirm"
+)
 GOOGLE_CHAT_SUBSCRIBE_ENDPOINT = "/google/chat/spaces/subscribe"
 MICROSOFT_CHAT_SUBSCRIBE_ENDPOINT = "/microsoft/chat/subscribe"
 
@@ -50,3 +65,13 @@ MENTORSHIP_MEETING_V2_SINGLE_ENDPOINT = "/mentorship/v2/meetings/{meeting_id}"
 MENTORSHIP_MEETING_V2_BATCH_DELETE_ENDPOINT = "/mentorship/v2/meetings/batch-delete"
 MEET_ATTENDANCE_SYNC_ENDPOINT = "/mentorship/v2/meetings/attendance/sync"
 MENTORSHIP_ROUNDS_FEEDBACK_ENDPOINT = "/mentorship/rounds/{round_id}/feedback"
+MENTORSHIP_ADMIN_PARTICIPANTS = "/mentorship/admin/participants"
+
+ADMIN_PERMISSIONS_ENDPOINT = "/admin/permissions"
+ADMIN_USERS_ENDPOINT = "/admin/users"
+ADMIN_USER_PERMISSIONS_ENDPOINT = "/admin/users/{user_id}/permissions"
+ADMIN_PERMISSION_USERS_ENDPOINT = "/admin/permissions/{permission_name}/users"
+ADMIN_AUDIT_PERMISSION_CHANGES_ENDPOINT = "/admin/audit/permission-changes"
+ADMIN_USER_GRANT_PERMISSIONS_ENDPOINT = "/admin/users/{user_id}/permissions/grant"
+ADMIN_USER_REVOKE_PERMISSIONS_ENDPOINT = "/admin/users/{user_id}/permissions/revoke"
+ADMIN_USER_SUPER_ADMIN_ENDPOINT = "/admin/users/{user_id}/super-admin"

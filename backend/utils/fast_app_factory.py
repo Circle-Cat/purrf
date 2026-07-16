@@ -16,14 +16,20 @@ class FastAppFactory:
         self,
         authentication_controller,
         authentication_service,
+        user_identity_service,
+        user_permissions_repository,
         notification_controller,
         historical_controller,
         consumer_controller,
         internal_activity_controller,
         profile_controller,
         mentorship_controller,
+        mentorship_admin_controller,
+        email_management_controller,
+        permission_admin_controller,
         launchdarkly_client,
         database,
+        logger,
     ):
         """
         Initialize the factory.
@@ -31,25 +37,34 @@ class FastAppFactory:
         Args:
             authentication_controller: Controller instance responsible for authentication routes.
             authentication_service: AuthenticationService instance used by middleware to validate requests.
+            user_identity_service: UserIdentityService used by middleware to bootstrap the internal user on first login.
             notification_controller: An instance of NotificationController that manages API routes for subscribe_microsoft_chat_messages and subscribe_google_chat_space.
             historical_controller: An instance of HistoricalController that manages API routes for sync historical data.
             consumer_controller: An instance of ConsumerController that manages API routes to trigger, check, or stop subscribers.
             internal_activity_controller: An instance of InternalActivityController that manages API routes to query internal activity data.
             profile_controller: Optional ProfileController instance to register profile routes.
             mentorship_controller: An instance of MentorshipController that manages API routes for mentorship services.
+            mentorship_admin_controller: An instance of MentorshipAdminController that manages API routes for admin participant search.
+            email_management_controller: An instance of EmailManagementController that manages API routes for email OTP verify/link.
             launchdarkly_client: LaunchDarklyClient instance for feature flag lifecycle management.
             database: Database instance for application lifecycle cleanup.
         """
         self.authentication_controller = authentication_controller
         self.authentication_service = authentication_service
+        self.user_identity_service = user_identity_service
+        self.user_permissions_repository = user_permissions_repository
         self.notification_controller = notification_controller
         self.historical_controller = historical_controller
         self.consumer_controller = consumer_controller
         self.internal_activity_controller = internal_activity_controller
         self.profile_controller = profile_controller
         self.mentorship_controller = mentorship_controller
+        self.mentorship_admin_controller = mentorship_admin_controller
+        self.email_management_controller = email_management_controller
+        self.permission_admin_controller = permission_admin_controller
         self.launchdarkly_client = launchdarkly_client
         self.database = database
+        self.logger = logger
 
     def create_app(self, is_prod: bool = False) -> FastAPI:
         """
@@ -100,7 +115,14 @@ class FastAppFactory:
         register_exception_handlers(app)
 
         # Add authentication middleware
-        app.add_middleware(AuthMiddleware, auth_service=self.authentication_service)
+        app.add_middleware(
+            AuthMiddleware,
+            auth_service=self.authentication_service,
+            database=self.database,
+            user_identity_service=self.user_identity_service,
+            user_permissions_repository=self.user_permissions_repository,
+            logger=self.logger,
+        )
 
         # Include authentication routes
         app.include_router(self.authentication_controller.router, prefix="/api")
@@ -110,6 +132,9 @@ class FastAppFactory:
         app.include_router(self.internal_activity_controller.router, prefix="/api")
         app.include_router(self.profile_controller.router, prefix="/api")
         app.include_router(self.mentorship_controller.router, prefix="/api")
+        app.include_router(self.mentorship_admin_controller.router, prefix="/api")
+        app.include_router(self.email_management_controller.router, prefix="/api")
+        app.include_router(self.permission_admin_controller.router, prefix="/api")
 
         @app.get("/fastapi/health")
         def health_check():

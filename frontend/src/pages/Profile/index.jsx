@@ -5,7 +5,8 @@ import { useProfileData } from "@/pages/Profile/hooks/useProfileData";
 import { useProfileCompletenessReminder } from "@/pages/Profile/hooks/useProfileCompletenessReminder";
 
 import ProfileHeader from "@/pages/Profile/components/ProfileHeader";
-import ContactSection from "@/pages/Profile/components/ContactSection";
+import LinkedInSection from "@/pages/Profile/components/LinkedInSection";
+import EmailSection from "@/pages/Profile/components/EmailSection";
 import ExperienceSection from "@/pages/Profile/components/ExperienceSection";
 import EducationSection from "@/pages/Profile/components/EducationSection";
 import TrainingSection from "@/pages/Profile/components/TrainingSection";
@@ -76,7 +77,14 @@ const Profile = () => {
           </CardHeader>
           {/* ContactSection */}
           <CardContent>
-            <ContactSection info={personalInfo} />
+            <LinkedInSection info={personalInfo} />
+          </CardContent>
+        </Card>
+
+        {/* Email Card */}
+        <Card>
+          <CardContent>
+            <EmailSection info={personalInfo} />
           </CardContent>
         </Card>
 

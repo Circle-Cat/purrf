@@ -3,9 +3,19 @@ import { API_ENDPOINTS } from "@/constants/ApiEndpoints";
 
 /**
  * Fetch all mentorship rounds.
+ * @param {boolean} needDetails - Optional: include additional round details for mentorship admins.
  */
-export const getAllMentorshipRounds = () =>
-  request.get(API_ENDPOINTS.MENTORSHIP_ROUNDS);
+export const getAllMentorshipRounds = (needDetails = false) =>
+  request.get(API_ENDPOINTS.MENTORSHIP_ROUNDS, {
+    params: { need_details: needDetails },
+  });
+
+/**
+ * Create or update a mentorship round (admin only).
+ * @param {object} data - Round form data to submit.
+ */
+export const upsertMentorshipRound = (data) =>
+  request.post(API_ENDPOINTS.MENTORSHIP_ROUNDS, data);
 
 /**
  * Fetch the mentorship partners for a specific round.
@@ -51,25 +61,6 @@ export const getMyMentorshipMeetingLog = (roundId) =>
  */
 export const postMyMentorshipMeetingLog = (data) =>
   request.post(API_ENDPOINTS.MENTORSHIP_MEETINGS_ENDPOINT, data);
-
-/**
- * Fetch meetings by roundId for Mentorship V2.
- * @param {string} roundId - The ID of the mentorship round.
- */
-export const getMyMentorshipMeetingsV2 = ({ roundId, includeDetails }) =>
-  request.get(API_ENDPOINTS.MENTORSHIP_MEETINGS_V2, {
-    params: {
-      round_id: roundId,
-      include_details: includeDetails,
-    },
-  });
-
-/**
- * Create a mentorship meeting V2.
- * @param {object} data - The meeting data to be created.
- */
-export const postMyMentorshipMeetingV2 = (data) =>
-  request.post(API_ENDPOINTS.MENTORSHIP_MEETINGS_V2, data);
 
 /**
  * Fetch the current user's program feedback for a specific round.

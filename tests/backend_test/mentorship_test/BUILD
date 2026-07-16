@@ -36,11 +36,26 @@ py_test(
 py_test(
     name = "meeting_service_test",
     srcs = ["meeting_service_test.py"],
-    deps = ["//backend/mentorship"],
+    deps = [
+        "//backend/common:permissions",
+        "//backend/mentorship",
+    ],
 )
 
 py_test(
     name = "meet_attendance_service_test",
     srcs = ["meet_attendance_service_test.py"],
+    deps = ["//backend/mentorship"],
+)
+
+py_test(
+    name = "mentorship_admin_service_test",
+    srcs = ["mentorship_admin_service_test.py"],
+    deps = ["//backend/mentorship"],
+)
+
+py_test(
+    name = "mentorship_admin_controller_test",
+    srcs = ["mentorship_admin_controller_test.py"],
     deps = ["//backend/mentorship"],
 )
