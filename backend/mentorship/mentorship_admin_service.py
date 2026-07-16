@@ -4,6 +4,7 @@ from backend.dto.participant_search_dto import ParticipantRowDto, ParticipantSea
 from backend.dto.partner_dto import PartnerDto
 from backend.dto.admin_meeting_log_dto import AdminMeetingLogDto
 from backend.common.mentorship_enums import (
+    MENTORSHIP_ONBOARDING_CATEGORIES,
     MeetingNoteTag,
     ParticipantRole,
     TrainingCategory,
@@ -140,10 +141,7 @@ class MentorshipAdminService:
             await self.training_repository.get_training_by_user_ids_and_categories(
                 session,
                 list(participant_user_ids),
-                categories=[
-                    TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING,
-                    TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING,
-                ],
+                categories=list(MENTORSHIP_ONBOARDING_CATEGORIES),
             )
         )
         trainings_map: dict[int, dict[TrainingCategory, TrainingStatus]] = {}

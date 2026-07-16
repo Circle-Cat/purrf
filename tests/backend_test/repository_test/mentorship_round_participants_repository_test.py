@@ -8,6 +8,9 @@ from backend.entity.mentorship_pairs_entity import MentorshipPairsEntity
 from backend.entity.users_entity import UsersEntity
 from backend.entity.mentorship_round_entity import MentorshipRoundEntity
 from backend.entity.user_emails_entity import UserEmailsEntity
+from backend.entity.job_entity import JobEntity
+from backend.entity.application_entity import ApplicationEntity
+from backend.entity.training_entity import TrainingEntity
 from backend.repository.mentorship_round_participants_repository import (
     MentorshipRoundParticipantsRepository,
 )
@@ -19,7 +22,10 @@ from backend.common.mentorship_enums import (
     MentorActionStatus,
     PairStatus,
     ParticipantRole,
+    TrainingCategory,
+    TrainingStatus,
 )
+from backend.common.recruiting_enums import ApplicationStage, JobKind
 from tests.backend_test.repository_test.base_repository_test_lib import (
     BaseRepositoryTestLib,
 )
@@ -42,6 +48,7 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
         )
 
         await self.insert_entities([self.user])
+        await self._hire_for_activity(self.user)
 
         self.rounds = [
             MentorshipRoundEntity(
@@ -84,6 +91,35 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
             is_active=True,
             updated_timestamp=datetime.now(timezone.utc),
         )
+
+    async def _hire_for_activity(self, user, role=ParticipantRole.MENTEE):
+        """Insert a hired application to an activity posting for the given user."""
+        job = JobEntity(
+            kind=JobKind.ACTIVITY,
+            mentorship_role=role,
+            title=f"{role.value} activity",
+        )
+        await self.insert_entities([job])
+        await self.insert_entities([
+            ApplicationEntity(
+                job_id=job.job_id,
+                user_id=user.user_id,
+                stage=ApplicationStage.HIRED,
+            )
+        ])
+
+    async def _add_training(
+        self, user, category=TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING
+    ):
+        """Insert a training record for the given user and category."""
+        await self.insert_entities([
+            TrainingEntity(
+                user_id=user.user_id,
+                category=category,
+                status=TrainingStatus.DONE,
+                deadline=datetime.now(timezone.utc),
+            )
+        ])
 
     async def test_get_by_user_id_and_round_id(self):
         """Test retrieve a mentorship round participants entity."""
@@ -303,11 +339,14 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
         )
         self.assertEqual(result.goal, participant.goal)
 
-    async def test_search_no_filters_returns_all_users(self):
+    async def test_search_no_filters_returns_all_mentorship_users(self):
+        """Verify all users meeting the base mentorship gate are returned
+        when no filters are applied."""
         user2 = self._make_user(
             first_name="Bob", last_name="Jones", email="bob@example.com"
         )
         await self.insert_entities([user2])
+        await self._hire_for_activity(user2)
 
         rows, total = await self.repo.search_participants_for_admin(
             self.session, ParticipantSearchFilterDto(), limit=50, offset=0
@@ -317,6 +356,88 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
         user_ids = {r.user_id for r in rows}
         self.assertIn(self.user.user_id, user_ids)
         self.assertIn(user2.user_id, user_ids)
+
+    async def test_search_includes_onboarding_training_only_users(self):
+        """Ensure users with mentorship onboarding training are included,
+        while unrelated categories are excluded."""
+        trained_user = self._make_user(
+            first_name="Tina", last_name="Trained", email="tina@example.com"
+        )
+        unrelated_trained_user = self._make_user(
+            first_name="Rey", last_name="Resident", email="rey@example.com"
+        )
+        await self.insert_entities([trained_user, unrelated_trained_user])
+        await self._add_training(trained_user)
+        await self._add_training(
+            unrelated_trained_user,
+            category=TrainingCategory.RESIDENCY_PROGRAM_ONBOARDING,
+        )
+
+        rows, _ = await self.repo.search_participants_for_admin(
+            self.session, ParticipantSearchFilterDto(), limit=20, offset=0
+        )
+
+        user_ids = {r.user_id for r in rows}
+        self.assertIn(trained_user.user_id, user_ids)
+        self.assertNotIn(unrelated_trained_user.user_id, user_ids)
+
+    async def test_search_excludes_unqualified_users(self):
+        """Verify the mentorship gate excludes users with non-hired applications,
+        non-activity jobs, or no application at all."""
+        hired_user = self._make_user(
+            first_name="Hana", last_name="Hired", email="hana@example.com"
+        )
+        applied_user = self._make_user(
+            first_name="Amy", last_name="Applied", email="amy@example.com"
+        )
+        employment_hired_user = self._make_user(
+            first_name="Eve", last_name="Employed", email="eve@example.com"
+        )
+        no_application_user = self._make_user(
+            first_name="Xin", last_name="External", email="xin@example.com"
+        )
+        await self.insert_entities([
+            hired_user,
+            applied_user,
+            employment_hired_user,
+            no_application_user,
+        ])
+        await self._hire_for_activity(hired_user)
+
+        activity_job = JobEntity(
+            kind=JobKind.ACTIVITY,
+            mentorship_role=ParticipantRole.MENTEE,
+            title="mentee activity",
+        )
+        await self.insert_entities([activity_job])
+        await self.insert_entities([
+            ApplicationEntity(
+                job_id=activity_job.job_id,
+                user_id=applied_user.user_id,
+                stage=ApplicationStage.APPLIED,
+            )
+        ])
+
+        employment_job = JobEntity(kind=JobKind.EMPLOYMENT, title="SWE Intern")
+        await self.insert_entities([employment_job])
+        await self.insert_entities([
+            ApplicationEntity(
+                job_id=employment_job.job_id,
+                user_id=employment_hired_user.user_id,
+                stage=ApplicationStage.HIRED,
+            )
+        ])
+        # no_application_user has no application at all (recruiting first-login only).
+
+        rows, _ = await self.repo.search_participants_for_admin(
+            self.session, ParticipantSearchFilterDto(), limit=20, offset=0
+        )
+
+        user_ids = {r.user_id for r in rows}
+        self.assertIn(hired_user.user_id, user_ids)
+        self.assertNotIn(applied_user.user_id, user_ids)
+        self.assertNotIn(employment_hired_user.user_id, user_ids)
+        self.assertNotIn(no_application_user.user_id, user_ids)
 
     async def test_search_filter_by_user_id(self):
         user2 = self._make_user(
@@ -335,6 +456,8 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
         self.assertEqual(rows[0].user_id, self.user.user_id)
 
     async def test_search_filter_by_name(self):
+        """Verify name filtering matches first, last, and preferred names using
+        case-insensitive partial matching."""
         alice = self.user
         bob_jones = self._make_user(
             first_name="Bob", last_name="Jones", email="bob@example.com"
@@ -346,6 +469,8 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
             preferred_name="Rosalie Wu",
         )
         await self.insert_entities([bob_jones, rosalie_wu])
+        await self._hire_for_activity(bob_jones)
+        await self._hire_for_activity(rosalie_wu)
 
         rows, total = await self.repo.search_participants_for_admin(
             self.session,
@@ -493,6 +618,7 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
             first_name="Bob", last_name="Jones", email="bob@example.com"
         )
         await self.insert_entities([user2])
+        await self._hire_for_activity(user2)
         await self.insert_entities([
             MentorshipRoundParticipantsEntity(
                 user_id=self.user.user_id,
@@ -560,6 +686,8 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
             for i in range(3)
         ]
         await self.insert_entities(extra_users)
+        for extra_user in extra_users:
+            await self._hire_for_activity(extra_user)
 
         rows_p1, total = await self.repo.search_participants_for_admin(
             self.session, ParticipantSearchFilterDto(), limit=2, offset=0
@@ -580,6 +708,7 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
             first_name="Bob", last_name="Jones", email="bob@example.com"
         )
         await self.insert_entities([user2])
+        await self._hire_for_activity(user2)
 
         rows, _ = await self.repo.search_participants_for_admin(
             self.session,
