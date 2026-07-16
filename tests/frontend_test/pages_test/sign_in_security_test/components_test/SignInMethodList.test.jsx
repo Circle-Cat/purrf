@@ -71,6 +71,82 @@ describe("SignInMethodList", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("renders an email without a matching identity as an Unverified row with a Verify action", async () => {
+    const onVerify = vi.fn();
+    const user = userEvent.setup();
+    const backup = {
+      emailId: 3,
+      email: "backup@x.com",
+      otpConfirmed: false,
+      isPrimary: false,
+    };
+    render(
+      <SignInMethodList
+        emails={[backup]}
+        internalIdentities={[]}
+        externalIdentities={[makeIdentity()]}
+        isLoading={false}
+        onUnlink={vi.fn()}
+        onVerify={onVerify}
+      />,
+    );
+
+    const rows = screen.getAllByRole("listitem");
+    expect(rows).toHaveLength(2);
+    // Identity rows come first; the contact-only address trails.
+    expect(within(rows[1]).getByText("backup@x.com")).toBeInTheDocument();
+    expect(within(rows[1]).getByText("Unverified")).toBeInTheDocument();
+
+    await user.click(within(rows[1]).getByRole("button", { name: "Verify" }));
+    expect(onVerify).toHaveBeenCalledWith(backup);
+  });
+
+  it("does not repeat an email already shown on its sign-in method row", () => {
+    const emailRow = {
+      emailId: 1,
+      email: "alice@gmail.com",
+      otpConfirmed: true,
+      isPrimary: true,
+    };
+    render(
+      <SignInMethodList
+        emails={[emailRow]}
+        internalIdentities={[]}
+        externalIdentities={[makeIdentity({ subjectIdentifier: "email|abc" })]}
+        isLoading={false}
+        onUnlink={vi.fn()}
+        onVerify={vi.fn()}
+      />,
+    );
+
+    expect(screen.getAllByRole("listitem")).toHaveLength(1);
+    expect(screen.getAllByText("alice@gmail.com")).toHaveLength(1);
+  });
+
+  it("lists contact-only emails even when there are no identities", () => {
+    render(
+      <SignInMethodList
+        emails={[
+          {
+            emailId: 3,
+            email: "backup@x.com",
+            otpConfirmed: false,
+            isPrimary: false,
+          },
+        ]}
+        internalIdentities={[]}
+        externalIdentities={[]}
+        isLoading={false}
+        onVerify={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.queryByText("No sign-in methods yet."),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("backup@x.com")).toBeInTheDocument();
+  });
+
   it("renders the internal identity first and tags it Internal", () => {
     const internalIdentity = makeIdentity({
       identityId: 99,
@@ -712,7 +788,7 @@ describe("SignInMethodList", () => {
       ).toBeInTheDocument();
     });
 
-    it("hides the primary-contact badge for a non-email sign-in method", () => {
+    it("keeps the primary-contact badge off a non-email sign-in method row", () => {
       render(
         <SignInMethodList
           emails={[{ ...verifiedNonPrimary, isPrimary: true }]}
@@ -729,7 +805,15 @@ describe("SignInMethodList", () => {
         />,
       );
 
-      expect(screen.queryByText("Primary contact")).not.toBeInTheDocument();
+      // The Google row itself carries no contact-email state; the address —
+      // unclaimed by any email sign-in method — trails as its own contact
+      // row, which is where the badge lives.
+      const rows = screen.getAllByRole("listitem");
+      expect(rows).toHaveLength(2);
+      expect(
+        within(rows[0]).queryByText("Primary contact"),
+      ).not.toBeInTheDocument();
+      expect(within(rows[1]).getByText("Primary contact")).toBeInTheDocument();
     });
   });
 });

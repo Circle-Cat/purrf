@@ -29,7 +29,8 @@ vi.spyOn(toast, "success").mockImplementation(() => {});
 vi.spyOn(toast, "error").mockImplementation(() => {});
 
 // Child list mock exposes buttons that drive the page's action callbacks.
-// Both the set-primary and unlink actions are now triggered from this list.
+// The set-primary, unlink and verify actions are all triggered from this
+// single merged list.
 vi.mock("@/pages/SignInSecurity/components/SignInMethodList", () => ({
   default: ({
     emails,
@@ -38,6 +39,7 @@ vi.mock("@/pages/SignInSecurity/components/SignInMethodList", () => ({
     isLoading,
     onUnlink,
     onSetPrimary,
+    onVerify,
   }) => (
     <div data-testid="sign-in-method-list">
       SignInMethodList:{isLoading ? "loading" : "ready"}:
@@ -59,16 +61,6 @@ vi.mock("@/pages/SignInSecurity/components/SignInMethodList", () => ({
       >
         trigger-unlink
       </button>
-    </div>
-  ),
-}));
-
-// Contact-email list mock exposes a button that drives the page's verify
-// callback with an unverified row.
-vi.mock("@/pages/SignInSecurity/components/ContactEmailList", () => ({
-  default: ({ emails, isLoading, onVerify }) => (
-    <div data-testid="contact-email-list">
-      ContactEmailList:{isLoading ? "loading" : "ready"}:{emails.length}
       <button
         onClick={() =>
           onVerify({ emailId: 3, email: "backup@x.com", otpConfirmed: false })
@@ -136,16 +128,17 @@ describe("SignInSecurity page", () => {
 
   afterEach(cleanup);
 
-  it("renders the sign-in methods card and the emails card", () => {
+  it("renders a single card with the merged sign-in and email list", () => {
     render(<SignInSecurity />);
 
-    expect(screen.getByText("Sign-in methods")).toBeInTheDocument();
+    expect(screen.getByText("Sign-in methods & emails")).toBeInTheDocument();
     expect(
       screen.getByText(/The methods you can use to sign in to Purrf\./),
     ).toBeInTheDocument();
-    expect(screen.getByText("Emails")).toBeInTheDocument();
     expect(screen.getByTestId("sign-in-method-list")).toBeInTheDocument();
-    expect(screen.getByTestId("contact-email-list")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Add email" }),
+    ).toBeInTheDocument();
   });
 
   it("passes hook data (including emails) through to the sign-in method list", () => {
