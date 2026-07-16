@@ -9,9 +9,20 @@ vi.mock("@/api/recruitingApi");
 const OVERVIEW = {
   openPositionsCount: 2,
   jobs: [
-    { id: 1, title: "Backend Engineer", status: "published" },
-    { id: 2, title: "Frontend Engineer", status: "published" },
-    { id: 3, title: "Old Posting", status: "closed" },
+    {
+      id: 1,
+      title: "Backend Engineer",
+      status: "published",
+      kind: "employment",
+    },
+    {
+      id: 2,
+      title: "Frontend Engineer",
+      status: "published",
+      kind: "employment",
+    },
+    { id: 3, title: "Old Posting", status: "closed", kind: "employment" },
+    { id: 4, title: "Mentor", status: "published", kind: "activity" },
   ],
   stageBreakdown: [
     {
@@ -22,6 +33,7 @@ const OVERVIEW = {
     },
     { jobId: 1, jobTitle: "Backend Engineer", stage: "hired", count: 1 },
     { jobId: 2, jobTitle: "Frontend Engineer", stage: "tech", count: 2 },
+    { jobId: 4, jobTitle: "Mentor", stage: "hired", count: 5 },
   ],
   dailyTrend: [
     { jobId: 1, jobTitle: "Backend Engineer", date: "2026-06-01", count: 2 },
@@ -81,36 +93,62 @@ describe("Audit", () => {
       api.getAuditOverview.mock.calls[
         api.getAuditOverview.mock.calls.length - 1
       ][0];
-    expect(lastCall.jobIds.sort()).toEqual([1, 2, 3]);
+    expect(lastCall.jobIds.sort()).toEqual([1, 2, 3, 4]);
   });
 
-  it("renders the job x stage table with exact counts", async () => {
+  it("renders separate employment and activity job x stage tables with exact counts", async () => {
     render(<Audit />);
     // Waiting only for the API call to have fired (as the sibling tests do)
-    // races the mocked response's resolution -- the table itself doesn't
+    // races the mocked response's resolution -- the tables themselves don't
     // exist until the response lands and the component re-renders out of
-    // its loading state. findByRole polls until the table actually appears.
-    const table = await screen.findByRole("table");
-    expect(within(table).getByText("Backend Engineer")).toBeInTheDocument();
-    expect(within(table).getByText("Recruiter screening")).toBeInTheDocument();
-    expect(within(table).getByText("3")).toBeInTheDocument();
-    expect(within(table).getByText("Hired")).toBeInTheDocument();
-    expect(within(table).getByText("1")).toBeInTheDocument();
+    // its loading state. findAllByRole polls until they actually appear.
+    const [employmentTable, activityTable] =
+      await screen.findAllByRole("table");
+
+    expect(
+      within(employmentTable).getByText("Backend Engineer"),
+    ).toBeInTheDocument();
+    expect(
+      within(employmentTable).getByText("Recruiter screening"),
+    ).toBeInTheDocument();
+    expect(within(employmentTable).getByText("3")).toBeInTheDocument();
+    expect(within(employmentTable).getByText("Hired")).toBeInTheDocument();
+    expect(within(employmentTable).getByText("1")).toBeInTheDocument();
+    expect(
+      within(employmentTable).queryByText("Mentor"),
+    ).not.toBeInTheDocument();
+
+    // The activity section presents `hired` as "Admitted" and never lists
+    // employment postings.
+    expect(within(activityTable).getByText("Mentor")).toBeInTheDocument();
+    expect(within(activityTable).getByText("Admitted")).toBeInTheDocument();
+    expect(within(activityTable).getByText("5")).toBeInTheDocument();
+    expect(within(activityTable).queryByText("Hired")).not.toBeInTheDocument();
+    expect(
+      within(activityTable).queryByText("Backend Engineer"),
+    ).not.toBeInTheDocument();
   });
 
-  it("renders one bar per selected job in the stage breakdown chart", async () => {
+  it("renders one stage breakdown chart per posting kind", async () => {
     render(<Audit />);
     // Waiting only for the API call to have fired (as some sibling tests do)
-    // races the mocked response's resolution -- the chart itself doesn't
+    // races the mocked response's resolution -- the charts themselves don't
     // exist until the response lands and the component re-renders out of
     // its loading state (same class of race already fixed for the table
-    // assertion above). findByRole polls until the chart actually appears.
+    // assertion above). findByRole polls until each chart actually appears.
     //
     // Recharts renders SVG <rect> elements per bar segment inside the
-    // chart's data-slot="chart" container — assert the container renders
+    // chart's data-slot="chart" container — assert the containers render
     // rather than asserting on SVG internals, which is brittle.
     expect(
-      await screen.findByRole("img", { name: /stage breakdown chart/i }),
+      await screen.findByRole("img", {
+        name: /stage breakdown chart — employment/i,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByRole("img", {
+        name: /stage breakdown chart — activity/i,
+      }),
     ).toBeInTheDocument();
   });
 });

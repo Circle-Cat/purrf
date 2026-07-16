@@ -157,7 +157,7 @@ describe("BoardPage", () => {
     expect(api.getJobBoard).toHaveBeenCalledWith(1);
   });
 
-  it("always shows an Offer lane between the pipeline lanes and the terminal lanes, regardless of configured stages", async () => {
+  it("always shows an Offer lane between an employment job's pipeline lanes and the terminal lanes, regardless of configured stages", async () => {
     const jobNoStages = {
       id: 5,
       title: "No Stages Job",
@@ -177,6 +177,32 @@ describe("BoardPage", () => {
       .getAllByTestId(/^lane-/)
       .map((el) => el.getAttribute("data-testid"));
     expect(laneKeys).toEqual(["lane-offer", "lane-hired", "lane-rejected"]);
+  });
+
+  it("omits the Offer lane and labels the terminal success lane Admitted for an activity job", async () => {
+    api.listBoardJobs.mockResolvedValue({ data: [jobB] });
+    api.getJobBoard.mockResolvedValue({ data: {} });
+
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByText("Board review")).toBeInTheDocument(),
+    );
+    expect(screen.getByText("Admitted")).toBeInTheDocument();
+    expect(screen.getByText("Rejected")).toBeInTheDocument();
+    expect(screen.queryByText("Offer")).not.toBeInTheDocument();
+    expect(screen.queryByText("Hired")).not.toBeInTheDocument();
+
+    // The lane still keys off the stored stage value ("hired") — only the
+    // label is renamed.
+    const laneKeys = screen
+      .getAllByTestId(/^lane-/)
+      .map((el) => el.getAttribute("data-testid"));
+    expect(laneKeys).toEqual([
+      "lane-board_review",
+      "lane-hired",
+      "lane-rejected",
+    ]);
   });
 
   it("switches jobs and refetches the board", async () => {

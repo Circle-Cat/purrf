@@ -106,9 +106,10 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         stages=("recruiter_screening", "tech"),
         rounds=None,
         default_assignees=None,
+        kind=JobKind.ACTIVITY,
     ):
         job = JobEntity(
-            kind=JobKind.ACTIVITY,
+            kind=kind,
             title=f"Job {job_id}",
             status=JobStatus.PUBLISHED,
         )
@@ -896,7 +897,9 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.current_round, 1)
 
     async def test_change_stage_last_stage_to_offer_clears_sub_status(self):
-        job = self._job(job_id=1, owner_ids=(2,), stages=("tech",))
+        job = self._job(
+            job_id=1, owner_ids=(2,), stages=("tech",), kind=JobKind.EMPLOYMENT
+        )
         application = self._application(
             application_id=10, job_id=1, stage=ApplicationStage.TECH
         )
@@ -916,7 +919,9 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         """Offer is a fixed step before Hired (not a configurable pipeline
         stage) — advancing out of it uses the same generic Advance action
         as any other stage, with no special-casing needed."""
-        job = self._job(job_id=1, owner_ids=(2,), stages=("board_review",))
+        job = self._job(
+            job_id=1, owner_ids=(2,), stages=("board_review",), kind=JobKind.EMPLOYMENT
+        )
         application = self._application(
             application_id=10, job_id=1, stage=ApplicationStage.OFFER
         )
@@ -935,7 +940,9 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
     async def test_change_stage_offer_to_rejected_with_declined_reason(self):
         """The owner rejects from Offer the same generic way as any other
         stage, using the "candidate declined" reason."""
-        job = self._job(job_id=1, owner_ids=(2,), stages=("board_review",))
+        job = self._job(
+            job_id=1, owner_ids=(2,), stages=("board_review",), kind=JobKind.EMPLOYMENT
+        )
         application = self._application(
             application_id=10, job_id=1, stage=ApplicationStage.OFFER
         )
@@ -956,6 +963,38 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             result.tags["reject"]["reason"], "Candidate declined the offer"
         )
         self.assertEqual(result.tags["reject"]["fromStage"], "offer")
+
+    async def test_change_stage_activity_last_stage_advances_straight_to_hired(self):
+        """ACTIVITY jobs have no Offer step: the last configured stage
+        advances directly to HIRED (shown as "Admitted" in the UI)."""
+        job = self._job(job_id=1, owner_ids=(2,), stages=("tech",))
+        application = self._application(
+            application_id=10, job_id=1, stage=ApplicationStage.TECH
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+
+        dto = StageChangeDto(to_stage=ApplicationStage.HIRED)
+        result = await self.service.change_stage(
+            self.session, self._ctx(user_id=2), 10, dto
+        )
+
+        self.assertEqual(result.stage, ApplicationStage.HIRED)
+        self.assertIsNone(result.sub_status)
+
+    async def test_change_stage_activity_move_to_offer_raises(self):
+        job = self._job(job_id=1, owner_ids=(2,), stages=("tech",))
+        application = self._application(
+            application_id=10, job_id=1, stage=ApplicationStage.TECH
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+
+        dto = StageChangeDto(to_stage=ApplicationStage.OFFER)
+        with self.assertRaises(ValueError):
+            await self.service.change_stage(self.session, self._ctx(user_id=2), 10, dto)
 
     async def test_change_stage_illegal_transition_raises_without_mutating(self):
         job = self._job(job_id=1, owner_ids=(2,), stages=("tech",))
@@ -1046,7 +1085,9 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(str(ctx.exception), "application 999 not found")
 
     async def test_change_stage_row_locks_the_application(self):
-        job = self._job(job_id=1, owner_ids=(2,), stages=("tech",))
+        job = self._job(
+            job_id=1, owner_ids=(2,), stages=("tech",), kind=JobKind.EMPLOYMENT
+        )
         application = self._application(
             application_id=10, job_id=1, stage=ApplicationStage.TECH
         )
@@ -1174,7 +1215,9 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.notification_repo.create.assert_not_awaited()
 
     async def test_change_stage_to_hired_ignores_assignee_id(self):
-        job = self._job(job_id=1, owner_ids=(2,), stages=("tech",))
+        job = self._job(
+            job_id=1, owner_ids=(2,), stages=("tech",), kind=JobKind.EMPLOYMENT
+        )
         application = self._application(
             application_id=10, job_id=1, stage=ApplicationStage.OFFER
         )

@@ -13,6 +13,20 @@ export const humanize = (value) => {
 };
 
 /**
+ * Kind-aware display label for an application stage. Activity postings have
+ * no offer step and present their terminal success stage as "Admitted"
+ * (the stored value stays `hired` — the rename is display-only).
+ *
+ * @param {string|null|undefined} stage ApplicationStage value, e.g. "hired".
+ * @param {string|null|undefined} kind JobKind value ("employment"|"activity").
+ * @returns {string}
+ */
+export const stageLabel = (stage, kind) => {
+  if (kind === "activity" && stage === "hired") return "Admitted";
+  return humanize(stage);
+};
+
+/**
  * Stages that carry an interview assignment/evaluation, mirroring the
  * backend's `INTERVIEW_STAGES` (backend/recruiting/board_service.py).
  */
