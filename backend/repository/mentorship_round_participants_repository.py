@@ -5,7 +5,14 @@ from backend.entity.mentorship_round_participants_entity import (
 from backend.entity.mentorship_pairs_entity import MentorshipPairsEntity
 from backend.entity.users_entity import UsersEntity
 from backend.entity.user_emails_entity import UserEmailsEntity
-from backend.common.mentorship_enums import ParticipantRole
+from backend.entity.application_entity import ApplicationEntity
+from backend.entity.job_entity import JobEntity
+from backend.entity.training_entity import TrainingEntity
+from backend.common.mentorship_enums import (
+    MENTORSHIP_ONBOARDING_CATEGORIES,
+    ParticipantRole,
+)
+from backend.common.recruiting_enums import ApplicationStage, JobKind
 from backend.dto.participant_search_row_dto import ParticipantSearchRow
 from backend.dto.participant_search_filter_dto import ParticipantSearchFilterDto
 from sqlalchemy import TIMESTAMP, Float, cast, func, select, and_, or_
@@ -143,6 +150,42 @@ class MentorshipRoundParticipantsRepository:
         )
         return result.scalar_one_or_none()
 
+    def _build_mentorship_eligibility_gate(self):
+        """
+        Builds the base filter for the admin participant search.
+
+        A user is considered a mentorship user if they meet at least one condition:
+        1. Has a hired application for a mentor/mentee activity in the recruiting system.
+        2. Has a mentor/mentee onboarding training record, not other categories like
+           residency onboarding or corporate culture course.
+
+        Returns:
+            ColumnElement[bool]: A correlated EXISTS-OR-EXISTS expression.
+        """
+        has_hired_activity_application = (
+            select(ApplicationEntity.application_id)
+            .join(JobEntity, ApplicationEntity.job_id == JobEntity.job_id)
+            .where(
+                ApplicationEntity.user_id == UsersEntity.user_id,
+                ApplicationEntity.stage == ApplicationStage.HIRED,
+                JobEntity.kind == JobKind.ACTIVITY,
+                JobEntity.mentorship_role.in_([
+                    ParticipantRole.MENTOR,
+                    ParticipantRole.MENTEE,
+                ]),
+            )
+            .exists()
+        )
+        has_mentorship_onboarding_training = (
+            select(TrainingEntity.training_id)
+            .where(
+                TrainingEntity.user_id == UsersEntity.user_id,
+                TrainingEntity.category.in_(MENTORSHIP_ONBOARDING_CATEGORIES),
+            )
+            .exists()
+        )
+        return or_(has_hired_activity_application, has_mentorship_onboarding_training)
+
     def _build_admin_search_stmt(self, filters) -> select:
         """
         Build the base SELECT statement for the admin participant search.
@@ -189,6 +232,7 @@ class MentorshipRoundParticipantsRepository:
                     == MentorshipRoundParticipantsEntity.round_id,
                 ),
             )
+            .where(self._build_mentorship_eligibility_gate())
         )
 
         if filters.user_id is not None:
