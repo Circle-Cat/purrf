@@ -1,16 +1,16 @@
 """
-Auth0 client for the multi-IdP email OTP / account-link flow.
+Auth0 client for the email OTP flow.
 
-Wraps the four Auth0 calls the email flow needs:
+Wraps the two Auth0 calls the email flow needs:
 
 - ``start_passwordless`` — POST /passwordless/start (send OTP code)
 - ``exchange_otp``       — POST /oauth/token with the passwordless OTP grant,
                            verifying the returned ID token signature against the
                            tenant JWKS before trusting its claims
-- ``link_identity``      — POST /api/v2/users/{account_root_sub}/identities
-- ``add_alias_email_to_account_root`` — PATCH app_metadata so a later social
-                           login with the same address resolves to this account
-                           instead of forking a new Auth0 user
+
+Auth0 users are never merged or mutated: every sign-in method stays its own
+Auth0 user, and the ``user_identities`` table is the only thing mapping those
+subs to one Purrf account.
 
 Auth0 HTTP failures are translated into the shared domain exceptions so the API
 layer can answer callers correctly: a throttled tenant becomes
@@ -19,8 +19,6 @@ rather than a blanket 503.
 """
 
 import os
-import time
-import urllib.parse
 from http import HTTPStatus
 
 import jwt
@@ -28,9 +26,6 @@ import requests
 from jwt import PyJWKClient
 
 from backend.common.environment_constants import (
-    AUTH0_M2M_AUDIENCE,
-    AUTH0_M2M_CLIENT_ID,
-    AUTH0_M2M_CLIENT_SECRET,
     AUTH0_PASSWORDLESS_CLIENT_ID,
     AUTH0_PASSWORDLESS_CLIENT_SECRET,
     AUTH0_TENANT_DOMAIN,
@@ -38,8 +33,6 @@ from backend.common.environment_constants import (
 from backend.common.exceptions import RateLimitedError
 
 _PASSWORDLESS_GRANT_TYPE = "http://auth0.com/oauth/grant-type/passwordless/otp"
-_CLIENT_CREDENTIALS_GRANT_TYPE = "client_credentials"
-_M2M_TOKEN_REFRESH_BUFFER_SECONDS = 60
 _HTTP_TIMEOUT_SECONDS = 10
 _ID_TOKEN_ALGORITHMS = ["RS256"]
 
@@ -56,14 +49,10 @@ class Auth0Client:
         self._tenant = os.getenv(AUTH0_TENANT_DOMAIN)
         self._pwl_client_id = os.getenv(AUTH0_PASSWORDLESS_CLIENT_ID)
         self._pwl_client_secret = os.getenv(AUTH0_PASSWORDLESS_CLIENT_SECRET)
-        self._m2m_client_id = os.getenv(AUTH0_M2M_CLIENT_ID)
-        self._m2m_client_secret = os.getenv(AUTH0_M2M_CLIENT_SECRET)
-        self._m2m_audience = os.getenv(AUTH0_M2M_AUDIENCE)
         self._issuer = f"https://{self._tenant}/"
         # PyJWKClient fetches and caches the tenant signing keys lazily on first
         # verification, so constructing it here makes no network call.
         self._jwks_client = PyJWKClient(f"https://{self._tenant}/.well-known/jwks.json")
-        self._m2m_token_cache = None  # {"access_token": str, "expires_at": float}
         self._logger = logger
 
     def start_passwordless(self, email: str) -> None:
@@ -151,215 +140,6 @@ class Auth0Client:
         )
         return claims
 
-    def link_identity(
-        self, account_root_sub: str, provider: str, secondary_user_id: str
-    ) -> None:
-        """
-        Merge a secondary identity into ``account_root_sub``.
-
-        Re-linking an already-linked identity is treated as success so a retry
-        after a partial failure is idempotent.
-
-        Args:
-            account_root_sub (str): Auth0 sub of the account-root user to link onto.
-            provider (str): Provider of the secondary identity (e.g. 'email').
-            secondary_user_id (str): Provider-scoped id of the secondary identity.
-
-        Raises:
-            RateLimitedError: If Auth0 throttles the request (HTTP 429).
-            RuntimeError: For any other non-2xx Auth0 response (already-linked is
-                treated as success, not an error).
-        """
-        encoded = urllib.parse.quote(account_root_sub, safe="")
-        url = f"https://{self._tenant}/api/v2/users/{encoded}/identities"
-        payload = {"provider": provider, "user_id": secondary_user_id}
-        response = requests.post(
-            url,
-            json=payload,
-            headers={"Authorization": f"Bearer {self._get_m2m_token()}"},
-            timeout=_HTTP_TIMEOUT_SECONDS,
-        )
-
-        if response.status_code == HTTPStatus.TOO_MANY_REQUESTS:
-            raise RateLimitedError(
-                "Auth0 is throttling identity links; try again later"
-            )
-        if response.status_code == HTTPStatus.BAD_REQUEST:
-            _, description = _auth0_error(response)
-            if "already" in (description or "").lower():
-                self._logger.info(
-                    "[Auth0Client] link_identity idempotent: %s already linked to account root",
-                    secondary_user_id,
-                )
-                return
-        self._raise_for_auth0_error(response, "link_identity")
-        self._logger.info(
-            "[Auth0Client] link_identity merged %s into account root", secondary_user_id
-        )
-
-    def get_linked_identity_sub(
-        self, account_root_sub: str, provider: str, email: str
-    ) -> str | None:
-        """
-        Look up the real per-connection identity id for `provider` and `email`
-        on account_root_sub's own Auth0 profile.
-
-        Used when an OIDC token has already collapsed to the account root's own
-        sub instead of exposing a linked secondary identity's native id (e.g. a
-        passwordless OTP grant for an email already merged into this same
-        account root) -- reads the account root's own `identities` array via
-        the Management API instead of trusting the token. Matching requires
-        both provider and email (via each identity's `profileData.email`) so
-        an account root with more than one linked identity for the same
-        provider (e.g. two different linked passwordless addresses) still
-        resolves to the correct one instead of guessing.
-
-        Args:
-            account_root_sub (str): Auth0 sub of the account-root user to inspect.
-            provider (str): Provider to look for in the identities array (e.g. 'email').
-            email (str): The address this identity's profileData.email must match.
-
-        Returns:
-            str | None: ``f"{provider}|{user_id}"`` for the identity matching
-            both provider and email, or None if no such identity is linked.
-
-        Raises:
-            RateLimitedError: If Auth0 throttles the request (HTTP 429).
-            RuntimeError: For any other non-2xx Auth0 response.
-        """
-        encoded = urllib.parse.quote(account_root_sub, safe="")
-        url = f"https://{self._tenant}/api/v2/users/{encoded}"
-        response = requests.get(
-            url,
-            headers={"Authorization": f"Bearer {self._get_m2m_token()}"},
-            timeout=_HTTP_TIMEOUT_SECONDS,
-        )
-        self._raise_for_auth0_error(response, "get_linked_identity_sub")
-        identities = response.json().get("identities") or []
-        normalized = email.lower()
-        for identity in identities:
-            if identity.get("provider") != provider:
-                continue
-            profile_email = (identity.get("profileData") or {}).get("email", "")
-            if profile_email.lower() == normalized:
-                return f"{provider}|{identity['user_id']}"
-        return None
-
-    def add_alias_email_to_account_root(
-        self, account_root_sub: str, email: str
-    ) -> None:
-        """
-        Append ``email`` to the account-root user's ``app_metadata.alias_emails```.
-
-        Auth0's getByEmail only indexes the top-level ``email`` field, so without
-        this index a later social login with the same address forks a fresh Auth0
-        user. Reads current metadata first so the PATCH only touches the one key.
-
-        Args:
-            account_root_sub (str): Auth0 sub of the account-root user to index the email on.
-            email (str): Address to add to ``app_metadata.alias_emails```
-                (stored lowercased; a no-op if already present).
-
-        Raises:
-            RateLimitedError: If Auth0 throttles either the read or the PATCH.
-            RuntimeError: For any other non-2xx Auth0 response.
-        """
-        encoded = urllib.parse.quote(account_root_sub, safe="")
-        url = f"https://{self._tenant}/api/v2/users/{encoded}"
-        auth_header = {"Authorization": f"Bearer {self._get_m2m_token()}"}
-        normalized = email.lower()
-
-        get_resp = requests.get(url, headers=auth_header, timeout=_HTTP_TIMEOUT_SECONDS)
-        self._raise_for_auth0_error(get_resp, "get_user_for_alias_emails")
-        app_metadata = get_resp.json().get("app_metadata") or {}
-        aliases = app_metadata.get("alias_emails") or []
-
-        if any(e.lower() == normalized for e in aliases):
-            return
-
-        patch_resp = requests.patch(
-            url,
-            json={"app_metadata": {"alias_emails": aliases + [normalized]}},
-            headers={**auth_header, "Content-Type": "application/json"},
-            timeout=_HTTP_TIMEOUT_SECONDS,
-        )
-        self._raise_for_auth0_error(patch_resp, "add_alias_email_to_account_root")
-        self._logger.info(
-            "[Auth0Client] add_alias_email_to_account_root indexed %s on account root",
-            _mask_email(normalized),
-        )
-
-    def unlink_identity(
-        self, account_root_sub: str, provider: str, secondary_user_id: str
-    ) -> None:
-        """
-        Detach a secondary identity from ``account_root_sub``.
-
-        A 404 is treated as success so a retry after a partial failure (or an
-        already-detached identity) is idempotent — the reverse of
-        :meth:`link_identity`. ``secondary_user_id`` is the local part of the
-        sub (after the ``|``).
-        """
-        encoded = urllib.parse.quote(account_root_sub, safe="")
-        url = (
-            f"https://{self._tenant}/api/v2/users/{encoded}"
-            f"/identities/{provider}/{secondary_user_id}"
-        )
-        response = requests.delete(
-            url,
-            headers={"Authorization": f"Bearer {self._get_m2m_token()}"},
-            timeout=_HTTP_TIMEOUT_SECONDS,
-        )
-
-        if response.status_code == HTTPStatus.NOT_FOUND:
-            self._logger.info(
-                "[Auth0Client] unlink_identity idempotent: %s already detached",
-                secondary_user_id,
-            )
-            return
-        self._raise_for_auth0_error(response, "unlink_identity")
-        self._logger.info(
-            "[Auth0Client] unlink_identity detached %s from account root",
-            secondary_user_id,
-        )
-
-    def remove_alias_email_from_account_root(
-        self, account_root_sub: str, email: str
-    ) -> None:
-        """
-        Remove ``email`` from the account-root user's ``app_metadata.alias_emails``.
-
-        The reverse of :meth:`add_alias_email_to_account_root`, called when an
-        unlinked identity's address is no longer referenced by the user. Reads
-        current metadata first and only PATCHes when the address is present, so
-        an already-absent alias is a no-op.
-        """
-        encoded = urllib.parse.quote(account_root_sub, safe="")
-        url = f"https://{self._tenant}/api/v2/users/{encoded}"
-        auth_header = {"Authorization": f"Bearer {self._get_m2m_token()}"}
-        normalized = email.lower()
-
-        get_resp = requests.get(url, headers=auth_header, timeout=_HTTP_TIMEOUT_SECONDS)
-        self._raise_for_auth0_error(get_resp, "get_user_for_alias_emails")
-        app_metadata = get_resp.json().get("app_metadata") or {}
-        aliases = app_metadata.get("alias_emails") or []
-
-        remaining = [e for e in aliases if e.lower() != normalized]
-        if len(remaining) == len(aliases):
-            return
-
-        patch_resp = requests.patch(
-            url,
-            json={"app_metadata": {"alias_emails": remaining}},
-            headers={**auth_header, "Content-Type": "application/json"},
-            timeout=_HTTP_TIMEOUT_SECONDS,
-        )
-        self._raise_for_auth0_error(patch_resp, "remove_alias_email_from_account_root")
-        self._logger.info(
-            "[Auth0Client] remove_alias_email_from_account_root dropped %s from account root",
-            _mask_email(normalized),
-        )
-
     def _verify_id_token(self, id_token: str) -> dict:
         """
         Verify the ID token against the tenant JWKS and return its claims.
@@ -386,42 +166,6 @@ class Auth0Client:
             )
         except jwt.PyJWTError as e:
             raise ValueError(f"Auth0 ID token verification failed: {e}")
-
-    def _get_m2m_token(self) -> str:
-        """
-        Return a cached Management API M2M access token, refreshing if near expiry.
-
-        The token is reused until it falls within the refresh buffer of its
-        expiry, so the Management API calls share one client-credentials grant.
-
-        Returns:
-            str: A valid Management API access token.
-
-        Raises:
-            RateLimitedError: If Auth0 throttles the token request (HTTP 429).
-            RuntimeError: For any other non-2xx Auth0 response.
-        """
-        now = time.time()
-        cache = self._m2m_token_cache
-        if cache and cache["expires_at"] - _M2M_TOKEN_REFRESH_BUFFER_SECONDS > now:
-            return cache["access_token"]
-
-        url = f"https://{self._tenant}/oauth/token"
-        payload = {
-            "grant_type": _CLIENT_CREDENTIALS_GRANT_TYPE,
-            "client_id": self._m2m_client_id,
-            "client_secret": self._m2m_client_secret,
-            "audience": self._m2m_audience,
-        }
-        response = requests.post(url, json=payload, timeout=_HTTP_TIMEOUT_SECONDS)
-        self._raise_for_auth0_error(response, "get_m2m_token")
-        body = response.json()
-        expires_in = body.get("expires_in", 3600)
-        self._m2m_token_cache = {
-            "access_token": body["access_token"],
-            "expires_at": now + expires_in,
-        }
-        return body["access_token"]
 
     def _raise_for_auth0_error(self, response, op: str) -> None:
         """

@@ -66,6 +66,55 @@ class EmailManagementService:
         self._state_secret = os.getenv(EMAIL_OTP_STATE_JWT_SECRET)
         self._logger = logger
 
+    async def add_email(self, session, current_user_id: int, email: str) -> dict:
+        """
+        Record a backup contact address on the caller's account without an OTP
+        round-trip.
+
+        The row is written unconfirmed and non-primary: an unverified address
+        is contact-only. Making it usable as a sign-in method requires the
+        OTP verify flow (initiate/verify), which proves from inside the
+        account that the caller controls the mailbox — auto-linking a sign-in
+        off an unverified claim would let anyone pre-claim someone else's
+        address and capture their later logins.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            current_user_id (int): user_id of the authenticated caller.
+            email (str): The address to add.
+
+        Returns:
+            dict: ``{"ok": True, "email": <normalized address>}``.
+
+        Raises:
+            ValueError: The address is not a valid email.
+            ConflictError: Another account already OTP-confirmed the address,
+                or it is already on the caller's account.
+        """
+        normalized = email.strip().lower()
+        if not _EMAIL_PATTERN.match(normalized):
+            raise ValueError("Invalid email format")
+        if await self._user_emails.exists_confirmed_on_other_user(
+            session, normalized, current_user_id
+        ):
+            raise ConflictError("Email already verified by another account")
+        if await self._user_emails.get_by_user_and_email(
+            session, current_user_id, normalized
+        ):
+            raise ConflictError("This email is already on your account")
+
+        await self._user_emails.upsert_email(
+            session=session,
+            entity=UserEmailsEntity(
+                user_id=current_user_id,
+                email=normalized,
+                otp_confirmed=False,
+                is_primary=False,
+            ),
+        )
+        await session.commit()
+        return {"ok": True, "email": normalized}
+
     async def initiate(
         self,
         session,
@@ -141,9 +190,9 @@ class EmailManagementService:
 
         The address to verify is taken only from the signed state, never from the
         request, so a tampered email parameter cannot redirect the verification.
-        Nothing is written until the OTP and the new identity both check out; the
-        Auth0 alias index is synced best-effort after commit so a sync hiccup
-        never undoes a confirmed email.
+        Nothing is written until the OTP and the new identity both check out.
+        Auth0 users are never merged: the ``user_identities`` row is the only
+        link between the passwordless sub and the account.
 
         In needs-link mode (``needs_link=True``, PUR-480) the direction
         reverses: instead of pulling the address's identity into the caller's
@@ -179,21 +228,6 @@ class EmailManagementService:
             )
 
         new_sub = id_token_claims["sub"]
-        # Auth0 has already merged this email's passwordless identity into
-        # the caller's own account root when the OTP grant hands back
-        # current_sub itself instead of a distinct 'email|...' sub. Linking
-        # it to itself would fail (Auth0: "Main identity and the new one are
-        # the same"), so skip link_identity in that case and instead pull
-        # the real per-connection id from the account root's own identities
-        # array, if Auth0 exposes one.
-        self_linked = new_sub == current_sub
-        if self_linked:
-            real_sub = self._auth0.get_linked_identity_sub(
-                current_sub, "email", target_email
-            )
-            if real_sub is not None:
-                new_sub = real_sub
-
         existing_identity = await self._user_identities.get_by_subject_identifier(
             session, new_sub
         )
@@ -202,14 +236,6 @@ class EmailManagementService:
             and existing_identity.user_id != current_user_id
         ):
             raise ConflictError("Identity already linked to another account")
-
-        if not self_linked:
-            provider, secondary_user_id = self._split_sub(new_sub)
-            self._auth0.link_identity(
-                account_root_sub=current_sub,
-                provider=provider,
-                secondary_user_id=secondary_user_id,
-            )
 
         await self._confirm_email(session, current_user_id, target_email)
         if existing_identity is None:
@@ -227,8 +253,6 @@ class EmailManagementService:
                 ),
             )
         await session.commit()
-
-        self._sync_alias_best_effort(current_sub, target_email, current_user_id)
         return {"ok": True, "linked_sub": new_sub, "email": target_email}
 
     async def _link_into_owner(
@@ -253,9 +277,8 @@ class EmailManagementService:
         original sign-in method.
 
         No users row is created and nothing on the owning account changes:
-        only a user_identities row for the caller's sub is added (plus a
-        best-effort Auth0-side link so future logins with either method
-        resolve at step 1).
+        only a user_identities row for the caller's sub is added, so future
+        logins with either method resolve to the owning account at step 1.
 
         Args:
             session (AsyncSession): The active async database session.
@@ -294,16 +317,6 @@ class EmailManagementService:
         if otp_identity is not None and otp_identity.user_id != owner_user_id:
             raise ConflictError("Identity already linked to another account")
 
-        # When the caller signed in with the passwordless method itself the two
-        # subs coincide and there is nothing to link on the Auth0 side.
-        if otp_sub != current_sub:
-            provider, secondary_user_id = self._split_sub(otp_sub)
-            self._auth0.link_identity(
-                account_root_sub=current_sub,
-                provider=provider,
-                secondary_user_id=secondary_user_id,
-            )
-
         await self._user_identities.upsert_identity(
             session=session,
             entity=UserIdentitiesEntity(
@@ -329,7 +342,6 @@ class EmailManagementService:
             owner_user_id,
             target_email,
         )
-        self._sync_alias_best_effort(current_sub, target_email, owner_user_id)
         return {"ok": True, "linked_sub": current_sub, "email": target_email}
 
     async def list_emails_and_identities(
@@ -392,44 +404,6 @@ class EmailManagementService:
             internal_identities=internal_identities,
             external_identities=external_identities,
         )
-
-    async def _drop_alias_best_effort(
-        self, session, user_id: int, account_root_sub: str, removed, identities_before
-    ) -> None:
-        """
-        Remove the unlinked identity's address from the Auth0 alias index when
-        nothing else references it.
-
-        Skips the drop when another of the user's identities still claims the
-        same address (case-insensitive) or it remains a ``user_emails`` contact.
-        Best-effort: a failure here is logged and swallowed so it never undoes
-        the already-committed unlink.
-        """
-        email_claim = removed.email_claim
-        if not email_claim:
-            return
-        normalized = email_claim.lower()
-
-        still_linked = any(
-            other.identity_id != removed.identity_id
-            and (other.email_claim or "").lower() == normalized
-            for other in identities_before
-        )
-        if still_linked:
-            return
-        if await self._user_emails.get_by_user_and_email(session, user_id, normalized):
-            return
-
-        try:
-            self._auth0.remove_alias_email_from_account_root(
-                account_root_sub, email_claim
-            )
-        except Exception as exc:
-            self._logger.warning(
-                "[EmailManagementService] auth.alias_sync.failed user_id=%s op=remove error=%s",
-                user_id,
-                exc,
-            )
 
     @staticmethod
     def _to_identity_dto(identity, current_sub: str) -> IdentityDto:
@@ -597,15 +571,6 @@ class EmailManagementService:
             raise PermissionError(f"Primary email changed during {operation}; restart")
         self._auth0.exchange_otp(primary.email, code)
 
-    @staticmethod
-    def _split_sub(sub: str) -> tuple[str, str]:
-        """
-        Split an Auth0 ``sub`` (``provider|secondary_user_id``) into the
-        ``(provider, secondary_user_id)`` pair the link/unlink calls expect.
-        """
-        provider, _, secondary_user_id = sub.partition("|")
-        return provider, secondary_user_id
-
     async def _confirm_email(self, session, user_id: int, email: str) -> None:
         """
         Record `email` as an OTP-confirmed contact for the user.
@@ -679,24 +644,6 @@ class EmailManagementService:
             )
             return
         await self._users.update_primary_email(session, user_id, email)
-
-    def _sync_alias_best_effort(
-        self, account_root_sub: str, email: str, user_id: int
-    ) -> None:
-        """
-        Index the confirmed email on the Auth0 account-root user, logging on failure.
-
-        Runs after commit: a sync hiccup is logged and swallowed so it never
-        undoes an already-confirmed email.
-        """
-        try:
-            self._auth0.add_alias_email_to_account_root(account_root_sub, email)
-        except Exception as exc:
-            self._logger.warning(
-                "[EmailManagementService] auth.alias_sync.failed user_id=%s op=add error=%s",
-                user_id,
-                exc,
-            )
 
     async def _validate_unlinkable(
         self, session, current_user_id: int, current_sub: str, identity
@@ -818,10 +765,10 @@ class EmailManagementService:
         Validates the signed state (signature, expiry, caller, and that the URL
         ``identity_id`` matches the bound target), rechecks the primary *before*
         consuming the OTP — refusing if it changed since initiate — verifies the
-        code against the primary, unlinks from Auth0, deletes the
-        ``user_identities`` row, then deletes the matching ``user_emails``
-        contact row when no surviving identity claims the same address. The
-        Auth0 alias index is reverse-synced best-effort.
+        code against the primary, deletes the ``user_identities`` row, then
+        deletes the matching ``user_emails`` contact row when no surviving
+        identity claims the same address. Auth0 is untouched: identities are
+        never merged there, so removing the DB row is the whole unlink.
 
         Args:
             session (AsyncSession): The active async database session.
@@ -864,12 +811,6 @@ class EmailManagementService:
             session, current_user_id, current_sub, identity
         )
 
-        provider, secondary_user_id = self._split_sub(identity.subject_identifier)
-        self._auth0.unlink_identity(
-            account_root_sub=current_sub,
-            provider=provider,
-            secondary_user_id=secondary_user_id,
-        )
         await self._user_identities.delete(session, identity_id)
 
         removed_claim = (identity.email_claim or "").lower()
@@ -886,8 +827,4 @@ class EmailManagementService:
                 await self._user_emails.delete(session, email_row.email_id)
 
         await session.commit()
-
-        await self._drop_alias_best_effort(
-            session, current_user_id, current_sub, identity, identities_before
-        )
         return {"ok": True}

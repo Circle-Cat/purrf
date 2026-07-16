@@ -96,14 +96,16 @@ class UserIdentityService:
 
     async def email_has_owner(self, session: AsyncSession, email: str) -> bool:
         """
-        Whether `email` already belongs to some account — either as an
-        OTP-confirmed contact (user_emails) or via the legacy
-        users.primary_email column.
+        Whether `email` already belongs to some account — as a user_emails
+        contact claim (confirmed or an unverified backup address) or via the
+        legacy users.primary_email column.
 
-        Used by the bootstrap to classify a first-login unique violation: an
-        owned email means the login is a second sign-in method for an existing
-        account (hold at the verify wall to link, PUR-480), while an unowned
-        one means the violation is a real bug and must surface.
+        Used by the bootstrap to classify a colliding first login: an owned
+        email means the login is a second sign-in method for an existing
+        account, so the session is held at the verify wall (PUR-480). The
+        wall's link only succeeds against an owner that OTP-confirmed the
+        address; an unverified claim gets the pointer back to verifying it
+        from inside the owning account first.
 
         Args:
             session (AsyncSession): Active database async session.
@@ -112,7 +114,7 @@ class UserIdentityService:
         Returns:
             bool: True when some account owns the address.
         """
-        if await self.user_emails_repository.get_confirmed_by_email(session, email):
+        if await self.user_emails_repository.exists_claim_by_email(session, email):
             return True
         return (
             await self.users_repository.get_user_by_primary_email(session, email)

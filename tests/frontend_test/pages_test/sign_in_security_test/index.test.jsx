@@ -63,11 +63,38 @@ vi.mock("@/pages/SignInSecurity/components/SignInMethodList", () => ({
   ),
 }));
 
-vi.mock("@/pages/SignInSecurity/components/AddSignInMethodDialog", () => ({
+// Contact-email list mock exposes a button that drives the page's verify
+// callback with an unverified row.
+vi.mock("@/pages/SignInSecurity/components/ContactEmailList", () => ({
+  default: ({ emails, isLoading, onVerify }) => (
+    <div data-testid="contact-email-list">
+      ContactEmailList:{isLoading ? "loading" : "ready"}:{emails.length}
+      <button
+        onClick={() =>
+          onVerify({ emailId: 3, email: "backup@x.com", otpConfirmed: false })
+        }
+      >
+        trigger-verify
+      </button>
+    </div>
+  ),
+}));
+
+vi.mock("@/pages/SignInSecurity/components/AddEmailDialog", () => ({
   default: ({ open, onAdded }) =>
     open ? (
       <div data-testid="add-dialog">
         <button onClick={() => onAdded()}>add-onAdded</button>
+      </div>
+    ) : null,
+}));
+
+vi.mock("@/pages/SignInSecurity/components/VerifyEmailDialog", () => ({
+  default: ({ open, email, onVerified }) =>
+    open ? (
+      <div data-testid="verify-dialog">
+        <span data-testid="verify-email">{email}</span>
+        <button onClick={() => onVerified()}>verify-onVerified</button>
       </div>
     ) : null,
 }));
@@ -109,21 +136,16 @@ describe("SignInSecurity page", () => {
 
   afterEach(cleanup);
 
-  it("renders only the sign-in methods card and no email-address card", () => {
+  it("renders the sign-in methods card and the emails card", () => {
     render(<SignInSecurity />);
 
-    expect(screen.queryByText("Email addresses")).not.toBeInTheDocument();
     expect(screen.getByText("Sign-in methods")).toBeInTheDocument();
     expect(
       screen.getByText(/The methods you can use to sign in to Purrf\./),
     ).toBeInTheDocument();
-  });
-
-  it("renders the sign-in method list and no email-address list", () => {
-    render(<SignInSecurity />);
-
-    expect(screen.queryByTestId("email-address-list")).not.toBeInTheDocument();
+    expect(screen.getByText("Emails")).toBeInTheDocument();
     expect(screen.getByTestId("sign-in-method-list")).toBeInTheDocument();
+    expect(screen.getByTestId("contact-email-list")).toBeInTheDocument();
   });
 
   it("passes hook data (including emails) through to the sign-in method list", () => {
@@ -158,18 +180,35 @@ describe("SignInSecurity page", () => {
     expect(screen.queryByTestId("add-dialog")).not.toBeInTheDocument();
   });
 
-  describe("Add sign-in method", () => {
-    it("opens the add dialog and refreshes after a verified add", async () => {
+  describe("Add email", () => {
+    it("opens the add dialog and refreshes after an add", async () => {
       const user = userEvent.setup();
       render(<SignInSecurity />);
 
-      await user.click(
-        screen.getByRole("button", { name: "Add sign-in method" }),
-      );
+      await user.click(screen.getByRole("button", { name: "Add email" }));
       expect(screen.getByTestId("add-dialog")).toBeInTheDocument();
 
       await user.click(screen.getByRole("button", { name: "add-onAdded" }));
       expect(refresh).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("Verify email", () => {
+    it("opens the verify dialog for the picked address and refreshes after verify", async () => {
+      const user = userEvent.setup();
+      render(<SignInSecurity />);
+
+      await user.click(screen.getByRole("button", { name: "trigger-verify" }));
+      expect(screen.getByTestId("verify-dialog")).toBeInTheDocument();
+      expect(screen.getByTestId("verify-email")).toHaveTextContent(
+        "backup@x.com",
+      );
+
+      await user.click(
+        screen.getByRole("button", { name: "verify-onVerified" }),
+      );
+      expect(refresh).toHaveBeenCalledTimes(1);
+      expect(screen.queryByTestId("verify-dialog")).not.toBeInTheDocument();
     });
   });
 

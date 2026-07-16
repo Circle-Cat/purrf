@@ -20,7 +20,9 @@ import {
 import { useEmailSettings } from "@/pages/SignInSecurity/hooks/useEmailSettings";
 import { identityLabel } from "@/pages/SignInSecurity/providers";
 import SignInMethodList from "@/pages/SignInSecurity/components/SignInMethodList";
-import AddSignInMethodDialog from "@/pages/SignInSecurity/components/AddSignInMethodDialog";
+import ContactEmailList from "@/pages/SignInSecurity/components/ContactEmailList";
+import AddEmailDialog from "@/pages/SignInSecurity/components/AddEmailDialog";
+import VerifyEmailDialog from "@/pages/SignInSecurity/components/VerifyEmailDialog";
 import StepUpConfirmDialog from "@/pages/SignInSecurity/components/StepUpConfirmDialog";
 
 const errorMessage = (error, fallback) =>
@@ -29,12 +31,12 @@ const errorMessage = (error, fallback) =>
 /**
  * Sign in & security settings page.
  *
- * Sign-in methods are the management subject; each method's email is a contact
- * address synced from it, and the primary contact email receives notifications.
- * Backed by `GET /auth/emails`: add a sign-in method (email OTP), set a method's
- * email as the primary contact (step-up OTP), and remove a sign-in method
- * (step-up OTP, which also drops its synced contact email). A single full-width
- * card.
+ * Two cards backed by `GET /auth/emails`. The sign-in methods card lists the
+ * account's identities: set a method's email as the primary contact (step-up
+ * OTP) or remove a method (step-up OTP, which also drops its synced contact
+ * email). The emails card lists the account's contact addresses: add one
+ * without verification (contact-only), and verify it (email OTP) to unlock it
+ * as a sign-in method.
  *
  * @component
  */
@@ -42,6 +44,7 @@ const SignInSecurity = () => {
   const { isLoading, emails, internalIdentities, externalIdentities, refresh } =
     useEmailSettings();
   const [addOpen, setAddOpen] = useState(false);
+  const [verifyTarget, setVerifyTarget] = useState(null);
   const [primaryTarget, setPrimaryTarget] = useState(null);
   const [unlinkTarget, setUnlinkTarget] = useState(null);
 
@@ -121,15 +124,6 @@ const SignInSecurity = () => {
             The methods you can use to sign in to Purrf. Your primary contact
             email receives account notifications.
           </CardDescription>
-          <CardAction>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setAddOpen(true)}
-            >
-              Add sign-in method
-            </Button>
-          </CardAction>
         </CardHeader>
         <CardContent>
           <SignInMethodList
@@ -143,10 +137,48 @@ const SignInSecurity = () => {
         </CardContent>
       </Card>
 
-      <AddSignInMethodDialog
+      <Card>
+        <CardHeader>
+          <CardTitle>Emails</CardTitle>
+          <CardDescription>
+            Email addresses on your account. An unverified address is
+            contact-only — verify it to use it for signing in.
+          </CardDescription>
+          <CardAction>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setAddOpen(true)}
+            >
+              Add email
+            </Button>
+          </CardAction>
+        </CardHeader>
+        <CardContent>
+          <ContactEmailList
+            emails={emails}
+            isLoading={isLoading}
+            onVerify={(emailRow) => setVerifyTarget(emailRow)}
+          />
+        </CardContent>
+      </Card>
+
+      <AddEmailDialog
         open={addOpen}
         onOpenChange={setAddOpen}
         onAdded={refresh}
+      />
+
+      <VerifyEmailDialog
+        open={verifyTarget !== null}
+        onOpenChange={(o) => {
+          if (!o) setVerifyTarget(null);
+        }}
+        email={verifyTarget?.email ?? ""}
+        onVerified={async () => {
+          setVerifyTarget(null);
+          await refresh();
+        }}
       />
 
       <StepUpConfirmDialog

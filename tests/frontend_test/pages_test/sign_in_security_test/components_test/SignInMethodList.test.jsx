@@ -48,6 +48,29 @@ describe("SignInMethodList", () => {
     expect(screen.getByText("No sign-in methods yet.")).toBeInTheDocument();
   });
 
+  it("badges the identity backing the current session", () => {
+    const current = makeIdentity({ identityId: 1, isCurrentSession: true });
+    const other = makeIdentity({
+      identityId: 2,
+      subjectIdentifier: "email|abc",
+      emailClaim: "bob@gmail.com",
+    });
+    render(
+      <SignInMethodList
+        internalIdentities={[]}
+        externalIdentities={[current, other]}
+        isLoading={false}
+        onUnlink={vi.fn()}
+      />,
+    );
+
+    const rows = screen.getAllByRole("listitem");
+    expect(within(rows[0]).getByText("Current session")).toBeInTheDocument();
+    expect(
+      within(rows[1]).queryByText("Current session"),
+    ).not.toBeInTheDocument();
+  });
+
   it("renders the internal identity first and tags it Internal", () => {
     const internalIdentity = makeIdentity({
       identityId: 99,

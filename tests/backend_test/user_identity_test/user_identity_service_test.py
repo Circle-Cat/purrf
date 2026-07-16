@@ -38,7 +38,7 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
 
         # Default: the login's email is unowned, so first-login creation
         # proceeds. Ownership tests override these explicitly.
-        self.emails_repo.get_confirmed_by_email.return_value = None
+        self.emails_repo.exists_claim_by_email.return_value = False
         self.users_repo.get_user_by_primary_email.return_value = None
 
     # find_user_by_sub — Step 1 sub lookup (single JOIN)
@@ -108,11 +108,12 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
 
     # create_or_swap_user — Step 2 swap / Step 3 first-login
     # email_has_owner — needs-link collision classification (PUR-480)
-    async def test_email_has_owner_confirmed_contact(self):
-        """An OTP-confirmed user_emails row means the address is owned."""
-        self.emails_repo.get_confirmed_by_email.return_value = MagicMock(
-            spec=UserEmailsEntity
-        )
+    async def test_email_has_owner_any_contact_claim(self):
+        """Any user_emails claim counts, confirmed or not: even an unverified
+        backup address must hold a colliding sign-in at the verify wall (which
+        then points at verifying it from inside the owning account) instead of
+        forking a fresh account."""
+        self.emails_repo.exists_claim_by_email.return_value = True
 
         self.assertTrue(
             await self.service.email_has_owner(self.session, "a@example.com")
@@ -121,9 +122,9 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
         self.users_repo.get_user_by_primary_email.assert_not_awaited()
 
     async def test_email_has_owner_legacy_primary_email(self):
-        """No confirmed contact but a legacy users.primary_email owner still
+        """No contact claim but a legacy users.primary_email owner still
         counts — that column is what the first-login unique violation fires on."""
-        self.emails_repo.get_confirmed_by_email.return_value = None
+        self.emails_repo.exists_claim_by_email.return_value = False
         self.users_repo.get_user_by_primary_email.return_value = MagicMock(
             spec=UsersEntity
         )
@@ -133,8 +134,8 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_email_has_owner_unowned(self):
-        """Neither a confirmed contact nor a legacy owner: not owned."""
-        self.emails_repo.get_confirmed_by_email.return_value = None
+        """Neither a contact claim nor a legacy owner: not owned."""
+        self.emails_repo.exists_claim_by_email.return_value = False
         self.users_repo.get_user_by_primary_email.return_value = None
 
         self.assertFalse(
@@ -264,12 +265,12 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
         self.permissions_repo.grant.assert_not_awaited()
         self.assertEqual(user_info.user_id, 77)
 
-    async def test_create_or_swap_owned_confirmed_email_returns_none(self):
-        """The login's email is already OTP-confirmed by an existing account
-        (e.g. it was added there via Add sign-in method, so it lives only in
-        user_emails and no unique violation would ever fire): create nothing
+    async def test_create_or_swap_owned_claimed_email_returns_none(self):
+        """The login's email is already claimed by an existing account —
+        confirmed or an unverified backup address; either lives only in
+        user_emails, so no unique violation would ever fire: create nothing
         and return None so the bootstrap holds the session at the verify wall
-        to link (PUR-480) instead of creating an orphan account."""
+        (PUR-480) instead of creating an orphan account."""
         user_info = UserContextDto(
             sub="google-oauth2|new",
             primary_email="Owned@Example.com",
@@ -277,15 +278,13 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
             last_login_at=self.iat,
         )
         self.identities_repo.find_swappable_by_email.return_value = None
-        self.emails_repo.get_confirmed_by_email.return_value = MagicMock(
-            spec=UserEmailsEntity
-        )
+        self.emails_repo.exists_claim_by_email.return_value = True
 
         result = await self.service.create_or_swap_user(self.session, user_info)
 
         self.assertIsNone(result)
         # checked with the lowercased address
-        self.emails_repo.get_confirmed_by_email.assert_awaited_once_with(
+        self.emails_repo.exists_claim_by_email.assert_awaited_once_with(
             self.session, "owned@example.com"
         )
         # nothing is created or granted
@@ -337,15 +336,13 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
         self.identities_repo.find_swappable_by_email.return_value = mocked
         resolved = MagicMock(spec=UsersEntity, user_id=10)
         self.users_repo.get_user_by_user_id.return_value = resolved
-        # Even with a (theoretical) confirmed owner present, the swap path wins.
-        self.emails_repo.get_confirmed_by_email.return_value = MagicMock(
-            spec=UserEmailsEntity
-        )
+        # Even with a (theoretical) claim present, the swap path wins.
+        self.emails_repo.exists_claim_by_email.return_value = True
 
         result = await self.service.create_or_swap_user(self.session, user_info)
 
         self.assertIs(result, resolved)
-        self.emails_repo.get_confirmed_by_email.assert_not_awaited()
+        self.emails_repo.exists_claim_by_email.assert_not_awaited()
 
     async def test_create_or_swap_first_login_internal_grants_permissions(self):
         """First login with an internal identity grants the internal employee
