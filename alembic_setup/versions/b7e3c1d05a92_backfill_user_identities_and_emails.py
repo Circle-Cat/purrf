@@ -29,8 +29,12 @@ Per user:
       ``primary_must_be_confirmed`` CHECK; those users confirm the address (and
       promote it to primary) through the hard-wall verify flow on next login.
 
-Permissions are intentionally not backfilled, and users.is_super_admin is left
-at its default of false.
+* user_permissions -- the INTERNAL_EMPLOYEE_PERMISSIONS bundle for every active
+  internal user, mirroring the first-login lifecycle hook so migrated employees
+  and brand-new hires end up with the same baseline. Names are literals here
+  (migrations must not import app code); keep in sync with
+  ``backend/common/permissions.py``. All other permissions stay manual grants,
+  and users.is_super_admin is left at its default of false.
 
 Revision ID: b7e3c1d05a92
 Revises: f2a9c7b41d3e
@@ -107,14 +111,50 @@ def upgrade() -> None:
         )
     )
 
+    # The internal-employee baseline bundle, mirroring the first-login
+    # lifecycle hook in UserIdentityService (granted_source='system_internal',
+    # granted_by NULL = system). Idempotent: users already holding an
+    # unrevoked row for a bundle permission are skipped, so re-running (or a
+    # user graced by the first-login hook between deploys) never duplicates.
+    op.execute(
+        sa.text(
+            """
+            INSERT INTO user_permissions
+                (user_id, permission_name, granted_source, granted_by)
+            SELECT u.user_id, p.permission_name, 'system_internal', NULL
+            FROM users u
+            CROSS JOIN (VALUES
+                ('directory.microsoft_ldap.read'),
+                ('dashboard.activity_summary.read')
+            ) AS p(permission_name)
+            WHERE u.is_active
+              AND EXISTS (
+                  SELECT 1 FROM user_identities ui
+                  WHERE ui.user_id = u.user_id
+                    AND ui.identity_type = 'internal'
+              )
+              AND NOT EXISTS (
+                  SELECT 1 FROM user_permissions up
+                  WHERE up.user_id = u.user_id
+                    AND up.permission_name = p.permission_name
+                    AND up.revoked_timestamp IS NULL
+              )
+            """
+        )
+    )
+
 
 def downgrade() -> None:
     """Empty the backfilled tables.
 
     This revision is the initial population of user_identities and user_emails,
     which dee5e8b0c892 created empty; reverting it clears them. There is no
-    per-row marker distinguishing backfilled rows from later writes, so this is
+    per-row marker distinguishing backfilled rows from later writes (the
+    first-login hook stamps the same 'system_internal' source), so this is
     only a clean inverse at/around the deploy boundary.
     """
+    op.execute(
+        sa.text("DELETE FROM user_permissions WHERE granted_source = 'system_internal'")
+    )
     op.execute(sa.text("DELETE FROM user_emails"))
     op.execute(sa.text("DELETE FROM user_identities"))
