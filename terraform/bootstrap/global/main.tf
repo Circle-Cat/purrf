@@ -729,14 +729,14 @@ resource "cloudflare_zero_trust_access_application" "purrf_app_staging" {
     { type = "public", uri = local.environments.staging.api_host },
     { type = "public", uri = "staging.purrf.pages.dev" },
   ]
-  allowed_idps = [
-    "762bbddc-6753-4c4b-898e-89e18ecc410c",
-    cloudflare_zero_trust_access_identity_provider.mentorship_login_staging.id,
-  ]
+  # Single IdP + auto-redirect: like test, CF Access skips its own login
+  # chooser and sends visitors straight to the Auth0 page. (Prod keeps the
+  # two-IdP chooser; staging deliberately trades that fidelity away.)
+  allowed_idps         = [cloudflare_zero_trust_access_identity_provider.mentorship_login_staging.id]
   session_duration     = "24h"
   app_launcher_visible = true
 
-  auto_redirect_to_identity = false
+  auto_redirect_to_identity = true
   cors_headers = {
     allow_all_methods = true
     allow_credentials = true
