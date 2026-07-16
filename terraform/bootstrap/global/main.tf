@@ -633,7 +633,6 @@ resource "cloudflare_zero_trust_access_identity_provider" "mentorship_login_test
       "given_name",
       "family_name",
       "email_verified",
-      "https://api.purrf.io/login_diag",
     ]
 
     email_claim_name = "aud"
@@ -661,8 +660,11 @@ resource "cloudflare_zero_trust_access_identity_provider" "mentorship_login_stag
 
     claims = [
       "email",
-      "phone_number",
       "sub",
+      "iat",
+      "given_name",
+      "family_name",
+      "email_verified",
     ]
 
     email_claim_name = "aud"
