@@ -408,7 +408,9 @@ resource "cloudflare_dns_record" "login_test" {
   name    = "test-login"
   type    = "CNAME"
   content = data.terraform_remote_state.test_env.outputs.auth0_custom_domain_cname
-  proxied = false
+  # Proxied since 2026-05-23 (dashboard change); codified to match the live
+  # record. Note prod/staging login records are DNS-only.
+  proxied = true
   ttl     = 1
   lifecycle {
     ignore_changes = [
@@ -621,10 +623,17 @@ resource "cloudflare_zero_trust_access_identity_provider" "mentorship_login_test
       "profile",
     ]
 
+    # Matches the live IdP: the extra identity/diagnostic claims were added
+    # in the dashboard while debugging test logins (login_diag) and
+    # phone_number was dropped; codified as-is.
     claims = [
       "email",
-      "phone_number",
       "sub",
+      "iat",
+      "given_name",
+      "family_name",
+      "email_verified",
+      "https://api.purrf.io/login_diag",
     ]
 
     email_claim_name = "aud"
