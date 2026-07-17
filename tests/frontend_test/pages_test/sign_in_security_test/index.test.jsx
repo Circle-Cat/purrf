@@ -261,6 +261,33 @@ describe("SignInSecurity page", () => {
       );
     });
 
+    it("names the current primary address in the step-up description", async () => {
+      useEmailSettings.mockReturnValue({
+        ...defaultHookValue,
+        emails: [
+          {
+            emailId: 9,
+            email: "prime@x.com",
+            otpConfirmed: true,
+            isPrimary: true,
+          },
+        ],
+      });
+      const user = userEvent.setup();
+      initiateSetPrimary.mockResolvedValue({ data: { state: "st-1" } });
+      render(<SignInSecurity />);
+
+      await user.click(
+        screen.getByRole("button", { name: "trigger-set-primary" }),
+      );
+
+      await waitFor(() =>
+        expect(screen.getByTestId("stepup-desc")).toHaveTextContent(
+          "we sent to prime@x.com",
+        ),
+      );
+    });
+
     it("toasts and stays closed when initiate fails", async () => {
       const user = userEvent.setup();
       initiateSetPrimary.mockRejectedValue({

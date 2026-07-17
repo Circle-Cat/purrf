@@ -83,8 +83,23 @@ describe("StepUpConfirmDialog", () => {
     await user.click(screen.getByRole("button", { name: "Resend code" }));
 
     await waitFor(() => expect(onResend).toHaveBeenCalledTimes(1));
+    // Without otpEmail the toast falls back to the generic wording.
     expect(toast.success).toHaveBeenCalledWith(
       "We sent a new code to your primary contact email.",
+    );
+  });
+
+  it("names the OTP address in the resend toast when otpEmail is given", async () => {
+    const user = userEvent.setup();
+    const onResend = vi.fn().mockResolvedValue();
+    renderDialog({ onResend, otpEmail: "prime@x.com" });
+
+    await user.click(screen.getByRole("button", { name: "Resend code" }));
+
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith(
+        "We sent a new code to prime@x.com.",
+      ),
     );
   });
 

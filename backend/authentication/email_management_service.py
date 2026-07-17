@@ -149,8 +149,12 @@ class EmailManagementService:
         if row.is_primary:
             raise ConflictError("The primary contact email cannot be removed")
         if row.otp_confirmed:
+            # Accurate whether or not an email sign-in method still exists for
+            # the address: a verified row survives only while some sign-in
+            # method claims it, and it is deleted alongside the last one.
             raise ConflictError(
-                "A verified email is removed by removing its sign-in method"
+                "This verified email is still used by your sign-in methods "
+                "and cannot be removed separately"
             )
 
         await self._user_emails.delete(session, email_id)
@@ -259,7 +263,10 @@ class EmailManagementService:
 
         id_token_claims = self._auth0.exchange_otp(target_email, otp)
         if not id_token_claims.get("email_verified"):
-            raise ValueError("Auth0 returned email_verified=false")
+            self._logger.warning(
+                "[EmailManagementService] OTP exchange returned email_verified=false"
+            )
+            raise ValueError("Email verification failed; request a new code")
         if id_token_claims.get("email", "").lower() != target_email:
             raise ValueError("Verified email does not match the requested address")
 
@@ -621,7 +628,10 @@ class EmailManagementService:
         """
         primary = await self._user_emails.get_primary(session, current_user_id)
         if primary is None or primary.email != claims["primary_email_at_request"]:
-            raise PermissionError(f"Primary email changed during {operation}; restart")
+            raise PermissionError(
+                f"Your primary contact email changed during this {operation}; "
+                "start over"
+            )
         self._auth0.exchange_otp(primary.email, code)
 
     async def _absorb_internal_identity(

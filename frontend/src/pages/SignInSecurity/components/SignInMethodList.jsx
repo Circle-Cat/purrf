@@ -90,14 +90,23 @@ const IdentityRow = ({
  * removed). Shows the primary/unverified state; an unverified address offers
  * a "Verify" action, which is what unlocks it as a sign-in method, and a
  * "Remove" action — adding it needed no OTP, so removing it needs none either.
+ * A verified, non-primary address offers "Set as primary contact" (the same
+ * step-up flow the sign-in method rows use).
  *
  * @param {Object} props
  * @param {object} props.emailRow
  * @param {{kind: string, id: (number|string)}|null} props.busy - in-flight action.
  * @param {(emailRow: object) => void} [props.onVerify]
  * @param {(emailRow: object) => void} [props.onRemove]
+ * @param {(emailRow: object) => void} [props.onSetPrimary]
  */
-const ContactEmailRow = ({ emailRow, busy, onVerify, onRemove }) => (
+const ContactEmailRow = ({
+  emailRow,
+  busy,
+  onVerify,
+  onRemove,
+  onSetPrimary,
+}) => (
   <li className="flex items-center justify-between gap-2 py-3">
     <div className="flex items-center gap-2">
       <span className="font-medium">{emailRow.email}</span>
@@ -105,6 +114,18 @@ const ContactEmailRow = ({ emailRow, busy, onVerify, onRemove }) => (
       {!emailRow.otpConfirmed && <Badge variant="outline">Unverified</Badge>}
     </div>
     <div className="flex items-center gap-1">
+      {emailRow.otpConfirmed && !emailRow.isPrimary && !!onSetPrimary && (
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={busy !== null}
+          onClick={() => onSetPrimary(emailRow)}
+        >
+          {busy?.kind === "primary" && busy.id === emailRow.emailId
+            ? "Setting…"
+            : "Set as primary contact"}
+        </Button>
+      )}
       {!emailRow.otpConfirmed && !!onVerify && (
         <Button
           size="sm"
@@ -268,6 +289,7 @@ const SignInMethodList = ({
           busy={busy}
           onVerify={onVerify}
           onRemove={onRemove ? handleRemove : undefined}
+          onSetPrimary={onSetPrimary ? handleSetPrimary : undefined}
         />
       ))}
     </ul>
