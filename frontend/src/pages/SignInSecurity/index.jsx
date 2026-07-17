@@ -16,6 +16,7 @@ import {
   confirmSetPrimary,
   initiateUnlink,
   confirmUnlink,
+  removeContactEmail,
 } from "@/api/emailApi";
 import { useEmailSettings } from "@/pages/SignInSecurity/hooks/useEmailSettings";
 import { identityLabel } from "@/pages/SignInSecurity/providers";
@@ -34,8 +35,9 @@ const errorMessage = (error, fallback) =>
  * methods and its contact emails together: set a method's email as the
  * primary contact (step-up OTP), remove a method (step-up OTP, which also
  * drops its synced contact email), add a backup email without verification
- * (contact-only), and verify an unverified address (email OTP) to unlock it
- * as a sign-in method.
+ * (contact-only), verify an unverified address (email OTP) to unlock it as a
+ * sign-in method, and remove an unverified address (no OTP — adding it
+ * required none).
  *
  * @component
  */
@@ -114,6 +116,16 @@ const SignInSecurity = () => {
     setUnlinkTarget((t) => ({ ...t, state: data.state }));
   };
 
+  const handleRemoveEmail = async (emailRow) => {
+    try {
+      await removeContactEmail(emailRow.emailId);
+      toast.success("Email removed.");
+      await refresh();
+    } catch (error) {
+      toast.error(errorMessage(error, "Could not remove this email."));
+    }
+  };
+
   return (
     <div className="flex flex-col gap-4 py-8">
       <Card>
@@ -143,6 +155,7 @@ const SignInSecurity = () => {
             onUnlink={handleUnlink}
             onSetPrimary={handleSetPrimary}
             onVerify={(emailRow) => setVerifyTarget(emailRow)}
+            onRemove={handleRemoveEmail}
           />
         </CardContent>
       </Card>
