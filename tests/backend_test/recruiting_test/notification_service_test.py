@@ -62,13 +62,9 @@ class TestRecruitingNotificationService(unittest.IsolatedAsyncioTestCase):
         application.application_id = 10
         self.app_repo.get_by_id = AsyncMock(return_value=application)
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
-        applicant = UsersEntity(
-            first_name="Ada", last_name="Lovelace", primary_email="a@b.com"
-        )
+        applicant = UsersEntity(first_name="Ada", last_name="Lovelace")
         applicant.user_id = 3
-        actor = UsersEntity(
-            first_name="Grace", last_name="Hopper", primary_email="g@h.com"
-        )
+        actor = UsersEntity(first_name="Grace", last_name="Hopper")
         actor.user_id = 9
 
         async def get_user(session, user_id):
@@ -102,9 +98,7 @@ class TestRecruitingNotificationService(unittest.IsolatedAsyncioTestCase):
         )
         job.job_id = 1
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
-        actor = UsersEntity(
-            first_name="Grace", last_name="Hopper", primary_email="g@h.com"
-        )
+        actor = UsersEntity(first_name="Grace", last_name="Hopper")
         actor.user_id = 9
         self.users_repo.get_user_by_user_id = AsyncMock(return_value=actor)
 

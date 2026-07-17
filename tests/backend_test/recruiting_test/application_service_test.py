@@ -93,7 +93,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         return job
 
     def _user(self, is_blocked=False, email="a@b.com"):
-        u = UsersEntity(first_name="A", last_name="B", primary_email=email)
+        u = UsersEntity(first_name="A", last_name="B")
         u.user_id = 2
         u.is_blocked = is_blocked
         return u

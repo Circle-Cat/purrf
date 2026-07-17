@@ -97,8 +97,9 @@ class UserIdentityService:
     async def email_has_owner(self, session: AsyncSession, email: str) -> bool:
         """
         Whether `email` already belongs to some account — as a user_emails
-        contact claim (confirmed or an unverified backup address) or via the
-        legacy users.primary_email column.
+        contact claim, confirmed or an unverified backup address. Every
+        account claims its addresses in user_emails (first logins seed one),
+        so the table is the single source of ownership.
 
         Used by the bootstrap to classify a colliding first login: an owned
         email means the login is a second sign-in method for an existing
@@ -114,12 +115,7 @@ class UserIdentityService:
         Returns:
             bool: True when some account owns the address.
         """
-        if await self.user_emails_repository.exists_claim_by_email(session, email):
-            return True
-        return (
-            await self.users_repository.get_user_by_primary_email(session, email)
-            is not None
-        )
+        return await self.user_emails_repository.exists_claim_by_email(session, email)
 
     async def create_or_swap_user(
         self,
@@ -172,14 +168,12 @@ class UserIdentityService:
             user_info.user_id = user.user_id
             return user
 
-        # The email already belongs to an account — as an OTP-confirmed
-        # contact or via legacy users.primary_email. Detection cannot rely on
-        # the primary_email unique violation alone: an address confirmed on
-        # an account through Add sign-in method lives only in user_emails and
-        # never collides on insert, so a first-login insert here would create
-        # an orphan account permanently stuck at the verify wall ("Email
-        # already verified by another account"). Create nothing; the
-        # bootstrap marks the session needs_link instead (PUR-480).
+        # The email already belongs to an account as a user_emails claim.
+        # The proactive check classifies the collision before the insert:
+        # relying on the uq_user_emails_email unique violation alone would
+        # first create an orphan users row permanently stuck at the verify
+        # wall. Create nothing; the bootstrap marks the session needs_link
+        # instead (PUR-480).
         if await self.email_has_owner(session, email):
             self.logger.info(
                 "[UserIdentityService] first-login email %s already owned; "
@@ -299,16 +293,11 @@ class UserIdentityService:
         other sub seeds it unconfirmed and non-primary; the user is then sent
         through the hard-wall /verify-required flow (PR5), which confirms the
         row and promotes it to primary.
-
-        Legacy users.primary_email is still populated for dual-write
-        compatibility; it is removed in a later cleanup. users.subject_identifier
-        is no longer written — the real sub lives only on the user_identities row.
         """
         sub = user_info.sub
         email = user_info.primary_email.lower()
 
         new_user = UsersEntity(
-            primary_email=email,
             first_name=user_info.first_name or "",
             last_name=user_info.last_name or "",
             preferred_name=None,

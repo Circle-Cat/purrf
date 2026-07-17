@@ -71,9 +71,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         return job
 
     def _approver(self, uid):
-        u = UsersEntity(
-            first_name=f"A{uid}", last_name="X", primary_email=f"a{uid}@x.com"
-        )
+        u = UsersEntity(first_name=f"A{uid}", last_name="X")
         u.user_id = uid
         return u
 
@@ -369,9 +367,9 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
 
     async def test_list_active_approvers_maps_users(self):
         """list_active_approvers maps active job.approve holders to ApproverDto."""
-        u1 = UsersEntity(first_name="Ann", last_name="Lee", primary_email="ann@x.com")
+        u1 = UsersEntity(first_name="Ann", last_name="Lee")
         u1.user_id = 7
-        u2 = UsersEntity(first_name="Bo", last_name="Ng", primary_email="bo@x.com")
+        u2 = UsersEntity(first_name="Bo", last_name="Ng")
         u2.user_id = 8
         self.perms.get_active_users_with_permission.return_value = [u1, u2]
         # Approver emails come from user_emails, not the legacy column.
@@ -486,9 +484,9 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         job.pipeline_config = {}
         self.repo.get_by_job_id = AsyncMock(return_value=job)
         self.review_repo.get_open_for_job = AsyncMock(return_value=None)
-        approver1 = UsersEntity(first_name="A", last_name="B", primary_email="a@b.com")
+        approver1 = UsersEntity(first_name="A", last_name="B")
         approver1.user_id = 6
-        approver2 = UsersEntity(first_name="C", last_name="D", primary_email="c@d.com")
+        approver2 = UsersEntity(first_name="C", last_name="D")
         approver2.user_id = 7
         self.perms.get_active_users_with_permission = AsyncMock(
             return_value=[approver1, approver2]
@@ -1478,7 +1476,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
     async def test_list_interview_pool(self):
         users = self._make_users(7, 8)
         for u in users:
-            u.first_name, u.last_name, u.primary_email = "A", "B", "a@b.com"
+            u.first_name, u.last_name = "A", "B"
 
         async def pool(session, perm):
             if perm == Permission.RECRUITING_INTERVIEW_EVALUATE.value:
@@ -1492,7 +1490,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
     async def test_list_job_owners(self):
         users = self._make_users(42)
         for u in users:
-            u.first_name, u.last_name, u.primary_email = "O", "W", "o@w.com"
+            u.first_name, u.last_name = "O", "W"
         self.perms.get_active_users_with_permission = AsyncMock(return_value=users)
         result = await self.service.list_job_owners(self.session)
         self.assertEqual(result[0].user_id, 42)

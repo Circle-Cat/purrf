@@ -25,6 +25,7 @@ from backend.entity.mentorship_round_participants_entity import (
 )
 from backend.entity.preference_entity import PreferenceEntity
 from backend.entity.training_entity import TrainingEntity
+from backend.entity.user_emails_entity import UserEmailsEntity
 from backend.entity.users_entity import UsersEntity
 
 logger = get_logger()
@@ -187,24 +188,32 @@ async def main():
                 for row in user_info_and_preferences
             ]
 
+            # Addresses live in user_emails now (the legacy
+            # users.primary_email column is gone): resolve owners through
+            # their claims, and seed a claim for each newly created user.
             existing_users: dict[str, UsersEntity] = {
-                u.primary_email: u
-                for u in (
+                claim_email: u
+                for u, claim_email in (
                     await session.execute(
-                        select(UsersEntity).where(UsersEntity.primary_email.in_(emails))
+                        select(UsersEntity, UserEmailsEntity.email)
+                        .join(
+                            UserEmailsEntity,
+                            UserEmailsEntity.user_id == UsersEntity.user_id,
+                        )
+                        .where(UserEmailsEntity.email.in_(emails))
                     )
-                ).scalars()
+                ).all()
             }
-            # Upsert users, collect (row, user) user_rows
-            user_rows: list[tuple[dict, UsersEntity]] = []
+            # Upsert users, collect (row, email, user) user_rows
+            user_rows: list[tuple[dict, str, UsersEntity]] = []
+            new_users: list[tuple[str, UsersEntity]] = []
             for row in user_info_and_preferences:
                 email = row["primary_email"].strip().lower()
                 user = existing_users.get(email)
                 if user is None:
-                    user = UsersEntity(
-                        primary_email=email,
-                    )
+                    user = UsersEntity()
                     session.add(user)
+                    new_users.append((email, user))
 
                 user.first_name = row["first_name"].strip()
                 user.last_name = row["last_name"].strip()
@@ -214,11 +223,23 @@ async def main():
                 user.communication_channel = CommunicationMethod.EMAIL
                 user.linkedin_link = row.get("linkedin_link", "").strip() or None
                 user.is_active = True
-                user_rows.append((row, user))
+                user_rows.append((row, email, user))
 
             await session.flush()
 
-            all_user_ids = [u.user_id for _, u in user_rows]
+            for email, user in new_users:
+                session.add(
+                    UserEmailsEntity(
+                        user_id=user.user_id,
+                        email=email,
+                        otp_confirmed=False,
+                        is_primary=False,
+                    )
+                )
+            if new_users:
+                await session.flush()
+
+            all_user_ids = [u.user_id for _, _, u in user_rows]
 
             # Bulk-fetch related records for all users
             existing_training: dict[int, TrainingEntity] = {
@@ -266,8 +287,7 @@ async def main():
             }
 
             # Upsert training / prefs / experience / participant
-            for row, user in user_rows:
-                email = user.primary_email
+            for row, email, user in user_rows:
                 training = existing_training.get(user.user_id)
                 if training is None:
                     training = TrainingEntity(
