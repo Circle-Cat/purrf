@@ -165,6 +165,10 @@ class UserIdentityService:
                 identity_type=user_info.identity_type,
                 last_login_at=login_dt,
             )
+            if user_info.sub.startswith("email|") and user_info.email_verified:
+                await self._confirm_swapped_claim_email(
+                    session=session, user_id=user.user_id, email=email
+                )
             user_info.user_id = user.user_id
             return user
 
@@ -203,9 +207,11 @@ class UserIdentityService:
         """
         Overwrite a migration-backfilled identity row (mocked sub) with the
         real Auth0 sub on first real login, in place — keeps the row's user_id
-        / linked_at and leaves the migrated user_emails row untouched
-        (otp_confirmed stays False; verification is the hard-wall flow, PR5).
-        Step 2.
+        / linked_at and does not itself touch the migrated user_emails row.
+        For non-passwordless logins otp_confirmed stays False and verification
+        is the hard-wall flow (PR5); for passwordless logins the caller runs
+        _confirm_swapped_claim_email, since the login already proved the
+        mailbox. Step 2.
         """
         self.logger.info(
             "[UserIdentityService] overwriting mocked sub %s -> %s for user_id=%s",
@@ -222,6 +228,58 @@ class UserIdentityService:
         )
         return await self.users_repository.get_user_by_user_id(
             session=session, user_id=identity.user_id
+        )
+
+    async def _confirm_swapped_claim_email(
+        self,
+        session: AsyncSession,
+        user_id: int,
+        email: str,
+    ) -> None:
+        """
+        Confirm the claim address after a passwordless swap login (step 2).
+
+        A passwordless login is itself the OTP round-trip that proves this
+        mailbox — the same doctrine _first_login_insert applies when seeding a
+        confirmed primary for 'email|' subs — so a migration-backfilled user
+        signing in by email must not be held at the verify wall to repeat it.
+        Flips the backfilled user_emails row to otp_confirmed (seeding one if
+        the backfill left none) and promotes it to primary when the account
+        has no primary yet (the CHECK constraint allows primary only on
+        confirmed rows). Already-confirmed rows are left as-is.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            user_id (int): The swapped account's user_id.
+            email (str): Lowercased claim email of the passwordless login.
+        """
+        row = await self.user_emails_repository.get_by_user_and_email(
+            session=session, user_id=user_id, email=email
+        )
+        if row is not None and row.otp_confirmed:
+            return
+
+        make_primary = not await self.user_emails_repository.has_primary(
+            session=session, user_id=user_id
+        )
+        if row is None:
+            row = UserEmailsEntity(
+                user_id=user_id,
+                email=email,
+                otp_confirmed=True,
+                is_primary=make_primary,
+            )
+        else:
+            row.otp_confirmed = True
+            if make_primary:
+                row.is_primary = True
+        await self.user_emails_repository.upsert_email(session=session, entity=row)
+        self.logger.info(
+            "[UserIdentityService] confirmed swapped passwordless claim %s "
+            "for user_id=%s (promoted_primary=%s)",
+            email,
+            user_id,
+            make_primary,
         )
 
     async def _first_login_insert(
