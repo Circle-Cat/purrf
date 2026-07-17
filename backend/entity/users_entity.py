@@ -31,10 +31,11 @@ class UsersEntity(Base):
     # TODO(PUR-496): retire this column. The live "primary contact" is the
     # user_emails is_primary row; this legacy column is kept only as a fallback
     # for users who have not yet verified (no is_primary row yet) and is
-    # write-through synced by EmailManagementService so reads stay current. Drop
-    # it once tools/primary_email_readiness.py reports the gap is ~0, then cut
-    # the remaining reads over to user_emails and remove the sync.
-    primary_email: Mapped[str] = mapped_column(String, unique=True)
+    # write-through synced by EmailManagementService so reads stay current.
+    # Relaxed to nullable + non-unique (uq_user_emails_email owns the global
+    # invariant now) so the follow-up PR that stops writing it can run against
+    # the same schema; that PR cuts the reads over and drops the column.
+    primary_email: Mapped[str | None] = mapped_column(String)
 
     linkedin_link: Mapped[str | None] = mapped_column(String)
 

@@ -94,16 +94,17 @@ class EmailManagementService:
 
         Raises:
             ValueError: The address is not a valid email.
-            ConflictError: Another account already OTP-confirmed the address,
-                or it is already on the caller's account.
+            ConflictError: Another account already claims the address
+                (confirmed or not — addresses are globally exclusive), or it
+                is already on the caller's account.
         """
         normalized = email.strip().lower()
         if not _EMAIL_PATTERN.match(normalized):
             raise ValueError("Invalid email format")
-        if await self._user_emails.exists_confirmed_on_other_user(
+        if await self._user_emails.exists_on_other_user(
             session, normalized, current_user_id
         ):
-            raise ConflictError("Email already verified by another account")
+            raise ConflictError("Email already in use by another account")
         if await self._user_emails.get_by_user_and_email(
             session, current_user_id, normalized
         ):
@@ -176,8 +177,8 @@ class EmailManagementService:
         Two modes share the mechanism:
 
         - Normal (``needs_link=False``): the caller adds a contact email to
-          their own account; an address confirmed by *another* account is
-          refused.
+          their own account; an address claimed by *another* account is
+          refused (confirmed or not — addresses are globally exclusive).
         - Needs-link (``needs_link=True``, PUR-480): the caller's sign-in
           collided with an existing account at bootstrap, so no local user
           exists (``current_user_id`` is None). The address is locked to the
@@ -206,10 +207,10 @@ class EmailManagementService:
                 raise ValueError(
                     "Verify the email address associated with this sign-in"
                 )
-        elif await self._user_emails.exists_confirmed_on_other_user(
+        elif await self._user_emails.exists_on_other_user(
             session, normalized, current_user_id
         ):
-            raise ConflictError("Email already verified by another account")
+            raise ConflictError("Email already in use by another account")
 
         self._auth0.start_passwordless(normalized)
 
@@ -742,11 +743,11 @@ class EmailManagementService:
         still hit the column stay current (see the TODO on
         ``UsersEntity.primary_email``).
 
-        Best-effort: ``users.primary_email`` is globally unique, so if ``email``
-        is already another user's primary the sync is skipped (that user's legacy
-        column stays stale until the column is retired) rather than aborting the
-        OTP-confirmed primary change. The column is being retired, so this
-        residual staleness is acceptable.
+        Best-effort: if ``email`` is already another user's legacy value the
+        sync is skipped (that user's legacy column stays stale until the
+        column is retired) rather than aborting the OTP-confirmed primary
+        change. The column is being retired, so this residual staleness is
+        acceptable.
         """
         owner = await self._users.get_user_by_primary_email(session, email)
         if owner is not None and owner.user_id != user_id:

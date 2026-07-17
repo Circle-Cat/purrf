@@ -364,11 +364,17 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
         # DTO user_id write-back
         self.assertEqual(user_info.user_id, 99)
 
-    async def test_create_or_swap_first_login_non_email_sub(self):
-        """First login with non-email| sub: no user_emails row written."""
+    async def test_create_or_swap_first_login_non_email_sub_seeds_unverified_claim(
+        self,
+    ):
+        """First login with a non-email| sub: the login did not prove the
+        mailbox, so an unverified, non-primary claim row is still seeded —
+        ownership of the address must be discoverable from user_emails alone,
+        not from the legacy users.primary_email column. The hard-wall verify
+        flow confirms (and promotes) it later."""
         user_info = UserContextDto(
             sub="google-oauth2|abc",
-            primary_email="dave@example.com",
+            primary_email="Dave@Example.com",
             identity_type="external",
             last_login_at=self.iat,
         )
@@ -380,10 +386,39 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
 
         self.assertIs(result, created)
         self.identities_repo.upsert_identity.assert_awaited_once()
-        self.emails_repo.upsert_email.assert_not_awaited()
+        self.emails_repo.upsert_email.assert_awaited_once()
+        email_row = self.emails_repo.upsert_email.call_args.kwargs["entity"]
+        self.assertIsInstance(email_row, UserEmailsEntity)
+        self.assertEqual(email_row.user_id, 77)
+        self.assertEqual(email_row.email, "dave@example.com")
+        self.assertFalse(email_row.otp_confirmed)
+        self.assertFalse(email_row.is_primary)
         # non-internal identity: no permission grant
         self.permissions_repo.grant.assert_not_awaited()
         self.assertEqual(user_info.user_id, 77)
+
+    async def test_create_or_swap_first_login_email_sub_unverified_claim_stays_unconfirmed(
+        self,
+    ):
+        """First login with an email| sub whose token says email_verified=False:
+        the row is seeded unconfirmed AND non-primary — is_primary=True with
+        otp_confirmed=False would violate the primary_must_be_confirmed CHECK."""
+        user_info = UserContextDto(
+            sub="email|xyz",
+            primary_email="carol@example.com",
+            identity_type="external",
+            last_login_at=self.iat,
+            email_verified=False,
+        )
+        self.identities_repo.find_swappable_by_email.return_value = None
+        created = MagicMock(spec=UsersEntity, user_id=99)
+        self.users_repo.upsert_users.return_value = created
+
+        await self.service.create_or_swap_user(self.session, user_info)
+
+        email_row = self.emails_repo.upsert_email.call_args.kwargs["entity"]
+        self.assertFalse(email_row.otp_confirmed)
+        self.assertFalse(email_row.is_primary)
 
     async def test_create_or_swap_owned_claimed_email_returns_none(self):
         """The login's email is already claimed by an existing account —
