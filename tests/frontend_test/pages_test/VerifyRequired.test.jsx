@@ -95,6 +95,68 @@ describe("VerifyRequired", () => {
     );
   });
 
+  it.each(["bob@circlecat.org", "Bob@CircleCat.org"])(
+    "shows the internal-user hint when the sign-in email is %s",
+    (email) => {
+      useAuth.mockReturnValue({
+        user: { email },
+        refreshAuth: vi.fn().mockResolvedValue(),
+      });
+
+      renderWall();
+
+      expect(
+        screen.getByText(/verify your Google Workspace email/),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText(/please contact your manager/),
+      ).toBeInTheDocument();
+      // Hint only — the address field stays editable.
+      expect(screen.getByTestId("otp-form")).toHaveAttribute(
+        "data-lock-email",
+        "false",
+      );
+    },
+  );
+
+  // @u.circlecat.org is the Microsoft domain; the hint names Google
+  // Workspace specifically, so those sign-ins keep the generic copy.
+  it.each(["alice@gmail.com", "bob@u.circlecat.org"])(
+    "keeps the generic description for %s",
+    (email) => {
+      useAuth.mockReturnValue({
+        user: { email },
+        refreshAuth: vi.fn().mockResolvedValue(),
+      });
+
+      renderWall();
+
+      expect(
+        screen.getByText(/We need a confirmed contact email/),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByText(/please contact your manager/),
+      ).not.toBeInTheDocument();
+    },
+  );
+
+  it("keeps the needs-link copy even for a company email", () => {
+    useAuth.mockReturnValue({
+      user: { email: "bob@circlecat.org" },
+      needsLink: true,
+      refreshAuth: vi.fn().mockResolvedValue(),
+    });
+
+    renderWall();
+
+    expect(
+      screen.getByText(/An account already exists for this email/),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/please contact your manager/),
+    ).not.toBeInTheDocument();
+  });
+
   it("prefills the form with the user's email and the verify id prefix", () => {
     renderWall();
 

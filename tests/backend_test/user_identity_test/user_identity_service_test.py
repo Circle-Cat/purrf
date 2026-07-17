@@ -209,6 +209,126 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
         self.users_repo.upsert_users.assert_not_awaited()
         self.assertEqual(user_info.user_id, 20)
 
+    def _swap_passwordless_user_info(self, email_verified=True, sub="email|xyz"):
+        return UserContextDto(
+            sub=sub,
+            primary_email="Alice@Example.com",
+            identity_type="external",
+            last_login_at=self.iat,
+            email_verified=email_verified,
+        )
+
+    def _arrange_swap_hit(self, user_id=10):
+        mocked = MagicMock(
+            spec=UserIdentitiesEntity,
+            identity_id=7,
+            user_id=user_id,
+            subject_identifier="mock|alice@example.com",
+        )
+        self.identities_repo.find_swappable_by_email.return_value = mocked
+        resolved = MagicMock(spec=UsersEntity, user_id=user_id)
+        self.users_repo.get_user_by_user_id.return_value = resolved
+        return mocked, resolved
+
+    async def test_create_or_swap_swap_passwordless_confirms_and_promotes(self):
+        """Swap hit via passwordless login: the login's OTP round-trip already
+        proved the mailbox, so the backfilled claim row is confirmed and, with
+        no existing primary, promoted — no redundant verify wall."""
+        self._arrange_swap_hit()
+        row = MagicMock(spec=UserEmailsEntity, otp_confirmed=False, is_primary=False)
+        self.emails_repo.get_by_user_and_email.return_value = row
+        self.emails_repo.has_primary.return_value = False
+
+        await self.service.create_or_swap_user(
+            self.session, self._swap_passwordless_user_info()
+        )
+
+        self.emails_repo.get_by_user_and_email.assert_awaited_once_with(
+            session=self.session, user_id=10, email="alice@example.com"
+        )
+        self.assertTrue(row.otp_confirmed)
+        self.assertTrue(row.is_primary)
+        self.emails_repo.upsert_email.assert_awaited_once_with(
+            session=self.session, entity=row
+        )
+
+    async def test_create_or_swap_swap_passwordless_keeps_existing_primary(self):
+        """Swap-confirm with a primary already set elsewhere: the claim row is
+        confirmed but not promoted (one primary per user)."""
+        self._arrange_swap_hit()
+        row = MagicMock(spec=UserEmailsEntity, otp_confirmed=False, is_primary=False)
+        self.emails_repo.get_by_user_and_email.return_value = row
+        self.emails_repo.has_primary.return_value = True
+
+        await self.service.create_or_swap_user(
+            self.session, self._swap_passwordless_user_info()
+        )
+
+        self.assertTrue(row.otp_confirmed)
+        self.assertFalse(row.is_primary)
+        self.emails_repo.upsert_email.assert_awaited_once_with(
+            session=self.session, entity=row
+        )
+
+    async def test_create_or_swap_swap_passwordless_seeds_missing_row(self):
+        """Swap-confirm when the backfill left no claim row: a confirmed row is
+        seeded (primary when none exists), mirroring first-login behavior."""
+        self._arrange_swap_hit()
+        self.emails_repo.get_by_user_and_email.return_value = None
+        self.emails_repo.has_primary.return_value = False
+
+        await self.service.create_or_swap_user(
+            self.session, self._swap_passwordless_user_info()
+        )
+
+        self.emails_repo.upsert_email.assert_awaited_once()
+        seeded = self.emails_repo.upsert_email.call_args.kwargs["entity"]
+        self.assertIsInstance(seeded, UserEmailsEntity)
+        self.assertEqual(seeded.user_id, 10)
+        self.assertEqual(seeded.email, "alice@example.com")
+        self.assertTrue(seeded.otp_confirmed)
+        self.assertTrue(seeded.is_primary)
+
+    async def test_create_or_swap_swap_passwordless_already_confirmed_noop(self):
+        """Swap-confirm on an already-confirmed primary row: nothing to change,
+        no write issued."""
+        self._arrange_swap_hit()
+        row = MagicMock(spec=UserEmailsEntity, otp_confirmed=True, is_primary=True)
+        self.emails_repo.get_by_user_and_email.return_value = row
+
+        await self.service.create_or_swap_user(
+            self.session, self._swap_passwordless_user_info()
+        )
+
+        self.emails_repo.upsert_email.assert_not_awaited()
+
+    async def test_create_or_swap_swap_passwordless_unverified_claim_untouched(
+        self,
+    ):
+        """Swap via passwordless but token lacks email_verified: no trust, the
+        claim row stays untouched and the verify wall applies."""
+        self._arrange_swap_hit()
+
+        await self.service.create_or_swap_user(
+            self.session, self._swap_passwordless_user_info(email_verified=False)
+        )
+
+        self.emails_repo.get_by_user_and_email.assert_not_awaited()
+        self.emails_repo.upsert_email.assert_not_awaited()
+
+    async def test_create_or_swap_swap_google_sub_leaves_email_untouched(self):
+        """Swap via a non-passwordless sub: the mailbox was never proved by the
+        login, so the claim row stays unconfirmed (hard-wall verify flow)."""
+        self._arrange_swap_hit()
+
+        await self.service.create_or_swap_user(
+            self.session,
+            self._swap_passwordless_user_info(sub="google-oauth2|abc"),
+        )
+
+        self.emails_repo.get_by_user_and_email.assert_not_awaited()
+        self.emails_repo.upsert_email.assert_not_awaited()
+
     async def test_create_or_swap_first_login_email_sub(self):
         """First login with email| sub: creates user, identity AND user_emails.
         email_verified=True (Auth0-verified) -> otp_confirmed True."""
