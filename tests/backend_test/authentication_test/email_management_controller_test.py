@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from starlette.responses import JSONResponse
 
 from backend.common.api_endpoints import (
+    EMAIL_MANAGEMENT_ADD_ENDPOINT,
     EMAIL_MANAGEMENT_INITIATE_ENDPOINT,
     EMAIL_MANAGEMENT_LIST_ENDPOINT,
     EMAIL_MANAGEMENT_SET_PRIMARY_CONFIRM_ENDPOINT,
@@ -38,6 +39,9 @@ class TestEmailManagementController(unittest.TestCase):
         self.service.initiate = AsyncMock(return_value={"state": "signed.jwt"})
         self.service.verify = AsyncMock(
             return_value={"ok": True, "linked_sub": "email|abc"}
+        )
+        self.service.add_email = AsyncMock(
+            return_value={"ok": True, "email": "backup@gmail.com"}
         )
         self.service.initiate_set_primary = AsyncMock(
             return_value={"state": "signed.jwt"}
@@ -117,6 +121,18 @@ class TestEmailManagementController(unittest.TestCase):
         self.assertEqual(kwargs["current_user_id"], 42)
         self.assertEqual(kwargs["current_sub"], "google-oauth2|primary")
         self.assertEqual(kwargs["email"], "alice@gmail.com")
+
+    def test_add_email_passes_session_user_and_email_to_service(self):
+        client = self._client_with_user()
+        response = client.post(
+            EMAIL_MANAGEMENT_ADD_ENDPOINT, json={"email": "backup@gmail.com"}
+        )
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.assertEqual(response.json()["data"]["email"], "backup@gmail.com")
+        _, kwargs = self.service.add_email.call_args
+        self.assertEqual(kwargs["current_user_id"], 42)
+        self.assertEqual(kwargs["email"], "backup@gmail.com")
 
     def test_verify_passes_state_and_otp_to_service(self):
         client = self._client_with_user()

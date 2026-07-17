@@ -138,14 +138,49 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
             )
         self.auth0.start_passwordless.assert_not_called()
 
-    async def test_verify_happy_path_confirms_email_and_links_identity(self):
+    # add_email — record a backup contact address without an OTP round-trip
+    async def test_add_email_inserts_unconfirmed_backup_row(self):
+        result = await self.service.add_email(
+            self.session, _USER_ID, " Alice@Gmail.com "
+        )
+
+        self.auth0.start_passwordless.assert_not_called()
+        entity = self.user_emails.upsert_email.call_args.kwargs["entity"]
+        self.assertEqual(entity.user_id, _USER_ID)
+        self.assertEqual(entity.email, _TARGET_EMAIL)
+        self.assertFalse(entity.otp_confirmed)
+        self.assertFalse(entity.is_primary)
+        self.session.commit.assert_awaited_once()
+        self.assertEqual(result, {"ok": True, "email": _TARGET_EMAIL})
+
+    async def test_add_email_rejects_invalid_format(self):
+        with self.assertRaises(ValueError):
+            await self.service.add_email(self.session, _USER_ID, "not-an-email")
+        self.user_emails.upsert_email.assert_not_awaited()
+
+    async def test_add_email_conflict_when_confirmed_elsewhere(self):
+        self.user_emails.exists_confirmed_on_other_user.return_value = True
+        with self.assertRaises(ConflictError):
+            await self.service.add_email(self.session, _USER_ID, _TARGET_EMAIL)
+        self.user_emails.upsert_email.assert_not_awaited()
+
+    async def test_add_email_conflict_when_already_on_own_account(self):
+        self.user_emails.get_by_user_and_email.return_value = self._email_row(
+            _TARGET_EMAIL, otp_confirmed=False
+        )
+        with self.assertRaises(ConflictError):
+            await self.service.add_email(self.session, _USER_ID, _TARGET_EMAIL)
+        self.user_emails.upsert_email.assert_not_awaited()
+
+    async def test_verify_happy_path_confirms_email_and_records_identity(self):
         result = await self.service.verify(
             self.session, _USER_ID, _CURRENT_SUB, _state(), "123456"
         )
 
-        self.auth0.link_identity.assert_called_once_with(
-            account_root_sub=_CURRENT_SUB, provider="email", secondary_user_id="abc123"
-        )
+        # Identities are never merged on the Auth0 side: the DB row is the
+        # only link between the passwordless sub and the account.
+        self.auth0.link_identity.assert_not_called()
+        self.auth0.add_alias_email_to_account_root.assert_not_called()
         email_entity = self.user_emails.upsert_email.call_args.kwargs["entity"]
         self.assertTrue(email_entity.otp_confirmed)
         self.assertTrue(email_entity.is_primary)  # no existing primary -> auto
@@ -159,88 +194,7 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
             self.session, _USER_ID, _TARGET_EMAIL
         )
         self.session.commit.assert_awaited_once()
-        self.auth0.add_alias_email_to_account_root.assert_called_once()
         self.assertEqual(result["linked_sub"], _NEW_SUB)
-
-    async def test_verify_self_linked_records_real_sub(self):
-        """Auth0 already merged this email's passwordless identity into the
-        caller's own account root, so exchange_otp returns current_sub itself
-        instead of a distinct email|... sub. verify() must not try to link
-        the identity to itself, and must record the real per-connection sub
-        fetched from Auth0 instead."""
-        self.auth0.exchange_otp.return_value = {
-            "sub": _CURRENT_SUB,
-            "email": _TARGET_EMAIL,
-            "email_verified": True,
-        }
-        self.auth0.get_linked_identity_sub.return_value = "email|real123"
-
-        def get_by_subject_identifier(session, sub):
-            if sub == _CURRENT_SUB:
-                return UserIdentitiesEntity(
-                    user_id=_USER_ID,
-                    subject_identifier=_CURRENT_SUB,
-                    identity_type=IdentityType.EXTERNAL,
-                    email_claim=None,
-                )
-            return None
-
-        self.user_identities.get_by_subject_identifier.side_effect = (
-            get_by_subject_identifier
-        )
-
-        result = await self.service.verify(
-            self.session, _USER_ID, _CURRENT_SUB, _state(), "123456"
-        )
-
-        self.auth0.link_identity.assert_not_called()
-        self.auth0.get_linked_identity_sub.assert_called_once_with(
-            _CURRENT_SUB, "email", _TARGET_EMAIL
-        )
-        identity_entity = self.user_identities.upsert_identity.call_args.kwargs[
-            "entity"
-        ]
-        self.assertEqual(identity_entity.subject_identifier, "email|real123")
-        email_entity = self.user_emails.upsert_email.call_args.kwargs["entity"]
-        self.assertTrue(email_entity.otp_confirmed)
-        self.session.commit.assert_awaited_once()
-        self.assertEqual(result["linked_sub"], "email|real123")
-
-    async def test_verify_self_linked_no_real_sub_only_confirms_email(self):
-        """Same self-linked case, but Auth0's identities array has nothing
-        for 'email' (defensive fallback): still no link_identity call and no
-        new identity row, but the email confirmation still happens."""
-        self.auth0.exchange_otp.return_value = {
-            "sub": _CURRENT_SUB,
-            "email": _TARGET_EMAIL,
-            "email_verified": True,
-        }
-        self.auth0.get_linked_identity_sub.return_value = None
-
-        def get_by_subject_identifier(session, sub):
-            if sub == _CURRENT_SUB:
-                return UserIdentitiesEntity(
-                    user_id=_USER_ID,
-                    subject_identifier=_CURRENT_SUB,
-                    identity_type=IdentityType.EXTERNAL,
-                    email_claim=None,
-                )
-            return None
-
-        self.user_identities.get_by_subject_identifier.side_effect = (
-            get_by_subject_identifier
-        )
-
-        result = await self.service.verify(
-            self.session, _USER_ID, _CURRENT_SUB, _state(), "123456"
-        )
-
-        self.auth0.link_identity.assert_not_called()
-        self.user_identities.upsert_identity.assert_not_awaited()
-        email_entity = self.user_emails.upsert_email.call_args.kwargs["entity"]
-        self.assertTrue(email_entity.otp_confirmed)
-        self.session.commit.assert_awaited_once()
-        self.assertEqual(result["linked_sub"], _CURRENT_SUB)
 
     async def test_verify_skips_legacy_primary_sync_on_collision(self):
         """If the confirmed email is already another user's users.primary_email,
@@ -436,17 +390,6 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(existing_email.otp_confirmed)
         self.assertFalse(existing_email.is_primary)
 
-    async def test_verify_succeeds_even_if_alias_sync_fails(self):
-        self.auth0.add_alias_email_to_account_root.side_effect = RuntimeError(
-            "auth0 down"
-        )
-        result = await self.service.verify(
-            self.session, _USER_ID, _CURRENT_SUB, _state(), "123456"
-        )
-        # Alias sync is best-effort: DB already committed, no error surfaced.
-        self.session.commit.assert_awaited_once()
-        self.assertEqual(result["linked_sub"], _NEW_SUB)
-
     async def test_initiate_needs_link_locks_to_claim_email(self):
         """A needs-link session may only verify its own sign-in email; any
         other address is refused before an OTP is ever sent."""
@@ -498,9 +441,7 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
             caller_identity_type=IdentityType.EXTERNAL,
         )
 
-        self.auth0.link_identity.assert_called_once_with(
-            account_root_sub=_CURRENT_SUB, provider="email", secondary_user_id="abc123"
-        )
+        self.auth0.link_identity.assert_not_called()
         identity_entity = self.user_identities.upsert_identity.call_args.kwargs[
             "entity"
         ]
@@ -518,7 +459,7 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         user back to their original sign-in method."""
         self.user_emails.get_confirmed_by_email.return_value = None
 
-        with self.assertRaises(ConflictError):
+        with self.assertRaises(ConflictError) as ctx:
             await self.service.verify(
                 self.session,
                 None,
@@ -528,6 +469,14 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
                 needs_link=True,
                 caller_identity_type=IdentityType.EXTERNAL,
             )
+        # The message must tell the user what to actually do: verify the
+        # email from inside the owning account first, then retry.
+        self.assertEqual(
+            str(ctx.exception),
+            "This email belongs to an existing account that hasn't verified "
+            "it yet. Sign in with that account's original method, verify "
+            "this email there, then try this sign-in again.",
+        )
         self.auth0.link_identity.assert_not_called()
         self.user_identities.upsert_identity.assert_not_called()
 
@@ -1002,14 +951,29 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         )
 
         self.auth0.exchange_otp.assert_called_once_with("old@example.com", "123456")
-        self.auth0.unlink_identity.assert_called_once_with(
-            account_root_sub=_CURRENT_SUB,
-            provider="email",
-            secondary_user_id="todelete",
-        )
         self.user_identities.delete.assert_awaited_once_with(self.session, 7)
+        # Each sign-in method is its own Auth0 user; unlinking deletes it too.
+        self.auth0.delete_user.assert_called_once_with("email|todelete")
         self.session.commit.assert_awaited_once()
         self.assertEqual(result, {"ok": True})
+
+    async def test_confirm_unlink_auth0_delete_failure_aborts_before_commit(self):
+        # The Auth0 user delete happens before the commit so a failure rolls
+        # the whole unlink back instead of leaving an orphan Auth0 user.
+        target = self._identity(7, "email|todelete", "external", "alice@gmail.com")
+        keep = self._identity(5, _CURRENT_SUB, "external", "yuji@circlecat.org")
+        self._arrange_unlink(target, [keep])
+        self.user_emails.get_primary.return_value = self._email_row(
+            "old@example.com", is_primary=True
+        )
+        self.auth0.delete_user.side_effect = RuntimeError("Auth0 delete_user failed")
+        state = _unlink_state(target_identity_id=7, primary_email="old@example.com")
+
+        with self.assertRaises(RuntimeError):
+            await self.service.confirm_unlink(
+                self.session, _USER_ID, _CURRENT_SUB, 7, state, "123456"
+            )
+        self.session.commit.assert_not_awaited()
 
     async def test_confirm_unlink_rejects_wrong_flow(self):
         state = _unlink_state(target_identity_id=7, flow="set_primary")
@@ -1077,7 +1041,7 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
                 self.session, _USER_ID, _CURRENT_SUB, 7, state, "123456"
             )
         # OTP was consumed (recheck happens after), but nothing was deleted.
-        self.auth0.unlink_identity.assert_not_called()
+        self.auth0.delete_user.assert_not_called()
         self.user_identities.delete.assert_not_awaited()
         self.session.commit.assert_not_awaited()
 
@@ -1110,7 +1074,7 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
             await self.service.confirm_unlink(
                 self.session, _USER_ID, _CURRENT_SUB, 7, state, "123456"
             )
-        self.auth0.unlink_identity.assert_not_called()
+        self.auth0.delete_user.assert_not_called()
         self.user_identities.delete.assert_not_awaited()
 
     async def test_confirm_unlink_deletes_contact_email_when_unreferenced(self):
@@ -1168,27 +1132,6 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         )
 
         self.user_emails.delete.assert_not_awaited()
-
-    async def test_confirm_unlink_succeeds_even_if_alias_sync_fails(self):
-        target = self._identity(7, "email|todelete", "external", "alice@gmail.com")
-        keep = self._identity(5, _CURRENT_SUB, "external", "yuji@circlecat.org")
-        self._arrange_unlink(target, [keep])
-        self.user_emails.get_primary.return_value = self._email_row(
-            "old@example.com", is_primary=True
-        )
-        self.user_emails.get_by_user_and_email.return_value = None
-        self.auth0.remove_alias_email_from_account_root.side_effect = RuntimeError(
-            "auth0 down"
-        )
-        state = _unlink_state(target_identity_id=7, primary_email="old@example.com")
-
-        result = await self.service.confirm_unlink(
-            self.session, _USER_ID, _CURRENT_SUB, 7, state, "123456"
-        )
-
-        self.user_identities.delete.assert_awaited_once_with(self.session, 7)
-        self.session.commit.assert_awaited_once()
-        self.assertEqual(result, {"ok": True})
 
 
 class TestSignState(unittest.TestCase):
@@ -1276,18 +1219,6 @@ class TestConsumeStepUpOtp(unittest.IsolatedAsyncioTestCase):
                 self.session, _USER_ID, claims, "123456", "switch"
             )
         self.auth0.exchange_otp.assert_not_called()
-
-
-class TestSplitSub(unittest.TestCase):
-    def test_splits_provider_and_secondary_user_id(self):
-        self.assertEqual(
-            EmailManagementService._split_sub("google-oauth2|abc123"),
-            ("google-oauth2", "abc123"),
-        )
-
-    def test_handles_sub_without_separator(self):
-        # No pipe: the whole value is the provider, secondary id is empty.
-        self.assertEqual(EmailManagementService._split_sub("opaque"), ("opaque", ""))
 
 
 if __name__ == "__main__":

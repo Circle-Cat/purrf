@@ -1,6 +1,7 @@
 export const API_ENDPOINTS = {
   MY_PROFILE: "/profiles/me",
   MY_PERMISSIONS: "/permissions/me",
+  EMAIL_ADD: "/auth/emails/add",
   EMAIL_OTP_INITIATE: "/auth/emails/initiate",
   EMAIL_OTP_VERIFY: "/auth/emails/verify",
   EMAIL_LIST: "/auth/emails",
