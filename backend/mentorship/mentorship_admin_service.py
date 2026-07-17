@@ -6,7 +6,6 @@ from backend.dto.admin_meeting_log_dto import AdminMeetingLogDto
 from backend.common.mentorship_enums import (
     MENTORSHIP_ONBOARDING_CATEGORIES,
     MeetingNoteTag,
-    ParticipantRole,
     TrainingCategory,
     TrainingStatus,
 )
@@ -54,36 +53,6 @@ class MentorshipAdminService:
                 alternative_emails.append(e.email)
         return primary_email, alternative_emails
 
-    def _is_onboarding_completed(
-        self,
-        participant_role: ParticipantRole | None,
-        mentor_status: TrainingStatus | None,
-        mentee_status: TrainingStatus | None,
-    ) -> bool:
-        """
-        Return True if onboarding is completed for the given role and training statuses.
-
-        For participants, only the training category matching their role is checked.
-        For non-participants (no role), either category being DONE counts as completed;
-        no records yields False.
-
-        Args:
-            participant_role (ParticipantRole | None): The user's role, or None for
-                non-participants.
-            mentor_status (TrainingStatus | None): Mentor onboarding training status.
-            mentee_status (TrainingStatus | None): Mentee onboarding training status.
-
-        Returns:
-            bool: True if onboarding is completed, False otherwise.
-        """
-        if participant_role == ParticipantRole.MENTOR:
-            return mentor_status == TrainingStatus.DONE
-        if participant_role == ParticipantRole.MENTEE:
-            return mentee_status == TrainingStatus.DONE
-        return (
-            mentor_status == TrainingStatus.DONE or mentee_status == TrainingStatus.DONE
-        )
-
     async def search_participants(
         self,
         session: AsyncSession,
@@ -96,11 +65,8 @@ class MentorshipAdminService:
         """
         Search mentorship participants and non-participants for admin with pagination.
 
-        Executes the main participant query, batch-fetches user/email/round/training
-        data, and assembles each row into a ParticipantRowDto. If onboarding_status
-        is specified, it is applied during row processing on the already-paginated
-        result set. This means total always reflects the repository count before
-        onboarding_status filtering.
+        Executes the participant query, batch-fetches related user, email, round, and
+        training data, then assembles the response.
 
         Args:
             session (AsyncSession): Active database async session.
@@ -148,21 +114,11 @@ class MentorshipAdminService:
         for t in trainings:
             trainings_map.setdefault(t.user_id, {})[t.category] = t.status
 
-        is_completed = None
-        if filters.onboarding_status:
-            is_completed = filters.onboarding_status == "completed"
-
         participant_rows: list[ParticipantRowDto] = []
         for row in rows:
             statuses = trainings_map.get(row.user_id, {})
             mentor_status = statuses.get(TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING)
             mentee_status = statuses.get(TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING)
-
-            result = self._is_onboarding_completed(
-                row.participant_role, mentor_status, mentee_status
-            )
-            if is_completed is not None and result != is_completed:
-                continue
 
             user = users_map[row.user_id]
             primary_email, alternative_emails = self._extract_emails(
