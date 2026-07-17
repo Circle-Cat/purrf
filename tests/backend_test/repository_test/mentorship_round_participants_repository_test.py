@@ -109,14 +109,17 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
         ])
 
     async def _add_training(
-        self, user, category=TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING
+        self,
+        user,
+        category=TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING,
+        status=TrainingStatus.DONE,
     ):
-        """Insert a training record for the given user and category."""
+        """Insert a training record for the given user, category, and status."""
         await self.insert_entities([
             TrainingEntity(
                 user_id=user.user_id,
                 category=category,
-                status=TrainingStatus.DONE,
+                status=status,
                 deadline=datetime.now(timezone.utc),
             )
         ])
@@ -380,6 +383,110 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
         user_ids = {r.user_id for r in rows}
         self.assertIn(trained_user.user_id, user_ids)
         self.assertNotIn(unrelated_trained_user.user_id, user_ids)
+
+    async def test_search_onboarding_status_completed_by_role(self):
+        """MENTOR only checks mentor training; MENTEE only checks mentee
+        training; no role (non-participant) counts either category."""
+        mentor_user = self._make_user(
+            first_name="Mel", last_name="Mentor", email="mel@example.com"
+        )
+        mentee_user = self._make_user(
+            first_name="Nia", last_name="Mentee", email="nia@example.com"
+        )
+        non_participant_user = self._make_user(
+            first_name="Norah", last_name="NonParticipant", email="norah@example.com"
+        )
+        await self.insert_entities([mentor_user, mentee_user, non_participant_user])
+        await self._hire_for_activity(mentor_user, role=ParticipantRole.MENTOR)
+        await self._hire_for_activity(mentee_user, role=ParticipantRole.MENTEE)
+        await self._hire_for_activity(non_participant_user)
+        await self.insert_entities([
+            MentorshipRoundParticipantsEntity(
+                user_id=mentor_user.user_id,
+                round_id=self.rounds[0].round_id,
+                participant_role=ParticipantRole.MENTOR,
+            ),
+            MentorshipRoundParticipantsEntity(
+                user_id=mentee_user.user_id,
+                round_id=self.rounds[0].round_id,
+                participant_role=ParticipantRole.MENTEE,
+            ),
+        ])
+        await self._add_training(
+            mentor_user, category=TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING
+        )
+        await self._add_training(
+            mentee_user, category=TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING
+        )
+        await self._add_training(
+            non_participant_user, category=TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING
+        )
+
+        rows, _ = await self.repo.search_participants_for_admin(
+            self.session,
+            ParticipantSearchFilterDto(onboarding_status="completed"),
+            limit=20,
+            offset=0,
+        )
+
+        user_ids = {r.user_id for r in rows}
+        self.assertIn(mentor_user.user_id, user_ids)
+        self.assertIn(mentee_user.user_id, user_ids)
+        self.assertIn(non_participant_user.user_id, user_ids)
+
+    async def test_search_onboarding_status_excludes_wrong_role_or_missing_training(
+        self,
+    ):
+        """A mentor with only mentee training, or a mentor with no training
+        at all, does not count as completed; both correctly show up under
+        incomplete instead."""
+        mentor_wrong_training_user = self._make_user(
+            first_name="Wren", last_name="WrongTraining", email="wren@example.com"
+        )
+        no_training_user = self._make_user(
+            first_name="Nora", last_name="NoTraining", email="nora@example.com"
+        )
+        await self.insert_entities([mentor_wrong_training_user, no_training_user])
+        await self._hire_for_activity(
+            mentor_wrong_training_user, role=ParticipantRole.MENTOR
+        )
+        await self._hire_for_activity(no_training_user, role=ParticipantRole.MENTOR)
+        await self.insert_entities([
+            MentorshipRoundParticipantsEntity(
+                user_id=mentor_wrong_training_user.user_id,
+                round_id=self.rounds[0].round_id,
+                participant_role=ParticipantRole.MENTOR,
+            ),
+            MentorshipRoundParticipantsEntity(
+                user_id=no_training_user.user_id,
+                round_id=self.rounds[0].round_id,
+                participant_role=ParticipantRole.MENTOR,
+            ),
+        ])
+        await self._add_training(
+            mentor_wrong_training_user,
+            category=TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING,
+        )
+
+        completed_rows, _ = await self.repo.search_participants_for_admin(
+            self.session,
+            ParticipantSearchFilterDto(onboarding_status="completed"),
+            limit=20,
+            offset=0,
+        )
+        incomplete_rows, _ = await self.repo.search_participants_for_admin(
+            self.session,
+            ParticipantSearchFilterDto(onboarding_status="incomplete"),
+            limit=20,
+            offset=0,
+        )
+
+        completed_ids = {r.user_id for r in completed_rows}
+        incomplete_ids = {r.user_id for r in incomplete_rows}
+        self.assertNotIn(mentor_wrong_training_user.user_id, completed_ids)
+        self.assertNotIn(no_training_user.user_id, completed_ids)
+        self.assertIn(mentor_wrong_training_user.user_id, incomplete_ids)
+        self.assertIn(no_training_user.user_id, incomplete_ids)
 
     async def test_search_excludes_unqualified_users(self):
         """Verify the mentorship gate excludes users with non-hired applications,

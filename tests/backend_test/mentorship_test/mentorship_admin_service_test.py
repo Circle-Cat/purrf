@@ -227,54 +227,6 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(rows[3].mentor_onboarding_status, TrainingStatus.TO_DO)
         self.assertIsNone(rows[3].mentee_onboarding_status)
 
-    async def test_post_filter_onboarding_status(self):
-        """Rows not matching filters.onboarding_status are excluded; total reflects the repo count."""
-        self.mock_participants_repo.search_participants_for_admin.return_value = (
-            [
-                _make_row(user_id=1, participant_role=ParticipantRole.MENTEE),
-                _make_row(user_id=2, participant_role=ParticipantRole.MENTEE),
-            ],
-            2,
-        )
-        self.mock_users_repo.get_users_and_emails_by_ids.return_value = (
-            {
-                1: MagicMock(
-                    user_id=1,
-                    first_name="Alice",
-                    last_name="Doe",
-                    preferred_name="Alice Doe",
-                ),
-                2: MagicMock(
-                    user_id=2,
-                    first_name="Bob",
-                    last_name="Smith",
-                    preferred_name="Bob Smith",
-                ),
-            },
-            {},
-        )
-        self.mock_rounds_repo.get_all_rounds.return_value = []
-        self.mock_training_repo.get_training_by_user_ids_and_categories.return_value = [
-            MagicMock(
-                user_id=1,
-                category=TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING,
-                status=TrainingStatus.DONE,
-            ),
-            MagicMock(
-                user_id=2,
-                category=TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING,
-                status=TrainingStatus.IN_PROGRESS,
-            ),
-        ]
-
-        result = await self.service.search_participants(
-            self.mock_session, ParticipantSearchFilterDto(onboarding_status="completed")
-        )
-
-        self.assertEqual(len(result.participant_rows), 1)
-        self.assertEqual(result.participant_rows[0].user_id, 1)
-        self.assertEqual(result.total, 2)
-
     async def test_get_meeting_log_pair_not_found(self):
         """Returns None when pair_id does not exist."""
         self.mock_pairs_repo.get_pair_by_id.return_value = None
