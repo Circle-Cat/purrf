@@ -9,6 +9,7 @@ import jwt
 from backend.authentication.email_management_service import EmailManagementService
 from backend.common.exceptions import ConflictError
 from backend.common.identity_type import IdentityType
+from backend.common.permissions import INTERNAL_EMPLOYEE_PERMISSIONS
 from backend.entity.user_emails_entity import UserEmailsEntity
 from backend.entity.user_identities_entity import UserIdentitiesEntity
 
@@ -96,12 +97,15 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         self.user_identities.exists_active_internal.return_value = False
         self.users = AsyncMock()
         self.users.get_user_by_primary_email.return_value = None
+        self.user_permissions = AsyncMock()
+        self.user_permissions.get_active_permission_names.return_value = []
         self.session = AsyncMock()
         self.service = EmailManagementService(
             self.auth0,
             self.user_emails,
             self.user_identities,
             self.users,
+            self.user_permissions,
             MagicMock(),
         )
 
@@ -296,6 +300,74 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
                 ]
                 self.assertEqual(identity_entity.identity_type, IdentityType.INTERNAL)
                 self.assertEqual(identity_entity.email_claim, company_email)
+
+    # Corp sign-in joining an existing account mirrors the first-login
+    # lifecycle hook: internal permission bundle + corp email becomes primary.
+    async def test_verify_company_email_grants_bundle_and_promotes_primary(self):
+        corp_email = "bob@circlecat.org"
+        self.auth0.exchange_otp.return_value = {
+            "sub": _NEW_SUB,
+            "email": corp_email,
+            "email_verified": True,
+        }
+        # The account already has a personal primary; the corp row is created
+        # by _confirm_email (first lookup None), then re-read by the hook.
+        self.user_emails.has_primary.return_value = True
+        corp_row = self._email_row(corp_email, otp_confirmed=True)
+        corp_row.email_id = 31
+        self.user_emails.get_by_user_and_email.side_effect = [None, corp_row]
+
+        await self.service.verify(
+            self.session, _USER_ID, _CURRENT_SUB, _state(email=corp_email), "123456"
+        )
+
+        _, grant_kwargs = self.user_permissions.grant.call_args
+        self.assertEqual(grant_kwargs["user_id"], _USER_ID)
+        self.assertEqual(
+            set(grant_kwargs["permission_names"]), set(INTERNAL_EMPLOYEE_PERMISSIONS)
+        )
+        self.assertEqual(grant_kwargs["granted_source"], "system_internal")
+        # The corp address displaces the personal primary.
+        self.user_emails.set_primary.assert_awaited_once_with(
+            self.session, _USER_ID, 31
+        )
+        self.users.update_primary_email.assert_awaited_once_with(
+            self.session, _USER_ID, corp_email
+        )
+        self.session.commit.assert_awaited_once()
+
+    async def test_verify_company_email_skips_held_bundle_and_existing_primary(self):
+        # Re-verifying is idempotent: bundle already held -> no new grant rows;
+        # corp address already primary -> no promotion.
+        corp_email = "bob@circlecat.org"
+        self.auth0.exchange_otp.return_value = {
+            "sub": _NEW_SUB,
+            "email": corp_email,
+            "email_verified": True,
+        }
+        self.user_permissions.get_active_permission_names.return_value = [
+            str(p) for p in INTERNAL_EMPLOYEE_PERMISSIONS
+        ]
+        self.user_emails.has_primary.return_value = True
+        self.user_emails.get_by_user_and_email.return_value = self._email_row(
+            corp_email, otp_confirmed=True, is_primary=True
+        )
+
+        await self.service.verify(
+            self.session, _USER_ID, _CURRENT_SUB, _state(email=corp_email), "123456"
+        )
+
+        self.user_permissions.grant.assert_not_awaited()
+        self.user_emails.set_primary.assert_not_awaited()
+        self.session.commit.assert_awaited_once()
+
+    async def test_verify_external_email_grants_nothing(self):
+        await self.service.verify(
+            self.session, _USER_ID, _CURRENT_SUB, _state(), "123456"
+        )
+
+        self.user_permissions.grant.assert_not_awaited()
+        self.user_emails.set_primary.assert_not_awaited()
 
     async def test_verify_rejects_state_for_other_user(self):
         with self.assertRaises(ValueError):
@@ -496,6 +568,48 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(identity_entity.identity_type, IdentityType.EXTERNAL)
         # The owning account's contact emails are not modified.
         self.user_emails.upsert_email.assert_not_called()
+        # An external link grants no internal-employee lifecycle side effects.
+        self.user_permissions.grant.assert_not_awaited()
+        self.session.commit.assert_awaited_once()
+        self.assertEqual(result["linked_sub"], _CURRENT_SUB)
+
+    async def test_verify_needs_link_internal_grants_bundle_and_promotes_primary(
+        self,
+    ):
+        # An employee links their corp sign-in into a pre-existing account:
+        # mirror the first-login hook — bundle + corp email becomes primary.
+        corp_email = "bob@circlecat.org"
+        owner_row = self._email_row(
+            corp_email, otp_confirmed=True, is_primary=False, user_id=7
+        )
+        owner_row.email_id = 31
+        self.user_emails.get_confirmed_by_email.return_value = owner_row
+        self.user_emails.get_by_user_and_email.return_value = owner_row
+        self.auth0.exchange_otp.return_value = {
+            "sub": "email|corp",
+            "email": corp_email,
+            "email_verified": True,
+        }
+
+        result = await self.service.verify(
+            self.session,
+            None,
+            _CURRENT_SUB,
+            _state(user_id=None, email=corp_email),
+            "123456",
+            needs_link=True,
+            caller_identity_type=IdentityType.INTERNAL,
+        )
+
+        _, grant_kwargs = self.user_permissions.grant.call_args
+        self.assertEqual(grant_kwargs["user_id"], 7)
+        self.assertEqual(
+            set(grant_kwargs["permission_names"]), set(INTERNAL_EMPLOYEE_PERMISSIONS)
+        )
+        self.user_emails.set_primary.assert_awaited_once_with(self.session, 7, 31)
+        self.users.update_primary_email.assert_awaited_once_with(
+            self.session, 7, corp_email
+        )
         self.session.commit.assert_awaited_once()
         self.assertEqual(result["linked_sub"], _CURRENT_SUB)
 
@@ -1184,7 +1298,7 @@ class TestSignState(unittest.TestCase):
     def setUp(self):
         os.environ["EMAIL_OTP_STATE_JWT_SECRET"] = _SECRET
         self.service = EmailManagementService(
-            MagicMock(), AsyncMock(), AsyncMock(), AsyncMock(), MagicMock()
+            MagicMock(), AsyncMock(), AsyncMock(), AsyncMock(), AsyncMock(), MagicMock()
         )
 
     def test_sign_state_stamps_envelope_and_roundtrips(self):
@@ -1226,7 +1340,12 @@ class TestConsumeStepUpOtp(unittest.IsolatedAsyncioTestCase):
         self.user_emails = AsyncMock()
         self.session = AsyncMock()
         self.service = EmailManagementService(
-            self.auth0, self.user_emails, AsyncMock(), AsyncMock(), MagicMock()
+            self.auth0,
+            self.user_emails,
+            AsyncMock(),
+            AsyncMock(),
+            AsyncMock(),
+            MagicMock(),
         )
 
     def _primary(self, email):
