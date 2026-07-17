@@ -276,6 +276,29 @@ class TestAuthMiddleware(unittest.TestCase):
             self.mock_session, "test@example.com"
         )
 
+    def test_create_returns_none_marks_needs_link(self):
+        """
+        create_or_swap_user detects the owned email proactively and returns
+        None (no unique violation fires when the address lives only in
+        user_emails, e.g. added to another account via Add sign-in method):
+        same needs-link hold as the IntegrityError path — no user created,
+        user_id=None, needs_link=True, empty permissions, request proceeds.
+        """
+        user_context = make_user_context(last_login_at=1700000000)
+        self.mock_auth_service.authenticate_request.return_value = user_context
+        self.mock_user_identity_service.find_user_by_sub.return_value = None
+        self.mock_user_identity_service.create_or_swap_user.return_value = None
+
+        client = self._add_middleware()
+        response = client.get(
+            "/protected", headers={"Authorization": "Bearer valid_token"}
+        )
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.assertIsNone(response.json()["user_id"])
+        self.assertTrue(user_context.needs_link)
+        self.assertEqual(user_context.permissions, frozenset())
+
     def test_cron_runner_skips_bootstrap(self):
         """
         Service-account tokens (is_service_account=True) have no user_identities

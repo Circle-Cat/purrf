@@ -25,9 +25,9 @@ class DevAuthenticationService(AuthenticationService):
     email on first login so the hard wall passes — no Auth0 env or OTP needed to
     work on unrelated features.
 
-    To exercise the real email-link flow instead, temporarily set ``sub`` to a
-    real Auth0 primary user's sub (e.g. ``google-oauth2|<id>``) and the matching
-    ``primary_email``; link_identity needs a real Auth0 user to merge into.
+    To exercise the real email OTP flow instead, temporarily set ``sub`` to a
+    real Auth0 user's sub (e.g. ``google-oauth2|<id>``) and the matching
+    ``primary_email`` so the OTP exchange resolves against a real tenant user.
     Never use this service in production.
     """
 
