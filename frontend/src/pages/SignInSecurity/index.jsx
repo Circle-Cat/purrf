@@ -49,6 +49,12 @@ const SignInSecurity = () => {
   const [primaryTarget, setPrimaryTarget] = useState(null);
   const [unlinkTarget, setUnlinkTarget] = useState(null);
 
+  // Step-up codes go to the current primary; name the actual address in the
+  // dialogs so the user knows which inbox to check.
+  const primaryEmail =
+    emails.find((email) => email.isPrimary)?.email ??
+    "your primary contact email";
+
   const handleSetPrimary = async (email) => {
     try {
       const { data } = await initiateSetPrimary(email.emailId);
@@ -184,8 +190,9 @@ const SignInSecurity = () => {
           if (!o) setPrimaryTarget(null);
         }}
         title="Set primary contact email"
-        description={`Enter the 6-digit code we sent to your current primary contact email to make ${primaryTarget?.email} your primary contact email.`}
+        description={`Enter the 6-digit code we sent to ${primaryEmail} to make ${primaryTarget?.email} your primary contact email.`}
         confirmLabel="Set as primary"
+        otpEmail={primaryEmail}
         onConfirm={handleConfirmSetPrimary}
         onResend={handleResendSetPrimary}
       />
@@ -196,9 +203,10 @@ const SignInSecurity = () => {
           if (!o) setUnlinkTarget(null);
         }}
         title="Remove sign-in method"
-        description={`Enter the 6-digit code we sent to your primary contact email to confirm removing ${unlinkTarget?.label}. Its contact email is removed too unless another sign-in method uses it.`}
+        description={`Enter the 6-digit code we sent to ${primaryEmail} to confirm removing ${unlinkTarget?.label}. Its contact email is removed too unless another sign-in method uses it.`}
         confirmLabel="Remove sign-in method"
         confirmVariant="destructive"
+        otpEmail={primaryEmail}
         onConfirm={handleConfirmUnlink}
         onResend={handleResendUnlink}
       />
