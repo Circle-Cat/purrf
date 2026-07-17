@@ -951,11 +951,29 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         )
 
         self.auth0.exchange_otp.assert_called_once_with("old@example.com", "123456")
-        # No Auth0-side merge exists, so there is nothing to detach there.
-        self.auth0.unlink_identity.assert_not_called()
         self.user_identities.delete.assert_awaited_once_with(self.session, 7)
+        # Each sign-in method is its own Auth0 user; unlinking deletes it too.
+        self.auth0.delete_user.assert_called_once_with("email|todelete")
         self.session.commit.assert_awaited_once()
         self.assertEqual(result, {"ok": True})
+
+    async def test_confirm_unlink_auth0_delete_failure_aborts_before_commit(self):
+        # The Auth0 user delete happens before the commit so a failure rolls
+        # the whole unlink back instead of leaving an orphan Auth0 user.
+        target = self._identity(7, "email|todelete", "external", "alice@gmail.com")
+        keep = self._identity(5, _CURRENT_SUB, "external", "yuji@circlecat.org")
+        self._arrange_unlink(target, [keep])
+        self.user_emails.get_primary.return_value = self._email_row(
+            "old@example.com", is_primary=True
+        )
+        self.auth0.delete_user.side_effect = RuntimeError("Auth0 delete_user failed")
+        state = _unlink_state(target_identity_id=7, primary_email="old@example.com")
+
+        with self.assertRaises(RuntimeError):
+            await self.service.confirm_unlink(
+                self.session, _USER_ID, _CURRENT_SUB, 7, state, "123456"
+            )
+        self.session.commit.assert_not_awaited()
 
     async def test_confirm_unlink_rejects_wrong_flow(self):
         state = _unlink_state(target_identity_id=7, flow="set_primary")
@@ -1023,7 +1041,7 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
                 self.session, _USER_ID, _CURRENT_SUB, 7, state, "123456"
             )
         # OTP was consumed (recheck happens after), but nothing was deleted.
-        self.auth0.unlink_identity.assert_not_called()
+        self.auth0.delete_user.assert_not_called()
         self.user_identities.delete.assert_not_awaited()
         self.session.commit.assert_not_awaited()
 
@@ -1056,7 +1074,7 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
             await self.service.confirm_unlink(
                 self.session, _USER_ID, _CURRENT_SUB, 7, state, "123456"
             )
-        self.auth0.unlink_identity.assert_not_called()
+        self.auth0.delete_user.assert_not_called()
         self.user_identities.delete.assert_not_awaited()
 
     async def test_confirm_unlink_deletes_contact_email_when_unreferenced(self):

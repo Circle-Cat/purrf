@@ -759,16 +759,20 @@ class EmailManagementService:
         code: str,
     ) -> dict:
         """
-        Confirm the step-up OTP, unlink the sign-in identity, and drop its
-        synced contact email when no other identity still uses that address.
+        Confirm the step-up OTP, unlink the sign-in identity, drop its synced
+        contact email when no other identity still uses that address, and
+        delete its Auth0 user.
 
         Validates the signed state (signature, expiry, caller, and that the URL
         ``identity_id`` matches the bound target), rechecks the primary *before*
         consuming the OTP — refusing if it changed since initiate — verifies the
         code against the primary, deletes the ``user_identities`` row, then
         deletes the matching ``user_emails`` contact row when no surviving
-        identity claims the same address. Auth0 is untouched: identities are
-        never merged there, so removing the DB row is the whole unlink.
+        identity claims the same address. Each sign-in method is its own Auth0
+        user, so the unlinked identity's Auth0 user is deleted too — before the
+        commit, so a failed Auth0 delete rolls the whole unlink back rather
+        than leaving the two stores disagreeing; on retry the Auth0 delete is
+        idempotent (404 counts as done).
 
         Args:
             session (AsyncSession): The active async database session.
@@ -788,6 +792,8 @@ class EmailManagementService:
                 between initiate and confirm.
             PermissionError: The primary changed since initiate, or it is now an
                 active employee's INTERNAL identity.
+            RateLimitedError: Auth0 throttled the user deletion.
+            RuntimeError: The Auth0 user deletion failed; nothing is committed.
         """
         claims = self._decode_state(state)
         if claims.get("flow") != _UNLINK_STATE_FLOW:
@@ -825,6 +831,11 @@ class EmailManagementService:
             )
             if email_row is not None and not email_row.is_primary:
                 await self._user_emails.delete(session, email_row.email_id)
+
+        # The Auth0 user backing this sign-in must not outlive the unlink.
+        # Before the commit: if the delete fails the transaction rolls back and
+        # the unlink is retryable (delete_user treats 404 as already gone).
+        self._auth0.delete_user(identity.subject_identifier)
 
         await session.commit()
         return {"ok": True}

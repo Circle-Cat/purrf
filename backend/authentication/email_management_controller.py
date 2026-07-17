@@ -150,14 +150,15 @@ class EmailManagementController:
         body: OtpConfirmRequest,
     ):
         """
-        Confirm the step-up OTP, unlink the sign-in identity, and drop its
-        synced contact email when nothing else uses it.
+        Confirm the step-up OTP, unlink the sign-in identity, drop its synced
+        contact email when nothing else uses it, and delete its Auth0 user.
 
         The service validates the signed state against the path's ``identity_id``,
         rechecks the primary has not changed since initiate, verifies the OTP,
-        deletes the identity row, then deletes the matching contact email when
-        no surviving identity claims it. Auth0 is untouched — identities are
-        never merged there.
+        deletes the identity row, deletes the matching contact email when no
+        surviving identity claims it, and deletes the identity's Auth0 user —
+        each sign-in method is its own Auth0 user, so it must not outlive the
+        unlink.
 
         Args:
             current_user (UserContextDto): The authenticated user context.

@@ -1,16 +1,20 @@
 """
 Auth0 client for the email OTP flow.
 
-Wraps the two Auth0 calls the email flow needs:
+Wraps the three Auth0 calls the email flow needs:
 
 - ``start_passwordless`` — POST /passwordless/start (send OTP code)
 - ``exchange_otp``       — POST /oauth/token with the passwordless OTP grant,
                            verifying the returned ID token signature against the
                            tenant JWKS before trusting its claims
+- ``delete_user``        — DELETE /api/v2/users/{sub} via the Management API,
+                           so unlinking a sign-in also removes its Auth0 user
+                           (and the sessions/refresh tokens hanging off it)
 
 Auth0 users are never merged or mutated: every sign-in method stays its own
 Auth0 user, and the ``user_identities`` table is the only thing mapping those
-subs to one Purrf account.
+subs to one Purrf account. Deletion is the one Management API write left — the
+M2M app therefore only needs the ``delete:users`` scope.
 
 Auth0 HTTP failures are translated into the shared domain exceptions so the API
 layer can answer callers correctly: a throttled tenant becomes
@@ -19,6 +23,8 @@ rather than a blanket 503.
 """
 
 import os
+import time
+import urllib.parse
 from http import HTTPStatus
 
 import jwt
@@ -26,6 +32,9 @@ import requests
 from jwt import PyJWKClient
 
 from backend.common.environment_constants import (
+    AUTH0_M2M_AUDIENCE,
+    AUTH0_M2M_CLIENT_ID,
+    AUTH0_M2M_CLIENT_SECRET,
     AUTH0_PASSWORDLESS_CLIENT_ID,
     AUTH0_PASSWORDLESS_CLIENT_SECRET,
     AUTH0_TENANT_DOMAIN,
@@ -33,8 +42,10 @@ from backend.common.environment_constants import (
 from backend.common.exceptions import RateLimitedError
 
 _PASSWORDLESS_GRANT_TYPE = "http://auth0.com/oauth/grant-type/passwordless/otp"
+_CLIENT_CREDENTIALS_GRANT_TYPE = "client_credentials"
 _HTTP_TIMEOUT_SECONDS = 10
 _ID_TOKEN_ALGORITHMS = ["RS256"]
+_M2M_TOKEN_REFRESH_BUFFER_SECONDS = 60
 
 
 class Auth0Client:
@@ -49,6 +60,10 @@ class Auth0Client:
         self._tenant = os.getenv(AUTH0_TENANT_DOMAIN)
         self._pwl_client_id = os.getenv(AUTH0_PASSWORDLESS_CLIENT_ID)
         self._pwl_client_secret = os.getenv(AUTH0_PASSWORDLESS_CLIENT_SECRET)
+        self._m2m_client_id = os.getenv(AUTH0_M2M_CLIENT_ID)
+        self._m2m_client_secret = os.getenv(AUTH0_M2M_CLIENT_SECRET)
+        self._m2m_audience = os.getenv(AUTH0_M2M_AUDIENCE)
+        self._m2m_token_cache = None  # {"access_token": str, "expires_at": float}
         self._issuer = f"https://{self._tenant}/"
         # PyJWKClient fetches and caches the tenant signing keys lazily on first
         # verification, so constructing it here makes no network call.
@@ -139,6 +154,74 @@ class Auth0Client:
             claims.get("email_verified"),
         )
         return claims
+
+    def delete_user(self, sub: str) -> None:
+        """
+        Delete the Auth0 user identified by ``sub`` via the Management API.
+
+        Called when a sign-in identity is unlinked: each sign-in method is its
+        own Auth0 user, so once its ``user_identities`` row is gone the Auth0
+        user (and any sessions/refresh tokens on it) must not outlive it. A 404
+        is treated as success so a retry after a partial failure is idempotent.
+
+        Args:
+            sub (str): The Auth0 user_id to delete (e.g. ``email|abc123``).
+
+        Raises:
+            RateLimitedError: If Auth0 throttles the request (HTTP 429).
+            RuntimeError: For any other non-2xx Auth0 response.
+        """
+        encoded = urllib.parse.quote(sub, safe="")
+        url = f"https://{self._tenant}/api/v2/users/{encoded}"
+        response = requests.delete(
+            url,
+            headers={"Authorization": f"Bearer {self._get_m2m_token()}"},
+            timeout=_HTTP_TIMEOUT_SECONDS,
+        )
+
+        if response.status_code == HTTPStatus.NOT_FOUND:
+            self._logger.info(
+                "[Auth0Client] delete_user idempotent: %s already gone", sub
+            )
+            return
+        self._raise_for_auth0_error(response, "delete_user")
+        self._logger.info("[Auth0Client] delete_user removed %s", sub)
+
+    def _get_m2m_token(self) -> str:
+        """
+        Return a cached Management API M2M access token, refreshing if near expiry.
+
+        The token is reused until it falls within the refresh buffer of its
+        expiry, so the Management API calls share one client-credentials grant.
+
+        Returns:
+            str: A valid Management API access token.
+
+        Raises:
+            RateLimitedError: If Auth0 throttles the token request (HTTP 429).
+            RuntimeError: For any other non-2xx Auth0 response.
+        """
+        now = time.time()
+        cache = self._m2m_token_cache
+        if cache and cache["expires_at"] - _M2M_TOKEN_REFRESH_BUFFER_SECONDS > now:
+            return cache["access_token"]
+
+        url = f"https://{self._tenant}/oauth/token"
+        payload = {
+            "grant_type": _CLIENT_CREDENTIALS_GRANT_TYPE,
+            "client_id": self._m2m_client_id,
+            "client_secret": self._m2m_client_secret,
+            "audience": self._m2m_audience,
+        }
+        response = requests.post(url, json=payload, timeout=_HTTP_TIMEOUT_SECONDS)
+        self._raise_for_auth0_error(response, "get_m2m_token")
+        body = response.json()
+        expires_in = body.get("expires_in", 3600)
+        self._m2m_token_cache = {
+            "access_token": body["access_token"],
+            "expires_at": now + expires_in,
+        }
+        return body["access_token"]
 
     def _verify_id_token(self, id_token: str) -> dict:
         """
