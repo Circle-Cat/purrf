@@ -2,6 +2,30 @@ import request from "@/utils/request";
 import { API_ENDPOINTS } from "@/constants/ApiEndpoints";
 
 /**
+ * Add a backup contact email to the caller's account without an OTP
+ * round-trip. The address stays contact-only (unverified) until the user
+ * verifies it via the OTP flow, which is what makes it usable for signing in.
+ *
+ * @param {string} email
+ * @returns {Promise<{ data: { ok: boolean, email: string } }>}
+ */
+export async function addContactEmail(email) {
+  return await request.post(API_ENDPOINTS.EMAIL_ADD, { email });
+}
+
+/**
+ * Remove an unverified backup contact email from the caller's account. The
+ * backend refuses the primary contact and verified addresses (those are
+ * removed via the sign-in method unlink flow).
+ *
+ * @param {number} emailId
+ * @returns {Promise<{ data: { ok: boolean } }>}
+ */
+export async function removeContactEmail(emailId) {
+  return await request.delete(API_ENDPOINTS.EMAIL_REMOVE(emailId));
+}
+
+/**
  * Start email OTP verification: asks the backend to send a one-time code to
  * `email` and returns a signed state token to submit alongside the code.
  *

@@ -26,6 +26,8 @@ import { Label } from "@/components/ui/label";
  * @param {string} props.description
  * @param {string} props.confirmLabel
  * @param {string} [props.confirmVariant] - Button variant (e.g. "destructive").
+ * @param {string} [props.otpEmail] - the address the code was mailed to; named
+ *   in the resend toast so the user knows which inbox to check.
  * @param {(code: string) => Promise<void>} props.onConfirm
  * @param {() => Promise<void>} [props.onResend] - re-send the code (re-runs
  *   initiate and refreshes the bound state in the parent); omit to hide the link.
@@ -37,6 +39,7 @@ const StepUpConfirmDialog = ({
   description,
   confirmLabel,
   confirmVariant = "default",
+  otpEmail,
   onConfirm,
   onResend,
 }) => {
@@ -65,7 +68,9 @@ const StepUpConfirmDialog = ({
     try {
       await onResend();
       setCode("");
-      toast.success("We sent a new code to your primary contact email.");
+      toast.success(
+        `We sent a new code to ${otpEmail ?? "your primary contact email"}.`,
+      );
     } catch (error) {
       toast.error(
         error?.response?.data?.message ||

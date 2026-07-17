@@ -13,7 +13,9 @@ request context, so these handlers do not look the user up again.
 from fastapi import APIRouter
 
 from backend.common.api_endpoints import (
+    EMAIL_MANAGEMENT_ADD_ENDPOINT,
     EMAIL_MANAGEMENT_INITIATE_ENDPOINT,
+    EMAIL_MANAGEMENT_REMOVE_ENDPOINT,
     EMAIL_MANAGEMENT_LIST_ENDPOINT,
     EMAIL_MANAGEMENT_SET_PRIMARY_CONFIRM_ENDPOINT,
     EMAIL_MANAGEMENT_SET_PRIMARY_INITIATE_ENDPOINT,
@@ -23,6 +25,7 @@ from backend.common.api_endpoints import (
 )
 from backend.common.fast_api_response_wrapper import api_response
 from backend.dto.email_management_dto import (
+    AddEmailRequest,
     InitiateRequest,
     OtpConfirmRequest,
     VerifyRequest,
@@ -45,6 +48,18 @@ class EmailManagementController:
         self._service = email_management_service
         self._database = database
         self.router = APIRouter(tags=["email-management"])
+        self.router.add_api_route(
+            EMAIL_MANAGEMENT_ADD_ENDPOINT,
+            endpoint=authenticate()(self.add_email),
+            methods=["POST"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            EMAIL_MANAGEMENT_REMOVE_ENDPOINT,
+            endpoint=authenticate()(self.remove_email),
+            methods=["DELETE"],
+            response_model=None,
+        )
         self.router.add_api_route(
             EMAIL_MANAGEMENT_INITIATE_ENDPOINT,
             endpoint=authenticate()(self.initiate),
@@ -88,6 +103,53 @@ class EmailManagementController:
             response_model=None,
         )
 
+    async def add_email(self, current_user: UserContextDto, body: AddEmailRequest):
+        """
+        Add a backup contact email to the caller's account — no OTP round-trip.
+
+        The address is recorded unconfirmed and non-primary: it is contact-only
+        until the user verifies it via the initiate/verify OTP flow, which is
+        what makes it usable as a sign-in method.
+
+        Args:
+            current_user (UserContextDto): The authenticated user context.
+            body (AddEmailRequest): The address to add.
+
+        Returns:
+            A standardized API response confirming the add.
+        """
+        async with self._database.session() as session:
+            data = await self._service.add_email(
+                session=session,
+                current_user_id=current_user.user_id,
+                email=body.email,
+            )
+        return api_response(message="Email added", data=data)
+
+    async def remove_email(self, current_user: UserContextDto, email_id: int):
+        """
+        Remove an unverified backup contact email from the caller's account.
+
+        Only a never-confirmed, non-primary address is removable here — adding
+        it required no OTP, so removal requires none either. The service
+        refuses the primary contact and verified addresses (those leave via
+        the step-up unlink flow).
+
+        Args:
+            current_user (UserContextDto): The authenticated user context.
+            email_id (int): Primary key of the email row to remove, from the path.
+
+        Returns:
+            A standardized API response confirming the removal.
+        """
+        async with self._database.session() as session:
+            data = await self._service.remove_email(
+                session=session,
+                current_user_id=current_user.user_id,
+                email_id=email_id,
+            )
+        return api_response(message="Email removed", data=data)
+
     async def unlink_initiate(self, current_user: UserContextDto, identity_id: int):
         """
         Start a step-up-OTP unlink of one of the caller's sign-in identities.
@@ -119,14 +181,15 @@ class EmailManagementController:
         body: OtpConfirmRequest,
     ):
         """
-        Confirm the step-up OTP, unlink the sign-in identity, and drop its
-        synced contact email when nothing else uses it.
+        Confirm the step-up OTP, unlink the sign-in identity, drop its synced
+        contact email when nothing else uses it, and delete its Auth0 user.
 
         The service validates the signed state against the path's ``identity_id``,
         rechecks the primary has not changed since initiate, verifies the OTP,
-        unlinks from Auth0, deletes the identity row, then deletes the matching
-        contact email when no surviving identity claims it, and reverse-syncs the
-        Auth0 alias index.
+        deletes the identity row, deletes the matching contact email when no
+        surviving identity claims it, and deletes the identity's Auth0 user —
+        each sign-in method is its own Auth0 user, so it must not outlive the
+        unlink.
 
         Args:
             current_user (UserContextDto): The authenticated user context.

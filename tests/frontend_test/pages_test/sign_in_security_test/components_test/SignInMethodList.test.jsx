@@ -48,6 +48,105 @@ describe("SignInMethodList", () => {
     expect(screen.getByText("No sign-in methods yet.")).toBeInTheDocument();
   });
 
+  it("badges the identity backing the current session", () => {
+    const current = makeIdentity({ identityId: 1, isCurrentSession: true });
+    const other = makeIdentity({
+      identityId: 2,
+      subjectIdentifier: "email|abc",
+      emailClaim: "bob@gmail.com",
+    });
+    render(
+      <SignInMethodList
+        internalIdentities={[]}
+        externalIdentities={[current, other]}
+        isLoading={false}
+        onUnlink={vi.fn()}
+      />,
+    );
+
+    const rows = screen.getAllByRole("listitem");
+    expect(within(rows[0]).getByText("Current session")).toBeInTheDocument();
+    expect(
+      within(rows[1]).queryByText("Current session"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("renders an email without a matching identity as an Unverified row with a Verify action", async () => {
+    const onVerify = vi.fn();
+    const user = userEvent.setup();
+    const backup = {
+      emailId: 3,
+      email: "backup@x.com",
+      otpConfirmed: false,
+      isPrimary: false,
+    };
+    render(
+      <SignInMethodList
+        emails={[backup]}
+        internalIdentities={[]}
+        externalIdentities={[makeIdentity()]}
+        isLoading={false}
+        onUnlink={vi.fn()}
+        onVerify={onVerify}
+      />,
+    );
+
+    const rows = screen.getAllByRole("listitem");
+    expect(rows).toHaveLength(2);
+    // Identity rows come first; the contact-only address trails.
+    expect(within(rows[1]).getByText("backup@x.com")).toBeInTheDocument();
+    expect(within(rows[1]).getByText("Unverified")).toBeInTheDocument();
+
+    await user.click(within(rows[1]).getByRole("button", { name: "Verify" }));
+    expect(onVerify).toHaveBeenCalledWith(backup);
+  });
+
+  it("does not repeat an email already shown on its sign-in method row", () => {
+    const emailRow = {
+      emailId: 1,
+      email: "alice@gmail.com",
+      otpConfirmed: true,
+      isPrimary: true,
+    };
+    render(
+      <SignInMethodList
+        emails={[emailRow]}
+        internalIdentities={[]}
+        externalIdentities={[makeIdentity({ subjectIdentifier: "email|abc" })]}
+        isLoading={false}
+        onUnlink={vi.fn()}
+        onVerify={vi.fn()}
+      />,
+    );
+
+    expect(screen.getAllByRole("listitem")).toHaveLength(1);
+    expect(screen.getAllByText("alice@gmail.com")).toHaveLength(1);
+  });
+
+  it("lists contact-only emails even when there are no identities", () => {
+    render(
+      <SignInMethodList
+        emails={[
+          {
+            emailId: 3,
+            email: "backup@x.com",
+            otpConfirmed: false,
+            isPrimary: false,
+          },
+        ]}
+        internalIdentities={[]}
+        externalIdentities={[]}
+        isLoading={false}
+        onVerify={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.queryByText("No sign-in methods yet."),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("backup@x.com")).toBeInTheDocument();
+  });
+
   it("renders the internal identity first and tags it Internal", () => {
     const internalIdentity = makeIdentity({
       identityId: 99,
@@ -368,6 +467,162 @@ describe("SignInMethodList", () => {
     });
   });
 
+  describe("Contact email Set as primary action", () => {
+    const verified = {
+      emailId: 4,
+      email: "kept@x.com",
+      otpConfirmed: true,
+      isPrimary: false,
+    };
+
+    it("offers Set as primary on a verified non-primary contact-only row", async () => {
+      const user = userEvent.setup();
+      const onSetPrimary = vi.fn().mockResolvedValue();
+      render(
+        <SignInMethodList
+          emails={[verified]}
+          internalIdentities={[]}
+          externalIdentities={[makeIdentity()]}
+          isLoading={false}
+          onUnlink={vi.fn()}
+          onSetPrimary={onSetPrimary}
+        />,
+      );
+
+      const rows = screen.getAllByRole("listitem");
+      await user.click(
+        within(rows[1]).getByRole("button", { name: "Set as primary contact" }),
+      );
+      expect(onSetPrimary).toHaveBeenCalledWith(verified);
+    });
+
+    it("does not offer Set as primary on the primary or an unverified row", () => {
+      render(
+        <SignInMethodList
+          emails={[
+            { ...verified, isPrimary: true },
+            {
+              emailId: 5,
+              email: "new@x.com",
+              otpConfirmed: false,
+              isPrimary: false,
+            },
+          ]}
+          internalIdentities={[]}
+          externalIdentities={[]}
+          isLoading={false}
+          onUnlink={vi.fn()}
+          onSetPrimary={vi.fn()}
+          onVerify={vi.fn()}
+        />,
+      );
+
+      expect(
+        screen.queryByRole("button", { name: "Set as primary contact" }),
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  describe("Contact email Remove action", () => {
+    const backup = {
+      emailId: 3,
+      email: "backup@x.com",
+      otpConfirmed: false,
+      isPrimary: false,
+    };
+
+    it("offers Remove on an unverified contact-only row and calls onRemove", async () => {
+      const user = userEvent.setup();
+      const onRemove = vi.fn().mockResolvedValue();
+      render(
+        <SignInMethodList
+          emails={[backup]}
+          internalIdentities={[]}
+          externalIdentities={[makeIdentity()]}
+          isLoading={false}
+          onUnlink={vi.fn()}
+          onVerify={vi.fn()}
+          onRemove={onRemove}
+        />,
+      );
+
+      const rows = screen.getAllByRole("listitem");
+      await user.click(within(rows[1]).getByRole("button", { name: "Remove" }));
+      expect(onRemove).toHaveBeenCalledWith(backup);
+    });
+
+    it("does not offer Remove on a verified contact-only row", () => {
+      const verified = { ...backup, otpConfirmed: true };
+      render(
+        <SignInMethodList
+          emails={[verified]}
+          internalIdentities={[]}
+          externalIdentities={[makeIdentity()]}
+          isLoading={false}
+          onUnlink={vi.fn()}
+          onVerify={vi.fn()}
+          onRemove={vi.fn()}
+        />,
+      );
+
+      const rows = screen.getAllByRole("listitem");
+      expect(
+        within(rows[1]).queryByRole("button", { name: "Remove" }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("does not offer Remove when onRemove is not provided", () => {
+      render(
+        <SignInMethodList
+          emails={[backup]}
+          internalIdentities={[]}
+          externalIdentities={[]}
+          isLoading={false}
+          onUnlink={vi.fn()}
+          onVerify={vi.fn()}
+        />,
+      );
+
+      expect(
+        screen.queryByRole("button", { name: "Remove" }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("shows a busy label and disables actions while removing", async () => {
+      const user = userEvent.setup();
+      let resolve;
+      const onRemove = vi.fn(
+        () =>
+          new Promise((r) => {
+            resolve = r;
+          }),
+      );
+      render(
+        <SignInMethodList
+          emails={[backup]}
+          internalIdentities={[]}
+          externalIdentities={[]}
+          isLoading={false}
+          onUnlink={vi.fn()}
+          onVerify={vi.fn()}
+          onRemove={onRemove}
+        />,
+      );
+
+      await user.click(screen.getByRole("button", { name: "Remove" }));
+
+      expect(screen.getByText("Removing…")).toBeInTheDocument();
+      screen
+        .getAllByRole("button")
+        .forEach((button) => expect(button).toBeDisabled());
+
+      resolve();
+      await waitFor(() =>
+        expect(screen.queryByText("Removing…")).not.toBeInTheDocument(),
+      );
+    });
+  });
+
   describe("Current session identity", () => {
     it("does not show a 'Primary sign-in' badge on the current-session identity", () => {
       const externalIdentities = [
@@ -645,7 +900,10 @@ describe("SignInMethodList", () => {
       ).not.toBeInTheDocument();
     });
 
-    it("hides the set-primary action for a non-email sign-in method", () => {
+    it("moves the set-primary action to the contact row for a non-email sign-in method", () => {
+      // A non-email method (Google) never exposes contact-email management on
+      // its own row; the verified address renders as a contact-only row, and
+      // THAT row carries the set-primary action so it is never stranded.
       render(
         <SignInMethodList
           emails={[verifiedNonPrimary]}
@@ -662,9 +920,15 @@ describe("SignInMethodList", () => {
         />,
       );
 
+      const rows = screen.getAllByRole("listitem");
       expect(
-        screen.queryByRole("button", { name: "Set as primary contact" }),
+        within(rows[0]).queryByRole("button", {
+          name: "Set as primary contact",
+        }),
       ).not.toBeInTheDocument();
+      expect(
+        within(rows[1]).getByRole("button", { name: "Set as primary contact" }),
+      ).toBeInTheDocument();
     });
 
     it("matches the contact email regardless of casing", () => {
@@ -689,7 +953,7 @@ describe("SignInMethodList", () => {
       ).toBeInTheDocument();
     });
 
-    it("hides the primary-contact badge for a non-email sign-in method", () => {
+    it("keeps the primary-contact badge off a non-email sign-in method row", () => {
       render(
         <SignInMethodList
           emails={[{ ...verifiedNonPrimary, isPrimary: true }]}
@@ -706,7 +970,15 @@ describe("SignInMethodList", () => {
         />,
       );
 
-      expect(screen.queryByText("Primary contact")).not.toBeInTheDocument();
+      // The Google row itself carries no contact-email state; the address —
+      // unclaimed by any email sign-in method — trails as its own contact
+      // row, which is where the badge lives.
+      const rows = screen.getAllByRole("listitem");
+      expect(rows).toHaveLength(2);
+      expect(
+        within(rows[0]).queryByText("Primary contact"),
+      ).not.toBeInTheDocument();
+      expect(within(rows[1]).getByText("Primary contact")).toBeInTheDocument();
     });
   });
 });

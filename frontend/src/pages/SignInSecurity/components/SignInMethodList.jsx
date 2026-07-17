@@ -47,6 +47,9 @@ const IdentityRow = ({
           </span>
         )}
         {internal && <Badge>Internal</Badge>}
+        {identity.isCurrentSession && (
+          <Badge variant="outline">Current session</Badge>
+        )}
         {emailRow?.isPrimary && (
           <Badge variant="secondary">Primary contact</Badge>
         )}
@@ -82,17 +85,89 @@ const IdentityRow = ({
 };
 
 /**
- * List of the caller's linked sign-in methods: the internal (work) identities,
- * if any, followed by external identities. An employee may hold more than one
- * internal identity (e.g. an SSO login plus an OTP-linked corp email). Internal
- * identities cannot be unlinked here; an external identity can be unless it is
- * the only remaining sign-in method (the backend additionally refuses the
- * current session's identity and an active employee's corp sign-in).
+ * One contact-only email row: an address with no sign-in identity behind it
+ * (an unverified backup, or a verified address whose email method was
+ * removed). Shows the primary/unverified state; an unverified address offers
+ * a "Verify" action, which is what unlocks it as a sign-in method, and a
+ * "Remove" action — adding it needed no OTP, so removing it needs none either.
+ * A verified, non-primary address offers "Set as primary contact" (the same
+ * step-up flow the sign-in method rows use).
  *
- * Only an email sign-in method exposes contact-email management; when such a
- * method's email is a verified, non-primary contact email it can be set as the
- * primary contact from its own row, replacing the standalone email card. A
- * single in-flight action disables every action button on the list.
+ * @param {Object} props
+ * @param {object} props.emailRow
+ * @param {{kind: string, id: (number|string)}|null} props.busy - in-flight action.
+ * @param {(emailRow: object) => void} [props.onVerify]
+ * @param {(emailRow: object) => void} [props.onRemove]
+ * @param {(emailRow: object) => void} [props.onSetPrimary]
+ */
+const ContactEmailRow = ({
+  emailRow,
+  busy,
+  onVerify,
+  onRemove,
+  onSetPrimary,
+}) => (
+  <li className="flex items-center justify-between gap-2 py-3">
+    <div className="flex items-center gap-2">
+      <span className="font-medium">{emailRow.email}</span>
+      {emailRow.isPrimary && <Badge variant="secondary">Primary contact</Badge>}
+      {!emailRow.otpConfirmed && <Badge variant="outline">Unverified</Badge>}
+    </div>
+    <div className="flex items-center gap-1">
+      {emailRow.otpConfirmed && !emailRow.isPrimary && !!onSetPrimary && (
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={busy !== null}
+          onClick={() => onSetPrimary(emailRow)}
+        >
+          {busy?.kind === "primary" && busy.id === emailRow.emailId
+            ? "Setting…"
+            : "Set as primary contact"}
+        </Button>
+      )}
+      {!emailRow.otpConfirmed && !!onVerify && (
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={busy !== null}
+          onClick={() => onVerify(emailRow)}
+        >
+          Verify
+        </Button>
+      )}
+      {!emailRow.otpConfirmed && !!onRemove && (
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={busy !== null}
+          onClick={() => onRemove(emailRow)}
+        >
+          {busy?.kind === "removeEmail" && busy.id === emailRow.emailId
+            ? "Removing…"
+            : "Remove"}
+        </Button>
+      )}
+    </div>
+  </li>
+);
+
+/**
+ * Merged list of the caller's sign-in methods and contact emails: the
+ * internal (work) identities, if any, then external identities, then the
+ * contact-only addresses (emails with no identity claiming them — e.g. an
+ * unverified backup added without OTP). An employee may hold more than one
+ * internal identity (e.g. an SSO login plus an OTP-linked corp email).
+ * Internal identities cannot be unlinked here; an external identity can be
+ * unless it is the only remaining sign-in method (the backend additionally
+ * refuses the current session's identity and an active employee's corp
+ * sign-in).
+ *
+ * An email sign-in method's row carries its contact-email state: a verified,
+ * non-primary address can be set as the primary contact from there. A
+ * contact-only unverified address offers "Verify" instead, which unlocks it
+ * as a sign-in method. A single in-flight action disables every action
+ * button on the list.
  *
  * @component
  * @param {Object} props
@@ -102,6 +177,8 @@ const IdentityRow = ({
  * @param {boolean} props.isLoading
  * @param {(identity: object) => Promise<void>} props.onUnlink
  * @param {(emailRow: object) => Promise<void>} [props.onSetPrimary] - start promoting a contact email.
+ * @param {(emailRow: object) => void} [props.onVerify] - start verifying a contact-only address.
+ * @param {(emailRow: object) => Promise<void>} [props.onRemove] - remove an unverified contact-only address.
  */
 const SignInMethodList = ({
   emails = [],
@@ -110,6 +187,8 @@ const SignInMethodList = ({
   isLoading,
   onUnlink,
   onSetPrimary,
+  onVerify,
+  onRemove,
 }) => {
   const [busy, setBusy] = useState(null);
 
@@ -125,6 +204,16 @@ const SignInMethodList = ({
     isEmailMethod(identity.subjectIdentifier)
       ? emailByAddress.get((identity.emailClaim || "").toLowerCase())
       : undefined;
+
+  // Addresses no email sign-in method claims render as their own rows.
+  const claimedAddresses = new Set(
+    [...internalIdentities, ...externalIdentities]
+      .filter((identity) => isEmailMethod(identity.subjectIdentifier))
+      .map((identity) => (identity.emailClaim || "").toLowerCase()),
+  );
+  const contactOnlyEmails = emails.filter(
+    (email) => !claimedAddresses.has((email.email || "").toLowerCase()),
+  );
 
   const handleUnlink = async (identity) => {
     setBusy({ kind: "unlink", id: identity.identityId });
@@ -144,10 +233,23 @@ const SignInMethodList = ({
     }
   };
 
+  const handleRemove = async (emailRow) => {
+    setBusy({ kind: "removeEmail", id: emailRow.emailId });
+    try {
+      await onRemove(emailRow);
+    } finally {
+      setBusy(null);
+    }
+  };
+
   if (isLoading) {
     return <p className="text-sm text-muted-foreground">Loading…</p>;
   }
-  if (!internalIdentities.length && !externalIdentities.length) {
+  if (
+    !internalIdentities.length &&
+    !externalIdentities.length &&
+    !contactOnlyEmails.length
+  ) {
     return (
       <p className="text-sm text-muted-foreground">No sign-in methods yet.</p>
     );
@@ -178,6 +280,16 @@ const SignInMethodList = ({
           busy={busy}
           onUnlink={handleUnlink}
           onSetPrimary={handleSetPrimary}
+        />
+      ))}
+      {contactOnlyEmails.map((emailRow) => (
+        <ContactEmailRow
+          key={`email-${emailRow.emailId}`}
+          emailRow={emailRow}
+          busy={busy}
+          onVerify={onVerify}
+          onRemove={onRemove ? handleRemove : undefined}
+          onSetPrimary={onSetPrimary ? handleSetPrimary : undefined}
         />
       ))}
     </ul>

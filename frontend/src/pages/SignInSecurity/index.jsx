@@ -16,11 +16,13 @@ import {
   confirmSetPrimary,
   initiateUnlink,
   confirmUnlink,
+  removeContactEmail,
 } from "@/api/emailApi";
 import { useEmailSettings } from "@/pages/SignInSecurity/hooks/useEmailSettings";
 import { identityLabel } from "@/pages/SignInSecurity/providers";
 import SignInMethodList from "@/pages/SignInSecurity/components/SignInMethodList";
-import AddSignInMethodDialog from "@/pages/SignInSecurity/components/AddSignInMethodDialog";
+import AddEmailDialog from "@/pages/SignInSecurity/components/AddEmailDialog";
+import VerifyEmailDialog from "@/pages/SignInSecurity/components/VerifyEmailDialog";
 import StepUpConfirmDialog from "@/pages/SignInSecurity/components/StepUpConfirmDialog";
 
 const errorMessage = (error, fallback) =>
@@ -29,12 +31,13 @@ const errorMessage = (error, fallback) =>
 /**
  * Sign in & security settings page.
  *
- * Sign-in methods are the management subject; each method's email is a contact
- * address synced from it, and the primary contact email receives notifications.
- * Backed by `GET /auth/emails`: add a sign-in method (email OTP), set a method's
- * email as the primary contact (step-up OTP), and remove a sign-in method
- * (step-up OTP, which also drops its synced contact email). A single full-width
- * card.
+ * A single card backed by `GET /auth/emails`, listing the account's sign-in
+ * methods and its contact emails together: set a method's email as the
+ * primary contact (step-up OTP), remove a method (step-up OTP, which also
+ * drops its synced contact email), add a backup email without verification
+ * (contact-only), verify an unverified address (email OTP) to unlock it as a
+ * sign-in method, and remove an unverified address (no OTP — adding it
+ * required none).
  *
  * @component
  */
@@ -42,8 +45,15 @@ const SignInSecurity = () => {
   const { isLoading, emails, internalIdentities, externalIdentities, refresh } =
     useEmailSettings();
   const [addOpen, setAddOpen] = useState(false);
+  const [verifyTarget, setVerifyTarget] = useState(null);
   const [primaryTarget, setPrimaryTarget] = useState(null);
   const [unlinkTarget, setUnlinkTarget] = useState(null);
+
+  // Step-up codes go to the current primary; name the actual address in the
+  // dialogs so the user knows which inbox to check.
+  const primaryEmail =
+    emails.find((email) => email.isPrimary)?.email ??
+    "your primary contact email";
 
   const handleSetPrimary = async (email) => {
     try {
@@ -112,14 +122,25 @@ const SignInSecurity = () => {
     setUnlinkTarget((t) => ({ ...t, state: data.state }));
   };
 
+  const handleRemoveEmail = async (emailRow) => {
+    try {
+      await removeContactEmail(emailRow.emailId);
+      toast.success("Email removed.");
+      await refresh();
+    } catch (error) {
+      toast.error(errorMessage(error, "Could not remove this email."));
+    }
+  };
+
   return (
     <div className="flex flex-col gap-4 py-8">
       <Card>
         <CardHeader>
-          <CardTitle>Sign-in methods</CardTitle>
+          <CardTitle>Sign-in methods & emails</CardTitle>
           <CardDescription>
             The methods you can use to sign in to Purrf. Your primary contact
-            email receives account notifications.
+            email receives account notifications; an unverified email is
+            contact-only until you verify it.
           </CardDescription>
           <CardAction>
             <Button
@@ -127,7 +148,7 @@ const SignInSecurity = () => {
               variant="outline"
               onClick={() => setAddOpen(true)}
             >
-              Add sign-in method
+              Add email
             </Button>
           </CardAction>
         </CardHeader>
@@ -139,14 +160,28 @@ const SignInSecurity = () => {
             isLoading={isLoading}
             onUnlink={handleUnlink}
             onSetPrimary={handleSetPrimary}
+            onVerify={(emailRow) => setVerifyTarget(emailRow)}
+            onRemove={handleRemoveEmail}
           />
         </CardContent>
       </Card>
 
-      <AddSignInMethodDialog
+      <AddEmailDialog
         open={addOpen}
         onOpenChange={setAddOpen}
         onAdded={refresh}
+      />
+
+      <VerifyEmailDialog
+        open={verifyTarget !== null}
+        onOpenChange={(o) => {
+          if (!o) setVerifyTarget(null);
+        }}
+        email={verifyTarget?.email ?? ""}
+        onVerified={async () => {
+          setVerifyTarget(null);
+          await refresh();
+        }}
       />
 
       <StepUpConfirmDialog
@@ -155,8 +190,9 @@ const SignInSecurity = () => {
           if (!o) setPrimaryTarget(null);
         }}
         title="Set primary contact email"
-        description={`Enter the 6-digit code we sent to your current primary contact email to make ${primaryTarget?.email} your primary contact email.`}
+        description={`Enter the 6-digit code we sent to ${primaryEmail} to make ${primaryTarget?.email} your primary contact email.`}
         confirmLabel="Set as primary"
+        otpEmail={primaryEmail}
         onConfirm={handleConfirmSetPrimary}
         onResend={handleResendSetPrimary}
       />
@@ -167,9 +203,10 @@ const SignInSecurity = () => {
           if (!o) setUnlinkTarget(null);
         }}
         title="Remove sign-in method"
-        description={`Enter the 6-digit code we sent to your primary contact email to confirm removing ${unlinkTarget?.label}. Its contact email is removed too unless another sign-in method uses it.`}
+        description={`Enter the 6-digit code we sent to ${primaryEmail} to confirm removing ${unlinkTarget?.label}. Its contact email is removed too unless another sign-in method uses it.`}
         confirmLabel="Remove sign-in method"
         confirmVariant="destructive"
+        otpEmail={primaryEmail}
         onConfirm={handleConfirmUnlink}
         onResend={handleResendUnlink}
       />

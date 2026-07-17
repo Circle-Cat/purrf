@@ -10,6 +10,7 @@ import {
   confirmSetPrimary,
   initiateUnlink,
   confirmUnlink,
+  removeContactEmail,
 } from "@/api/emailApi";
 
 import "@testing-library/jest-dom/vitest";
@@ -23,13 +24,15 @@ vi.mock("@/api/emailApi", () => ({
   confirmSetPrimary: vi.fn(),
   initiateUnlink: vi.fn(),
   confirmUnlink: vi.fn(),
+  removeContactEmail: vi.fn(),
 }));
 
 vi.spyOn(toast, "success").mockImplementation(() => {});
 vi.spyOn(toast, "error").mockImplementation(() => {});
 
 // Child list mock exposes buttons that drive the page's action callbacks.
-// Both the set-primary and unlink actions are now triggered from this list.
+// The set-primary, unlink and verify actions are all triggered from this
+// single merged list.
 vi.mock("@/pages/SignInSecurity/components/SignInMethodList", () => ({
   default: ({
     emails,
@@ -38,6 +41,8 @@ vi.mock("@/pages/SignInSecurity/components/SignInMethodList", () => ({
     isLoading,
     onUnlink,
     onSetPrimary,
+    onVerify,
+    onRemove,
   }) => (
     <div data-testid="sign-in-method-list">
       SignInMethodList:{isLoading ? "loading" : "ready"}:
@@ -59,15 +64,39 @@ vi.mock("@/pages/SignInSecurity/components/SignInMethodList", () => ({
       >
         trigger-unlink
       </button>
+      <button
+        onClick={() =>
+          onVerify({ emailId: 3, email: "backup@x.com", otpConfirmed: false })
+        }
+      >
+        trigger-verify
+      </button>
+      <button
+        onClick={() =>
+          onRemove({ emailId: 3, email: "backup@x.com", otpConfirmed: false })
+        }
+      >
+        trigger-remove
+      </button>
     </div>
   ),
 }));
 
-vi.mock("@/pages/SignInSecurity/components/AddSignInMethodDialog", () => ({
+vi.mock("@/pages/SignInSecurity/components/AddEmailDialog", () => ({
   default: ({ open, onAdded }) =>
     open ? (
       <div data-testid="add-dialog">
         <button onClick={() => onAdded()}>add-onAdded</button>
+      </div>
+    ) : null,
+}));
+
+vi.mock("@/pages/SignInSecurity/components/VerifyEmailDialog", () => ({
+  default: ({ open, email, onVerified }) =>
+    open ? (
+      <div data-testid="verify-dialog">
+        <span data-testid="verify-email">{email}</span>
+        <button onClick={() => onVerified()}>verify-onVerified</button>
       </div>
     ) : null,
 }));
@@ -109,21 +138,17 @@ describe("SignInSecurity page", () => {
 
   afterEach(cleanup);
 
-  it("renders only the sign-in methods card and no email-address card", () => {
+  it("renders a single card with the merged sign-in and email list", () => {
     render(<SignInSecurity />);
 
-    expect(screen.queryByText("Email addresses")).not.toBeInTheDocument();
-    expect(screen.getByText("Sign-in methods")).toBeInTheDocument();
+    expect(screen.getByText("Sign-in methods & emails")).toBeInTheDocument();
     expect(
       screen.getByText(/The methods you can use to sign in to Purrf\./),
     ).toBeInTheDocument();
-  });
-
-  it("renders the sign-in method list and no email-address list", () => {
-    render(<SignInSecurity />);
-
-    expect(screen.queryByTestId("email-address-list")).not.toBeInTheDocument();
     expect(screen.getByTestId("sign-in-method-list")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Add email" }),
+    ).toBeInTheDocument();
   });
 
   it("passes hook data (including emails) through to the sign-in method list", () => {
@@ -158,18 +183,62 @@ describe("SignInSecurity page", () => {
     expect(screen.queryByTestId("add-dialog")).not.toBeInTheDocument();
   });
 
-  describe("Add sign-in method", () => {
-    it("opens the add dialog and refreshes after a verified add", async () => {
+  describe("Add email", () => {
+    it("opens the add dialog and refreshes after an add", async () => {
       const user = userEvent.setup();
       render(<SignInSecurity />);
 
-      await user.click(
-        screen.getByRole("button", { name: "Add sign-in method" }),
-      );
+      await user.click(screen.getByRole("button", { name: "Add email" }));
       expect(screen.getByTestId("add-dialog")).toBeInTheDocument();
 
       await user.click(screen.getByRole("button", { name: "add-onAdded" }));
       expect(refresh).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("Verify email", () => {
+    it("opens the verify dialog for the picked address and refreshes after verify", async () => {
+      const user = userEvent.setup();
+      render(<SignInSecurity />);
+
+      await user.click(screen.getByRole("button", { name: "trigger-verify" }));
+      expect(screen.getByTestId("verify-dialog")).toBeInTheDocument();
+      expect(screen.getByTestId("verify-email")).toHaveTextContent(
+        "backup@x.com",
+      );
+
+      await user.click(
+        screen.getByRole("button", { name: "verify-onVerified" }),
+      );
+      expect(refresh).toHaveBeenCalledTimes(1);
+      expect(screen.queryByTestId("verify-dialog")).not.toBeInTheDocument();
+    });
+  });
+
+  describe("Remove email", () => {
+    it("removes the address, toasts success and refreshes", async () => {
+      removeContactEmail.mockResolvedValue({ data: { ok: true } });
+      const user = userEvent.setup();
+      render(<SignInSecurity />);
+
+      await user.click(screen.getByRole("button", { name: "trigger-remove" }));
+
+      await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
+      expect(removeContactEmail).toHaveBeenCalledWith(3);
+      expect(toast.success).toHaveBeenCalledWith("Email removed.");
+    });
+
+    it("toasts the backend message when removal fails", async () => {
+      removeContactEmail.mockRejectedValue({
+        response: { data: { message: "Nope" } },
+      });
+      const user = userEvent.setup();
+      render(<SignInSecurity />);
+
+      await user.click(screen.getByRole("button", { name: "trigger-remove" }));
+
+      await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Nope"));
+      expect(refresh).not.toHaveBeenCalled();
     });
   });
 
@@ -189,6 +258,33 @@ describe("SignInSecurity page", () => {
       );
       expect(screen.getByTestId("stepup-desc")).toHaveTextContent(
         "bob@gmail.com",
+      );
+    });
+
+    it("names the current primary address in the step-up description", async () => {
+      useEmailSettings.mockReturnValue({
+        ...defaultHookValue,
+        emails: [
+          {
+            emailId: 9,
+            email: "prime@x.com",
+            otpConfirmed: true,
+            isPrimary: true,
+          },
+        ],
+      });
+      const user = userEvent.setup();
+      initiateSetPrimary.mockResolvedValue({ data: { state: "st-1" } });
+      render(<SignInSecurity />);
+
+      await user.click(
+        screen.getByRole("button", { name: "trigger-set-primary" }),
+      );
+
+      await waitFor(() =>
+        expect(screen.getByTestId("stepup-desc")).toHaveTextContent(
+          "we sent to prime@x.com",
+        ),
       );
     });
 

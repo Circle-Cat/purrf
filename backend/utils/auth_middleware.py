@@ -197,24 +197,29 @@ class AuthMiddleware(BaseHTTPMiddleware):
                         if user is None:
                             # Not the race. If the login's email already belongs
                             # to an account, this is a second sign-in method for
-                            # it (e.g. a passwordless user trying Google):
-                            # create nothing and mark the session needs_link —
-                            # the verify wall links the sub after an OTP proves
-                            # the mailbox (PUR-480). Any other violation is a
-                            # real bug and must surface.
+                            # it that raced past the proactive check below —
+                            # fall through to the needs-link hold. Any other
+                            # violation is a real bug and must surface.
                             email = user_context.primary_email.lower()
-                            if await self.user_identity_service.email_has_owner(
+                            if not await self.user_identity_service.email_has_owner(
                                 session, email
                             ):
-                                user_context.needs_link = True
-                                user_context.user_id = None
-                                user_context.permissions = frozenset()
-                                self.logger.info(
-                                    "[AuthMiddleware] needs-link login: sub=%s email owned by an existing account",
-                                    user_context.sub,
-                                )
-                                return
-                            raise
+                                raise
+                    if user is None:
+                        # The login's email already belongs to an account (a
+                        # second sign-in method, e.g. a Google login for an
+                        # address another account verified): create nothing
+                        # and mark the session needs_link — the verify wall
+                        # links the sub after an OTP proves the mailbox
+                        # (PUR-480).
+                        user_context.needs_link = True
+                        user_context.user_id = None
+                        user_context.permissions = frozenset()
+                        self.logger.info(
+                            "[AuthMiddleware] needs-link login: sub=%s email owned by an existing account",
+                            user_context.sub,
+                        )
+                        return
 
                 # A deactivated account still authenticates (valid token, real
                 # user) but must not be allowed to act.
