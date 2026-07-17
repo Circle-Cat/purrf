@@ -55,6 +55,9 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         )
         self.notification_repo = create_autospec(NotificationRepository, instance=True)
         self.session = AsyncMock()
+        # The applicant's screen-rule email comes from user_emails.
+        self.user_emails_repo = MagicMock()
+        self.user_emails_repo.get_contact_email = AsyncMock(return_value=None)
         self.service = ApplicationService(
             self.app_repo,
             self.sub_repo,
@@ -64,6 +67,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             self.assignment_repo,
             self.activity_repo,
             self.notification_repo,
+            self.user_emails_repo,
         )
 
     def _create_side_effect(self, session, entity):
@@ -738,9 +742,8 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             }
         )
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
-        self.users_repo.get_user_by_user_id = AsyncMock(
-            return_value=self._user(email="a@spam.com")
-        )
+        # The screen-rule email comes from user_emails, not the legacy column.
+        self.user_emails_repo.get_contact_email.return_value = "a@spam.com"
         dto = ApplicationSubmitDto.model_validate({"jobId": 1})
 
         result = await self.service.submit(self.session, self._ctx(), dto)
@@ -774,9 +777,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             }
         )
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
-        self.users_repo.get_user_by_user_id = AsyncMock(
-            return_value=self._user(email="a@google.com")
-        )
+        self.user_emails_repo.get_contact_email.return_value = "a@google.com"
         dto = ApplicationSubmitDto.model_validate({"jobId": 1})
 
         result = await self.service.submit(self.session, self._ctx(), dto)
@@ -812,9 +813,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             }
         )
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
-        self.users_repo.get_user_by_user_id = AsyncMock(
-            return_value=self._user(email="a@circlecat.org")
-        )
+        self.user_emails_repo.get_contact_email.return_value = "a@circlecat.org"
         dto = ApplicationSubmitDto.model_validate({"jobId": 1})
 
         result = await self.service.submit(self.session, self._ctx(), dto)
@@ -861,16 +860,12 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         )
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
 
-        self.users_repo.get_user_by_user_id = AsyncMock(
-            return_value=self._user(email="a@circlecat.org")
-        )
+        self.user_emails_repo.get_contact_email.return_value = "a@circlecat.org"
         dto = ApplicationSubmitDto.model_validate({"jobId": 1})
         hired_result = await self.service.submit(self.session, self._ctx(), dto)
         self.assertEqual(hired_result.stage, ApplicationStage.HIRED)
 
-        self.users_repo.get_user_by_user_id = AsyncMock(
-            return_value=self._user(email="a@yahoo.com")
-        )
+        self.user_emails_repo.get_contact_email.return_value = "a@yahoo.com"
         rejected_result = await self.service.submit(self.session, self._ctx(), dto)
         self.assertEqual(rejected_result.stage, ApplicationStage.REJECTED)
 
@@ -898,9 +893,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             },
         )
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
-        self.users_repo.get_user_by_user_id = AsyncMock(
-            return_value=self._user(email="a@circlecat.org")
-        )
+        self.user_emails_repo.get_contact_email.return_value = "a@circlecat.org"
         dto = ApplicationSubmitDto.model_validate({"jobId": 1})
 
         await self.service.submit(self.session, self._ctx(), dto)
@@ -954,9 +947,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             },
         )
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
-        self.users_repo.get_user_by_user_id = AsyncMock(
-            return_value=self._user(email="a@spam.com")
-        )
+        self.user_emails_repo.get_contact_email.return_value = "a@spam.com"
         app = ApplicationEntity(
             job_id=1, user_id=2, stage=ApplicationStage.REJECTED, current_round=1
         )
@@ -995,9 +986,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             },
         )
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
-        self.users_repo.get_user_by_user_id = AsyncMock(
-            return_value=self._user(email="a@circlecat.org")
-        )
+        self.user_emails_repo.get_contact_email.return_value = "a@circlecat.org"
         app = ApplicationEntity(
             job_id=1, user_id=2, stage=ApplicationStage.REJECTED, current_round=1
         )

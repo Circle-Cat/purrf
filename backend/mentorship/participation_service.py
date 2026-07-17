@@ -24,6 +24,7 @@ class ParticipationService:
         mentorship_round_participants_repo,
         mentorship_round_repository,
         mentorship_mapper,
+        user_emails_repository,
     ):
         """
         Initializes the ParticipationService with required dependencies.
@@ -40,6 +41,8 @@ class ParticipationService:
                 The repository for accessing mentorship round entity data.
             mentorship_mapper (MentorshipMapper):
                 The mapper for converting mentorship rounds and entities to DTOs.
+            user_emails_repository (UserEmailsRepository):
+                Contact-email resolution for matched partners.
         """
         self.logger = logger
         self.users_repository = users_repository
@@ -47,6 +50,7 @@ class ParticipationService:
         self.mentorship_round_participants_repo = mentorship_round_participants_repo
         self.mentorship_round_repository = mentorship_round_repository
         self.mentorship_mapper = mentorship_mapper
+        self.user_emails_repository = user_emails_repository
 
     async def resolve_participant_role_with_fallback(
         self, session: AsyncSession, user_context: UserContextDto, user_id: int
@@ -151,6 +155,13 @@ class ParticipationService:
                 session=session, user_id=current_user_id, round_id=round_id
             )
         )
+        contact_by_user_id = (
+            await self.user_emails_repository.get_contact_emails_by_user_ids(
+                session, [p_user.user_id for _, p_user in pairs_data]
+            )
+            if participant and participant.approval_status == ApprovalStatus.MATCHED
+            else {}
+        )
 
         return [
             PartnerDto(
@@ -159,7 +170,7 @@ class ParticipationService:
                 last_name=p_user.last_name,
                 preferred_name=p_user.preferred_name,
                 primary_email=(
-                    p_user.primary_email
+                    contact_by_user_id.get(p_user.user_id)
                     if participant
                     and participant.approval_status == ApprovalStatus.MATCHED
                     and pair.status == PairStatus.ACTIVE
@@ -282,6 +293,11 @@ class ParticipationService:
         pairs_data = await self.mentorship_pairs_repository.get_pairs_with_partner_info(
             session=session, user_id=uid, round_id=round_id
         )
+        contact_by_user_id = (
+            await self.user_emails_repository.get_contact_emails_by_user_ids(
+                session, [p_user.user_id for _, p_user in pairs_data]
+            )
+        )
 
         for pair, p_user in pairs_data:
             partners.append(
@@ -290,7 +306,7 @@ class ParticipationService:
                     preferred_name=p_user.preferred_name,
                     first_name=p_user.first_name,
                     last_name=p_user.last_name,
-                    primary_email=p_user.primary_email,
+                    primary_email=contact_by_user_id.get(p_user.user_id),
                     participant_role=ParticipantRole.MENTEE
                     if pair.mentor_id == uid
                     else ParticipantRole.MENTOR,

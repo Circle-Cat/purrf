@@ -472,6 +472,7 @@ class AppDependencyBuilder:
             mentorship_round_participants_repo=self.mentorship_round_participants_repo,
             mentorship_round_repository=self.mentorship_round_repository,
             mentorship_mapper=self.mentorship_mapper,
+            user_emails_repository=self.user_emails_repository,
         )
         self.registration_service = RegistrationService(
             logger=self.logger,
@@ -489,6 +490,7 @@ class AppDependencyBuilder:
             mentorship_mapper=self.mentorship_mapper,
             users_repository=self.users_repository,
             google_service=self.google_service,
+            user_emails_repository=self.user_emails_repository,
         )
         self.meet_attendance_service = MeetAttendanceService(
             logger=self.logger,
@@ -527,6 +529,7 @@ class AppDependencyBuilder:
             experience_repository=self.experience_repository,
             training_repository=self.training_repository,
             profile_mapper=self.profile_mapper,
+            user_emails_repository=self.user_emails_repository,
         )
         self.profile_command_service = ProfileCommandService(
             users_repository=self.users_repository,
@@ -549,6 +552,7 @@ class AppDependencyBuilder:
         self.permission_admin_service = PermissionAdminService(
             self.users_repository,
             self.user_permissions_repository,
+            self.user_emails_repository,
         )
         self.permission_admin_controller = PermissionAdminController(
             self.permission_admin_service,
@@ -566,6 +570,7 @@ class AppDependencyBuilder:
             self.notification_repository,
             self.users_repository,
             self.job_activity_repository,
+            self.user_emails_repository,
         )
         self.recruiting_controller = RecruitingController(
             job_service=self.job_service,
@@ -589,6 +594,7 @@ class AppDependencyBuilder:
             self.application_assignment_repository,
             self.application_activity_repository,
             self.notification_repository,
+            self.user_emails_repository,
         )
         self.application_controller = ApplicationController(
             self.application_service,
@@ -610,12 +616,15 @@ class AppDependencyBuilder:
             self.application_comment_mention_repository,
             self.evaluation_repository,
             self.notification_repository,
+            self.user_emails_repository,
         )
         self.board_controller = BoardController(
             self.board_service,
             self.database,
         )
-        self.blacklist_service = BlacklistService(self.users_repository)
+        self.blacklist_service = BlacklistService(
+            self.users_repository, self.user_emails_repository
+        )
         self.blacklist_controller = BlacklistController(
             self.blacklist_service,
             self.database,

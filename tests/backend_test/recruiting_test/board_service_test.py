@@ -76,6 +76,12 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.evaluation_repo.list_by_application.return_value = []
         self.notification_repo = create_autospec(NotificationRepository, instance=True)
         self.session = AsyncMock()
+        # Applicant emails come from user_emails, not the legacy column.
+        self.user_emails_repo = MagicMock()
+        self.user_emails_repo.get_contact_emails_by_user_ids = AsyncMock(
+            return_value={}
+        )
+        self.user_emails_repo.get_contact_email = AsyncMock(return_value=None)
         self.service = BoardService(
             self.job_repo,
             self.app_repo,
@@ -90,6 +96,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             self.comment_mention_repo,
             self.evaluation_repo,
             self.notification_repo,
+            self.user_emails_repo,
         )
         # Default persistence mocks: echo the entity back, like SQLAlchemy's
         # merge-and-flush does when nothing else stubs them out.
@@ -407,6 +414,8 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.assignment_repo.get.return_value = None
         self.users_repo.get_user_by_user_id = AsyncMock(return_value=applicant)
         self.sub_repo.get_current = AsyncMock(return_value=current_sub)
+        # The applicant's email is resolved from user_emails.
+        self.user_emails_repo.get_contact_email.return_value = "c@d.com"
 
         result = await self.service.get_application_detail(
             self.session, self._ctx(user_id=2), 10

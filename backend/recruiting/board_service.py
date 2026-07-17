@@ -123,6 +123,7 @@ class BoardService:
         application_comment_mention_repository,
         evaluation_repository,
         notification_repository,
+        user_emails_repository,
     ):
         """
         Args:
@@ -132,6 +133,8 @@ class BoardService:
                 Versioned-submission data access.
             users_repository (UsersRepository): Applicant lookups for the
                 detail view.
+            user_emails_repository (UserEmailsRepository): Applicant
+                contact-email resolution for board cards and the detail view.
             recruiting_mapper (RecruitingMapper): Entity->DTO conversion.
             resume_storage (ResumeStorage): Content-addressed résumé download,
                 for the owner-facing proxy download route.
@@ -176,6 +179,7 @@ class BoardService:
         )
         self.evaluation_repository = evaluation_repository
         self.notification_repository = notification_repository
+        self.user_emails_repository = user_emails_repository
 
     async def list_my_jobs(
         self, session: AsyncSession, current_user: UserContextDto
@@ -318,6 +322,12 @@ class BoardService:
             u.user_id: f"{u.first_name} {u.last_name}".strip() for u in reviewers
         }
 
+        contact_by_user_id = (
+            await self.user_emails_repository.get_contact_emails_by_user_ids(
+                session, [user.user_id for _, user in rows]
+            )
+        )
+
         board: dict[str, list[BoardCardDto]] = {}
         for application, user in rows:
             reviewer_name = None
@@ -332,7 +342,10 @@ class BoardService:
                 if assignee_id is not None:
                     reviewer_name = names_by_id.get(assignee_id)
             card = self.recruiting_mapper.to_board_card_dto(
-                application, user, reviewer_name=reviewer_name
+                application,
+                user,
+                reviewer_name=reviewer_name,
+                applicant_email=contact_by_user_id.get(user.user_id, ""),
             )
             board.setdefault(application.stage.value, []).append(card)
         return board
@@ -463,6 +476,11 @@ class BoardService:
         user = await self.users_repository.get_user_by_user_id(
             session, application.user_id
         )
+        applicant_email = (
+            await self.user_emails_repository.get_contact_email(session, user.user_id)
+            if user is not None
+            else None
+        )
         current_sub = await self.application_submission_repository.get_current(
             session, application_id
         )
@@ -488,7 +506,7 @@ class BoardService:
                 if user is not None
                 else ""
             ),
-            applicant_email=user.primary_email if user is not None else "",
+            applicant_email=applicant_email or "",
             resume_available=bool(
                 current_sub is not None and current_sub.resume_object_key
             ),

@@ -47,6 +47,12 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
         self.mock_mapper = MagicMock()
         self.logger = MagicMock()
 
+        self.mock_user_emails_repo = MagicMock()
+        # Partner emails come from user_emails, not the legacy column.
+        self.mock_user_emails_repo.get_contact_emails_by_user_ids = AsyncMock(
+            return_value={456: "partner@example.com"}
+        )
+
         self.participation_service = ParticipationService(
             logger=self.logger,
             users_repository=self.mock_users_repo,
@@ -54,6 +60,7 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
             mentorship_round_participants_repo=self.mock_round_participants_repo,
             mentorship_round_repository=self.mock_round_repo,
             mentorship_mapper=self.mock_mapper,
+            user_emails_repository=self.mock_user_emails_repo,
         )
 
         self.mock_users_entities = [
@@ -112,9 +119,7 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
             round_id=mock_round_id,
         )
 
-        self.assertEqual(
-            result[0].primary_email, self.mock_specific_partner_user.primary_email
-        )
+        self.assertEqual(result[0].primary_email, "partner@example.com")
         self.mock_pairs_repo.get_pairs_with_partner_info.assert_awaited_once_with(
             session=self.mock_session,
             user_id=self.user_context.user_id,

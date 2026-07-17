@@ -20,11 +20,17 @@ class TestProfileQueryService(unittest.IsolatedAsyncioTestCase):
 
         self.mock_mapper = MagicMock()
 
+        self.mock_user_emails_repo = MagicMock()
+        self.mock_user_emails_repo.get_contact_email = AsyncMock(
+            return_value="user@example.com"
+        )
+
         self.service = ProfileQueryService(
             users_repository=self.mock_users_repo,
             experience_repository=self.mock_experience_repo,
             training_repository=self.mock_training_repo,
             profile_mapper=self.mock_mapper,
+            user_emails_repository=self.mock_user_emails_repo,
         )
 
         self.session = AsyncMock()
@@ -50,6 +56,14 @@ class TestProfileQueryService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(profile_dto, self.mock_profile_dto)
         self.mock_users_repo.get_user_by_user_id.assert_called_once_with(
             session=self.session, user_id=self.user_id
+        )
+        # The DTO's primary_email is resolved from user_emails.
+        self.mock_user_emails_repo.get_contact_email.assert_awaited_once_with(
+            self.session, self.user_id
+        )
+        self.assertEqual(
+            self.mock_mapper.map_to_profile_dto.call_args.kwargs["primary_email"],
+            "user@example.com",
         )
 
     async def test_get_profile_full_load(self):

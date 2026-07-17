@@ -55,7 +55,9 @@ class TestRecruitingMapper(unittest.TestCase):
         )
         user.user_id = 2
 
-        dto = self.mapper.to_board_card_dto(application, user)
+        dto = self.mapper.to_board_card_dto(
+            application, user, applicant_email="ada@b.com"
+        )
 
         self.assertEqual(dto.id, 42)
         self.assertEqual(dto.applicant_name, "Ada Lovelace")

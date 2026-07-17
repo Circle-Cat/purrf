@@ -9,8 +9,10 @@ from backend.entity.users_entity import UsersEntity
 class TestBlacklistService(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.users_repo = MagicMock()
+        self.user_emails_repo = AsyncMock()
+        self.user_emails_repo.get_contact_emails_by_user_ids.return_value = {}
         self.session = AsyncMock()
-        self.service = BlacklistService(self.users_repo)
+        self.service = BlacklistService(self.users_repo, self.user_emails_repo)
 
     def _user(self, user_id=1, first="A", last="B", email="a@b.com", reason="cheated"):
         u = UsersEntity(first_name=first, last_name=last, primary_email=email)
@@ -23,6 +25,10 @@ class TestBlacklistService(unittest.IsolatedAsyncioTestCase):
     async def test_list_blacklist_maps_users_to_dtos(self):
         user = self._user()
         self.users_repo.list_blocked_users = AsyncMock(return_value=[user])
+        # The entry's email comes from user_emails, not the legacy column.
+        self.user_emails_repo.get_contact_emails_by_user_ids.return_value = {
+            user.user_id: "a@b.com"
+        }
 
         result = await self.service.list_blacklist(self.session)
 
@@ -52,6 +58,8 @@ class TestBlacklistService(unittest.IsolatedAsyncioTestCase):
         self.users_repo.list_blocked_users = AsyncMock(return_value=[user])
         result = await self.service.list_blacklist(self.session)
         self.assertEqual(result[0].reason, "")
+        # No user_emails rows at all: the email falls back to empty.
+        self.assertEqual(result[0].email, "")
 
     async def test_unblock_clears_and_commits(self):
         self.users_repo.clear_block = AsyncMock()

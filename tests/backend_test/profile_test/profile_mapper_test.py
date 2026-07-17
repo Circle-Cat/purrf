@@ -86,7 +86,7 @@ class TestProfileMapper(unittest.TestCase):
 
     def test_map_users_entity_to_dto(self):
         """Test mapping of basic user information using _map_user."""
-        dto = self.mapper._map_user(self.users_entity)
+        dto = self.mapper._map_user(self.users_entity, "alice@example.com")
 
         self.assertIsInstance(dto, UsersDto)
         self.assertEqual(dto.id, self.users_entity.user_id)
@@ -95,6 +95,7 @@ class TestProfileMapper(unittest.TestCase):
             dto.communication_method, self.users_entity.communication_channel
         )
         self.assertEqual(dto.timezone, "Asia/Shanghai")
+        self.assertEqual(dto.primary_email, "alice@example.com")
 
     def test_map_experience_to_work_history_dto(self):
         """Test mapping of work history using _map_work_history."""

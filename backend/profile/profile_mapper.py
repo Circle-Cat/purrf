@@ -20,11 +20,16 @@ class ProfileMapper:
         trainings: list[TrainingEntity] | None,
         include_work_history: bool = True,
         include_education: bool = True,
+        primary_email: str = "",
     ) -> ProfileDto:
-        """Assemble a complete ProfileDto with optional work history and education."""
+        """Assemble a complete ProfileDto with optional work history and education.
+
+        ``primary_email`` is the user's contact address from user_emails (see
+        ``UserEmailsRepository.get_contact_email``); empty when they have none.
+        """
         return ProfileDto(
             id=user.user_id,
-            user=self._map_user(user),
+            user=self._map_user(user, primary_email),
             work_history=self._map_work_history(experience)
             if include_work_history
             else [],
@@ -32,7 +37,7 @@ class ProfileMapper:
             training=[self._map_training(t) for t in (trainings or [])],
         )
 
-    def _map_user(self, entity: UsersEntity) -> UsersDto:
+    def _map_user(self, entity: UsersEntity, primary_email: str) -> UsersDto:
         """Map basic user information."""
         return UsersDto(
             id=entity.user_id,
@@ -42,7 +47,7 @@ class ProfileMapper:
             timezone=entity.timezone,
             timezone_updated_at=entity.timezone_updated_at,
             communication_method=entity.communication_channel,
-            primary_email=entity.primary_email,
+            primary_email=primary_email,
             linkedin_link=entity.linkedin_link,
             updated_timestamp=entity.updated_timestamp,
         )
