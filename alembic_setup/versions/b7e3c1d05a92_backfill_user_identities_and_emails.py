@@ -21,13 +21,19 @@ Per user:
     - email_claim: the lower-cased primary email (the swap path matches on the
       lower-cased address).
 
-* user_emails -- one row for the primary email (alternative_emails are ignored).
-    - A legacy ``auth0|email|...`` sub means the address was already proven via
-      the Auth0 passwordless one-time-code round-trip, so the row is seeded
-      otp_confirmed=True and is_primary=True. Every other sub is seeded
+* user_emails -- one row for the primary email, plus one per alternative email.
+    - Primary: a legacy ``auth0|email|...`` sub means the address was already
+      proven via the Auth0 passwordless one-time-code round-trip, so the row is
+      seeded otp_confirmed=True and is_primary=True. Every other sub is seeded
       otp_confirmed=False, and therefore is_primary=False to satisfy the
       ``primary_must_be_confirmed`` CHECK; those users confirm the address (and
       promote it to primary) through the hard-wall verify flow on next login.
+    - Alternatives: every distinct entry of ``users.alternative_emails`` (a
+      legacy text array dropped later in the chain by f3d9a2b6c8e1) becomes an
+      unverified backup row — otp_confirmed=False, is_primary=False — matching
+      what POST /auth/emails/add writes today. No sign-in is auto-linked off
+      these claims; the user unlocks one by verifying it from inside the
+      account. Blank entries and duplicates of the primary are skipped.
 
 * user_permissions -- the INTERNAL_EMPLOYEE_PERMISSIONS bundle for every active
   internal user, mirroring the first-login lifecycle hook so migrated employees
@@ -107,6 +113,38 @@ def upgrade() -> None:
                 WHERE ue.user_id = u.user_id
                   AND ue.email = lower(u.primary_email)
             )
+            """
+        )
+    )
+
+    # One unverified backup row per distinct alternative email. unnest of a
+    # NULL array yields no rows, so users without alternatives are skipped
+    # for free. DISTINCT collapses duplicates within one user's array after
+    # normalization; the NOT EXISTS guard keeps the statement idempotent and
+    # skips addresses already present (including the primary row above, but
+    # the explicit primary comparison also covers users whose primary insert
+    # was skipped by its own guard).
+    op.execute(
+        sa.text(
+            """
+            INSERT INTO user_emails
+                (user_id, email, otp_confirmed, is_primary, added_at)
+            SELECT DISTINCT
+                u.user_id,
+                lower(trim(alt.email)),
+                FALSE,
+                FALSE,
+                now()
+            FROM users u
+            CROSS JOIN LATERAL unnest(u.alternative_emails) AS alt(email)
+            WHERE alt.email IS NOT NULL
+              AND trim(alt.email) <> ''
+              AND lower(trim(alt.email)) <> lower(u.primary_email)
+              AND NOT EXISTS (
+                  SELECT 1 FROM user_emails ue
+                  WHERE ue.user_id = u.user_id
+                    AND ue.email = lower(trim(alt.email))
+              )
             """
         )
     )
