@@ -467,6 +467,62 @@ describe("SignInMethodList", () => {
     });
   });
 
+  describe("Contact email Set as primary action", () => {
+    const verified = {
+      emailId: 4,
+      email: "kept@x.com",
+      otpConfirmed: true,
+      isPrimary: false,
+    };
+
+    it("offers Set as primary on a verified non-primary contact-only row", async () => {
+      const user = userEvent.setup();
+      const onSetPrimary = vi.fn().mockResolvedValue();
+      render(
+        <SignInMethodList
+          emails={[verified]}
+          internalIdentities={[]}
+          externalIdentities={[makeIdentity()]}
+          isLoading={false}
+          onUnlink={vi.fn()}
+          onSetPrimary={onSetPrimary}
+        />,
+      );
+
+      const rows = screen.getAllByRole("listitem");
+      await user.click(
+        within(rows[1]).getByRole("button", { name: "Set as primary contact" }),
+      );
+      expect(onSetPrimary).toHaveBeenCalledWith(verified);
+    });
+
+    it("does not offer Set as primary on the primary or an unverified row", () => {
+      render(
+        <SignInMethodList
+          emails={[
+            { ...verified, isPrimary: true },
+            {
+              emailId: 5,
+              email: "new@x.com",
+              otpConfirmed: false,
+              isPrimary: false,
+            },
+          ]}
+          internalIdentities={[]}
+          externalIdentities={[]}
+          isLoading={false}
+          onUnlink={vi.fn()}
+          onSetPrimary={vi.fn()}
+          onVerify={vi.fn()}
+        />,
+      );
+
+      expect(
+        screen.queryByRole("button", { name: "Set as primary contact" }),
+      ).not.toBeInTheDocument();
+    });
+  });
+
   describe("Contact email Remove action", () => {
     const backup = {
       emailId: 3,
@@ -844,7 +900,10 @@ describe("SignInMethodList", () => {
       ).not.toBeInTheDocument();
     });
 
-    it("hides the set-primary action for a non-email sign-in method", () => {
+    it("moves the set-primary action to the contact row for a non-email sign-in method", () => {
+      // A non-email method (Google) never exposes contact-email management on
+      // its own row; the verified address renders as a contact-only row, and
+      // THAT row carries the set-primary action so it is never stranded.
       render(
         <SignInMethodList
           emails={[verifiedNonPrimary]}
@@ -861,9 +920,15 @@ describe("SignInMethodList", () => {
         />,
       );
 
+      const rows = screen.getAllByRole("listitem");
       expect(
-        screen.queryByRole("button", { name: "Set as primary contact" }),
+        within(rows[0]).queryByRole("button", {
+          name: "Set as primary contact",
+        }),
       ).not.toBeInTheDocument();
+      expect(
+        within(rows[1]).getByRole("button", { name: "Set as primary contact" }),
+      ).toBeInTheDocument();
     });
 
     it("matches the contact email regardless of casing", () => {
