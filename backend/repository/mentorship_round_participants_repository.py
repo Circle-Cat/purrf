@@ -11,11 +11,13 @@ from backend.entity.training_entity import TrainingEntity
 from backend.common.mentorship_enums import (
     MENTORSHIP_ONBOARDING_CATEGORIES,
     ParticipantRole,
+    TrainingCategory,
+    TrainingStatus,
 )
 from backend.common.recruiting_enums import ApplicationStage, JobKind
 from backend.dto.participant_search_row_dto import ParticipantSearchRow
 from backend.dto.participant_search_filter_dto import ParticipantSearchFilterDto
-from sqlalchemy import TIMESTAMP, Float, cast, func, select, and_, or_
+from sqlalchemy import TIMESTAMP, Float, cast, func, select, and_, or_, not_
 from sqlalchemy.orm import aliased
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -186,6 +188,59 @@ class MentorshipRoundParticipantsRepository:
         )
         return or_(has_hired_activity_application, has_mentorship_onboarding_training)
 
+    def _build_onboarding_completed_condition(self, is_completed: bool):
+        """
+        Correlated condition for whether the row's own participant_role has
+        completed mentor/mentee onboarding training.
+
+        - MENTOR: mentor onboarding training status is DONE.
+        - MENTEE: mentee onboarding training status is DONE.
+        - No role (non-participant): either category's status is DONE.
+
+        is_completed=False negates this same condition rather than using a
+        separate one.
+
+        Returns:
+            ColumnElement[bool]: A correlated EXISTS-based expression.
+        """
+        mentor_done = (
+            select(TrainingEntity.training_id)
+            .where(
+                TrainingEntity.user_id == UsersEntity.user_id,
+                TrainingEntity.category == TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING,
+                TrainingEntity.status == TrainingStatus.DONE,
+            )
+            .exists()
+        )
+        mentee_done = (
+            select(TrainingEntity.training_id)
+            .where(
+                TrainingEntity.user_id == UsersEntity.user_id,
+                TrainingEntity.category == TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING,
+                TrainingEntity.status == TrainingStatus.DONE,
+            )
+            .exists()
+        )
+
+        completed = or_(
+            and_(
+                MentorshipRoundParticipantsEntity.participant_role
+                == ParticipantRole.MENTOR,
+                mentor_done,
+            ),
+            and_(
+                MentorshipRoundParticipantsEntity.participant_role
+                == ParticipantRole.MENTEE,
+                mentee_done,
+            ),
+            and_(
+                MentorshipRoundParticipantsEntity.participant_role.is_(None),
+                or_(mentor_done, mentee_done),
+            ),
+        )
+
+        return completed if is_completed else not_(completed)
+
     def _build_admin_search_stmt(self, filters) -> select:
         """
         Build the base SELECT statement for the admin participant search.
@@ -299,6 +354,13 @@ class MentorshipRoundParticipantsRepository:
             stmt = stmt.where(
                 MentorshipRoundParticipantsEntity.approval_status
                 == filters.approval_status
+            )
+
+        if filters.onboarding_status is not None:
+            stmt = stmt.where(
+                self._build_onboarding_completed_condition(
+                    is_completed=filters.onboarding_status == "completed"
+                )
             )
 
         return stmt
