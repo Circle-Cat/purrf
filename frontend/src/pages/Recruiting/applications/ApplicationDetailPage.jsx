@@ -69,6 +69,7 @@ import {
 } from "@/api/recruitingApi";
 import {
   humanize,
+  stageLabel,
   INTERVIEW_STAGES,
 } from "@/pages/Recruiting/board/stageFormat";
 import { useAuth } from "@/context/auth/AuthContext";
@@ -118,22 +119,25 @@ const SUB_STATUS_SETS = {
 
 /**
  * Compute the stage an application advances to, mirroring the backend's
- * `stage_machine.advance_target`: the next configured pipeline stage;
- * "offer" once the current stage is the last one configured (Offer is a
- * fixed step, never itself configurable); "hired" when the current stage
- * is "offer"; or null when the current stage isn't part of the job's
- * configured pipeline and isn't "offer" either (i.e. it's already a
- * terminal stage).
+ * `stage_machine.advance_target`: the next configured pipeline stage; once
+ * the current stage is the last one configured, "offer" for an employment
+ * job (Offer is a fixed step, never itself configurable) or "hired"
+ * directly for an activity job (which has no offer step); "hired" when the
+ * current stage is "offer" on an employment job; or null when the current
+ * stage isn't part of the job's configured pipeline and isn't an
+ * employment job's "offer" either (i.e. it's already a terminal stage).
  *
  * @param {string[]} jobStages The job's configured pipeline stages in order.
  * @param {string} stage The application's current stage.
+ * @param {string|null|undefined} kind The job's kind ("employment"|"activity").
  * @returns {string|null} The next stage, "offer", "hired", or null.
  */
-const advanceTarget = (jobStages, stage) => {
-  if (stage === "offer") return "hired";
+const advanceTarget = (jobStages, stage, kind) => {
+  if (stage === "offer") return kind === "activity" ? null : "hired";
   const index = jobStages.indexOf(stage);
   if (index === -1) return null;
-  return index === jobStages.length - 1 ? "offer" : jobStages[index + 1];
+  if (index < jobStages.length - 1) return jobStages[index + 1];
+  return kind === "activity" ? "hired" : "offer";
 };
 
 /**
@@ -331,9 +335,11 @@ const EvaluationSummary = ({ evaluations, interviewPool }) => (
  * trailing suffix — not part of this function's return value.
  *
  * @param {{eventType: string, details: object}} activity
+ * @param {string|null|undefined} jobKind The job's kind, so stage names in
+ *   the narration match the rest of the page (activity: hired -> Admitted).
  * @returns {string}
  */
-const describeActivity = ({ eventType, details }) => {
+const describeActivity = ({ eventType, details }, jobKind) => {
   switch (eventType) {
     case "application_submitted": {
       if (details.screenAutoHireRuleId) {
@@ -341,7 +347,7 @@ const describeActivity = ({ eventType, details }) => {
           details.screenAutoHireRuleLabel
             ? ` "${details.screenAutoHireRuleLabel}"`
             : ""
-        } (landed on Hired)`;
+        } (landed on ${stageLabel("hired", jobKind)})`;
       }
       const base = `Submitted — landed on ${humanize(details.stage)}`;
       return details.screenQualifyRuleId
@@ -366,7 +372,7 @@ const describeActivity = ({ eventType, details }) => {
             : `: ${details.reason}`
         }`;
       }
-      return `Advanced from ${humanize(details.fromStage)} to ${humanize(details.toStage)}${
+      return `Advanced from ${humanize(details.fromStage)} to ${stageLabel(details.toStage, jobKind)}${
         details.assigneeName ? `, assigned to ${details.assigneeName}` : ""
       }`;
     case "reassigned":
@@ -397,9 +403,10 @@ const describeActivity = ({ eventType, details }) => {
  * actor's resolved display name.
  *
  * @param {{activity: {id: number, eventType: string, details: object,
- *          actorName: string, createdAt: string}[]}} props
+ *          actorName: string, createdAt: string}[],
+ *          jobKind?: string|null}} props
  */
-const ActivityTimeline = ({ activity }) => (
+const ActivityTimeline = ({ activity, jobKind }) => (
   <div className="space-y-2">
     {activity.length === 0 ? (
       <p className="text-sm text-slate-400">No activity yet.</p>
@@ -410,7 +417,7 @@ const ActivityTimeline = ({ activity }) => (
             <span className="text-slate-500">
               {new Date(entry.createdAt).toLocaleString()}
             </span>{" "}
-            — {describeActivity(entry)}, by {entry.actorName}
+            — {describeActivity(entry, jobKind)}, by {entry.actorName}
           </li>
         ))}
       </ul>
@@ -785,7 +792,7 @@ const ApplicationDetailPage = () => {
 
   const next =
     loaded && detail?.isOwner
-      ? advanceTarget(jobStages, detail.application.stage)
+      ? advanceTarget(jobStages, detail.application.stage, job?.kind)
       : null;
   const isPipelineStage = next !== null;
   const needsAssignee = isPipelineStage && INTERVIEW_STAGES.has(next);
@@ -1090,7 +1097,7 @@ const ApplicationDetailPage = () => {
             {detail.applicantName}
           </h1>
           <Badge variant="secondary">
-            {humanize(detail.application.stage)}
+            {stageLabel(detail.application.stage, job?.kind)}
           </Badge>
           {guide && <HowItWorksDialog {...guide} />}
         </div>
@@ -1185,7 +1192,7 @@ const ApplicationDetailPage = () => {
                             : handleAdvance(next)
                         }
                       >
-                        Advance to {humanize(next)}
+                        Advance to {stageLabel(next, job?.kind)}
                       </Button>
                     )
                   )}
@@ -1205,7 +1212,7 @@ const ApplicationDetailPage = () => {
                   />
                 </TabsContent>
                 <TabsContent value="timeline">
-                  <ActivityTimeline activity={activity} />
+                  <ActivityTimeline activity={activity} jobKind={job?.kind} />
                 </TabsContent>
                 <TabsContent value="comments">
                   <CommentsPanel
@@ -1437,7 +1444,9 @@ const ApplicationDetailPage = () => {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {isPipelineStage ? `Advance to ${humanize(next)}` : "Advance"}
+              {isPipelineStage
+                ? `Advance to ${stageLabel(next, job?.kind)}`
+                : "Advance"}
             </DialogTitle>
           </DialogHeader>
           <PeoplePicker

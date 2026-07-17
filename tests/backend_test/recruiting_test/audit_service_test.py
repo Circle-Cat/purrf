@@ -14,10 +14,31 @@ class TestAuditService(unittest.IsolatedAsyncioTestCase):
         self.session = AsyncMock()
         self.service = AuditService(self.job_repo, self.app_repo)
 
-    def _job(self, job_id, title, status):
-        job = JobEntity(kind=JobKind.ACTIVITY, title=title, status=status)
+    def _job(self, job_id, title, status, kind=JobKind.ACTIVITY):
+        job = JobEntity(kind=kind, title=title, status=status)
         job.job_id = job_id
         return job
+
+    async def test_jobs_list_carries_each_posting_kind(self):
+        """The page splits its stage breakdown into employment/activity
+        sections, keyed off each job's kind."""
+        self.job_repo.list_all = AsyncMock(
+            return_value=[
+                self._job(1, "Job A", JobStatus.PUBLISHED, kind=JobKind.EMPLOYMENT),
+                self._job(2, "Job B", JobStatus.PUBLISHED, kind=JobKind.ACTIVITY),
+            ]
+        )
+        self.app_repo.count_by_job_and_stage = AsyncMock(return_value=[])
+        self.app_repo.count_by_job_and_day = AsyncMock(return_value=[])
+
+        result = await self.service.get_overview(
+            self.session, date(2026, 6, 1), date(2026, 6, 30), None
+        )
+
+        self.assertEqual(
+            {(j.id, j.kind) for j in result.jobs},
+            {(1, JobKind.EMPLOYMENT), (2, JobKind.ACTIVITY)},
+        )
 
     async def test_open_positions_count_is_unfiltered_and_live_only(self):
         self.job_repo.list_all = AsyncMock(

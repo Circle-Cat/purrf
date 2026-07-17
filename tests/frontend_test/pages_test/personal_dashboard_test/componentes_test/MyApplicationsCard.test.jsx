@@ -68,7 +68,9 @@ describe("MyApplicationsCard", () => {
     });
 
     expect(screen.getByText("CircleCat Mentor")).toBeInTheDocument();
-    expect(screen.getByText("Hired")).toBeInTheDocument();
+    // Activity postings present `hired` as "Admitted" (display-only rename).
+    expect(screen.getByText("Admitted")).toBeInTheDocument();
+    expect(screen.queryByText("Hired")).not.toBeInTheDocument();
     expect(screen.getByText("Backend Engineer")).toBeInTheDocument();
     expect(screen.getByText("Recruiter screening")).toBeInTheDocument();
   });

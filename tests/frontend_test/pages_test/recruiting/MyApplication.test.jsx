@@ -238,7 +238,10 @@ describe("MyApplication", () => {
       },
     });
     renderAt(5);
-    await waitFor(() => expect(screen.getByText(/hired/i)).toBeInTheDocument());
+    // Activity posting fixture: `hired` renders as "Admitted".
+    await waitFor(() =>
+      expect(screen.getByText("Status: Admitted")).toBeInTheDocument(),
+    );
     expect(
       screen.queryByRole("button", { name: /reapply/i }),
     ).not.toBeInTheDocument();
@@ -289,7 +292,11 @@ describe("MyApplication", () => {
       },
     });
     renderAt(5);
-    await waitFor(() => expect(screen.getByText(/hired/i)).toBeInTheDocument());
+    // The job fixture is an activity posting, whose `hired` stage is
+    // presented as "Admitted" (display-only rename).
+    await waitFor(() =>
+      expect(screen.getByText("Status: Admitted")).toBeInTheDocument(),
+    );
     expect(
       screen.queryByRole("button", { name: /submit application/i }),
     ).not.toBeInTheDocument();

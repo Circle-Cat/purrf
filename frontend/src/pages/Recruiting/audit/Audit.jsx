@@ -22,31 +22,36 @@ import DateRangePicker from "@/components/common/DateRangePicker";
 import { getAuditOverview } from "@/api/recruitingApi";
 import { formatLocalYmd } from "@/utils/dateTime";
 import { STAGE_COLORS } from "@/pages/Recruiting/audit/auditColors";
-
-/**
- * Sentence-case a snake_case stage/status value for display, e.g.
- * "recruiter_screening" -> "Recruiter screening".
- */
-const humanize = (value) => {
-  const spaced = value.split("_").join(" ");
-  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
-};
+import { stageLabel } from "@/pages/Recruiting/board/stageFormat";
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
-/** Stages in funnel order, then the four terminal outcomes — the order
- * bars stack in, and the order the legend lists them. */
-const STAGE_ORDER = [
-  "recruiter_screening",
-  "behavioral",
-  "tech",
-  "board_review",
-  "offer",
-  "hired",
-  "rejected",
-  "offer_declined",
-  "blacklisted",
-];
+/** Stages in funnel order, then the terminal outcomes — the order bars
+ * stack in, and the order the legend lists them. Employment and activity
+ * postings render as separate sections: activity postings have no offer
+ * step, and their `hired` stage is labeled "Admitted". */
+const STAGE_ORDERS = {
+  employment: [
+    "recruiter_screening",
+    "behavioral",
+    "tech",
+    "board_review",
+    "offer",
+    "hired",
+    "rejected",
+    "offer_declined",
+    "blacklisted",
+  ],
+  activity: [
+    "recruiter_screening",
+    "behavioral",
+    "tech",
+    "board_review",
+    "hired",
+    "rejected",
+    "blacklisted",
+  ],
+};
 
 /**
  * Reshape `stageBreakdown` rows into one object per job with a key per
@@ -66,12 +71,112 @@ function toStageChartData(rows) {
   return [...byJob.values()];
 }
 
-const STAGE_CHART_CONFIG = Object.fromEntries(
-  STAGE_ORDER.map((stage) => [
-    stage,
-    { label: humanize(stage), color: STAGE_COLORS[stage] },
+const STAGE_CHART_CONFIGS = Object.fromEntries(
+  Object.entries(STAGE_ORDERS).map(([kind, stages]) => [
+    kind,
+    Object.fromEntries(
+      stages.map((stage) => [
+        stage,
+        { label: stageLabel(stage, kind), color: STAGE_COLORS[stage] },
+      ]),
+    ),
   ]),
 );
+
+/**
+ * One posting kind's stage-breakdown chart and supporting job x stage
+ * table. Employment and activity postings are rendered as separate
+ * sections because their stage sets differ (activity has no offer step)
+ * and their terminal-success labels differ (Hired vs Admitted).
+ *
+ * @param {{
+ *   kind: "employment"|"activity",
+ *   title: string,
+ *   rows: {jobId: number, jobTitle: string, stage: string, count: number}[],
+ * }} props
+ */
+const StageBreakdownSection = ({ kind, title, rows }) => {
+  // Group stage rows by job so each job's name renders once, spanning its
+  // stage rows, instead of repeating on every row.
+  const rowsByJob = useMemo(() => {
+    const map = new Map();
+    for (const row of rows) {
+      if (!map.has(row.jobId)) map.set(row.jobId, []);
+      map.get(row.jobId).push(row);
+    }
+    return map;
+  }, [rows]);
+
+  return (
+    <>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm font-medium text-slate-600">
+            Stage breakdown by job — {title}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ChartContainer
+            config={STAGE_CHART_CONFIGS[kind]}
+            role="img"
+            aria-label={`Stage breakdown chart — ${title}`}
+          >
+            <BarChart data={toStageChartData(rows)}>
+              <CartesianGrid vertical={false} />
+              <XAxis dataKey="jobTitle" tickLine={false} axisLine={false} />
+              <YAxis tickLine={false} axisLine={false} allowDecimals={false} />
+              <ChartTooltip content={<ChartTooltipContent />} />
+              <ChartLegend content={<ChartLegendContent />} />
+              {STAGE_ORDERS[kind].map((stage) => (
+                <Bar
+                  key={stage}
+                  dataKey={stage}
+                  stackId="stage"
+                  fill={STAGE_COLORS[stage]}
+                  radius={0}
+                />
+              ))}
+            </BarChart>
+          </ChartContainer>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm font-medium text-slate-600">
+            Stage breakdown — {title}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Job</TableHead>
+                <TableHead>Stage</TableHead>
+                <TableHead>Count</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {[...rowsByJob.entries()].map(([jobId, jobRows]) =>
+                jobRows.map((row, idx) => (
+                  <TableRow key={`${jobId}-${row.stage}`}>
+                    {idx === 0 && (
+                      <TableCell rowSpan={jobRows.length}>
+                        {row.jobTitle}
+                      </TableCell>
+                    )}
+                    <TableCell>{stageLabel(row.stage, kind)}</TableCell>
+                    <TableCell>{row.count}</TableCell>
+                  </TableRow>
+                )),
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </>
+  );
+};
 
 /**
  * Cross-posting recruiting audit page: open-positions KPI, a date-range +
@@ -127,24 +232,19 @@ const Audit = () => {
     fetchOverview(next, startDate, endDate);
   };
 
-  const filteredStageBreakdown = useMemo(
-    () =>
-      (overview?.stageBreakdown ?? []).filter((row) =>
-        (selectedJobIds ?? []).includes(row.jobId),
-      ),
-    [overview, selectedJobIds],
-  );
-
-  // Group stage rows by job so each job's name renders once, spanning its
-  // stage rows, instead of repeating on every row.
-  const stageRowsByJob = useMemo(() => {
-    const map = new Map();
-    for (const row of filteredStageBreakdown) {
-      if (!map.has(row.jobId)) map.set(row.jobId, []);
-      map.get(row.jobId).push(row);
+  // Selected jobs' stage rows, split by posting kind — employment and
+  // activity render as separate sections (see StageBreakdownSection).
+  const stageBreakdownByKind = useMemo(() => {
+    const kindByJobId = new Map(
+      (overview?.jobs ?? []).map((job) => [job.id, job.kind]),
+    );
+    const split = { employment: [], activity: [] };
+    for (const row of overview?.stageBreakdown ?? []) {
+      if (!(selectedJobIds ?? []).includes(row.jobId)) continue;
+      split[kindByJobId.get(row.jobId)]?.push(row);
     }
-    return map;
-  }, [filteredStageBreakdown]);
+    return split;
+  }, [overview, selectedJobIds]);
 
   if (!overview || selectedJobIds === null) {
     return <div className="p-6 text-sm text-slate-500">Loading…</div>;
@@ -182,73 +282,19 @@ const Audit = () => {
         </div>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm font-medium text-slate-600">
-            Stage breakdown by job
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <ChartContainer
-            config={STAGE_CHART_CONFIG}
-            role="img"
-            aria-label="Stage breakdown chart"
-          >
-            <BarChart data={toStageChartData(filteredStageBreakdown)}>
-              <CartesianGrid vertical={false} />
-              <XAxis dataKey="jobTitle" tickLine={false} axisLine={false} />
-              <YAxis tickLine={false} axisLine={false} allowDecimals={false} />
-              <ChartTooltip content={<ChartTooltipContent />} />
-              <ChartLegend content={<ChartLegendContent />} />
-              {STAGE_ORDER.map((stage) => (
-                <Bar
-                  key={stage}
-                  dataKey={stage}
-                  stackId="stage"
-                  fill={STAGE_COLORS[stage]}
-                  radius={0}
-                />
-              ))}
-            </BarChart>
-          </ChartContainer>
-        </CardContent>
-      </Card>
+      <StageBreakdownSection
+        kind="employment"
+        title="Employment"
+        rows={stageBreakdownByKind.employment}
+      />
+
+      <StageBreakdownSection
+        kind="activity"
+        title="Activity"
+        rows={stageBreakdownByKind.activity}
+      />
 
       {/* Task 5 (daily trend) renders here. */}
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm font-medium text-slate-600">
-            Stage breakdown
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Job</TableHead>
-                <TableHead>Stage</TableHead>
-                <TableHead>Count</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {[...stageRowsByJob.entries()].map(([jobId, rows]) =>
-                rows.map((row, idx) => (
-                  <TableRow key={`${jobId}-${row.stage}`}>
-                    {idx === 0 && (
-                      <TableCell rowSpan={rows.length}>
-                        {row.jobTitle}
-                      </TableCell>
-                    )}
-                    <TableCell>{humanize(row.stage)}</TableCell>
-                    <TableCell>{row.count}</TableCell>
-                  </TableRow>
-                )),
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
     </div>
   );
 };
