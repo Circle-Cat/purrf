@@ -14,6 +14,18 @@ export async function addContactEmail(email) {
 }
 
 /**
+ * Remove an unverified backup contact email from the caller's account. The
+ * backend refuses the primary contact and verified addresses (those are
+ * removed via the sign-in method unlink flow).
+ *
+ * @param {number} emailId
+ * @returns {Promise<{ data: { ok: boolean } }>}
+ */
+export async function removeContactEmail(emailId) {
+  return await request.delete(API_ENDPOINTS.EMAIL_REMOVE(emailId));
+}
+
+/**
  * Start email OTP verification: asks the backend to send a one-time code to
  * `email` and returns a signed state token to submit alongside the code.
  *

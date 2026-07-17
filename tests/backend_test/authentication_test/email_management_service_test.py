@@ -172,6 +172,52 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
             await self.service.add_email(self.session, _USER_ID, _TARGET_EMAIL)
         self.user_emails.upsert_email.assert_not_awaited()
 
+    # remove_email — drop an unverified backup contact address, no OTP
+    def _removable_row(self, email_id=12, **overrides):
+        row = self._email_row("backup@gmail.com", otp_confirmed=False, **overrides)
+        row.email_id = email_id
+        return row
+
+    async def test_remove_email_deletes_unverified_row(self):
+        self.user_emails.get_by_id.return_value = self._removable_row()
+
+        result = await self.service.remove_email(self.session, _USER_ID, 12)
+
+        self.user_emails.delete.assert_awaited_once_with(self.session, 12)
+        self.session.commit.assert_awaited_once()
+        self.assertEqual(result, {"ok": True})
+
+    async def test_remove_email_rejects_missing_row(self):
+        self.user_emails.get_by_id.return_value = None
+        with self.assertRaises(ValueError):
+            await self.service.remove_email(self.session, _USER_ID, 12)
+        self.user_emails.delete.assert_not_awaited()
+
+    async def test_remove_email_rejects_row_owned_by_other_user(self):
+        self.user_emails.get_by_id.return_value = self._removable_row(user_id=999)
+        with self.assertRaises(ValueError):
+            await self.service.remove_email(self.session, _USER_ID, 12)
+        self.user_emails.delete.assert_not_awaited()
+
+    async def test_remove_email_rejects_primary(self):
+        row = self._removable_row()
+        row.is_primary = True
+        self.user_emails.get_by_id.return_value = row
+        with self.assertRaises(ConflictError):
+            await self.service.remove_email(self.session, _USER_ID, 12)
+        self.user_emails.delete.assert_not_awaited()
+
+    async def test_remove_email_rejects_verified_row(self):
+        # A verified address is (or can become) a sign-in method; it leaves
+        # the account only through the step-up unlink flow.
+        row = self._removable_row()
+        row.otp_confirmed = True
+        self.user_emails.get_by_id.return_value = row
+        with self.assertRaises(ConflictError):
+            await self.service.remove_email(self.session, _USER_ID, 12)
+        self.user_emails.delete.assert_not_awaited()
+        self.session.commit.assert_not_awaited()
+
     async def test_verify_happy_path_confirms_email_and_records_identity(self):
         result = await self.service.verify(
             self.session, _USER_ID, _CURRENT_SUB, _state(), "123456"
