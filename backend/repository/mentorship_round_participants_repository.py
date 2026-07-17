@@ -207,7 +207,8 @@ class MentorshipRoundParticipantsRepository:
             select(TrainingEntity.training_id)
             .where(
                 TrainingEntity.user_id == UsersEntity.user_id,
-                TrainingEntity.category == TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING,
+                TrainingEntity.category
+                == TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING,
                 TrainingEntity.status == TrainingStatus.DONE,
             )
             .exists()
@@ -216,7 +217,8 @@ class MentorshipRoundParticipantsRepository:
             select(TrainingEntity.training_id)
             .where(
                 TrainingEntity.user_id == UsersEntity.user_id,
-                TrainingEntity.category == TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING,
+                TrainingEntity.category
+                == TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING,
                 TrainingEntity.status == TrainingStatus.DONE,
             )
             .exists()

@@ -434,7 +434,9 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
         self.assertIn(mentee_user.user_id, user_ids)
         self.assertIn(non_participant_user.user_id, user_ids)
 
-    async def test_search_onboarding_status_excludes_wrong_role_or_missing_training(self):
+    async def test_search_onboarding_status_excludes_wrong_role_or_missing_training(
+        self,
+    ):
         """A mentor with only mentee training, or a mentor with no training
         at all, does not count as completed; both correctly show up under
         incomplete instead."""
@@ -445,7 +447,9 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
             first_name="Nora", last_name="NoTraining", email="nora@example.com"
         )
         await self.insert_entities([mentor_wrong_training_user, no_training_user])
-        await self._hire_for_activity(mentor_wrong_training_user, role=ParticipantRole.MENTOR)
+        await self._hire_for_activity(
+            mentor_wrong_training_user, role=ParticipantRole.MENTOR
+        )
         await self._hire_for_activity(no_training_user, role=ParticipantRole.MENTOR)
         await self.insert_entities([
             MentorshipRoundParticipantsEntity(
@@ -460,7 +464,8 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
             ),
         ])
         await self._add_training(
-            mentor_wrong_training_user, category=TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING
+            mentor_wrong_training_user,
+            category=TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING,
         )
 
         completed_rows, _ = await self.repo.search_participants_for_admin(
