@@ -22,6 +22,7 @@ from backend.common.constants import is_company_email
 from backend.common.environment_constants import EMAIL_OTP_STATE_JWT_SECRET
 from backend.common.exceptions import ConflictError
 from backend.common.identity_type import IdentityType
+from backend.common.permissions import INTERNAL_EMPLOYEE_PERMISSIONS
 from backend.dto.emails_view_dto import (
     EmailEntryDto,
     EmailsViewDto,
@@ -46,6 +47,7 @@ class EmailManagementService:
         user_emails_repository,
         user_identities_repository,
         users_repository,
+        user_permissions_repository,
         logger,
     ):
         """
@@ -57,12 +59,16 @@ class EmailManagementService:
             user_identities_repository (UserIdentitiesRepository): Repository handling UserIdentitiesEntity.
             users_repository (UsersRepository): Repository handling UsersEntity; used to
                 write-through sync the legacy users.primary_email column.
+            user_permissions_repository (UserPermissionsRepository): Repository
+                handling permission grants; used to mirror the internal-employee
+                lifecycle hook when a corp sign-in joins an existing account.
             logger: Application logger.
         """
         self._auth0 = auth0_client
         self._user_emails = user_emails_repository
         self._user_identities = user_identities_repository
         self._users = users_repository
+        self._user_permissions = user_permissions_repository
         self._state_secret = os.getenv(EMAIL_OTP_STATE_JWT_SECRET)
         self._logger = logger
 
@@ -228,7 +234,10 @@ class EmailManagementService:
         request, so a tampered email parameter cannot redirect the verification.
         Nothing is written until the OTP and the new identity both check out.
         Auth0 users are never merged: the ``user_identities`` row is the only
-        link between the passwordless sub and the account.
+        link between the passwordless sub and the account. Verifying a company
+        address additionally mirrors the internal-employee lifecycle hook —
+        the baseline permission bundle is granted and the corp address becomes
+        the primary contact.
 
         In needs-link mode (``needs_link=True``, PUR-480) the direction
         reverses: instead of pulling the address's identity into the caller's
@@ -288,6 +297,8 @@ class EmailManagementService:
                     email_claim=target_email,
                 ),
             )
+        if is_company_email(target_email):
+            await self._absorb_internal_identity(session, current_user_id, target_email)
         await session.commit()
         return {"ok": True, "linked_sub": new_sub, "email": target_email}
 
@@ -312,9 +323,12 @@ class EmailManagementService:
         has not passed the wall yet) is refused with a pointer back to their
         original sign-in method.
 
-        No users row is created and nothing on the owning account changes:
-        only a user_identities row for the caller's sub is added, so future
-        logins with either method resolve to the owning account at step 1.
+        No users row is created: a user_identities row for the caller's sub is
+        added, so future logins with either method resolve to the owning
+        account at step 1. When the linked sign-in is INTERNAL (an employee
+        joining their corp sign-in to a pre-existing account), the
+        internal-employee lifecycle hook is mirrored: the baseline permission
+        bundle is granted and the corp address becomes the primary contact.
 
         Args:
             session (AsyncSession): The active async database session.
@@ -353,23 +367,26 @@ class EmailManagementService:
         if otp_identity is not None and otp_identity.user_id != owner_user_id:
             raise ConflictError("Identity already linked to another account")
 
+        linked_type = (
+            caller_identity_type
+            if caller_identity_type is not None
+            else (
+                IdentityType.INTERNAL
+                if is_company_email(target_email)
+                else IdentityType.EXTERNAL
+            )
+        )
         await self._user_identities.upsert_identity(
             session=session,
             entity=UserIdentitiesEntity(
                 user_id=owner_user_id,
                 subject_identifier=current_sub,
-                identity_type=(
-                    caller_identity_type
-                    if caller_identity_type is not None
-                    else (
-                        IdentityType.INTERNAL
-                        if is_company_email(target_email)
-                        else IdentityType.EXTERNAL
-                    )
-                ),
+                identity_type=linked_type,
                 email_claim=target_email,
             ),
         )
+        if IdentityType.INTERNAL == linked_type:
+            await self._absorb_internal_identity(session, owner_user_id, target_email)
         await session.commit()
 
         self._logger.info(
@@ -607,6 +624,58 @@ class EmailManagementService:
             raise PermissionError(f"Primary email changed during {operation}; restart")
         self._auth0.exchange_otp(primary.email, code)
 
+    async def _absorb_internal_identity(
+        self, session, user_id: int, email: str
+    ) -> None:
+        """
+        Mirror the first-login lifecycle hook when a corp sign-in joins an
+        EXISTING account (verify or needs-link): grant the internal-employee
+        permission bundle and promote the corp address to the primary contact.
+
+        Without this, an employee who linked their corp sign-in into a
+        pre-existing external account would be INTERNAL without the baseline
+        permissions a first-login hire gets, with a personal address still
+        receiving account mail. Grants are diffed against the user's active
+        permissions first (``grant()`` never dedups), so re-verifying is
+        idempotent; the promotion is skipped when the corp address is already
+        the primary or (defensively) not confirmed. Flushes only — the caller
+        owns the transaction boundary.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            user_id (int): The account the corp sign-in was linked into.
+            email (str): The corp address (normalized) that was just verified.
+        """
+        active = await self._user_permissions.get_active_permission_names(
+            session, user_id
+        )
+        held = set(active)
+        missing = sorted(
+            (p for p in INTERNAL_EMPLOYEE_PERMISSIONS if str(p) not in held), key=str
+        )
+        if missing:
+            await self._user_permissions.grant(
+                session=session,
+                user_id=user_id,
+                permission_names=missing,
+                granted_source="system_internal",
+            )
+            self._logger.info(
+                "[EmailManagementService] granted internal bundle to user_id=%s "
+                "on corp sign-in link",
+                user_id,
+            )
+
+        row = await self._user_emails.get_by_user_and_email(session, user_id, email)
+        if row is not None and row.otp_confirmed and not row.is_primary:
+            await self._user_emails.set_primary(session, user_id, row.email_id)
+            await self._sync_legacy_primary_email(session, user_id, email)
+            self._logger.info(
+                "[EmailManagementService] promoted corp email to primary for "
+                "user_id=%s",
+                user_id,
+            )
+
     async def _confirm_email(self, session, user_id: int, email: str) -> None:
         """
         Record `email` as an OTP-confirmed contact for the user.
@@ -772,8 +841,8 @@ class EmailManagementService:
 
         if (identity.email_claim or "").lower() == primary.email.lower():
             raise PermissionError(
-                "This sign-in's email is your primary contact; "
-                "switch your primary email first"
+                "This sign-in's email is your primary contact. Verify another "
+                "email, set it as your primary contact, then remove this sign-in."
             )
 
         self._auth0.start_passwordless(primary.email)
