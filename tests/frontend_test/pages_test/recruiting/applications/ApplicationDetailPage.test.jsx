@@ -33,6 +33,7 @@ const INTERVIEW_POOL = [
 const JOB = {
   id: 1,
   title: "Mentor",
+  kind: "employment",
   pipelineConfig: {
     ownerIds: [OWNER_ID],
     stages: [
@@ -1954,6 +1955,50 @@ describe("ApplicationDetailPage — Offer is a fixed step before Hired", () => {
     await waitLoaded();
 
     expect(screen.queryByText("Status:")).not.toBeInTheDocument();
+  });
+});
+
+describe("ApplicationDetailPage — activity jobs have no Offer step", () => {
+  const ACTIVITY_JOB = { ...JOB, kind: "activity" };
+
+  it("advances from the last configured stage straight to Admitted (hired)", async () => {
+    const user = userEvent.setup();
+    authState.userId = OWNER_ID;
+    api.getJob.mockResolvedValue({ data: ACTIVITY_JOB });
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({
+        isOwner: true,
+        assigneeId: ASSIGNEE_ID,
+        stage: "tech",
+      }),
+    });
+    api.changeApplicationStage.mockResolvedValue({ data: {} });
+    renderPage();
+    await waitLoaded();
+
+    await user.click(
+      screen.getByRole("button", { name: "Advance to Admitted" }),
+    );
+
+    await waitFor(() =>
+      expect(api.changeApplicationStage).toHaveBeenCalledWith("101", {
+        toStage: "hired",
+        assigneeId: undefined,
+      }),
+    );
+  });
+
+  it("shows the stage badge as Admitted for a hired application", async () => {
+    authState.userId = OWNER_ID;
+    api.getJob.mockResolvedValue({ data: ACTIVITY_JOB });
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, stage: "hired" }),
+    });
+    renderPage();
+    await waitLoaded();
+
+    expect(screen.getByText("Admitted")).toBeInTheDocument();
+    expect(screen.queryByText("Hired")).not.toBeInTheDocument();
   });
 });
 

@@ -1,10 +1,12 @@
-from backend.common.recruiting_enums import ApplicationStage
+from backend.common.recruiting_enums import ApplicationStage, JobKind
 
 # Global ordering of the configurable pipeline stages. A job's pipeline_config
 # selects a subset of these (see configured_stages); APPLIED/REJECTED/HIRED/
 # OFFER/BLACKLISTED are not configurable pipeline steps. OFFER specifically
-# is a fixed step always inserted between a job's last configured stage and
-# HIRED (see advance_target) — never something an owner opts into per job.
+# is a fixed step always inserted between an EMPLOYMENT job's last configured
+# stage and HIRED (see advance_target) — never something an owner opts into
+# per job. ACTIVITY jobs have no OFFER step at all: their last configured
+# stage advances straight to HIRED (surfaced as "Admitted" in the UI).
 PIPELINE_ORDER: list[ApplicationStage] = [
     ApplicationStage.RECRUITER_SCREENING,
     ApplicationStage.BEHAVIORAL,
@@ -97,7 +99,7 @@ def first_stage(pipeline_config: dict | None) -> ApplicationStage:
 
 
 def advance_target(
-    pipeline_config: dict | None, current: ApplicationStage
+    pipeline_config: dict | None, current: ApplicationStage, kind: JobKind
 ) -> ApplicationStage | None:
     """The stage a forward move from ``current`` would land on.
 
@@ -105,28 +107,38 @@ def advance_target(
         pipeline_config (dict | None): The job's stored pipeline
             configuration (see ``configured_stages``).
         current (ApplicationStage): The application's current stage.
+        kind (JobKind): The job's kind. ACTIVITY jobs have no OFFER step:
+            their last configured stage advances straight to HIRED.
 
     Returns:
         ApplicationStage | None: The next configured stage after
-            ``current``; ``ApplicationStage.OFFER`` when ``current`` is the
-            last configured stage; ``ApplicationStage.HIRED`` when
-            ``current`` is ``ApplicationStage.OFFER``; ``None`` when
+            ``current``; when ``current`` is the last configured stage,
+            ``ApplicationStage.OFFER`` for EMPLOYMENT jobs or
+            ``ApplicationStage.HIRED`` for ACTIVITY jobs;
+            ``ApplicationStage.HIRED`` when ``current`` is
+            ``ApplicationStage.OFFER`` on an EMPLOYMENT job; ``None`` when
             ``current`` is terminal or is not one of the job's configured
-            pipeline stages.
+            pipeline stages (including OFFER on an ACTIVITY job, which is
+            unreachable).
     """
     if current == ApplicationStage.OFFER:
-        return ApplicationStage.HIRED
+        return ApplicationStage.HIRED if kind == JobKind.EMPLOYMENT else None
     stages = configured_stages(pipeline_config)
     if current not in stages:
         return None
     index = stages.index(current)
     if index + 1 < len(stages):
         return stages[index + 1]
-    return ApplicationStage.OFFER
+    return (
+        ApplicationStage.OFFER if kind == JobKind.EMPLOYMENT else ApplicationStage.HIRED
+    )
 
 
 def validate_transition(
-    pipeline_config: dict | None, current: ApplicationStage, to: ApplicationStage
+    pipeline_config: dict | None,
+    current: ApplicationStage,
+    to: ApplicationStage,
+    kind: JobKind,
 ) -> None:
     """Validate a proposed stage transition for a job's configured pipeline.
 
@@ -135,6 +147,7 @@ def validate_transition(
             configuration (see ``configured_stages``).
         current (ApplicationStage): The application's current stage.
         to (ApplicationStage): The proposed destination stage.
+        kind (JobKind): The job's kind (see ``advance_target``).
 
     Returns:
         None
@@ -142,13 +155,13 @@ def validate_transition(
     Raises:
         ValueError: Unless ``to`` is the ``advance_target`` of ``current``,
             or ``to`` is ``ApplicationStage.REJECTED`` and ``current`` is
-            either one of the job's configured pipeline stages or
-            ``ApplicationStage.OFFER``.
+            either one of the job's configured pipeline stages or, on an
+            EMPLOYMENT job, ``ApplicationStage.OFFER``.
     """
-    if to == advance_target(pipeline_config, current):
+    if to == advance_target(pipeline_config, current, kind):
         return
     if to == ApplicationStage.REJECTED and (
-        current == ApplicationStage.OFFER
+        (current == ApplicationStage.OFFER and kind == JobKind.EMPLOYMENT)
         or current in configured_stages(pipeline_config)
     ):
         return

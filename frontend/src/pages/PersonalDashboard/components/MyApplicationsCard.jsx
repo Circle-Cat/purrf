@@ -3,9 +3,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
 
-/** Human-readable label for an ApplicationStage value, e.g. "hired" -> "Hired". */
-const formatStageLabel = (stage) => {
+/** Human-readable label for an ApplicationStage value, e.g. "hired" ->
+ * "Hired" — except on activity postings, whose `hired` stage is presented
+ * as "Admitted" (display-only rename). */
+const formatStageLabel = (stage, jobKind) => {
   if (!stage) return "";
+  if (jobKind === "activity" && stage === "hired") return "Admitted";
   const words = stage.split("_").join(" ");
   return words[0].toUpperCase() + words.slice(1);
 };
@@ -19,7 +22,7 @@ const formatStageLabel = (stage) => {
  * only renders the list, it doesn't duplicate the detail view.
  *
  * @param {{
- *   applications: Array<{applicationId: number, jobId: number, jobTitle: string, stage: string}>,
+ *   applications: Array<{applicationId: number, jobId: number, jobTitle: string, stage: string, jobKind: string}>,
  *   isLoading: boolean,
  *   loadError: boolean,
  *   onRetry?: () => void,
@@ -64,7 +67,7 @@ const MyApplicationsCard = ({
                 >
                   <span className="text-sm text-slate-900">{app.jobTitle}</span>
                   <span className="text-sm text-muted-foreground">
-                    {formatStageLabel(app.stage)}
+                    {formatStageLabel(app.stage, app.jobKind)}
                   </span>
                 </button>
               </li>

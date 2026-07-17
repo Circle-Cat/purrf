@@ -863,7 +863,9 @@ class BoardService:
             session, current_user, application_id, for_update=True
         )
         from_stage = application.stage
-        stage_machine.validate_transition(job.pipeline_config, from_stage, dto.to_stage)
+        stage_machine.validate_transition(
+            job.pipeline_config, from_stage, dto.to_stage, job.kind
+        )
 
         new_interview_assignee = None
         if dto.to_stage in INTERVIEW_STAGES and dto.assignee_id is not None:

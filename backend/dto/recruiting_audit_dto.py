@@ -1,15 +1,18 @@
 from datetime import date
 
-from backend.common.recruiting_enums import ApplicationStage, JobStatus
+from backend.common.recruiting_enums import ApplicationStage, JobKind, JobStatus
 from backend.dto.base_dto import BaseDto
 
 
 class RecruitingAuditJobDto(BaseDto):
-    """One posting, for the audit page's job multi-selector."""
+    """One posting, for the audit page's job multi-selector. ``kind`` lets
+    the page split the stage breakdown into employment/activity sections
+    (activity postings have no offer step and label HIRED as Admitted)."""
 
     id: int
     title: str
     status: JobStatus
+    kind: JobKind
 
 
 class RecruitingAuditStageCountDto(BaseDto):

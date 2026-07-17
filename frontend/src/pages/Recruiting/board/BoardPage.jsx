@@ -11,15 +11,16 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { listBoardJobs, getJobBoard } from "@/api/recruitingApi";
-import { humanize } from "@/pages/Recruiting/board/stageFormat";
+import { humanize, stageLabel } from "@/pages/Recruiting/board/stageFormat";
 import { getStageColors } from "@/pages/Recruiting/board/stageColors";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
 import HowItWorksDialog from "@/pages/Recruiting/components/HowItWorksDialog";
 import { APPLICATIONS_BOARD_GUIDE } from "@/pages/Recruiting/components/guideContent";
 
-/** Offer is always inserted between a job's configured pipeline stages and
- * the terminal lanes — never something a job opts into (see TERMINAL_STAGES,
- * the same treatment). */
+/** Offer is always inserted between an employment job's configured pipeline
+ * stages and the terminal lanes — never something a job opts into (see
+ * TERMINAL_STAGES, the same treatment). Activity jobs have no offer step at
+ * all: their last configured stage advances straight to hired ("Admitted"). */
 const OFFER_STAGE = "offer";
 /** Terminal lanes always appended after a job's configured pipeline stages. */
 const TERMINAL_STAGES = ["hired", "rejected"];
@@ -27,7 +28,8 @@ const TERMINAL_STAGES = ["hired", "rejected"];
 /**
  * Owner-facing kanban board: pick a job you own from the switcher, see its
  * applicants laid out in lanes by pipeline stage, with the two terminal
- * lanes (Hired, Rejected) always shown at the end.
+ * lanes (Hired — labeled Admitted for activity jobs — and Rejected) always
+ * shown at the end.
  */
 const BoardPage = () => {
   const navigate = useNavigate();
@@ -102,19 +104,24 @@ const BoardPage = () => {
             },
           ],
     );
-    const offerLane = {
-      key: OFFER_STAGE,
-      stage: OFFER_STAGE,
-      round: null,
-      label: humanize(OFFER_STAGE),
-    };
+    const offerLanes =
+      selectedJob.kind === "activity"
+        ? []
+        : [
+            {
+              key: OFFER_STAGE,
+              stage: OFFER_STAGE,
+              round: null,
+              label: humanize(OFFER_STAGE),
+            },
+          ];
     const terminalLanes = TERMINAL_STAGES.map((stage) => ({
       key: stage,
       stage,
       round: null,
-      label: humanize(stage),
+      label: stageLabel(stage, selectedJob.kind),
     }));
-    return [...pipelineLanes, offerLane, ...terminalLanes];
+    return [...pipelineLanes, ...offerLanes, ...terminalLanes];
   }, [selectedJob]);
 
   /** Navigate to the shared application detail page for the clicked card. */

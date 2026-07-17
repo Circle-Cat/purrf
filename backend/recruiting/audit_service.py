@@ -67,7 +67,9 @@ class AuditService:
         return RecruitingAuditOverviewDto(
             open_positions_count=open_positions_count,
             jobs=[
-                RecruitingAuditJobDto(id=job.job_id, title=job.title, status=job.status)
+                RecruitingAuditJobDto(
+                    id=job.job_id, title=job.title, status=job.status, kind=job.kind
+                )
                 for job in jobs
             ],
             stage_breakdown=[

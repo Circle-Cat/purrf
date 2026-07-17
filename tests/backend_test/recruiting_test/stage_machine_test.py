@@ -1,5 +1,5 @@
 import unittest
-from backend.common.recruiting_enums import ApplicationStage
+from backend.common.recruiting_enums import ApplicationStage, JobKind
 from backend.recruiting.stage_machine import (
     PIPELINE_ORDER,
     SUB_STATUS_SETS,
@@ -43,35 +43,59 @@ class TestFirstStage(unittest.TestCase):
 class TestAdvanceTarget(unittest.TestCase):
     def test_advances_mid_pipeline(self):
         cfg = {"stages": [{"stage": "recruiter_screening"}, {"stage": "tech"}]}
-        self.assertEqual(
-            advance_target(cfg, ApplicationStage.RECRUITER_SCREENING),
-            ApplicationStage.TECH,
-        )
+        for kind in (JobKind.EMPLOYMENT, JobKind.ACTIVITY):
+            self.assertEqual(
+                advance_target(cfg, ApplicationStage.RECRUITER_SCREENING, kind),
+                ApplicationStage.TECH,
+            )
 
     def test_advances_from_last_configured_to_offer(self):
         cfg = {"stages": [{"stage": "recruiter_screening"}, {"stage": "tech"}]}
         self.assertEqual(
-            advance_target(cfg, ApplicationStage.TECH), ApplicationStage.OFFER
+            advance_target(cfg, ApplicationStage.TECH, JobKind.EMPLOYMENT),
+            ApplicationStage.OFFER,
         )
 
     def test_advances_from_offer_to_hired(self):
         cfg = {"stages": [{"stage": "recruiter_screening"}, {"stage": "tech"}]}
         self.assertEqual(
-            advance_target(cfg, ApplicationStage.OFFER), ApplicationStage.HIRED
+            advance_target(cfg, ApplicationStage.OFFER, JobKind.EMPLOYMENT),
+            ApplicationStage.HIRED,
         )
 
     def test_advances_to_offer_even_for_a_single_stage_pipeline(self):
         cfg = {"stages": [{"stage": "recruiter_screening"}]}
         self.assertEqual(
-            advance_target(cfg, ApplicationStage.RECRUITER_SCREENING),
+            advance_target(
+                cfg, ApplicationStage.RECRUITER_SCREENING, JobKind.EMPLOYMENT
+            ),
             ApplicationStage.OFFER,
         )
 
+    def test_activity_advances_from_last_configured_straight_to_hired(self):
+        cfg = {"stages": [{"stage": "recruiter_screening"}, {"stage": "tech"}]}
+        self.assertEqual(
+            advance_target(cfg, ApplicationStage.TECH, JobKind.ACTIVITY),
+            ApplicationStage.HIRED,
+        )
+
+    def test_activity_single_stage_pipeline_advances_straight_to_hired(self):
+        cfg = {"stages": [{"stage": "recruiter_screening"}]}
+        self.assertEqual(
+            advance_target(cfg, ApplicationStage.RECRUITER_SCREENING, JobKind.ACTIVITY),
+            ApplicationStage.HIRED,
+        )
+
+    def test_activity_offer_is_unreachable_and_returns_none(self):
+        cfg = {"stages": [{"stage": "recruiter_screening"}]}
+        self.assertIsNone(advance_target(cfg, ApplicationStage.OFFER, JobKind.ACTIVITY))
+
     def test_returns_none_from_terminal_or_unconfigured_current(self):
         cfg = {"stages": [{"stage": "recruiter_screening"}]}
-        self.assertIsNone(advance_target(cfg, ApplicationStage.REJECTED))
-        self.assertIsNone(advance_target(cfg, ApplicationStage.HIRED))
-        self.assertIsNone(advance_target(cfg, ApplicationStage.TECH))
+        for kind in (JobKind.EMPLOYMENT, JobKind.ACTIVITY):
+            self.assertIsNone(advance_target(cfg, ApplicationStage.REJECTED, kind))
+            self.assertIsNone(advance_target(cfg, ApplicationStage.HIRED, kind))
+            self.assertIsNone(advance_target(cfg, ApplicationStage.TECH, kind))
 
 
 class TestValidateTransition(unittest.TestCase):
@@ -80,41 +104,87 @@ class TestValidateTransition(unittest.TestCase):
 
     def test_accepts_advance_to_next_configured_stage(self):
         validate_transition(
-            self.cfg, ApplicationStage.RECRUITER_SCREENING, ApplicationStage.TECH
+            self.cfg,
+            ApplicationStage.RECRUITER_SCREENING,
+            ApplicationStage.TECH,
+            JobKind.EMPLOYMENT,
         )
 
     def test_accepts_advance_from_last_configured_to_offer(self):
-        validate_transition(self.cfg, ApplicationStage.TECH, ApplicationStage.OFFER)
+        validate_transition(
+            self.cfg, ApplicationStage.TECH, ApplicationStage.OFFER, JobKind.EMPLOYMENT
+        )
 
     def test_accepts_advance_from_offer_to_hired(self):
-        validate_transition(self.cfg, ApplicationStage.OFFER, ApplicationStage.HIRED)
+        validate_transition(
+            self.cfg, ApplicationStage.OFFER, ApplicationStage.HIRED, JobKind.EMPLOYMENT
+        )
 
     def test_accepts_reject_from_offer(self):
-        validate_transition(self.cfg, ApplicationStage.OFFER, ApplicationStage.REJECTED)
+        validate_transition(
+            self.cfg,
+            ApplicationStage.OFFER,
+            ApplicationStage.REJECTED,
+            JobKind.EMPLOYMENT,
+        )
 
     def test_accepts_reject_from_any_configured_pipeline_stage(self):
+        for kind in (JobKind.EMPLOYMENT, JobKind.ACTIVITY):
+            validate_transition(
+                self.cfg,
+                ApplicationStage.RECRUITER_SCREENING,
+                ApplicationStage.REJECTED,
+                kind,
+            )
+            validate_transition(
+                self.cfg, ApplicationStage.TECH, ApplicationStage.REJECTED, kind
+            )
+
+    def test_activity_accepts_advance_from_last_configured_to_hired(self):
         validate_transition(
-            self.cfg, ApplicationStage.RECRUITER_SCREENING, ApplicationStage.REJECTED
+            self.cfg, ApplicationStage.TECH, ApplicationStage.HIRED, JobKind.ACTIVITY
         )
-        validate_transition(self.cfg, ApplicationStage.TECH, ApplicationStage.REJECTED)
+
+    def test_activity_rejects_advance_to_offer(self):
+        with self.assertRaises(ValueError):
+            validate_transition(
+                self.cfg,
+                ApplicationStage.TECH,
+                ApplicationStage.OFFER,
+                JobKind.ACTIVITY,
+            )
+
+    def test_activity_rejects_any_move_out_of_offer(self):
+        for to in (ApplicationStage.HIRED, ApplicationStage.REJECTED):
+            with self.assertRaises(ValueError):
+                validate_transition(
+                    self.cfg, ApplicationStage.OFFER, to, JobKind.ACTIVITY
+                )
 
     def test_rejects_skip_ahead(self):
         with self.assertRaises(ValueError):
             validate_transition(
-                self.cfg, ApplicationStage.RECRUITER_SCREENING, ApplicationStage.HIRED
+                self.cfg,
+                ApplicationStage.RECRUITER_SCREENING,
+                ApplicationStage.HIRED,
+                JobKind.EMPLOYMENT,
             )
 
     def test_rejects_backward_move(self):
         with self.assertRaises(ValueError):
             validate_transition(
-                self.cfg, ApplicationStage.TECH, ApplicationStage.RECRUITER_SCREENING
+                self.cfg,
+                ApplicationStage.TECH,
+                ApplicationStage.RECRUITER_SCREENING,
+                JobKind.EMPLOYMENT,
             )
 
     def test_rejects_move_from_terminal_stage(self):
-        with self.assertRaises(ValueError):
-            validate_transition(
-                self.cfg, ApplicationStage.HIRED, ApplicationStage.REJECTED
-            )
+        for kind in (JobKind.EMPLOYMENT, JobKind.ACTIVITY):
+            with self.assertRaises(ValueError):
+                validate_transition(
+                    self.cfg, ApplicationStage.HIRED, ApplicationStage.REJECTED, kind
+                )
 
 
 class TestValidateSubStatus(unittest.TestCase):

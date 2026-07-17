@@ -10,13 +10,16 @@ import { ROUTE_PATHS } from "@/constants/RoutePaths";
 
 /**
  * Human-readable label for an `ApplicationStage` enum value, e.g.
- * "recruiter_screening" -> "Recruiter screening".
+ * "recruiter_screening" -> "Recruiter screening". Activity postings have no
+ * offer step and present `hired` as "Admitted" (display-only rename).
  *
  * @param {string} stage
+ * @param {string|null|undefined} jobKind JobKind value ("employment"|"activity").
  * @returns {string}
  */
-const formatStageLabel = (stage) => {
+const formatStageLabel = (stage, jobKind) => {
   if (!stage) return "";
+  if (jobKind === "activity" && stage === "hired") return "Admitted";
   const words = stage.split("_").join(" ");
   return words[0].toUpperCase() + words.slice(1);
 };
@@ -40,7 +43,7 @@ const ReadOnlySummary = ({ job, application, onReapply }) => {
       <div className="space-y-1">
         <h1 className="text-xl font-semibold text-slate-900">{job.title}</h1>
         <p className="text-sm text-slate-600">
-          Status: {formatStageLabel(application.stage)}
+          Status: {formatStageLabel(application.stage, job.kind)}
         </p>
       </div>
       <div className="space-y-1">
