@@ -467,6 +467,106 @@ describe("SignInMethodList", () => {
     });
   });
 
+  describe("Contact email Remove action", () => {
+    const backup = {
+      emailId: 3,
+      email: "backup@x.com",
+      otpConfirmed: false,
+      isPrimary: false,
+    };
+
+    it("offers Remove on an unverified contact-only row and calls onRemove", async () => {
+      const user = userEvent.setup();
+      const onRemove = vi.fn().mockResolvedValue();
+      render(
+        <SignInMethodList
+          emails={[backup]}
+          internalIdentities={[]}
+          externalIdentities={[makeIdentity()]}
+          isLoading={false}
+          onUnlink={vi.fn()}
+          onVerify={vi.fn()}
+          onRemove={onRemove}
+        />,
+      );
+
+      const rows = screen.getAllByRole("listitem");
+      await user.click(within(rows[1]).getByRole("button", { name: "Remove" }));
+      expect(onRemove).toHaveBeenCalledWith(backup);
+    });
+
+    it("does not offer Remove on a verified contact-only row", () => {
+      const verified = { ...backup, otpConfirmed: true };
+      render(
+        <SignInMethodList
+          emails={[verified]}
+          internalIdentities={[]}
+          externalIdentities={[makeIdentity()]}
+          isLoading={false}
+          onUnlink={vi.fn()}
+          onVerify={vi.fn()}
+          onRemove={vi.fn()}
+        />,
+      );
+
+      const rows = screen.getAllByRole("listitem");
+      expect(
+        within(rows[1]).queryByRole("button", { name: "Remove" }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("does not offer Remove when onRemove is not provided", () => {
+      render(
+        <SignInMethodList
+          emails={[backup]}
+          internalIdentities={[]}
+          externalIdentities={[]}
+          isLoading={false}
+          onUnlink={vi.fn()}
+          onVerify={vi.fn()}
+        />,
+      );
+
+      expect(
+        screen.queryByRole("button", { name: "Remove" }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("shows a busy label and disables actions while removing", async () => {
+      const user = userEvent.setup();
+      let resolve;
+      const onRemove = vi.fn(
+        () =>
+          new Promise((r) => {
+            resolve = r;
+          }),
+      );
+      render(
+        <SignInMethodList
+          emails={[backup]}
+          internalIdentities={[]}
+          externalIdentities={[]}
+          isLoading={false}
+          onUnlink={vi.fn()}
+          onVerify={vi.fn()}
+          onRemove={onRemove}
+        />,
+      );
+
+      await user.click(screen.getByRole("button", { name: "Remove" }));
+
+      expect(screen.getByText("Removing…")).toBeInTheDocument();
+      screen
+        .getAllByRole("button")
+        .forEach((button) => expect(button).toBeDisabled());
+
+      resolve();
+      await waitFor(() =>
+        expect(screen.queryByText("Removing…")).not.toBeInTheDocument(),
+      );
+    });
+  });
+
   describe("Current session identity", () => {
     it("does not show a 'Primary sign-in' badge on the current-session identity", () => {
       const externalIdentities = [

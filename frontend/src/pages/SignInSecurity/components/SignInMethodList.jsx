@@ -88,30 +88,46 @@ const IdentityRow = ({
  * One contact-only email row: an address with no sign-in identity behind it
  * (an unverified backup, or a verified address whose email method was
  * removed). Shows the primary/unverified state; an unverified address offers
- * a "Verify" action, which is what unlocks it as a sign-in method.
+ * a "Verify" action, which is what unlocks it as a sign-in method, and a
+ * "Remove" action — adding it needed no OTP, so removing it needs none either.
  *
  * @param {Object} props
  * @param {object} props.emailRow
  * @param {{kind: string, id: (number|string)}|null} props.busy - in-flight action.
  * @param {(emailRow: object) => void} [props.onVerify]
+ * @param {(emailRow: object) => void} [props.onRemove]
  */
-const ContactEmailRow = ({ emailRow, busy, onVerify }) => (
+const ContactEmailRow = ({ emailRow, busy, onVerify, onRemove }) => (
   <li className="flex items-center justify-between gap-2 py-3">
     <div className="flex items-center gap-2">
       <span className="font-medium">{emailRow.email}</span>
       {emailRow.isPrimary && <Badge variant="secondary">Primary contact</Badge>}
       {!emailRow.otpConfirmed && <Badge variant="outline">Unverified</Badge>}
     </div>
-    {!emailRow.otpConfirmed && !!onVerify && (
-      <Button
-        size="sm"
-        variant="ghost"
-        disabled={busy !== null}
-        onClick={() => onVerify(emailRow)}
-      >
-        Verify
-      </Button>
-    )}
+    <div className="flex items-center gap-1">
+      {!emailRow.otpConfirmed && !!onVerify && (
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={busy !== null}
+          onClick={() => onVerify(emailRow)}
+        >
+          Verify
+        </Button>
+      )}
+      {!emailRow.otpConfirmed && !!onRemove && (
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={busy !== null}
+          onClick={() => onRemove(emailRow)}
+        >
+          {busy?.kind === "removeEmail" && busy.id === emailRow.emailId
+            ? "Removing…"
+            : "Remove"}
+        </Button>
+      )}
+    </div>
   </li>
 );
 
@@ -141,6 +157,7 @@ const ContactEmailRow = ({ emailRow, busy, onVerify }) => (
  * @param {(identity: object) => Promise<void>} props.onUnlink
  * @param {(emailRow: object) => Promise<void>} [props.onSetPrimary] - start promoting a contact email.
  * @param {(emailRow: object) => void} [props.onVerify] - start verifying a contact-only address.
+ * @param {(emailRow: object) => Promise<void>} [props.onRemove] - remove an unverified contact-only address.
  */
 const SignInMethodList = ({
   emails = [],
@@ -150,6 +167,7 @@ const SignInMethodList = ({
   onUnlink,
   onSetPrimary,
   onVerify,
+  onRemove,
 }) => {
   const [busy, setBusy] = useState(null);
 
@@ -189,6 +207,15 @@ const SignInMethodList = ({
     setBusy({ kind: "primary", id: emailRow.emailId });
     try {
       await onSetPrimary(emailRow);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const handleRemove = async (emailRow) => {
+    setBusy({ kind: "removeEmail", id: emailRow.emailId });
+    try {
+      await onRemove(emailRow);
     } finally {
       setBusy(null);
     }
@@ -240,6 +267,7 @@ const SignInMethodList = ({
           emailRow={emailRow}
           busy={busy}
           onVerify={onVerify}
+          onRemove={onRemove ? handleRemove : undefined}
         />
       ))}
     </ul>

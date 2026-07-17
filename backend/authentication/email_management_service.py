@@ -115,6 +115,42 @@ class EmailManagementService:
         await session.commit()
         return {"ok": True, "email": normalized}
 
+    async def remove_email(self, session, current_user_id: int, email_id: int) -> dict:
+        """
+        Remove an unverified backup contact address from the caller's account.
+
+        Only a never-confirmed, non-primary row may be removed here: adding it
+        required no OTP round-trip, so removing it requires none either. A
+        verified address is (or can become) a sign-in method and leaves the
+        account only through the step-up unlink flow, and the primary contact
+        cannot be removed at all.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            current_user_id (int): user_id of the authenticated caller.
+            email_id (int): Primary key of the email row to remove.
+
+        Returns:
+            dict: ``{"ok": True}`` once the removal is committed.
+
+        Raises:
+            ValueError: The row is missing or owned by another user.
+            ConflictError: The row is the primary contact or already verified.
+        """
+        row = await self._user_emails.get_by_id(session, email_id)
+        if row is None or row.user_id != current_user_id:
+            raise ValueError("Email not found")
+        if row.is_primary:
+            raise ConflictError("The primary contact email cannot be removed")
+        if row.otp_confirmed:
+            raise ConflictError(
+                "A verified email is removed by removing its sign-in method"
+            )
+
+        await self._user_emails.delete(session, email_id)
+        await session.commit()
+        return {"ok": True}
+
     async def initiate(
         self,
         session,

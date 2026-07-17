@@ -10,6 +10,7 @@ import {
   confirmSetPrimary,
   initiateUnlink,
   confirmUnlink,
+  removeContactEmail,
 } from "@/api/emailApi";
 
 import "@testing-library/jest-dom/vitest";
@@ -23,6 +24,7 @@ vi.mock("@/api/emailApi", () => ({
   confirmSetPrimary: vi.fn(),
   initiateUnlink: vi.fn(),
   confirmUnlink: vi.fn(),
+  removeContactEmail: vi.fn(),
 }));
 
 vi.spyOn(toast, "success").mockImplementation(() => {});
@@ -40,6 +42,7 @@ vi.mock("@/pages/SignInSecurity/components/SignInMethodList", () => ({
     onUnlink,
     onSetPrimary,
     onVerify,
+    onRemove,
   }) => (
     <div data-testid="sign-in-method-list">
       SignInMethodList:{isLoading ? "loading" : "ready"}:
@@ -67,6 +70,13 @@ vi.mock("@/pages/SignInSecurity/components/SignInMethodList", () => ({
         }
       >
         trigger-verify
+      </button>
+      <button
+        onClick={() =>
+          onRemove({ emailId: 3, email: "backup@x.com", otpConfirmed: false })
+        }
+      >
+        trigger-remove
       </button>
     </div>
   ),
@@ -202,6 +212,33 @@ describe("SignInSecurity page", () => {
       );
       expect(refresh).toHaveBeenCalledTimes(1);
       expect(screen.queryByTestId("verify-dialog")).not.toBeInTheDocument();
+    });
+  });
+
+  describe("Remove email", () => {
+    it("removes the address, toasts success and refreshes", async () => {
+      removeContactEmail.mockResolvedValue({ data: { ok: true } });
+      const user = userEvent.setup();
+      render(<SignInSecurity />);
+
+      await user.click(screen.getByRole("button", { name: "trigger-remove" }));
+
+      await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
+      expect(removeContactEmail).toHaveBeenCalledWith(3);
+      expect(toast.success).toHaveBeenCalledWith("Email removed.");
+    });
+
+    it("toasts the backend message when removal fails", async () => {
+      removeContactEmail.mockRejectedValue({
+        response: { data: { message: "Nope" } },
+      });
+      const user = userEvent.setup();
+      render(<SignInSecurity />);
+
+      await user.click(screen.getByRole("button", { name: "trigger-remove" }));
+
+      await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Nope"));
+      expect(refresh).not.toHaveBeenCalled();
     });
   });
 
