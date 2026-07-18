@@ -258,16 +258,37 @@ class JobService:
     async def _revalidate_job_config(
         self, session: AsyncSession, job: "JobEntity"
     ) -> None:
-        """Re-check the stored pipeline's assignees/owners before submission.
+        """Re-check the pipeline that would go live before submission.
+
+        Validates the effective config — the staged ``pending_payload``'s
+        ``pipelineConfig`` when an edit is staged, else the live
+        ``pipeline_config`` — so a REVISION is judged on what approval would
+        actually publish. Requires at least one pipeline stage (a human
+        fallback so no submission can land outside every board lane) and at
+        least one owner (someone the applications are visible to), then
+        re-checks that stored assignees/owners still hold their permissions.
 
         Args:
             session (AsyncSession): Active database async session.
             job (JobEntity): The posting about to be submitted.
 
         Raises:
-            ValueError: If a stored assignee/owner no longer holds its permission.
+            ValueError: If the effective config has no stage or no owner, or
+                a stored assignee/owner no longer holds its permission.
         """
-        cfg = job.pipeline_config or {}
+        cfg = (
+            job.pending_payload.get("pipelineConfig")
+            if job.pending_payload is not None
+            else job.pipeline_config
+        ) or {}
+        if not cfg.get("stages"):
+            raise ValueError(
+                "the posting needs at least one pipeline stage before submission"
+            )
+        if not normalized_owner_ids(cfg):
+            raise ValueError(
+                "the posting needs at least one manager (Managed by) before submission"
+            )
         assignee_ids = {
             s.get("defaultAssigneeId")
             for s in cfg.get("stages", [])

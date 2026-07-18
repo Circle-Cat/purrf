@@ -423,7 +423,11 @@ describe("PostingDetailPage", () => {
         title: "Backend Engineer",
         description: "desc",
         status: "draft",
-        pipelineConfig: null,
+        // The submit gate requires >=1 stage and >=1 owner.
+        pipelineConfig: {
+          stages: [{ stage: "recruiter_screening", rounds: 1 }],
+          ownerIds: [5],
+        },
         screenRules: null,
         profileConfig: null,
         lastRejectComment: null,
@@ -454,6 +458,146 @@ describe("PostingDetailPage", () => {
         ROUTE_PATHS.RECRUITING_POSTINGS,
       ),
     );
+  });
+
+  it("disables Submit for review with a hint when the draft has no pipeline stage", async () => {
+    // Default fixture ships pipelineConfig: null — no stage configured.
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Submit for review" }),
+      ).toBeDisabled(),
+    );
+    expect(
+      screen.getByText(
+        "Add at least one pipeline stage before submitting for review.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("disables Submit for review with a hint when the draft has no manager", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        status: "draft",
+        pipelineConfig: {
+          stages: [{ stage: "recruiter_screening", rounds: 1 }],
+          ownerIds: [],
+        },
+        screenRules: null,
+        profileConfig: null,
+        lastRejectComment: null,
+        reviewerId: null,
+      },
+    });
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Submit for review" }),
+      ).toBeDisabled(),
+    );
+    expect(
+      screen.getByText(
+        "Add at least one manager (Managed by) before submitting for review.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("enables Submit for review when the draft has a stage and a manager", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        status: "draft",
+        pipelineConfig: {
+          stages: [{ stage: "recruiter_screening", rounds: 1 }],
+          ownerIds: [5],
+        },
+        screenRules: null,
+        profileConfig: null,
+        lastRejectComment: null,
+        reviewerId: null,
+      },
+    });
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Submit for review" }),
+      ).toBeEnabled(),
+    );
+  });
+
+  it("accepts the legacy single-ownerId shape for the submit gate", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        status: "draft",
+        pipelineConfig: {
+          stages: [{ stage: "recruiter_screening", rounds: 1 }],
+          ownerId: 7,
+        },
+        screenRules: null,
+        profileConfig: null,
+        lastRejectComment: null,
+        reviewerId: null,
+      },
+    });
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Submit for review" }),
+      ).toBeEnabled(),
+    );
+  });
+
+  it("gates the staged-edit Submit for review on the staged pipeline, not the live one", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        kind: "employment",
+        status: "published",
+        pipelineConfig: {
+          stages: [{ stage: "recruiter_screening", rounds: 1 }],
+          ownerIds: [5],
+        },
+        screenRules: null,
+        profileConfig: null,
+        lastRejectComment: null,
+        reviewerId: null,
+        pendingPayload: {
+          title: "Senior Backend Engineer",
+          pipelineConfig: { stages: [], ownerIds: [5] },
+        },
+      },
+    });
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Submit for review" }),
+      ).toBeDisabled(),
+    );
+    expect(
+      screen.getByText(
+        "Add at least one pipeline stage before submitting for review.",
+      ),
+    ).toBeInTheDocument();
   });
 
   it("shows Submit for review and Discard draft (not Request close) for a published posting with a staged edit", async () => {

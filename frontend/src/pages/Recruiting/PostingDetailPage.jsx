@@ -179,6 +179,22 @@ const PostingDetailPage = () => {
   const proposedJob = job.pendingPayload
     ? { ...job, ...job.pendingPayload }
     : null;
+  // Mirrors JobService._revalidate_job_config's publish gate: whatever
+  // approval would put live (the staged pipeline when an edit is staged,
+  // else the live one) needs >=1 stage and >=1 Managed by owner, or every
+  // application would land outside all board lanes with no one to see it.
+  const effectivePipeline =
+    (job.pendingPayload
+      ? job.pendingPayload.pipelineConfig
+      : job.pipelineConfig) ?? {};
+  const effectiveOwnerIds =
+    effectivePipeline.ownerIds ??
+    (effectivePipeline.ownerId != null ? [effectivePipeline.ownerId] : []);
+  const submitBlocker = !effectivePipeline.stages?.length
+    ? "Add at least one pipeline stage before submitting for review."
+    : effectiveOwnerIds.length === 0
+      ? "Add at least one manager (Managed by) before submitting for review."
+      : null;
 
   const formatActivity = (entry) => {
     const { eventType, actorName, details = {} } = entry;
@@ -363,7 +379,11 @@ const PostingDetailPage = () => {
           )}
           {isDraft && (
             <>
-              <Button size="sm" onClick={() => openReview("submit")}>
+              <Button
+                size="sm"
+                disabled={submitBlocker != null}
+                onClick={() => openReview("submit")}
+              >
                 Submit for review
               </Button>
               <Button
@@ -386,7 +406,11 @@ const PostingDetailPage = () => {
           )}
           {isPublished && job.pendingPayload != null && (
             <>
-              <Button size="sm" onClick={() => openReview("submit")}>
+              <Button
+                size="sm"
+                disabled={submitBlocker != null}
+                onClick={() => openReview("submit")}
+              >
                 Submit for review
               </Button>
               <Button
@@ -425,6 +449,10 @@ const PostingDetailPage = () => {
               Delete
             </Button>
           )}
+          {submitBlocker != null &&
+            (isDraft || (isPublished && job.pendingPayload != null)) && (
+              <span className="text-xs text-amber-600">{submitBlocker}</span>
+            )}
         </div>
       )}
 
