@@ -37,9 +37,9 @@ py_library(
         "//backend/common:environment_constants",
         "//backend/common:exceptions",
         "//backend/common:identity_type",
-        "//backend/common:permissions",
         "//backend/dto",
         "//backend/entity:entities",
+        "//backend/user_identity:internal_lifecycle",
         "@pypi//pyjwt",
     ],
 )

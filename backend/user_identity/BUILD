@@ -11,3 +11,11 @@ py_library(
         "//backend/entity:entities",
     ],
 )
+
+py_library(
+    name = "internal_lifecycle",
+    srcs = ["internal_lifecycle.py"],
+    deps = [
+        "//backend/common:permissions",
+    ],
+)
