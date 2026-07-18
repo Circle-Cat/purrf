@@ -32,6 +32,8 @@ class UserEmailsEntity(Base):
     )
 
     __table_args__ = (
+        # Kept although implied by uq_user_emails_email: its (user_id, email)
+        # btree doubles as the index for user_id lookups.
         UniqueConstraint(
             "user_id",
             "email",
@@ -47,5 +49,10 @@ class UserEmailsEntity(Base):
             "NOT is_primary OR otp_confirmed",
             name="user_emails_primary_must_be_confirmed",
         ),
-        Index("user_emails_email_idx", "email"),
+        # An address belongs to at most one account, confirmed or not. This
+        # carries the global one-email-one-account invariant (and the
+        # concurrent first-login race guard) that historically lived on
+        # users.primary_email's unique constraint, so that column can be
+        # retired.
+        UniqueConstraint("email", name="uq_user_emails_email"),
     )

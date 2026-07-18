@@ -183,6 +183,49 @@ class TestUserEmailsRepository(BaseRepositoryTestLib):
             await self.repo.exists_claim_by_email(self.session, "nobody@example.com")
         )
 
+    async def test_exists_on_other_user_counts_unconfirmed_claim(self):
+        # user_emails.email is globally unique, so even an unverified claim on
+        # another account makes the address unavailable.
+        other = _make_user()
+        await self.insert_entities([other])
+        await self.insert_entities([
+            UserEmailsEntity(
+                user_id=other.user_id,
+                email="taken@example.com",
+                otp_confirmed=False,
+                is_primary=False,
+            )
+        ])
+
+        self.assertTrue(
+            await self.repo.exists_on_other_user(
+                self.session, "taken@example.com", self.user.user_id
+            )
+        )
+
+    async def test_exists_on_other_user_ignores_own_claim(self):
+        await self.insert_entities([
+            UserEmailsEntity(
+                user_id=self.user.user_id,
+                email="mine@example.com",
+                otp_confirmed=True,
+                is_primary=True,
+            )
+        ])
+
+        self.assertFalse(
+            await self.repo.exists_on_other_user(
+                self.session, "mine@example.com", self.user.user_id
+            )
+        )
+
+    async def test_exists_on_other_user_unknown_returns_false(self):
+        self.assertFalse(
+            await self.repo.exists_on_other_user(
+                self.session, "nobody@example.com", self.user.user_id
+            )
+        )
+
     async def test_get_by_id_missing_returns_none(self):
         fetched = await self.repo.get_by_id(self.session, 99999999)
         self.assertIsNone(fetched)

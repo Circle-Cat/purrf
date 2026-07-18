@@ -26,8 +26,8 @@ class UserIdentityService:
       1. sub lookup on user_identities
       2. email fallback: find a migration-backfilled identity by email_claim
          and overwrite its mocked sub in place with the real one
-      3. first-login: insert new users + user_identities (+ user_emails if
-         sub starts with 'email|')
+      3. first-login: insert new users + user_identities + a user_emails
+         claim row (confirmed and primary only for 'email|' subs)
     """
 
     def __init__(
@@ -290,11 +290,15 @@ class UserIdentityService:
     ) -> UsersEntity:
         """
         First-time-login path. Creates the users row, the user_identities row,
-        and (for 'email|...' subs only) a primary user_emails row with
-        otp_confirmed taken from the token's email_verified claim.
+        and a user_emails row claiming the login's address, so ownership of the
+        address is discoverable from user_emails alone (email_has_owner must
+        not depend on the legacy users.primary_email column).
 
-        Google first-login leaves user_emails empty; the user is then sent
-        through the hard-wall /verify-required flow (PR5).
+        Only an 'email|...' sub lands the claim confirmed (and therefore
+        primary): the passwordless login is itself the mailbox round-trip. Any
+        other sub seeds it unconfirmed and non-primary; the user is then sent
+        through the hard-wall /verify-required flow (PR5), which confirms the
+        row and promotes it to primary.
 
         Legacy users.primary_email is still populated for dual-write
         compatibility; it is removed in a later cleanup. users.subject_identifier
@@ -332,24 +336,26 @@ class UserIdentityService:
             session=session, entity=new_identity
         )
 
-        if sub.startswith("email|"):
-            # 'email|' is the Auth0 passwordless-email connection: logging in
-            # already required entering a one-time code Auth0 mailed to this
-            # address, so the mailbox round-trip is done at login. Trusting
-            # email_verified here is therefore consistent with the "only an
-            # OTP round-trip confirms a contact" doctrine — the passwordless
-            # login *is* that round-trip — and lets us seed a confirmed primary
-            # without a redundant /verify. (is_primary=True also requires
-            # otp_confirmed=True per the user_emails CHECK constraint.)
-            new_email_row = UserEmailsEntity(
-                user_id=created_user.user_id,
-                email=email,
-                otp_confirmed=user_info.email_verified,
-                is_primary=True,
-            )
-            await self.user_emails_repository.upsert_email(
-                session=session, entity=new_email_row
-            )
+        # 'email|' is the Auth0 passwordless-email connection: logging in
+        # already required entering a one-time code Auth0 mailed to this
+        # address, so the mailbox round-trip is done at login. Trusting
+        # email_verified here is therefore consistent with the "only an
+        # OTP round-trip confirms a contact" doctrine — the passwordless
+        # login *is* that round-trip — and lets us seed a confirmed primary
+        # without a redundant /verify. Any other sub seeds an unconfirmed,
+        # non-primary claim (is_primary=True requires otp_confirmed=True per
+        # the user_emails CHECK constraint); the hard-wall verify flow
+        # confirms and promotes it later.
+        confirmed = sub.startswith("email|") and user_info.email_verified
+        new_email_row = UserEmailsEntity(
+            user_id=created_user.user_id,
+            email=email,
+            otp_confirmed=confirmed,
+            is_primary=confirmed,
+        )
+        await self.user_emails_repository.upsert_email(
+            session=session, entity=new_email_row
+        )
 
         # Lifecycle hook: a new internal employee gets the internal
         # permission bundle auto-injected.

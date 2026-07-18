@@ -120,8 +120,7 @@ class UsersRepository:
         Write-through used by EmailManagementService to keep the legacy column in
         sync with the current primary user_emails row (see the TODO on
         ``UsersEntity.primary_email``). Flushes but does not commit; the caller
-        owns the transaction boundary. The caller is responsible for not passing
-        an email already owned by another user (``uq_users_primary_email``).
+        owns the transaction boundary.
 
         Args:
             session (AsyncSession): The active async database session.

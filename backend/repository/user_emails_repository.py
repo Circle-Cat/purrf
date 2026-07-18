@@ -85,18 +85,28 @@ class UserEmailsRepository:
             emails_by_user_id.setdefault(user_id, []).append(email)
         return emails_by_user_id
 
-    async def exists_confirmed_on_other_user(
+    async def exists_on_other_user(
         self, session: AsyncSession, email: str, user_id: int
     ) -> bool:
         """
-        Whether `email` is already a confirmed contact on a *different* account —
-        the guard that stops one user from claiming another's verified address.
+        Whether `email` is claimed by a *different* account, confirmed or not —
+        the guard that stops one user from claiming an address another account
+        already holds. Addresses are globally exclusive (unique index
+        ``uq_user_emails_email``), so even an unverified claim makes the
+        address unavailable to everyone else.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            email (str): Normalized (lowercased) address to check.
+            user_id (int): The caller's user_id, excluded from the match.
+
+        Returns:
+            bool: True when another account has any row for the address.
         """
         result = await session.execute(
             select(UserEmailsEntity.email_id)
             .where(
                 UserEmailsEntity.email == email,
-                UserEmailsEntity.otp_confirmed.is_(True),
                 UserEmailsEntity.user_id != user_id,
             )
             .limit(1)
