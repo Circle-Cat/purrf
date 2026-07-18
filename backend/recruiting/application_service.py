@@ -45,7 +45,7 @@ class ApplicationService:
             job_repository (JobRepository): Posting data access.
             users_repository (UsersRepository): Reads is_blocked.
             user_emails_repository (UserEmailsRepository): The applicant's
-                contact address for screen-rule email matching.
+                confirmed email claims for screen-rule email matching.
             recruiting_mapper (RecruitingMapper): Entity→DTO conversion.
             application_assignment_repository (ApplicationAssignmentRepository):
                 Used to materialize a stage's configured default assignee
@@ -252,19 +252,26 @@ class ApplicationService:
             session, current_user.user_id
         )
         blocked = bool(user is not None and getattr(user, "is_blocked", False))
-        applicant_email = (
-            await self.user_emails_repository.get_contact_email(
+        applicant_email_rows = (
+            await self.user_emails_repository.list_by_user_id(
                 session, current_user.user_id
             )
             if not blocked
-            else None
+            else []
         )
+        # Screen against every confirmed claim, not just the contact
+        # address — a corp email held as a non-primary claim must still
+        # satisfy (or escape) email_domain rules. Unconfirmed claims are
+        # excluded so an unverified address can't game the screening.
+        applicant_emails = [
+            row.email for row in applicant_email_rows if row.otp_confirmed
+        ]
         screen_result = (
             {"action": None, "rule_id": None}
             if blocked
             else screen_rules.evaluate(
                 job.screen_rules,
-                applicant_email or "",
+                applicant_emails,
                 dto.answers,
             )
         )

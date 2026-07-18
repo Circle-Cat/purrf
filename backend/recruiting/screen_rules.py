@@ -21,25 +21,41 @@ def _normalized_values(value: str | list[str]) -> list[str]:
     return [v.lower() for v in values]
 
 
-def _email_domain_matches(condition: dict, email: str) -> bool:
-    """True when ``email``'s domain satisfies an email_domain condition.
+def _email_domains(emails: list[str]) -> set[str]:
+    """The distinct lowercased domains of the candidate's email addresses.
+
+    Args:
+        emails (list[str]): The candidate's confirmed email addresses.
+
+    Returns:
+        set[str]: Lowercased domains; empty when there are no addresses.
+    """
+    return {email.rsplit("@", 1)[-1].lower() for email in emails if email}
+
+
+def _email_domain_matches(condition: dict, domains: set[str]) -> bool:
+    """True when the candidate's email domains satisfy an email_domain
+    condition.
+
+    ``equals``/``in`` match when any of the candidate's domains is listed;
+    ``not_in`` matches only when none of them is — holding a single address
+    in a listed domain is enough to escape a ``not_in`` rule.
 
     Args:
         condition (dict): The rule's ``condition`` dict (camelCase keys).
-        email (str): The candidate's primary email.
+        domains (set[str]): The candidate's lowercased email domains.
 
     Returns:
         bool: Whether the condition matches.
     """
-    domain = email.rsplit("@", 1)[-1].lower() if email else ""
     values = _normalized_values(condition.get("value", ""))
     operator = condition.get("operator")
     if operator == "equals":
-        return domain == values[0]
+        return values[0] in domains
     if operator == "in":
-        return domain in values
+        return bool(domains.intersection(values))
     if operator == "not_in":
-        return domain not in values
+        return not domains.intersection(values)
     return False
 
 
@@ -72,12 +88,12 @@ def _answer_matches(condition: dict, answers: dict) -> bool:
     return False
 
 
-def _rule_matches(rule: dict, email: str, answers: dict) -> bool:
+def _rule_matches(rule: dict, domains: set[str], answers: dict) -> bool:
     """True when a single rule's condition is satisfied.
 
     Args:
         rule (dict): One entry of ``screen_rules["rules"]``.
-        email (str): The candidate's primary email.
+        domains (set[str]): The candidate's lowercased email domains.
         answers (dict): The submission's question_id -> answer value map.
 
     Returns:
@@ -86,13 +102,13 @@ def _rule_matches(rule: dict, email: str, answers: dict) -> bool:
     condition = rule.get("condition") or {}
     source = condition.get("source")
     if source == "email_domain":
-        return _email_domain_matches(condition, email)
+        return _email_domain_matches(condition, domains)
     if source == "answer":
         return _answer_matches(condition, answers)
     return False
 
 
-def evaluate(screen_rules: dict | None, email: str, answers: dict) -> dict:
+def evaluate(screen_rules: dict | None, emails: list[str], answers: dict) -> dict:
     """Evaluate a job's screen_rules against one submission.
 
     Args:
@@ -100,7 +116,9 @@ def evaluate(screen_rules: dict | None, email: str, answers: dict) -> dict:
             value — ``{"rules": [{"id", "condition", "action"}, ...]}``,
             camelCase keys (per ``ScreenRulesDto``'s serialization) — or
             None/empty when unconfigured.
-        email (str): The candidate's primary email.
+        emails (list[str]): All of the candidate's confirmed email
+            addresses — email_domain rules match against any of them, not
+            just the contact address.
         answers (dict): The submission's question_id -> answer value map.
 
     Returns:
@@ -113,13 +131,14 @@ def evaluate(screen_rules: dict | None, email: str, answers: dict) -> dict:
         empty/missing.
     """
     rules = (screen_rules or {}).get("rules") or []
+    domains = _email_domains(emails)
     matched = {}
     for rule in rules:
         action = rule.get("action")
         if (
             action in _ACTION_PRIORITY
             and action not in matched
-            and _rule_matches(rule, email, answers)
+            and _rule_matches(rule, domains, answers)
         ):
             matched[action] = rule.get("id")
     for action in _ACTION_PRIORITY:

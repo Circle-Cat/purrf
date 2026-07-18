@@ -12,32 +12,32 @@ def _rule(id, source, operator, value, action, question_id=None):
 
 class TestScreenRulesEvaluate(unittest.TestCase):
     def test_none_screen_rules_no_match(self):
-        result = screen_rules.evaluate(None, "a@google.com", {})
+        result = screen_rules.evaluate(None, ["a@google.com"], {})
         self.assertEqual(result, {"action": None, "rule_id": None})
 
     def test_empty_rules_list_no_match(self):
-        result = screen_rules.evaluate({"rules": []}, "a@google.com", {})
+        result = screen_rules.evaluate({"rules": []}, ["a@google.com"], {})
         self.assertEqual(result, {"action": None, "rule_id": None})
 
     def test_email_domain_equals_matches(self):
         rules = {
             "rules": [_rule("r1", "email_domain", "equals", "google.com", "reject")]
         }
-        result = screen_rules.evaluate(rules, "a@google.com", {})
+        result = screen_rules.evaluate(rules, ["a@google.com"], {})
         self.assertEqual(result, {"action": "reject", "rule_id": "r1"})
 
     def test_email_domain_equals_is_case_insensitive(self):
         rules = {
             "rules": [_rule("r1", "email_domain", "equals", "Google.com", "reject")]
         }
-        result = screen_rules.evaluate(rules, "a@GOOGLE.COM", {})
+        result = screen_rules.evaluate(rules, ["a@GOOGLE.COM"], {})
         self.assertEqual(result, {"action": "reject", "rule_id": "r1"})
 
     def test_email_domain_equals_no_match(self):
         rules = {
             "rules": [_rule("r1", "email_domain", "equals", "google.com", "reject")]
         }
-        result = screen_rules.evaluate(rules, "a@yahoo.com", {})
+        result = screen_rules.evaluate(rules, ["a@yahoo.com"], {})
         self.assertEqual(result, {"action": None, "rule_id": None})
 
     def test_email_domain_in_matches(self):
@@ -52,28 +52,76 @@ class TestScreenRulesEvaluate(unittest.TestCase):
                 )
             ]
         }
-        result = screen_rules.evaluate(rules, "a@circlecat.org", {})
+        result = screen_rules.evaluate(rules, ["a@circlecat.org"], {})
         self.assertEqual(result, {"action": "qualify", "rule_id": "r1"})
 
     def test_email_domain_not_in_matches_excluded_domain(self):
         rules = {
             "rules": [_rule("r1", "email_domain", "not_in", ["google.com"], "reject")]
         }
-        result = screen_rules.evaluate(rules, "a@yahoo.com", {})
+        result = screen_rules.evaluate(rules, ["a@yahoo.com"], {})
         self.assertEqual(result, {"action": "reject", "rule_id": "r1"})
 
     def test_email_domain_not_in_no_match_for_listed_domain(self):
         rules = {
             "rules": [_rule("r1", "email_domain", "not_in", ["google.com"], "reject")]
         }
-        result = screen_rules.evaluate(rules, "a@google.com", {})
+        result = screen_rules.evaluate(rules, ["a@google.com"], {})
         self.assertEqual(result, {"action": None, "rule_id": None})
+
+    def test_email_domain_equals_matches_any_of_multiple_emails(self):
+        rules = {
+            "rules": [
+                _rule("r1", "email_domain", "equals", "circlecat.org", "auto_hire")
+            ]
+        }
+        result = screen_rules.evaluate(rules, ["a@yahoo.com", "a@circlecat.org"], {})
+        self.assertEqual(result, {"action": "auto_hire", "rule_id": "r1"})
+
+    def test_email_domain_in_matches_any_of_multiple_emails(self):
+        rules = {
+            "rules": [_rule("r1", "email_domain", "in", ["circlecat.org"], "qualify")]
+        }
+        result = screen_rules.evaluate(rules, ["a@yahoo.com", "a@circlecat.org"], {})
+        self.assertEqual(result, {"action": "qualify", "rule_id": "r1"})
+
+    def test_email_domain_not_in_no_match_when_any_email_holds_listed_domain(self):
+        """A candidate holding one address in the listed domains escapes a
+        not_in rule even when their other addresses are outside it."""
+        rules = {
+            "rules": [
+                _rule("r1", "email_domain", "not_in", ["circlecat.org"], "reject")
+            ]
+        }
+        result = screen_rules.evaluate(rules, ["a@yahoo.com", "a@circlecat.org"], {})
+        self.assertEqual(result, {"action": None, "rule_id": None})
+
+    def test_email_domain_no_emails_never_matches_equals_or_in(self):
+        rules = {
+            "rules": [
+                _rule("r1", "email_domain", "equals", "circlecat.org", "auto_hire"),
+                _rule("r2", "email_domain", "in", ["circlecat.org"], "qualify"),
+            ]
+        }
+        result = screen_rules.evaluate(rules, [], {})
+        self.assertEqual(result, {"action": None, "rule_id": None})
+
+    def test_email_domain_no_emails_matches_not_in(self):
+        """A candidate with no confirmed addresses holds nothing in the
+        listed domains, so a not_in rule matches."""
+        rules = {
+            "rules": [
+                _rule("r1", "email_domain", "not_in", ["circlecat.org"], "reject")
+            ]
+        }
+        result = screen_rules.evaluate(rules, [], {})
+        self.assertEqual(result, {"action": "reject", "rule_id": "r1"})
 
     def test_answer_equals_matches(self):
         rules = {
             "rules": [_rule("r1", "answer", "equals", "no", "reject", question_id="q1")]
         }
-        result = screen_rules.evaluate(rules, "a@b.com", {"q1": "no"})
+        result = screen_rules.evaluate(rules, ["a@b.com"], {"q1": "no"})
         self.assertEqual(result, {"action": "reject", "rule_id": "r1"})
 
     def test_answer_in_matches(self):
@@ -82,7 +130,7 @@ class TestScreenRulesEvaluate(unittest.TestCase):
                 _rule("r1", "answer", "in", ["no", "maybe"], "reject", question_id="q1")
             ]
         }
-        result = screen_rules.evaluate(rules, "a@b.com", {"q1": "maybe"})
+        result = screen_rules.evaluate(rules, ["a@b.com"], {"q1": "maybe"})
         self.assertEqual(result, {"action": "reject", "rule_id": "r1"})
 
     def test_answer_not_in_matches(self):
@@ -91,14 +139,14 @@ class TestScreenRulesEvaluate(unittest.TestCase):
                 _rule("r1", "answer", "not_in", ["yes"], "reject", question_id="q1")
             ]
         }
-        result = screen_rules.evaluate(rules, "a@b.com", {"q1": "no"})
+        result = screen_rules.evaluate(rules, ["a@b.com"], {"q1": "no"})
         self.assertEqual(result, {"action": "reject", "rule_id": "r1"})
 
     def test_unanswered_question_never_matches(self):
         rules = {
             "rules": [_rule("r1", "answer", "equals", "no", "reject", question_id="q1")]
         }
-        result = screen_rules.evaluate(rules, "a@b.com", {})
+        result = screen_rules.evaluate(rules, ["a@b.com"], {})
         self.assertEqual(result, {"action": None, "rule_id": None})
 
     def test_reject_wins_over_qualify_regardless_of_order(self):
@@ -108,7 +156,7 @@ class TestScreenRulesEvaluate(unittest.TestCase):
                 _rule("r2", "answer", "equals", "no", "reject", question_id="q1"),
             ]
         }
-        result = screen_rules.evaluate(rules, "a@google.com", {"q1": "no"})
+        result = screen_rules.evaluate(rules, ["a@google.com"], {"q1": "no"})
         self.assertEqual(result, {"action": "reject", "rule_id": "r2"})
 
     def test_auto_hire_wins_over_qualify_when_no_reject(self):
@@ -118,7 +166,7 @@ class TestScreenRulesEvaluate(unittest.TestCase):
                 _rule("r2", "answer", "equals", "no", "auto_hire", question_id="q1"),
             ]
         }
-        result = screen_rules.evaluate(rules, "a@google.com", {"q1": "no"})
+        result = screen_rules.evaluate(rules, ["a@google.com"], {"q1": "no"})
         self.assertEqual(result, {"action": "auto_hire", "rule_id": "r2"})
 
     def test_first_match_wins_within_same_action_type(self):
@@ -128,7 +176,7 @@ class TestScreenRulesEvaluate(unittest.TestCase):
                 _rule("r2", "email_domain", "in", ["google.com"], "reject"),
             ]
         }
-        result = screen_rules.evaluate(rules, "a@google.com", {})
+        result = screen_rules.evaluate(rules, ["a@google.com"], {})
         self.assertEqual(result, {"action": "reject", "rule_id": "r1"})
 
 
