@@ -17,8 +17,8 @@ class TestRecruitingNotificationController(unittest.IsolatedAsyncioTestCase):
         self.notification_service.list_for_user = AsyncMock(
             return_value={"notifications": [], "unreadCount": 0}
         )
-        self.notification_service.mark_read = AsyncMock(return_value={"unreadCount": 0})
-        self.notification_service.mark_all_read = AsyncMock(
+        self.notification_service.dismiss = AsyncMock(return_value={"unreadCount": 0})
+        self.notification_service.dismiss_all = AsyncMock(
             return_value={"unreadCount": 0}
         )
 
@@ -56,37 +56,45 @@ class TestRecruitingNotificationController(unittest.IsolatedAsyncioTestCase):
             self.session, 2, limit=5, offset=10
         )
 
-    async def test_mark_read_delegates(self):
+    async def test_dismiss_delegates(self):
         result = {"unreadCount": 2}
-        self.notification_service.mark_read = AsyncMock(return_value=result)
+        self.notification_service.dismiss = AsyncMock(return_value=result)
 
-        resp = await self.controller.mark_read(self.ctx, notification_id=7)
+        resp = await self.controller.dismiss(self.ctx, notification_id=7)
 
-        self.notification_service.mark_read.assert_awaited_once_with(self.session, 2, 7)
+        self.notification_service.dismiss.assert_awaited_once_with(self.session, 2, 7)
         self.assertEqual(resp["data"], result)
 
-    async def test_mark_all_read_delegates(self):
+    async def test_dismiss_all_delegates(self):
         result = {"unreadCount": 0}
-        self.notification_service.mark_all_read = AsyncMock(return_value=result)
+        self.notification_service.dismiss_all = AsyncMock(return_value=result)
 
-        resp = await self.controller.mark_all_read(self.ctx)
+        resp = await self.controller.dismiss_all(self.ctx)
 
-        self.notification_service.mark_all_read.assert_awaited_once_with(
-            self.session, 2
-        )
+        self.notification_service.dismiss_all.assert_awaited_once_with(self.session, 2)
         self.assertEqual(resp["data"], result)
 
     def test_routes_are_registered_and_plain_authenticated(self):
-        routes_by_path = {route.path: route for route in self.controller.router.routes}
+        routes = self.controller.router.routes
 
-        list_route = routes_by_path["/recruiting/notifications"]
+        list_route = next(
+            r
+            for r in routes
+            if r.path == "/recruiting/notifications" and "GET" in r.methods
+        )
         self.assertIn("GET", list_route.methods)
 
-        read_route = routes_by_path["/recruiting/notifications/{notification_id}/read"]
-        self.assertIn("POST", read_route.methods)
+        dismiss_route = next(
+            r for r in routes if r.path == "/recruiting/notifications/{notification_id}"
+        )
+        self.assertIn("DELETE", dismiss_route.methods)
 
-        read_all_route = routes_by_path["/recruiting/notifications/read-all"]
-        self.assertIn("POST", read_all_route.methods)
+        dismiss_all_route = next(
+            r
+            for r in routes
+            if r.path == "/recruiting/notifications" and "DELETE" in r.methods
+        )
+        self.assertIn("DELETE", dismiss_all_route.methods)
 
 
 if __name__ == "__main__":

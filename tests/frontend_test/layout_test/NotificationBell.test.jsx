@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { toast } from "sonner";
 import NotificationBell from "@/components/layout/NotificationBell";
 import * as api from "@/api/recruitingApi";
@@ -11,27 +10,12 @@ vi.spyOn(toast, "error").mockImplementation(() => {});
 
 beforeEach(() => vi.clearAllMocks());
 
-const renderBell = () => {
-  const router = createMemoryRouter(
-    [
-      { path: "/", element: <NotificationBell /> },
-      {
-        path: "/recruiting/applications/:applicationId",
-        element: <p>APPLICATION DETAIL</p>,
-      },
-      { path: "/recruiting/jobs/:jobId", element: <p>JOB DETAIL</p> },
-    ],
-    { initialEntries: ["/"] },
-  );
-  return render(<RouterProvider router={router} />);
-};
-
 describe("NotificationBell", () => {
   it("shows no unread badge when there are no notifications", async () => {
     api.listNotifications.mockResolvedValue({
       data: { notifications: [], unreadCount: 0 },
     });
-    renderBell();
+    render(<NotificationBell />);
 
     await waitFor(() => expect(api.listNotifications).toHaveBeenCalledTimes(1));
     expect(screen.queryByText("0")).not.toBeInTheDocument();
@@ -52,13 +36,12 @@ describe("NotificationBell", () => {
             jobTitle: "Backend Engineer",
             applicantName: "Ada Lovelace",
             actorName: "Grace Hopper",
-            read: false,
             createdAt: "2026-07-09T00:00:00Z",
           },
         ],
       },
     });
-    renderBell();
+    render(<NotificationBell />);
 
     await waitFor(() => expect(screen.getByText("1")).toBeInTheDocument());
     await user.click(screen.getByRole("button", { name: "Notifications" }));
@@ -70,7 +53,7 @@ describe("NotificationBell", () => {
     ).toBeInTheDocument();
   });
 
-  it("navigates to the application and marks read on click", async () => {
+  it("dismisses a single notification and updates the badge on the X", async () => {
     const user = userEvent.setup();
     api.listNotifications.mockResolvedValue({
       data: {
@@ -85,63 +68,27 @@ describe("NotificationBell", () => {
             jobTitle: "Backend Engineer",
             applicantName: "Ada Lovelace",
             actorName: "Grace Hopper",
-            read: false,
             createdAt: "2026-07-09T00:00:00Z",
           },
         ],
       },
     });
-    api.markNotificationRead.mockResolvedValue({ data: { unreadCount: 0 } });
-    renderBell();
+    api.dismissNotification.mockResolvedValue({ data: { unreadCount: 0 } });
+    render(<NotificationBell />);
 
     await waitFor(() => expect(screen.getByText("1")).toBeInTheDocument());
     await user.click(screen.getByRole("button", { name: "Notifications" }));
     await user.click(
-      screen.getByText(
-        "Grace Hopper mentioned you in a comment on Ada Lovelace — Backend Engineer",
-      ),
+      screen.getByRole("button", { name: "Dismiss notification" }),
     );
 
-    expect(screen.getByText("APPLICATION DETAIL")).toBeInTheDocument();
-    expect(api.markNotificationRead).toHaveBeenCalledWith(1);
-  });
-
-  it("navigates to the job detail page for a job-review notification", async () => {
-    const user = userEvent.setup();
-    api.listNotifications.mockResolvedValue({
-      data: {
-        unreadCount: 1,
-        notifications: [
-          {
-            id: 2,
-            type: "job_review_requested",
-            applicationId: null,
-            jobId: 5,
-            round: null,
-            jobTitle: "Design Review",
-            applicantName: "",
-            actorName: "Grace Hopper",
-            read: false,
-            createdAt: "2026-07-09T00:00:00Z",
-          },
-        ],
-      },
-    });
-    api.markNotificationRead.mockResolvedValue({ data: { unreadCount: 0 } });
-    renderBell();
-
-    await waitFor(() => expect(screen.getByText("1")).toBeInTheDocument());
-    await user.click(screen.getByRole("button", { name: "Notifications" }));
-    await user.click(
-      screen.getByText(
-        'Grace Hopper submitted "Design Review" for your review',
-      ),
+    expect(api.dismissNotification).toHaveBeenCalledWith(1);
+    await waitFor(() =>
+      expect(screen.getByText("No notifications yet.")).toBeInTheDocument(),
     );
-
-    expect(screen.getByText("JOB DETAIL")).toBeInTheDocument();
   });
 
-  it("marks every notification read and clears the badge on Mark all read", async () => {
+  it("clears every notification and the badge on Clear all", async () => {
     const user = userEvent.setup();
     api.listNotifications.mockResolvedValue({
       data: {
@@ -156,7 +103,6 @@ describe("NotificationBell", () => {
             jobTitle: "Backend Engineer",
             applicantName: "Ada Lovelace",
             actorName: "Grace Hopper",
-            read: false,
             createdAt: "2026-07-09T00:00:00Z",
           },
           {
@@ -168,22 +114,21 @@ describe("NotificationBell", () => {
             jobTitle: "Backend Engineer",
             applicantName: "Grace Hopper",
             actorName: "Ada Lovelace",
-            read: false,
             createdAt: "2026-07-09T00:00:00Z",
           },
         ],
       },
     });
-    api.markAllNotificationsRead.mockResolvedValue({
+    api.dismissAllNotifications.mockResolvedValue({
       data: { unreadCount: 0 },
     });
-    renderBell();
+    render(<NotificationBell />);
 
     await waitFor(() => expect(screen.getByText("2")).toBeInTheDocument());
     await user.click(screen.getByRole("button", { name: "Notifications" }));
-    await user.click(screen.getByRole("button", { name: "Mark all read" }));
+    await user.click(screen.getByRole("button", { name: "Clear all" }));
 
-    expect(api.markAllNotificationsRead).toHaveBeenCalledTimes(1);
+    expect(api.dismissAllNotifications).toHaveBeenCalledTimes(1);
     await waitFor(() =>
       expect(screen.queryByText("2")).not.toBeInTheDocument(),
     );
@@ -192,7 +137,7 @@ describe("NotificationBell", () => {
   it("shows an inline error when the initial load fails", async () => {
     const user = userEvent.setup();
     api.listNotifications.mockRejectedValue(new Error("boom"));
-    renderBell();
+    render(<NotificationBell />);
 
     await waitFor(() => expect(api.listNotifications).toHaveBeenCalledTimes(1));
     await user.click(screen.getByRole("button", { name: "Notifications" }));
