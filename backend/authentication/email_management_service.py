@@ -68,22 +68,33 @@ class EmailManagementService:
         self._state_secret = os.getenv(EMAIL_OTP_STATE_JWT_SECRET)
         self._logger = logger
 
-    async def remove_email(self, session, current_user_id: int, email_id: int) -> dict:
-        """
-        Remove an unverified backup contact address from the caller's account.
+    async def remove_email(
+        self,
+        session,
+        current_user_id: int,
+        current_sub: str,
+        current_claim_email: str | None,
+        email_id: int,
+    ) -> dict:
+        """Remove a non-primary address from the caller's account.
 
-        Only a never-confirmed, non-primary row may be removed here: such a
-        row was never proven to be the caller's mailbox — only the OTP
-        initiate/verify flow can create a confirmed row, and an unconfirmed
-        one can only be a legacy row from before that flow was the sole
-        entry point — so removing it requires no proof either. A verified
-        address is (or can become) a sign-in method and leaves the account
-        only through the step-up unlink flow, and the primary contact cannot
-        be removed at all.
+        Any non-primary row is removable — a confirmed address is account
+        contact data the user owns, and removing it also removes its use as
+        a passwordless login identifier (one action, one consequence). Two
+        refusals: the primary contact, and — when the caller's session is
+        itself a passwordless login — the address that session signed in
+        with (deleting it would strand a live token whose next request can
+        no longer resolve; same doctrine as the unlink current-session
+        guard).
 
         Args:
             session (AsyncSession): The active async database session.
             current_user_id (int): user_id of the authenticated caller.
+            current_sub (str): JWT ``sub`` of the caller's session; only an
+                ``email|`` sub triggers the current-session address guard.
+            current_claim_email (str | None): The session token's email
+                claim, checked against the target row when ``current_sub``
+                is a passwordless login.
             email_id (int): Primary key of the email row to remove.
 
         Returns:
@@ -91,20 +102,22 @@ class EmailManagementService:
 
         Raises:
             ValueError: The row is missing or owned by another user.
-            ConflictError: The row is the primary contact or already verified.
+            ConflictError: The row is the primary contact, or it is the
+                address the caller's own passwordless session signed in with.
         """
         row = await self._user_emails.get_by_id(session, email_id)
         if row is None or row.user_id != current_user_id:
             raise ValueError("Email not found")
         if row.is_primary:
             raise ConflictError("The primary contact email cannot be removed")
-        if row.otp_confirmed:
-            # Accurate whether or not an email sign-in method still exists for
-            # the address: a verified row survives only while some sign-in
-            # method claims it, and it is deleted alongside the last one.
+        if (
+            current_sub.startswith("email|")
+            and current_claim_email
+            and row.email == current_claim_email.strip().lower()
+        ):
             raise ConflictError(
-                "This verified email is still used by your sign-in methods "
-                "and cannot be removed separately"
+                "Cannot remove the email used for the current session; "
+                "log in with another method first"
             )
 
         await self._user_emails.delete(session, email_id)
@@ -639,7 +652,7 @@ class EmailManagementService:
 
     async def _validate_unlinkable(
         self, session, current_user_id: int, current_sub: str, identity
-    ) -> list:
+    ) -> None:
         """
         Shared guard for unlinking ``identity`` (ownership assumed already
         checked by the caller): refuses the caller's only remaining sign-in, the
@@ -656,10 +669,6 @@ class EmailManagementService:
             current_sub (str): JWT ``sub`` of the caller, the current-session
                 identity to protect.
             identity (UserIdentitiesEntity): The identity row to unlink.
-
-        Returns:
-            list[UserIdentitiesEntity]: The caller's identities including
-            ``identity``, so the caller can reuse them without a second query.
 
         Raises:
             ConflictError: It is the only identity, or the current session's.
@@ -682,8 +691,6 @@ class EmailManagementService:
             )
         ):
             raise PermissionError("Active employees cannot remove corp sign-in")
-
-        return identities
 
     async def initiate_unlink(
         self, session, current_user_id: int, current_sub: str, identity_id: int
@@ -751,19 +758,21 @@ class EmailManagementService:
         code: str,
     ) -> dict:
         """
-        Confirm the step-up OTP, unlink the sign-in identity, drop its synced
-        contact email when no other identity still uses that address, and
-        delete its Auth0 user.
+        Confirm the step-up OTP, unlink the sign-in identity, and delete its
+        Auth0 user.
 
-        Validates the signed state (signature, expiry, caller, and that the URL
-        ``identity_id`` matches the bound target), rechecks the primary *before*
-        consuming the OTP — refusing if it changed since initiate — verifies the
-        code against the primary, deletes the ``user_identities`` row, then
-        deletes the matching ``user_emails`` contact row when no surviving
-        identity claims the same address. Each sign-in method is its own Auth0
-        user, so the unlinked identity's Auth0 user is deleted too — before the
-        commit, so a failed Auth0 delete rolls the whole unlink back rather
-        than leaving the two stores disagreeing; on retry the Auth0 delete is
+        Unlink has a single responsibility: remove the ``user_identities`` row
+        for this sign-in method. It never touches ``user_emails`` — email rows
+        belong to the account, not to any one identity, and leave only through
+        :meth:`remove_email` (or by being the primary, which cannot be
+        removed). Validates the signed state (signature, expiry, caller, and
+        that the URL ``identity_id`` matches the bound target), rechecks the
+        primary *before* consuming the OTP — refusing if it changed since
+        initiate — verifies the code against the primary, then deletes the
+        ``user_identities`` row. Each sign-in method is its own Auth0 user, so
+        the unlinked identity's Auth0 user is deleted too — before the commit,
+        so a failed Auth0 delete rolls the whole unlink back rather than
+        leaving the two stores disagreeing; on retry the Auth0 delete is
         idempotent (404 counts as done).
 
         Args:
@@ -805,24 +814,9 @@ class EmailManagementService:
 
         # Re-check the unlink preconditions against current state — the only/
         # current-session/active-employee guards from initiate may no longer hold.
-        identities_before = await self._validate_unlinkable(
-            session, current_user_id, current_sub, identity
-        )
+        await self._validate_unlinkable(session, current_user_id, current_sub, identity)
 
         await self._user_identities.delete(session, identity_id)
-
-        removed_claim = (identity.email_claim or "").lower()
-        still_claimed = any(
-            other.identity_id != identity.identity_id
-            and (other.email_claim or "").lower() == removed_claim
-            for other in identities_before
-        )
-        if removed_claim and not still_claimed:
-            email_row = await self._user_emails.get_by_user_and_email(
-                session, current_user_id, removed_claim
-            )
-            if email_row is not None and not email_row.is_primary:
-                await self._user_emails.delete(session, email_row.email_id)
 
         # The Auth0 user backing this sign-in must not outlive the unlink.
         # Before the commit: if the delete fails the transaction rolls back and

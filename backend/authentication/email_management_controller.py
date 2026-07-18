@@ -99,12 +99,13 @@ class EmailManagementController:
 
     async def remove_email(self, current_user: UserContextDto, email_id: int):
         """
-        Remove an unverified backup contact email from the caller's account.
+        Remove a non-primary email from the caller's account.
 
-        Only a never-confirmed, non-primary address is removable here — such a
-        row was never proven to be the caller's mailbox, so removal requires
-        no proof either. The service refuses the primary contact and verified
-        addresses (those leave via the step-up unlink flow).
+        Any non-primary row is removable, including a confirmed one — removing
+        it also removes its use as a passwordless login identifier. The
+        service refuses the primary contact, and — when the caller's own
+        session is a passwordless login — the address that session signed in
+        with.
 
         Args:
             current_user (UserContextDto): The authenticated user context.
@@ -117,6 +118,8 @@ class EmailManagementController:
             data = await self._service.remove_email(
                 session=session,
                 current_user_id=current_user.user_id,
+                current_sub=current_user.sub,
+                current_claim_email=current_user.primary_email,
                 email_id=email_id,
             )
         return api_response(message="Email removed", data=data)
@@ -152,15 +155,15 @@ class EmailManagementController:
         body: OtpConfirmRequest,
     ):
         """
-        Confirm the step-up OTP, unlink the sign-in identity, drop its synced
-        contact email when nothing else uses it, and delete its Auth0 user.
+        Confirm the step-up OTP, unlink the sign-in identity, and delete its
+        Auth0 user.
 
         The service validates the signed state against the path's ``identity_id``,
         rechecks the primary has not changed since initiate, verifies the OTP,
-        deletes the identity row, deletes the matching contact email when no
-        surviving identity claims it, and deletes the identity's Auth0 user —
-        each sign-in method is its own Auth0 user, so it must not outlive the
-        unlink.
+        deletes the identity row, and deletes the identity's Auth0 user — each
+        sign-in method is its own Auth0 user, so it must not outlive the
+        unlink. The caller's contact email rows are never touched; they leave
+        the account only via :meth:`remove_email`.
 
         Args:
             current_user (UserContextDto): The authenticated user context.
