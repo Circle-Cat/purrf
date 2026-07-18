@@ -73,6 +73,7 @@ import {
   INTERVIEW_STAGES,
 } from "@/pages/Recruiting/board/stageFormat";
 import { useAuth } from "@/context/auth/AuthContext";
+import { PERMISSIONS } from "@/constants/Permissions";
 import HowItWorksDialog from "@/pages/Recruiting/components/HowItWorksDialog";
 import {
   APPLICATION_OWNER_GUIDE,
@@ -668,7 +669,11 @@ const OtherApplicationsSection = ({
  *   specifically, so a `read.all` viewer sees the same information an owner
  *   does but can't act on it: the sub-status buttons render disabled, the
  *   Reassign trigger and the whole "Operate" decision row (Blacklist/Reject/
- *   Advance) don't render at all. For an actual owner, the workflow only
+ *   Advance) don't render at all. Blacklist is additionally gated on the
+ *   `recruiting.blacklist.write` permission (an org-level sanction, not a
+ *   per-posting decision — same gate as the backend route): an owner
+ *   without it sees the button disabled with a tooltip. For an actual
+ *   owner, the workflow only
  *   ever moves forward one step at a time, so Advance is a single button
  *   covering both cases: round-advance (via the job's
  *   `pipelineConfig.stages[].rounds`) while rounds remain in the current
@@ -698,8 +703,14 @@ const ApplicationDetailPage = () => {
   const { applicationId } = useParams();
   const [searchParams] = useSearchParams();
   const evaluatorMode = searchParams.get("mode") === "evaluate";
-  const { user } = useAuth();
+  const { user, permissions = [] } = useAuth();
   const currentUserId = user?.userId;
+  // Blacklisting is an org-level sanction, permission-gated (not owner-gated)
+  // on the backend route — mirror that here so an owner without the grant
+  // sees a disabled button instead of a post-click error.
+  const canBlacklist = permissions.includes(
+    PERMISSIONS.RECRUITING_BLACKLIST_WRITE,
+  );
 
   const [detail, setDetail] = useState(null);
   const [evaluations, setEvaluations] = useState([]);
@@ -1238,7 +1249,12 @@ const ApplicationDetailPage = () => {
                   <Button
                     variant="outline"
                     className="mr-auto"
-                    disabled={blacklisting}
+                    disabled={blacklisting || !canBlacklist}
+                    title={
+                      canBlacklist
+                        ? undefined
+                        : "Requires the blacklist permission"
+                    }
                     onClick={() => setBlacklistConfirmOpen(true)}
                   >
                     Blacklist
