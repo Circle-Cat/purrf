@@ -132,4 +132,20 @@ describe("MentorshipManagement", () => {
       screen.getByTestId("mock-participant-search-card"),
     ).toBeInTheDocument();
   });
+
+  it("renders the card with write controls for a write-only user, without ParticipantSearchCard", () => {
+    useAuth.mockReturnValue({
+      permissions: [PERMISSIONS.MENTORSHIP_ADMIN_WRITE],
+    });
+    render(<MentorshipManagement />);
+    expect(
+      screen.getByTestId("mock-rounds-management-card"),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("can-write").textContent).toBe("true");
+    expect(
+      screen.queryByTestId("mock-participant-search-card"),
+    ).not.toBeInTheDocument();
+    // canRead is false for a write-only user, forwarded to the hook.
+    expect(useMentorshipManagement).toHaveBeenCalledWith(false);
+  });
 });

@@ -8,8 +8,11 @@ import { useMentorshipManagement } from "@/pages/MentorshipManagement/hooks/useM
  * MentorshipManagement
  *
  * Admin page for managing mentorship rounds and participant search. Entry is
- * gated on MENTORSHIP_ADMIN_READ or MENTORSHIP_ADMIN_WRITE (route + sidebar);
- * cards inside check read/write as appropriate.
+ * gated on MENTORSHIP_ADMIN_READ or MENTORSHIP_ADMIN_WRITE (route + sidebar).
+ * RoundsManagementCard renders for either permission (basic round list needs
+ * no backend permission at all; write-only users get create/edit affordances
+ * but no per-round detail stats). ParticipantSearchCard requires
+ * MENTORSHIP_ADMIN_READ.
  *
  * Route: /mentorship-management
  *
@@ -33,7 +36,7 @@ const MentorshipManagement = () => {
 
   return (
     <div className="mentorship-management">
-      {canRead && (
+      {(canRead || canWrite) && (
         <RoundsManagementCard
           rounds={sortedRounds}
           totals={totals}
