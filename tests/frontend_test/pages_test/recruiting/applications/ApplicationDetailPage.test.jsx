@@ -138,6 +138,22 @@ const makeDetail = ({
   assigneeId,
 });
 
+/**
+ * Build a confirmed evaluation row for a stage+round, as returned by
+ * getEvaluationsForApplication — what the advance-without-evaluation soft
+ * reminder checks for before letting an advance through silently.
+ */
+const confirmedEval = (stage, round = 1, evaluatorId = ASSIGNEE_ID) => ({
+  id: 900 + round,
+  applicationId: 101,
+  stage,
+  round,
+  evaluatorId,
+  responses: {},
+  isConfirmed: true,
+  confirmedAt: "2026-07-18T00:00:00Z",
+});
+
 beforeEach(() => {
   vi.clearAllMocks();
   authState.userId = 999;
@@ -640,6 +656,15 @@ describe("ApplicationDetailPage — role-adaptive right column", () => {
 });
 
 describe("ApplicationDetailPage — advance-time assignee dialog", () => {
+  beforeEach(() => {
+    // These tests exercise the assignee dialog itself; seed confirmed
+    // evaluations for the stages advanced from so the no-evaluation
+    // reminder (covered by its own describe) stays out of the way.
+    api.getEvaluationsForApplication.mockResolvedValue({
+      data: [confirmedEval("recruiter_screening"), confirmedEval("behavioral")],
+    });
+  });
+
   it("clicking Advance to Behavioral opens a dialog pre-filled with the configured default", async () => {
     const user = userEvent.setup();
     authState.userId = OWNER_ID;
@@ -991,6 +1016,14 @@ describe("ApplicationDetailPage — reject dialog", () => {
 });
 
 describe("ApplicationDetailPage — advance round", () => {
+  beforeEach(() => {
+    // Round-advance mechanics under test, not the no-evaluation reminder:
+    // seed a confirmed evaluation for the round being left.
+    api.getEvaluationsForApplication.mockResolvedValue({
+      data: [confirmedEval("tech", 1)],
+    });
+  });
+
   /** The base JOB fixture with the tech stage's `rounds` overridden. */
   const jobWithTechRounds = (rounds) => ({
     ...JOB,
@@ -1789,6 +1822,18 @@ describe("ApplicationDetailPage — Scheduled requires an assignee", () => {
 });
 
 describe("ApplicationDetailPage — advance dialog Scheduled hint", () => {
+  beforeEach(() => {
+    // The Scheduled hint lives inside the advance dialog; seed confirmed
+    // evaluations so the no-evaluation reminder doesn't intercept the click.
+    api.getEvaluationsForApplication.mockResolvedValue({
+      data: [
+        confirmedEval("recruiter_screening"),
+        confirmedEval("behavioral"),
+        confirmedEval("tech"),
+      ],
+    });
+  });
+
   const HINT_TEXT =
     "You can leave this unassigned for now — an assignee will be required before marking this stage as Scheduled.";
 
@@ -1864,6 +1909,14 @@ describe("ApplicationDetailPage — advance dialog Scheduled hint", () => {
 });
 
 describe("ApplicationDetailPage — Offer is a fixed step before Hired", () => {
+  beforeEach(() => {
+    // Advancing out of tech (the last interview stage here) would otherwise
+    // trip the no-evaluation reminder.
+    api.getEvaluationsForApplication.mockResolvedValue({
+      data: [confirmedEval("tech")],
+    });
+  });
+
   it("advances from the last configured stage to Offer, not Hired", async () => {
     const user = userEvent.setup();
     authState.userId = OWNER_ID;
@@ -1960,6 +2013,14 @@ describe("ApplicationDetailPage — Offer is a fixed step before Hired", () => {
 
 describe("ApplicationDetailPage — activity jobs have no Offer step", () => {
   const ACTIVITY_JOB = { ...JOB, kind: "activity" };
+
+  beforeEach(() => {
+    // Advancing tech -> Admitted would otherwise trip the no-evaluation
+    // reminder (activity jobs get it too, by design).
+    api.getEvaluationsForApplication.mockResolvedValue({
+      data: [confirmedEval("tech")],
+    });
+  });
 
   it("advances from the last configured stage straight to Admitted (hired)", async () => {
     const user = userEvent.setup();
@@ -2378,6 +2439,241 @@ describe("ApplicationDetailPage — screen-rule activity messages", () => {
 
     expect(
       await screen.findByText(/Automatically rejected by screening rule,/),
+    ).toBeInTheDocument();
+  });
+});
+
+describe("ApplicationDetailPage — advance-without-evaluation soft reminder", () => {
+  const renderOwner = (detailOverrides = {}) => {
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, ...detailOverrides }),
+    });
+    return renderPage();
+  };
+
+  it("clicking Advance with no confirmed evaluation opens the reminder instead of the assignee dialog", async () => {
+    const user = userEvent.setup();
+    renderOwner({ stage: "recruiter_screening" });
+    await waitLoaded();
+
+    await user.click(
+      screen.getByRole("button", { name: "Advance to Behavioral" }),
+    );
+
+    expect(
+      screen.getByText(
+        "This round has no confirmed evaluation yet. Advance anyway?",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Confirm advance" }),
+    ).not.toBeInTheDocument();
+    expect(api.changeApplicationStage).not.toHaveBeenCalled();
+  });
+
+  it("Advance anyway continues into the assignee dialog", async () => {
+    const user = userEvent.setup();
+    renderOwner({ stage: "recruiter_screening" });
+    await waitLoaded();
+
+    await user.click(
+      screen.getByRole("button", { name: "Advance to Behavioral" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Advance anyway" }));
+
+    expect(
+      screen.getByRole("button", { name: "Confirm advance" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        "This round has no confirmed evaluation yet. Advance anyway?",
+      ),
+    ).not.toBeInTheDocument();
+  });
+
+  it("Cancel closes the reminder without advancing", async () => {
+    const user = userEvent.setup();
+    renderOwner({ stage: "recruiter_screening" });
+    await waitLoaded();
+
+    await user.click(
+      screen.getByRole("button", { name: "Advance to Behavioral" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(
+      screen.queryByText(
+        "This round has no confirmed evaluation yet. Advance anyway?",
+      ),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Confirm advance" }),
+    ).not.toBeInTheDocument();
+    expect(api.changeApplicationStage).not.toHaveBeenCalled();
+  });
+
+  it("a confirmed evaluation for the current round skips the reminder", async () => {
+    const user = userEvent.setup();
+    api.getEvaluationsForApplication.mockResolvedValue({
+      data: [confirmedEval("recruiter_screening")],
+    });
+    renderOwner({ stage: "recruiter_screening" });
+    await waitLoaded();
+
+    await user.click(
+      screen.getByRole("button", { name: "Advance to Behavioral" }),
+    );
+
+    expect(
+      screen.queryByText(
+        "This round has no confirmed evaluation yet. Advance anyway?",
+      ),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Confirm advance" }),
+    ).toBeInTheDocument();
+  });
+
+  it("a draft-only evaluation still triggers the reminder", async () => {
+    const user = userEvent.setup();
+    api.getEvaluationsForApplication.mockResolvedValue({
+      data: [{ ...confirmedEval("recruiter_screening"), isConfirmed: false }],
+    });
+    renderOwner({ stage: "recruiter_screening" });
+    await waitLoaded();
+
+    await user.click(
+      screen.getByRole("button", { name: "Advance to Behavioral" }),
+    );
+
+    expect(
+      screen.getByText(
+        "This round has no confirmed evaluation yet. Advance anyway?",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("Advance anyway on a direct advance (no assignee dialog) calls the API straight away", async () => {
+    const user = userEvent.setup();
+    api.changeApplicationStage.mockResolvedValue({ data: {} });
+    renderOwner({ stage: "tech" });
+    await waitLoaded();
+
+    await user.click(screen.getByRole("button", { name: "Advance to Offer" }));
+    await user.click(screen.getByRole("button", { name: "Advance anyway" }));
+
+    await waitFor(() =>
+      expect(api.changeApplicationStage).toHaveBeenCalledWith("101", {
+        toStage: "offer",
+        assigneeId: undefined,
+      }),
+    );
+  });
+
+  it("Advance Round shows the reminder and continues into the round dialog on Advance anyway", async () => {
+    const user = userEvent.setup();
+    authState.userId = OWNER_ID;
+    api.getJob.mockResolvedValue({
+      data: {
+        ...JOB,
+        pipelineConfig: {
+          ...JOB.pipelineConfig,
+          stages: JOB.pipelineConfig.stages.map((s) =>
+            s.stage === "tech" ? { ...s, rounds: 3 } : s,
+          ),
+        },
+      },
+    });
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, stage: "tech", currentRound: 1 }),
+    });
+    renderPage();
+    await waitLoaded();
+
+    await user.click(
+      screen.getByRole("button", { name: "Advance to Round 2" }),
+    );
+    expect(
+      screen.getByText(
+        "This round has no confirmed evaluation yet. Advance anyway?",
+      ),
+    ).toBeInTheDocument();
+    expect(api.setApplicationRound).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "Advance anyway" }));
+    expect(
+      screen.getByRole("button", { name: "Confirm advance round" }),
+    ).toBeInTheDocument();
+  });
+
+  it("disables the Evaluated status button while the current round has no confirmed evaluation", async () => {
+    renderOwner({ stage: "recruiter_screening" });
+    await waitLoaded();
+
+    expect(screen.getByRole("button", { name: "Evaluated" })).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "In progress" }),
+    ).not.toBeDisabled();
+  });
+
+  it("enables the Evaluated status button once the current round has a confirmed evaluation", async () => {
+    api.getEvaluationsForApplication.mockResolvedValue({
+      data: [confirmedEval("recruiter_screening")],
+    });
+    renderOwner({ stage: "recruiter_screening" });
+    await waitLoaded();
+
+    expect(
+      screen.getByRole("button", { name: "Evaluated" }),
+    ).not.toBeDisabled();
+  });
+
+  it("marks advances recorded without an evaluation in the timeline", async () => {
+    const user = userEvent.setup();
+    api.getApplicationActivity.mockResolvedValue({
+      data: [
+        {
+          id: 1,
+          eventType: "stage_changed",
+          details: {
+            fromStage: "recruiter_screening",
+            toStage: "tech",
+            advancedWithoutEvaluation: true,
+          },
+          actorId: OWNER_ID,
+          actorName: "Owen Owner",
+          createdAt: "2026-07-18T12:00:00Z",
+        },
+        {
+          id: 2,
+          eventType: "round_advanced",
+          details: {
+            stage: "tech",
+            fromRound: 1,
+            toRound: 2,
+            advancedWithoutEvaluation: true,
+          },
+          actorId: OWNER_ID,
+          actorName: "Owen Owner",
+          createdAt: "2026-07-18T11:00:00Z",
+        },
+      ],
+    });
+    renderOwner({ stage: "tech" });
+    await waitLoaded();
+
+    await user.click(screen.getByRole("tab", { name: "Timeline" }));
+
+    expect(
+      screen.getByText(
+        /Advanced from Recruiter screening to Tech \(no evaluation recorded\), by Owen Owner/,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /Advanced to round 2 of Tech \(no evaluation recorded\), by Owen Owner/,
+      ),
     ).toBeInTheDocument();
   });
 });

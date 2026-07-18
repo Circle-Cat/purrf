@@ -146,10 +146,22 @@ const advanceTarget = (jobStages, stage, kind) => {
  * `aria-pressed`. Renders nothing for stages with no configured sub-status
  * set (terminal stages).
  *
+ * "evaluated" is additionally locked behind `evaluatedDisabled`: it means
+ * "an evaluator confirmed a scorecard" (the backend rejects a manual switch
+ * without one), so it only becomes clickable once the current round has a
+ * confirmed evaluation.
+ *
  * @param {{stage: string, subStatus: string|null, disabled: boolean,
+ *          evaluatedDisabled: boolean,
  *          onSelect: (value: string) => void}} props
  */
-const SubStatusSelector = ({ stage, subStatus, disabled, onSelect }) => {
+const SubStatusSelector = ({
+  stage,
+  subStatus,
+  disabled,
+  evaluatedDisabled,
+  onSelect,
+}) => {
   const options = SUB_STATUS_SETS[stage];
   if (!options) return null;
   return (
@@ -164,7 +176,12 @@ const SubStatusSelector = ({ stage, subStatus, disabled, onSelect }) => {
             size="sm"
             variant={isActive ? "default" : "outline"}
             aria-pressed={isActive}
-            disabled={disabled}
+            disabled={disabled || (value === "evaluated" && evaluatedDisabled)}
+            title={
+              value === "evaluated" && evaluatedDisabled
+                ? "Requires a confirmed evaluation for the current round"
+                : undefined
+            }
             onClick={() => onSelect(value)}
           >
             {humanize(value)}
@@ -374,7 +391,7 @@ const describeActivity = ({ eventType, details }, jobKind) => {
       }
       return `Advanced from ${humanize(details.fromStage)} to ${stageLabel(details.toStage, jobKind)}${
         details.assigneeName ? `, assigned to ${details.assigneeName}` : ""
-      }`;
+      }${details.advancedWithoutEvaluation ? " (no evaluation recorded)" : ""}`;
     case "reassigned":
       return `Reassigned on ${humanize(details.stage)}${
         details.fromAssigneeName ? ` from ${details.fromAssigneeName}` : ""
@@ -382,7 +399,7 @@ const describeActivity = ({ eventType, details }, jobKind) => {
     case "round_advanced":
       return `Advanced to round ${details.toRound} of ${humanize(details.stage)}${
         details.assigneeName ? `, assigned to ${details.assigneeName}` : ""
-      }`;
+      }${details.advancedWithoutEvaluation ? " (no evaluation recorded)" : ""}`;
     case "sub_status_changed":
       return `Status changed from ${humanize(details.fromSubStatus)} to ${humanize(details.toSubStatus)} on ${humanize(details.stage)}`;
     case "evaluation_confirmed":
@@ -706,6 +723,9 @@ const ApplicationDetailPage = () => {
   const [advancingRound, setAdvancingRound] = useState(false);
   const [roundAdvanceOpen, setRoundAdvanceOpen] = useState(false);
   const [roundAdvanceAssigneeId, setRoundAdvanceAssigneeId] = useState("");
+  // Which advance the no-evaluation reminder is intercepting: null (closed),
+  // "stage", or "round". Confirming resumes the intercepted flow.
+  const [evalReminderFor, setEvalReminderFor] = useState(null);
 
   const [rejectFormOpen, setRejectFormOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
@@ -812,6 +832,25 @@ const ApplicationDetailPage = () => {
     detail &&
     currentStageRounds > 1 &&
     (detail.application.currentRound ?? 1) < currentStageRounds;
+
+  // Whether any evaluator has a CONFIRMED evaluation for the application's
+  // current stage+round. Gates the manual "Evaluated" status button (the
+  // backend hard-rejects that switch without one) and decides whether an
+  // advance needs the soft "no evaluation yet" reminder first.
+  const hasCurrentRoundEvaluation =
+    loaded && detail != null
+      ? evaluations.some(
+          (evaluation) =>
+            evaluation.stage === detail.application.stage &&
+            evaluation.round === (detail.application.currentRound ?? 1) &&
+            evaluation.isConfirmed,
+        )
+      : false;
+  const needsEvalReminder =
+    loaded &&
+    detail != null &&
+    INTERVIEW_STAGES.has(detail.application.stage) &&
+    !hasCurrentRoundEvaluation;
 
   // Pre-fill the advance-time assignee picker with the target stage's
   // configured default for screening/behavioral targets (tech/board_review
@@ -953,6 +992,43 @@ const ApplicationDetailPage = () => {
       })
       .catch((e) => toast.error(e.message))
       .finally(() => setAdvancing(false));
+  };
+
+  /**
+   * The stage-advance flow proper: open the assignee picker for interview
+   * targets, or advance directly for the rest. Split out of the button
+   * handler so the no-evaluation reminder can resume it after "Advance
+   * anyway".
+   */
+  const proceedStageAdvance = () => {
+    if (needsAssignee) setAdvanceOpen(true);
+    else handleAdvance(next);
+  };
+
+  /**
+   * Stage-advance button entry point: intercept with the soft
+   * no-evaluation reminder when the current interview round has no
+   * confirmed evaluation, otherwise go straight into the advance flow.
+   * The backend allows the advance either way (it only marks the activity
+   * log) — this dialog is the "are you sure" half of that soft check.
+   */
+  const handleStageAdvanceClick = () => {
+    if (needsEvalReminder) setEvalReminderFor("stage");
+    else proceedStageAdvance();
+  };
+
+  /** Round-advance button entry point; mirrors handleStageAdvanceClick. */
+  const handleRoundAdvanceClick = () => {
+    if (needsEvalReminder) setEvalReminderFor("round");
+    else handleOpenRoundAdvance();
+  };
+
+  /** "Advance anyway": close the reminder and resume the intercepted flow. */
+  const handleConfirmEvalReminder = () => {
+    const pending = evalReminderFor;
+    setEvalReminderFor(null);
+    if (pending === "stage") proceedStageAdvance();
+    else if (pending === "round") handleOpenRoundAdvance();
   };
 
   const handleCancelReassign = () => {
@@ -1131,6 +1207,7 @@ const ApplicationDetailPage = () => {
                 stage={detail.application.stage}
                 subStatus={detail.application.subStatus}
                 disabled={switchingSubStatus || !detail.isOwner}
+                evaluatedDisabled={!hasCurrentRoundEvaluation}
                 onSelect={handleSelectSubStatus}
               />
               {(assigneeName || isPipelineStage) && (
@@ -1177,7 +1254,7 @@ const ApplicationDetailPage = () => {
                   {canAdvanceRound ? (
                     <Button
                       disabled={advancingRound}
-                      onClick={handleOpenRoundAdvance}
+                      onClick={handleRoundAdvanceClick}
                     >
                       Advance to Round{" "}
                       {(detail.application.currentRound ?? 1) + 1}
@@ -1186,11 +1263,7 @@ const ApplicationDetailPage = () => {
                     isPipelineStage && (
                       <Button
                         disabled={advancing}
-                        onClick={() =>
-                          needsAssignee
-                            ? setAdvanceOpen(true)
-                            : handleAdvance(next)
-                        }
+                        onClick={handleStageAdvanceClick}
                       >
                         Advance to {stageLabel(next, job?.kind)}
                       </Button>
@@ -1327,6 +1400,28 @@ const ApplicationDetailPage = () => {
             >
               Confirm blacklist
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={evalReminderFor != null}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) setEvalReminderFor(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>No evaluation recorded</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-slate-700">
+            This round has no confirmed evaluation yet. Advance anyway?
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEvalReminderFor(null)}>
+              Cancel
+            </Button>
+            <Button onClick={handleConfirmEvalReminder}>Advance anyway</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

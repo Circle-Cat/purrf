@@ -855,6 +855,13 @@ class BoardService:
         version, since once a decision has been made on it, the candidate
         must not be able to edit the record the decision was based on.
 
+        Advancing out of an interview stage whose current round has no
+        confirmed evaluation is allowed (rescue lanes rely on it), but the
+        ``stage_changed`` activity entry gets ``advancedWithoutEvaluation:
+        true`` so the skip stays visible in the audit timeline. Rejects are
+        exempt (rejecting never requires an evaluation), as is advancing out
+        of OFFER (no rubric exists for it).
+
         Args:
             session (AsyncSession): Active database async session.
             current_user (UserContextDto): The authenticated caller,
@@ -883,6 +890,13 @@ class BoardService:
         from_stage = application.stage
         stage_machine.validate_transition(
             job.pipeline_config, from_stage, dto.to_stage, job.kind
+        )
+        advanced_without_evaluation = (
+            from_stage in INTERVIEW_STAGES
+            and dto.to_stage != ApplicationStage.REJECTED
+            and not await self.evaluation_repository.has_confirmed(
+                session, application_id, from_stage, application.current_round
+            )
         )
 
         new_interview_assignee = None
@@ -943,6 +957,11 @@ class BoardService:
                 **(
                     {"reason": dto.reason, "note": dto.note}
                     if dto.to_stage == ApplicationStage.REJECTED
+                    else {}
+                ),
+                **(
+                    {"advancedWithoutEvaluation": True}
+                    if advanced_without_evaluation
                     else {}
                 ),
             },
@@ -1099,6 +1118,13 @@ class BoardService:
         moving back to ``"pending"`` never unfreezes it). Logs a
         ``"sub_status_changed"`` activity entry.
 
+        ``"evaluated"`` is the one target the owner may not set freely: it
+        means "an evaluator confirmed a scorecard" (``EvaluationService.submit``
+        stamps it automatically on confirm), so setting it by hand requires a
+        confirmed evaluation row for the current stage+round — otherwise the
+        status would assert something that never happened. Every other target
+        stays a free manual switch.
+
         Args:
             session (AsyncSession): Active database async session.
             current_user (UserContextDto): The authenticated caller.
@@ -1110,14 +1136,25 @@ class BoardService:
 
         Raises:
             ValueError: If the application is missing, the caller is not an
-                owner (collapsed "not found" message), or ``dto.sub_status``
+                owner (collapsed "not found" message), ``dto.sub_status``
                 isn't valid for the application's current stage
-                (``stage_machine.validate_sub_status``).
+                (``stage_machine.validate_sub_status``), or ``dto.sub_status``
+                is ``"evaluated"`` while the current stage+round has no
+                confirmed evaluation row.
         """
         application, _job = await self._load_owned_application(
             session, current_user, application_id, for_update=True
         )
         stage_machine.validate_sub_status(application.stage, dto.sub_status)
+        if dto.sub_status == "evaluated" and not (
+            await self.evaluation_repository.has_confirmed(
+                session, application_id, application.stage, application.current_round
+            )
+        ):
+            raise ValueError(
+                "sub-status evaluated requires a confirmed evaluation "
+                "for the current round"
+            )
 
         current_value = application.sub_status or "pending"
         if current_value == "pending" and dto.sub_status != "pending":
@@ -1168,6 +1205,12 @@ class BoardService:
         ``sub_status`` to ``"pending"`` (mirrors ``reassign``/``change_stage``)
         so the new round doesn't inherit a prior round's ``"evaluated"`` state.
 
+        Advancing to a higher round while the round being left has no
+        confirmed evaluation is allowed but marks the ``round_advanced``
+        activity entry with ``advancedWithoutEvaluation: true`` — the same
+        soft reminder ``change_stage`` leaves. Moving backward (or re-setting
+        the same round) never checks.
+
         Args:
             session (AsyncSession): Active database async session.
             current_user (UserContextDto): The authenticated caller,
@@ -1209,6 +1252,13 @@ class BoardService:
                 current_user.user_id,
             )
         from_round = application.current_round
+        advanced_without_evaluation = (
+            dto.round > from_round
+            and application.stage in INTERVIEW_STAGES
+            and not await self.evaluation_repository.has_confirmed(
+                session, application_id, application.stage, from_round
+            )
+        )
         application.current_round = dto.round
         application.sub_status = "pending"
 
@@ -1228,6 +1278,11 @@ class BoardService:
                 **(
                     {"assigneeId": dto.assignee_id}
                     if dto.assignee_id is not None
+                    else {}
+                ),
+                **(
+                    {"advancedWithoutEvaluation": True}
+                    if advanced_without_evaluation
                     else {}
                 ),
             },

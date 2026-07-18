@@ -298,6 +298,95 @@ class TestEvaluationRepository(BaseRepositoryTestLib):
         )
         self.assertTrue(all(r.evaluator_id == evaluator.user_id for r in results))
 
+    async def test_has_confirmed_false_with_no_rows(self):
+        app = await self._seed_application()
+        repo = EvaluationRepository()
+
+        self.assertFalse(
+            await repo.has_confirmed(
+                self.session,
+                app.application_id,
+                ApplicationStage.RECRUITER_SCREENING,
+                1,
+            )
+        )
+
+    async def test_has_confirmed_false_for_unconfirmed_draft(self):
+        app = await self._seed_application()
+        (evaluator,) = await self._seed_users(1)
+        repo = EvaluationRepository()
+        await repo.upsert_draft(
+            self.session,
+            app.application_id,
+            ApplicationStage.RECRUITER_SCREENING,
+            1,
+            evaluator.user_id,
+            {"rating": 3},
+        )
+
+        self.assertFalse(
+            await repo.has_confirmed(
+                self.session,
+                app.application_id,
+                ApplicationStage.RECRUITER_SCREENING,
+                1,
+            )
+        )
+
+    async def test_has_confirmed_true_after_any_evaluators_confirm(self):
+        app = await self._seed_application()
+        (evaluator,) = await self._seed_users(1)
+        repo = EvaluationRepository()
+        draft = await repo.upsert_draft(
+            self.session,
+            app.application_id,
+            ApplicationStage.RECRUITER_SCREENING,
+            1,
+            evaluator.user_id,
+            {"rating": 3},
+        )
+        await repo.confirm(self.session, draft, datetime.now(timezone.utc))
+
+        self.assertTrue(
+            await repo.has_confirmed(
+                self.session,
+                app.application_id,
+                ApplicationStage.RECRUITER_SCREENING,
+                1,
+            )
+        )
+
+    async def test_has_confirmed_is_scoped_to_stage_and_round(self):
+        app = await self._seed_application()
+        (evaluator,) = await self._seed_users(1)
+        repo = EvaluationRepository()
+        draft = await repo.upsert_draft(
+            self.session,
+            app.application_id,
+            ApplicationStage.RECRUITER_SCREENING,
+            1,
+            evaluator.user_id,
+            {"rating": 3},
+        )
+        await repo.confirm(self.session, draft, datetime.now(timezone.utc))
+
+        self.assertFalse(
+            await repo.has_confirmed(
+                self.session,
+                app.application_id,
+                ApplicationStage.RECRUITER_SCREENING,
+                2,
+            )
+        )
+        self.assertFalse(
+            await repo.has_confirmed(
+                self.session,
+                app.application_id,
+                ApplicationStage.TECH,
+                1,
+            )
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
