@@ -385,9 +385,118 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         # A user with no user_emails rows falls back to an empty address.
         self.assertEqual(result[1].email, "")
 
+    def _valid_pipeline(self, owner_id=2):
+        """A minimal submittable pipeline config: one stage + one owner."""
+        return {
+            "stages": [{"stage": "recruiter_screening", "rounds": 1}],
+            "ownerIds": [owner_id],
+        }
+
+    async def test_submit_draft_without_pipeline_stages_raises(self):
+        """A posting whose pipeline has no stages cannot be submitted — every
+        posting needs at least one human stage as a screening fallback."""
+        job = self._job(status=JobStatus.DRAFT)
+        job.pipeline_config = {"stages": [], "ownerIds": [2]}
+        self.repo.get_by_job_id.return_value = job
+        self._two_approvers()
+
+        with self.assertRaisesRegex(ValueError, "pipeline stage"):
+            await self.service.submit_for_review(
+                self.session, job.job_id, reviewer_id=2, submitted_by=1, message=None
+            )
+        self.review_repo.create.assert_not_awaited()
+
+    async def test_submit_draft_without_pipeline_config_raises(self):
+        """A posting with no pipeline config at all is equally unsubmittable."""
+        job = self._job(status=JobStatus.DRAFT)
+        self.repo.get_by_job_id.return_value = job
+        self._two_approvers()
+
+        with self.assertRaisesRegex(ValueError, "pipeline stage"):
+            await self.service.submit_for_review(
+                self.session, job.job_id, reviewer_id=2, submitted_by=1, message=None
+            )
+
+    async def test_submit_draft_without_owner_raises(self):
+        """A posting with no Managed by owner cannot be submitted — applications
+        would be visible to no one."""
+        job = self._job(status=JobStatus.DRAFT)
+        job.pipeline_config = {
+            "stages": [{"stage": "recruiter_screening", "rounds": 1}],
+            "ownerIds": [],
+        }
+        self.repo.get_by_job_id.return_value = job
+        self._two_approvers()
+
+        with self.assertRaisesRegex(ValueError, "manager"):
+            await self.service.submit_for_review(
+                self.session, job.job_id, reviewer_id=2, submitted_by=1, message=None
+            )
+        self.review_repo.create.assert_not_awaited()
+
+    async def test_submit_draft_with_legacy_single_owner_passes(self):
+        """The legacy single-``ownerId`` shape satisfies the owner requirement."""
+        job = self._job(status=JobStatus.DRAFT)
+        job.pipeline_config = {
+            "stages": [{"stage": "recruiter_screening", "rounds": 1}],
+            "ownerId": 2,
+        }
+        self.repo.get_by_job_id.return_value = job
+        self._two_approvers()
+
+        result = await self.service.submit_for_review(
+            self.session, job.job_id, reviewer_id=2, submitted_by=1, message=None
+        )
+
+        self.assertEqual(result.status, JobStatus.PENDING_REVIEW)
+
+    async def test_submit_revision_validates_staged_pipeline_not_live(self):
+        """A staged edit that empties the pipeline is caught at submit time,
+        even when the live config is still valid."""
+        job = self._job(status=JobStatus.PUBLISHED)
+        job.pipeline_config = self._valid_pipeline()
+        job.pending_payload = {
+            "title": "new",
+            "pipelineConfig": {"stages": [], "ownerIds": [2]},
+        }
+        self.repo.get_by_job_id.return_value = job
+        self._two_approvers()
+
+        with self.assertRaisesRegex(ValueError, "pipeline stage"):
+            await self.service.submit_for_review(
+                self.session, job.job_id, reviewer_id=2, submitted_by=1, message=None
+            )
+
+    async def test_submit_revision_rechecks_staged_assignee_permission(self):
+        """The assignee/owner permission re-check runs against the staged
+        config (what would go live), not the current live config."""
+        job = self._job(status=JobStatus.PUBLISHED)
+        job.pipeline_config = self._valid_pipeline()
+        job.pending_payload = {
+            "title": "new",
+            "pipelineConfig": {
+                "stages": [
+                    {
+                        "stage": "recruiter_screening",
+                        "rounds": 1,
+                        "defaultAssigneeId": 8,
+                    }
+                ],
+                "ownerIds": [2],
+            },
+        }
+        self.repo.get_by_job_id.return_value = job
+        self._two_approvers()  # pool is ids 2 and 3 — 8 no longer qualifies
+
+        with self.assertRaisesRegex(ValueError, "no longer qualify"):
+            await self.service.submit_for_review(
+                self.session, job.job_id, reviewer_id=2, submitted_by=1, message=None
+            )
+
     async def test_submit_rejects_self_review(self):
         """A submitter cannot pick themselves as the reviewer."""
         job = self._job(status=JobStatus.DRAFT)
+        job.pipeline_config = self._valid_pipeline(owner_id=2)
         self.repo.get_by_job_id.return_value = job
         self._two_approvers()
 
@@ -399,6 +508,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
     async def test_submit_allows_single_approver_pool(self):
         """Submission has no minimum pool size — one eligible approver suffices."""
         job = self._job(status=JobStatus.DRAFT)
+        job.pipeline_config = self._valid_pipeline(owner_id=2)
         self.repo.get_by_job_id.return_value = job
         self.perms.get_active_users_with_permission.return_value = [self._approver(2)]
 
@@ -411,6 +521,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
     async def test_submit_rejects_reviewer_outside_pool(self):
         """The chosen reviewer must hold the approve permission."""
         job = self._job(status=JobStatus.DRAFT)
+        job.pipeline_config = self._valid_pipeline(owner_id=2)
         self.repo.get_by_job_id.return_value = job
         self._two_approvers()  # ids 2 and 3
 
@@ -422,6 +533,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
     async def test_submit_rejects_when_review_already_open(self):
         """A posting with a pending review cannot open a second one."""
         job = self._job(status=JobStatus.DRAFT)
+        job.pipeline_config = self._valid_pipeline(owner_id=2)
         self.repo.get_by_job_id.return_value = job
         self._two_approvers()
         self.review_repo.get_open_for_job.return_value = JobReviewEntity(
@@ -462,6 +574,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
     async def test_submit_draft_creates_initial_review_and_flips_status(self):
         """Submitting a DRAFT opens an INITIAL review and moves to PENDING_REVIEW."""
         job = self._job(status=JobStatus.DRAFT)
+        job.pipeline_config = self._valid_pipeline(owner_id=2)
         self.repo.get_by_job_id.return_value = job
         self._two_approvers()
 
@@ -481,7 +594,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         """submit_for_review inserts a JOB_REVIEW_REQUESTED notification for the reviewer."""
         job = JobEntity(kind=JobKind.ACTIVITY, title="T", status=JobStatus.DRAFT)
         job.job_id = 1
-        job.pipeline_config = {}
+        job.pipeline_config = self._valid_pipeline(owner_id=6)
         self.repo.get_by_job_id = AsyncMock(return_value=job)
         self.review_repo.get_open_for_job = AsyncMock(return_value=None)
         approver1 = UsersEntity(first_name="A", last_name="B")
@@ -505,6 +618,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         """submit_for_review logs a review_opened activity entry."""
         self._two_approvers()
         job = self._job(status=JobStatus.DRAFT)
+        job.pipeline_config = self._valid_pipeline(owner_id=2)
         self.repo.get_by_job_id.return_value = job
 
         await self.service.submit_for_review(self.session, job.job_id, 2, 5, "please")
@@ -522,7 +636,10 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         review and flips status to PUBLISHED_PENDING_REVISION — the flip now
         happens at submit time, not at edit time."""
         job = self._job(status=JobStatus.PUBLISHED)
-        job.pending_payload = {"title": "new"}
+        job.pending_payload = {
+            "title": "new",
+            "pipelineConfig": self._valid_pipeline(),
+        }
         self.repo.get_by_job_id.return_value = job
         self._two_approvers()
 
@@ -538,6 +655,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         """Submitting a PUBLISHED posting with nothing staged is rejected —
         there is no draft to send for review."""
         job = self._job(status=JobStatus.PUBLISHED)
+        job.pipeline_config = self._valid_pipeline()
         self.repo.get_by_job_id.return_value = job
         self._two_approvers()
 
