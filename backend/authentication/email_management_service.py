@@ -152,7 +152,10 @@ class EmailManagementService:
         if await self._user_emails.exists_on_other_user(
             session, normalized, current_user_id
         ):
-            raise ConflictError("Email already in use by another account")
+            raise ConflictError(
+                "Email already in use by another account. If it's yours, "
+                "sign in with a code to that address instead."
+            )
 
         self._auth0.start_passwordless(normalized)
 
@@ -516,13 +519,23 @@ class EmailManagementService:
     ) -> None:
         """
         Shared guard for unlinking ``identity`` (ownership assumed already
-        checked by the caller): refuses the caller's only remaining sign-in, the
-        identity backing the current session, and an active employee's INTERNAL
-        corp sign-in.
+        checked by the caller): refuses the identity backing the current
+        session, and an active employee's INTERNAL corp sign-in.
 
-        Re-run at confirm time, not just initiate: between the two steps the user
-        may have dropped their other sign-ins or become an active employee, and
-        neither must be allowed to strip the last or locked identity.
+        A caller's only remaining identity row is not refused: unlinking it
+        can never lock the account out. Completing this very step-up OTP
+        requires a confirmed primary contact email (``get_primary`` in
+        :meth:`initiate_unlink` / :meth:`confirm_unlink`); the primary row is
+        undeletable (:meth:`remove_email` refuses it); and a confirmed
+        primary is itself a passwordless login path, since any OTP-confirmed
+        address already works as a sign-in identifier without a
+        ``user_identities`` row (see :meth:`verify`). So the primary always
+        outlives the unlink and always logs in — there is no "last sign-in"
+        to protect.
+
+        Re-run at confirm time, not just initiate: between the two steps the
+        user may have become an active employee, and that must not be allowed
+        to strip the locked identity.
 
         Args:
             session (AsyncSession): The active async database session.
@@ -532,13 +545,9 @@ class EmailManagementService:
             identity (UserIdentitiesEntity): The identity row to unlink.
 
         Raises:
-            ConflictError: It is the only identity, or the current session's.
+            ConflictError: It is the current session's identity.
             PermissionError: It is an active employee's INTERNAL identity.
         """
-        identities = await self._user_identities.list_by_user(session, current_user_id)
-        if len(identities) <= 1:
-            raise ConflictError("Cannot remove the only remaining sign-in method")
-
         if identity.subject_identifier == current_sub:
             raise ConflictError(
                 "Cannot remove the sign-in used for the current session; "
@@ -560,13 +569,10 @@ class EmailManagementService:
         Begin a step-up-OTP unlink of one of the caller's sign-in identities.
 
         Validates the identity can be unlinked — owned by the caller, not the
-        only one, not the current session's, and not an active employee's
-        INTERNAL corp sign-in. As a conservative interim rule pending a product
-        decision on whether unlinking the method behind the primary contact needs
-        special handling, it additionally refuses when that identity's email is
-        the primary (switch the primary first). The OTP is sent to the current
-        primary, snapshotted into the signed state so :meth:`confirm_unlink` can
-        detect a swap mid-flow.
+        current session's, and not an active employee's INTERNAL corp
+        sign-in. The OTP is sent to the current primary (also the OTP
+        target used to prove control of the account), snapshotted into the
+        signed state so :meth:`confirm_unlink` can detect a swap mid-flow.
 
         Args:
             session (AsyncSession): The active async database session.
@@ -581,9 +587,8 @@ class EmailManagementService:
         Raises:
             ValueError: The identity is missing/owned by another user, or there
                 is no primary email to verify against.
-            ConflictError: It is the only identity, or the current session's.
-            PermissionError: It is an active employee's INTERNAL identity, or
-                its email is the primary contact.
+            ConflictError: It is the current session's identity.
+            PermissionError: It is an active employee's INTERNAL identity.
         """
         identity = await self._user_identities.get_by_id(session, identity_id)
         if identity is None or identity.user_id != current_user_id:
@@ -594,12 +599,6 @@ class EmailManagementService:
         primary = await self._user_emails.get_primary(session, current_user_id)
         if primary is None:
             raise ValueError("No primary email to verify against")
-
-        if (identity.email_claim or "").lower() == primary.email.lower():
-            raise PermissionError(
-                "This sign-in's email is your primary contact. Verify another "
-                "email, set it as your primary contact, then remove this sign-in."
-            )
 
         self._auth0.start_passwordless(primary.email)
         state = self._sign_state(
@@ -651,8 +650,8 @@ class EmailManagementService:
         Raises:
             ValueError: The state is invalid/expired/mismatched, the OTP is
                 wrong, or the identity vanished or is owned by another user.
-            ConflictError: It became the only identity, or the current session's,
-                between initiate and confirm.
+            ConflictError: It became the current session's identity between
+                initiate and confirm.
             PermissionError: The primary changed since initiate, or it is now an
                 active employee's INTERNAL identity.
             RateLimitedError: Auth0 throttled the user deletion.
