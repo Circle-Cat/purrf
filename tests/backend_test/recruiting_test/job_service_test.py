@@ -48,6 +48,10 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         self.job_activity_repo = MagicMock()
         self.job_activity_repo.create = AsyncMock()
         self.job_activity_repo.list_by_job = AsyncMock(return_value=[])
+        self.user_emails_repo = MagicMock()
+        self.user_emails_repo.get_contact_emails_by_user_ids = AsyncMock(
+            return_value={}
+        )
         self.service = JobService(
             self.repo,
             RecruitingMapper(),
@@ -56,6 +60,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
             self.notification_repo,
             self.users_repo,
             self.job_activity_repo,
+            self.user_emails_repo,
         )
 
     def _job(self, **kw):
@@ -369,12 +374,18 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         u2 = UsersEntity(first_name="Bo", last_name="Ng", primary_email="bo@x.com")
         u2.user_id = 8
         self.perms.get_active_users_with_permission.return_value = [u1, u2]
+        # Approver emails come from user_emails, not the legacy column.
+        self.user_emails_repo.get_contact_emails_by_user_ids.return_value = {
+            7: "ann@x.com"
+        }
 
         result = await self.service.list_active_approvers(self.session)
 
         self.assertEqual([a.user_id for a in result], [7, 8])
         self.assertEqual(result[0].name, "Ann Lee")
         self.assertEqual(result[0].email, "ann@x.com")
+        # A user with no user_emails rows falls back to an empty address.
+        self.assertEqual(result[1].email, "")
 
     async def test_submit_rejects_self_review(self):
         """A submitter cannot pick themselves as the reviewer."""

@@ -10,12 +10,22 @@ from backend.dto.job_review_dto import ApproverDto, JobReviewDto
 class RecruitingMapper:
     """Converts recruiting entities to DTOs."""
 
-    def to_approver_dto(self, user: UsersEntity) -> ApproverDto:
-        """Map a user to an ApproverDto (full name + primary email)."""
+    def to_approver_dto(self, user: UsersEntity, email: str) -> ApproverDto:
+        """Map a user to an ApproverDto (full name + contact email).
+
+        Args:
+            user (UsersEntity): The approver row.
+            email (str): The user's contact address from user_emails (see
+                ``UserEmailsRepository.get_contact_emails_by_user_ids``);
+                empty when they have none.
+
+        Returns:
+            ApproverDto: The approver projection.
+        """
         return ApproverDto(
             user_id=user.user_id,
             name=f"{user.first_name} {user.last_name}",
-            email=user.primary_email,
+            email=email,
         )
 
     def to_job_review_dto(
@@ -124,6 +134,7 @@ class RecruitingMapper:
         application: ApplicationEntity,
         user: UsersEntity,
         reviewer_name: str | None = None,
+        applicant_email: str = "",
     ) -> BoardCardDto:
         """Map an application + its joined applicant to a board card.
 
@@ -135,6 +146,8 @@ class RecruitingMapper:
                 ``BoardService.get_board``), or None when there is no
                 reviewer to show (either the stage isn't an interview stage,
                 or nobody is assigned yet).
+            applicant_email (str): The applicant's contact address from
+                user_emails; empty when they have none.
 
         Returns:
             BoardCardDto: The board's applicant-card projection.
@@ -142,7 +155,7 @@ class RecruitingMapper:
         return BoardCardDto(
             id=application.application_id,
             applicant_name=f"{user.first_name} {user.last_name}".strip(),
-            applicant_email=user.primary_email,
+            applicant_email=applicant_email,
             stage=application.stage,
             sub_status=application.sub_status,
             tags=application.tags,

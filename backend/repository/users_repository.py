@@ -11,6 +11,21 @@ class UsersRepository:
     Repository for handling database operations related to UsersEntity.
     """
 
+    @staticmethod
+    def _any_email_matches(pattern: str):
+        """
+        EXISTS filter: any of the user's user_emails rows (primary or not)
+        matches the lowercased LIKE ``pattern``. The email leg of the admin
+        substring searches; user_emails stores addresses already lowercased,
+        so no lower() is needed on the column.
+        """
+        return exists(
+            select(UserEmailsEntity.email_id).where(
+                UserEmailsEntity.user_id == UsersEntity.user_id,
+                UserEmailsEntity.email.like(pattern),
+            )
+        )
+
     async def get_user_by_user_id(
         self, session: AsyncSession, user_id: int
     ) -> UsersEntity | None:
@@ -226,7 +241,7 @@ class UsersRepository:
                 or_(
                     func.lower(UsersEntity.first_name).like(pattern),
                     func.lower(UsersEntity.last_name).like(pattern),
-                    func.lower(UsersEntity.primary_email).like(pattern),
+                    self._any_email_matches(pattern),
                 )
             )
         if user_id is not None:
@@ -348,7 +363,7 @@ class UsersRepository:
                 or_(
                     func.lower(UsersEntity.first_name).like(pattern),
                     func.lower(UsersEntity.last_name).like(pattern),
-                    func.lower(UsersEntity.primary_email).like(pattern),
+                    self._any_email_matches(pattern),
                     func.lower(UsersEntity.blocked_reason).like(pattern),
                 )
             )

@@ -28,12 +28,14 @@ class MeetingService:
         mentorship_mapper,
         users_repository,
         google_service,
+        user_emails_repository,
     ):
         self.logger = logger
         self.mentorship_pairs_repository = mentorship_pairs_repository
         self.mentorship_mapper = mentorship_mapper
         self.users_repository = users_repository
         self.google_service = google_service
+        self.user_emails_repository = user_emails_repository
 
     async def get_meetings_by_user_and_round(
         self, session: AsyncSession, user_context: UserContextDto, round_id: int
@@ -254,8 +256,25 @@ class MeetingService:
         event_id = uuid.uuid4().hex
         request_id = str(uuid.uuid4())
 
-        # Call Google Calendar API
-        attendees_emails = [current_user.primary_email, partner.primary_email]
+        # Call Google Calendar API. Both attendees' contact addresses come
+        # from user_emails (their primary, or the claim seeded from their
+        # login while they are still in front of the verify wall).
+        contact_by_user_id = (
+            await self.user_emails_repository.get_contact_emails_by_user_ids(
+                session, [current_user.user_id, partner.user_id]
+            )
+        )
+        attendees_emails = []
+        for attendee in (current_user, partner):
+            attendee_email = contact_by_user_id.get(attendee.user_id)
+            if attendee_email:
+                attendees_emails.append(attendee_email)
+            else:
+                self.logger.warning(
+                    "[MeetingService] user_id=%s has no contact email; "
+                    "creating the calendar invite without them",
+                    attendee.user_id,
+                )
         google_result = await asyncio.to_thread(
             self.google_service.insert_google_meeting,
             summary=summary,

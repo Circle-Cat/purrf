@@ -289,8 +289,8 @@ class TestUserEmailsRepository(BaseRepositoryTestLib):
         # Deleting a row that does not exist should not raise.
         await self.repo.delete(self.session, 99999999)
 
-    # get_non_primary_emails_by_user_ids — backs Meet attendance alt-email matching
-    async def test_get_non_primary_emails_by_user_ids(self):
+    # get_emails_by_user_ids — backs Meet attendance any-address matching
+    async def test_get_emails_by_user_ids_returns_all_rows(self):
         other = _make_user()
         await self.insert_entities([other])
         await self.insert_entities([
@@ -307,12 +307,6 @@ class TestUserEmailsRepository(BaseRepositoryTestLib):
                 is_primary=False,
             ),
             UserEmailsEntity(
-                user_id=self.user.user_id,
-                email="alt2@example.com",
-                otp_confirmed=True,
-                is_primary=False,
-            ),
-            UserEmailsEntity(
                 user_id=other.user_id,
                 email="otheralt@example.com",
                 otp_confirmed=False,
@@ -320,7 +314,7 @@ class TestUserEmailsRepository(BaseRepositoryTestLib):
             ),
         ])
 
-        result = await self.repo.get_non_primary_emails_by_user_ids(
+        result = await self.repo.get_emails_by_user_ids(
             self.session, [self.user.user_id, other.user_id]
         )
 
@@ -330,30 +324,95 @@ class TestUserEmailsRepository(BaseRepositoryTestLib):
                 other.user_id: result[other.user_id],
             },
             {
-                self.user.user_id: ["alt1@example.com", "alt2@example.com"],
+                self.user.user_id: ["alt1@example.com", "primary@example.com"],
                 other.user_id: ["otheralt@example.com"],
             },
         )
 
-    async def test_get_non_primary_emails_by_user_ids_empty_input(self):
-        result = await self.repo.get_non_primary_emails_by_user_ids(self.session, [])
+    async def test_get_emails_by_user_ids_empty_input(self):
+        result = await self.repo.get_emails_by_user_ids(self.session, [])
         self.assertEqual(result, {})
 
-    async def test_get_non_primary_emails_by_user_ids_only_primary(self):
+    # get_contact_emails_by_user_ids — the user_emails replacement for reading
+    # legacy users.primary_email as a contact/display address
+    async def test_get_contact_emails_by_user_ids_prefers_primary(self):
         await self.insert_entities([
             UserEmailsEntity(
                 user_id=self.user.user_id,
-                email="onlyprimary@example.com",
+                email="older@example.com",
+                otp_confirmed=False,
+                is_primary=False,
+            ),
+            UserEmailsEntity(
+                user_id=self.user.user_id,
+                email="primary@example.com",
+                otp_confirmed=True,
+                is_primary=True,
+            ),
+        ])
+
+        result = await self.repo.get_contact_emails_by_user_ids(
+            self.session, [self.user.user_id]
+        )
+
+        self.assertEqual(result, {self.user.user_id: "primary@example.com"})
+
+    async def test_get_contact_emails_by_user_ids_falls_back_to_oldest_claim(self):
+        # No primary yet (e.g. a user still in front of the verify wall): the
+        # oldest claim — the address seeded from the login — stands in, which
+        # matches what the legacy users.primary_email column held.
+        await self.insert_entities([
+            UserEmailsEntity(
+                user_id=self.user.user_id,
+                email="seeded@example.com",
+                otp_confirmed=False,
+                is_primary=False,
+            )
+        ])
+        await self.insert_entities([
+            UserEmailsEntity(
+                user_id=self.user.user_id,
+                email="added-later@example.com",
+                otp_confirmed=False,
+                is_primary=False,
+            )
+        ])
+
+        result = await self.repo.get_contact_emails_by_user_ids(
+            self.session, [self.user.user_id]
+        )
+
+        self.assertEqual(result, {self.user.user_id: "seeded@example.com"})
+
+    async def test_get_contact_emails_by_user_ids_omits_user_without_rows(self):
+        result = await self.repo.get_contact_emails_by_user_ids(
+            self.session, [self.user.user_id]
+        )
+        self.assertEqual(result, {})
+
+    async def test_get_contact_emails_by_user_ids_empty_input(self):
+        result = await self.repo.get_contact_emails_by_user_ids(self.session, [])
+        self.assertEqual(result, {})
+
+    async def test_get_contact_email_single_user(self):
+        await self.insert_entities([
+            UserEmailsEntity(
+                user_id=self.user.user_id,
+                email="primary@example.com",
                 otp_confirmed=True,
                 is_primary=True,
             )
         ])
 
-        result = await self.repo.get_non_primary_emails_by_user_ids(
-            self.session, [self.user.user_id]
+        self.assertEqual(
+            await self.repo.get_contact_email(self.session, self.user.user_id),
+            "primary@example.com",
         )
 
-        self.assertEqual(result, {})
+    async def test_get_contact_email_missing_returns_none(self):
+        self.assertIsNone(
+            await self.repo.get_contact_email(self.session, self.user.user_id)
+        )
 
 
 if __name__ == "__main__":

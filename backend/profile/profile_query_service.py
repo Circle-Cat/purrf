@@ -18,6 +18,7 @@ class ProfileQueryService:
         experience_repository,
         training_repository,
         profile_mapper,
+        user_emails_repository,
     ):
         """
         Initialize ProfileQueryService with required repositories.
@@ -27,11 +28,14 @@ class ProfileQueryService:
             experience_repository: Repository handling ExperienceEntity.
             training_repository: Repository handling TrainingEntity.
             profile_mapper: Mapper used to convert entities into ProfileDto.
+            user_emails_repository: Repository handling UserEmailsEntity;
+                contact-email resolution for the profile view.
         """
         self.users_repository = users_repository
         self.experience_repository = experience_repository
         self.training_repository = training_repository
         self.profile_mapper = profile_mapper
+        self.user_emails_repository = user_emails_repository
 
     async def get_profile(
         self,
@@ -81,10 +85,15 @@ class ProfileQueryService:
                 session, user_id
             )
 
+        contact_email = await self.user_emails_repository.get_contact_email(
+            session, user_id
+        )
+
         return self.profile_mapper.map_to_profile_dto(
             user=users_entity,
             experience=experience_entity,
             trainings=training_entities,
             include_work_history=include_work_history,
             include_education=include_education,
+            primary_email=contact_email or "",
         )

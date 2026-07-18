@@ -137,12 +137,10 @@ class MeetAttendanceService:
         }
         users = await self.users_repository.get_all_by_ids(session, list(active_uids))
         user_by_id = {u.user_id: u for u in users}
-        # Each user's alternative (non-primary) emails, used to match a
-        # participant who signed in with a secondary address.
-        alt_emails_by_id = (
-            await self.user_emails_repository.get_non_primary_emails_by_user_ids(
-                session, list(active_uids)
-            )
+        # Every known address per user (primary and secondary), used to match
+        # a participant whichever address they signed in with.
+        emails_by_id = await self.user_emails_repository.get_emails_by_user_ids(
+            session, list(active_uids)
         )
         self.logger.debug(
             "[MeetAttendanceService] Loaded %d users for %d active UIDs",
@@ -251,7 +249,7 @@ class MeetAttendanceService:
                     identity_map,
                     mentor,
                     mentee,
-                    alt_emails_by_id,
+                    emails_by_id,
                 )
                 self.logger.debug(
                     "[MeetAttendanceService] Space %s: mentor_intervals=%d, mentee_intervals=%d, anon_keys=%s",
@@ -328,7 +326,7 @@ class MeetAttendanceService:
         user_entities: list[UsersEntity],
     ) -> dict[str, str | None]:
         """
-        Resolves Google user IDs found in participant logs to their primary email addresses.
+        Resolves Google user IDs found in participant logs to their contact email addresses.
 
         Checks the mentor/mentee user objects first (local cache) before falling back
         to bulk Google API lookups for any unresolved UIDs. The local cache is keyed
@@ -368,7 +366,11 @@ class MeetAttendanceService:
         google_subs = await self.user_identities_repository.get_google_subs_by_user_ids(
             session, [u.user_id for u in known_users]
         )
-        email_by_user_id = {u.user_id: u.primary_email.lower() for u in known_users}
+        email_by_user_id = (
+            await self.user_emails_repository.get_contact_emails_by_user_ids(
+                session, [u.user_id for u in known_users]
+            )
+        )
         local_uid_map = {
             sub.split("|")[-1]: email_by_user_id[user_id]
             for user_id, subs in google_subs.items()
@@ -408,7 +410,7 @@ class MeetAttendanceService:
         identity_map: dict[str, str | None],
         mentor: UsersEntity | None,
         mentee: UsersEntity | None,
-        alt_emails_by_id: dict[int, list[str]],
+        emails_by_id: dict[int, list[str]],
     ) -> tuple[dict[str, IntervalTree], dict[str, IntervalTree]]:
         """
         Converts raw participant session records into merged IntervalTrees grouped by role.
@@ -442,8 +444,8 @@ class MeetAttendanceService:
 
         mentor_names = self._get_user_name_fingerprints(mentor)
         mentee_names = self._get_user_name_fingerprints(mentee)
-        mentor_emails = self._get_user_emails(mentor, alt_emails_by_id)
-        mentee_emails = self._get_user_emails(mentee, alt_emails_by_id)
+        mentor_emails = self._get_user_emails(mentor, emails_by_id)
+        mentee_emails = self._get_user_emails(mentee, emails_by_id)
 
         for conf in conf_list:
             conf_end = isoparse(conf["end_time"])
@@ -848,25 +850,22 @@ class MeetAttendanceService:
         }
 
     def _get_user_emails(
-        self, user: UsersEntity | None, alt_emails_by_id: dict[int, list[str]]
+        self, user: UsersEntity | None, emails_by_id: dict[int, list[str]]
     ) -> set[str]:
         """
         Returns the set of all known email addresses for a user.
 
         Args:
             user: User ORM object, or None.
-            alt_emails_by_id: Map of user_id to that user's alternative
-                (non-primary) emails, from user_emails.
+            emails_by_id: Map of user_id to all of that user's addresses
+                (primary and secondary), from user_emails.
 
         Returns:
-            A set of lowercase email strings (primary + alternatives), or an empty set
-            if user is None.
+            A set of lowercase email strings, or an empty set if user is None.
         """
         if not user:
             return set()
-        return {user.primary_email.lower()} | {
-            e.lower() for e in alt_emails_by_id.get(user.user_id, [])
-        }
+        return {e.lower() for e in emails_by_id.get(user.user_id, [])}
 
     def _get_user_name_fingerprints(self, user: UsersEntity | None) -> set[str]:
         """

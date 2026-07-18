@@ -28,16 +28,21 @@ _SUPER_ADMIN_DERIVED_SOURCE = "super_admin"
 
 
 class PermissionAdminService:
-    def __init__(self, users_repository, user_permissions_repository):
+    def __init__(
+        self, users_repository, user_permissions_repository, user_emails_repository
+    ):
         """
         Args:
             users_repository (UsersRepository): Repository for user rows
                 (list/search and single lookups).
             user_permissions_repository (UserPermissionsRepository): Repository
                 for grant rows (active permissions, history, reverse lookup, audit).
+            user_emails_repository (UserEmailsRepository): Contact-email
+                resolution for the admin user views.
         """
         self._users = users_repository
         self._perms = user_permissions_repository
+        self._user_emails = user_emails_repository
 
     def list_permission_catalog(self) -> list[PermissionCatalogEntryDto]:
         """Every permission the admin UI can grant, with its description."""
@@ -93,11 +98,15 @@ class PermissionAdminService:
             is_super_admin=is_super_admin,
             user_type=user_type,
         )
+        contact_by_user_id = await self._user_emails.get_contact_emails_by_user_ids(
+            session, [u.user_id for u, _ in rows]
+        )
         return UserListDto(
             users=[
                 self._to_admin_user_dto(
                     u,
                     IdentityType.INTERNAL if is_internal else IdentityType.EXTERNAL,
+                    contact_by_user_id.get(u.user_id, ""),
                 )
                 for u, is_internal in rows
             ],
@@ -366,9 +375,11 @@ class PermissionAdminService:
         )
         user.is_super_admin = True
         internal = await self._users.is_internal(session, user_id)
+        contact_email = await self._user_emails.get_contact_email(session, user_id)
         dto = self._to_admin_user_dto(
             user,
             IdentityType.INTERNAL if internal else IdentityType.EXTERNAL,
+            contact_email or "",
         )
         await session.commit()
         return dto
@@ -403,28 +414,32 @@ class PermissionAdminService:
         )
         user.is_super_admin = False
         internal = await self._users.is_internal(session, user_id)
+        contact_email = await self._user_emails.get_contact_email(session, user_id)
         dto = self._to_admin_user_dto(
             user,
             IdentityType.INTERNAL if internal else IdentityType.EXTERNAL,
+            contact_email or "",
         )
         await session.commit()
         return dto
 
     @staticmethod
-    def _to_admin_user_dto(user, user_type: str) -> AdminUserDto:
+    def _to_admin_user_dto(user, user_type: str, primary_email: str) -> AdminUserDto:
         """
         Map a UsersEntity to an AdminUserDto.
 
         Args:
             user (UsersEntity): The user row.
             user_type (str): The user type ("internal" or "external").
+            primary_email (str): The user's contact address from user_emails;
+                empty when they have none.
 
         Returns:
             AdminUserDto: The serializable view.
         """
         return AdminUserDto(
             user_id=user.user_id,
-            primary_email=user.primary_email,
+            primary_email=primary_email,
             first_name=user.first_name,
             last_name=user.last_name,
             is_active=user.is_active,

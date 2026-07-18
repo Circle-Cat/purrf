@@ -191,10 +191,14 @@ class TestUsersRepository(BaseRepositoryTestLib):
 
         self.assertFalse(user.is_active)
 
-    def _make_user(self, *, first_name="T", last_name="U", email):
+    def _make_user(self, *, first_name="T", last_name=None, email):
+        # last_name defaults to the email's local part so tests that isolate
+        # their rows with a token-bearing email still match search=token via
+        # the name leg: the email leg of the search reads user_emails now,
+        # not the legacy users.primary_email column this helper fills.
         return UsersEntity(
             first_name=first_name,
-            last_name=last_name,
+            last_name=last_name if last_name is not None else email.split("@")[0],
             timezone="UTC",
             timezone_updated_at=datetime.now(timezone.utc),
             communication_channel=CommunicationMethod.EMAIL,
@@ -204,11 +208,28 @@ class TestUsersRepository(BaseRepositoryTestLib):
         )
 
     async def test_list_users_search_matches_and_paginates(self):
-        """A unique token isolates these rows from any pre-existing DB data."""
+        """A unique token isolates these rows from any pre-existing DB data.
+        The token appears only in user_emails rows — the email leg of the
+        search reads user_emails, not the legacy users.primary_email column."""
         token = uuid.uuid4().hex[:10]
+        users = [
+            self._make_user(first_name="Zoe", email=f"{uuid.uuid4()}@example.com"),
+            self._make_user(first_name="Yan", email=f"{uuid.uuid4()}@example.com"),
+        ]
+        await self.insert_entities(users)
         await self.insert_entities([
-            self._make_user(first_name="Zoe", email=f"zoe-{token}@example.com"),
-            self._make_user(first_name="Yan", email=f"yan-{token}@example.com"),
+            UserEmailsEntity(
+                user_id=users[0].user_id,
+                email=f"zoe-{token}@example.com",
+                otp_confirmed=False,
+                is_primary=False,
+            ),
+            UserEmailsEntity(
+                user_id=users[1].user_id,
+                email=f"yan-{token}@example.com",
+                otp_confirmed=False,
+                is_primary=False,
+            ),
         ])
 
         page1, total = await self.repo.list_users(
@@ -425,11 +446,21 @@ class TestUsersRepository(BaseRepositoryTestLib):
         self.assertEqual(rows[0].user_id, user.user_id)
 
     async def test_list_blocked_users_search_matches_email(self):
+        # The token appears only in a user_emails row — the email leg of the
+        # search reads user_emails, not the legacy users.primary_email column.
         token = uuid.uuid4().hex[:10]
-        user = self._make_user(email=f"findme-{token}@example.com")
+        user = self._make_user(email=f"{uuid.uuid4()}@example.com")
         user.is_blocked = True
         user.blocked_reason = "spam"
         await self.insert_entities([user])
+        await self.insert_entities([
+            UserEmailsEntity(
+                user_id=user.user_id,
+                email=f"findme-{token}@example.com",
+                otp_confirmed=True,
+                is_primary=True,
+            )
+        ])
 
         rows = await self.repo.list_blocked_users(self.session, search=token)
         self.assertEqual(len(rows), 1)

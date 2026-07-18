@@ -77,8 +77,19 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
         )
 
         self.mock_user_emails_repo = MagicMock()
-        self.mock_user_emails_repo.get_non_primary_emails_by_user_ids = AsyncMock(
-            return_value={}
+        # All known addresses per user come from user_emails, not the legacy
+        # users.primary_email column.
+        self.mock_user_emails_repo.get_emails_by_user_ids = AsyncMock(
+            return_value={
+                10: ["mentor@example.com"],
+                20: ["mentee@example.com"],
+            }
+        )
+        self.mock_user_emails_repo.get_contact_emails_by_user_ids = AsyncMock(
+            return_value={
+                10: "mentor@example.com",
+                20: "mentee@example.com",
+            }
         )
 
         self.mock_session = AsyncMock()
@@ -755,9 +766,10 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
             user_id=self.mentor.user_id,
             primary_email="mentor@example.com",
         )
-        # The alternative email now lives in user_emails (a non-primary row).
-        self.mock_user_emails_repo.get_non_primary_emails_by_user_ids.return_value = {
-            self.mentor.user_id: ["mentor-alt@example.com"],
+        # The alternative email is just another user_emails row.
+        self.mock_user_emails_repo.get_emails_by_user_ids.return_value = {
+            self.mentor.user_id: ["mentor@example.com", "mentor-alt@example.com"],
+            self.mentee.user_id: ["mentee@example.com"],
         }
         pair = self._make_active_pair(
             start="2026-04-07T10:00:00+00:00",

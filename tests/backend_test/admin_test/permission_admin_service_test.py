@@ -54,7 +54,11 @@ class TestPermissionAdminService(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.users = AsyncMock()
         self.perms = AsyncMock()
-        self.service = PermissionAdminService(self.users, self.perms)
+        # Contact emails come from user_emails, not the legacy column.
+        self.user_emails = AsyncMock()
+        self.user_emails.get_contact_emails_by_user_ids.return_value = {}
+        self.user_emails.get_contact_email.return_value = None
+        self.service = PermissionAdminService(self.users, self.perms, self.user_emails)
         self.session = AsyncMock()
         # Default: no super admins (most tests are about plain grant rows).
         self.users.get_super_admins.return_value = []
@@ -237,6 +241,7 @@ class TestPermissionAdminService(unittest.IsolatedAsyncioTestCase):
             ],
             1,
         )
+        self.user_emails.get_contact_emails_by_user_ids.return_value = {1: "a@x.com"}
         out = await self.service.list_users(
             self.session, search=None, limit=20, offset=0
         )
@@ -389,6 +394,7 @@ class TestPermissionAdminService(unittest.IsolatedAsyncioTestCase):
         )
         self.users.set_super_admin.return_value = 1
         self.users.is_internal = AsyncMock(return_value=False)
+        self.user_emails.get_contact_email.return_value = "s@x.com"
         dto = await self.service.set_super_admin(self.session, 2, granted_by=9)
         self.users.set_super_admin.assert_awaited_once_with(self.session, 2, True)
         self.perms.grant.assert_awaited_once()
@@ -397,6 +403,7 @@ class TestPermissionAdminService(unittest.IsolatedAsyncioTestCase):
         names = args[2] if len(args) > 2 else kwargs["permission_names"]
         self.assertEqual(list(names), ["*"])
         self.assertTrue(dto.is_super_admin)
+        self.assertEqual(dto.primary_email, "s@x.com")
         self.assertEqual(dto.user_type, "external")
         self.session.commit.assert_awaited_once()
 
