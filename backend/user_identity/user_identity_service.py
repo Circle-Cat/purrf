@@ -22,10 +22,13 @@ class UserIdentityService:
     Service responsible for resolving internal user identities from external
     authentication identifiers.
 
-    Resolution is three steps:
+    Resolution is four steps:
       1. sub lookup on user_identities
       2. email fallback: find a migration-backfilled identity by email_claim
          and overwrite its mocked sub in place with the real one
+      2.5. passwordless routing: a verified 'email|' login resolves to the
+         account that OTP-confirmed its address (the login is itself the
+         OTP round-trip), without creating any rows
       3. first-login: insert new users + user_identities + a user_emails
          claim row (confirmed and primary only for 'email|' subs)
     """
@@ -126,9 +129,12 @@ class UserIdentityService:
         Resolve a user not found by sub lookup.
 
         Tries step 2 (overwrite a migration-backfilled identity found by
-        email) first; on miss, checks whether the login's email already
-        belongs to some account and, only when it does not, falls through to
-        step 3 (first-login insert). Writes the resolved user_id back onto
+        email) first; on miss, checks step 2.5 (passwordless routing: a
+        verified 'email|' login whose address an account has OTP-confirmed
+        returns that account directly, without swapping or creating). If no
+        confirmed owner, checks whether the email already belongs to some
+        account and, only when it does not, falls through to step 3
+        (first-login insert). Writes the resolved user_id back onto
         `user_info` (mutates the DTO).
 
         Args:
@@ -137,11 +143,12 @@ class UserIdentityService:
                 identity_type and last_login_at.
 
         Returns:
-            UsersEntity | None: The linked or newly created user, or None
-            when the email already belongs to an existing account — the
-            sign-in is a second method for that account, so nothing is
-            created and the caller must hold the session at the verify wall
-            to link (needs-link, PUR-480).
+            UsersEntity | None: The linked or newly created user (step 2 swap,
+            step 2.5 routed owner, or step 3 first-login), or None when the
+            email already belongs to an existing account but is not routable
+            (no OTP-confirmed claim) — the sign-in is a second method for that
+            account, so nothing is created and the caller must hold the session
+            at the verify wall to link (needs-link, PUR-480).
         """
         email = user_info.primary_email.lower()
         login_dt = _iat_as_datetime(user_info.last_login_at)
@@ -167,6 +174,29 @@ class UserIdentityService:
                 )
             user_info.user_id = user.user_id
             return user
+
+        # Step 2.5 (LinkedIn-style routing): a verified passwordless login IS
+        # a first-party OTP round-trip for its address, so an address some
+        # account has OTP-confirmed logs straight into that account — the
+        # needs-link wall would only ask for the same proof a second time.
+        # Purely a resolution step: nothing is written, so the per-request
+        # re-resolution for identity-row-less passwordless subs is idempotent.
+        if user_info.sub.startswith("email|") and user_info.email_verified:
+            confirmed = await self.user_emails_repository.get_confirmed_by_email(
+                session=session, email=email
+            )
+            if confirmed is not None:
+                user = await self.users_repository.get_user_by_user_id(
+                    session=session, user_id=confirmed.user_id
+                )
+                user_info.user_id = user.user_id
+                self.logger.info(
+                    "[UserIdentityService] passwordless login routed to "
+                    "user_id=%s by confirmed address (sub=%s)",
+                    user.user_id,
+                    user_info.sub,
+                )
+                return user
 
         # The email already belongs to an account as a user_emails claim.
         # The proactive check classifies the collision before the insert:
