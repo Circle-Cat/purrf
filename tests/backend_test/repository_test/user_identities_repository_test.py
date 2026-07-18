@@ -1,5 +1,4 @@
 import unittest
-import uuid
 from datetime import datetime, timezone
 
 from backend.repository.user_identities_repository import UserIdentitiesRepository
@@ -18,7 +17,6 @@ def _make_user(is_active: bool = True) -> UsersEntity:
         timezone="Asia/Shanghai",
         timezone_updated_at=datetime.now(timezone.utc),
         communication_channel=CommunicationMethod.EMAIL,
-        primary_email=f"{uuid.uuid4()}@example.com",
         is_active=is_active,
         updated_timestamp=datetime.now(timezone.utc),
     )

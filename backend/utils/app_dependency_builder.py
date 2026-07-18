@@ -447,7 +447,6 @@ class AppDependencyBuilder:
             auth0_client=self.auth0_client,
             user_emails_repository=self.user_emails_repository,
             user_identities_repository=self.user_identities_repository,
-            users_repository=self.users_repository,
             user_permissions_repository=self.user_permissions_repository,
             logger=self.logger,
         )

@@ -104,51 +104,6 @@ class UsersRepository:
                 emails_map[user.user_id].append(email)
         return users_map, emails_map
 
-    async def get_user_by_primary_email(
-        self, session: AsyncSession, primary_email: str
-    ) -> UsersEntity | None:
-        """
-        Retrieve a users entity by its primary email.
-
-        This method expects an externally managed AsyncSession, typically provided
-        by the service layer within a transactional context.
-
-        Args:
-            session (AsyncSession): The active async database session.
-            primary_email (string): The primary email of the user to retrieve.
-
-        Returns:
-            UsersEntity | None: The matching user entity if found; otherwise None.
-        """
-        result = await session.execute(
-            select(UsersEntity).where(UsersEntity.primary_email == primary_email)
-        )
-
-        return result.scalars().one_or_none()
-
-    async def update_primary_email(
-        self, session: AsyncSession, user_id: int, email: str
-    ) -> None:
-        """
-        Overwrite the legacy ``users.primary_email`` column for one user.
-
-        Write-through used by EmailManagementService to keep the legacy column in
-        sync with the current primary user_emails row (see the TODO on
-        ``UsersEntity.primary_email``). Flushes but does not commit; the caller
-        owns the transaction boundary.
-
-        Args:
-            session (AsyncSession): The active async database session.
-            user_id (int): The user whose primary_email to update.
-            email (str): The new primary email value.
-        """
-        await session.execute(
-            update(UsersEntity)
-            .where(UsersEntity.user_id == user_id)
-            .values(primary_email=email)
-        )
-        await session.flush()
-
     async def upsert_users(
         self, session: AsyncSession, entity: UsersEntity
     ) -> UsersEntity:
@@ -191,7 +146,7 @@ class UsersRepository:
         Args:
             session (AsyncSession): The active async database session.
             search (str | None): Case-insensitive substring over first_name /
-                last_name / primary_email; None lists everyone.
+                last_name / any user_emails address; None lists everyone.
             user_id (int | None): When not None, restricts results to the user
                 with this exact ``user_id``. Applied in addition to ``search``.
             limit (int): Max rows to return.
@@ -345,7 +300,8 @@ class UsersRepository:
     ) -> list[UsersEntity]:
         """
         All currently-blocked users, optionally filtered by a case-insensitive
-        substring over first_name / last_name / primary_email / blocked_reason.
+        substring over first_name / last_name / any user_emails address /
+        blocked_reason.
 
         Args:
             session (AsyncSession): The active async database session.

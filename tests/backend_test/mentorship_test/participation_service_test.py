@@ -88,7 +88,6 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
             first_name="Alice",
             last_name="Smith",
             preferred_name="Alice Smith",
-            primary_email="partner@example.com",
         )
 
         self.user_context = MagicMock(
@@ -408,7 +407,6 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
             first_name="Bob",
             last_name="S",
             preferred_name="Bob",
-            primary_email="bob@ex.com",
         )
 
         # Case B: Current user (123) is Mentee, Partner (789) is Mentor
@@ -421,7 +419,6 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
             first_name="Alice",
             last_name="W",
             preferred_name="Alice",
-            primary_email="alice@ex.com",
         )
 
         self.mock_pairs_repo.get_pairs_with_partner_info.return_value = [

@@ -50,9 +50,7 @@ class TestRecruitingMapper(unittest.TestCase):
         )
         application.application_id = 42
         application.created_datetime = applied_at
-        user = UsersEntity(
-            first_name="Ada", last_name="Lovelace", primary_email="ada@b.com"
-        )
+        user = UsersEntity(first_name="Ada", last_name="Lovelace")
         user.user_id = 2
 
         dto = self.mapper.to_board_card_dto(
@@ -72,7 +70,7 @@ class TestRecruitingMapper(unittest.TestCase):
             job_id=1, user_id=2, stage=ApplicationStage.APPLIED, current_round=1
         )
         application.application_id = 1
-        user = UsersEntity(first_name="Cher", last_name="", primary_email="c@b.com")
+        user = UsersEntity(first_name="Cher", last_name="")
         user.user_id = 2
 
         dto = self.mapper.to_board_card_dto(application, user)
@@ -87,7 +85,7 @@ class TestRecruitingMapper(unittest.TestCase):
             current_round=2,
         )
         application.application_id = 1
-        user = UsersEntity(first_name="A", last_name="B", primary_email="a@b.com")
+        user = UsersEntity(first_name="A", last_name="B")
         user.user_id = 2
 
         dto = self.mapper.to_board_card_dto(application, user)
@@ -102,7 +100,7 @@ class TestRecruitingMapper(unittest.TestCase):
             current_round=1,
         )
         application.application_id = 1
-        user = UsersEntity(first_name="A", last_name="B", primary_email="a@b.com")
+        user = UsersEntity(first_name="A", last_name="B")
         user.user_id = 2
 
         dto = self.mapper.to_board_card_dto(
@@ -116,7 +114,7 @@ class TestRecruitingMapper(unittest.TestCase):
             job_id=1, user_id=2, stage=ApplicationStage.TECH, current_round=1
         )
         application.application_id = 1
-        user = UsersEntity(first_name="A", last_name="B", primary_email="a@b.com")
+        user = UsersEntity(first_name="A", last_name="B")
         user.user_id = 2
 
         dto = self.mapper.to_board_card_dto(application, user)
@@ -145,7 +143,7 @@ class TestRecruitingMapper(unittest.TestCase):
             current_round=1,
         )
         application.application_id = 1
-        user = UsersEntity(first_name="A", last_name="B", primary_email="a@b.com")
+        user = UsersEntity(first_name="A", last_name="B")
         user.user_id = 2
         user.is_blocked = True
 
@@ -162,7 +160,7 @@ class TestRecruitingMapper(unittest.TestCase):
             current_round=1,
         )
         application.application_id = 1
-        user = UsersEntity(first_name="A", last_name="B", primary_email="a@b.com")
+        user = UsersEntity(first_name="A", last_name="B")
         user.user_id = 2
         user.is_blocked = False
 
@@ -175,7 +173,7 @@ class TestRecruitingMapper(unittest.TestCase):
             job_id=1, user_id=2, stage=ApplicationStage.APPLIED, current_round=1
         )
         application.application_id = 1
-        user = UsersEntity(first_name="A", last_name="B", primary_email="a@b.com")
+        user = UsersEntity(first_name="A", last_name="B")
         user.user_id = 2
 
         dto = self.mapper.to_board_card_dto(application, user)

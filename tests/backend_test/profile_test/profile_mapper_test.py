@@ -34,7 +34,6 @@ class TestProfileMapper(unittest.TestCase):
             timezone="Asia/Shanghai",
             timezone_updated_at=self.now - timedelta(hours=2),
             communication_channel=CommunicationMethod.EMAIL,
-            primary_email="alice@example.com",
             updated_timestamp=self.now,
             preferred_name="Alice",
             linkedin_link="http://linkedin.com/alice",

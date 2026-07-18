@@ -1,5 +1,4 @@
 import unittest
-import uuid
 from datetime import datetime, timezone
 from backend.common.mentorship_enums import CommunicationMethod
 from backend.common.recruiting_enums import ApplicationStage, JobKind, JobStatus
@@ -22,7 +21,6 @@ def _make_user() -> UsersEntity:
         timezone="America/Los_Angeles",
         timezone_updated_at=datetime.now(timezone.utc),
         communication_channel=CommunicationMethod.EMAIL,
-        primary_email=f"{uuid.uuid4().hex}@test.com",
         is_active=True,
         updated_timestamp=datetime.now(timezone.utc),
     )

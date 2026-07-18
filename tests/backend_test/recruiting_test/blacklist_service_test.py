@@ -15,7 +15,7 @@ class TestBlacklistService(unittest.IsolatedAsyncioTestCase):
         self.service = BlacklistService(self.users_repo, self.user_emails_repo)
 
     def _user(self, user_id=1, first="A", last="B", email="a@b.com", reason="cheated"):
-        u = UsersEntity(first_name=first, last_name=last, primary_email=email)
+        u = UsersEntity(first_name=first, last_name=last)
         u.user_id = user_id
         u.is_blocked = True
         u.blocked_reason = reason

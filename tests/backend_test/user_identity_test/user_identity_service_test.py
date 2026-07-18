@@ -37,9 +37,8 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
         self.user = MagicMock(spec=UsersEntity, user_id=10)
 
         # Default: the login's email is unowned, so first-login creation
-        # proceeds. Ownership tests override these explicitly.
+        # proceeds. Ownership tests override this explicitly.
         self.emails_repo.exists_claim_by_email.return_value = False
-        self.users_repo.get_user_by_primary_email.return_value = None
 
     # find_user_by_sub — Step 1 sub lookup (single JOIN)
     async def test_find_user_by_sub_hit_without_last_login(self):
@@ -118,25 +117,11 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(
             await self.service.email_has_owner(self.session, "a@example.com")
         )
-        # Short-circuits before the legacy column lookup.
-        self.users_repo.get_user_by_primary_email.assert_not_awaited()
-
-    async def test_email_has_owner_legacy_primary_email(self):
-        """No contact claim but a legacy users.primary_email owner still
-        counts — that column is what the first-login unique violation fires on."""
-        self.emails_repo.exists_claim_by_email.return_value = False
-        self.users_repo.get_user_by_primary_email.return_value = MagicMock(
-            spec=UsersEntity
-        )
-
-        self.assertTrue(
-            await self.service.email_has_owner(self.session, "a@example.com")
-        )
 
     async def test_email_has_owner_unowned(self):
-        """Neither a contact claim nor a legacy owner: not owned."""
+        """No user_emails claim: not owned. Claims are the single source of
+        ownership — every account's addresses live in user_emails."""
         self.emails_repo.exists_claim_by_email.return_value = False
-        self.users_repo.get_user_by_primary_email.return_value = None
 
         self.assertFalse(
             await self.service.email_has_owner(self.session, "a@example.com")
@@ -447,29 +432,6 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
         self.identities_repo.upsert_identity.assert_not_awaited()
         self.emails_repo.upsert_email.assert_not_awaited()
         self.permissions_repo.grant.assert_not_awaited()
-        self.assertIsNone(user_info.user_id)
-
-    async def test_create_or_swap_owned_legacy_primary_email_returns_none(self):
-        """A legacy users.primary_email owner counts too: the proactive check
-        classifies the collision before the insert instead of relying on the
-        unique-violation round-trip."""
-        user_info = UserContextDto(
-            sub="email|new",
-            primary_email="legacy@example.com",
-            identity_type="external",
-            last_login_at=self.iat,
-        )
-        self.identities_repo.find_swappable_by_email.return_value = None
-        self.users_repo.get_user_by_primary_email.return_value = MagicMock(
-            spec=UsersEntity
-        )
-
-        result = await self.service.create_or_swap_user(self.session, user_info)
-
-        self.assertIsNone(result)
-        self.users_repo.upsert_users.assert_not_awaited()
-        self.identities_repo.upsert_identity.assert_not_awaited()
-        self.emails_repo.upsert_email.assert_not_awaited()
         self.assertIsNone(user_info.user_id)
 
     async def test_create_or_swap_swap_wins_over_owned_email_check(self):

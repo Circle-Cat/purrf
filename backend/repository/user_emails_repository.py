@@ -186,6 +186,27 @@ class UserEmailsRepository:
         )
         return result.first() is not None
 
+    async def get_by_email(
+        self, session: AsyncSession, email: str
+    ) -> UserEmailsEntity | None:
+        """
+        Fetch the row claiming `email`, confirmed or not, regardless of which
+        user owns it. Addresses are globally exclusive (unique index
+        ``uq_user_emails_email``), so a plain scalar lookup suffices.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            email (str): Normalized (lowercased) address to look up.
+
+        Returns:
+            UserEmailsEntity | None: The claiming row, or None when no account
+            has the address.
+        """
+        result = await session.execute(
+            select(UserEmailsEntity).where(UserEmailsEntity.email == email).limit(1)
+        )
+        return result.scalar_one_or_none()
+
     async def get_confirmed_by_email(
         self, session: AsyncSession, email: str
     ) -> UserEmailsEntity | None:

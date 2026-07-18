@@ -9,6 +9,7 @@ from sqlalchemy import select
 
 import json
 import uuid
+from backend.entity.user_emails_entity import UserEmailsEntity
 from backend.entity.users_entity import UsersEntity
 from backend.entity.training_entity import TrainingEntity
 from backend.entity.preference_entity import PreferenceEntity
@@ -227,8 +228,20 @@ async def upsert_experience(
 async def upsert_user(
     session: AsyncSession, users_repo, email: str, data: dict
 ) -> UsersEntity | None:
-    user = await users_repo.get_user_by_primary_email(session, email)
+    # Resolve the owner through their user_emails claim (the legacy
+    # users.primary_email column is gone).
+    claim = (
+        await session.execute(
+            select(UserEmailsEntity).where(UserEmailsEntity.email == email)
+        )
+    ).scalar_one_or_none()
+    user = (
+        await users_repo.get_user_by_user_id(session, claim.user_id)
+        if claim is not None
+        else None
+    )
 
+    is_new = user is None
     if user:
         if user.updated_timestamp > BULK_UPDATE_EXECUTED_AT:
             logger.info("Skipping %s, updated after bulk update cutoff", email)
@@ -236,7 +249,6 @@ async def upsert_user(
     else:
         user = UsersEntity()
 
-    user.primary_email = email
     user.first_name = data.get("first_name")
     user.last_name = data.get("last_name")
     user.preferred_name = data.get("preferred_name")
@@ -246,7 +258,20 @@ async def upsert_user(
     user.communication_channel = CommunicationMethod.EMAIL
     user.timezone_updated_at = DEFAULT_DATETIME_UTC
 
-    return await users_repo.upsert_users(session, user)
+    user = await users_repo.upsert_users(session, user)
+    if is_new:
+        # Seed the address as an unverified claim, matching what a first
+        # login would have created.
+        session.add(
+            UserEmailsEntity(
+                user_id=user.user_id,
+                email=email,
+                otp_confirmed=False,
+                is_primary=False,
+            )
+        )
+        await session.flush()
+    return user
 
 
 async def upsert_training(session: AsyncSession, user_id: int, row: pd.Series):
