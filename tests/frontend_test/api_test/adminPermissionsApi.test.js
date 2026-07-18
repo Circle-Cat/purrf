@@ -58,12 +58,12 @@ describe("adminPermissionsApi", () => {
 
   it("getPermissionHolders encodes the name and passes filter params as snake_case", async () => {
     request.get.mockResolvedValue({ data: { grants: [] } });
-    await getPermissionHolders("mentorship.round.read", {
+    await getPermissionHolders("mentorship.admin.read", {
       includeRevoked: true,
       grantedSource: "manual",
     });
     expect(request.get).toHaveBeenCalledWith(
-      "/admin/permissions/mentorship.round.read/users",
+      "/admin/permissions/mentorship.admin.read/users",
       { params: { include_revoked: true, granted_source: "manual" } },
     );
   });

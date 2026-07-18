@@ -453,7 +453,7 @@ class MeetingService:
             session=session, user_id=user_context.user_id
         )
 
-        is_admin = user_context.has_permission(Permission.MENTORSHIP_ROUND_WRITE)
+        is_admin = user_context.has_permission(Permission.MENTORSHIP_ADMIN_READ)
         is_detail_allowed = include_details and is_admin
 
         pair_entity = (

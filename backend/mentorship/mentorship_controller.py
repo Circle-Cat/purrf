@@ -93,7 +93,7 @@ class MentorshipController:
 
         self.router.add_api_route(
             MENTORSHIP_ROUNDS_ENDPOINT,
-            endpoint=authenticate(permissions=[Permission.MENTORSHIP_ROUND_WRITE])(
+            endpoint=authenticate(permissions=[Permission.MENTORSHIP_ADMIN_WRITE])(
                 self.upsert_rounds
             ),
             methods=["POST"],
@@ -223,7 +223,7 @@ class MentorshipController:
             current_user (UserContextDto): The authenticated user context.
             need_details (bool): If True, returns participant and completed
                 meeting counts per round for the mentorship admin dashboard.
-                This detailed view requires the MENTORSHIP_ROUND_READ
+                This detailed view requires the MENTORSHIP_ADMIN_READ
                 permission; the basic list (need_details=False) is open to any
                 authenticated user.
 
@@ -231,7 +231,7 @@ class MentorshipController:
             API response containing a list of rounds DTOs.
         """
         if need_details and not current_user.has_permission(
-            Permission.MENTORSHIP_ROUND_READ
+            Permission.MENTORSHIP_ADMIN_READ
         ):
             return api_response(
                 success=False,

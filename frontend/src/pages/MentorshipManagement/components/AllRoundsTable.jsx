@@ -13,7 +13,7 @@ import Table from "@/components/common/Table";
  *   rounds: Object[], mentorship round objects with pair stats
  *   totals: { totalCompletedRounds: number, totalParticipants: number, totalMeetings: number },
  *   onEdit: (round: Object) => void, round to edit
- *   canEdit: boolean, whether the user may edit rounds (MENTORSHIP_ROUND_WRITE); controls icon (pencil or eye)
+ *   canEdit: boolean, whether the user may edit rounds (MENTORSHIP_ADMIN_WRITE); controls icon (pencil or eye)
  * }} props
  */
 

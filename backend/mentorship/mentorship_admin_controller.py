@@ -17,7 +17,7 @@ class MentorshipAdminController:
 
         self.router.add_api_route(
             MENTORSHIP_ADMIN_PARTICIPANTS,
-            endpoint=authenticate(permissions=[Permission.MENTORSHIP_PARTICIPANT_READ])(
+            endpoint=authenticate(permissions=[Permission.MENTORSHIP_ADMIN_READ])(
                 self.search_participants
             ),
             methods=["GET"],
@@ -26,7 +26,7 @@ class MentorshipAdminController:
 
         self.router.add_api_route(
             MENTORSHIP_ADMIN_PAIRS_MEETINGS,
-            endpoint=authenticate(permissions=[Permission.MENTORSHIP_PARTICIPANT_READ])(
+            endpoint=authenticate(permissions=[Permission.MENTORSHIP_ADMIN_READ])(
                 self.get_meeting_log
             ),
             methods=["GET"],

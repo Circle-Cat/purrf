@@ -40,7 +40,10 @@ const Sidebar = () => {
     {
       label: "Mentorship Management",
       to: ROUTE_PATHS.MENTORSHIP_MANAGEMENT,
-      permissions: [PERMISSIONS.MENTORSHIP_MANAGEMENT_READ],
+      permissions: [
+        PERMISSIONS.MENTORSHIP_ADMIN_READ,
+        PERMISSIONS.MENTORSHIP_ADMIN_WRITE,
+      ],
     },
     {
       label: "User Permissions",

@@ -45,11 +45,13 @@ describe("useMentorshipManagement", () => {
     expect(getAllMentorshipRounds).toHaveBeenCalledWith(true);
   });
 
-  it("skips the fetch and stops loading when canReadRounds is false", async () => {
+  it("fetches with needDetails=false (basic list) when canReadRounds is false", async () => {
+    getAllMentorshipRounds.mockResolvedValue({ data: [] });
+
     const { result } = renderHook(() => useMentorshipManagement(false));
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
-    expect(getAllMentorshipRounds).not.toHaveBeenCalled();
+    expect(getAllMentorshipRounds).toHaveBeenCalledWith(false);
     expect(result.current.sortedRounds).toEqual([]);
   });
 

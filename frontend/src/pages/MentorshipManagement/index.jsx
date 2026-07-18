@@ -8,8 +8,11 @@ import { useMentorshipManagement } from "@/pages/MentorshipManagement/hooks/useM
  * MentorshipManagement
  *
  * Admin page for managing mentorship rounds and participant search. Entry is
- * gated on MENTORSHIP_MANAGEMENT_READ (route + sidebar); each section inside
- * has its own finer-grained permission check.
+ * gated on MENTORSHIP_ADMIN_READ or MENTORSHIP_ADMIN_WRITE (route + sidebar).
+ * RoundsManagementCard renders for either permission (basic round list needs
+ * no backend permission at all; write-only users get create/edit affordances
+ * but no per-round detail stats). ParticipantSearchCard requires
+ * MENTORSHIP_ADMIN_READ.
  *
  * Route: /mentorship-management
  *
@@ -17,13 +20,8 @@ import { useMentorshipManagement } from "@/pages/MentorshipManagement/hooks/useM
  */
 const MentorshipManagement = () => {
   const { permissions } = useAuth();
-  const canReadRounds = permissions.includes(PERMISSIONS.MENTORSHIP_ROUND_READ);
-  const canWriteRounds = permissions.includes(
-    PERMISSIONS.MENTORSHIP_ROUND_WRITE,
-  );
-  const canReadParticipants = permissions.includes(
-    PERMISSIONS.MENTORSHIP_PARTICIPANT_READ,
-  );
+  const canRead = permissions.includes(PERMISSIONS.MENTORSHIP_ADMIN_READ);
+  const canWrite = permissions.includes(PERMISSIONS.MENTORSHIP_ADMIN_WRITE);
 
   const {
     sortedRounds,
@@ -34,11 +32,11 @@ const MentorshipManagement = () => {
     openEdit,
     closeModal,
     saveRound,
-  } = useMentorshipManagement(canReadRounds);
+  } = useMentorshipManagement(canRead);
 
   return (
     <div className="mentorship-management">
-      {canReadRounds && (
+      {(canRead || canWrite) && (
         <RoundsManagementCard
           rounds={sortedRounds}
           totals={totals}
@@ -48,10 +46,10 @@ const MentorshipManagement = () => {
           openEdit={openEdit}
           closeModal={closeModal}
           saveRound={saveRound}
-          canWriteRounds={canWriteRounds}
+          canWriteRounds={canWrite}
         />
       )}
-      {canReadParticipants && <ParticipantSearchCard />}
+      {canRead && <ParticipantSearchCard />}
     </div>
   );
 };

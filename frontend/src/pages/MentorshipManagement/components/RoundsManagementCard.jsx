@@ -16,7 +16,7 @@ import RoundModal from "@/pages/MentorshipManagement/components/RoundModal";
  *   openEdit: (round: Object) => void,
  *   closeModal: () => void,
  *   saveRound: (payload: Object) => Promise<void>,
- *   canWriteRounds: boolean, whether the user may create/edit rounds (MENTORSHIP_ROUND_WRITE)
+ *   canWriteRounds: boolean, whether the user may create/edit rounds (MENTORSHIP_ADMIN_WRITE)
  * }} props
  */
 export default function RoundsManagementCard({

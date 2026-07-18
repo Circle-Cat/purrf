@@ -86,8 +86,8 @@ describe("Sidebar Component", () => {
     expect(screen.getByText("Personal Dashboard")).toBeInTheDocument();
   });
 
-  test("renders Mentorship Management for a user with management-read permission", () => {
-    renderSidebar([PERMISSIONS.MENTORSHIP_MANAGEMENT_READ]);
+  test("renders Mentorship Management for a user with admin-read permission", () => {
+    renderSidebar([PERMISSIONS.MENTORSHIP_ADMIN_READ]);
 
     expect(screen.getByText("Mentorship Management")).toBeInTheDocument();
     expect(screen.getByText("Personal Dashboard")).toBeInTheDocument();
@@ -95,7 +95,12 @@ describe("Sidebar Component", () => {
     expect(screen.queryByText("DataSearch")).not.toBeInTheDocument();
   });
 
-  test("does not render Mentorship Management without management-read permission", () => {
+  test("shows Mentorship Management for a write-only admin", () => {
+    renderSidebar([PERMISSIONS.MENTORSHIP_ADMIN_WRITE]);
+    expect(screen.getByText("Mentorship Management")).toBeInTheDocument();
+  });
+
+  test("does not render Mentorship Management without admin-read permission", () => {
     renderSidebar([
       PERMISSIONS.DASHBOARD_ACTIVITY_SUMMARY_READ,
       PERMISSIONS.INTERNAL_ACTIVITY_READ,
