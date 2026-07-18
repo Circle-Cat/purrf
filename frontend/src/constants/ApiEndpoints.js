@@ -88,8 +88,7 @@ export const API_ENDPOINTS = {
     `/recruiting/applications/${id}/other-applications`,
   RECRUITING_AUDIT_OVERVIEW: "/recruiting/audit/overview",
   RECRUITING_NOTIFICATIONS: "/recruiting/notifications",
-  RECRUITING_NOTIFICATION_READ: (id) => `/recruiting/notifications/${id}/read`,
-  RECRUITING_NOTIFICATIONS_READ_ALL: "/recruiting/notifications/read-all",
+  RECRUITING_NOTIFICATION: (id) => `/recruiting/notifications/${id}`,
 };
 
 /**

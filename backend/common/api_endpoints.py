@@ -139,7 +139,4 @@ RECRUITING_APPLICATION_MENTIONABLE_USERS_ENDPOINT = (
     "/recruiting/applications/{application_id}/mentionable-users"
 )
 RECRUITING_NOTIFICATIONS_ENDPOINT = "/recruiting/notifications"
-RECRUITING_NOTIFICATION_READ_ENDPOINT = (
-    "/recruiting/notifications/{notification_id}/read"
-)
-RECRUITING_NOTIFICATIONS_READ_ALL_ENDPOINT = "/recruiting/notifications/read-all"
+RECRUITING_NOTIFICATION_ENDPOINT = "/recruiting/notifications/{notification_id}"
