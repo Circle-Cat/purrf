@@ -30,12 +30,17 @@ class TestMeetingServiceV1(unittest.IsolatedAsyncioTestCase):
 
         self.mock_google_service = MagicMock()
 
+        self.mock_user_emails_repo = MagicMock()
+        self.mock_user_emails_repo.get_contact_emails_by_user_ids = AsyncMock(
+            return_value={}
+        )
         self.meeting_service = MeetingService(
             logger=self.mock_logger,
             mentorship_pairs_repository=self.mock_pairs_repo,
             mentorship_mapper=self.mock_mapper,
             users_repository=self.mock_users_repo,
             google_service=self.mock_google_service,
+            user_emails_repository=self.mock_user_emails_repo,
         )
 
         self.user_id = 1
@@ -172,12 +177,18 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
 
         self.mock_session = AsyncMock()
 
+        self.mock_user_emails_repo = MagicMock()
+        # Attendee emails come from user_emails, not the legacy column.
+        self.mock_user_emails_repo.get_contact_emails_by_user_ids = AsyncMock(
+            return_value={1: "alice@example.com", 2: "bob@example.com"}
+        )
         self.service = MeetingService(
             logger=self.mock_logger,
             mentorship_pairs_repository=self.mock_mentorship_pairs_repository,
             mentorship_mapper=MagicMock(),
             users_repository=self.mock_users_repository,
             google_service=self.mock_google_service,
+            user_emails_repository=self.mock_user_emails_repo,
         )
 
         self.mock_current_user = MagicMock()
@@ -241,6 +252,7 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
             mentorship_mapper=self.mock_mapper,
             users_repository=self.mock_users_repository,
             google_service=self.mock_google_service,
+            user_emails_repository=self.mock_user_emails_repo,
         )
 
         self.user_id = 1

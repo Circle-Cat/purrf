@@ -34,6 +34,7 @@ class ApplicationService:
         application_assignment_repository,
         application_activity_repository,
         notification_repository,
+        user_emails_repository,
         profile_writeback=None,
     ):
         """
@@ -43,6 +44,8 @@ class ApplicationService:
                 Versioned-submission data access.
             job_repository (JobRepository): Posting data access.
             users_repository (UsersRepository): Reads is_blocked.
+            user_emails_repository (UserEmailsRepository): The applicant's
+                contact address for screen-rule email matching.
             recruiting_mapper (RecruitingMapper): Entity→DTO conversion.
             application_assignment_repository (ApplicationAssignmentRepository):
                 Used to materialize a stage's configured default assignee
@@ -67,6 +70,7 @@ class ApplicationService:
         self.application_assignment_repository = application_assignment_repository
         self.application_activity_repository = application_activity_repository
         self.notification_repository = notification_repository
+        self.user_emails_repository = user_emails_repository
         self._profile_writeback = profile_writeback
 
     @staticmethod
@@ -248,12 +252,19 @@ class ApplicationService:
             session, current_user.user_id
         )
         blocked = bool(user is not None and getattr(user, "is_blocked", False))
+        applicant_email = (
+            await self.user_emails_repository.get_contact_email(
+                session, current_user.user_id
+            )
+            if not blocked
+            else None
+        )
         screen_result = (
             {"action": None, "rule_id": None}
             if blocked
             else screen_rules.evaluate(
                 job.screen_rules,
-                user.primary_email if user is not None else "",
+                applicant_email or "",
                 dto.answers,
             )
         )

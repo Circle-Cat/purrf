@@ -13,12 +13,15 @@ from backend.dto.blacklist_dto import BlacklistEntryDto
 class BlacklistService:
     """Reads and clears the org-wide user blacklist."""
 
-    def __init__(self, users_repository):
+    def __init__(self, users_repository, user_emails_repository):
         """
         Args:
             users_repository (UsersRepository): Blocked-user reads/writes.
+            user_emails_repository (UserEmailsRepository): Contact-email
+                resolution for blacklist entries.
         """
         self.users_repository = users_repository
+        self.user_emails_repository = user_emails_repository
 
     async def list_blacklist(
         self, session: AsyncSession, search: str | None = None
@@ -35,11 +38,16 @@ class BlacklistService:
             list[BlacklistEntryDto]: Blocked users, most recently blocked first.
         """
         users = await self.users_repository.list_blocked_users(session, search=search)
+        contact_by_user_id = (
+            await self.user_emails_repository.get_contact_emails_by_user_ids(
+                session, [user.user_id for user in users]
+            )
+        )
         return [
             BlacklistEntryDto(
                 user_id=user.user_id,
                 name=f"{user.first_name} {user.last_name}".strip(),
-                email=user.primary_email,
+                email=contact_by_user_id.get(user.user_id, ""),
                 reason=user.blocked_reason or "",
                 blocked_at=user.blocked_at,
             )

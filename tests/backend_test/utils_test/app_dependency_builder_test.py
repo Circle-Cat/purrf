@@ -453,6 +453,7 @@ class TestAppDependencyBuilder(TestCase):
             experience_repository=mock_experience_repo_cls.return_value,
             training_repository=mock_training_repo_cls.return_value,
             profile_mapper=mock_profile_mapper_cls.return_value,
+            user_emails_repository=mock_user_emails_repo_cls.return_value,
         )
         mock_profile_command_service_cls.assert_called_once_with(
             users_repository=mock_users_repo_cls.return_value,
@@ -517,6 +518,7 @@ class TestAppDependencyBuilder(TestCase):
             mentorship_round_participants_repo=mock_mentorship_round_participants_repo_cls.return_value,
             mentorship_round_repository=mock_mentorship_round_repository_cls.return_value,
             mentorship_mapper=mock_mentorship_mapper_cls.return_value,
+            user_emails_repository=mock_user_emails_repo_cls.return_value,
         )
         mock_registration_service_cls.assert_called_once_with(
             logger=mock_logger,
@@ -534,6 +536,7 @@ class TestAppDependencyBuilder(TestCase):
             mentorship_mapper=mock_mentorship_mapper_cls.return_value,
             users_repository=mock_users_repo_cls.return_value,
             google_service=mock_google_service.return_value,
+            user_emails_repository=mock_user_emails_repo_cls.return_value,
         )
 
         mock_fast_app_factory_cls.assert_called_once_with(
@@ -621,6 +624,7 @@ class TestAppDependencyBuilder(TestCase):
             experience_repository=mock_experience_repo_cls.return_value,
             training_repository=mock_training_repo_cls.return_value,
             profile_mapper=mock_profile_mapper_cls.return_value,
+            user_emails_repository=mock_user_emails_repo_cls.return_value,
         )
         # Assert that the builder's internal attributes are the created mock instances
         self.assertEqual(builder.users_repository, mock_users_repo_cls.return_value)

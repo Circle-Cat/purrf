@@ -49,25 +49,25 @@ class UserEmailsRepository:
         )
         return list(result.scalars().all())
 
-    async def get_non_primary_emails_by_user_ids(
+    async def get_emails_by_user_ids(
         self, session: AsyncSession, user_ids: list[int]
     ) -> dict[int, list[str]]:
         """
-        Map each user_id to its non-primary email addresses (its "alternative"
-        emails), regardless of otp_confirmed.
+        Map each user_id to all of its email addresses, primary or not,
+        regardless of otp_confirmed.
 
         Backs Meet attendance matching, which matches a meeting participant
         against any of a mentor/mentee's known addresses. A user with no
-        non-primary email is omitted from the map. An empty input
-        short-circuits without a query.
+        email rows is omitted from the map. An empty input short-circuits
+        without a query.
 
         Args:
             session (AsyncSession): The active async database session.
-            user_ids (list[int]): user_ids whose alternative emails to fetch.
+            user_ids (list[int]): user_ids whose emails to fetch.
 
         Returns:
-            dict[int, list[str]]: {user_id: [non-primary email, ...]} for users
-            that have at least one; users with only a primary email are omitted.
+            dict[int, list[str]]: {user_id: [email, ...]} for users that have
+            at least one row; users without any are omitted.
         """
         if not user_ids:
             return {}
@@ -75,15 +75,66 @@ class UserEmailsRepository:
             select(
                 UserEmailsEntity.user_id,
                 UserEmailsEntity.email,
-            ).where(
-                UserEmailsEntity.user_id.in_(user_ids),
-                UserEmailsEntity.is_primary.is_(False),
-            )
+            ).where(UserEmailsEntity.user_id.in_(user_ids))
         )
         emails_by_user_id: dict[int, list[str]] = {}
         for user_id, email in result.all():
             emails_by_user_id.setdefault(user_id, []).append(email)
         return emails_by_user_id
+
+    async def get_contact_emails_by_user_ids(
+        self, session: AsyncSession, user_ids: list[int]
+    ) -> dict[int, str]:
+        """
+        Map each user_id to its best contact address: the primary row when one
+        exists, otherwise the user's oldest claim (lowest email_id) — the
+        address seeded from their login, i.e. what the legacy
+        users.primary_email column held. This is the read that replaces that
+        column.
+
+        A user with no email rows is omitted from the map. An empty input
+        short-circuits without a query.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            user_ids (list[int]): user_ids whose contact address to fetch.
+
+        Returns:
+            dict[int, str]: {user_id: email} for users that have at least one
+            row; users without any are omitted.
+        """
+        if not user_ids:
+            return {}
+        result = await session.execute(
+            select(UserEmailsEntity.user_id, UserEmailsEntity.email)
+            .distinct(UserEmailsEntity.user_id)
+            .where(UserEmailsEntity.user_id.in_(user_ids))
+            .order_by(
+                UserEmailsEntity.user_id,
+                UserEmailsEntity.is_primary.desc(),
+                UserEmailsEntity.email_id.asc(),
+            )
+        )
+        return {user_id: email for user_id, email in result.all()}
+
+    async def get_contact_email(
+        self, session: AsyncSession, user_id: int
+    ) -> str | None:
+        """
+        Single-user convenience over :meth:`get_contact_emails_by_user_ids`.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            user_id (int): The user whose contact address to fetch.
+
+        Returns:
+            str | None: The user's contact address, or None when they have no
+            email rows.
+        """
+        contact_by_user_id = await self.get_contact_emails_by_user_ids(
+            session, [user_id]
+        )
+        return contact_by_user_id.get(user_id)
 
     async def exists_on_other_user(
         self, session: AsyncSession, email: str, user_id: int

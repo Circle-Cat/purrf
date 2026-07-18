@@ -35,6 +35,7 @@ class JobService:
         notification_repository,
         users_repository: UsersRepository,
         job_activity_repository: JobActivityRepository,
+        user_emails_repository,
     ):
         """
         Initialise the service with its repositories and mapper.
@@ -53,6 +54,8 @@ class JobService:
                 audit timeline.
             job_activity_repository (JobActivityRepository): Data-access layer
                 for the append-only audit timeline.
+            user_emails_repository (UserEmailsRepository): Contact-email
+                resolution for approver/evaluator/owner pickers.
         """
         self.job_repository = job_repository
         self.recruiting_mapper = recruiting_mapper
@@ -61,6 +64,31 @@ class JobService:
         self.notification_repository = notification_repository
         self.users_repository = users_repository
         self.job_activity_repository = job_activity_repository
+        self.user_emails_repository = user_emails_repository
+
+    async def _to_approver_dtos(
+        self, session: AsyncSession, users: list
+    ) -> list[ApproverDto]:
+        """Map user rows to ApproverDtos with their user_emails contact address.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            users (list[UsersEntity]): The users to project.
+
+        Returns:
+            list[ApproverDto]: One entry per user, in input order.
+        """
+        contact_by_user_id = (
+            await self.user_emails_repository.get_contact_emails_by_user_ids(
+                session, [u.user_id for u in users]
+            )
+        )
+        return [
+            self.recruiting_mapper.to_approver_dto(
+                u, contact_by_user_id.get(u.user_id, "")
+            )
+            for u in users
+        ]
 
     async def list_active_approvers(self, session: AsyncSession) -> list[ApproverDto]:
         """List active users who may approve postings (hold job.approve).
@@ -74,7 +102,7 @@ class JobService:
         users = await self.user_permissions_repository.get_active_users_with_permission(
             session, Permission.RECRUITING_JOB_APPROVE.value
         )
-        return [self.recruiting_mapper.to_approver_dto(u) for u in users]
+        return await self._to_approver_dtos(session, users)
 
     async def list_interview_pool(self, session: AsyncSession) -> list[ApproverDto]:
         """List active users assignable as Screening/Behavioral/Tech evaluators.
@@ -88,7 +116,7 @@ class JobService:
         users = await self.user_permissions_repository.get_active_users_with_permission(
             session, Permission.RECRUITING_INTERVIEW_EVALUATE.value
         )
-        return [self.recruiting_mapper.to_approver_dto(u) for u in users]
+        return await self._to_approver_dtos(session, users)
 
     async def list_job_owners(self, session: AsyncSession) -> list[ApproverDto]:
         """List active users eligible to own a posting (advance applications).
@@ -102,7 +130,7 @@ class JobService:
         users = await self.user_permissions_repository.get_active_users_with_permission(
             session, Permission.RECRUITING_APPLICATION_ADVANCE.value
         )
-        return [self.recruiting_mapper.to_approver_dto(u) for u in users]
+        return await self._to_approver_dtos(session, users)
 
     @staticmethod
     def _serialize(model) -> dict | None:
