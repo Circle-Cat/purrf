@@ -1,6 +1,5 @@
 MY_PERMISSIONS = "/permissions/me"
 EMAIL_MANAGEMENT_LIST_ENDPOINT = "/auth/emails"
-EMAIL_MANAGEMENT_ADD_ENDPOINT = "/auth/emails/add"
 EMAIL_MANAGEMENT_REMOVE_ENDPOINT = "/auth/emails/{email_id}"
 EMAIL_MANAGEMENT_INITIATE_ENDPOINT = "/auth/emails/initiate"
 EMAIL_MANAGEMENT_VERIFY_ENDPOINT = "/auth/emails/verify"
