@@ -95,10 +95,13 @@ class TestEmailManagementController(unittest.TestCase):
     def tearDown(self):
         self.patcher.stop()
 
-    def _client_with_user(self, user_id=42, sub="google-oauth2|primary"):
+    def _client_with_user(
+        self, user_id=42, sub="google-oauth2|primary", primary_email="alice@gmail.com"
+    ):
         mock_user = MagicMock()
         mock_user.user_id = user_id
         mock_user.sub = sub
+        mock_user.primary_email = primary_email
 
         @self.app.middleware("http")
         async def _inject_user(request: Request, call_next):
@@ -128,6 +131,8 @@ class TestEmailManagementController(unittest.TestCase):
         self.assertEqual(response.json()["data"], {"ok": True})
         _, kwargs = self.service.remove_email.call_args
         self.assertEqual(kwargs["current_user_id"], 42)
+        self.assertEqual(kwargs["current_sub"], "google-oauth2|primary")
+        self.assertEqual(kwargs["current_claim_email"], "alice@gmail.com")
         self.assertEqual(kwargs["email_id"], 12)
 
     def test_remove_email_requires_authentication(self):

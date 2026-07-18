@@ -37,17 +37,11 @@ const isWorkspaceEmail = (email) => /@circlecat\.org$/i.test(email || "");
  * the copy instead asks them to verify their @circlecat.org email and to
  * contact their manager if that mailbox cannot receive the code. Hint
  * only — nothing is enforced.
- *
- * Needs-link variant: when the sign-in's email already belongs to an existing
- * account (`needsLink`), the same OTP proves the mailbox and links this
- * sign-in method into that account instead — the address is locked to the
- * sign-in's own email, since verifying any other address cannot resolve the
- * collision.
  */
 const VerifyRequired = () => {
-  const { user, needsLink, refreshAuth } = useAuth();
+  const { user, refreshAuth } = useAuth();
   const navigate = useNavigate();
-  const isInternal = !needsLink && isWorkspaceEmail(user?.email);
+  const isInternal = isWorkspaceEmail(user?.email);
 
   const handleVerified = async () => {
     await refreshAuth();
@@ -58,22 +52,15 @@ const VerifyRequired = () => {
     <div className="flex min-h-[70vh] items-center justify-center p-6">
       <Card className="w-full max-w-md">
         <CardHeader>
-          <CardTitle>
-            {needsLink
-              ? "Link this sign-in to your account"
-              : "Verify your email to continue"}
-          </CardTitle>
+          <CardTitle>Set your contact email</CardTitle>
           <CardDescription>
-            {needsLink
-              ? "An account already exists for this email. Verify it once and " +
-                "this sign-in method will be linked to that account."
-              : isInternal
-                ? "As a Circle Cat member, please verify your Google Workspace " +
-                  "email (@circlecat.org) as your contact address. If this " +
-                  "address can't receive the verification code, please contact " +
-                  "your manager."
-                : "We need a confirmed contact email to deliver application " +
-                  "updates and round notifications."}
+            {isInternal
+              ? "As a Circle Cat member, please verify your Google Workspace " +
+                "email (@circlecat.org) as your contact address. If this " +
+                "address can't receive the verification code, please contact " +
+                "your manager."
+              : "Enter an address and the code we send it; it becomes your " +
+                "primary contact and works for signing in."}
           </CardDescription>
         </CardHeader>
 
@@ -82,7 +69,6 @@ const VerifyRequired = () => {
             initialEmail={user?.email || ""}
             onVerified={handleVerified}
             idPrefix="verify"
-            lockEmail={needsLink}
           />
         </CardContent>
 

@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,6 +12,14 @@ from backend.entity.user_identities_entity import UserIdentitiesEntity
 from backend.entity.users_entity import UsersEntity
 from backend.user_identity.internal_lifecycle import absorb_internal_identity
 
+# A first-login insert must come from a login that just happened: a stale
+# token whose address no account holds anymore (e.g. deleted from another
+# session) must NOT silently fork a fresh account. Fresh signups reach the
+# first request within seconds of the Auth0 login; anything older than this
+# re-authenticates instead. 30 minutes absorbs slow onboarding without
+# leaving a meaningful fork window.
+_MAX_FIRST_LOGIN_TOKEN_AGE_SECONDS = 30 * 60
+
 
 def _iat_as_datetime(last_login_at: int | None) -> datetime | None:
     if last_login_at is None:
@@ -24,18 +32,26 @@ class UserIdentityService:
     Service responsible for resolving internal user identities from external
     authentication identifiers.
 
-    Resolution is four steps:
+    Resolution: refuse untrusted, swap, route, refuse stale, first-login —
+    every login that creates or enters an account is trusted.
       1. sub lookup on user_identities
+      1.5. refuse: any assertion that isn't trusted (see
+         backend.common.trusted_connections) is refused outright — no
+         account is ever created or entered for it
       2. email fallback: find a migration-backfilled identity by email_claim
          and overwrite its mocked sub in place with the real one
-      2.5. trusted-assertion routing: a login whose sub is allowlisted (see
-         backend.common.trusted_connections) and whose address some account
-         has OTP-confirmed resolves to that account. A verified 'email|'
-         login is itself the OTP round-trip and stays row-less; any other
-         allowlisted (social) sub additionally gets its identity row
-         upserted, so the next login resolves at step 1.
-      3. first-login: insert new users + user_identities + a user_emails
-         claim row (confirmed and primary only for a trusted assertion)
+      2.5. trusted-assertion routing: a login whose sub is allowlisted and
+         whose address some account has OTP-confirmed resolves to that
+         account. A verified 'email|' login is itself the OTP round-trip and
+         stays row-less; any other allowlisted (social) sub additionally
+         gets its identity row upserted, so the next login resolves at
+         step 1.
+      2.75. refuse: a first-login insert whose token iat is older than
+         _MAX_FIRST_LOGIN_TOKEN_AGE_SECONDS is refused — a stale token must
+         not silently fork a fresh account
+      3. first-login: insert new users + user_identities + a confirmed,
+         primary user_emails claim row (every login reaching this step is
+         trusted, by step 1.5's construction)
     """
 
     def __init__(
@@ -102,51 +118,36 @@ class UserIdentityService:
 
         return user
 
-    async def email_has_owner(self, session: AsyncSession, email: str) -> bool:
-        """
-        Whether `email` already belongs to some account — as a user_emails
-        contact claim, confirmed or an unverified backup address. Every
-        account claims its addresses in user_emails (first logins seed one),
-        so the table is the single source of ownership.
-
-        Used by the bootstrap to classify a colliding first login: an owned
-        email means the login is a second sign-in method for an existing
-        account, so the session is held at the verify wall (PUR-480) — except
-        a verified passwordless login for a *confirmed* address, which step
-        2.5 routes directly into the owning account before this check runs.
-        The wall's link only succeeds against an owner that OTP-confirmed the
-        address; an unverified claim gets the pointer back to verifying it
-        from inside the owning account first.
-
-        Args:
-            session (AsyncSession): Active database async session.
-            email (str): Normalized (lowercased) address to check.
-
-        Returns:
-            bool: True when some account owns the address.
-        """
-        return await self.user_emails_repository.exists_claim_by_email(session, email)
-
     async def create_or_swap_user(
         self,
         session: AsyncSession,
         user_info: UserContextDto,
-    ) -> UsersEntity | None:
+    ) -> UsersEntity:
         """
         Resolve a user not found by sub lookup.
 
+        First, refuses outright any login whose assertion is not trusted (see
+        backend.common.trusted_connections): no account is created or
+        entered, ever — the tenant has only trusted connections, so this is
+        the default-deny backstop. Then refuses a first-login insert whose
+        token iat is older than `_MAX_FIRST_LOGIN_TOKEN_AGE_SECONDS`: a stale
+        token must not silently fork a fresh account for an address no
+        account currently holds; this only guards the first-login insert,
+        not the swap or routing paths, which resolve into an existing
+        account rather than creating one.
+
         Tries step 2 (overwrite a migration-backfilled identity found by
-        email) first — an INTERNAL trusted-assertion swap also runs the
-        absorb lifecycle hook, same as every other corp-join path; on miss,
-        checks step 2.5 (trusted-assertion routing: a login whose sub is
-        allowlisted and whose address an account has OTP-confirmed returns
-        that account directly — a passwordless login writes nothing, a
-        routed social sub additionally gets its identity row upserted, so
+        email — every assertion reaching here is already trusted, per the
+        refusal above) first — an INTERNAL trusted-assertion swap also runs
+        the absorb lifecycle hook, same as every other corp-join path; on
+        miss, checks step 2.5 (trusted-assertion routing: a login whose sub
+        is allowlisted and whose address an account has OTP-confirmed
+        returns that account directly — a passwordless login writes nothing,
+        a routed social sub additionally gets its identity row upserted, so
         the next login resolves at step 1; an INTERNAL routed login of
-        either kind also runs the absorb hook). If no confirmed owner,
-        checks whether the email already belongs to some account and, only
-        when it does not, falls through to step 3 (first-login insert).
-        Writes the resolved user_id back onto `user_info` (mutates the DTO).
+        either kind also runs the absorb hook). Otherwise falls through to
+        step 3 (first-login insert). Writes the resolved user_id back onto
+        `user_info` (mutates the DTO).
 
         Args:
             session (AsyncSession): Active database async session.
@@ -154,20 +155,38 @@ class UserIdentityService:
                 identity_type and last_login_at.
 
         Returns:
-            UsersEntity | None: The linked or newly created user (step 2 swap,
-            step 2.5 routed owner, or step 3 first-login), or None when the
-            email already belongs to an existing account but is not routable
-            (no OTP-confirmed claim) — the sign-in is a second method for that
-            account, so nothing is created and the caller must hold the session
-            at the verify wall to link (needs-link, PUR-480).
+            UsersEntity: The linked or newly created user — step 2 swap,
+            step 2.5 routed owner, or step 3 first-login. Every login
+            reaching this method resolves to a user; nothing is refused
+            without raising.
+
+        Raises:
+            ValueError: The assertion is untrusted (see
+                is_trusted_email_assertion), or the token is a stale
+                first-login attempt (iat older than
+                _MAX_FIRST_LOGIN_TOKEN_AGE_SECONDS) for an address no
+                account owns.
         """
         email = user_info.primary_email.lower()
         login_dt = _iat_as_datetime(user_info.last_login_at)
 
+        if not is_trusted_email_assertion(
+            user_info.sub, user_info.email_verified, email
+        ):
+            # No untrusted connection may create or enter an account: seeding
+            # would recreate the retired unverified state, and there is no
+            # longer a verify wall to hold the session at. The tenant has
+            # only trusted connections; this is the default-deny backstop
+            # (guard 1).
+            raise ValueError("Sign in with a supported method")
+
         # Step 2: a deployment migration backfills old users as a user_emails
         # row (otp_confirmed=False) plus a user_identities row carrying a
         # mocked sub. On first real login we find that row by email and
-        # overwrite the mocked sub with the real one.
+        # overwrite the mocked sub with the real one. Swapping IS entering
+        # the backfilled account, so it demands the same mailbox proof as
+        # routing (step 2.5) — guard 1 above already refused any assertion
+        # that isn't trusted, so every lookup here runs on a trusted login.
         mocked = await self.user_identities_repository.find_swappable_by_email(
             session=session, email_claim=email
         )
@@ -179,99 +198,91 @@ class UserIdentityService:
                 identity_type=user_info.identity_type,
                 last_login_at=login_dt,
             )
-            if is_trusted_email_assertion(
-                user_info.sub, user_info.email_verified, email
-            ):
-                await self._confirm_swapped_claim_email(
-                    session=session, user_id=user.user_id, email=email
+            # Guard 1 already required a trusted assertion, so the confirm +
+            # INTERNAL absorb here always run (no re-check needed).
+            await self._confirm_swapped_claim_email(
+                session=session, user_id=user.user_id, email=email
+            )
+            if IdentityType.INTERNAL == user_info.identity_type:
+                # A backfilled employee entering via a trusted corp swap
+                # gets the full lifecycle (permission bundle + primary
+                # promotion), same as every other corp-join path.
+                await absorb_internal_identity(
+                    session,
+                    user.user_id,
+                    email,
+                    user_permissions_repository=self.user_permissions_repository,
+                    user_emails_repository=self.user_emails_repository,
+                    logger=self.logger,
                 )
-                if IdentityType.INTERNAL == user_info.identity_type:
-                    # A backfilled employee entering via a trusted corp swap
-                    # gets the full lifecycle (permission bundle + primary
-                    # promotion), same as every other corp-join path.
-                    await absorb_internal_identity(
-                        session,
-                        user.user_id,
-                        email,
-                        user_permissions_repository=self.user_permissions_repository,
-                        user_emails_repository=self.user_emails_repository,
-                        logger=self.logger,
-                    )
             user_info.user_id = user.user_id
             return user
 
         # Step 2.5 (LinkedIn-style routing): a trusted assertion — a verified
         # passwordless login (itself a first-party OTP round-trip) or a
         # verified login from an allowlisted social IdP — for an address some
-        # account has OTP-confirmed logs straight into that account; the
-        # needs-link wall would only ask for the same proof a second time.
-        # Passwordless writes nothing (row-less, idempotent re-resolution);
-        # a routed social sub additionally gets its identity row upserted
-        # below, so the next login resolves at step 1.
-        if is_trusted_email_assertion(user_info.sub, user_info.email_verified, email):
-            confirmed = await self.user_emails_repository.get_confirmed_by_email(
-                session=session, email=email
+        # account has OTP-confirmed logs straight into that account. Guard 1
+        # above already refused any assertion that isn't trusted, so every
+        # login reaching here qualifies. Passwordless writes nothing
+        # (row-less, idempotent re-resolution); a routed social sub
+        # additionally gets its identity row upserted below, so the next
+        # login resolves at step 1.
+        confirmed = await self.user_emails_repository.get_confirmed_by_email(
+            session=session, email=email
+        )
+        if confirmed is not None:
+            user = await self.users_repository.get_user_by_user_id(
+                session=session, user_id=confirmed.user_id
             )
-            if confirmed is not None:
-                user = await self.users_repository.get_user_by_user_id(
-                    session=session, user_id=confirmed.user_id
+            if not user_info.sub.startswith("email|"):
+                # Social credentials stay sub-routed: record the identity
+                # so the next login resolves at step 1. Passwordless stays
+                # row-less — the verified address itself is the identifier.
+                # A concurrent duplicate insert trips the subject_identifier
+                # UNIQUE constraint; the middleware's SAVEPOINT + re-find
+                # already handles that race.
+                await self.user_identities_repository.upsert_identity(
+                    session=session,
+                    entity=UserIdentitiesEntity(
+                        user_id=user.user_id,
+                        subject_identifier=user_info.sub,
+                        identity_type=user_info.identity_type,
+                        email_claim=email,
+                        last_login_at=login_dt,
+                    ),
                 )
-                if not user_info.sub.startswith("email|"):
-                    # Social credentials stay sub-routed: record the identity
-                    # so the next login resolves at step 1. Passwordless stays
-                    # row-less — the verified address itself is the identifier.
-                    # A concurrent duplicate insert trips the subject_identifier
-                    # UNIQUE constraint; the middleware's SAVEPOINT + re-find
-                    # already handles that race.
-                    await self.user_identities_repository.upsert_identity(
-                        session=session,
-                        entity=UserIdentitiesEntity(
-                            user_id=user.user_id,
-                            subject_identifier=user_info.sub,
-                            identity_type=user_info.identity_type,
-                            email_claim=email,
-                            last_login_at=login_dt,
-                        ),
-                    )
-                if IdentityType.INTERNAL == user_info.identity_type:
-                    # An employee's corp sign-in joining an existing account
-                    # mirrors the first-login lifecycle hook. Runs for ANY
-                    # routed login, not just social: absorb is idempotent
-                    # (diffed grants, promotion guarded), so per-request
-                    # re-routing of row-less passwordless subs is safe.
-                    await absorb_internal_identity(
-                        session,
-                        user.user_id,
-                        email,
-                        user_permissions_repository=self.user_permissions_repository,
-                        user_emails_repository=self.user_emails_repository,
-                        logger=self.logger,
-                    )
-                user_info.user_id = user.user_id
-                self.logger.info(
-                    "[UserIdentityService] trusted-assertion login routed to "
-                    "user_id=%s by confirmed address (sub=%s)",
+            if IdentityType.INTERNAL == user_info.identity_type:
+                # An employee's corp sign-in joining an existing account
+                # mirrors the first-login lifecycle hook. Runs for ANY
+                # routed login, not just social: absorb is idempotent
+                # (diffed grants, promotion guarded), so per-request
+                # re-routing of row-less passwordless subs is safe.
+                await absorb_internal_identity(
+                    session,
                     user.user_id,
-                    user_info.sub,
+                    email,
+                    user_permissions_repository=self.user_permissions_repository,
+                    user_emails_repository=self.user_emails_repository,
+                    logger=self.logger,
                 )
-                return user
-
-        # The email already belongs to an account as a user_emails claim.
-        # The proactive check classifies the collision before the insert:
-        # relying on the uq_user_emails_email unique violation alone would
-        # first create an orphan users row permanently stuck at the verify
-        # wall. Create nothing; the bootstrap marks the session needs_link
-        # instead (PUR-480).
-        if await self.email_has_owner(session, email):
+            user_info.user_id = user.user_id
             self.logger.info(
-                "[UserIdentityService] first-login email %s already owned; "
-                "holding sub %s for needs-link",
-                email,
+                "[UserIdentityService] trusted-assertion login routed to "
+                "user_id=%s by confirmed address (sub=%s)",
+                user.user_id,
                 user_info.sub,
             )
-            return None
+            return user
 
-        # Step 3: first login.
+        # Step 3: first login. Guard 1 already refused any assertion that
+        # isn't trusted, so no unowned-collision check is needed here — an
+        # address with a confirmed owner would already have routed above,
+        # and post-migration every user_emails row is confirmed, so there is
+        # no unconfirmed claim left to collide with.
+        if login_dt is not None and (datetime.now(timezone.utc) - login_dt) > timedelta(
+            seconds=_MAX_FIRST_LOGIN_TOKEN_AGE_SECONDS
+        ):
+            raise ValueError("Session expired; sign in again")
         user = await self._first_login_insert(
             session=session, user_info=user_info, last_login_at=login_dt
         )
@@ -373,16 +384,15 @@ class UserIdentityService:
     ) -> UsersEntity:
         """
         First-time-login path. Creates the users row, the user_identities row,
-        and a user_emails row claiming the login's address, so ownership of the
-        address is discoverable from user_emails alone (email_has_owner must
-        not depend on the legacy users.primary_email column).
+        and a user_emails row claiming the login's address, so ownership of
+        the address is discoverable from user_emails alone (not the legacy
+        users.primary_email column).
 
-        Only a trusted assertion — a passwordless login (itself the mailbox
-        round-trip) or a verified login from an allowlisted social IdP —
-        lands the claim confirmed (and therefore primary). Anything else
-        seeds it unconfirmed and non-primary; the user is then sent through
-        the hard-wall /verify-required flow (PR5), which confirms the row and
-        promotes it to primary.
+        create_or_swap_user's guard 1 refuses any untrusted assertion before
+        this method is ever reached, so every claim seeded here is confirmed
+        and primary by construction — the login itself is the mailbox proof
+        (a passwordless round-trip, or a verified assertion from an
+        allowlisted social IdP).
         """
         sub = user_info.sub
         email = user_info.primary_email.lower()
@@ -415,23 +425,20 @@ class UserIdentityService:
             session=session, entity=new_identity
         )
 
-        # A trusted assertion — an allowlisted IdP reporting the address
-        # verified, or the passwordless login's own OTP round-trip — seeds a
-        # confirmed primary; anything else seeds unconfirmed/non-primary and
-        # goes through the wall. 'email|' is the Auth0 passwordless-email
-        # connection: logging in already required entering a one-time code
-        # Auth0 mailed to this address, so the mailbox round-trip is done at
-        # login. 'google-oauth2|' is Google, the mailbox authority for its
-        # verified addresses. Any other sub seeds an unconfirmed, non-primary
-        # claim (is_primary=True requires otp_confirmed=True per the
-        # user_emails CHECK constraint); the hard-wall verify flow confirms
-        # and promotes it later.
-        confirmed = is_trusted_email_assertion(sub, user_info.email_verified, email)
+        # Every login reaching this insert is a trusted assertion (guard 1 in
+        # create_or_swap_user refuses anything else before this method runs):
+        # an allowlisted IdP reporting the address verified, or the
+        # passwordless login's own OTP round-trip. 'email|' is the Auth0
+        # passwordless-email connection: logging in already required entering
+        # a one-time code Auth0 mailed to this address, so the mailbox
+        # round-trip is done at login. 'google-oauth2|' is Google, the
+        # mailbox authority for its verified addresses. The claim is
+        # therefore always seeded confirmed and primary.
         new_email_row = UserEmailsEntity(
             user_id=created_user.user_id,
             email=email,
-            otp_confirmed=confirmed,
-            is_primary=confirmed,
+            otp_confirmed=True,
+            is_primary=True,
         )
         await self.user_emails_repository.upsert_email(
             session=session, entity=new_email_row

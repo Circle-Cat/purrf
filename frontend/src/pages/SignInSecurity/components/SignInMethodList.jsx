@@ -87,12 +87,14 @@ const IdentityRow = ({
 /**
  * One contact-only email row: an address with no sign-in identity behind it
  * (a legacy unverified backup from before verify-at-add, or a verified address
- * whose email method was removed). Shows the primary/unverified state; an
- * unverified address offers a "Verify" action, which unlocks it as a sign-in
- * method, and a "Remove" action — legacy unverified rows required no OTP to
- * add, so they require none to remove either. A verified, non-primary address
- * offers "Set as primary contact" (the same step-up flow the sign-in method
- * rows use).
+ * whose email method was removed). Shows the primary/unverified state; a
+ * legacy unverified address still offers a "Verify" action (dead post-migration,
+ * kept until the follow-up that removes it), which unlocks it as a sign-in
+ * method. Any non-primary address — confirmed or legacy-unverified — offers
+ * "Remove"; the server refuses to remove the address backing the caller's own
+ * current passwordless session, and that rejection surfaces here as a toast.
+ * A confirmed, non-primary address also offers "Set as primary contact" (the
+ * same step-up flow the sign-in method rows use).
  *
  * @param {Object} props
  * @param {object} props.emailRow
@@ -137,7 +139,7 @@ const ContactEmailRow = ({
           Verify
         </Button>
       )}
-      {!emailRow.otpConfirmed && !!onRemove && (
+      {!emailRow.isPrimary && !!onRemove && (
         <Button
           size="sm"
           variant="ghost"
@@ -179,7 +181,7 @@ const ContactEmailRow = ({
  * @param {(identity: object) => Promise<void>} props.onUnlink
  * @param {(emailRow: object) => Promise<void>} [props.onSetPrimary] - start promoting a contact email.
  * @param {(emailRow: object) => void} [props.onVerify] - start verifying a contact-only address.
- * @param {(emailRow: object) => Promise<void>} [props.onRemove] - remove an unverified contact-only address.
+ * @param {(emailRow: object) => Promise<void>} [props.onRemove] - remove a non-primary contact-only address.
  */
 const SignInMethodList = ({
   emails = [],

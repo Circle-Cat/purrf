@@ -8,7 +8,6 @@ import jwt
 
 from backend.authentication.email_management_service import EmailManagementService
 from backend.common.exceptions import ConflictError
-from backend.common.identity_type import IdentityType
 from backend.common.permissions import INTERNAL_EMPLOYEE_PERMISSIONS
 from backend.entity.user_emails_entity import UserEmailsEntity
 from backend.entity.user_identities_entity import UserIdentitiesEntity
@@ -150,7 +149,9 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
     async def test_remove_email_deletes_unverified_row(self):
         self.user_emails.get_by_id.return_value = self._removable_row()
 
-        result = await self.service.remove_email(self.session, _USER_ID, 12)
+        result = await self.service.remove_email(
+            self.session, _USER_ID, _CURRENT_SUB, None, 12
+        )
 
         self.user_emails.delete.assert_awaited_once_with(self.session, 12)
         self.session.commit.assert_awaited_once()
@@ -159,13 +160,17 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
     async def test_remove_email_rejects_missing_row(self):
         self.user_emails.get_by_id.return_value = None
         with self.assertRaises(ValueError):
-            await self.service.remove_email(self.session, _USER_ID, 12)
+            await self.service.remove_email(
+                self.session, _USER_ID, _CURRENT_SUB, None, 12
+            )
         self.user_emails.delete.assert_not_awaited()
 
     async def test_remove_email_rejects_row_owned_by_other_user(self):
         self.user_emails.get_by_id.return_value = self._removable_row(user_id=999)
         with self.assertRaises(ValueError):
-            await self.service.remove_email(self.session, _USER_ID, 12)
+            await self.service.remove_email(
+                self.session, _USER_ID, _CURRENT_SUB, None, 12
+            )
         self.user_emails.delete.assert_not_awaited()
 
     async def test_remove_email_rejects_primary(self):
@@ -173,19 +178,72 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         row.is_primary = True
         self.user_emails.get_by_id.return_value = row
         with self.assertRaises(ConflictError):
-            await self.service.remove_email(self.session, _USER_ID, 12)
+            await self.service.remove_email(
+                self.session, _USER_ID, _CURRENT_SUB, None, 12
+            )
         self.user_emails.delete.assert_not_awaited()
 
-    async def test_remove_email_rejects_verified_row(self):
-        # A verified address is (or can become) a sign-in method; it leaves
-        # the account only through the step-up unlink flow.
+    async def test_remove_email_deletes_confirmed_non_primary_row(self):
+        # New contract: any non-primary row is removable, confirmed included —
+        # deleting it also removes its use as a passwordless login identifier
+        # (one action, one consequence). A google-session caller hits no guard.
         row = self._removable_row()
         row.otp_confirmed = True
         self.user_emails.get_by_id.return_value = row
+
+        result = await self.service.remove_email(
+            self.session, _USER_ID, _CURRENT_SUB, None, 12
+        )
+
+        self.user_emails.delete.assert_awaited_once_with(self.session, 12)
+        self.session.commit.assert_awaited_once()
+        self.assertEqual(result, {"ok": True})
+
+    async def test_remove_email_rejects_current_passwordless_session_address(self):
+        # The caller's own session is an email| passwordless login whose token
+        # claim matches this row (case/whitespace-insensitive) — deleting it
+        # would strand a live token whose next request can no longer resolve.
+        row = self._removable_row()
+        row.otp_confirmed = True
+        self.user_emails.get_by_id.return_value = row
+
         with self.assertRaises(ConflictError):
-            await self.service.remove_email(self.session, _USER_ID, 12)
+            await self.service.remove_email(
+                self.session, _USER_ID, "email|abc123", "  Backup@Gmail.com  ", 12
+            )
         self.user_emails.delete.assert_not_awaited()
-        self.session.commit.assert_not_awaited()
+
+    async def test_remove_email_passwordless_session_can_delete_different_address(
+        self,
+    ):
+        # Same passwordless sub, but the target row is a different address —
+        # the guard protects only the address the session itself signed in with.
+        row = self._removable_row()
+        row.otp_confirmed = True
+        self.user_emails.get_by_id.return_value = row
+
+        result = await self.service.remove_email(
+            self.session, _USER_ID, "email|abc123", "other@gmail.com", 12
+        )
+
+        self.user_emails.delete.assert_awaited_once_with(self.session, 12)
+        self.assertEqual(result, {"ok": True})
+
+    async def test_remove_email_google_session_can_delete_login_adjacent_address(
+        self,
+    ):
+        # The guard is passwordless-session-only: a google-session caller may
+        # delete a non-primary row even if it matches their token's email claim.
+        row = self._removable_row()
+        row.otp_confirmed = True
+        self.user_emails.get_by_id.return_value = row
+
+        result = await self.service.remove_email(
+            self.session, _USER_ID, _CURRENT_SUB, "backup@gmail.com", 12
+        )
+
+        self.user_emails.delete.assert_awaited_once_with(self.session, 12)
+        self.assertEqual(result, {"ok": True})
 
     async def test_verify_confirms_without_creating_sign_in_identity(self):
         """Normal-mode verify only confirms the address; it must not create a
@@ -411,222 +469,6 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(existing_email.otp_confirmed)
         self.assertFalse(existing_email.is_primary)
-
-    async def test_initiate_needs_link_locks_to_claim_email(self):
-        """A needs-link session may only verify its own sign-in email; any
-        other address is refused before an OTP is ever sent."""
-        with self.assertRaises(ValueError):
-            await self.service.initiate(
-                self.session,
-                None,
-                _CURRENT_SUB,
-                "other@example.com",
-                needs_link=True,
-                claim_email=_TARGET_EMAIL,
-            )
-        self.auth0.start_passwordless.assert_not_called()
-
-    async def test_initiate_needs_link_skips_other_account_conflict(self):
-        """The address belonging to another account is the situation being
-        resolved, so the other-account guard must not fire; the state is
-        signed with user_id=None."""
-        self.user_emails.exists_on_other_user.return_value = True
-        result = await self.service.initiate(
-            self.session,
-            None,
-            _CURRENT_SUB,
-            " Alice@Gmail.com ",
-            needs_link=True,
-            claim_email=_TARGET_EMAIL,
-        )
-        self.auth0.start_passwordless.assert_called_once_with(_TARGET_EMAIL)
-        self.user_emails.exists_on_other_user.assert_not_called()
-        claims = jwt.decode(result["state"], _SECRET, algorithms=["HS256"])
-        self.assertIsNone(claims["user_id"])
-        self.assertEqual(claims["sub"], _CURRENT_SUB)
-
-    async def test_verify_needs_link_links_caller_into_owner(self):
-        """Needs-link happy path: the OTP-proved address is confirmed on an
-        existing account, so the caller's sub is linked into that account —
-        no users row is created and the owner's emails are untouched."""
-        self.user_emails.get_confirmed_by_email.return_value = self._email_row(
-            _TARGET_EMAIL, otp_confirmed=True, is_primary=True, user_id=7
-        )
-
-        result = await self.service.verify(
-            self.session,
-            None,
-            _CURRENT_SUB,
-            _state(user_id=None),
-            "123456",
-            needs_link=True,
-            caller_identity_type=IdentityType.EXTERNAL,
-        )
-
-        self.auth0.link_identity.assert_not_called()
-        identity_entity = self.user_identities.upsert_identity.call_args.kwargs[
-            "entity"
-        ]
-        self.assertEqual(identity_entity.user_id, 7)
-        self.assertEqual(identity_entity.subject_identifier, _CURRENT_SUB)
-        self.assertEqual(identity_entity.identity_type, IdentityType.EXTERNAL)
-        # The owning account's contact emails are not modified.
-        self.user_emails.upsert_email.assert_not_called()
-        # An external link grants no internal-employee lifecycle side effects.
-        self.user_permissions.grant.assert_not_awaited()
-        self.session.commit.assert_awaited_once()
-        self.assertEqual(result["linked_sub"], _CURRENT_SUB)
-
-    async def test_verify_needs_link_internal_grants_bundle_and_promotes_primary(
-        self,
-    ):
-        # An employee links their corp sign-in into a pre-existing account:
-        # mirror the first-login hook — bundle + corp email becomes primary.
-        corp_email = "bob@circlecat.org"
-        owner_row = self._email_row(
-            corp_email, otp_confirmed=True, is_primary=False, user_id=7
-        )
-        owner_row.email_id = 31
-        self.user_emails.get_confirmed_by_email.return_value = owner_row
-        self.user_emails.get_by_user_and_email.return_value = owner_row
-        self.auth0.exchange_otp.return_value = {
-            "sub": "email|corp",
-            "email": corp_email,
-            "email_verified": True,
-        }
-
-        result = await self.service.verify(
-            self.session,
-            None,
-            _CURRENT_SUB,
-            _state(user_id=None, email=corp_email),
-            "123456",
-            needs_link=True,
-            caller_identity_type=IdentityType.INTERNAL,
-        )
-
-        _, grant_kwargs = self.user_permissions.grant.call_args
-        self.assertEqual(grant_kwargs["user_id"], 7)
-        self.assertEqual(
-            set(grant_kwargs["permission_names"]), set(INTERNAL_EMPLOYEE_PERMISSIONS)
-        )
-        self.user_emails.set_primary.assert_awaited_once_with(self.session, 7, 31)
-        self.session.commit.assert_awaited_once()
-        self.assertEqual(result["linked_sub"], _CURRENT_SUB)
-
-    async def test_verify_needs_link_rejects_unconfirmed_owner(self):
-        """No account has OTP-confirmed the address (e.g. a migrated Google
-        user who has not passed the wall yet): refuse the link and point the
-        user back to their original sign-in method."""
-        self.user_emails.get_confirmed_by_email.return_value = None
-
-        with self.assertRaises(ConflictError) as ctx:
-            await self.service.verify(
-                self.session,
-                None,
-                _CURRENT_SUB,
-                _state(user_id=None),
-                "123456",
-                needs_link=True,
-                caller_identity_type=IdentityType.EXTERNAL,
-            )
-        # The message must tell the user what to actually do: verify the
-        # email from inside the owning account first, then retry.
-        self.assertEqual(
-            str(ctx.exception),
-            "This email belongs to an existing account that hasn't verified "
-            "it yet. Sign in with that account's original method, verify "
-            "this email there, then try this sign-in again.",
-        )
-        self.auth0.link_identity.assert_not_called()
-        self.user_identities.upsert_identity.assert_not_called()
-
-    async def test_verify_needs_link_rejects_third_account_identity(self):
-        """The address's passwordless identity belonging to a *different*
-        account than the confirmed owner is an inconsistent state; refuse."""
-        self.user_emails.get_confirmed_by_email.return_value = self._email_row(
-            _TARGET_EMAIL, otp_confirmed=True, is_primary=True, user_id=7
-        )
-        self.user_identities.get_by_subject_identifier.return_value = (
-            UserIdentitiesEntity(
-                user_id=9,
-                subject_identifier=_NEW_SUB,
-                identity_type=IdentityType.EXTERNAL,
-                email_claim=_TARGET_EMAIL,
-            )
-        )
-
-        with self.assertRaises(ConflictError):
-            await self.service.verify(
-                self.session,
-                None,
-                _CURRENT_SUB,
-                _state(user_id=None),
-                "123456",
-                needs_link=True,
-                caller_identity_type=IdentityType.EXTERNAL,
-            )
-        self.auth0.link_identity.assert_not_called()
-        self.user_identities.upsert_identity.assert_not_called()
-
-    async def test_verify_needs_link_self_sub_skips_auth0_link(self):
-        """A passwordless caller's OTP exchange returns its own sub: there is
-        nothing to link on the Auth0 side, but the DB row is still added."""
-        passwordless_sub = "email|caller"
-        self.auth0.exchange_otp.return_value = {
-            "sub": passwordless_sub,
-            "email": _TARGET_EMAIL,
-            "email_verified": True,
-        }
-        self.user_emails.get_confirmed_by_email.return_value = self._email_row(
-            _TARGET_EMAIL, otp_confirmed=True, is_primary=True, user_id=7
-        )
-        now = int(time.time())
-        state = jwt.encode(
-            {
-                "user_id": None,
-                "sub": passwordless_sub,
-                "email": _TARGET_EMAIL,
-                "flow": "add_email",
-                "iat": now,
-                "exp": now + 600,
-            },
-            _SECRET,
-            algorithm="HS256",
-        )
-
-        result = await self.service.verify(
-            self.session,
-            None,
-            passwordless_sub,
-            state,
-            "123456",
-            needs_link=True,
-            caller_identity_type=IdentityType.EXTERNAL,
-        )
-
-        self.auth0.link_identity.assert_not_called()
-        identity_entity = self.user_identities.upsert_identity.call_args.kwargs[
-            "entity"
-        ]
-        self.assertEqual(identity_entity.user_id, 7)
-        self.assertEqual(identity_entity.subject_identifier, passwordless_sub)
-        self.assertEqual(result["linked_sub"], passwordless_sub)
-
-    async def test_verify_needs_link_rejects_state_with_user_id(self):
-        """A needs-link verify must not accept a state minted for a normal
-        (user-bound) session — cross-mode reuse is a CSRF hole."""
-        with self.assertRaises(ValueError):
-            await self.service.verify(
-                self.session,
-                None,
-                _CURRENT_SUB,
-                _state(user_id=_USER_ID),
-                "123456",
-                needs_link=True,
-                caller_identity_type=IdentityType.EXTERNAL,
-            )
-        self.auth0.exchange_otp.assert_not_called()
 
     async def test_list_emails_and_identities_assembles_view(self):
         added_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
@@ -1138,29 +980,33 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         self.auth0.delete_user.assert_not_called()
         self.user_identities.delete.assert_not_awaited()
 
-    async def test_confirm_unlink_deletes_contact_email_when_unreferenced(self):
+    async def test_confirm_unlink_leaves_contact_email_row_untouched_when_unreferenced(
+        self,
+    ):
+        # Unlink is decoupled from user_emails entirely now: an address left
+        # unreferenced by any surviving identity is still not inspected or
+        # deleted — it leaves the account only via remove_email.
         target = self._identity(7, "email|todelete", "external", "alice@gmail.com")
         keep = self._identity(5, _CURRENT_SUB, "external", "yuji@circlecat.org")
         self._arrange_unlink(target, [keep])
         self.user_emails.get_primary.return_value = self._email_row(
             "old@example.com", is_primary=True
         )
-        email_row = self._email_row("alice@gmail.com", is_primary=False)
-        email_row.email_id = 88
-        self.user_emails.get_by_user_and_email.return_value = email_row
         state = _unlink_state(target_identity_id=7, primary_email="old@example.com")
 
         await self.service.confirm_unlink(
             self.session, _USER_ID, _CURRENT_SUB, 7, state, "123456"
         )
 
-        self.user_emails.delete.assert_awaited_once_with(self.session, 88)
+        self.user_emails.get_by_user_and_email.assert_not_awaited()
+        self.user_emails.delete.assert_not_awaited()
 
-    async def test_confirm_unlink_keeps_contact_email_referenced_by_other_identity(
+    async def test_confirm_unlink_leaves_contact_email_row_untouched_when_referenced_by_other_identity(
         self,
     ):
         target = self._identity(7, "email|todelete", "external", "alice@gmail.com")
-        # Another identity still claims the same address (case-insensitive).
+        # Another identity still claims the same address (case-insensitive) —
+        # irrelevant now, since unlink never looks at user_emails at all.
         other = self._identity(5, "google-oauth2|9", "external", "Alice@Gmail.com")
         current = self._identity(9, _CURRENT_SUB, "external", "yuji@circlecat.org")
         self._arrange_unlink(target, [other, current])
@@ -1176,15 +1022,12 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         self.user_emails.delete.assert_not_awaited()
         self.user_emails.get_by_user_and_email.assert_not_awaited()
 
-    async def test_confirm_unlink_does_not_delete_primary_contact_email(self):
+    async def test_confirm_unlink_leaves_primary_contact_email_untouched(self):
         target = self._identity(7, "email|todelete", "external", "alice@gmail.com")
         keep = self._identity(5, _CURRENT_SUB, "external", "yuji@circlecat.org")
         self._arrange_unlink(target, [keep])
         self.user_emails.get_primary.return_value = self._email_row(
             "old@example.com", is_primary=True
-        )
-        self.user_emails.get_by_user_and_email.return_value = self._email_row(
-            "alice@gmail.com", is_primary=True
         )
         state = _unlink_state(target_identity_id=7, primary_email="old@example.com")
 
@@ -1193,6 +1036,7 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         )
 
         self.user_emails.delete.assert_not_awaited()
+        self.user_emails.get_by_user_and_email.assert_not_awaited()
 
 
 class TestSignState(unittest.TestCase):
