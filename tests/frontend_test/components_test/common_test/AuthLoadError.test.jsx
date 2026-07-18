@@ -64,9 +64,7 @@ describe("AuthLoadError Component", () => {
   });
 
   test("calls performGlobalLogout when Log in again is clicked on the refusal variant", () => {
-    render(
-      <AuthLoadError refusalMessage="Sign in with a supported method." />,
-    );
+    render(<AuthLoadError refusalMessage="Sign in with a supported method." />);
 
     screen.getByRole("button", { name: "Log in again" }).click();
     expect(performGlobalLogout).toHaveBeenCalledTimes(1);
