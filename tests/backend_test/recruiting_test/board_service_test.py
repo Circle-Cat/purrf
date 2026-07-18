@@ -142,7 +142,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         return job
 
     def _user(self, user_id=2, first="A", last="B", email="a@b.com"):
-        u = UsersEntity(first_name=first, last_name=last, primary_email=email)
+        u = UsersEntity(first_name=first, last_name=last)
         u.user_id = user_id
         return u
 

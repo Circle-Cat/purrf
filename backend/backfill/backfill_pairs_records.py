@@ -13,7 +13,7 @@ from backend.entity.mentorship_pairs_entity import MentorshipPairsEntity
 from backend.entity.mentorship_round_participants_entity import (
     MentorshipRoundParticipantsEntity,
 )
-from backend.entity.users_entity import UsersEntity
+from backend.entity.user_emails_entity import UserEmailsEntity
 from backend.common.database import Database
 from backend.common.mentorship_enums import (
     PairStatus,
@@ -102,9 +102,11 @@ class PairsBackfillService:
         Returns:
             pd.DataFrame: DataFrame with columns ['user_id', 'primary_email'].
         """
+        # Addresses live in user_emails (the legacy users.primary_email
+        # column is gone); the returned column keeps its historical name.
         result = await session.execute(
-            select(UsersEntity.user_id, UsersEntity.primary_email).where(
-                UsersEntity.primary_email.in_(emails)
+            select(UserEmailsEntity.user_id, UserEmailsEntity.email).where(
+                UserEmailsEntity.email.in_(emails)
             )
         )
 

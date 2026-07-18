@@ -230,7 +230,6 @@ class TestPermissionAdminService(unittest.IsolatedAsyncioTestCase):
                 (
                     UsersEntity(
                         user_id=1,
-                        primary_email="a@x.com",
                         first_name="A",
                         last_name="B",
                         is_active=True,
@@ -256,7 +255,6 @@ class TestPermissionAdminService(unittest.IsolatedAsyncioTestCase):
                 (
                     UsersEntity(
                         user_id=2,
-                        primary_email="b@circlecat.org",
                         first_name="B",
                         last_name="C",
                         is_active=True,
@@ -386,7 +384,6 @@ class TestPermissionAdminService(unittest.IsolatedAsyncioTestCase):
     async def test_set_super_admin_updates_flag_and_writes_marker(self):
         self.users.get_user_by_user_id.return_value = UsersEntity(
             user_id=2,
-            primary_email="s@x.com",
             first_name="S",
             last_name="A",
             is_active=True,
@@ -423,7 +420,6 @@ class TestPermissionAdminService(unittest.IsolatedAsyncioTestCase):
     async def test_revoke_super_admin_clears_flag_and_marker(self):
         self.users.get_user_by_user_id.return_value = UsersEntity(
             user_id=2,
-            primary_email="s@x.com",
             first_name="S",
             last_name="A",
             is_active=True,

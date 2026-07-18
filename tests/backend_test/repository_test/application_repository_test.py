@@ -26,7 +26,6 @@ def _make_user(first_name: str, last_name: str, primary_email: str) -> UsersEnti
         timezone="UTC",
         timezone_updated_at=datetime.now(timezone.utc),
         communication_channel=CommunicationMethod.EMAIL,
-        primary_email=primary_email,
         is_active=True,
         updated_timestamp=datetime.now(timezone.utc),
     )

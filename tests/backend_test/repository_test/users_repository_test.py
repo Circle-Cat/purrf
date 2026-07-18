@@ -28,7 +28,6 @@ class TestUsersRepository(BaseRepositoryTestLib):
                 timezone="Asia/Shanghai",
                 timezone_updated_at=datetime.now(timezone.utc),
                 communication_channel=CommunicationMethod.EMAIL,
-                primary_email="alice@example.com",
                 is_active=True,
                 updated_timestamp=datetime.now(timezone.utc),
             ),
@@ -38,7 +37,6 @@ class TestUsersRepository(BaseRepositoryTestLib):
                 timezone="America/New_York",
                 timezone_updated_at=datetime.now(timezone.utc),
                 communication_channel=CommunicationMethod.EMAIL,
-                primary_email="bob@example.com",
                 is_active=True,
                 updated_timestamp=datetime.now(timezone.utc),
             ),
@@ -48,7 +46,6 @@ class TestUsersRepository(BaseRepositoryTestLib):
                 timezone="Asia/Shanghai",
                 timezone_updated_at=datetime.now(timezone.utc),
                 communication_channel=CommunicationMethod.EMAIL,
-                primary_email="charlie@example.com",
                 is_active=False,
                 updated_timestamp=datetime.now(timezone.utc),
             ),
@@ -120,45 +117,6 @@ class TestUsersRepository(BaseRepositoryTestLib):
 
         self.assertIsNone(user)
 
-    async def test_get_user_by_primary_email(self):
-        """Test retrieving an existing user by primary email"""
-        user = await self.repo.get_user_by_primary_email(
-            self.session, self.user_entity.primary_email
-        )
-
-        self.assertEqual(user, self.user_entity)
-        self.assertEqual(user.primary_email, self.user_entity.primary_email)
-
-    async def test_get_user_by_primary_email_is_None(self):
-        """Test passing None as subject identifier returns None."""
-        user = await self.repo.get_user_by_primary_email(self.session, None)
-        self.assertIsNone(user)
-
-        user = await self.repo.get_user_by_primary_email(self.session, "")
-        self.assertIsNone(user)
-
-    async def test_get_user_by_primary_email_not_found(self):
-        """Test retrieving a non-existent user by email returns None."""
-        user = await self.repo.get_user_by_primary_email(
-            self.session, "non-existent@example.com"
-        )
-
-        self.assertIsNone(user)
-
-    async def test_update_primary_email(self):
-        """update_primary_email overwrites the column for the given user only."""
-        await self.repo.update_primary_email(
-            self.session, self.user_entity.user_id, "alice.new@example.com"
-        )
-
-        updated = await self.repo.get_user_by_user_id(
-            self.session, self.user_entity.user_id
-        )
-        self.assertEqual(updated.primary_email, "alice.new@example.com")
-        # other users untouched
-        other = await self.repo.get_user_by_user_id(self.session, self.users[1].user_id)
-        self.assertEqual(other.primary_email, "bob@example.com")
-
     async def test_upsert_users_insert_user_entity(self):
         """Test insert a new UserEntity"""
         new_user = UsersEntity(
@@ -167,15 +125,9 @@ class TestUsersRepository(BaseRepositoryTestLib):
             timezone="Asia/Shanghai",
             timezone_updated_at=datetime.now(timezone.utc),
             communication_channel="email",
-            primary_email="dave@example.com",
             is_active=True,
             updated_timestamp=datetime.now(timezone.utc),
         )
-
-        user_in_db = await self.repo.get_user_by_primary_email(
-            self.session, new_user.primary_email
-        )
-        self.assertIsNone(user_in_db)
 
         inserted_user = await self.repo.upsert_users(self.session, new_user)
 
@@ -194,15 +146,14 @@ class TestUsersRepository(BaseRepositoryTestLib):
     def _make_user(self, *, first_name="T", last_name=None, email):
         # last_name defaults to the email's local part so tests that isolate
         # their rows with a token-bearing email still match search=token via
-        # the name leg: the email leg of the search reads user_emails now,
-        # not the legacy users.primary_email column this helper fills.
+        # the name leg: the email leg of the search reads user_emails, which
+        # this helper does not populate.
         return UsersEntity(
             first_name=first_name,
             last_name=last_name if last_name is not None else email.split("@")[0],
             timezone="UTC",
             timezone_updated_at=datetime.now(timezone.utc),
             communication_channel=CommunicationMethod.EMAIL,
-            primary_email=email,
             is_active=True,
             updated_timestamp=datetime.now(timezone.utc),
         )
@@ -816,7 +767,6 @@ class TestUsersRepository(BaseRepositoryTestLib):
             timezone="UTC",
             timezone_updated_at=datetime.now(timezone.utc),
             communication_channel=CommunicationMethod.EMAIL,
-            primary_email=f"superadmin-{uuid.uuid4().hex}@example.com",
             is_active=True,
             is_super_admin=True,
             updated_timestamp=datetime.now(timezone.utc),

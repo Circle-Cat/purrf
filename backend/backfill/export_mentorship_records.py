@@ -4,6 +4,7 @@ import json
 import os
 from datetime import timedelta
 from sqlalchemy import false, select, update, or_
+from backend.entity.user_emails_entity import UserEmailsEntity
 from backend.entity.users_entity import UsersEntity
 from backend.entity.experience_entity import ExperienceEntity
 from backend.entity.preference_entity import PreferenceEntity
@@ -369,6 +370,24 @@ async def fetch_participants_data(
 
     rows = (await session.execute(stmt)).all()
 
+    # Contact addresses live in user_emails (the legacy users.primary_email
+    # column is gone): primary row first, else the oldest claim.
+    email_rows = (
+        await session.execute(
+            select(UserEmailsEntity.user_id, UserEmailsEntity.email)
+            .distinct(UserEmailsEntity.user_id)
+            .where(
+                UserEmailsEntity.user_id.in_([user.user_id for user, _, _, _ in rows])
+            )
+            .order_by(
+                UserEmailsEntity.user_id,
+                UserEmailsEntity.is_primary.desc(),
+                UserEmailsEntity.email_id.asc(),
+            )
+        )
+    ).all()
+    contact_by_user_id = {user_id: email for user_id, email in email_rows}
+
     export_mentors = []
     export_mentees = []
 
@@ -390,7 +409,7 @@ async def fetch_participants_data(
             "communication_channel": (
                 user.communication_channel.value if user.communication_channel else ""
             ),
-            "primary_email": user.primary_email,
+            "primary_email": contact_by_user_id.get(user.user_id, ""),
             "linkedin_link": user.linkedin_link or "",
             **skill_cells,
             "specific_industry": _industry_object(
