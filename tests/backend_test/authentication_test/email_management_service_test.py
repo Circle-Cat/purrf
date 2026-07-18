@@ -759,15 +759,14 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         row.identity_id = identity_id
         return row
 
-    def _arrange_unlink(self, target, others):
+    def _arrange_unlink(self, target):
         """Wire the mocks for an unlink: get_by_id→target."""
         self.user_identities.get_by_id.return_value = target
 
     # initiate_unlink — step 1: validate, OTP the current primary, sign state
     async def test_initiate_unlink_sends_otp_to_primary_and_returns_state(self):
         target = self._identity(7, "email|todelete", "external", "alice@gmail.com")
-        keep = self._identity(5, _CURRENT_SUB, "external", "yuji@circlecat.org")
-        self._arrange_unlink(target, [keep])
+        self._arrange_unlink(target)
         self.user_emails.get_primary.return_value = self._email_row(
             "old@example.com", is_primary=True
         )
@@ -799,8 +798,7 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
 
     async def test_initiate_unlink_rejects_current_session_identity(self):
         target = self._identity(7, _CURRENT_SUB, "external", "x@x.com")
-        keep = self._identity(5, "email|other", "external", "y@y.com")
-        self._arrange_unlink(target, [keep])
+        self._arrange_unlink(target)
         with self.assertRaises(ConflictError):
             await self.service.initiate_unlink(self.session, _USER_ID, _CURRENT_SUB, 7)
         self.auth0.start_passwordless.assert_not_called()
@@ -809,8 +807,7 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         target = self._identity(
             7, "google-oauth2|corp", "internal", "yuji@circlecat.org"
         )
-        keep = self._identity(5, _CURRENT_SUB, "external", "yuji@gmail.com")
-        self._arrange_unlink(target, [keep])
+        self._arrange_unlink(target)
         self.user_identities.exists_active_internal.return_value = True
         with self.assertRaises(PermissionError):
             await self.service.initiate_unlink(self.session, _USER_ID, _CURRENT_SUB, 7)
@@ -818,8 +815,7 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
 
     async def test_initiate_unlink_rejects_when_no_primary(self):
         target = self._identity(7, "email|todelete", "external", "alice@gmail.com")
-        keep = self._identity(5, _CURRENT_SUB, "external", "yuji@circlecat.org")
-        self._arrange_unlink(target, [keep])
+        self._arrange_unlink(target)
         self.user_emails.get_primary.return_value = None
         with self.assertRaises(ValueError):
             await self.service.initiate_unlink(self.session, _USER_ID, _CURRENT_SUB, 7)
@@ -862,8 +858,7 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
     # confirm_unlink — step 2: recheck primary + preconditions, verify OTP, unlink
     async def test_confirm_unlink_happy_path_detaches_and_deletes_identity(self):
         target = self._identity(7, "email|todelete", "external", "alice@gmail.com")
-        keep = self._identity(5, _CURRENT_SUB, "external", "yuji@circlecat.org")
-        self._arrange_unlink(target, [keep])
+        self._arrange_unlink(target)
         self.user_emails.get_primary.return_value = self._email_row(
             "old@example.com", is_primary=True
         )
@@ -884,8 +879,7 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         # The Auth0 user delete happens before the commit so a failure rolls
         # the whole unlink back instead of leaving an orphan Auth0 user.
         target = self._identity(7, "email|todelete", "external", "alice@gmail.com")
-        keep = self._identity(5, _CURRENT_SUB, "external", "yuji@circlecat.org")
-        self._arrange_unlink(target, [keep])
+        self._arrange_unlink(target)
         self.user_emails.get_primary.return_value = self._email_row(
             "old@example.com", is_primary=True
         )
@@ -954,8 +948,7 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         target = self._identity(
             7, "google-oauth2|corp", "internal", "yuji@circlecat.org"
         )
-        keep = self._identity(5, _CURRENT_SUB, "external", "yuji@gmail.com")
-        self._arrange_unlink(target, [keep])
+        self._arrange_unlink(target)
         self.user_emails.get_primary.return_value = self._email_row(
             "old@example.com", is_primary=True
         )
@@ -988,8 +981,7 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         # unreferenced by any surviving identity is still not inspected or
         # deleted — it leaves the account only via remove_email.
         target = self._identity(7, "email|todelete", "external", "alice@gmail.com")
-        keep = self._identity(5, _CURRENT_SUB, "external", "yuji@circlecat.org")
-        self._arrange_unlink(target, [keep])
+        self._arrange_unlink(target)
         self.user_emails.get_primary.return_value = self._email_row(
             "old@example.com", is_primary=True
         )
@@ -1008,9 +1000,7 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         target = self._identity(7, "email|todelete", "external", "alice@gmail.com")
         # Another identity still claims the same address (case-insensitive) —
         # irrelevant now, since unlink never looks at user_emails at all.
-        other = self._identity(5, "google-oauth2|9", "external", "Alice@Gmail.com")
-        current = self._identity(9, _CURRENT_SUB, "external", "yuji@circlecat.org")
-        self._arrange_unlink(target, [other, current])
+        self._arrange_unlink(target)
         self.user_emails.get_primary.return_value = self._email_row(
             "old@example.com", is_primary=True
         )
@@ -1025,8 +1015,7 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
 
     async def test_confirm_unlink_leaves_primary_contact_email_untouched(self):
         target = self._identity(7, "email|todelete", "external", "alice@gmail.com")
-        keep = self._identity(5, _CURRENT_SUB, "external", "yuji@circlecat.org")
-        self._arrange_unlink(target, [keep])
+        self._arrange_unlink(target)
         self.user_emails.get_primary.return_value = self._email_row(
             "old@example.com", is_primary=True
         )

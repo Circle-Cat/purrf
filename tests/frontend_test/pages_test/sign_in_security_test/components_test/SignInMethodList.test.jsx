@@ -374,7 +374,7 @@ describe("SignInMethodList", () => {
       );
 
       const rows = screen.getAllByRole("listitem");
-      // Internal row (first) has no Remove; the external one does (total > 1).
+      // Internal row (first) has no Remove; the external one always does.
       expect(
         within(rows[0]).queryByRole("button", { name: "Remove" }),
       ).not.toBeInTheDocument();
@@ -383,7 +383,10 @@ describe("SignInMethodList", () => {
       ).toBeInTheDocument();
     });
 
-    it("does not offer Remove when only one sign-in method remains", () => {
+    it("offers Remove for a lone non-current-session external identity", () => {
+      // The deleted-guard era withheld Remove when only one sign-in method
+      // remained; a verified primary email is always a login path, so no
+      // lockout is possible and Remove is always offered here.
       const externalIdentities = [
         makeIdentity({ identityId: 1, subjectIdentifier: "google-oauth2|1" }),
       ];
@@ -398,8 +401,8 @@ describe("SignInMethodList", () => {
       );
 
       expect(
-        screen.queryByRole("button", { name: "Remove" }),
-      ).not.toBeInTheDocument();
+        screen.getByRole("button", { name: "Remove" }),
+      ).toBeInTheDocument();
     });
 
     it("offers Remove on every external identity when more than one exists", () => {
@@ -698,8 +701,8 @@ describe("SignInMethodList", () => {
       );
 
       const rows = screen.getAllByRole("listitem");
-      // total > 1 so canUnlink is true, but the current-session row still has
-      // no Remove control; the other external identity keeps its own.
+      // The current-session row still has no Remove control regardless of
+      // canUnlink; the other external identity keeps its own.
       expect(
         within(rows[0]).queryByRole("button", { name: "Remove" }),
       ).not.toBeInTheDocument();

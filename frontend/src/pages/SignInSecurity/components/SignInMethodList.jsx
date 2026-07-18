@@ -141,9 +141,11 @@ const ContactEmailRow = ({ emailRow, busy, onRemove, onSetPrimary }) => (
  * verified address whose email sign-in method was removed). An employee may
  * hold more than one internal identity (e.g. an SSO login plus an OTP-linked
  * corp email). Internal identities cannot be unlinked here; an external
- * identity can be unless it is the only remaining sign-in method (the
- * backend additionally refuses the current session's identity and an active
- * employee's corp sign-in).
+ * identity can always be removed, current session excepted — the always-live
+ * email OTP path to the primary contact means removing the last remaining
+ * sign-in method can never lock the caller out (the backend additionally
+ * refuses the current session's identity and an active employee's corp
+ * sign-in).
  *
  * An email sign-in method's row carries its contact-email state: a
  * non-primary address can be set as the primary contact from there. A
@@ -236,9 +238,6 @@ const SignInMethodList = ({
     );
   }
 
-  const total = internalIdentities.length + externalIdentities.length;
-  const canUnlink = total > 1;
-
   return (
     <ul className="divide-y">
       {internalIdentities.map((identity) => (
@@ -256,7 +255,7 @@ const SignInMethodList = ({
         <IdentityRow
           key={identity.identityId}
           identity={identity}
-          canUnlink={canUnlink}
+          canUnlink
           emailRow={emailRowFor(identity)}
           busy={busy}
           onUnlink={handleUnlink}
