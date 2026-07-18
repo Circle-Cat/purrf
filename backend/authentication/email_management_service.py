@@ -22,7 +22,6 @@ from backend.common.constants import is_company_email
 from backend.common.environment_constants import EMAIL_OTP_STATE_JWT_SECRET
 from backend.common.exceptions import ConflictError
 from backend.common.identity_type import IdentityType
-from backend.common.permissions import INTERNAL_EMPLOYEE_PERMISSIONS
 from backend.dto.emails_view_dto import (
     EmailEntryDto,
     EmailsViewDto,
@@ -30,6 +29,7 @@ from backend.dto.emails_view_dto import (
 )
 from backend.entity.user_emails_entity import UserEmailsEntity
 from backend.entity.user_identities_entity import UserIdentitiesEntity
+from backend.user_identity.internal_lifecycle import absorb_internal_identity
 
 _STATE_TTL_SECONDS = 600
 _STATE_FLOW = "add_email"
@@ -633,53 +633,16 @@ class EmailManagementService:
     async def _absorb_internal_identity(
         self, session, user_id: int, email: str
     ) -> None:
-        """
-        Mirror the first-login lifecycle hook when a corp sign-in joins an
-        EXISTING account (verify or needs-link): grant the internal-employee
-        permission bundle and promote the corp address to the primary contact.
-
-        Without this, an employee who linked their corp sign-in into a
-        pre-existing external account would be INTERNAL without the baseline
-        permissions a first-login hire gets, with a personal address still
-        receiving account mail. Grants are diffed against the user's active
-        permissions first (``grant()`` never dedups), so re-verifying is
-        idempotent; the promotion is skipped when the corp address is already
-        the primary or (defensively) not confirmed. Flushes only — the caller
-        owns the transaction boundary.
-
-        Args:
-            session (AsyncSession): The active async database session.
-            user_id (int): The account the corp sign-in was linked into.
-            email (str): The corp address (normalized) that was just verified.
-        """
-        active = await self._user_permissions.get_active_permission_names(
-            session, user_id
+        """Delegate to the shared internal-employee lifecycle hook — see
+        backend.user_identity.internal_lifecycle.absorb_internal_identity."""
+        await absorb_internal_identity(
+            session,
+            user_id,
+            email,
+            user_permissions_repository=self._user_permissions,
+            user_emails_repository=self._user_emails,
+            logger=self._logger,
         )
-        held = set(active)
-        missing = sorted(
-            (p for p in INTERNAL_EMPLOYEE_PERMISSIONS if str(p) not in held), key=str
-        )
-        if missing:
-            await self._user_permissions.grant(
-                session=session,
-                user_id=user_id,
-                permission_names=missing,
-                granted_source="system_internal",
-            )
-            self._logger.info(
-                "[EmailManagementService] granted internal bundle to user_id=%s "
-                "on corp sign-in link",
-                user_id,
-            )
-
-        row = await self._user_emails.get_by_user_and_email(session, user_id, email)
-        if row is not None and row.otp_confirmed and not row.is_primary:
-            await self._user_emails.set_primary(session, user_id, row.email_id)
-            self._logger.info(
-                "[EmailManagementService] promoted corp email to primary for "
-                "user_id=%s",
-                user_id,
-            )
 
     async def _confirm_email(self, session, user_id: int, email: str) -> None:
         """
