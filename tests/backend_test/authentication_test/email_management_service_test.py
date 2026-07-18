@@ -141,42 +141,6 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
             )
         self.auth0.start_passwordless.assert_not_called()
 
-    # add_email — record a backup contact address without an OTP round-trip
-    async def test_add_email_inserts_unconfirmed_backup_row(self):
-        result = await self.service.add_email(
-            self.session, _USER_ID, " Alice@Gmail.com "
-        )
-
-        self.auth0.start_passwordless.assert_not_called()
-        entity = self.user_emails.upsert_email.call_args.kwargs["entity"]
-        self.assertEqual(entity.user_id, _USER_ID)
-        self.assertEqual(entity.email, _TARGET_EMAIL)
-        self.assertFalse(entity.otp_confirmed)
-        self.assertFalse(entity.is_primary)
-        self.session.commit.assert_awaited_once()
-        self.assertEqual(result, {"ok": True, "email": _TARGET_EMAIL})
-
-    async def test_add_email_rejects_invalid_format(self):
-        with self.assertRaises(ValueError):
-            await self.service.add_email(self.session, _USER_ID, "not-an-email")
-        self.user_emails.upsert_email.assert_not_awaited()
-
-    async def test_add_email_conflict_when_claimed_elsewhere(self):
-        # Any other-account claim blocks, confirmed or not: user_emails.email
-        # is globally unique, so the insert could never succeed.
-        self.user_emails.exists_on_other_user.return_value = True
-        with self.assertRaises(ConflictError):
-            await self.service.add_email(self.session, _USER_ID, _TARGET_EMAIL)
-        self.user_emails.upsert_email.assert_not_awaited()
-
-    async def test_add_email_conflict_when_already_on_own_account(self):
-        self.user_emails.get_by_user_and_email.return_value = self._email_row(
-            _TARGET_EMAIL, otp_confirmed=False
-        )
-        with self.assertRaises(ConflictError):
-            await self.service.add_email(self.session, _USER_ID, _TARGET_EMAIL)
-        self.user_emails.upsert_email.assert_not_awaited()
-
     # remove_email — drop an unverified backup contact address, no OTP
     def _removable_row(self, email_id=12, **overrides):
         row = self._email_row("backup@gmail.com", otp_confirmed=False, **overrides)

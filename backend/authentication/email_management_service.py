@@ -68,65 +68,18 @@ class EmailManagementService:
         self._state_secret = os.getenv(EMAIL_OTP_STATE_JWT_SECRET)
         self._logger = logger
 
-    async def add_email(self, session, current_user_id: int, email: str) -> dict:
-        """
-        Record a backup contact address on the caller's account without an OTP
-        round-trip.
-
-        The row is written unconfirmed and non-primary: an unverified address
-        is contact-only. Making it usable as a sign-in method requires the
-        OTP verify flow (initiate/verify), which proves from inside the
-        account that the caller controls the mailbox — auto-linking a sign-in
-        off an unverified claim would let anyone pre-claim someone else's
-        address and capture their later logins.
-
-        Args:
-            session (AsyncSession): The active async database session.
-            current_user_id (int): user_id of the authenticated caller.
-            email (str): The address to add.
-
-        Returns:
-            dict: ``{"ok": True, "email": <normalized address>}``.
-
-        Raises:
-            ValueError: The address is not a valid email.
-            ConflictError: Another account already claims the address
-                (confirmed or not — addresses are globally exclusive), or it
-                is already on the caller's account.
-        """
-        normalized = email.strip().lower()
-        if not _EMAIL_PATTERN.match(normalized):
-            raise ValueError("Invalid email format")
-        if await self._user_emails.exists_on_other_user(
-            session, normalized, current_user_id
-        ):
-            raise ConflictError("Email already in use by another account")
-        if await self._user_emails.get_by_user_and_email(
-            session, current_user_id, normalized
-        ):
-            raise ConflictError("This email is already on your account")
-
-        await self._user_emails.upsert_email(
-            session=session,
-            entity=UserEmailsEntity(
-                user_id=current_user_id,
-                email=normalized,
-                otp_confirmed=False,
-                is_primary=False,
-            ),
-        )
-        await session.commit()
-        return {"ok": True, "email": normalized}
-
     async def remove_email(self, session, current_user_id: int, email_id: int) -> dict:
         """
         Remove an unverified backup contact address from the caller's account.
 
-        Only a never-confirmed, non-primary row may be removed here: adding it
-        required no OTP round-trip, so removing it requires none either. A
-        verified address is (or can become) a sign-in method and leaves the
-        account only through the step-up unlink flow, and the primary contact
-        cannot be removed at all.
+        Only a never-confirmed, non-primary row may be removed here: such a
+        row was never proven to be the caller's mailbox — only the OTP
+        initiate/verify flow can create a confirmed row, and an unconfirmed
+        one can only be a legacy row from before that flow was the sole
+        entry point — so removing it requires no proof either. A verified
+        address is (or can become) a sign-in method and leaves the account
+        only through the step-up unlink flow, and the primary contact cannot
+        be removed at all.
 
         Args:
             session (AsyncSession): The active async database session.
