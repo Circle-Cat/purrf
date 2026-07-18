@@ -1,5 +1,6 @@
 import unittest
 from datetime import date, datetime, timezone
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, create_autospec
 from backend.recruiting.application_service import ApplicationService
 from backend.recruiting.recruiting_mapper import RecruitingMapper
@@ -55,9 +56,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         )
         self.notification_repo = create_autospec(NotificationRepository, instance=True)
         self.session = AsyncMock()
-        # The applicant's screen-rule email comes from user_emails.
+        # The applicant's screen-rule emails come from user_emails; submit
+        # matches against every confirmed claim, not one contact address.
         self.user_emails_repo = MagicMock()
-        self.user_emails_repo.get_contact_email = AsyncMock(return_value=None)
+        self.user_emails_repo.list_by_user_id = AsyncMock(return_value=[])
         self.service = ApplicationService(
             self.app_repo,
             self.sub_repo,
@@ -100,6 +102,11 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
 
     def _ctx(self, user_id=2):
         return UserContextDto(sub="s", primary_email="a@b.com", user_id=user_id)
+
+    @staticmethod
+    def _email_row(email, otp_confirmed=True):
+        """A user_emails row stub with just the fields submit reads."""
+        return SimpleNamespace(email=email, otp_confirmed=otp_confirmed)
 
     async def test_submit_lands_first_stage_with_version_one(self):
         dto = ApplicationSubmitDto.model_validate({
@@ -743,7 +750,9 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         )
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
         # The screen-rule email comes from user_emails, not the legacy column.
-        self.user_emails_repo.get_contact_email.return_value = "a@spam.com"
+        self.user_emails_repo.list_by_user_id.return_value = [
+            self._email_row("a@spam.com")
+        ]
         dto = ApplicationSubmitDto.model_validate({"jobId": 1})
 
         result = await self.service.submit(self.session, self._ctx(), dto)
@@ -777,7 +786,9 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             }
         )
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
-        self.user_emails_repo.get_contact_email.return_value = "a@google.com"
+        self.user_emails_repo.list_by_user_id.return_value = [
+            self._email_row("a@google.com")
+        ]
         dto = ApplicationSubmitDto.model_validate({"jobId": 1})
 
         result = await self.service.submit(self.session, self._ctx(), dto)
@@ -813,7 +824,9 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             }
         )
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
-        self.user_emails_repo.get_contact_email.return_value = "a@circlecat.org"
+        self.user_emails_repo.list_by_user_id.return_value = [
+            self._email_row("a@circlecat.org")
+        ]
         dto = ApplicationSubmitDto.model_validate({"jobId": 1})
 
         result = await self.service.submit(self.session, self._ctx(), dto)
@@ -860,14 +873,86 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         )
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
 
-        self.user_emails_repo.get_contact_email.return_value = "a@circlecat.org"
+        self.user_emails_repo.list_by_user_id.return_value = [
+            self._email_row("a@circlecat.org")
+        ]
         dto = ApplicationSubmitDto.model_validate({"jobId": 1})
         hired_result = await self.service.submit(self.session, self._ctx(), dto)
         self.assertEqual(hired_result.stage, ApplicationStage.HIRED)
 
-        self.user_emails_repo.get_contact_email.return_value = "a@yahoo.com"
+        self.user_emails_repo.list_by_user_id.return_value = [
+            self._email_row("a@yahoo.com")
+        ]
         rejected_result = await self.service.submit(self.session, self._ctx(), dto)
         self.assertEqual(rejected_result.stage, ApplicationStage.REJECTED)
+
+    async def test_submit_screens_against_all_confirmed_claims(self):
+        """A required-domain address held as a non-contact claim still
+        satisfies the include rule and escapes the exclude rule — screening
+        looks at every confirmed claim, not just the contact address."""
+        job = self._job(
+            screen_rules={
+                "rules": [
+                    {
+                        "id": "r1",
+                        "condition": {
+                            "source": "email_domain",
+                            "operator": "in",
+                            "value": ["circlecat.org"],
+                        },
+                        "action": "auto_hire",
+                    },
+                    {
+                        "id": "r2",
+                        "condition": {
+                            "source": "email_domain",
+                            "operator": "not_in",
+                            "value": ["circlecat.org"],
+                        },
+                        "action": "reject",
+                    },
+                ]
+            }
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.user_emails_repo.list_by_user_id.return_value = [
+            self._email_row("a@gmail.com"),
+            self._email_row("a@circlecat.org"),
+        ]
+        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+
+        result = await self.service.submit(self.session, self._ctx(), dto)
+
+        self.assertEqual(result.stage, ApplicationStage.HIRED)
+
+    async def test_submit_ignores_unconfirmed_claims_in_screening(self):
+        """An unverified claim can't game the screening: only
+        otp_confirmed rows participate in email_domain matching."""
+        job = self._job(
+            screen_rules={
+                "rules": [
+                    {
+                        "id": "r1",
+                        "condition": {
+                            "source": "email_domain",
+                            "operator": "in",
+                            "value": ["circlecat.org"],
+                        },
+                        "action": "auto_hire",
+                    }
+                ]
+            }
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.user_emails_repo.list_by_user_id.return_value = [
+            self._email_row("a@gmail.com"),
+            self._email_row("a@circlecat.org", otp_confirmed=False),
+        ]
+        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+
+        result = await self.service.submit(self.session, self._ctx(), dto)
+
+        self.assertEqual(result.stage, ApplicationStage.RECRUITER_SCREENING)
 
     async def test_submit_auto_hire_skips_default_assignment(self):
         """HIRED is never an interview stage, so no assignment row should
@@ -893,7 +978,9 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             },
         )
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
-        self.user_emails_repo.get_contact_email.return_value = "a@circlecat.org"
+        self.user_emails_repo.list_by_user_id.return_value = [
+            self._email_row("a@circlecat.org")
+        ]
         dto = ApplicationSubmitDto.model_validate({"jobId": 1})
 
         await self.service.submit(self.session, self._ctx(), dto)
@@ -947,7 +1034,9 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             },
         )
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
-        self.user_emails_repo.get_contact_email.return_value = "a@spam.com"
+        self.user_emails_repo.list_by_user_id.return_value = [
+            self._email_row("a@spam.com")
+        ]
         app = ApplicationEntity(
             job_id=1, user_id=2, stage=ApplicationStage.REJECTED, current_round=1
         )
@@ -986,7 +1075,9 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             },
         )
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
-        self.user_emails_repo.get_contact_email.return_value = "a@circlecat.org"
+        self.user_emails_repo.list_by_user_id.return_value = [
+            self._email_row("a@circlecat.org")
+        ]
         app = ApplicationEntity(
             job_id=1, user_id=2, stage=ApplicationStage.REJECTED, current_round=1
         )
