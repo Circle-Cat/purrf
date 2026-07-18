@@ -13,9 +13,9 @@ const view = (active) => ({ data: { userId: 7, active, history: [] } });
 describe("useUserPermissions", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    api.getUserPermissions.mockResolvedValue(view(["mentorship.round.read"]));
+    api.getUserPermissions.mockResolvedValue(view(["mentorship.admin.read"]));
     api.grantPermissions.mockResolvedValue(
-      view(["mentorship.round.read", "x"]),
+      view(["mentorship.admin.read", "x"]),
     );
     api.revokePermissions.mockResolvedValue(view([]));
   });
@@ -23,7 +23,7 @@ describe("useUserPermissions", () => {
   it("loads active + history for the user", async () => {
     const { result } = renderHook(() => useUserPermissions(7));
     await waitFor(() =>
-      expect(result.current.active).toEqual(["mentorship.round.read"]),
+      expect(result.current.active).toEqual(["mentorship.admin.read"]),
     );
     expect(api.getUserPermissions).toHaveBeenCalledWith(7);
   });
@@ -36,13 +36,13 @@ describe("useUserPermissions", () => {
   it("saveDiff grants newly checked and revokes unchecked", async () => {
     const { result } = renderHook(() => useUserPermissions(7));
     await waitFor(() => expect(result.current.active).toHaveLength(1));
-    // checked = [x] : add "x", remove "mentorship.round.read"
+    // checked = [x] : add "x", remove "mentorship.admin.read"
     await act(async () => {
       await result.current.saveDiff(["x"]);
     });
     expect(api.grantPermissions).toHaveBeenCalledWith(7, ["x"]);
     expect(api.revokePermissions).toHaveBeenCalledWith(7, [
-      "mentorship.round.read",
+      "mentorship.admin.read",
     ]);
     // mount fetch + post-save refetch
     expect(api.getUserPermissions).toHaveBeenCalledTimes(2);
@@ -56,7 +56,7 @@ describe("useUserPermissions", () => {
     });
     expect(api.grantPermissions).not.toHaveBeenCalled();
     expect(api.revokePermissions).toHaveBeenCalledWith(7, [
-      "mentorship.round.read",
+      "mentorship.admin.read",
     ]);
     // mount fetch + post-save refetch
     expect(api.getUserPermissions).toHaveBeenCalledTimes(2);
@@ -67,7 +67,7 @@ describe("useUserPermissions", () => {
     await waitFor(() => expect(result.current.active).toHaveLength(1));
     api.grantPermissions.mockRejectedValueOnce(new Error("boom"));
     api.getUserPermissions.mockResolvedValueOnce(
-      view(["mentorship.round.read"]),
+      view(["mentorship.admin.read"]),
     );
     await act(async () => {
       await result.current.saveDiff(["x"]);
@@ -80,14 +80,14 @@ describe("useUserPermissions", () => {
     const { result } = renderHook(() => useUserPermissions(7));
     await waitFor(() => expect(result.current.active).toHaveLength(1));
     api.grantPermissions.mockRejectedValueOnce(new Error("grant boom"));
-    // checked = [x] : add "x" (fails), remove "mentorship.round.read"
+    // checked = [x] : add "x" (fails), remove "mentorship.admin.read"
     await act(async () => {
       await result.current.saveDiff(["x"]);
     });
     expect(api.grantPermissions).toHaveBeenCalledWith(7, ["x"]);
     // The revoke must NOT be skipped just because the grant threw.
     expect(api.revokePermissions).toHaveBeenCalledWith(7, [
-      "mentorship.round.read",
+      "mentorship.admin.read",
     ]);
   });
 

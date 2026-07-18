@@ -25,7 +25,7 @@ export const useMentorshipManagement = (canReadRounds = true) => {
   });
 
   const refreshRounds = useCallback(async () => {
-    // The detailed round view requires MENTORSHIP_ROUND_READ; skip the request
+    // The detailed round view requires MENTORSHIP_ADMIN_READ; skip the request
     // when the user lacks it (the backend would return 403) and show nothing.
     if (!canReadRounds) {
       setRounds([]);
