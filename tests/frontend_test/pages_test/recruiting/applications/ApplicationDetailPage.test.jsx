@@ -15,9 +15,15 @@ vi.spyOn(toast, "success").mockImplementation(() => {});
 
 // The current user id is read via useAuth(); a hoisted mutable holder lets
 // each test flip who is viewing (owner / assignee / neither) before render.
-const authState = vi.hoisted(() => ({ userId: 999 }));
+// `permissions` defaults to holding the blacklist grant (see beforeEach) so
+// owner-flow tests exercise a fully-empowered owner; the permission-gating
+// tests empty it explicitly.
+const authState = vi.hoisted(() => ({ userId: 999, permissions: [] }));
 vi.mock("@/context/auth/AuthContext", () => ({
-  useAuth: () => ({ user: { userId: authState.userId } }),
+  useAuth: () => ({
+    user: { userId: authState.userId },
+    permissions: authState.permissions,
+  }),
 }));
 
 const OWNER_ID = 500;
@@ -157,6 +163,7 @@ const confirmedEval = (stage, round = 1, evaluatorId = ASSIGNEE_ID) => ({
 beforeEach(() => {
   vi.clearAllMocks();
   authState.userId = 999;
+  authState.permissions = ["recruiting.blacklist.write"];
   api.resumeUrl.mockImplementation(
     (id) => `/api/recruiting/applications/${id}/resume`,
   );
@@ -916,6 +923,35 @@ describe("ApplicationDetailPage — operate row", () => {
     expect(
       screen.getByRole("button", { name: "Advance to Behavioral" }),
     ).toBeInTheDocument();
+  });
+
+  it("disables Blacklist for an owner without recruiting.blacklist.write", async () => {
+    authState.userId = OWNER_ID;
+    authState.permissions = [];
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
+    });
+    renderPage();
+    await waitLoaded();
+
+    const blacklistButton = screen.getByRole("button", { name: "Blacklist" });
+    expect(blacklistButton).toBeDisabled();
+    expect(blacklistButton).toHaveAttribute(
+      "title",
+      "Requires the blacklist permission",
+    );
+  });
+
+  it("keeps Blacklist enabled for an owner holding recruiting.blacklist.write", async () => {
+    authState.userId = OWNER_ID;
+    authState.permissions = ["recruiting.blacklist.write"];
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
+    });
+    renderPage();
+    await waitLoaded();
+
+    expect(screen.getByRole("button", { name: "Blacklist" })).toBeEnabled();
   });
 
   it("shows a single Advance button that advances the round while one remains, not both round and stage buttons", async () => {
