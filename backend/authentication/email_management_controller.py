@@ -3,8 +3,10 @@ Email management routes, mounted under /api/auth/emails:
 
 - ``POST /initiate`` — start an Auth0 passwordless OTP and return a signed state
   JWT binding the code to the caller's session.
-- ``POST /verify``   — confirm the OTP, link the new identity, and record the
-  address as a confirmed contact.
+- ``POST /verify``   — confirm the OTP and record the address as a confirmed
+  contact. In needs-link mode, also links the new identity to the account; in
+  normal mode, verification unlocks the address as a sign-in method but does
+  not link identity.
 
 The caller's user_id is resolved by AuthMiddleware (bootstrap) and read from the
 request context, so these handlers do not look the user up again.
