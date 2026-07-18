@@ -26,6 +26,7 @@ const HardWallGate = ({ children }) => {
     accessDeniedMessage,
     authError,
     sessionExpired,
+    authRefusalMessage,
     refreshAuth,
   } = useAuth();
   const location = useLocation();
@@ -42,7 +43,11 @@ const HardWallGate = ({ children }) => {
   // trapping the user at the verify wall (where OTP calls would also fail).
   if (authError) {
     return (
-      <AuthLoadError sessionExpired={sessionExpired} onRetry={refreshAuth} />
+      <AuthLoadError
+        sessionExpired={sessionExpired}
+        refusalMessage={authRefusalMessage}
+        onRetry={refreshAuth}
+      />
     );
   }
 
