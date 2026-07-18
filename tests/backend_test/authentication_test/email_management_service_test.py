@@ -88,7 +88,7 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
             "email_verified": True,
         }
         self.user_emails = AsyncMock()
-        self.user_emails.exists_confirmed_on_other_user.return_value = False
+        self.user_emails.exists_on_other_user.return_value = False
         self.user_emails.get_by_user_and_email.return_value = None
         self.user_emails.has_primary.return_value = False
         self.user_identities = AsyncMock()
@@ -134,8 +134,10 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
             )
         self.auth0.start_passwordless.assert_not_called()
 
-    async def test_initiate_conflict_when_confirmed_elsewhere(self):
-        self.user_emails.exists_confirmed_on_other_user.return_value = True
+    async def test_initiate_conflict_when_claimed_elsewhere(self):
+        # Any other-account claim blocks, confirmed or not: user_emails.email
+        # is globally unique, so the eventual insert could never succeed.
+        self.user_emails.exists_on_other_user.return_value = True
         with self.assertRaises(ConflictError):
             await self.service.initiate(
                 self.session, _USER_ID, _CURRENT_SUB, _TARGET_EMAIL
@@ -162,8 +164,10 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
             await self.service.add_email(self.session, _USER_ID, "not-an-email")
         self.user_emails.upsert_email.assert_not_awaited()
 
-    async def test_add_email_conflict_when_confirmed_elsewhere(self):
-        self.user_emails.exists_confirmed_on_other_user.return_value = True
+    async def test_add_email_conflict_when_claimed_elsewhere(self):
+        # Any other-account claim blocks, confirmed or not: user_emails.email
+        # is globally unique, so the insert could never succeed.
+        self.user_emails.exists_on_other_user.return_value = True
         with self.assertRaises(ConflictError):
             await self.service.add_email(self.session, _USER_ID, _TARGET_EMAIL)
         self.user_emails.upsert_email.assert_not_awaited()
@@ -526,7 +530,7 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         """The address belonging to another account is the situation being
         resolved, so the other-account guard must not fire; the state is
         signed with user_id=None."""
-        self.user_emails.exists_confirmed_on_other_user.return_value = True
+        self.user_emails.exists_on_other_user.return_value = True
         result = await self.service.initiate(
             self.session,
             None,
@@ -536,7 +540,7 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
             claim_email=_TARGET_EMAIL,
         )
         self.auth0.start_passwordless.assert_called_once_with(_TARGET_EMAIL)
-        self.user_emails.exists_confirmed_on_other_user.assert_not_called()
+        self.user_emails.exists_on_other_user.assert_not_called()
         claims = jwt.decode(result["state"], _SECRET, algorithms=["HS256"])
         self.assertIsNone(claims["user_id"])
         self.assertEqual(claims["sub"], _CURRENT_SUB)
