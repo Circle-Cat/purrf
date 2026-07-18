@@ -169,7 +169,7 @@ class TestMentorshipController(unittest.IsolatedAsyncioTestCase):
         )
 
         mock_user.has_permission.assert_called_once_with(
-            Permission.MENTORSHIP_ROUND_READ
+            Permission.MENTORSHIP_ADMIN_READ
         )
         self.mock_rounds_service.get_all_rounds.assert_awaited_once_with(
             self.mock_session, include_details=True
@@ -186,7 +186,7 @@ class TestMentorshipController(unittest.IsolatedAsyncioTestCase):
         )
 
         mock_user.has_permission.assert_called_once_with(
-            Permission.MENTORSHIP_ROUND_READ
+            Permission.MENTORSHIP_ADMIN_READ
         )
         self.mock_rounds_service.get_all_rounds.assert_not_awaited()
         self.assertEqual(response["status_code"], HTTPStatus.FORBIDDEN)

@@ -19,7 +19,7 @@ beforeEach(() => {
     data: {
       permissions: [
         { name: "permission.manage", description: "d1" },
-        { name: "mentorship.round.read", description: "d2" },
+        { name: "mentorship.admin.read", description: "d2" },
       ],
     },
   });

@@ -35,7 +35,7 @@ class TestAuthenticateDecorator(unittest.IsolatedAsyncioTestCase):
         self.mock_user.sub = "user_123"
         self.mock_user.permissions = frozenset({
             Permission.INTERNAL_ACTIVITY_READ,
-            Permission.MENTORSHIP_ROUND_WRITE,
+            Permission.MENTORSHIP_ADMIN_WRITE,
         })
         self.mock_user.primary_email = "test@example.com"
 

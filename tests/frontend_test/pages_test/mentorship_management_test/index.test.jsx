@@ -64,8 +64,8 @@ describe("MentorshipManagement", () => {
     useMentorshipManagement.mockReturnValue(defaultHookData);
     useAuth.mockReturnValue({
       permissions: [
-        PERMISSIONS.MENTORSHIP_ROUND_READ,
-        PERMISSIONS.MENTORSHIP_ROUND_WRITE,
+        PERMISSIONS.MENTORSHIP_ADMIN_READ,
+        PERMISSIONS.MENTORSHIP_ADMIN_WRITE,
       ],
     });
   });
@@ -85,7 +85,7 @@ describe("MentorshipManagement", () => {
     expect(screen.getByTestId("is-loading").textContent).toBe("true");
   });
 
-  it("renders the card and forwards the write flag with round-read permission", () => {
+  it("renders the card and forwards the write flag with admin-write permission", () => {
     render(<MentorshipManagement />);
     expect(
       screen.getByTestId("mock-rounds-management-card"),
@@ -95,7 +95,7 @@ describe("MentorshipManagement", () => {
     expect(useMentorshipManagement).toHaveBeenCalledWith(true);
   });
 
-  it("does not render the card when the user lacks round-read permission", () => {
+  it("does not render the card when the user lacks admin-read permission", () => {
     useAuth.mockReturnValue({ permissions: [] });
     render(<MentorshipManagement />);
     expect(
@@ -104,9 +104,17 @@ describe("MentorshipManagement", () => {
     expect(useMentorshipManagement).toHaveBeenCalledWith(false);
   });
 
-  it("renders the card without write controls for a round-read-only user", () => {
+  it("does not render ParticipantSearchCard when the user lacks admin-read permission", () => {
+    useAuth.mockReturnValue({ permissions: [] });
+    render(<MentorshipManagement />);
+    expect(
+      screen.queryByTestId("mock-participant-search-card"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("renders the card without write controls for an admin-read-only user", () => {
     useAuth.mockReturnValue({
-      permissions: [PERMISSIONS.MENTORSHIP_ROUND_READ],
+      permissions: [PERMISSIONS.MENTORSHIP_ADMIN_READ],
     });
     render(<MentorshipManagement />);
     expect(
@@ -115,9 +123,9 @@ describe("MentorshipManagement", () => {
     expect(screen.getByTestId("can-write").textContent).toBe("false");
   });
 
-  it("renders ParticipantSearchCard when the user has participant-read", () => {
+  it("renders ParticipantSearchCard when the user has admin-read permission", () => {
     useAuth.mockReturnValue({
-      permissions: [PERMISSIONS.MENTORSHIP_PARTICIPANT_READ],
+      permissions: [PERMISSIONS.MENTORSHIP_ADMIN_READ],
     });
     render(<MentorshipManagement />);
     expect(
@@ -125,13 +133,19 @@ describe("MentorshipManagement", () => {
     ).toBeInTheDocument();
   });
 
-  it("does not render ParticipantSearchCard when the user lacks participant-read", () => {
+  it("renders the card with write controls for a write-only user, without ParticipantSearchCard", () => {
     useAuth.mockReturnValue({
-      permissions: [PERMISSIONS.MENTORSHIP_ROUND_READ],
+      permissions: [PERMISSIONS.MENTORSHIP_ADMIN_WRITE],
     });
     render(<MentorshipManagement />);
     expect(
+      screen.getByTestId("mock-rounds-management-card"),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("can-write").textContent).toBe("true");
+    expect(
       screen.queryByTestId("mock-participant-search-card"),
     ).not.toBeInTheDocument();
+    // canRead is false for a write-only user, forwarded to the hook.
+    expect(useMentorshipManagement).toHaveBeenCalledWith(false);
   });
 });

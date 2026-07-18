@@ -106,7 +106,8 @@ function App() {
                       element={
                         <ProtectedRoute
                           requiredPermissions={[
-                            PERMISSIONS.MENTORSHIP_MANAGEMENT_READ,
+                            PERMISSIONS.MENTORSHIP_ADMIN_READ,
+                            PERMISSIONS.MENTORSHIP_ADMIN_WRITE,
                           ]}
                         >
                           <MentorshipManagement />

@@ -527,7 +527,7 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
             include_details=True,
         )
         self.user_context.has_permission.assert_called_once_with(
-            Permission.MENTORSHIP_ROUND_WRITE
+            Permission.MENTORSHIP_ADMIN_READ
         )
 
     async def test_get_meetings_by_user_and_round_v2_no_pair_found(self):
