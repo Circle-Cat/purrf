@@ -73,7 +73,6 @@ class TestNotificationRepository(BaseRepositoryTestLib):
         self.assertIsNotNone(created.notification_id)
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0].notification_id, created.notification_id)
-        self.assertIsNone(result[0].read_at)
 
     async def test_list_by_user_orders_newest_first(self):
         app, recipient = await self._seed()
@@ -102,7 +101,7 @@ class TestNotificationRepository(BaseRepositoryTestLib):
             [second.notification_id, first.notification_id],
         )
 
-    async def test_count_unread_only_counts_unread_for_that_user(self):
+    async def test_count_by_user_only_counts_that_user(self):
         app, recipient = await self._seed()
         other = _make_user()
         await self.insert_entities([other])
@@ -124,11 +123,11 @@ class TestNotificationRepository(BaseRepositoryTestLib):
             ),
         )
 
-        count = await repo.count_unread(self.session, recipient.user_id)
+        count = await repo.count_by_user(self.session, recipient.user_id)
 
         self.assertEqual(count, 1)
 
-    async def test_mark_read_sets_read_at_and_returns_entity(self):
+    async def test_delete_by_id_removes_the_row_and_returns_true(self):
         app, recipient = await self._seed()
         repo = NotificationRepository()
         created = await repo.create(
@@ -140,15 +139,14 @@ class TestNotificationRepository(BaseRepositoryTestLib):
             ),
         )
 
-        updated = await repo.mark_read(
+        deleted = await repo.delete_by_id(
             self.session, created.notification_id, recipient.user_id
         )
 
-        self.assertIsNotNone(updated)
-        self.assertIsNotNone(updated.read_at)
-        self.assertEqual(await repo.count_unread(self.session, recipient.user_id), 0)
+        self.assertTrue(deleted)
+        self.assertEqual(await repo.count_by_user(self.session, recipient.user_id), 0)
 
-    async def test_mark_read_wrong_user_is_a_no_op(self):
+    async def test_delete_by_id_wrong_user_is_a_no_op(self):
         app, recipient = await self._seed()
         other = _make_user()
         await self.insert_entities([other])
@@ -162,14 +160,14 @@ class TestNotificationRepository(BaseRepositoryTestLib):
             ),
         )
 
-        result = await repo.mark_read(
+        result = await repo.delete_by_id(
             self.session, created.notification_id, other.user_id
         )
 
-        self.assertIsNone(result)
-        self.assertEqual(await repo.count_unread(self.session, recipient.user_id), 1)
+        self.assertFalse(result)
+        self.assertEqual(await repo.count_by_user(self.session, recipient.user_id), 1)
 
-    async def test_mark_all_read_clears_every_unread_row_for_that_user(self):
+    async def test_delete_all_by_user_removes_every_row_for_that_user(self):
         app, recipient = await self._seed()
         repo = NotificationRepository()
         await repo.create(
@@ -189,9 +187,9 @@ class TestNotificationRepository(BaseRepositoryTestLib):
             ),
         )
 
-        await repo.mark_all_read(self.session, recipient.user_id)
+        await repo.delete_all_by_user(self.session, recipient.user_id)
 
-        self.assertEqual(await repo.count_unread(self.session, recipient.user_id), 0)
+        self.assertEqual(await repo.count_by_user(self.session, recipient.user_id), 0)
 
 
 if __name__ == "__main__":

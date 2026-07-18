@@ -40,7 +40,6 @@ class TestRecruitingNotificationService(unittest.IsolatedAsyncioTestCase):
             job_id=None,
             job_review_id=None,
             actor_user_id=9,
-            read_at=None,
             created_at=datetime.now(timezone.utc),
         )
         defaults.update(overrides)
@@ -51,7 +50,7 @@ class TestRecruitingNotificationService(unittest.IsolatedAsyncioTestCase):
     async def test_list_for_user_resolves_application_scoped_display_fields(self):
         row = self._notification()
         self.notification_repo.list_by_user = AsyncMock(return_value=[row])
-        self.notification_repo.count_unread = AsyncMock(return_value=1)
+        self.notification_repo.count_by_user = AsyncMock(return_value=1)
         job = JobEntity(
             kind=JobKind.ACTIVITY, title="Backend Engineer", status=JobStatus.PUBLISHED
         )
@@ -80,7 +79,6 @@ class TestRecruitingNotificationService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(item.job_title, "Backend Engineer")
         self.assertEqual(item.applicant_name, "Ada Lovelace")
         self.assertEqual(item.actor_name, "Grace Hopper")
-        self.assertFalse(item.read)
 
     async def test_list_for_user_resolves_job_scoped_display_fields(self):
         row = self._notification(
@@ -89,10 +87,9 @@ class TestRecruitingNotificationService(unittest.IsolatedAsyncioTestCase):
             round=None,
             job_id=1,
             job_review_id=100,
-            read_at=datetime.now(timezone.utc),
         )
         self.notification_repo.list_by_user = AsyncMock(return_value=[row])
-        self.notification_repo.count_unread = AsyncMock(return_value=0)
+        self.notification_repo.count_by_user = AsyncMock(return_value=0)
         job = JobEntity(
             kind=JobKind.ACTIVITY, title="Design Review", status=JobStatus.DRAFT
         )
@@ -108,27 +105,26 @@ class TestRecruitingNotificationService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(item.job_id, 1)
         self.assertEqual(item.job_title, "Design Review")
         self.assertEqual(item.applicant_name, "")
-        self.assertTrue(item.read)
         self.app_repo.get_by_id.assert_not_awaited()
 
-    async def test_mark_read_returns_updated_unread_count(self):
-        self.notification_repo.mark_read = AsyncMock(return_value=self._notification())
-        self.notification_repo.count_unread = AsyncMock(return_value=3)
+    async def test_dismiss_returns_updated_pending_count(self):
+        self.notification_repo.delete_by_id = AsyncMock(return_value=True)
+        self.notification_repo.count_by_user = AsyncMock(return_value=3)
 
-        result = await self.service.mark_read(
-            self.session, user_id=2, notification_id=1
-        )
+        result = await self.service.dismiss(self.session, user_id=2, notification_id=1)
 
-        self.notification_repo.mark_read.assert_awaited_once_with(self.session, 1, 2)
+        self.notification_repo.delete_by_id.assert_awaited_once_with(self.session, 1, 2)
         self.assertEqual(result.unread_count, 3)
 
-    async def test_mark_all_read_commits_and_returns_zero(self):
-        self.notification_repo.mark_all_read = AsyncMock()
-        self.notification_repo.count_unread = AsyncMock(return_value=0)
+    async def test_dismiss_all_commits_and_returns_zero(self):
+        self.notification_repo.delete_all_by_user = AsyncMock()
+        self.notification_repo.count_by_user = AsyncMock(return_value=0)
 
-        result = await self.service.mark_all_read(self.session, user_id=2)
+        result = await self.service.dismiss_all(self.session, user_id=2)
 
-        self.notification_repo.mark_all_read.assert_awaited_once_with(self.session, 2)
+        self.notification_repo.delete_all_by_user.assert_awaited_once_with(
+            self.session, 2
+        )
         self.assertEqual(result.unread_count, 0)
 
 

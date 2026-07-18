@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { Bell } from "lucide-react";
+import { Bell, X } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -10,11 +9,10 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import {
+  dismissAllNotifications,
+  dismissNotification,
   listNotifications,
-  markAllNotificationsRead,
-  markNotificationRead,
 } from "@/api/recruitingApi";
-import { ROUTE_PATHS } from "@/constants/RoutePaths";
 
 /** Compose a notification's display text, by type. */
 const describe = (n) => {
@@ -36,24 +34,18 @@ const describe = (n) => {
   }
 };
 
-/** Where a notification click should navigate to. */
-const targetPath = (n) =>
-  n.applicationId != null
-    ? ROUTE_PATHS.RECRUITING_APPLICATION_DETAIL(n.applicationId)
-    : ROUTE_PATHS.RECRUITING_JOB_DETAIL(n.jobId);
-
 /**
  * Header bell + popover for in-app recruiting notifications.
  *
- * Fetches once on mount only -- no polling, no WebSocket/SSE, per the
- * notification-system design spec. Mark-read/mark-all-read update local
- * state immediately and reconcile the unread count from the response.
+ * Notifications are light reminders: they don't navigate anywhere.
+ * Dismissing one (the X) or "Clear all" deletes it server-side and drops
+ * it from the list. Fetches once on mount only -- no polling, no
+ * WebSocket/SSE, per the notification-system design spec.
  */
 const NotificationBell = () => {
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loadError, setLoadError] = useState(false);
-  const navigate = useNavigate();
 
   const load = useCallback(async () => {
     setLoadError(false);
@@ -71,24 +63,20 @@ const NotificationBell = () => {
     load();
   }, [load]);
 
-  const handleOpenNotification = async (notification) => {
-    navigate(targetPath(notification));
-    if (notification.read) return;
-    setNotifications((prev) =>
-      prev.map((n) => (n.id === notification.id ? { ...n, read: true } : n)),
-    );
+  const handleDismiss = async (notification) => {
+    setNotifications((prev) => prev.filter((n) => n.id !== notification.id));
     try {
-      const { data } = await markNotificationRead(notification.id);
+      const { data } = await dismissNotification(notification.id);
       setUnreadCount(data?.unreadCount ?? 0);
     } catch (e) {
       toast.error(e.message);
     }
   };
 
-  const handleMarkAllRead = async () => {
-    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+  const handleDismissAll = async () => {
+    setNotifications([]);
     try {
-      const { data } = await markAllNotificationsRead();
+      const { data } = await dismissAllNotifications();
       setUnreadCount(data?.unreadCount ?? 0);
     } catch (e) {
       toast.error(e.message);
@@ -121,10 +109,10 @@ const NotificationBell = () => {
           <Button
             variant="ghost"
             size="sm"
-            disabled={unreadCount === 0}
-            onClick={handleMarkAllRead}
+            disabled={notifications.length === 0}
+            onClick={handleDismissAll}
           >
-            Mark all read
+            Clear all
           </Button>
         </div>
         <div className="max-h-96 overflow-y-auto">
@@ -137,16 +125,21 @@ const NotificationBell = () => {
             <p className="p-4 text-sm text-slate-500">No notifications yet.</p>
           )}
           {notifications.map((n) => (
-            <button
+            <div
               key={n.id}
-              type="button"
-              onClick={() => handleOpenNotification(n)}
-              className={`block w-full border-b px-4 py-2 text-left text-sm last:border-b-0 hover:bg-accent ${
-                n.read ? "text-slate-500" : "font-medium"
-              }`}
+              className="flex items-start gap-2 border-b px-4 py-2 text-sm last:border-b-0"
             >
-              {describe(n)}
-            </button>
+              <span className="flex-1 font-medium">{describe(n)}</span>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Dismiss notification"
+                className="h-5 w-5 shrink-0 text-slate-500"
+                onClick={() => handleDismiss(n)}
+              >
+                <X size={14} />
+              </Button>
+            </div>
           ))}
         </div>
       </PopoverContent>

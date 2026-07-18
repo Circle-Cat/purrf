@@ -10,10 +10,11 @@ from backend.common.recruiting_enums import NotificationType
 class NotificationEntity(Base):
     """One in-app notification for a single recipient.
 
-    Written synchronously, in the same transaction as the triggering
-    event, by BoardService (assignment/mention), ApplicationService
-    (default-assignee materialization), and JobService (review
-    request/decision) -- never updated except to set read_at.
+    Notifications are light reminders: rows are written synchronously, in
+    the same transaction as the triggering event, by BoardService
+    (assignment/mention), ApplicationService (default-assignee
+    materialization), and JobService (review request/decision) -- never
+    updated, and deleted outright when the recipient dismisses them.
 
     Exactly one of application_id or (job_id, job_review_id) is set,
     never both: application_id/round/comment_id serve
@@ -55,9 +56,6 @@ class NotificationEntity(Base):
     )
     actor_user_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.user_id", ondelete="CASCADE"), nullable=True
-    )
-    read_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

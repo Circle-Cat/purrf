@@ -225,10 +225,10 @@ export const getAuditOverview = ({ startDate, endDate, jobIds = [] }) =>
 export const listNotifications = () =>
   request.get(API_ENDPOINTS.RECRUITING_NOTIFICATIONS);
 
-/** Mark one notification read. Returns { unreadCount }. */
-export const markNotificationRead = (id) =>
-  request.post(API_ENDPOINTS.RECRUITING_NOTIFICATION_READ(id));
+/** Dismiss (delete) one notification. Returns { unreadCount }. */
+export const dismissNotification = (id) =>
+  request.delete(API_ENDPOINTS.RECRUITING_NOTIFICATION(id));
 
-/** Mark every notification read. Returns { unreadCount }. */
-export const markAllNotificationsRead = () =>
-  request.post(API_ENDPOINTS.RECRUITING_NOTIFICATIONS_READ_ALL);
+/** Dismiss (delete) every notification. Returns { unreadCount }. */
+export const dismissAllNotifications = () =>
+  request.delete(API_ENDPOINTS.RECRUITING_NOTIFICATIONS);

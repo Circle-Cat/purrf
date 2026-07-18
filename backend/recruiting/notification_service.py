@@ -8,7 +8,10 @@ from backend.dto.notification_dto import (
 
 
 class RecruitingNotificationService:
-    """Read-side logic for in-app notifications: list + mark read/read-all.
+    """Read-side logic for in-app notifications: list + dismiss/dismiss-all.
+
+    Notifications are light reminders: dismissing one (the frontend's
+    "read") deletes the row outright, so everything listed is pending.
 
     The write side (creating notifications) is deliberately NOT here --
     BoardService/ApplicationService/JobService call
@@ -81,14 +84,13 @@ class RecruitingNotificationService:
             job_title=job_title,
             applicant_name=applicant_name,
             actor_name=actor_name,
-            read=row.read_at is not None,
             created_at=row.created_at,
         )
 
     async def list_for_user(
         self, session: AsyncSession, user_id: int, limit: int = 20, offset: int = 0
     ) -> NotificationListDto:
-        """List one user's notifications (newest first) plus their unread count.
+        """List one user's notifications (newest first) plus their pending count.
 
         Args:
             session (AsyncSession): Active database async session.
@@ -98,37 +100,41 @@ class RecruitingNotificationService:
 
         Returns:
             NotificationListDto: The page of notifications and the total
-                unread count (independent of `limit`/`offset`).
+                pending count (independent of `limit`/`offset`).
         """
         rows = await self.notification_repository.list_by_user(
             session, user_id, limit, offset
         )
-        unread_count = await self.notification_repository.count_unread(session, user_id)
+        unread_count = await self.notification_repository.count_by_user(
+            session, user_id
+        )
         items = [await self._to_dto(session, row) for row in rows]
         return NotificationListDto(notifications=items, unread_count=unread_count)
 
-    async def mark_read(
+    async def dismiss(
         self, session: AsyncSession, user_id: int, notification_id: int
     ) -> UnreadCountDto:
-        """Mark one notification read (no-op if it isn't user_id's) and commit.
+        """Delete one notification (no-op if it isn't user_id's) and commit.
 
         Args:
             session (AsyncSession): Active database async session.
             user_id (int): The authenticated caller.
-            notification_id (int): The notification to mark read.
+            notification_id (int): The notification to dismiss.
 
         Returns:
-            UnreadCountDto: The caller's unread count after the update.
+            UnreadCountDto: The caller's pending count after the delete.
         """
-        await self.notification_repository.mark_read(session, notification_id, user_id)
+        await self.notification_repository.delete_by_id(
+            session, notification_id, user_id
+        )
         await session.commit()
-        unread_count = await self.notification_repository.count_unread(session, user_id)
+        unread_count = await self.notification_repository.count_by_user(
+            session, user_id
+        )
         return UnreadCountDto(unread_count=unread_count)
 
-    async def mark_all_read(
-        self, session: AsyncSession, user_id: int
-    ) -> UnreadCountDto:
-        """Mark every one of user_id's unread notifications read and commit.
+    async def dismiss_all(self, session: AsyncSession, user_id: int) -> UnreadCountDto:
+        """Delete every one of user_id's notifications and commit.
 
         Args:
             session (AsyncSession): Active database async session.
@@ -137,7 +143,9 @@ class RecruitingNotificationService:
         Returns:
             UnreadCountDto: Always unread_count=0.
         """
-        await self.notification_repository.mark_all_read(session, user_id)
+        await self.notification_repository.delete_all_by_user(session, user_id)
         await session.commit()
-        unread_count = await self.notification_repository.count_unread(session, user_id)
+        unread_count = await self.notification_repository.count_by_user(
+            session, user_id
+        )
         return UnreadCountDto(unread_count=unread_count)
