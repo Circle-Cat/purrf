@@ -35,7 +35,6 @@ def make_user_context(
         last_login_at=last_login_at,
         user_id=None,
         permissions=frozenset(),
-        needs_link=False,
     )
 
 
@@ -85,11 +84,10 @@ class TestAuthMiddleware(unittest.TestCase):
         self.mock_user_identity_service = MagicMock()
         self.mock_user_identity_service.find_user_by_sub = AsyncMock(return_value=None)
         self.mock_user_identity_service.create_or_swap_user = AsyncMock(
-            return_value=None
+            return_value=SimpleNamespace(
+                user_id=1, is_super_admin=False, is_active=True, last_login_at=None
+            )
         )
-        # Default: the colliding email has no owner, so a non-race
-        # IntegrityError re-raises (the pre-needs-link behavior).
-        self.mock_user_identity_service.email_has_owner = AsyncMock(return_value=False)
         self.mock_user_permissions_repository = MagicMock()
         self.mock_user_permissions_repository.get_active_permission_names = AsyncMock(
             return_value=[]
@@ -252,57 +250,28 @@ class TestAuthMiddleware(unittest.TestCase):
         with self.assertRaises(IntegrityError):
             asyncio.run(middleware._bootstrap_user(user_context))
 
-    def test_integrity_error_owned_email_marks_needs_link(self):
+    def test_create_or_swap_refusal_returns_bad_request(self):
         """
-        A non-race IntegrityError whose email IS owned by an existing account
-        (a second sign-in method colliding, PUR-480): no user is created, the
-        request proceeds with user_id=None, needs_link=True and an empty
-        permission set instead of surfacing a 500.
-        """
-        user_context = make_user_context(last_login_at=1700000000)
-        self.mock_auth_service.authenticate_request.return_value = user_context
-        # Both finds miss; the insert's violation is the owned-email collision.
-        self.mock_user_identity_service.find_user_by_sub.side_effect = [None, None]
-        self.mock_user_identity_service.create_or_swap_user.side_effect = (
-            IntegrityError("stmt", "params", Exception("uq_users_primary_email"))
-        )
-        self.mock_user_identity_service.email_has_owner.return_value = True
-
-        client = self._add_middleware()
-        response = client.get(
-            "/protected", headers={"Authorization": "Bearer valid_token"}
-        )
-
-        self.assertEqual(response.status_code, HTTPStatus.OK)
-        self.assertIsNone(response.json()["user_id"])
-        self.assertTrue(user_context.needs_link)
-        self.assertEqual(user_context.permissions, frozenset())
-        self.mock_user_identity_service.email_has_owner.assert_awaited_once_with(
-            self.mock_session, "test@example.com"
-        )
-
-    def test_create_returns_none_marks_needs_link(self):
-        """
-        create_or_swap_user detects the owned email proactively and returns
-        None (no unique violation fires when the address lives only in
-        user_emails, e.g. added to another account via Add sign-in method):
-        same needs-link hold as the IntegrityError path — no user created,
-        user_id=None, needs_link=True, empty permissions, request proceeds.
+        create_or_swap_user refuses an untrusted or stale login by raising
+        ValueError (Task 3); the needs-link hold this used to fall through to
+        is gone, so the error surfaces through the middleware's general
+        ValueError handling as a 400 — no request.state.user is ever set, no
+        route handler runs.
         """
         user_context = make_user_context(last_login_at=1700000000)
         self.mock_auth_service.authenticate_request.return_value = user_context
         self.mock_user_identity_service.find_user_by_sub.return_value = None
-        self.mock_user_identity_service.create_or_swap_user.return_value = None
+        self.mock_user_identity_service.create_or_swap_user.side_effect = ValueError(
+            "Sign in with a supported method"
+        )
 
         client = self._add_middleware()
         response = client.get(
             "/protected", headers={"Authorization": "Bearer valid_token"}
         )
 
-        self.assertEqual(response.status_code, HTTPStatus.OK)
-        self.assertIsNone(response.json()["user_id"])
-        self.assertTrue(user_context.needs_link)
-        self.assertEqual(user_context.permissions, frozenset())
+        self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
+        self.assertIn("Sign in with a supported method", response.json()["message"])
 
     def test_cron_runner_skips_bootstrap(self):
         """

@@ -33,11 +33,13 @@ const errorMessage = (error, fallback) =>
  *
  * A single card backed by `GET /auth/emails`, listing the account's sign-in
  * methods and its contact emails together: set a method's email as the
- * primary contact (step-up OTP), remove a method (step-up OTP, which also
- * drops its synced contact email), add a backup email with immediate
- * verification (email OTP in the dialog), verify a legacy unverified address
- * (email OTP) to unlock it as a sign-in method, and remove an unverified
- * address (no OTP — legacy rows from before verify-at-add).
+ * primary contact (step-up OTP), remove a method (step-up OTP; its email
+ * address stays on the account as a contact-only row), add a backup email
+ * with immediate verification (email OTP in the dialog), verify a legacy
+ * unverified address (email OTP) to unlock it as a sign-in method, and
+ * remove a non-primary contact email (no OTP for a legacy unverified row;
+ * the server refuses to remove the address behind the caller's own current
+ * passwordless session).
  *
  * @component
  */
@@ -203,7 +205,7 @@ const SignInSecurity = () => {
           if (!o) setUnlinkTarget(null);
         }}
         title="Remove sign-in method"
-        description={`Enter the 6-digit code we sent to ${primaryEmail} to confirm removing ${unlinkTarget?.label}. Its contact email is removed too unless another sign-in method uses it.`}
+        description={`Enter the 6-digit code we sent to ${primaryEmail} to confirm removing ${unlinkTarget?.label}. This removes only the sign-in method — its email address stays on your account.`}
         confirmLabel="Remove sign-in method"
         confirmVariant="destructive"
         otpEmail={primaryEmail}

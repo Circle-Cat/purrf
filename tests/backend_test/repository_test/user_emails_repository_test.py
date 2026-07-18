@@ -161,26 +161,6 @@ class TestUserEmailsRepository(BaseRepositoryTestLib):
         )
         self.assertIsNone(found)
 
-    async def test_exists_claim_by_email_counts_unconfirmed(self):
-        # Even an unverified backup address is a claim: the bootstrap must
-        # hold a colliding sign-in at the wall instead of forking an account.
-        row = UserEmailsEntity(
-            user_id=self.user.user_id,
-            email="backup@example.com",
-            otp_confirmed=False,
-            is_primary=False,
-        )
-        await self.repo.upsert_email(self.session, row)
-
-        self.assertTrue(
-            await self.repo.exists_claim_by_email(self.session, "backup@example.com")
-        )
-
-    async def test_exists_claim_by_email_unknown_returns_false(self):
-        self.assertFalse(
-            await self.repo.exists_claim_by_email(self.session, "nobody@example.com")
-        )
-
     async def test_exists_on_other_user_counts_unconfirmed_claim(self):
         # user_emails.email is globally unique, so even an unverified claim on
         # another account makes the address unavailable.

@@ -551,11 +551,32 @@ describe("SignInMethodList", () => {
       expect(onRemove).toHaveBeenCalledWith(backup);
     });
 
-    it("does not offer Remove on a verified contact-only row", () => {
-      const verified = { ...backup, otpConfirmed: true };
+    it("offers Remove on a confirmed non-primary contact-only row and calls onRemove", async () => {
+      const user = userEvent.setup();
+      const onRemove = vi.fn().mockResolvedValue();
+      const verified = { ...backup, otpConfirmed: true, isPrimary: false };
       render(
         <SignInMethodList
           emails={[verified]}
+          internalIdentities={[]}
+          externalIdentities={[makeIdentity()]}
+          isLoading={false}
+          onUnlink={vi.fn()}
+          onVerify={vi.fn()}
+          onRemove={onRemove}
+        />,
+      );
+
+      const rows = screen.getAllByRole("listitem");
+      await user.click(within(rows[1]).getByRole("button", { name: "Remove" }));
+      expect(onRemove).toHaveBeenCalledWith(verified);
+    });
+
+    it("does not offer Remove on the primary contact row, confirmed or not", () => {
+      const primary = { ...backup, otpConfirmed: true, isPrimary: true };
+      render(
+        <SignInMethodList
+          emails={[primary]}
           internalIdentities={[]}
           externalIdentities={[makeIdentity()]}
           isLoading={false}

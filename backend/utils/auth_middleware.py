@@ -173,10 +173,15 @@ class AuthMiddleware(BaseHTTPMiddleware):
         re-resolve through create_or_swap_user on each request—multiple SELECTs
         to check for email ownership, but no writes in the steady state.
 
+        create_or_swap_user always returns a user (untrusted and stale logins
+        are refused upstream, so every login reaching this point is trusted
+        and resolves to a row via swap, routing, or first-login).
+
         Two concurrent first logins for the same sub both miss find_by_sub and
         enter create_or_swap_user; the second collides on the
         subject_identifier UNIQUE constraint, rolls back, and re-finds the row
-        the winner committed.
+        the winner committed. If it's still missing, the violation isn't the
+        race and must surface.
 
         Also stamps the account-level users.last_login_at on every successful
         sign-in, so the timestamp stays complete regardless of which identity
@@ -203,31 +208,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
                             session, user_context.sub, user_context.last_login_at
                         )
                         if user is None:
-                            # Not the race. If the login's email already belongs
-                            # to an account, this is a second sign-in method for
-                            # it that raced past the proactive check below —
-                            # fall through to the needs-link hold. Any other
-                            # violation is a real bug and must surface.
-                            email = user_context.primary_email.lower()
-                            if not await self.user_identity_service.email_has_owner(
-                                session, email
-                            ):
-                                raise
-                    if user is None:
-                        # The login's email already belongs to an account (a
-                        # second sign-in method, e.g. a Google login for an
-                        # address another account verified): create nothing
-                        # and mark the session needs_link — the verify wall
-                        # links the sub after an OTP proves the mailbox
-                        # (PUR-480).
-                        user_context.needs_link = True
-                        user_context.user_id = None
-                        user_context.permissions = frozenset()
-                        self.logger.info(
-                            "[AuthMiddleware] needs-link login: sub=%s email owned by an existing account",
-                            user_context.sub,
-                        )
-                        return
+                            # Not the race — a real bug. Must surface.
+                            raise
 
                 # A deactivated account still authenticates (valid token, real
                 # user) but must not be allowed to act.
