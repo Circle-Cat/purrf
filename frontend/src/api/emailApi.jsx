@@ -39,9 +39,14 @@ export async function initiateEmailVerification(email) {
 /**
  * Confirm the OTP for a previously initiated verification.
  *
+ * Normal mode returns `{ ok, email }`: confirming an address never creates a
+ * new sign-in identity. Needs-link mode (linking a colliding sign-in into an
+ * existing account) additionally returns `linked_sub`, the sub that was
+ * linked.
+ *
  * @param {string} state - token returned by initiateEmailVerification
  * @param {string} otp - the 6-digit code the user received
- * @returns {Promise<{ data: { ok: boolean, linked_sub: string, email: string } }>}
+ * @returns {Promise<{ data: { ok: boolean, email: string, linked_sub?: string } }>}
  */
 export async function verifyEmailOtp(state, otp) {
   return await request.post(API_ENDPOINTS.EMAIL_OTP_VERIFY, { state, otp });

@@ -39,7 +39,7 @@ class TestEmailManagementController(unittest.TestCase):
         self.service = MagicMock()
         self.service.initiate = AsyncMock(return_value={"state": "signed.jwt"})
         self.service.verify = AsyncMock(
-            return_value={"ok": True, "linked_sub": "email|abc"}
+            return_value={"ok": True, "email": "alice@gmail.com"}
         )
         self.service.add_email = AsyncMock(
             return_value={"ok": True, "email": "backup@gmail.com"}
@@ -159,7 +159,7 @@ class TestEmailManagementController(unittest.TestCase):
         )
 
         self.assertEqual(response.status_code, HTTPStatus.OK)
-        self.assertEqual(response.json()["data"]["linked_sub"], "email|abc")
+        self.assertEqual(response.json()["data"]["email"], "alice@gmail.com")
         _, kwargs = self.service.verify.call_args
         self.assertEqual(kwargs["current_user_id"], 42)
         self.assertEqual(kwargs["state"], "signed.jwt")

@@ -233,17 +233,30 @@ class EmailManagementService:
 
         The address to verify is taken only from the signed state, never from the
         request, so a tampered email parameter cannot redirect the verification.
-        Nothing is written until the OTP and the new identity both check out.
-        Auth0 users are never merged: the ``user_identities`` row is the only
-        link between the passwordless sub and the account. Verifying a company
-        address additionally mirrors the internal-employee lifecycle hook —
-        the baseline permission bundle is granted and the corp address becomes
-        the primary contact.
+        Nothing is written until the OTP checks out.
+
+        Normal mode (``needs_link=False``) only confirms the address as a
+        Purrf contact; it does not create a ``user_identities`` row for the
+        OTP's passwordless ``email|`` sub. That row would be redundant: since
+        PR1, any OTP-confirmed address already works as a passwordless login
+        identifier through routing in ``UserIdentityService.create_or_swap_user``,
+        so no separate sign-in identity is needed to make it usable. The OTP's
+        Auth0 ``email|`` user is left inert — the same as any step-up OTP
+        target — and Auth0 users are never merged. The pre-existing
+        ``existing_identity`` conflict guard is kept as drift protection: an
+        ``email|`` identity row can still exist for the address (they are not
+        retired until PR4), and if one does, it must already belong to this
+        account. Verifying a company address additionally mirrors the
+        internal-employee lifecycle hook — the baseline permission bundle is
+        granted and the corp address becomes the primary contact.
 
         In needs-link mode (``needs_link=True``, PUR-480) the direction
         reverses: instead of pulling the address's identity into the caller's
         account, the caller's sign-in ``sub`` is linked into the account that
-        already OTP-confirmed the address — see :meth:`_link_into_owner`.
+        already OTP-confirmed the address — see :meth:`_link_into_owner`. That
+        branch is unaffected by the above: it still creates a
+        ``user_identities`` row for the caller's sub, because that row is what
+        makes the caller's own sign-in method resolve to the owning account.
         """
         claims = self._decode_state(state)
         if claims.get("flow") != _STATE_FLOW:
@@ -287,24 +300,10 @@ class EmailManagementService:
             raise ConflictError("Identity already linked to another account")
 
         await self._confirm_email(session, current_user_id, target_email)
-        if existing_identity is None:
-            await self._user_identities.upsert_identity(
-                session=session,
-                entity=UserIdentitiesEntity(
-                    user_id=current_user_id,
-                    subject_identifier=new_sub,
-                    identity_type=(
-                        IdentityType.INTERNAL
-                        if is_company_email(target_email)
-                        else IdentityType.EXTERNAL
-                    ),
-                    email_claim=target_email,
-                ),
-            )
         if is_company_email(target_email):
             await self._absorb_internal_identity(session, current_user_id, target_email)
         await session.commit()
-        return {"ok": True, "linked_sub": new_sub, "email": target_email}
+        return {"ok": True, "email": target_email}
 
     async def _link_into_owner(
         self,
