@@ -7,8 +7,10 @@ py_library(
     srcs = ["user_identity_service.py"],
     deps = [
         "//backend/common:mentorship_enums",
+        "//backend/common:trusted_connections",
         "//backend/dto",
         "//backend/entity:entities",
+        "//backend/user_identity:internal_lifecycle",
     ],
 )
 
