@@ -1,5 +1,6 @@
 import asyncio
 import unittest
+from datetime import datetime, timezone
 from http import HTTPStatus
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -132,7 +133,7 @@ class TestAuthMiddleware(unittest.TestCase):
         user_context = make_user_context(last_login_at=1700000000)
         self.mock_auth_service.authenticate_request.return_value = user_context
         self.mock_user_identity_service.find_user_by_sub.return_value = SimpleNamespace(
-            user_id=42, is_super_admin=False, is_active=True
+            user_id=42, is_super_admin=False, is_active=True, last_login_at=None
         )
 
         client = self._add_middleware()
@@ -157,7 +158,9 @@ class TestAuthMiddleware(unittest.TestCase):
         self.mock_auth_service.authenticate_request.return_value = user_context
         self.mock_user_identity_service.find_user_by_sub.return_value = None
         self.mock_user_identity_service.create_or_swap_user.return_value = (
-            SimpleNamespace(user_id=99, is_super_admin=False, is_active=True)
+            SimpleNamespace(
+                user_id=99, is_super_admin=False, is_active=True, last_login_at=None
+            )
         )
 
         client = self._add_middleware()
@@ -180,7 +183,7 @@ class TestAuthMiddleware(unittest.TestCase):
         user_context = make_user_context()
         self.mock_auth_service.authenticate_request.return_value = user_context
         self.mock_user_identity_service.find_user_by_sub.return_value = SimpleNamespace(
-            user_id=42, is_active=False
+            user_id=42, is_active=False, last_login_at=None
         )
 
         client = self._add_middleware()
@@ -203,7 +206,9 @@ class TestAuthMiddleware(unittest.TestCase):
         # First find misses, second find (after the savepoint unwinds) hits.
         self.mock_user_identity_service.find_user_by_sub.side_effect = [
             None,
-            SimpleNamespace(user_id=7, is_super_admin=False, is_active=True),
+            SimpleNamespace(
+                user_id=7, is_super_admin=False, is_active=True, last_login_at=None
+            ),
         ]
         self.mock_user_identity_service.create_or_swap_user.side_effect = (
             IntegrityError("stmt", "params", Exception("unique"))
@@ -381,7 +386,7 @@ class TestAuthMiddleware(unittest.TestCase):
         user_context = make_user_context()
         self.mock_auth_service.authenticate_request.return_value = user_context
         self.mock_user_identity_service.find_user_by_sub.return_value = SimpleNamespace(
-            user_id=1, is_super_admin=False, is_active=True
+            user_id=1, is_super_admin=False, is_active=True, last_login_at=None
         )
 
         client = self._add_middleware()
@@ -401,6 +406,54 @@ class TestAuthMiddleware(unittest.TestCase):
             if c.args and c.args[0] is self.mock_auth_service.authenticate_request
         ]
         self.assertEqual(len(matching), 1)
+
+    def test_bootstrap_records_account_last_login_when_newer(self):
+        """Any successful sign-in path stamps users.last_login_at when the
+        token iat is newer than the stored value."""
+        user = SimpleNamespace(
+            user_id=42, is_super_admin=False, is_active=True, last_login_at=None
+        )
+        self.mock_user_identity_service.find_user_by_sub.return_value = user
+        user_context = make_user_context(last_login_at=1_700_000_000)
+
+        middleware = AuthMiddleware(
+            app=MagicMock(),
+            auth_service=self.mock_auth_service,
+            database=self.mock_database,
+            user_identity_service=self.mock_user_identity_service,
+            user_permissions_repository=self.mock_user_permissions_repository,
+            logger=self.mock_logger,
+        )
+
+        asyncio.run(middleware._bootstrap_user(user_context))
+
+        self.assertEqual(
+            user.last_login_at,
+            datetime.fromtimestamp(1_700_000_000, tz=timezone.utc),
+        )
+
+    def test_bootstrap_skips_account_last_login_when_not_newer(self):
+        """In-session requests (same iat) must not issue a pointless UPDATE:
+        the stored value is left untouched (identity comparison)."""
+        stored = datetime.fromtimestamp(1_700_000_000, tz=timezone.utc)
+        user = SimpleNamespace(
+            user_id=42, is_super_admin=False, is_active=True, last_login_at=stored
+        )
+        self.mock_user_identity_service.find_user_by_sub.return_value = user
+        user_context = make_user_context(last_login_at=1_700_000_000)
+
+        middleware = AuthMiddleware(
+            app=MagicMock(),
+            auth_service=self.mock_auth_service,
+            database=self.mock_database,
+            user_identity_service=self.mock_user_identity_service,
+            user_permissions_repository=self.mock_user_permissions_repository,
+            logger=self.mock_logger,
+        )
+
+        asyncio.run(middleware._bootstrap_user(user_context))
+
+        self.assertIs(user.last_login_at, stored)
 
 
 if __name__ == "__main__":

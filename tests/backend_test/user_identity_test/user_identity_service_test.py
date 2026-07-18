@@ -39,6 +39,9 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
         # Default: the login's email is unowned, so first-login creation
         # proceeds. Ownership tests override this explicitly.
         self.emails_repo.exists_claim_by_email.return_value = False
+        # Default: no confirmed owner found for the email address (routing
+        # doesn't apply). Email-routing tests override this explicitly.
+        self.emails_repo.get_confirmed_by_email.return_value = None
 
     # find_user_by_sub — Step 1 sub lookup (single JOIN)
     async def test_find_user_by_sub_hit_without_last_login(self):
@@ -484,6 +487,137 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
             granted_source="system_internal",
         )
         self.assertEqual(user_info.user_id, 55)
+
+    # create_or_swap_user — Step 2.5 passwordless email-routing (LinkedIn-style)
+    async def test_create_or_swap_routes_passwordless_to_confirmed_owner(self):
+        """A verified 'email|' login whose address some account already
+        OTP-confirmed resolves straight to that account: no swap, no insert,
+        no needs-link hold — the passwordless login is itself the OTP."""
+        user_info = UserContextDto(
+            sub="email|otp1",
+            primary_email="Owner@Example.com",
+            identity_type=IdentityType.EXTERNAL,
+            email_verified=True,
+        )
+        self.identities_repo.find_swappable_by_email.return_value = None
+        self.emails_repo.get_confirmed_by_email.return_value = MagicMock(
+            spec=UserEmailsEntity, user_id=10, otp_confirmed=True
+        )
+        self.users_repo.get_user_by_user_id.return_value = self.user
+
+        result = await self.service.create_or_swap_user(self.session, user_info)
+
+        self.assertIs(result, self.user)
+        self.assertEqual(user_info.user_id, 10)
+        self.emails_repo.get_confirmed_by_email.assert_awaited_once_with(
+            session=self.session, email="owner@example.com"
+        )
+        # Pure resolution: nothing is created or modified.
+        self.identities_repo.upsert_identity.assert_not_awaited()
+        self.emails_repo.upsert_email.assert_not_awaited()
+        self.users_repo.upsert_users.assert_not_awaited()
+
+    async def test_create_or_swap_unverified_passwordless_never_routes(self):
+        """email_verified=False never email-routes; the owned-address hold is
+        unchanged."""
+        user_info = UserContextDto(
+            sub="email|otp1",
+            primary_email="a@b.com",
+            identity_type=IdentityType.EXTERNAL,
+            email_verified=False,
+        )
+        self.identities_repo.find_swappable_by_email.return_value = None
+        self.emails_repo.exists_claim_by_email.return_value = True
+
+        result = await self.service.create_or_swap_user(self.session, user_info)
+
+        self.assertIsNone(result)
+        self.emails_repo.get_confirmed_by_email.assert_not_awaited()
+
+    async def test_create_or_swap_social_sub_never_email_routes(self):
+        """A social (non-'email|') login never email-routes in this PR: its
+        email assertion is not first-party proof. The IdP allowlist is a later
+        PR; until then the needs-link hold stays."""
+        user_info = UserContextDto(
+            sub="google-oauth2|123",
+            primary_email="a@b.com",
+            identity_type=IdentityType.EXTERNAL,
+            email_verified=True,
+        )
+        self.identities_repo.find_swappable_by_email.return_value = None
+        self.emails_repo.exists_claim_by_email.return_value = True
+
+        result = await self.service.create_or_swap_user(self.session, user_info)
+
+        self.assertIsNone(result)
+        self.emails_repo.get_confirmed_by_email.assert_not_awaited()
+
+    async def test_create_or_swap_passwordless_unconfirmed_claim_still_held(self):
+        """Transitional: an address held only as an UNconfirmed claim keeps the
+        current needs-link hold — routing requires a confirmed owner. The
+        unconfirmed state itself is retired in a later PR."""
+        user_info = UserContextDto(
+            sub="email|otp1",
+            primary_email="a@b.com",
+            identity_type=IdentityType.EXTERNAL,
+            email_verified=True,
+        )
+        self.identities_repo.find_swappable_by_email.return_value = None
+        self.emails_repo.get_confirmed_by_email.return_value = None
+        self.emails_repo.exists_claim_by_email.return_value = True
+
+        result = await self.service.create_or_swap_user(self.session, user_info)
+
+        self.assertIsNone(result)
+
+    async def test_create_or_swap_swap_still_wins_over_email_routing(self):
+        """A migration-backfilled (mocked-sub) identity is swapped in place
+        before email-routing is consulted: the swap records the real sub and
+        last_login, which routing alone would never do."""
+        user_info = UserContextDto(
+            sub="email|otp1",
+            primary_email="legacy@b.com",
+            identity_type=IdentityType.EXTERNAL,
+            email_verified=True,
+            last_login_at=self.iat,
+        )
+        mocked = MagicMock(
+            spec=UserIdentitiesEntity,
+            user_id=10,
+            subject_identifier="mock|legacy",
+        )
+        self.identities_repo.find_swappable_by_email.return_value = mocked
+        self.users_repo.get_user_by_user_id.return_value = self.user
+        self.emails_repo.get_by_user_and_email.return_value = MagicMock(
+            spec=UserEmailsEntity, otp_confirmed=True
+        )
+
+        result = await self.service.create_or_swap_user(self.session, user_info)
+
+        self.assertIs(result, self.user)
+        self.identities_repo.upsert_identity.assert_awaited()
+        self.emails_repo.get_confirmed_by_email.assert_not_awaited()
+
+    async def test_create_or_swap_passwordless_unowned_falls_to_first_login(self):
+        """No confirmed row and no claim at all: first-login creation runs
+        exactly as before (routing is consulted but misses)."""
+        user_info = UserContextDto(
+            sub="email|otp1",
+            primary_email="new@b.com",
+            identity_type=IdentityType.EXTERNAL,
+            email_verified=True,
+        )
+        self.identities_repo.find_swappable_by_email.return_value = None
+        self.emails_repo.get_confirmed_by_email.return_value = None
+        self.emails_repo.exists_claim_by_email.return_value = False
+        created = MagicMock(spec=UsersEntity, user_id=77)
+        self.users_repo.upsert_users.return_value = created
+
+        result = await self.service.create_or_swap_user(self.session, user_info)
+
+        self.assertIs(result, created)
+        self.assertEqual(user_info.user_id, 77)
+        self.emails_repo.get_confirmed_by_email.assert_awaited_once()
 
     # _iat_as_datetime helper
     async def test_iat_as_datetime_none(self):
