@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime, timezone
 from http import HTTPStatus
 
 from sqlalchemy.exc import IntegrityError
@@ -225,6 +226,20 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 # user) but must not be allowed to act.
                 if not user.is_active:
                     raise PermissionError("User account is deactivated")
+
+                # Account-level last-login: every successful human sign-in
+                # path (sub-routed, swapped, or email-routed) lands here, so
+                # the column stays complete when passwordless logins stop
+                # touching user_identities. Written only when the token iat
+                # is newer — within a session the iat is constant, so the
+                # steady state adds no UPDATE.
+                if user_context.last_login_at is not None:
+                    login_dt = datetime.fromtimestamp(
+                        user_context.last_login_at, tz=timezone.utc
+                    )
+                    if user.last_login_at is None or user.last_login_at < login_dt:
+                        user.last_login_at = login_dt
+
                 await self._resolve_permissions(session, user, user_context)
 
     async def _resolve_permissions(self, session, user, user_context):
