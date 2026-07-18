@@ -152,3 +152,11 @@ py_test(
         "//backend/common:name_utils",
     ],
 )
+
+py_test(
+    name = "trusted_connections_test",
+    srcs = ["trusted_connections_test.py"],
+    deps = [
+        "//backend/common:trusted_connections",
+    ],
+)

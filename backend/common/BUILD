@@ -223,3 +223,8 @@ py_library(
         "@pypi//launchdarkly_server_sdk",
     ],
 )
+
+py_library(
+    name = "trusted_connections",
+    srcs = ["trusted_connections.py"],
+)
