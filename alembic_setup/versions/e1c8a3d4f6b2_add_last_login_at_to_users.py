@@ -25,12 +25,18 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    """Upgrade schema."""
+    """Add the nullable account-level last-login column.
+
+    Nullable because existing rows have no value to backfill; the auth
+    middleware starts stamping it going forward on every successful sign-in.
+    """
     op.add_column(
         "users", sa.Column("last_login_at", sa.DateTime(timezone=True), nullable=True)
     )
 
 
 def downgrade() -> None:
-    """Downgrade schema."""
+    """Drop the column. No backfill to preserve: it is derived at login time,
+    never a source of truth, so there is nothing to recover on rollback.
+    """
     op.drop_column("users", "last_login_at")

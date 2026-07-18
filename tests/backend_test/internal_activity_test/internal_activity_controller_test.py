@@ -94,6 +94,7 @@ class TestInternalActivityControllerIntegration(unittest.TestCase):
         mock_user = MagicMock()
         mock_user.is_service_account = False
         mock_user.is_super_admin = False
+        mock_user.last_login_at = None
         self.mock_auth_service.authenticate_request.return_value = mock_user
         self.mock_user_permissions_repository.get_active_permission_names.return_value = [
             p.value for p in permissions

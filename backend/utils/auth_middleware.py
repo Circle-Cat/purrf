@@ -167,13 +167,20 @@ class AuthMiddleware(BaseHTTPMiddleware):
         (user_id, is_super_admin, permissions).
 
         Runs in a short transaction that commits before the request handler
-        opens its own session: one SELECT per authenticated request, plus an
-        INSERT only on first login, plus the permission lookup.
+        opens its own session. For users with a matching user_identities row
+        (sub-routed), this is one SELECT plus the permission lookup. Passwordless
+        users resolved by confirmed-address routing have no identity row and instead
+        re-resolve through create_or_swap_user on each request—multiple SELECTs
+        to check for email ownership, but no writes in the steady state.
 
         Two concurrent first logins for the same sub both miss find_by_sub and
         enter create_or_swap_user; the second collides on the
         subject_identifier UNIQUE constraint, rolls back, and re-finds the row
         the winner committed.
+
+        Also stamps the account-level users.last_login_at on every successful
+        sign-in, so the timestamp stays complete regardless of which identity
+        path (sub-routed, swapped, email-routed, or first-login) resolved the user.
         """
         async with self.database.session() as session:
             async with session.begin():

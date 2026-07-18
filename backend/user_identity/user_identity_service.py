@@ -106,8 +106,10 @@ class UserIdentityService:
 
         Used by the bootstrap to classify a colliding first login: an owned
         email means the login is a second sign-in method for an existing
-        account, so the session is held at the verify wall (PUR-480). The
-        wall's link only succeeds against an owner that OTP-confirmed the
+        account, so the session is held at the verify wall (PUR-480) — except
+        a verified passwordless login for a *confirmed* address, which step
+        2.5 routes directly into the owning account before this check runs.
+        The wall's link only succeeds against an owner that OTP-confirmed the
         address; an unverified claim gets the pointer back to verifying it
         from inside the owning account first.
 

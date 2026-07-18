@@ -78,6 +78,7 @@ class TestNotificationIntegration(unittest.TestCase):
         mock_user.is_service_account = False
         mock_user.is_super_admin = False
         mock_user.primary_email = "admin@example.com"
+        mock_user.last_login_at = None
 
         # Return this user when authenticate_request is called by the middleware
         self.mock_auth_service.authenticate_request.return_value = mock_user
