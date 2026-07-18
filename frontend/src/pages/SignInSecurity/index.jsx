@@ -22,7 +22,6 @@ import { useEmailSettings } from "@/pages/SignInSecurity/hooks/useEmailSettings"
 import { identityLabel } from "@/pages/SignInSecurity/providers";
 import SignInMethodList from "@/pages/SignInSecurity/components/SignInMethodList";
 import AddEmailDialog from "@/pages/SignInSecurity/components/AddEmailDialog";
-import VerifyEmailDialog from "@/pages/SignInSecurity/components/VerifyEmailDialog";
 import StepUpConfirmDialog from "@/pages/SignInSecurity/components/StepUpConfirmDialog";
 
 const errorMessage = (error, fallback) =>
@@ -34,12 +33,10 @@ const errorMessage = (error, fallback) =>
  * A single card backed by `GET /auth/emails`, listing the account's sign-in
  * methods and its contact emails together: set a method's email as the
  * primary contact (step-up OTP), remove a method (step-up OTP; its email
- * address stays on the account as a contact-only row), add a backup email
- * with immediate verification (email OTP in the dialog), verify a legacy
- * unverified address (email OTP) to unlock it as a sign-in method, and
- * remove a non-primary contact email (no OTP for a legacy unverified row;
- * the server refuses to remove the address behind the caller's own current
- * passwordless session).
+ * address stays on the account as a contact-only row and can still be used
+ * to sign in), add a backup email with immediate verification (email OTP in
+ * the dialog), and remove a non-primary contact email (the server refuses to
+ * remove the address behind the caller's own current passwordless session).
  *
  * @component
  */
@@ -47,7 +44,6 @@ const SignInSecurity = () => {
   const { isLoading, emails, internalIdentities, externalIdentities, refresh } =
     useEmailSettings();
   const [addOpen, setAddOpen] = useState(false);
-  const [verifyTarget, setVerifyTarget] = useState(null);
   const [primaryTarget, setPrimaryTarget] = useState(null);
   const [unlinkTarget, setUnlinkTarget] = useState(null);
 
@@ -141,8 +137,7 @@ const SignInSecurity = () => {
           <CardTitle>Sign-in methods & emails</CardTitle>
           <CardDescription>
             The methods you can use to sign in to Purrf. Your primary contact
-            email receives account notifications; an unverified email is
-            contact-only until you verify it.
+            email receives account notifications.
           </CardDescription>
           <CardAction>
             <Button
@@ -162,7 +157,6 @@ const SignInSecurity = () => {
             isLoading={isLoading}
             onUnlink={handleUnlink}
             onSetPrimary={handleSetPrimary}
-            onVerify={(emailRow) => setVerifyTarget(emailRow)}
             onRemove={handleRemoveEmail}
           />
         </CardContent>
@@ -172,18 +166,6 @@ const SignInSecurity = () => {
         open={addOpen}
         onOpenChange={setAddOpen}
         onAdded={refresh}
-      />
-
-      <VerifyEmailDialog
-        open={verifyTarget !== null}
-        onOpenChange={(o) => {
-          if (!o) setVerifyTarget(null);
-        }}
-        email={verifyTarget?.email ?? ""}
-        onVerified={async () => {
-          setVerifyTarget(null);
-          await refresh();
-        }}
       />
 
       <StepUpConfirmDialog
@@ -205,7 +187,7 @@ const SignInSecurity = () => {
           if (!o) setUnlinkTarget(null);
         }}
         title="Remove sign-in method"
-        description={`Enter the 6-digit code we sent to ${primaryEmail} to confirm removing ${unlinkTarget?.label}. This removes only the sign-in method — its email address stays on your account.`}
+        description={`Enter the 6-digit code we sent to ${primaryEmail} to confirm removing ${unlinkTarget?.label}. This removes only the sign-in shortcut. Its email address stays on your account and can still be used to sign in. To fully cut this sign-in off, also remove that address.`}
         confirmLabel="Remove sign-in method"
         confirmVariant="destructive"
         otpEmail={primaryEmail}
