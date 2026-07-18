@@ -164,28 +164,6 @@ class UserEmailsRepository:
         )
         return result.first() is not None
 
-    async def exists_claim_by_email(self, session: AsyncSession, email: str) -> bool:
-        """
-        Whether any account has claimed `email` as a contact — confirmed or
-        not. The bootstrap uses it to classify a colliding sign-in: even an
-        unverified backup address holds the login at the verify wall (which
-        then points the user at verifying it from inside the owning account)
-        instead of forking a fresh account (PUR-480).
-
-        Args:
-            session (AsyncSession): Active database async session.
-            email (str): Normalized (lowercased) address to check.
-
-        Returns:
-            bool: True when any user_emails row claims the address.
-        """
-        result = await session.execute(
-            select(UserEmailsEntity.email_id)
-            .where(UserEmailsEntity.email == email)
-            .limit(1)
-        )
-        return result.first() is not None
-
     async def get_by_email(
         self, session: AsyncSession, email: str
     ) -> UserEmailsEntity | None:
@@ -212,10 +190,12 @@ class UserEmailsRepository:
     ) -> UserEmailsEntity | None:
         """
         Fetch the OTP-confirmed row owning `email`, regardless of which user
-        owns it — the needs-link flow uses it to find the account a colliding
-        sign-in should be linked into. At most one confirmed row can exist per
-        address (cross-account claims are blocked at confirm time), so a plain
-        scalar lookup suffices.
+        owns it — trusted-assertion routing (step 2.5 in
+        UserIdentityService.create_or_swap_user) uses it to resolve a login
+        for an already-confirmed address straight into its owning account.
+        At most one confirmed row can exist per address (cross-account
+        claims are blocked at confirm time), so a plain scalar lookup
+        suffices.
 
         Args:
             session (AsyncSession): Active database async session.

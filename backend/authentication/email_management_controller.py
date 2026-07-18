@@ -4,9 +4,8 @@ Email management routes, mounted under /api/auth/emails:
 - ``POST /initiate`` — start an Auth0 passwordless OTP and return a signed state
   JWT binding the code to the caller's session.
 - ``POST /verify``   — confirm the OTP and record the address as a confirmed
-  contact. In needs-link mode, also links the new identity to the account; in
-  normal mode, verification unlocks the address as a sign-in method but does
-  not link identity.
+  contact; verification unlocks the address as a sign-in method but does not
+  itself link a new identity.
 
 The caller's user_id is resolved by AuthMiddleware (bootstrap) and read from the
 request context, so these handlers do not look the user up again.
@@ -280,14 +279,12 @@ class EmailManagementController:
                 current_user_id=current_user.user_id,
                 current_sub=current_user.sub,
                 email=body.email,
-                needs_link=current_user.needs_link,
-                claim_email=current_user.primary_email,
             )
         return api_response(message="OTP sent", data=data)
 
     async def verify(self, current_user: UserContextDto, body: VerifyRequest):
         """
-        Confirm the OTP, link the new identity, and record the confirmed address.
+        Confirm the OTP and record the confirmed address.
 
         The address verified is bound to the signed state, not the request body.
 
@@ -296,7 +293,7 @@ class EmailManagementController:
             body (VerifyRequest): Carries the signed state JWT and the OTP code.
 
         Returns:
-            The api_response envelope wrapping the linked-identity result.
+            The api_response envelope wrapping the confirmed-address result.
         """
         async with self._database.session() as session:
             data = await self._service.verify(
@@ -305,7 +302,5 @@ class EmailManagementController:
                 current_sub=current_user.sub,
                 state=body.state,
                 otp=body.otp,
-                needs_link=current_user.needs_link,
-                caller_identity_type=current_user.identity_type,
             )
-        return api_response(message="Email verified and linked", data=data)
+        return api_response(message="Email verified", data=data)
