@@ -36,8 +36,8 @@ const AddEmailDialog = ({ open, onOpenChange, onAdded }) => {
         <DialogHeader>
           <DialogTitle>Add an email</DialogTitle>
           <DialogDescription>
-            We&apos;ll send a verification code to the address; entering it
-            adds the email to your account, ready for contact and sign-in.
+            We'll send a verification code to the address; entering it adds the
+            email to your account, ready for contact and sign-in.
           </DialogDescription>
         </DialogHeader>
         {open && (

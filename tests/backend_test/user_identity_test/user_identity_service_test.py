@@ -148,6 +148,10 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
         self.identities_repo.find_swappable_by_email.return_value = mocked
         resolved = MagicMock(spec=UsersEntity, user_id=10)
         self.users_repo.get_user_by_user_id.return_value = resolved
+        # already-confirmed row: the trusted swap's confirm step is a no-op here
+        self.emails_repo.get_by_user_and_email.return_value = MagicMock(
+            spec=UserEmailsEntity, otp_confirmed=True
+        )
 
         result = await self.service.create_or_swap_user(self.session, user_info)
 
@@ -188,6 +192,10 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
         self.identities_repo.find_swappable_by_email.return_value = mocked
         resolved = MagicMock(spec=UsersEntity, user_id=20)
         self.users_repo.get_user_by_user_id.return_value = resolved
+        # already-confirmed row: the trusted swap's confirm step is a no-op here
+        self.emails_repo.get_by_user_and_email.return_value = MagicMock(
+            spec=UserEmailsEntity, otp_confirmed=True
+        )
 
         result = await self.service.create_or_swap_user(self.session, user_info)
 
@@ -502,6 +510,10 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
         self.users_repo.get_user_by_user_id.return_value = resolved
         # Even with a (theoretical) claim present, the swap path wins.
         self.emails_repo.exists_claim_by_email.return_value = True
+        # already-confirmed row: the trusted swap's confirm step is a no-op here
+        self.emails_repo.get_by_user_and_email.return_value = MagicMock(
+            spec=UserEmailsEntity, otp_confirmed=True
+        )
 
         result = await self.service.create_or_swap_user(self.session, user_info)
 

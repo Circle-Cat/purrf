@@ -127,9 +127,7 @@ describe("AddEmailDialog", () => {
     rerender(
       <AddEmailDialog open={false} onOpenChange={vi.fn()} onAdded={vi.fn()} />,
     );
-    rerender(
-      <AddEmailDialog open onOpenChange={vi.fn()} onAdded={vi.fn()} />,
-    );
+    rerender(<AddEmailDialog open onOpenChange={vi.fn()} onAdded={vi.fn()} />);
 
     expect(screen.getByLabelText("Email address")).toHaveValue("");
     expect(
