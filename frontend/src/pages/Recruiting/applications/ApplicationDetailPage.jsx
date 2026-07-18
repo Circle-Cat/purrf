@@ -450,10 +450,14 @@ const ActivityTimeline = ({ activity, jobKind }) => (
  * does not create a timeline entry, and comments are never evaluation
  * scores. Comments are immutable once posted (no edit/delete).
  *
+ * Omitting `onPost` renders the thread read-only (no composer) — used by
+ * the expanded history rows, where discussion belongs on that
+ * application's own page.
+ *
  * @param {{comments: {id: number, authorName: string, body: string,
  *          createdAt: string, mentions: {userId: number, name: string}[]}[],
- *          onPost: (body: string) => void, posting: boolean,
- *          mentionableUsers: {userId: number, name: string}[]}} props
+ *          onPost?: (body: string) => void, posting?: boolean,
+ *          mentionableUsers?: {userId: number, name: string}[]}} props
  */
 const CommentsPanel = ({ comments, onPost, posting, mentionableUsers }) => {
   const [draft, setDraft] = useState("");
@@ -519,54 +523,56 @@ const CommentsPanel = ({ comments, onPost, posting, mentionableUsers }) => {
           ))}
         </ul>
       )}
-      <div className="flex flex-col gap-2">
-        <Popover
-          open={Boolean(mentionQuery)}
-          onOpenChange={(open) => {
-            if (!open) setMentionQuery(null);
-          }}
-        >
-          <PopoverAnchor asChild>
-            <Textarea
-              ref={textareaRef}
-              placeholder="Add a comment…"
-              value={draft}
-              onChange={handleDraftChange}
-              disabled={posting}
-            />
-          </PopoverAnchor>
-          <PopoverContent
-            align="start"
-            className="w-64 p-0"
-            onOpenAutoFocus={(e) => e.preventDefault()}
+      {onPost != null && (
+        <div className="flex flex-col gap-2">
+          <Popover
+            open={Boolean(mentionQuery)}
+            onOpenChange={(open) => {
+              if (!open) setMentionQuery(null);
+            }}
           >
-            <Command>
-              <CommandList>
-                <CommandEmpty>No one to mention.</CommandEmpty>
-                <CommandGroup>
-                  {filteredCandidates.map((candidate) => (
-                    <CommandItem
-                      key={candidate.userId}
-                      onSelect={() => handleSelectMention(candidate)}
-                    >
-                      {candidate.name}
-                    </CommandItem>
-                  ))}
-                </CommandGroup>
-              </CommandList>
-            </Command>
-          </PopoverContent>
-        </Popover>
-        <Button
-          type="button"
-          size="sm"
-          className="self-end"
-          disabled={posting}
-          onClick={handlePost}
-        >
-          Post
-        </Button>
-      </div>
+            <PopoverAnchor asChild>
+              <Textarea
+                ref={textareaRef}
+                placeholder="Add a comment…"
+                value={draft}
+                onChange={handleDraftChange}
+                disabled={posting}
+              />
+            </PopoverAnchor>
+            <PopoverContent
+              align="start"
+              className="w-64 p-0"
+              onOpenAutoFocus={(e) => e.preventDefault()}
+            >
+              <Command>
+                <CommandList>
+                  <CommandEmpty>No one to mention.</CommandEmpty>
+                  <CommandGroup>
+                    {filteredCandidates.map((candidate) => (
+                      <CommandItem
+                        key={candidate.userId}
+                        onSelect={() => handleSelectMention(candidate)}
+                      >
+                        {candidate.name}
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                </CommandList>
+              </Command>
+            </PopoverContent>
+          </Popover>
+          <Button
+            type="button"
+            size="sm"
+            className="self-end"
+            disabled={posting}
+            onClick={handlePost}
+          >
+            Post
+          </Button>
+        </div>
+      )}
     </div>
   );
 };
@@ -584,9 +590,21 @@ const CommentsPanel = ({ comments, onPost, posting, mentionableUsers }) => {
  * `title`/`labelFor` props, so the two sections share one implementation
  * while keeping independent expand state (see the two call sites below).
  *
+ * Below the snapshot, each expanded row mirrors the main info panel's tab
+ * strip — Evaluations | Timeline | Comments — all read-only and all fed
+ * from the aggregate payload. The timeline is where a rejected attempt's
+ * reason/note surfaces; comments render without a composer (discussion
+ * belongs on that application's own page). `activity`/`comments` arrive
+ * empty for an assignee-only caller (see
+ * BoardService.get_other_applications), but this section only renders in
+ * the owner/read.all layout anyway. `jobKind` is the row's OWN job's kind,
+ * so activity-posting rows narrate hired as "Admitted" even when viewed
+ * from an employment posting's page.
+ *
  * @param {{title: string, otherApplications: {application: object,
- *          jobTitle: string, resumeAvailable: boolean,
- *          evaluations: object[]}[],
+ *          jobTitle: string, jobKind: string, resumeAvailable: boolean,
+ *          evaluations: object[], activity: object[],
+ *          comments: object[]}[],
  *          interviewPool: {userId: number, name: string}[],
  *          expandedId: number|null, onToggle: (id: number) => void,
  *          labelFor: (other: object) => string}} props
@@ -641,10 +659,28 @@ const OtherApplicationsSection = ({
                       title="Résumé"
                     />
                   )}
-                  <EvaluationSummary
-                    evaluations={other.evaluations}
-                    interviewPool={interviewPool}
-                  />
+                  <Tabs defaultValue="evaluations">
+                    <TabsList>
+                      <TabsTrigger value="evaluations">Evaluations</TabsTrigger>
+                      <TabsTrigger value="timeline">Timeline</TabsTrigger>
+                      <TabsTrigger value="comments">Comments</TabsTrigger>
+                    </TabsList>
+                    <TabsContent value="evaluations">
+                      <EvaluationSummary
+                        evaluations={other.evaluations}
+                        interviewPool={interviewPool}
+                      />
+                    </TabsContent>
+                    <TabsContent value="timeline">
+                      <ActivityTimeline
+                        activity={other.activity ?? []}
+                        jobKind={other.jobKind}
+                      />
+                    </TabsContent>
+                    <TabsContent value="comments">
+                      <CommentsPanel comments={other.comments ?? []} />
+                    </TabsContent>
+                  </Tabs>
                 </div>
               )}
             </li>

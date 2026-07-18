@@ -67,7 +67,11 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.activity_repo = create_autospec(
             ApplicationActivityRepository, instance=True
         )
+        # Default: no activity/comment rows, so get_other_applications'
+        # embedded-history fetches map to empty lists unless a test seeds rows.
+        self.activity_repo.list_by_application.return_value = []
         self.comment_repo = create_autospec(ApplicationCommentRepository, instance=True)
+        self.comment_repo.list_by_application.return_value = []
         self.comment_mention_repo = create_autospec(
             ApplicationCommentMentionRepository, instance=True
         )
@@ -3664,6 +3668,176 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             )
 
         self.app_repo.list_by_user.assert_not_called()
+
+    async def test_get_other_applications_owner_gets_activity_and_comments(self):
+        """An owner of the entry job gets each other application's audit
+        timeline and comments embedded in its aggregate entry, with actor/
+        author names resolved and screen-rule labels resolved against the
+        OTHER application's own job config (not the entry job's)."""
+        entry_job = self._job(job_id=1, owner_ids=(2,))
+        entry_job.screen_rules = {"rules": []}
+        other_job = self._job(job_id=2, owner_ids=(9,), kind=JobKind.EMPLOYMENT)
+        other_job.screen_rules = {
+            "rules": [
+                {
+                    "id": "r1",
+                    "condition": {
+                        "source": "email_domain",
+                        "operator": "not_in",
+                        "value": ["google.com"],
+                    },
+                    "action": "reject",
+                }
+            ]
+        }
+        entry_app = self._application(application_id=10, job_id=1, user_id=3)
+        other_app = self._application(
+            application_id=11,
+            job_id=2,
+            user_id=3,
+            stage=ApplicationStage.REJECTED,
+        )
+        self.app_repo.get_by_id = AsyncMock(return_value=entry_app)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=entry_job)
+        self.assignment_repo.get.return_value = None
+        self.app_repo.list_by_user = AsyncMock(
+            return_value=[(entry_app, entry_job), (other_app, other_job)]
+        )
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+        self.activity_repo.list_by_application.return_value = [
+            SimpleNamespace(
+                activity_id=2,
+                application_id=11,
+                actor_id=9,
+                event_type="stage_changed",
+                details={
+                    "fromStage": "tech",
+                    "toStage": "rejected",
+                    "reason": "Not a fit",
+                    "note": "Weak coding round",
+                },
+                created_at=datetime(2026, 7, 5, 12, 0, 0),
+            ),
+            SimpleNamespace(
+                activity_id=1,
+                application_id=11,
+                actor_id=9,
+                event_type="auto_rejected",
+                details={"reason": "screen_rule", "ruleId": "r1"},
+                created_at=datetime(2026, 7, 4, 12, 0, 0),
+            ),
+        ]
+        self.comment_repo.list_by_application.return_value = [
+            SimpleNamespace(
+                comment_id=5,
+                application_id=11,
+                author_id=9,
+                body="Discussed with the panel.",
+                created_at=datetime(2026, 7, 6, 12, 0, 0),
+            )
+        ]
+        self.users_repo.get_all_by_ids = AsyncMock(
+            return_value=[self._user(user_id=9, first="Olga", last="Owner")]
+        )
+
+        result = await self.service.get_other_applications(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        entry = result.other_jobs[0]
+        self.assertEqual(entry.job_kind, JobKind.EMPLOYMENT)
+        self.assertEqual([a.id for a in entry.activity], [2, 1])
+        self.assertEqual(entry.activity[0].actor_name, "Olga Owner")
+        self.assertEqual(entry.activity[0].details["reason"], "Not a fit")
+        self.assertEqual(entry.activity[0].details["note"], "Weak coding round")
+        self.assertEqual(
+            entry.activity[1].details["ruleLabel"],
+            "email domain not in google.com",
+        )
+        self.assertEqual(len(entry.comments), 1)
+        self.assertEqual(entry.comments[0].body, "Discussed with the panel.")
+        self.assertEqual(entry.comments[0].author_name, "Olga Owner")
+        self.activity_repo.list_by_application.assert_awaited_once_with(
+            self.session, 11
+        )
+        self.comment_repo.list_by_application.assert_awaited_once_with(self.session, 11)
+
+    async def test_get_other_applications_assignee_only_caller_gets_no_history(self):
+        """A caller who passes the entry gate only as the current-stage
+        assignee gets the aggregate WITHOUT activity/comments — the timeline
+        is an owner-facing audit view an assignee can't read even on the
+        application they're grading, so the aggregate must not hand them
+        other applications' timelines either."""
+        entry_job = self._job(job_id=1, owner_ids=(9,))
+        other_job = self._job(job_id=2, owner_ids=(9,))
+        entry_app = self._application(application_id=10, job_id=1, user_id=3)
+        other_app = self._application(
+            application_id=11,
+            job_id=2,
+            user_id=3,
+            stage=ApplicationStage.TECH,
+        )
+        self.app_repo.get_by_id = AsyncMock(return_value=entry_app)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=entry_job)
+        self.assignment_repo.get.return_value = self._assignment(
+            10, ApplicationStage.RECRUITER_SCREENING, 1, assignee_id=5
+        )
+        self.app_repo.list_by_user = AsyncMock(
+            return_value=[(entry_app, entry_job), (other_app, other_job)]
+        )
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+
+        result = await self.service.get_other_applications(
+            self.session, self._ctx(user_id=5), 10
+        )
+
+        self.assertEqual(result.other_jobs[0].activity, [])
+        self.assertEqual(result.other_jobs[0].comments, [])
+        self.activity_repo.list_by_application.assert_not_called()
+        self.comment_repo.list_by_application.assert_not_called()
+
+    async def test_get_other_applications_read_all_caller_gets_history(self):
+        """A read.all holder (not an owner, not an assignee) gets the
+        embedded activity/comments, same as an owner — mirroring
+        get_application_activity's own gate."""
+        entry_job = self._job(job_id=1, owner_ids=(9,))
+        other_job = self._job(job_id=2, owner_ids=(9,))
+        entry_app = self._application(application_id=10, job_id=1, user_id=3)
+        other_app = self._application(
+            application_id=11,
+            job_id=2,
+            user_id=3,
+            stage=ApplicationStage.TECH,
+        )
+        self.app_repo.get_by_id = AsyncMock(return_value=entry_app)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=entry_job)
+        self.assignment_repo.get.return_value = None
+        self.app_repo.list_by_user = AsyncMock(
+            return_value=[(entry_app, entry_job), (other_app, other_job)]
+        )
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+        self.activity_repo.list_by_application.return_value = [
+            SimpleNamespace(
+                activity_id=1,
+                application_id=11,
+                actor_id=9,
+                event_type="application_submitted",
+                details={"stage": "recruiter_screening"},
+                created_at=datetime(2026, 7, 4, 12, 0, 0),
+            )
+        ]
+        self.comment_repo.list_by_application.return_value = []
+        ctx = UserContextDto(
+            sub="s",
+            primary_email="hr@b.com",
+            user_id=5,
+            permissions=frozenset({Permission.RECRUITING_APPLICATION_READ_ALL}),
+        )
+
+        result = await self.service.get_other_applications(self.session, ctx, 10)
+
+        self.assertEqual([a.id for a in result.other_jobs[0].activity], [1])
+        self.assertEqual(result.other_jobs[0].comments, [])
 
 
 if __name__ == "__main__":

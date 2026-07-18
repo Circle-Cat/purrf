@@ -633,14 +633,42 @@ class BoardService:
         _application, job = await self._load_owned_application(
             session, current_user, application_id, allow_read_all=True
         )
+        rows = await self.application_activity_repository.list_by_application(
+            session, application_id
+        )
+        return await self._activity_dtos(session, rows, job)
+
+    async def _activity_dtos(
+        self, session: AsyncSession, rows, job
+    ) -> list[ApplicationActivityDto]:
+        """Map raw activity rows to DTOs with read-time name/label resolution.
+
+        Shared by ``get_application_activity`` (the single-application
+        timeline endpoint) and ``get_other_applications`` (which embeds each
+        other application's timeline in its aggregate entry). Actor and
+        assignee names are resolved via one combined batched lookup;
+        screening-rule ids are resolved against ``job``'s *current*
+        ``screen_rules`` — pass each row set's OWN job, since rule configs
+        differ per job. Nothing is ever persisted back to the stored rows.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            rows: Activity rows for ONE application, as returned by
+                ``ApplicationActivityRepository.list_by_application``.
+            job (JobEntity): The job those rows' application belongs to,
+                for screen-rule label resolution.
+
+        Returns:
+            list[ApplicationActivityDto]: Same order as ``rows``, each with
+                resolved ``actor_name`` and, where applicable, assignee
+                name(s) and screen-rule label(s) merged into a copy of
+                ``details``.
+        """
         rules_by_id = {
             rule.get("id"): rule
             for rule in ((job.screen_rules or {}).get("rules") or [])
             if isinstance(rule, dict)
         }
-        rows = await self.application_activity_repository.list_by_application(
-            session, application_id
-        )
         ids_to_resolve = {row.actor_id for row in rows}
         for row in rows:
             for raw_field, _ in _ASSIGNEE_NAME_FIELDS.get(row.event_type, ()):
@@ -705,6 +733,15 @@ class BoardService:
         page's own history) go in ``previous_same_job``, newest first. The
         currently-viewed application itself appears in neither list.
 
+        The one carve-out from "returned in full": each entry's ``activity``
+        (audit timeline, which narrates rejection reasons) and ``comments``
+        are populated only when the caller is an owner of the ENTRY job or
+        holds ``read.all`` — an assignee-only caller gets empty lists,
+        because the timeline is an owner-facing audit view an assignee can't
+        read even on the application they're grading
+        (``get_application_activity``'s gate), and the frontend only renders
+        these panels in the owner/read.all layout anyway.
+
         Args:
             session (AsyncSession): Active database async session.
             current_user (UserContextDto): The authenticated caller.
@@ -724,13 +761,16 @@ class BoardService:
                 neither an owner of its job, its current-stage assignee,
                 nor a holder of ``RECRUITING_APPLICATION_READ_ALL``.
         """
-        application, _job = await self._load_owned_application(
+        application, entry_job = await self._load_owned_application(
             session,
             current_user,
             application_id,
             allow_assignee=True,
             allow_read_all=True,
         )
+        include_history = current_user.user_id in normalized_owner_ids(
+            entry_job.pipeline_config
+        ) or current_user.has_permission(Permission.RECRUITING_APPLICATION_READ_ALL)
         rows = await self.application_repository.list_by_user(
             session, application.user_id
         )
@@ -742,14 +782,32 @@ class BoardService:
             evaluation_rows = await self.evaluation_repository.list_by_application(
                 session, other_application.application_id
             )
+            activity: list[ApplicationActivityDto] = []
+            comments: list[CommentDto] = []
+            if include_history:
+                activity_rows = (
+                    await self.application_activity_repository.list_by_application(
+                        session, other_application.application_id
+                    )
+                )
+                activity = await self._activity_dtos(session, activity_rows, other_job)
+                comment_rows = (
+                    await self.application_comment_repository.list_by_application(
+                        session, other_application.application_id
+                    )
+                )
+                comments = await self._comment_dtos(session, comment_rows)
             return OtherApplicationDto(
                 application=self.recruiting_mapper.to_application_dto(
                     other_application, current_sub
                 ),
                 job_title=other_job.title,
+                job_kind=other_job.kind,
                 resume_available=bool(
                     current_sub is not None and current_sub.resume_object_key
                 ),
+                activity=activity,
+                comments=comments,
                 evaluations=[
                     EvaluationDto(
                         id=row.evaluation_id,
@@ -1526,6 +1584,26 @@ class BoardService:
         rows = await self.application_comment_repository.list_by_application(
             session, application_id
         )
+        return await self._comment_dtos(session, rows)
+
+    async def _comment_dtos(self, session: AsyncSession, rows) -> list[CommentDto]:
+        """Map raw comment rows to DTOs with read-time name resolution.
+
+        Shared by ``list_comments`` (the single-application endpoint) and
+        ``get_other_applications`` (which embeds each other application's
+        comments, read-only, in its aggregate entry). Author names and
+        @-mention names are resolved read-time only, with the same
+        ``f"User {id}"`` fallback as everywhere else.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            rows: Comment rows for ONE application, as returned by
+                ``ApplicationCommentRepository.list_by_application``.
+
+        Returns:
+            list[CommentDto]: Same order as ``rows``, each with its resolved
+                author name and @-mentions.
+        """
         authors = await self.users_repository.get_all_by_ids(
             session, list({row.author_id for row in rows})
         )

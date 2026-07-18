@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { toast } from "sonner";
@@ -93,9 +93,12 @@ const OTHER_SUBMISSION = {
 const makeOtherApplication = ({
   id = 201,
   jobTitle = "Backend Engineer",
+  jobKind = "employment",
   stage = "tech",
   resumeAvailable = false,
   evaluations = [],
+  activity = [],
+  comments = [],
 } = {}) => ({
   application: {
     id,
@@ -109,8 +112,11 @@ const makeOtherApplication = ({
     editable: false,
   },
   jobTitle,
+  jobKind,
   resumeAvailable,
   evaluations,
+  activity,
+  comments,
 });
 
 /** Build an ApplicationDetailDto-shaped payload for a given role/stage. */
@@ -2250,6 +2256,130 @@ describe("ApplicationDetailPage — candidate aggregation", () => {
     expect(
       screen.getByText("Previous applications for this posting"),
     ).toBeInTheDocument();
+  });
+});
+
+describe("ApplicationDetailPage — history row timeline and comments", () => {
+  /** Render as owner with one cross-job entry, expand it, return its <li>. */
+  const renderAndExpand = async (user, entry) => {
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true }),
+    });
+    api.getOtherApplications.mockResolvedValue({
+      data: { otherJobs: [entry], previousSameJob: [] },
+    });
+    renderPage();
+    await waitLoaded();
+    const label = screen.getByText(/Backend Engineer — /);
+    await user.click(label);
+    return label.closest("li");
+  };
+
+  it("shows Evaluations, Timeline and Comments tabs in an expanded row", async () => {
+    const user = userEvent.setup();
+    const row = await renderAndExpand(user, makeOtherApplication());
+
+    expect(
+      within(row).getByRole("tab", { name: "Evaluations" }),
+    ).toBeInTheDocument();
+    expect(
+      within(row).getByRole("tab", { name: "Timeline" }),
+    ).toBeInTheDocument();
+    expect(
+      within(row).getByRole("tab", { name: "Comments" }),
+    ).toBeInTheDocument();
+  });
+
+  it("narrates the rejection reason in the row's Timeline tab", async () => {
+    const user = userEvent.setup();
+    const row = await renderAndExpand(
+      user,
+      makeOtherApplication({
+        stage: "rejected",
+        activity: [
+          {
+            id: 2,
+            eventType: "stage_changed",
+            details: {
+              fromStage: "tech",
+              toStage: "rejected",
+              reason: "Not a fit",
+              note: "Weak coding round",
+            },
+            actorId: OWNER_ID,
+            actorName: "Olga Owner",
+            createdAt: "2026-07-05T12:00:00Z",
+          },
+        ],
+      }),
+    );
+
+    await user.click(within(row).getByRole("tab", { name: "Timeline" }));
+
+    expect(
+      within(row).getByText(
+        /Rejected from Tech: Not a fit — Weak coding round/,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("labels timeline stages by the row's own job kind, not the viewed job's", async () => {
+    // The viewed job (JOB fixture) is employment-kind; this cross-job entry
+    // is an activity posting, so its hired stage must narrate as "Admitted".
+    const user = userEvent.setup();
+    const row = await renderAndExpand(
+      user,
+      makeOtherApplication({
+        jobKind: "activity",
+        stage: "hired",
+        activity: [
+          {
+            id: 3,
+            eventType: "stage_changed",
+            details: { fromStage: "tech", toStage: "hired" },
+            actorId: OWNER_ID,
+            actorName: "Olga Owner",
+            createdAt: "2026-07-05T12:00:00Z",
+          },
+        ],
+      }),
+    );
+
+    await user.click(within(row).getByRole("tab", { name: "Timeline" }));
+
+    expect(
+      within(row).getByText(/Advanced from Tech to Admitted/),
+    ).toBeInTheDocument();
+  });
+
+  it("renders the row's comments read-only, with no input box", async () => {
+    const user = userEvent.setup();
+    const row = await renderAndExpand(
+      user,
+      makeOtherApplication({
+        comments: [
+          {
+            id: 5,
+            applicationId: 201,
+            authorId: OWNER_ID,
+            authorName: "Olga Owner",
+            body: "Discussed with the panel.",
+            createdAt: "2026-07-06T12:00:00Z",
+            mentions: [],
+          },
+        ],
+      }),
+    );
+
+    await user.click(within(row).getByRole("tab", { name: "Comments" }));
+
+    expect(
+      within(row).getByText(/Discussed with the panel\./),
+    ).toBeInTheDocument();
+    expect(
+      within(row).queryByPlaceholderText("Add a comment…"),
+    ).not.toBeInTheDocument();
   });
 });
 

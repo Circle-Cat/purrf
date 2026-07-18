@@ -89,32 +89,6 @@ class ApplicationDetailDto(BaseDto):
     assignee_id: int | None = None
 
 
-class OtherApplicationDto(BaseDto):
-    """One of a candidate's other applications, for the cross-posting
-    aggregation view surfaced on the shared application detail page.
-
-    Returned in full (submission snapshot + every evaluation row) to any
-    caller who already passed the entry gate on the application they're
-    currently viewing — see BoardService.get_other_applications.
-    """
-
-    application: ApplicationDto
-    job_title: str
-    resume_available: bool
-    evaluations: list[EvaluationDto]
-
-
-class ApplicationAggregateDto(BaseDto):
-    """Candidate-wide aggregation for the application detail page: the
-    candidate's applications to OTHER jobs, plus their PRIOR attempts on the
-    same job (newest first) — the currently-viewed application appears in
-    neither list. Same entry shape and visibility rule for both lists (see
-    BoardService.get_other_applications)."""
-
-    other_jobs: list[OtherApplicationDto]
-    previous_same_job: list[OtherApplicationDto]
-
-
 class ApplicationActivityDto(BaseDto):
     """One entry in an application's owner-facing audit timeline, newest first.
 
@@ -231,6 +205,41 @@ class CommentDto(BaseDto):
     body: str
     created_at: datetime
     mentions: list[MentionedUserDto] = []
+
+
+class OtherApplicationDto(BaseDto):
+    """One of a candidate's other applications, for the cross-posting
+    aggregation view surfaced on the shared application detail page.
+
+    Returned in full (submission snapshot + every evaluation row) to any
+    caller who already passed the entry gate on the application they're
+    currently viewing — see BoardService.get_other_applications. ``activity``
+    and ``comments`` are the exception: they're populated only for an
+    owner/read.all caller (an assignee-only caller gets empty lists), since
+    the timeline is an owner-facing audit view an assignee can't read even
+    on the application they're grading. ``job_kind`` lets the frontend
+    label stages for the entry's OWN job (activity: hired -> "Admitted"),
+    which may differ in kind from the job being viewed.
+    """
+
+    application: ApplicationDto
+    job_title: str
+    job_kind: JobKind
+    resume_available: bool
+    evaluations: list[EvaluationDto]
+    activity: list[ApplicationActivityDto] = []
+    comments: list[CommentDto] = []
+
+
+class ApplicationAggregateDto(BaseDto):
+    """Candidate-wide aggregation for the application detail page: the
+    candidate's applications to OTHER jobs, plus their PRIOR attempts on the
+    same job (newest first) — the currently-viewed application appears in
+    neither list. Same entry shape and visibility rule for both lists (see
+    BoardService.get_other_applications)."""
+
+    other_jobs: list[OtherApplicationDto]
+    previous_same_job: list[OtherApplicationDto]
 
 
 class CommentCreateDto(BaseRequestDto):
