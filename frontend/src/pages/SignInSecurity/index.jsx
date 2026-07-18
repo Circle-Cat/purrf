@@ -34,10 +34,10 @@ const errorMessage = (error, fallback) =>
  * A single card backed by `GET /auth/emails`, listing the account's sign-in
  * methods and its contact emails together: set a method's email as the
  * primary contact (step-up OTP), remove a method (step-up OTP, which also
- * drops its synced contact email), add a backup email without verification
- * (contact-only), verify an unverified address (email OTP) to unlock it as a
- * sign-in method, and remove an unverified address (no OTP — adding it
- * required none).
+ * drops its synced contact email), add a backup email with immediate
+ * verification (email OTP in the dialog), verify a legacy unverified address
+ * (email OTP) to unlock it as a sign-in method, and remove an unverified
+ * address (no OTP — legacy rows from before verify-at-add).
  *
  * @component
  */

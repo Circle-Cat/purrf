@@ -86,12 +86,13 @@ const IdentityRow = ({
 
 /**
  * One contact-only email row: an address with no sign-in identity behind it
- * (an unverified backup, or a verified address whose email method was
- * removed). Shows the primary/unverified state; an unverified address offers
- * a "Verify" action, which is what unlocks it as a sign-in method, and a
- * "Remove" action — adding it needed no OTP, so removing it needs none either.
- * A verified, non-primary address offers "Set as primary contact" (the same
- * step-up flow the sign-in method rows use).
+ * (a legacy unverified backup from before verify-at-add, or a verified address
+ * whose email method was removed). Shows the primary/unverified state; an
+ * unverified address offers a "Verify" action, which unlocks it as a sign-in
+ * method, and a "Remove" action — legacy unverified rows required no OTP to
+ * add, so they require none to remove either. A verified, non-primary address
+ * offers "Set as primary contact" (the same step-up flow the sign-in method
+ * rows use).
  *
  * @param {Object} props
  * @param {object} props.emailRow

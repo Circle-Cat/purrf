@@ -141,42 +141,6 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
             )
         self.auth0.start_passwordless.assert_not_called()
 
-    # add_email — record a backup contact address without an OTP round-trip
-    async def test_add_email_inserts_unconfirmed_backup_row(self):
-        result = await self.service.add_email(
-            self.session, _USER_ID, " Alice@Gmail.com "
-        )
-
-        self.auth0.start_passwordless.assert_not_called()
-        entity = self.user_emails.upsert_email.call_args.kwargs["entity"]
-        self.assertEqual(entity.user_id, _USER_ID)
-        self.assertEqual(entity.email, _TARGET_EMAIL)
-        self.assertFalse(entity.otp_confirmed)
-        self.assertFalse(entity.is_primary)
-        self.session.commit.assert_awaited_once()
-        self.assertEqual(result, {"ok": True, "email": _TARGET_EMAIL})
-
-    async def test_add_email_rejects_invalid_format(self):
-        with self.assertRaises(ValueError):
-            await self.service.add_email(self.session, _USER_ID, "not-an-email")
-        self.user_emails.upsert_email.assert_not_awaited()
-
-    async def test_add_email_conflict_when_claimed_elsewhere(self):
-        # Any other-account claim blocks, confirmed or not: user_emails.email
-        # is globally unique, so the insert could never succeed.
-        self.user_emails.exists_on_other_user.return_value = True
-        with self.assertRaises(ConflictError):
-            await self.service.add_email(self.session, _USER_ID, _TARGET_EMAIL)
-        self.user_emails.upsert_email.assert_not_awaited()
-
-    async def test_add_email_conflict_when_already_on_own_account(self):
-        self.user_emails.get_by_user_and_email.return_value = self._email_row(
-            _TARGET_EMAIL, otp_confirmed=False
-        )
-        with self.assertRaises(ConflictError):
-            await self.service.add_email(self.session, _USER_ID, _TARGET_EMAIL)
-        self.user_emails.upsert_email.assert_not_awaited()
-
     # remove_email — drop an unverified backup contact address, no OTP
     def _removable_row(self, email_id=12, **overrides):
         row = self._email_row("backup@gmail.com", otp_confirmed=False, **overrides)
@@ -223,7 +187,11 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         self.user_emails.delete.assert_not_awaited()
         self.session.commit.assert_not_awaited()
 
-    async def test_verify_happy_path_confirms_email_and_records_identity(self):
+    async def test_verify_confirms_without_creating_sign_in_identity(self):
+        """Normal-mode verify only confirms the address; it must not create a
+        user_identities row for the OTP's email| sub — the confirmed address
+        is already a valid passwordless login identifier via routing (PR1),
+        and the OTP's Auth0 user stays inert (verify-to-sign-in retired)."""
         result = await self.service.verify(
             self.session, _USER_ID, _CURRENT_SUB, _state(), "123456"
         )
@@ -235,50 +203,9 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         email_entity = self.user_emails.upsert_email.call_args.kwargs["entity"]
         self.assertTrue(email_entity.otp_confirmed)
         self.assertTrue(email_entity.is_primary)  # no existing primary -> auto
-        identity_entity = self.user_identities.upsert_identity.call_args.kwargs[
-            "entity"
-        ]
-        self.assertEqual(identity_entity.subject_identifier, _NEW_SUB)
+        self.user_identities.upsert_identity.assert_not_awaited()
         self.session.commit.assert_awaited_once()
-        self.assertEqual(result["linked_sub"], _NEW_SUB)
-
-    async def test_verify_marks_external_identity_for_outside_email(self):
-        """A non-company address (the default alice@gmail.com) yields an
-        EXTERNAL identity."""
-        await self.service.verify(
-            self.session, _USER_ID, _CURRENT_SUB, _state(), "123456"
-        )
-
-        identity_entity = self.user_identities.upsert_identity.call_args.kwargs[
-            "entity"
-        ]
-        self.assertEqual(identity_entity.identity_type, IdentityType.EXTERNAL)
-
-    async def test_verify_marks_internal_identity_for_company_email(self):
-        """Both CircleCat domains (@u.circlecat.org Microsoft, @circlecat.org
-        Google) mark the new identity INTERNAL."""
-        for company_email in ("bob@u.circlecat.org", "bob@circlecat.org"):
-            with self.subTest(email=company_email):
-                self.user_identities.upsert_identity.reset_mock()
-                self.auth0.exchange_otp.return_value = {
-                    "sub": _NEW_SUB,
-                    "email": company_email,
-                    "email_verified": True,
-                }
-
-                await self.service.verify(
-                    self.session,
-                    _USER_ID,
-                    _CURRENT_SUB,
-                    _state(email=company_email),
-                    "123456",
-                )
-
-                identity_entity = self.user_identities.upsert_identity.call_args.kwargs[
-                    "entity"
-                ]
-                self.assertEqual(identity_entity.identity_type, IdentityType.INTERNAL)
-                self.assertEqual(identity_entity.email_claim, company_email)
+        self.assertEqual(result, {"ok": True, "email": _TARGET_EMAIL})
 
     # Corp sign-in joining an existing account mirrors the first-login
     # lifecycle hook: internal permission bundle + corp email becomes primary.
@@ -438,7 +365,8 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertTrue(existing_email.otp_confirmed)
-        # Identity already present for this user -> no new identity row inserted.
+        # Confirming never inserts a user_identities row (regardless of
+        # whether one already exists for this user).
         self.user_identities.upsert_identity.assert_not_called()
         self.session.commit.assert_awaited_once()
 

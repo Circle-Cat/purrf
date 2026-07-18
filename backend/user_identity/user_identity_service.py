@@ -290,10 +290,10 @@ class UserIdentityService:
         Overwrite a migration-backfilled identity row (mocked sub) with the
         real Auth0 sub on first real login, in place — keeps the row's user_id
         / linked_at and does not itself touch the migrated user_emails row.
-        For non-passwordless logins otp_confirmed stays False and verification
-        is the hard-wall flow (PR5); for passwordless logins the caller runs
-        _confirm_swapped_claim_email, since the login already proved the
-        mailbox. Step 2.
+        Every swap is trust-gated (only trusted assertions, verified logins,
+        or allowlisted IdPs reach this point); the caller always runs
+        _confirm_swapped_claim_email to mark the swapped email as confirmed,
+        since the login already proved mailbox ownership. Step 2.
         """
         self.logger.info(
             "[UserIdentityService] overwriting mocked sub %s -> %s for user_id=%s",

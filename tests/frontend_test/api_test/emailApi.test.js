@@ -45,7 +45,7 @@ describe("emailApi", () => {
   describe("verifyEmailOtp", () => {
     it("posts the state and otp to the verify endpoint and returns the response", async () => {
       const response = {
-        data: { ok: true, linked_sub: "email|abc", email: "alice@gmail.com" },
+        data: { ok: true, email: "alice@gmail.com" },
       };
       request.post.mockResolvedValue(response);
 
