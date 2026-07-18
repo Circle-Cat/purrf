@@ -1,3 +1,4 @@
+import time
 import unittest
 from unittest.mock import AsyncMock, MagicMock
 from datetime import datetime, timezone
@@ -33,6 +34,12 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
 
         self.iat = 1_700_000_000
         self.iat_dt = datetime.fromtimestamp(self.iat, tz=timezone.utc)
+        # A "just happened" iat, for tests that must clear the first-login
+        # staleness guard (self.iat above is a fixed, long-past timestamp
+        # used only for last_login_at bookkeeping assertions on swap/routing
+        # paths, which the staleness guard does not touch).
+        self.fresh_iat = int(time.time())
+        self.fresh_iat_dt = datetime.fromtimestamp(self.fresh_iat, tz=timezone.utc)
 
         self.user = MagicMock(spec=UsersEntity, user_id=10)
 
@@ -138,6 +145,7 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
             primary_email="Alice@Example.com",
             identity_type="external",
             last_login_at=self.iat,
+            email_verified=True,
         )
         mocked = MagicMock(
             spec=UserIdentitiesEntity,
@@ -181,6 +189,7 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
             primary_email="bob@example.com",
             identity_type="external",
             last_login_at=None,
+            email_verified=True,
         )
         mocked = MagicMock(
             spec=UserIdentitiesEntity,
@@ -298,20 +307,6 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
 
         self.emails_repo.upsert_email.assert_not_awaited()
 
-    async def test_create_or_swap_swap_passwordless_unverified_claim_untouched(
-        self,
-    ):
-        """Swap via passwordless but token lacks email_verified: no trust, the
-        claim row stays untouched and the verify wall applies."""
-        self._arrange_swap_hit()
-
-        await self.service.create_or_swap_user(
-            self.session, self._swap_passwordless_user_info(email_verified=False)
-        )
-
-        self.emails_repo.get_by_user_and_email.assert_not_awaited()
-        self.emails_repo.upsert_email.assert_not_awaited()
-
     async def test_create_or_swap_swap_google_sub_confirms_email(self):
         """Swap via a trusted Google sub: the allowlisted IdP's verified
         assertion is first-party mailbox proof too, so the swap-confirm site
@@ -354,28 +349,64 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
 
         self.permissions_repo.grant.assert_awaited_once()
 
-    async def test_create_or_swap_swap_untrusted_sub_leaves_email_untouched(self):
-        """Swap via an unlisted connection: the mailbox was never proved by
-        the login (default-deny), so the claim row stays unconfirmed
-        (hard-wall verify flow)."""
-        self._arrange_swap_hit()
-
-        await self.service.create_or_swap_user(
-            self.session,
-            self._swap_passwordless_user_info(sub="auth0|abc"),
+    async def test_create_or_swap_untrusted_sub_never_swaps(self):
+        """The backfill swap is trust-gated: an unlisted connection's email
+        claim must not swap into (and thereby enter) a backfilled account.
+        Post stale-token-guard (PUR-505), the untrusted-assertion refusal at
+        the top of the method fires first — no repo call is ever made,
+        including the swap lookup itself."""
+        user_info = UserContextDto(
+            sub="auth0|123",
+            primary_email="legacy@b.com",
+            identity_type=IdentityType.EXTERNAL,
+            email_verified=True,
         )
+        mocked = MagicMock(
+            spec=UserIdentitiesEntity, user_id=10, subject_identifier="manual|x"
+        )
+        self.identities_repo.find_swappable_by_email.return_value = mocked
+        self.emails_repo.exists_claim_by_email.return_value = True
 
-        self.emails_repo.get_by_user_and_email.assert_not_awaited()
+        with self.assertRaisesRegex(ValueError, "Sign in with a supported method"):
+            await self.service.create_or_swap_user(self.session, user_info)
+
+        self.identities_repo.find_swappable_by_email.assert_not_awaited()
+        self.identities_repo.upsert_identity.assert_not_awaited()
+        self.emails_repo.upsert_email.assert_not_awaited()
+
+    async def test_create_or_swap_unverified_sub_never_swaps(self):
+        """An unverified login must not swap either — the claim proves
+        nothing. Post stale-token-guard (PUR-505), the untrusted-assertion
+        refusal fires before any repo call."""
+        user_info = UserContextDto(
+            sub="email|x",
+            primary_email="legacy@b.com",
+            identity_type=IdentityType.EXTERNAL,
+            email_verified=False,
+        )
+        mocked = MagicMock(
+            spec=UserIdentitiesEntity, user_id=10, subject_identifier="manual|x"
+        )
+        self.identities_repo.find_swappable_by_email.return_value = mocked
+        self.emails_repo.exists_claim_by_email.return_value = True
+
+        with self.assertRaisesRegex(ValueError, "Sign in with a supported method"):
+            await self.service.create_or_swap_user(self.session, user_info)
+
+        self.identities_repo.find_swappable_by_email.assert_not_awaited()
+        self.identities_repo.upsert_identity.assert_not_awaited()
         self.emails_repo.upsert_email.assert_not_awaited()
 
     async def test_create_or_swap_first_login_email_sub(self):
         """First login with email| sub: creates user, identity AND user_emails.
-        email_verified=True (Auth0-verified) -> otp_confirmed True."""
+        email_verified=True (Auth0-verified) -> otp_confirmed True. Uses a
+        fresh (just-happened) iat so the first-login staleness guard
+        (PUR-505) does not trip."""
         user_info = UserContextDto(
             sub="email|xyz",
             primary_email="Carol@Example.com",
             identity_type="external",
-            last_login_at=self.iat,
+            last_login_at=self.fresh_iat,
             email_verified=True,
         )
         self.identities_repo.find_swappable_by_email.return_value = None
@@ -390,7 +421,7 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
         identity = self.identities_repo.upsert_identity.call_args.kwargs["entity"]
         self.assertEqual(identity.subject_identifier, "email|xyz")
         self.assertEqual(identity.user_id, 99)
-        self.assertEqual(identity.last_login_at, self.iat_dt)
+        self.assertEqual(identity.last_login_at, self.fresh_iat_dt)
         # email| sub -> user_emails write
         self.emails_repo.upsert_email.assert_awaited_once()
         email_row = self.emails_repo.upsert_email.call_args.kwargs["entity"]
@@ -403,15 +434,16 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
         # DTO user_id write-back
         self.assertEqual(user_info.user_id, 99)
 
-    async def test_create_or_swap_first_login_non_email_sub_seeds_unverified_claim(
+    async def test_create_or_swap_first_login_non_email_sub_untrusted_raises(
         self,
     ):
         """First login with a non-email| (google) sub and no email_verified
         assertion: email_verified defaults to False, so the IdP's claim is
-        untrusted and an unverified, non-primary claim row is seeded —
-        ownership of the address must be discoverable from user_emails alone,
-        not from the legacy users.primary_email column. The hard-wall verify
-        flow confirms (and promotes) it later."""
+        untrusted. Post stale-token-guard (PUR-505) this refuses outright —
+        seeding an unconfirmed claim for an untrusted login would recreate
+        the retired unverified state, and no account is created or entered.
+        (Previously this seeded an unconfirmed, non-primary claim row sent
+        through the hard-wall verify flow; that flow no longer exists.)"""
         user_info = UserContextDto(
             sub="google-oauth2|abc",
             primary_email="Dave@Example.com",
@@ -419,30 +451,24 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
             last_login_at=self.iat,
         )
         self.identities_repo.find_swappable_by_email.return_value = None
-        created = MagicMock(spec=UsersEntity, user_id=77)
-        self.users_repo.upsert_users.return_value = created
 
-        result = await self.service.create_or_swap_user(self.session, user_info)
+        with self.assertRaisesRegex(ValueError, "Sign in with a supported method"):
+            await self.service.create_or_swap_user(self.session, user_info)
 
-        self.assertIs(result, created)
-        self.identities_repo.upsert_identity.assert_awaited_once()
-        self.emails_repo.upsert_email.assert_awaited_once()
-        email_row = self.emails_repo.upsert_email.call_args.kwargs["entity"]
-        self.assertIsInstance(email_row, UserEmailsEntity)
-        self.assertEqual(email_row.user_id, 77)
-        self.assertEqual(email_row.email, "dave@example.com")
-        self.assertFalse(email_row.otp_confirmed)
-        self.assertFalse(email_row.is_primary)
-        # non-internal identity: no permission grant
+        self.users_repo.upsert_users.assert_not_awaited()
+        self.identities_repo.upsert_identity.assert_not_awaited()
+        self.emails_repo.upsert_email.assert_not_awaited()
         self.permissions_repo.grant.assert_not_awaited()
-        self.assertEqual(user_info.user_id, 77)
+        self.assertIsNone(user_info.user_id)
 
-    async def test_create_or_swap_first_login_email_sub_unverified_claim_stays_unconfirmed(
+    async def test_create_or_swap_first_login_email_sub_unverified_raises(
         self,
     ):
-        """First login with an email| sub whose token says email_verified=False:
-        the row is seeded unconfirmed AND non-primary — is_primary=True with
-        otp_confirmed=False would violate the primary_must_be_confirmed CHECK."""
+        """First login with an email| sub whose token says email_verified=False
+        is untrusted (the OTP round-trip proves nothing without it). Post
+        stale-token-guard (PUR-505) this refuses outright with no account
+        creation. (Previously this seeded an unconfirmed, non-primary claim
+        row; that transitional state is retired.)"""
         user_info = UserContextDto(
             sub="email|xyz",
             primary_email="carol@example.com",
@@ -454,18 +480,18 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
         created = MagicMock(spec=UsersEntity, user_id=99)
         self.users_repo.upsert_users.return_value = created
 
-        await self.service.create_or_swap_user(self.session, user_info)
+        with self.assertRaisesRegex(ValueError, "Sign in with a supported method"):
+            await self.service.create_or_swap_user(self.session, user_info)
 
-        email_row = self.emails_repo.upsert_email.call_args.kwargs["entity"]
-        self.assertFalse(email_row.otp_confirmed)
-        self.assertFalse(email_row.is_primary)
+        self.emails_repo.upsert_email.assert_not_awaited()
 
-    async def test_create_or_swap_owned_claimed_email_returns_none(self):
-        """The login's email is already claimed by an existing account —
-        confirmed or an unverified backup address; either lives only in
-        user_emails, so no unique violation would ever fire: create nothing
-        and return None so the bootstrap holds the session at the verify wall
-        (PUR-480) instead of creating an orphan account."""
+    async def test_create_or_swap_owned_claimed_email_untrusted_raises(self):
+        """The login's email is already claimed by an existing account, but
+        the assertion itself is untrusted (email_verified defaults False for
+        this google sub). Post stale-token-guard (PUR-505) the
+        untrusted-assertion refusal fires before the ownership check is even
+        reached: create nothing, and the email_has_owner classification
+        never runs."""
         user_info = UserContextDto(
             sub="google-oauth2|new",
             primary_email="Owned@Example.com",
@@ -475,14 +501,11 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
         self.identities_repo.find_swappable_by_email.return_value = None
         self.emails_repo.exists_claim_by_email.return_value = True
 
-        result = await self.service.create_or_swap_user(self.session, user_info)
+        with self.assertRaisesRegex(ValueError, "Sign in with a supported method"):
+            await self.service.create_or_swap_user(self.session, user_info)
 
-        self.assertIsNone(result)
-        # checked with the lowercased address
-        self.emails_repo.exists_claim_by_email.assert_awaited_once_with(
-            self.session, "owned@example.com"
-        )
-        # nothing is created or granted
+        # nothing is created or granted, and the ownership check never runs
+        self.emails_repo.exists_claim_by_email.assert_not_awaited()
         self.users_repo.upsert_users.assert_not_awaited()
         self.identities_repo.upsert_identity.assert_not_awaited()
         self.emails_repo.upsert_email.assert_not_awaited()
@@ -498,6 +521,7 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
             primary_email="alice@example.com",
             identity_type="external",
             last_login_at=self.iat,
+            email_verified=True,
         )
         mocked = MagicMock(
             spec=UserIdentitiesEntity,
@@ -522,12 +546,17 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
 
     async def test_create_or_swap_first_login_internal_grants_permissions(self):
         """First login with an internal identity grants the internal employee
-        permission bundle via user_permissions_repository.grant."""
+        permission bundle via user_permissions_repository.grant. Uses a
+        trusted (verified) assertion and a fresh iat so neither the
+        untrusted-assertion refusal nor the first-login staleness guard
+        (PUR-505) fires — this test targets the permission-grant side
+        effect, not trust or staleness."""
         user_info = UserContextDto(
             sub="google-oauth2|emp",
             primary_email="emp@circlecat.org",
             identity_type=IdentityType.INTERNAL,
-            last_login_at=self.iat,
+            last_login_at=self.fresh_iat,
+            email_verified=True,
         )
         self.identities_repo.find_swappable_by_email.return_value = None
         created = MagicMock(spec=UsersEntity, user_id=55)
@@ -595,8 +624,9 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
         self.users_repo.upsert_users.assert_not_awaited()
 
     async def test_create_or_swap_unverified_passwordless_never_routes(self):
-        """email_verified=False never email-routes; the owned-address hold is
-        unchanged."""
+        """email_verified=False is untrusted; post stale-token-guard
+        (PUR-505) the untrusted-assertion refusal fires before routing (or
+        anything else) is even consulted."""
         user_info = UserContextDto(
             sub="email|otp1",
             primary_email="a@b.com",
@@ -606,9 +636,9 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
         self.identities_repo.find_swappable_by_email.return_value = None
         self.emails_repo.exists_claim_by_email.return_value = True
 
-        result = await self.service.create_or_swap_user(self.session, user_info)
+        with self.assertRaisesRegex(ValueError, "Sign in with a supported method"):
+            await self.service.create_or_swap_user(self.session, user_info)
 
-        self.assertIsNone(result)
         self.emails_repo.get_confirmed_by_email.assert_not_awaited()
 
     async def test_create_or_swap_routes_trusted_google_and_links_sub(self):
@@ -719,7 +749,9 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
 
     async def test_create_or_swap_untrusted_sub_never_email_routes(self):
         """An unlisted connection (auth0 database) with a verified claim is
-        default-denied: owned address still holds at needs-link."""
+        default-denied. Post stale-token-guard (PUR-505) this raises before
+        routing (or anything else) is consulted, rather than falling through
+        to the owned-address needs-link hold."""
         user_info = UserContextDto(
             sub="auth0|123",
             primary_email="a@b.com",
@@ -729,9 +761,9 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
         self.identities_repo.find_swappable_by_email.return_value = None
         self.emails_repo.exists_claim_by_email.return_value = True
 
-        result = await self.service.create_or_swap_user(self.session, user_info)
+        with self.assertRaisesRegex(ValueError, "Sign in with a supported method"):
+            await self.service.create_or_swap_user(self.session, user_info)
 
-        self.assertIsNone(result)
         self.emails_repo.get_confirmed_by_email.assert_not_awaited()
 
     async def test_create_or_swap_passwordless_unconfirmed_claim_still_held(self):
@@ -800,6 +832,144 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
         self.assertIs(result, created)
         self.assertEqual(user_info.user_id, 77)
         self.emails_repo.get_confirmed_by_email.assert_awaited_once()
+
+    # create_or_swap_user — PUR-505 stale-token guard + untrusted refusal
+    async def test_create_or_swap_untrusted_sub_raises_before_any_repo_call(self):
+        """An untrusted connection is refused at the very top of the method:
+        no swap lookup, no routing lookup, no ownership check — the tenant
+        has only trusted connections, so this is the default-deny backstop
+        and nothing is ever awaited on the repositories."""
+        user_info = UserContextDto(
+            sub="auth0|123",
+            primary_email="legacy@b.com",
+            identity_type=IdentityType.EXTERNAL,
+            email_verified=True,
+        )
+
+        with self.assertRaisesRegex(ValueError, "Sign in with a supported method"):
+            await self.service.create_or_swap_user(self.session, user_info)
+
+        self.identities_repo.find_swappable_by_email.assert_not_awaited()
+        self.emails_repo.get_confirmed_by_email.assert_not_awaited()
+        self.emails_repo.exists_claim_by_email.assert_not_awaited()
+
+    async def test_create_or_swap_unverified_trusted_prefix_sub_raises(self):
+        """A trusted-prefix sub (email|) whose token says email_verified=False
+        is still untrusted — the round-trip proves nothing without it — and
+        is refused the same as an unlisted connection, before any repo
+        call."""
+        user_info = UserContextDto(
+            sub="email|x",
+            primary_email="legacy@b.com",
+            identity_type=IdentityType.EXTERNAL,
+            email_verified=False,
+        )
+
+        with self.assertRaisesRegex(ValueError, "Sign in with a supported method"):
+            await self.service.create_or_swap_user(self.session, user_info)
+
+        self.identities_repo.find_swappable_by_email.assert_not_awaited()
+        self.emails_repo.get_confirmed_by_email.assert_not_awaited()
+        self.emails_repo.exists_claim_by_email.assert_not_awaited()
+
+    async def test_create_or_swap_stale_trusted_token_unowned_raises_session_expired(
+        self,
+    ):
+        """A stale trusted token (iat older than
+        _MAX_FIRST_LOGIN_TOKEN_AGE_SECONDS) for an address no account owns
+        must not silently fork a fresh account: the first-login insert is
+        refused so the client re-authenticates instead."""
+        stale_iat = int(time.time()) - 3600
+        user_info = UserContextDto(
+            sub="email|xyz",
+            primary_email="new@example.com",
+            identity_type=IdentityType.EXTERNAL,
+            email_verified=True,
+            last_login_at=stale_iat,
+        )
+        self.identities_repo.find_swappable_by_email.return_value = None
+        self.emails_repo.get_confirmed_by_email.return_value = None
+        self.emails_repo.exists_claim_by_email.return_value = False
+
+        with self.assertRaisesRegex(ValueError, "Session expired; sign in again"):
+            await self.service.create_or_swap_user(self.session, user_info)
+
+        self.users_repo.upsert_users.assert_not_awaited()
+        self.identities_repo.upsert_identity.assert_not_awaited()
+        self.emails_repo.upsert_email.assert_not_awaited()
+
+    async def test_create_or_swap_fresh_trusted_token_still_first_login_inserts(
+        self,
+    ):
+        """A fresh (just-happened) trusted token still first-login inserts
+        normally — the staleness guard only rejects tokens older than the
+        window."""
+        user_info = UserContextDto(
+            sub="email|fresh",
+            primary_email="fresh@example.com",
+            identity_type=IdentityType.EXTERNAL,
+            email_verified=True,
+            last_login_at=self.fresh_iat,
+        )
+        self.identities_repo.find_swappable_by_email.return_value = None
+        self.emails_repo.get_confirmed_by_email.return_value = None
+        self.emails_repo.exists_claim_by_email.return_value = False
+        created = MagicMock(spec=UsersEntity, user_id=88)
+        self.users_repo.upsert_users.return_value = created
+
+        result = await self.service.create_or_swap_user(self.session, user_info)
+
+        self.assertIs(result, created)
+        self.assertEqual(user_info.user_id, 88)
+
+    async def test_create_or_swap_stale_token_with_confirmed_owner_still_routes(
+        self,
+    ):
+        """The staleness guard protects only the first-login insert: a stale
+        trusted token whose address a confirmed owner already holds still
+        routes into that account at step 2.5, since no account is being
+        forked."""
+        stale_iat = int(time.time()) - 3600
+        user_info = UserContextDto(
+            sub="email|otp1",
+            primary_email="owner@example.com",
+            identity_type=IdentityType.EXTERNAL,
+            email_verified=True,
+            last_login_at=stale_iat,
+        )
+        self.identities_repo.find_swappable_by_email.return_value = None
+        self.emails_repo.get_confirmed_by_email.return_value = MagicMock(
+            spec=UserEmailsEntity, user_id=10, otp_confirmed=True
+        )
+        self.users_repo.get_user_by_user_id.return_value = self.user
+
+        result = await self.service.create_or_swap_user(self.session, user_info)
+
+        self.assertIs(result, self.user)
+        self.assertEqual(user_info.user_id, 10)
+        self.users_repo.upsert_users.assert_not_awaited()
+
+    async def test_create_or_swap_first_login_none_last_login_still_inserts(self):
+        """last_login_at=None (dev/test shims with no iat) skips the
+        staleness guard entirely (nothing to compare) and still first-login
+        inserts."""
+        user_info = UserContextDto(
+            sub="email|dev",
+            primary_email="dev@example.com",
+            identity_type=IdentityType.EXTERNAL,
+            email_verified=True,
+            last_login_at=None,
+        )
+        self.identities_repo.find_swappable_by_email.return_value = None
+        self.emails_repo.get_confirmed_by_email.return_value = None
+        self.emails_repo.exists_claim_by_email.return_value = False
+        created = MagicMock(spec=UsersEntity, user_id=66)
+        self.users_repo.upsert_users.return_value = created
+
+        result = await self.service.create_or_swap_user(self.session, user_info)
+
+        self.assertIs(result, created)
+        self.assertEqual(user_info.user_id, 66)
 
     # _iat_as_datetime helper
     async def test_iat_as_datetime_none(self):

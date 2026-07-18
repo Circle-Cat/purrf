@@ -7,6 +7,8 @@ This script performs the following steps:
 3. Runs the application using Uvicorn ASGI server.
 """
 
+import time
+
 import uvicorn
 from backend.utils.app_dependency_builder import AppDependencyBuilder
 from starlette.datastructures import Headers
@@ -41,9 +43,9 @@ class DevAuthenticationService(AuthenticationService):
             # Full access in dev; resolve_permissions honors this DTO flag
             # (only DevAuthenticationService sets it, never production auth).
             is_super_admin=True,
-            # Stand-in for the Auth0 token iat; bump it to see last_login_at
-            # advance on the next login.
-            last_login_at=1748000000,
+            # Stand-in for the Auth0 token iat: always "now" so the
+            # first-login staleness guard never trips on a fresh dev DB.
+            last_login_at=int(time.time()),
         )
 
 

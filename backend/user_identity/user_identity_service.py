@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,6 +11,14 @@ from backend.entity.user_emails_entity import UserEmailsEntity
 from backend.entity.user_identities_entity import UserIdentitiesEntity
 from backend.entity.users_entity import UsersEntity
 from backend.user_identity.internal_lifecycle import absorb_internal_identity
+
+# A first-login insert must come from a login that just happened: a stale
+# token whose address no account holds anymore (e.g. deleted from another
+# session) must NOT silently fork a fresh account. Fresh signups reach the
+# first request within seconds of the Auth0 login; anything older than this
+# re-authenticates instead. 30 minutes absorbs slow onboarding without
+# leaving a meaningful fork window.
+_MAX_FIRST_LOGIN_TOKEN_AGE_SECONDS = 30 * 60
 
 
 def _iat_as_datetime(last_login_at: int | None) -> datetime | None:
@@ -135,6 +143,16 @@ class UserIdentityService:
         """
         Resolve a user not found by sub lookup.
 
+        First, refuses outright any login whose assertion is not trusted (see
+        backend.common.trusted_connections): no account is created or
+        entered, ever — the tenant has only trusted connections, so this is
+        the default-deny backstop. Then refuses a first-login insert whose
+        token iat is older than `_MAX_FIRST_LOGIN_TOKEN_AGE_SECONDS`: a stale
+        token must not silently fork a fresh account for an address no
+        account currently holds; this only guards the first-login insert,
+        not the swap or routing paths, which resolve into an existing
+        account rather than creating one.
+
         Tries step 2 (overwrite a migration-backfilled identity found by
         email) first — an INTERNAL trusted-assertion swap also runs the
         absorb lifecycle hook, same as every other corp-join path; on miss,
@@ -160,9 +178,25 @@ class UserIdentityService:
             (no OTP-confirmed claim) — the sign-in is a second method for that
             account, so nothing is created and the caller must hold the session
             at the verify wall to link (needs-link, PUR-480).
+
+        Raises:
+            ValueError: The assertion is untrusted (see
+                is_trusted_email_assertion), or the token is a stale
+                first-login attempt (iat older than
+                _MAX_FIRST_LOGIN_TOKEN_AGE_SECONDS) for an address no
+                account owns.
         """
         email = user_info.primary_email.lower()
         login_dt = _iat_as_datetime(user_info.last_login_at)
+
+        if not is_trusted_email_assertion(
+            user_info.sub, user_info.email_verified, email
+        ):
+            # No untrusted connection may create or enter an account: seeding
+            # would recreate the retired unverified state, and the needs-link
+            # wall that used to hold these sessions is gone. The tenant has
+            # only trusted connections; this is the default-deny backstop.
+            raise ValueError("Sign in with a supported method")
 
         # Step 2: a deployment migration backfills old users as a user_emails
         # row (otp_confirmed=False) plus a user_identities row carrying a
@@ -272,6 +306,10 @@ class UserIdentityService:
             return None
 
         # Step 3: first login.
+        if login_dt is not None and (
+            datetime.now(timezone.utc) - login_dt
+        ) > timedelta(seconds=_MAX_FIRST_LOGIN_TOKEN_AGE_SECONDS):
+            raise ValueError("Session expired; sign in again")
         user = await self._first_login_insert(
             session=session, user_info=user_info, last_login_at=login_dt
         )
