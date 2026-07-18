@@ -1240,6 +1240,136 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.assignment_repo.upsert.assert_not_awaited()
         self.user_permissions_repo.get_active_users_with_permission.assert_not_called()
 
+    async def test_change_stage_advance_without_evaluation_flags_activity(self):
+        """Advancing an interview stage with no confirmed evaluation for the
+        current round is allowed (soft reminder, not a gate) but leaves an
+        advancedWithoutEvaluation marker in the audit log."""
+        job = self._job(
+            job_id=1, owner_ids=(2,), stages=("recruiter_screening", "tech")
+        )
+        application = self._application(
+            application_id=10, job_id=1, stage=ApplicationStage.RECRUITER_SCREENING
+        )
+        application.current_round = 2
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+        self.evaluation_repo.has_confirmed.return_value = False
+
+        dto = StageChangeDto(to_stage=ApplicationStage.TECH)
+        result = await self.service.change_stage(
+            self.session, self._ctx(user_id=2), 10, dto
+        )
+
+        self.assertEqual(result.stage, ApplicationStage.TECH)
+        self.evaluation_repo.has_confirmed.assert_awaited_once_with(
+            self.session, 10, ApplicationStage.RECRUITER_SCREENING, 2
+        )
+        self.activity_repo.create.assert_awaited_once_with(
+            self.session,
+            10,
+            2,
+            "stage_changed",
+            details={
+                "fromStage": "recruiter_screening",
+                "toStage": "tech",
+                "advancedWithoutEvaluation": True,
+            },
+        )
+
+    async def test_change_stage_advance_with_evaluation_leaves_no_flag(self):
+        job = self._job(
+            job_id=1, owner_ids=(2,), stages=("recruiter_screening", "tech")
+        )
+        application = self._application(
+            application_id=10, job_id=1, stage=ApplicationStage.RECRUITER_SCREENING
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+        self.evaluation_repo.has_confirmed.return_value = True
+
+        dto = StageChangeDto(to_stage=ApplicationStage.TECH)
+        await self.service.change_stage(self.session, self._ctx(user_id=2), 10, dto)
+
+        self.activity_repo.create.assert_awaited_once_with(
+            self.session,
+            10,
+            2,
+            "stage_changed",
+            details={"fromStage": "recruiter_screening", "toStage": "tech"},
+        )
+
+    async def test_change_stage_activity_advance_to_hired_still_flags(self):
+        """ACTIVITY jobs' final advance (to HIRED, shown as "Admitted") gets
+        the same soft-reminder marker as any other advance out of an
+        interview stage (2026-07-18 decision)."""
+        job = self._job(job_id=1, owner_ids=(2,), stages=("tech",))
+        application = self._application(
+            application_id=10, job_id=1, stage=ApplicationStage.TECH
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+        self.evaluation_repo.has_confirmed.return_value = False
+
+        dto = StageChangeDto(to_stage=ApplicationStage.HIRED)
+        await self.service.change_stage(self.session, self._ctx(user_id=2), 10, dto)
+
+        self.activity_repo.create.assert_awaited_once_with(
+            self.session,
+            10,
+            2,
+            "stage_changed",
+            details={
+                "fromStage": "tech",
+                "toStage": "hired",
+                "advancedWithoutEvaluation": True,
+            },
+        )
+
+    async def test_change_stage_reject_never_checks_evaluations(self):
+        """Rejection stays free of the evaluation reminder entirely -- the
+        marker is about advancing without a recorded evaluation."""
+        job = self._job(job_id=1, owner_ids=(2,), stages=("tech",))
+        application = self._application(
+            application_id=10, job_id=1, stage=ApplicationStage.TECH
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+        self.evaluation_repo.has_confirmed.return_value = False
+
+        dto = StageChangeDto(
+            to_stage=ApplicationStage.REJECTED, reason=REJECT_REASONS[0]
+        )
+        await self.service.change_stage(self.session, self._ctx(user_id=2), 10, dto)
+
+        self.evaluation_repo.has_confirmed.assert_not_awaited()
+        details = self.activity_repo.create.await_args.kwargs["details"]
+        self.assertNotIn("advancedWithoutEvaluation", details)
+
+    async def test_change_stage_offer_to_hired_never_checks_evaluations(self):
+        """OFFER carries no rubric, so advancing out of it has nothing to
+        remind about."""
+        job = self._job(
+            job_id=1, owner_ids=(2,), stages=("tech",), kind=JobKind.EMPLOYMENT
+        )
+        application = self._application(
+            application_id=10, job_id=1, stage=ApplicationStage.OFFER
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+        self.evaluation_repo.has_confirmed.return_value = False
+
+        dto = StageChangeDto(to_stage=ApplicationStage.HIRED)
+        await self.service.change_stage(self.session, self._ctx(user_id=2), 10, dto)
+
+        self.evaluation_repo.has_confirmed.assert_not_awaited()
+        details = self.activity_repo.create.await_args.kwargs["details"]
+        self.assertNotIn("advancedWithoutEvaluation", details)
+
     # -- reassign --
 
     async def test_reassign_promotes_evaluated_to_scheduled_on_scheduling_stage(self):
@@ -1665,6 +1795,78 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.app_repo.get_by_id.assert_awaited_once_with(
             self.session, 10, for_update=True
         )
+
+    async def test_set_sub_status_evaluated_without_confirmed_evaluation_raises(self):
+        """ "evaluated" is the one sub_status the owner may not fabricate:
+        it means "an evaluator confirmed a scorecard", so setting it by hand
+        requires a confirmed evaluation row for the current stage+round."""
+        job = self._job(job_id=1, owner_ids=(2,))
+        application = self._application(
+            application_id=10, job_id=1, stage=ApplicationStage.RECRUITER_SCREENING
+        )
+        application.sub_status = "in_progress"
+        application.current_round = 2
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+        self.evaluation_repo.has_confirmed.return_value = False
+
+        dto = SubStatusChangeDto(sub_status="evaluated")
+        with self.assertRaises(ValueError) as ctx:
+            await self.service.set_sub_status(
+                self.session, self._ctx(user_id=2), 10, dto
+            )
+
+        self.assertEqual(
+            str(ctx.exception),
+            "sub-status evaluated requires a confirmed evaluation for the current round",
+        )
+        self.evaluation_repo.has_confirmed.assert_awaited_once_with(
+            self.session, 10, ApplicationStage.RECRUITER_SCREENING, 2
+        )
+        self.assertEqual(application.sub_status, "in_progress")
+        self.app_repo.update.assert_not_awaited()
+        self.session.commit.assert_not_awaited()
+
+    async def test_set_sub_status_evaluated_with_confirmed_evaluation_passes(self):
+        job = self._job(job_id=1, owner_ids=(2,))
+        application = self._application(
+            application_id=10, job_id=1, stage=ApplicationStage.RECRUITER_SCREENING
+        )
+        application.sub_status = "in_progress"
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.sub_repo.get_current = AsyncMock(
+            return_value=self._submission(application_id=10, is_frozen=True)
+        )
+        self.evaluation_repo.has_confirmed.return_value = True
+
+        dto = SubStatusChangeDto(sub_status="evaluated")
+        result = await self.service.set_sub_status(
+            self.session, self._ctx(user_id=2), 10, dto
+        )
+
+        self.assertEqual(result.sub_status, "evaluated")
+        self.session.commit.assert_awaited_once()
+
+    async def test_set_sub_status_non_evaluated_targets_never_check_evaluations(self):
+        job = self._job(job_id=1, owner_ids=(2,))
+        application = self._application(
+            application_id=10, job_id=1, stage=ApplicationStage.RECRUITER_SCREENING
+        )
+        application.sub_status = "evaluated"
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+        self.evaluation_repo.has_confirmed.return_value = False
+
+        dto = SubStatusChangeDto(sub_status="in_progress")
+        result = await self.service.set_sub_status(
+            self.session, self._ctx(user_id=2), 10, dto
+        )
+
+        self.assertEqual(result.sub_status, "in_progress")
+        self.evaluation_repo.has_confirmed.assert_not_awaited()
 
     # -- blacklist --
 
@@ -2166,6 +2368,77 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
                 "assigneeId": 42,
             },
         )
+
+    async def test_set_round_advance_without_evaluation_flags_activity(self):
+        """Advancing a round with no confirmed evaluation for the round
+        being left is allowed but marked in the audit log, mirroring
+        change_stage's soft reminder."""
+        job = self._job(job_id=1, owner_ids=(2,), stages=("tech",), rounds={"tech": 3})
+        application = self._application(
+            application_id=10, job_id=1, stage=ApplicationStage.TECH
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+        self.evaluation_repo.has_confirmed.return_value = False
+
+        dto = RoundChangeDto(round=2)
+        await self.service.set_round(self.session, self._ctx(user_id=2), 10, dto)
+
+        self.evaluation_repo.has_confirmed.assert_awaited_once_with(
+            self.session, 10, ApplicationStage.TECH, 1
+        )
+        self.activity_repo.create.assert_awaited_once_with(
+            self.session,
+            10,
+            2,
+            "round_advanced",
+            details={
+                "stage": "tech",
+                "fromRound": 1,
+                "toRound": 2,
+                "advancedWithoutEvaluation": True,
+            },
+        )
+
+    async def test_set_round_advance_with_evaluation_leaves_no_flag(self):
+        job = self._job(job_id=1, owner_ids=(2,), stages=("tech",), rounds={"tech": 3})
+        application = self._application(
+            application_id=10, job_id=1, stage=ApplicationStage.TECH
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+        self.evaluation_repo.has_confirmed.return_value = True
+
+        dto = RoundChangeDto(round=2)
+        await self.service.set_round(self.session, self._ctx(user_id=2), 10, dto)
+
+        self.activity_repo.create.assert_awaited_once_with(
+            self.session,
+            10,
+            2,
+            "round_advanced",
+            details={"stage": "tech", "fromRound": 1, "toRound": 2},
+        )
+
+    async def test_set_round_backward_move_never_checks_evaluations(self):
+        job = self._job(job_id=1, owner_ids=(2,), stages=("tech",), rounds={"tech": 3})
+        application = self._application(
+            application_id=10, job_id=1, stage=ApplicationStage.TECH
+        )
+        application.current_round = 3
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+        self.evaluation_repo.has_confirmed.return_value = False
+
+        dto = RoundChangeDto(round=1)
+        await self.service.set_round(self.session, self._ctx(user_id=2), 10, dto)
+
+        self.evaluation_repo.has_confirmed.assert_not_awaited()
+        details = self.activity_repo.create.await_args.kwargs["details"]
+        self.assertNotIn("advancedWithoutEvaluation", details)
 
     # -- get_application_activity --
 

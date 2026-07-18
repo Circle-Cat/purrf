@@ -130,6 +130,41 @@ class EvaluationRepository:
         )
         return list(result.scalars().all())
 
+    async def has_confirmed(
+        self,
+        session: AsyncSession,
+        application_id: int,
+        stage: ApplicationStage,
+        round: int,
+    ) -> bool:
+        """Whether any evaluator has a confirmed row for this stage+round.
+
+        Deliberately evaluator-agnostic: a confirmed evaluation left by a
+        since-reassigned evaluator still counts (2026-07-18 decision) — the
+        question is "was this round ever formally evaluated", not "did the
+        current assignee evaluate it".
+
+        Args:
+            session (AsyncSession): The active DB session.
+            application_id (int): The application being checked.
+            stage (ApplicationStage): The stage being checked.
+            round (int): The round within that stage being checked.
+
+        Returns:
+            bool: True if at least one confirmed evaluation row exists.
+        """
+        result = await session.execute(
+            select(EvaluationEntity.evaluation_id)
+            .where(
+                EvaluationEntity.application_id == application_id,
+                EvaluationEntity.stage == stage,
+                EvaluationEntity.round == round,
+                EvaluationEntity.is_confirmed.is_(True),
+            )
+            .limit(1)
+        )
+        return result.scalar_one_or_none() is not None
+
     async def list_by_assignee(
         self, session: AsyncSession, assignee_id: int
     ) -> list[EvaluationEntity]:
