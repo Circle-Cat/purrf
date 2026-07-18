@@ -376,8 +376,9 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
     async def test_create_or_swap_first_login_non_email_sub_seeds_unverified_claim(
         self,
     ):
-        """First login with a non-email| sub: the login did not prove the
-        mailbox, so an unverified, non-primary claim row is still seeded —
+        """First login with a non-email| (google) sub and no email_verified
+        assertion: email_verified defaults to False, so the IdP's claim is
+        untrusted and an unverified, non-primary claim row is seeded —
         ownership of the address must be discoverable from user_emails alone,
         not from the legacy users.primary_email column. The hard-wall verify
         flow confirms (and promotes) it later."""
