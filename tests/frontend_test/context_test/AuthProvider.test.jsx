@@ -70,42 +70,6 @@ describe("AuthProvider", () => {
     });
   });
 
-  it("exposes needsLink when the API reports a colliding sign-in", async () => {
-    getUserPermissions.mockResolvedValue({
-      data: {
-        permissions: [],
-        sub: "u1",
-        user_id: null,
-        email: "a@b.com",
-        identity_type: "external",
-        is_super_admin: false,
-        has_verified_email: false,
-        needs_link: true,
-      },
-    });
-
-    const { result } = renderHook(() => useAuth(), {
-      wrapper: AuthProvider,
-    });
-
-    await waitFor(() => expect(result.current.loading).toBe(false));
-    expect(result.current.needsLink).toBe(true);
-    expect(result.current.hasVerifiedEmail).toBe(false);
-  });
-
-  it("defaults needsLink to false when the API omits it", async () => {
-    getUserPermissions.mockResolvedValue({
-      data: { permissions: [], is_super_admin: false },
-    });
-
-    const { result } = renderHook(() => useAuth(), {
-      wrapper: AuthProvider,
-    });
-
-    await waitFor(() => expect(result.current.loading).toBe(false));
-    expect(result.current.needsLink).toBe(false);
-  });
-
   it("should return empty permissions when user has none", async () => {
     getUserPermissions.mockResolvedValue({ data: { permissions: [] } });
 

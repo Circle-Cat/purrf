@@ -62,36 +62,15 @@ describe("VerifyRequired", () => {
   it("renders the hard-wall heading and description", () => {
     renderWall();
 
+    expect(screen.getByText("Set your contact email")).toBeInTheDocument();
     expect(
-      screen.getByText("Verify your email to continue"),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(/We need a confirmed contact email/),
+      screen.getByText(
+        /Enter an address and the code we send it; it becomes your/,
+      ),
     ).toBeInTheDocument();
     expect(screen.getByTestId("otp-form")).toHaveAttribute(
       "data-lock-email",
       "false",
-    );
-  });
-
-  it("renders the needs-link variant with a locked email", () => {
-    useAuth.mockReturnValue({
-      user: { email: "alice@gmail.com" },
-      needsLink: true,
-      refreshAuth: vi.fn().mockResolvedValue(),
-    });
-
-    renderWall();
-
-    expect(
-      screen.getByText("Link this sign-in to your account"),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(/An account already exists for this email/),
-    ).toBeInTheDocument();
-    expect(screen.getByTestId("otp-form")).toHaveAttribute(
-      "data-lock-email",
-      "true",
     );
   });
 
@@ -132,30 +111,15 @@ describe("VerifyRequired", () => {
       renderWall();
 
       expect(
-        screen.getByText(/We need a confirmed contact email/),
+        screen.getByText(
+          /Enter an address and the code we send it; it becomes your/,
+        ),
       ).toBeInTheDocument();
       expect(
         screen.queryByText(/please contact your manager/),
       ).not.toBeInTheDocument();
     },
   );
-
-  it("keeps the needs-link copy even for a company email", () => {
-    useAuth.mockReturnValue({
-      user: { email: "bob@circlecat.org" },
-      needsLink: true,
-      refreshAuth: vi.fn().mockResolvedValue(),
-    });
-
-    renderWall();
-
-    expect(
-      screen.getByText(/An account already exists for this email/),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByText(/please contact your manager/),
-    ).not.toBeInTheDocument();
-  });
 
   it("prefills the form with the user's email and the verify id prefix", () => {
     renderWall();
