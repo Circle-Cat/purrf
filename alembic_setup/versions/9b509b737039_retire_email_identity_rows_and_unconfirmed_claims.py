@@ -36,9 +36,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Delete email|-subject identity rows and unconfirmed email claims."""
-    op.execute(
-        "DELETE FROM user_identities WHERE subject_identifier LIKE 'email|%'"
-    )
+    op.execute("DELETE FROM user_identities WHERE subject_identifier LIKE 'email|%'")
     op.execute("DELETE FROM user_emails WHERE otp_confirmed = false")
 
 

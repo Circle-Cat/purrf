@@ -84,7 +84,9 @@ class TestAuthMiddleware(unittest.TestCase):
         self.mock_user_identity_service = MagicMock()
         self.mock_user_identity_service.find_user_by_sub = AsyncMock(return_value=None)
         self.mock_user_identity_service.create_or_swap_user = AsyncMock(
-            return_value=None
+            return_value=SimpleNamespace(
+                user_id=1, is_super_admin=False, is_active=True, last_login_at=None
+            )
         )
         self.mock_user_permissions_repository = MagicMock()
         self.mock_user_permissions_repository.get_active_permission_names = AsyncMock(

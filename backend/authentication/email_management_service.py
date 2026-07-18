@@ -561,11 +561,12 @@ class EmailManagementService:
 
         Validates the identity can be unlinked — owned by the caller, not the
         only one, not the current session's, and not an active employee's
-        INTERNAL corp sign-in. Because unlinking also drops the identity's
-        synced contact email, it additionally refuses when that email is the
-        primary (switch the primary first; the primary cannot be deleted). The
-        OTP is sent to the current primary, snapshotted into the signed state so
-        :meth:`confirm_unlink` can detect a swap mid-flow.
+        INTERNAL corp sign-in. As a conservative interim rule pending a product
+        decision on whether unlinking the method behind the primary contact needs
+        special handling, it additionally refuses when that identity's email is
+        the primary (switch the primary first). The OTP is sent to the current
+        primary, snapshotted into the signed state so :meth:`confirm_unlink` can
+        detect a swap mid-flow.
 
         Args:
             session (AsyncSession): The active async database session.

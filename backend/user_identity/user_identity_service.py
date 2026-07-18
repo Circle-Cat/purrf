@@ -279,9 +279,9 @@ class UserIdentityService:
         # address with a confirmed owner would already have routed above,
         # and post-migration every user_emails row is confirmed, so there is
         # no unconfirmed claim left to collide with.
-        if login_dt is not None and (
-            datetime.now(timezone.utc) - login_dt
-        ) > timedelta(seconds=_MAX_FIRST_LOGIN_TOKEN_AGE_SECONDS):
+        if login_dt is not None and (datetime.now(timezone.utc) - login_dt) > timedelta(
+            seconds=_MAX_FIRST_LOGIN_TOKEN_AGE_SECONDS
+        ):
             raise ValueError("Session expired; sign in again")
         user = await self._first_login_insert(
             session=session, user_info=user_info, last_login_at=login_dt
