@@ -136,13 +136,16 @@ class UserIdentityService:
         Resolve a user not found by sub lookup.
 
         Tries step 2 (overwrite a migration-backfilled identity found by
-        email) first; on miss, checks step 2.5 (trusted-assertion routing: a
-        login whose sub is allowlisted and whose address an account has
-        OTP-confirmed returns that account directly — a passwordless login
-        writes nothing, a routed social sub additionally gets its identity
-        row upserted, so the next login resolves at step 1). If no confirmed
-        owner, checks whether the email already belongs to some account and,
-        only when it does not, falls through to step 3 (first-login insert).
+        email) first — an INTERNAL trusted-assertion swap also runs the
+        absorb lifecycle hook, same as every other corp-join path; on miss,
+        checks step 2.5 (trusted-assertion routing: a login whose sub is
+        allowlisted and whose address an account has OTP-confirmed returns
+        that account directly — a passwordless login writes nothing, a
+        routed social sub additionally gets its identity row upserted, so
+        the next login resolves at step 1; an INTERNAL routed login of
+        either kind also runs the absorb hook). If no confirmed owner,
+        checks whether the email already belongs to some account and, only
+        when it does not, falls through to step 3 (first-login insert).
         Writes the resolved user_id back onto `user_info` (mutates the DTO).
 
         Args:
@@ -176,10 +179,24 @@ class UserIdentityService:
                 identity_type=user_info.identity_type,
                 last_login_at=login_dt,
             )
-            if is_trusted_email_assertion(user_info.sub, user_info.email_verified):
+            if is_trusted_email_assertion(
+                user_info.sub, user_info.email_verified, email
+            ):
                 await self._confirm_swapped_claim_email(
                     session=session, user_id=user.user_id, email=email
                 )
+                if IdentityType.INTERNAL == user_info.identity_type:
+                    # A backfilled employee entering via a trusted corp swap
+                    # gets the full lifecycle (permission bundle + primary
+                    # promotion), same as every other corp-join path.
+                    await absorb_internal_identity(
+                        session,
+                        user.user_id,
+                        email,
+                        user_permissions_repository=self.user_permissions_repository,
+                        user_emails_repository=self.user_emails_repository,
+                        logger=self.logger,
+                    )
             user_info.user_id = user.user_id
             return user
 
@@ -191,7 +208,7 @@ class UserIdentityService:
         # Passwordless writes nothing (row-less, idempotent re-resolution);
         # a routed social sub additionally gets its identity row upserted
         # below, so the next login resolves at step 1.
-        if is_trusted_email_assertion(user_info.sub, user_info.email_verified):
+        if is_trusted_email_assertion(user_info.sub, user_info.email_verified, email):
             confirmed = await self.user_emails_repository.get_confirmed_by_email(
                 session=session, email=email
             )
@@ -216,17 +233,20 @@ class UserIdentityService:
                             last_login_at=login_dt,
                         ),
                     )
-                    if IdentityType.INTERNAL == user_info.identity_type:
-                        # An employee's corp sign-in joining an existing
-                        # account mirrors the first-login lifecycle hook.
-                        await absorb_internal_identity(
-                            session,
-                            user.user_id,
-                            email,
-                            user_permissions_repository=self.user_permissions_repository,
-                            user_emails_repository=self.user_emails_repository,
-                            logger=self.logger,
-                        )
+                if IdentityType.INTERNAL == user_info.identity_type:
+                    # An employee's corp sign-in joining an existing account
+                    # mirrors the first-login lifecycle hook. Runs for ANY
+                    # routed login, not just social: absorb is idempotent
+                    # (diffed grants, promotion guarded), so per-request
+                    # re-routing of row-less passwordless subs is safe.
+                    await absorb_internal_identity(
+                        session,
+                        user.user_id,
+                        email,
+                        user_permissions_repository=self.user_permissions_repository,
+                        user_emails_repository=self.user_emails_repository,
+                        logger=self.logger,
+                    )
                 user_info.user_id = user.user_id
                 self.logger.info(
                     "[UserIdentityService] trusted-assertion login routed to "
@@ -338,7 +358,7 @@ class UserIdentityService:
                 row.is_primary = True
         await self.user_emails_repository.upsert_email(session=session, entity=row)
         self.logger.info(
-            "[UserIdentityService] confirmed swapped passwordless claim %s "
+            "[UserIdentityService] confirmed swapped trusted-assertion claim %s "
             "for user_id=%s (promoted_primary=%s)",
             email,
             user_id,
@@ -406,7 +426,7 @@ class UserIdentityService:
         # claim (is_primary=True requires otp_confirmed=True per the
         # user_emails CHECK constraint); the hard-wall verify flow confirms
         # and promotes it later.
-        confirmed = is_trusted_email_assertion(sub, user_info.email_verified)
+        confirmed = is_trusted_email_assertion(sub, user_info.email_verified, email)
         new_email_row = UserEmailsEntity(
             user_id=created_user.user_id,
             email=email,

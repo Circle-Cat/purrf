@@ -324,6 +324,28 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(row.otp_confirmed)
         self.assertTrue(row.is_primary)
 
+    async def test_create_or_swap_swap_google_internal_absorbs_lifecycle(self):
+        """A trusted Google swap for an INTERNAL identity also runs the
+        absorb hook (permission bundle grant), same as every other
+        corp-join path."""
+        self._arrange_swap_hit()
+        row = MagicMock(spec=UserEmailsEntity, otp_confirmed=False, is_primary=False)
+        self.emails_repo.get_by_user_and_email.return_value = row
+        self.emails_repo.has_primary.return_value = False
+        self.permissions_repo.get_active_permission_names.return_value = []
+
+        user_info = UserContextDto(
+            sub="google-oauth2|abc",
+            primary_email="Alice@Example.com",
+            identity_type=IdentityType.INTERNAL,
+            last_login_at=self.iat,
+            email_verified=True,
+        )
+
+        await self.service.create_or_swap_user(self.session, user_info)
+
+        self.permissions_repo.grant.assert_awaited_once()
+
     async def test_create_or_swap_swap_untrusted_sub_leaves_email_untouched(self):
         """Swap via an unlisted connection: the mailbox was never proved by
         the login (default-deny), so the claim row stays unconfirmed
@@ -607,6 +629,8 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
         # Routing links the credential but never creates users or email rows.
         self.users_repo.upsert_users.assert_not_awaited()
         self.emails_repo.upsert_email.assert_not_awaited()
+        # EXTERNAL routed logins never absorb the internal lifecycle.
+        self.permissions_repo.grant.assert_not_awaited()
 
     async def test_create_or_swap_routed_internal_mirrors_employee_lifecycle(self):
         """An employee's corp sign-in routing into an existing account gets
@@ -651,6 +675,34 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
 
         await self.service.create_or_swap_user(self.session, user_info)
 
+        self.identities_repo.upsert_identity.assert_not_awaited()
+
+    async def test_create_or_swap_routed_passwordless_internal_absorbs_lifecycle(
+        self,
+    ):
+        """A routed passwordless (email|) INTERNAL login also runs the
+        absorb hook — INTERNAL absorb applies to ANY routed login, not just
+        social — while staying row-less (no identity upsert)."""
+        user_info = UserContextDto(
+            sub="email|x",
+            primary_email="emp@circlecat.org",
+            identity_type=IdentityType.INTERNAL,
+            email_verified=True,
+        )
+        self.identities_repo.find_swappable_by_email.return_value = None
+        self.emails_repo.get_confirmed_by_email.return_value = MagicMock(
+            spec=UserEmailsEntity, user_id=10, otp_confirmed=True
+        )
+        self.users_repo.get_user_by_user_id.return_value = self.user
+        self.permissions_repo.get_active_permission_names.return_value = []
+        self.emails_repo.get_by_user_and_email.return_value = MagicMock(
+            spec=UserEmailsEntity, email_id=7, otp_confirmed=True, is_primary=False
+        )
+
+        result = await self.service.create_or_swap_user(self.session, user_info)
+
+        self.assertIs(result, self.user)
+        self.permissions_repo.grant.assert_awaited_once()
         self.identities_repo.upsert_identity.assert_not_awaited()
 
     async def test_create_or_swap_untrusted_sub_never_email_routes(self):
