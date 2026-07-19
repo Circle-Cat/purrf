@@ -236,18 +236,14 @@ export default function MeetingManagementDialog({
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
       <div key={roundId} title={tooltipText} className="inline-block">
         <DialogTrigger asChild>
-          <Button
-            variant="default"
-            disabled={isDisabled}
-            onClick={() => console.log("Current meetingRoundId:", roundId)}
-          >
+          <Button variant="default" disabled={isDisabled}>
             <CalendarIcon className="w-4 h-4 mr-2" />
             Manage Meetings
           </Button>
         </DialogTrigger>
       </div>
 
-      <DialogContent className="w-full max-w-2xl !h-auto max-h-[80vh] rounded-xl bg-white shadow-2xl p-0 animate-in fade-in zoom-in-95 duration-200 overflow-visible">
+      <DialogContent className="w-full max-w-2xl rounded-xl bg-white shadow-2xl p-0 animate-in fade-in zoom-in-95 duration-200 overflow-visible">
         {/* Header */}
         <div className="flex items-center justify-between bg-gray-50/50 px-6 py-4 border-b rounded-t-xl">
           <DialogTitle className="text-xl font-semibold text-gray-900 flex items-center gap-2">
