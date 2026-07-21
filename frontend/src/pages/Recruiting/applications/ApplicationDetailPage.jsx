@@ -863,6 +863,12 @@ const ApplicationDetailPage = () => {
       : null;
   const isPipelineStage = next !== null;
   const needsAssignee = isPipelineStage && INTERVIEW_STAGES.has(next);
+  // Reassignment applies only to interview stages, which carry an assignee.
+  // The Offer stage has no rubric and is not assignable (the backend rejects
+  // a reassign there), so the control must not appear even though Offer has a
+  // next stage to advance to (e.g. "hired" for employment jobs).
+  const canReassign =
+    loaded && detail?.isOwner && INTERVIEW_STAGES.has(detail.application.stage);
 
   // Rounds configured for the application's *current* stage (a sibling
   // field to `defaultAssigneeId` on the same per-stage job config entries
@@ -1257,14 +1263,14 @@ const ApplicationDetailPage = () => {
                 evaluatedDisabled={!hasCurrentRoundEvaluation}
                 onSelect={handleSelectSubStatus}
               />
-              {(assigneeName || isPipelineStage) && (
+              {(assigneeName || canReassign) && (
                 <div className="flex flex-wrap items-center gap-2">
                   {assigneeName && (
                     <p className="text-sm text-slate-700">
                       Assigned to: {assigneeName}
                     </p>
                   )}
-                  {isPipelineStage && detail.isOwner && (
+                  {canReassign && (
                     <Button
                       type="button"
                       size="sm"
