@@ -325,6 +325,47 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
 
         self.permissions_repo.grant.assert_awaited_once()
 
+    async def test_swap_external_passwordless_confirms_and_deletes_placeholder(self):
+        """External passwordless swap is row-less: confirm the migrated claim
+        and DELETE the manual| placeholder — never overwrite it into an email|
+        row."""
+        mocked, resolved = self._arrange_swap_hit()
+        row = MagicMock(spec=UserEmailsEntity, otp_confirmed=False, is_primary=False)
+        self.emails_repo.get_by_user_and_email.return_value = row
+        self.emails_repo.has_primary.return_value = False
+
+        result = await self.service.create_or_swap_user(
+            self.session, self._swap_passwordless_user_info()  # email|xyz, external
+        )
+
+        self.assertIs(result, resolved)
+        # confirmed…
+        self.assertTrue(row.otp_confirmed)
+        self.emails_repo.upsert_email.assert_awaited_once_with(
+            session=self.session, entity=row
+        )
+        # …placeholder deleted, NO overwrite (no email| row ever written).
+        self.identities_repo.delete.assert_awaited_once_with(
+            session=self.session, identity_id=7
+        )
+        self.identities_repo.upsert_identity.assert_not_awaited()
+
+    async def test_swap_google_still_overwrites_and_keeps_row(self):
+        """Google swap is NOT row-less: overwrite the placeholder with the real
+        sub (row kept), and never delete it — regression guard."""
+        mocked, resolved = self._arrange_swap_hit()
+        row = MagicMock(spec=UserEmailsEntity, otp_confirmed=False, is_primary=False)
+        self.emails_repo.get_by_user_and_email.return_value = row
+        self.emails_repo.has_primary.return_value = False
+
+        await self.service.create_or_swap_user(
+            self.session,
+            self._swap_passwordless_user_info(sub="google-oauth2|abc"),
+        )
+
+        self.identities_repo.upsert_identity.assert_awaited()
+        self.identities_repo.delete.assert_not_awaited()
+
     async def test_create_or_swap_untrusted_sub_never_swaps(self):
         """The backfill swap is trust-gated: an unlisted connection's email
         claim must not swap into (and thereby enter) a backfilled account.
@@ -748,9 +789,10 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
         self.emails_repo.get_confirmed_by_email.assert_not_awaited()
 
     async def test_create_or_swap_swap_still_wins_over_email_routing(self):
-        """A migration-backfilled (mocked-sub) identity is swapped in place
-        before email-routing is consulted: the swap records the real sub and
-        last_login, which routing alone would never do."""
+        """A migration-backfilled (mocked-sub) identity is resolved before
+        email-routing is consulted: the row-less passwordless swap confirms
+        the claim and deletes the placeholder, which routing alone would
+        never do."""
         user_info = UserContextDto(
             sub="email|otp1",
             primary_email="legacy@b.com",
@@ -760,6 +802,7 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
         )
         mocked = MagicMock(
             spec=UserIdentitiesEntity,
+            identity_id=9,
             user_id=10,
             subject_identifier="mock|legacy",
         )
@@ -772,7 +815,10 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
         result = await self.service.create_or_swap_user(self.session, user_info)
 
         self.assertIs(result, self.user)
-        self.identities_repo.upsert_identity.assert_awaited()
+        self.identities_repo.delete.assert_awaited_once_with(
+            session=self.session, identity_id=9
+        )
+        self.identities_repo.upsert_identity.assert_not_awaited()
         self.emails_repo.get_confirmed_by_email.assert_not_awaited()
 
     async def test_create_or_swap_passwordless_unowned_falls_to_first_login(self):

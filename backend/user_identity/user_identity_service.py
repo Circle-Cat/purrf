@@ -191,6 +191,23 @@ class UserIdentityService:
             session=session, email_claim=email
         )
         if mocked:
+            if is_rowless_login(user_info.sub, user_info.identity_type):
+                # Row-less external passwordless: the OTP round-trip proves the
+                # mailbox, so confirm the backfilled claim and DROP the
+                # migration placeholder — no email| row is recorded. Next login
+                # resolves by confirmed address (step 2.5).
+                await self._confirm_swapped_claim_email(
+                    session=session, user_id=mocked.user_id, email=email
+                )
+                await self.user_identities_repository.delete(
+                    session=session, identity_id=mocked.identity_id
+                )
+                user = await self.users_repository.get_user_by_user_id(
+                    session=session, user_id=mocked.user_id
+                )
+                user_info.user_id = user.user_id
+                return user
+
             user = await self._overwrite_mocked_identity(
                 session=session,
                 identity=mocked,
