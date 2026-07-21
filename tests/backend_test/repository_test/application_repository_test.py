@@ -467,6 +467,94 @@ class TestApplicationRepository(BaseRepositoryTestLib):
         )
         self.assertEqual(found_mentor.application_id, hired_mentor.application_id)
 
+    async def test_get_recent_hired_activity_role_returns_most_recent_role(self):
+        """When a user was hired into more than one activity posting, the
+        role of the most recent application (highest application_id) wins."""
+        mentee_job = JobEntity(
+            kind=JobKind.ACTIVITY,
+            mentorship_role=ParticipantRole.MENTEE,
+            title="Mentee Activity",
+            status=JobStatus.PUBLISHED,
+        )
+        mentor_job = JobEntity(
+            kind=JobKind.ACTIVITY,
+            mentorship_role=ParticipantRole.MENTOR,
+            title="Mentor Activity",
+            status=JobStatus.PUBLISHED,
+        )
+        user = _make_user("A", "B", "recent-role@b.com")
+        await self.insert_entities([mentee_job, mentor_job, user])
+        await self.session.flush()
+
+        repo = ApplicationRepository()
+        # Hired as mentee first, then as mentor. The later (mentor) row has
+        # the higher application_id, so the most recent role is MENTOR.
+        await repo.create(
+            self.session,
+            ApplicationEntity(
+                job_id=mentee_job.job_id,
+                user_id=user.user_id,
+                stage=ApplicationStage.HIRED,
+            ),
+        )
+        await repo.create(
+            self.session,
+            ApplicationEntity(
+                job_id=mentor_job.job_id,
+                user_id=user.user_id,
+                stage=ApplicationStage.HIRED,
+            ),
+        )
+
+        role = await repo.get_recent_hired_activity_role(
+            self.session, user_id=user.user_id
+        )
+        self.assertEqual(role, ParticipantRole.MENTOR)
+
+    async def test_get_recent_hired_activity_role_ignores_non_hired_and_non_activity(
+        self,
+    ):
+        """Only HIRED applications on ACTIVITY postings count; a non-HIRED
+        activity application and a HIRED non-activity application are both
+        ignored, yielding None."""
+        activity_job = JobEntity(
+            kind=JobKind.ACTIVITY,
+            mentorship_role=ParticipantRole.MENTOR,
+            title="Mentor Activity",
+            status=JobStatus.PUBLISHED,
+        )
+        employment_job = JobEntity(
+            kind=JobKind.EMPLOYMENT,
+            title="Some Job",
+            status=JobStatus.PUBLISHED,
+        )
+        user = _make_user("A", "B", "no-role@b.com")
+        await self.insert_entities([activity_job, employment_job, user])
+        await self.session.flush()
+
+        repo = ApplicationRepository()
+        await repo.create(
+            self.session,
+            ApplicationEntity(
+                job_id=activity_job.job_id,
+                user_id=user.user_id,
+                stage=ApplicationStage.RECRUITER_SCREENING,
+            ),
+        )
+        await repo.create(
+            self.session,
+            ApplicationEntity(
+                job_id=employment_job.job_id,
+                user_id=user.user_id,
+                stage=ApplicationStage.HIRED,
+            ),
+        )
+
+        role = await repo.get_recent_hired_activity_role(
+            self.session, user_id=user.user_id
+        )
+        self.assertIsNone(role)
+
     async def test_get_hired_activity_application_returns_none_when_not_hired(self):
         job = JobEntity(
             kind=JobKind.ACTIVITY,

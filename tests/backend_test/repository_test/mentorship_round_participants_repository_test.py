@@ -195,6 +195,83 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
 
         self.assertIsNone(result)
 
+    async def test_get_recent_participant_by_user_id_and_role_filters_by_role(self):
+        """Returns the most recent round matching the requested role, even
+        when a more recent round exists in the OTHER role."""
+        # rounds[0] (2025-06-30) as MENTOR; rounds[1] (2025-12-31, newer) as MENTEE.
+        participants = [
+            MentorshipRoundParticipantsEntity(
+                user_id=self.user.user_id,
+                round_id=self.rounds[0].round_id,
+                participant_role=ParticipantRole.MENTOR,
+            ),
+            MentorshipRoundParticipantsEntity(
+                user_id=self.user.user_id,
+                round_id=self.rounds[1].round_id,
+                participant_role=ParticipantRole.MENTEE,
+            ),
+        ]
+        await self.insert_entities(participants)
+
+        mentor_result = await self.repo.get_recent_participant_by_user_id_and_role(
+            self.session,
+            user_id=self.user.user_id,
+            participant_role=ParticipantRole.MENTOR,
+        )
+        self.assertIsNotNone(mentor_result)
+        # The newer round is a MENTEE round, so the role filter must skip it.
+        self.assertEqual(mentor_result.round_id, self.rounds[0].round_id)
+
+        mentee_result = await self.repo.get_recent_participant_by_user_id_and_role(
+            self.session,
+            user_id=self.user.user_id,
+            participant_role=ParticipantRole.MENTEE,
+        )
+        self.assertIsNotNone(mentee_result)
+        self.assertEqual(mentee_result.round_id, self.rounds[1].round_id)
+
+    async def test_get_recent_participant_by_user_id_and_role_returns_most_recent(self):
+        """Among multiple rounds in the SAME role, returns the one with the
+        latest meetings_completion_deadline_at."""
+        participants = [
+            MentorshipRoundParticipantsEntity(
+                user_id=self.user.user_id,
+                round_id=self.rounds[0].round_id,
+                participant_role=ParticipantRole.MENTEE,
+            ),
+            MentorshipRoundParticipantsEntity(
+                user_id=self.user.user_id,
+                round_id=self.rounds[1].round_id,
+                participant_role=ParticipantRole.MENTEE,
+            ),
+        ]
+        await self.insert_entities(participants)
+
+        result = await self.repo.get_recent_participant_by_user_id_and_role(
+            self.session,
+            user_id=self.user.user_id,
+            participant_role=ParticipantRole.MENTEE,
+        )
+        self.assertIsNotNone(result)
+        self.assertEqual(result.round_id, self.rounds[1].round_id)
+
+    async def test_get_recent_participant_by_user_id_and_role_none_when_no_match(self):
+        """Returns None when the user has participation but not in the role."""
+        await self.insert_entities([
+            MentorshipRoundParticipantsEntity(
+                user_id=self.user.user_id,
+                round_id=self.rounds[0].round_id,
+                participant_role=ParticipantRole.MENTEE,
+            )
+        ])
+
+        result = await self.repo.get_recent_participant_by_user_id_and_role(
+            self.session,
+            user_id=self.user.user_id,
+            participant_role=ParticipantRole.MENTOR,
+        )
+        self.assertIsNone(result)
+
     async def test_upsert_participant_insert(self):
         """Test insert a new participant entity correctly."""
         participant = MentorshipRoundParticipantsEntity(
