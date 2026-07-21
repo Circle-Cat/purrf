@@ -338,6 +338,24 @@ describe("ApplicationDetailPage — role-adaptive right column", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("owner at the Offer stage sees no Reassign button (Offer is not assignable)", async () => {
+    authState.userId = OWNER_ID;
+    // Offer carries no assignment, so the backend returns a null assigneeId.
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, stage: "offer", assigneeId: null }),
+    });
+    renderPage();
+    await waitLoaded();
+
+    // The decision footer still renders, but Offer has no rubric/assignee, so
+    // the Reassign control is hidden (the backend rejects a reassign there).
+    expect(screen.getByRole("button", { name: "Reject" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Reassign" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/^Assigned to:/)).not.toBeInTheDocument();
+  });
+
   it("owner-only viewer sees the How-it-works guide for reviewing applications", async () => {
     const user = userEvent.setup();
     authState.userId = OWNER_ID;
