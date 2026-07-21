@@ -7,6 +7,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
 from backend.common.fast_api_response_wrapper import api_response
+from backend.common.identity_type import is_rowless_login
 from backend.common.permissions import (
     Permission,
     SERVICE_ACCOUNT_PERMISSIONS,
@@ -189,9 +190,14 @@ class AuthMiddleware(BaseHTTPMiddleware):
         """
         async with self.database.session() as session:
             async with session.begin():
-                user = await self.user_identity_service.find_user_by_sub(
-                    session, user_context.sub, user_context.last_login_at
-                )
+                rowless = is_rowless_login(user_context.sub, user_context.identity_type)
+                user = None
+                if not rowless:
+                    # Sub-routed (google / INTERNAL, incl. corp passwordless):
+                    # single JOIN resolves the steady state.
+                    user = await self.user_identity_service.find_user_by_sub(
+                        session, user_context.sub, user_context.last_login_at
+                    )
                 if user is None:
                     try:
                         # SAVEPOINT around the insert: on a concurrent first
@@ -202,11 +208,18 @@ class AuthMiddleware(BaseHTTPMiddleware):
                                 session, user_context
                             )
                     except IntegrityError:
-                        # A concurrent first login may have won and committed;
-                        # re-find its row in the still-open outer transaction.
-                        user = await self.user_identity_service.find_user_by_sub(
-                            session, user_context.sub, user_context.last_login_at
-                        )
+                        # A concurrent first login committed the winner.
+                        if rowless:
+                            # Row-less winner wrote no identity row — re-resolve
+                            # by confirmed address (routes to the winner).
+                            user = await self.user_identity_service.create_or_swap_user(
+                                session, user_context
+                            )
+                        else:
+                            # Sub-routed winner recorded its sub — re-find it.
+                            user = await self.user_identity_service.find_user_by_sub(
+                                session, user_context.sub, user_context.last_login_at
+                            )
                         if user is None:
                             # Not the race — a real bug. Must surface.
                             raise

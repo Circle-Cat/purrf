@@ -325,6 +325,48 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
 
         self.permissions_repo.grant.assert_awaited_once()
 
+    async def test_swap_external_passwordless_confirms_and_deletes_placeholder(self):
+        """External passwordless swap is row-less: confirm the migrated claim
+        and DELETE the manual| placeholder — never overwrite it into an email|
+        row."""
+        _, resolved = self._arrange_swap_hit()
+        row = MagicMock(spec=UserEmailsEntity, otp_confirmed=False, is_primary=False)
+        self.emails_repo.get_by_user_and_email.return_value = row
+        self.emails_repo.has_primary.return_value = False
+
+        result = await self.service.create_or_swap_user(
+            self.session,
+            self._swap_passwordless_user_info(),  # email|xyz, external
+        )
+
+        self.assertIs(result, resolved)
+        # confirmed…
+        self.assertTrue(row.otp_confirmed)
+        self.emails_repo.upsert_email.assert_awaited_once_with(
+            session=self.session, entity=row
+        )
+        # …placeholder deleted, NO overwrite (no email| row ever written).
+        self.identities_repo.delete.assert_awaited_once_with(
+            session=self.session, identity_id=7
+        )
+        self.identities_repo.upsert_identity.assert_not_awaited()
+
+    async def test_swap_google_still_overwrites_and_keeps_row(self):
+        """Google swap is NOT row-less: overwrite the placeholder with the real
+        sub (row kept), and never delete it — regression guard."""
+        self._arrange_swap_hit()
+        row = MagicMock(spec=UserEmailsEntity, otp_confirmed=False, is_primary=False)
+        self.emails_repo.get_by_user_and_email.return_value = row
+        self.emails_repo.has_primary.return_value = False
+
+        await self.service.create_or_swap_user(
+            self.session,
+            self._swap_passwordless_user_info(sub="google-oauth2|abc"),
+        )
+
+        self.identities_repo.upsert_identity.assert_awaited()
+        self.identities_repo.delete.assert_not_awaited()
+
     async def test_create_or_swap_untrusted_sub_never_swaps(self):
         """The backfill swap is trust-gated: an unlisted connection's email
         claim must not swap into (and thereby enter) a backfilled account.
@@ -372,10 +414,8 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
         self.emails_repo.upsert_email.assert_not_awaited()
 
     async def test_create_or_swap_first_login_email_sub(self):
-        """First login with email| sub: creates user, identity AND user_emails.
-        email_verified=True (Auth0-verified) -> otp_confirmed True. Uses a
-        fresh (just-happened) iat so the first-login staleness guard
-        (PUR-505) does not trip."""
+        """External passwordless first login is ROW-LESS: creates user +
+        confirmed user_emails, but writes NO user_identities row."""
         user_info = UserContextDto(
             sub="email|xyz",
             primary_email="Carol@Example.com",
@@ -391,22 +431,40 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
 
         self.assertIs(result, created)
         self.users_repo.upsert_users.assert_awaited_once()
-        # new identity row carries last_login_at
-        identity = self.identities_repo.upsert_identity.call_args.kwargs["entity"]
-        self.assertEqual(identity.subject_identifier, "email|xyz")
-        self.assertEqual(identity.user_id, 99)
-        self.assertEqual(identity.last_login_at, self.fresh_iat_dt)
-        # email| sub -> user_emails write
+        # ROW-LESS: no identity row written.
+        self.identities_repo.upsert_identity.assert_not_awaited()
+        # confirmed primary user_emails row still seeded.
         self.emails_repo.upsert_email.assert_awaited_once()
         email_row = self.emails_repo.upsert_email.call_args.kwargs["entity"]
-        self.assertIsInstance(email_row, UserEmailsEntity)
         self.assertEqual(email_row.email, "carol@example.com")
         self.assertTrue(email_row.otp_confirmed)
         self.assertTrue(email_row.is_primary)
-        # non-internal identity: no permission grant
         self.permissions_repo.grant.assert_not_awaited()
-        # DTO user_id write-back
         self.assertEqual(user_info.user_id, 99)
+
+    async def test_create_or_swap_first_login_internal_email_sub_writes_identity(self):
+        """Corp (INTERNAL) passwordless first login is NOT row-less: it still
+        records the identity row so the user is classified internal."""
+        user_info = UserContextDto(
+            sub="email|xyz",
+            primary_email="dev@circlecat.org",
+            identity_type=IdentityType.INTERNAL,
+            last_login_at=self.fresh_iat,
+            email_verified=True,
+        )
+        self.identities_repo.find_swappable_by_email.return_value = None
+        created = MagicMock(spec=UsersEntity, user_id=42)
+        self.users_repo.upsert_users.return_value = created
+
+        result = await self.service.create_or_swap_user(self.session, user_info)
+
+        self.assertIs(result, created)
+        self.identities_repo.upsert_identity.assert_awaited_once()
+        identity = self.identities_repo.upsert_identity.call_args.kwargs["entity"]
+        self.assertEqual(identity.subject_identifier, "email|xyz")
+        self.assertEqual(identity.user_id, 42)
+        # INTERNAL first-login grants the employee bundle.
+        self.permissions_repo.grant.assert_awaited_once()
 
     async def test_create_or_swap_first_login_non_email_sub_untrusted_raises(
         self,
@@ -732,9 +790,10 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
         self.emails_repo.get_confirmed_by_email.assert_not_awaited()
 
     async def test_create_or_swap_swap_still_wins_over_email_routing(self):
-        """A migration-backfilled (mocked-sub) identity is swapped in place
-        before email-routing is consulted: the swap records the real sub and
-        last_login, which routing alone would never do."""
+        """A migration-backfilled (mocked-sub) identity is resolved before
+        email-routing is consulted: the row-less passwordless swap confirms
+        the claim and deletes the placeholder, which routing alone would
+        never do."""
         user_info = UserContextDto(
             sub="email|otp1",
             primary_email="legacy@b.com",
@@ -744,6 +803,7 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
         )
         mocked = MagicMock(
             spec=UserIdentitiesEntity,
+            identity_id=9,
             user_id=10,
             subject_identifier="mock|legacy",
         )
@@ -756,7 +816,10 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
         result = await self.service.create_or_swap_user(self.session, user_info)
 
         self.assertIs(result, self.user)
-        self.identities_repo.upsert_identity.assert_awaited()
+        self.identities_repo.delete.assert_awaited_once_with(
+            session=self.session, identity_id=9
+        )
+        self.identities_repo.upsert_identity.assert_not_awaited()
         self.emails_repo.get_confirmed_by_email.assert_not_awaited()
 
     async def test_create_or_swap_passwordless_unowned_falls_to_first_login(self):
