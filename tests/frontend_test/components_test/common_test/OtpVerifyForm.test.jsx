@@ -36,46 +36,6 @@ describe("OtpVerifyForm", () => {
     ).toBeInTheDocument();
   });
 
-  it("locks the email input when lockEmail is set", () => {
-    render(
-      <OtpVerifyForm
-        initialEmail="alice@gmail.com"
-        onVerified={vi.fn()}
-        lockEmail
-      />,
-    );
-
-    expect(screen.getByLabelText("Email address")).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Send code" })).toBeEnabled();
-  });
-
-  it("hides 'Use a different email' on the code step when lockEmail is set", async () => {
-    const user = userEvent.setup();
-    initiateEmailVerification.mockResolvedValue({ data: { state: "st-1" } });
-
-    render(
-      <OtpVerifyForm
-        initialEmail="alice@gmail.com"
-        onVerified={vi.fn()}
-        lockEmail
-      />,
-    );
-
-    await user.click(screen.getByRole("button", { name: "Send code" }));
-
-    await waitFor(() =>
-      expect(
-        screen.getByLabelText("Enter the code sent to alice@gmail.com"),
-      ).toBeInTheDocument(),
-    );
-    expect(
-      screen.queryByRole("button", { name: "Use a different email" }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "Resend code" }),
-    ).toBeInTheDocument();
-  });
-
   it("warns and does not call the API when the email is blank", async () => {
     const user = userEvent.setup();
     render(<OtpVerifyForm onVerified={vi.fn()} />);

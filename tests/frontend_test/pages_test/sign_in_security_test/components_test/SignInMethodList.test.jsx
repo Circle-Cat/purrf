@@ -71,9 +71,30 @@ describe("SignInMethodList", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("renders an email without a matching identity as an Unverified row with a Verify action", async () => {
-    const onVerify = vi.fn();
-    const user = userEvent.setup();
+  it("renders an email without a matching identity as its own contact row", () => {
+    const backup = {
+      emailId: 3,
+      email: "backup@x.com",
+      otpConfirmed: true,
+      isPrimary: false,
+    };
+    render(
+      <SignInMethodList
+        emails={[backup]}
+        internalIdentities={[]}
+        externalIdentities={[makeIdentity()]}
+        isLoading={false}
+        onUnlink={vi.fn()}
+      />,
+    );
+
+    const rows = screen.getAllByRole("listitem");
+    expect(rows).toHaveLength(2);
+    // Identity rows come first; the contact-only address trails.
+    expect(within(rows[1]).getByText("backup@x.com")).toBeInTheDocument();
+  });
+
+  it("never shows an Unverified badge or a Verify action, confirmed or not", () => {
     const backup = {
       emailId: 3,
       email: "backup@x.com",
@@ -87,18 +108,13 @@ describe("SignInMethodList", () => {
         externalIdentities={[makeIdentity()]}
         isLoading={false}
         onUnlink={vi.fn()}
-        onVerify={onVerify}
       />,
     );
 
-    const rows = screen.getAllByRole("listitem");
-    expect(rows).toHaveLength(2);
-    // Identity rows come first; the contact-only address trails.
-    expect(within(rows[1]).getByText("backup@x.com")).toBeInTheDocument();
-    expect(within(rows[1]).getByText("Unverified")).toBeInTheDocument();
-
-    await user.click(within(rows[1]).getByRole("button", { name: "Verify" }));
-    expect(onVerify).toHaveBeenCalledWith(backup);
+    expect(screen.queryByText("Unverified")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Verify" }),
+    ).not.toBeInTheDocument();
   });
 
   it("does not repeat an email already shown on its sign-in method row", () => {
@@ -115,7 +131,6 @@ describe("SignInMethodList", () => {
         externalIdentities={[makeIdentity({ subjectIdentifier: "email|abc" })]}
         isLoading={false}
         onUnlink={vi.fn()}
-        onVerify={vi.fn()}
       />,
     );
 
@@ -137,7 +152,6 @@ describe("SignInMethodList", () => {
         internalIdentities={[]}
         externalIdentities={[]}
         isLoading={false}
-        onVerify={vi.fn()}
       />,
     );
 
@@ -360,7 +374,7 @@ describe("SignInMethodList", () => {
       );
 
       const rows = screen.getAllByRole("listitem");
-      // Internal row (first) has no Remove; the external one does (total > 1).
+      // Internal row (first) has no Remove; the external one always does.
       expect(
         within(rows[0]).queryByRole("button", { name: "Remove" }),
       ).not.toBeInTheDocument();
@@ -369,7 +383,10 @@ describe("SignInMethodList", () => {
       ).toBeInTheDocument();
     });
 
-    it("does not offer Remove when only one sign-in method remains", () => {
+    it("offers Remove for a lone non-current-session external identity", () => {
+      // The deleted-guard era withheld Remove when only one sign-in method
+      // remained; a verified primary email is always a login path, so no
+      // lockout is possible and Remove is always offered here.
       const externalIdentities = [
         makeIdentity({ identityId: 1, subjectIdentifier: "google-oauth2|1" }),
       ];
@@ -384,8 +401,8 @@ describe("SignInMethodList", () => {
       );
 
       expect(
-        screen.queryByRole("button", { name: "Remove" }),
-      ).not.toBeInTheDocument();
+        screen.getByRole("button", { name: "Remove" }),
+      ).toBeInTheDocument();
     });
 
     it("offers Remove on every external identity when more than one exists", () => {
@@ -513,7 +530,6 @@ describe("SignInMethodList", () => {
           isLoading={false}
           onUnlink={vi.fn()}
           onSetPrimary={vi.fn()}
-          onVerify={vi.fn()}
         />,
       );
 
@@ -541,7 +557,6 @@ describe("SignInMethodList", () => {
           externalIdentities={[makeIdentity()]}
           isLoading={false}
           onUnlink={vi.fn()}
-          onVerify={vi.fn()}
           onRemove={onRemove}
         />,
       );
@@ -562,7 +577,6 @@ describe("SignInMethodList", () => {
           externalIdentities={[makeIdentity()]}
           isLoading={false}
           onUnlink={vi.fn()}
-          onVerify={vi.fn()}
           onRemove={onRemove}
         />,
       );
@@ -581,7 +595,6 @@ describe("SignInMethodList", () => {
           externalIdentities={[makeIdentity()]}
           isLoading={false}
           onUnlink={vi.fn()}
-          onVerify={vi.fn()}
           onRemove={vi.fn()}
         />,
       );
@@ -600,7 +613,6 @@ describe("SignInMethodList", () => {
           externalIdentities={[]}
           isLoading={false}
           onUnlink={vi.fn()}
-          onVerify={vi.fn()}
         />,
       );
 
@@ -625,7 +637,6 @@ describe("SignInMethodList", () => {
           externalIdentities={[]}
           isLoading={false}
           onUnlink={vi.fn()}
-          onVerify={vi.fn()}
           onRemove={onRemove}
         />,
       );
@@ -690,8 +701,8 @@ describe("SignInMethodList", () => {
       );
 
       const rows = screen.getAllByRole("listitem");
-      // total > 1 so canUnlink is true, but the current-session row still has
-      // no Remove control; the other external identity keeps its own.
+      // The current-session row still has no Remove control regardless of
+      // canUnlink; the other external identity keeps its own.
       expect(
         within(rows[0]).queryByRole("button", { name: "Remove" }),
       ).not.toBeInTheDocument();

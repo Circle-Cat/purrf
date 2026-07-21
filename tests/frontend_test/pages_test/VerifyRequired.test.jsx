@@ -21,12 +21,11 @@ vi.mock("@/utils/auth", () => ({
 // Surface the props the page wires into the shared form, plus a trigger to
 // drive onVerified without exercising the OTP flow itself.
 vi.mock("@/components/common/OtpVerifyForm", () => ({
-  default: ({ initialEmail, idPrefix, onVerified, lockEmail }) => (
+  default: ({ initialEmail, idPrefix, onVerified }) => (
     <div
       data-testid="otp-form"
       data-initial-email={initialEmail}
       data-idprefix={idPrefix}
-      data-lock-email={String(Boolean(lockEmail))}
     >
       <button onClick={() => onVerified({ ok: true })}>
         simulate verified
@@ -68,10 +67,6 @@ describe("VerifyRequired", () => {
         /Enter an address and the code we send it; it becomes your/,
       ),
     ).toBeInTheDocument();
-    expect(screen.getByTestId("otp-form")).toHaveAttribute(
-      "data-lock-email",
-      "false",
-    );
   });
 
   it.each(["bob@circlecat.org", "Bob@CircleCat.org"])(
@@ -90,11 +85,6 @@ describe("VerifyRequired", () => {
       expect(
         screen.getByText(/please contact your manager/),
       ).toBeInTheDocument();
-      // Hint only — the address field stays editable.
-      expect(screen.getByTestId("otp-form")).toHaveAttribute(
-        "data-lock-email",
-        "false",
-      );
     },
   );
 

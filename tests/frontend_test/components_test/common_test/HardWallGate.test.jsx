@@ -23,6 +23,7 @@ describe("HardWallGate Component", () => {
    * @param {boolean} [options.loading=false] - The auth context loading state.
    * @param {boolean} [options.accessDenied=false] - Whether the auth pull came back 403.
    * @param {string} [options.accessDeniedMessage=""] - The denial reason from the 403 response.
+   * @param {string | null} [options.authRefusalMessage=null] - The refusal reason from a 400 response.
    * @param {string} options.initialPath - The path the router starts at.
    * @returns {Object} React Testing Library render result.
    */
@@ -33,6 +34,7 @@ describe("HardWallGate Component", () => {
     accessDeniedMessage = "",
     authError = false,
     sessionExpired = false,
+    authRefusalMessage = null,
     initialPath,
   }) => {
     useAuth.mockReturnValue({
@@ -42,6 +44,7 @@ describe("HardWallGate Component", () => {
       accessDeniedMessage,
       authError,
       sessionExpired,
+      authRefusalMessage,
       refreshAuth: vi.fn(),
     });
     return render(
@@ -175,6 +178,24 @@ describe("HardWallGate Component", () => {
 
     expect(screen.getByText(/session has expired/i)).toBeInTheDocument();
     expect(screen.queryByText("Verify Wall")).not.toBeInTheDocument();
+  });
+
+  test("shows the refusal screen (not the verify wall) on a 400 refusal", () => {
+    const message = "Sign in with a supported method.";
+    renderGate({
+      hasVerifiedEmail: false,
+      authError: true,
+      authRefusalMessage: message,
+      initialPath: ROUTE_PATHS.DASHBOARD,
+    });
+
+    expect(screen.getByText("Sign-in was refused")).toBeInTheDocument();
+    expect(screen.getByText(message)).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /retry/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Verify Wall")).not.toBeInTheDocument();
+    expect(screen.queryByText("Dashboard Page")).not.toBeInTheDocument();
   });
 
   test("prefers the 403 page over the auth-error screen", () => {

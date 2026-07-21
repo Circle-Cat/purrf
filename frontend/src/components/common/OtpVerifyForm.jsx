@@ -27,15 +27,8 @@ const errorMessage = (error) =>
  * @param {(result: object) => (void|Promise<void>)} props.onVerified - called with
  *   the verify API result after success; the parent decides what happens next.
  * @param {string} [props.idPrefix] - DOM id prefix for the inputs (default "otp").
- * @param {boolean} [props.lockEmail] - render the address read-only (the
- *   needs-link wall only ever verifies the sign-in's own email).
  */
-const OtpVerifyForm = ({
-  initialEmail = "",
-  onVerified,
-  idPrefix = "otp",
-  lockEmail = false,
-}) => {
+const OtpVerifyForm = ({ initialEmail = "", onVerified, idPrefix = "otp" }) => {
   const [step, setStep] = useState(STEP_EMAIL);
   const [email, setEmail] = useState(initialEmail);
   const [stateToken, setStateToken] = useState(null);
@@ -91,7 +84,7 @@ const OtpVerifyForm = ({
           id={`${idPrefix}-email`}
           type="email"
           value={email}
-          disabled={busy || lockEmail}
+          disabled={busy}
           onChange={(e) => setEmail(e.target.value)}
           placeholder="you@example.com"
         />
@@ -127,17 +120,15 @@ const OtpVerifyForm = ({
         >
           Resend code
         </Button>
-        {!lockEmail && (
-          <Button
-            type="button"
-            variant="link"
-            className="h-auto p-0 text-muted-foreground"
-            onClick={useDifferentEmail}
-            disabled={busy}
-          >
-            Use a different email
-          </Button>
-        )}
+        <Button
+          type="button"
+          variant="link"
+          className="h-auto p-0 text-muted-foreground"
+          onClick={useDifferentEmail}
+          disabled={busy}
+        >
+          Use a different email
+        </Button>
       </div>
     </div>
   );

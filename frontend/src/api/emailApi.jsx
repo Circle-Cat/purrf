@@ -2,9 +2,9 @@ import request from "@/utils/request";
 import { API_ENDPOINTS } from "@/constants/ApiEndpoints";
 
 /**
- * Remove an unverified backup contact email from the caller's account. The
- * backend refuses the primary contact and verified addresses (those are
- * removed via the sign-in method unlink flow).
+ * Remove a non-primary contact email from the caller's account, verified or
+ * not. The backend refuses only the primary address and the address behind
+ * the caller's own current passwordless session.
  *
  * @param {number} emailId
  * @returns {Promise<{ data: { ok: boolean } }>}
@@ -25,16 +25,12 @@ export async function initiateEmailVerification(email) {
 }
 
 /**
- * Confirm the OTP for a previously initiated verification.
- *
- * Normal mode returns `{ ok, email }`: confirming an address never creates a
- * new sign-in identity. Needs-link mode (linking a colliding sign-in into an
- * existing account) additionally returns `linked_sub`, the sub that was
- * linked.
+ * Confirm the OTP for a previously initiated verification. Confirming an
+ * address never creates a new sign-in identity.
  *
  * @param {string} state - token returned by initiateEmailVerification
  * @param {string} otp - the 6-digit code the user received
- * @returns {Promise<{ data: { ok: boolean, email: string, linked_sub?: string } }>}
+ * @returns {Promise<{ data: { ok: boolean, email: string } }>}
  */
 export async function verifyEmailOtp(state, otp) {
   return await request.post(API_ENDPOINTS.EMAIL_OTP_VERIFY, { state, otp });
@@ -84,7 +80,7 @@ export async function confirmSetPrimary(emailId, state, code) {
 /**
  * Begin a step-up unlink of one of the caller's sign-in identities: the backend
  * sends an OTP to the current primary and returns a signed state. Unlinking
- * also drops the identity's synced contact email when nothing else uses it.
+ * removes only the sign-in method itself; contact-email rows are untouched.
  *
  * @param {number} identityId
  * @returns {Promise<{ data: { state: string } }>}
