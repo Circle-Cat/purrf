@@ -57,8 +57,9 @@ class RegistrationService:
                 The mapper for converting mentorship rounds and entities to DTOs.
             training_repository: The repository responsible for handling training data.
             application_repository: The repository responsible for looking up recruiting
-                                    activity applications, used to gate round registration
-                                    on an approved (HIRED) application for the role.
+                                    activity applications. Round registration derives the
+                                    participant role from the user's approved (HIRED)
+                                    activity application, which also gates registration.
         """
         self.logger = logger
         self.preferences_repo = preferences_repository
@@ -81,9 +82,11 @@ class RegistrationService:
 
         This method:
         1. Validates the existence of the mentorship round.
-        2. Checks if the application deadline has passed. If the round is still open, updates both
+        2. Resolves the user's participant role from their most recent approved (HIRED)
+            activity application, blocking registration when none exists.
+        3. Checks if the application deadline has passed. If the round is still open, updates both
             global and round-specific preferences for user.
-        3. Commits the changes to the database.
+        4. Commits the changes to the database.
 
         Args:
             session (AsyncSession): Active SQLAlchemy async session.
@@ -104,12 +107,8 @@ class RegistrationService:
             )
             raise ValueError(f"Mentorship round {round_id} not found.")
 
-        participant_role = (
-            await self.participation_service.resolve_participant_role_with_fallback(
-                session=session,
-                user_context=user_context,
-                user_id=user_context.user_id,
-            )
+        participant_role = await self._resolve_hired_participant_role(
+            session=session, user_id=user_context.user_id
         )
         preferences_data.round_preferences.participant_role = participant_role
 
@@ -141,24 +140,6 @@ class RegistrationService:
             )
             raise ValueError(
                 f"Registration period has ended at {application_deadline}."
-            )
-
-        approved_application = (
-            await self.application_repo.get_hired_activity_application(
-                session=session,
-                user_id=user_context.user_id,
-                mentorship_role=participant_role,
-            )
-        )
-        if not approved_application:
-            self.logger.error(
-                "[RegistrationService] user %s tried to register for round %s as %s without an approved application.",
-                user_context.user_id,
-                round_id,
-                participant_role.value,
-            )
-            raise ValueError(
-                f"Please complete your {participant_role.value} application before registering for a round."
             )
 
         global_pref = await self._update_skill_and_industry_preferences(
@@ -213,6 +194,41 @@ class RegistrationService:
             is_onboarding_training_completed=onboarding_training.status
             == TrainingStatus.DONE,
         )
+
+    async def _resolve_hired_participant_role(
+        self, session: AsyncSession, user_id: int
+    ) -> ParticipantRole:
+        """
+        Resolve the user's participant role from their most recent approved
+        (HIRED) activity application — the single source of truth for a
+        user's mentor/mentee role, shared by both the registration GET and
+        POST paths.
+
+        Raises ValueError when the user has no such application: they are not
+        eligible to register for (or view a registration form scoped to) a
+        mentorship round until they have been hired into a mentor/mentee
+        activity posting.
+
+        Args:
+            session (AsyncSession): Active SQLAlchemy async session.
+            user_id (int): The ID of the current user.
+
+        Returns:
+            ParticipantRole: The role from the user's most recent HIRED
+                activity application.
+        """
+        participant_role = await self.application_repo.get_recent_hired_activity_role(
+            session=session, user_id=user_id
+        )
+        if participant_role is None:
+            self.logger.error(
+                "[RegistrationService] user %s has no approved activity application; cannot resolve participant role.",
+                user_id,
+            )
+            raise ValueError(
+                "Please complete your mentor or mentee application before registering for a round."
+            )
+        return participant_role
 
     async def _update_skill_and_industry_preferences(
         self, session: AsyncSession, user_id: int, data: RegistrationCreateDto
@@ -375,6 +391,10 @@ class RegistrationService:
 
         current_user_id = user_context.user_id
 
+        participant_role = await self._resolve_hired_participant_role(
+            session=session, user_id=current_user_id
+        )
+
         global_preferences = await self._get_skill_and_industry_preferences(
             session=session, user_id=current_user_id
         )
@@ -383,9 +403,9 @@ class RegistrationService:
             is_registered,
         ) = await self.participation_service.get_user_round_preferences(
             session=session,
-            user_context=user_context,
             user_id=current_user_id,
             round_id=round_id,
+            participant_role=participant_role,
         )
 
         return RegistrationDto(

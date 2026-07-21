@@ -95,6 +95,58 @@ class MentorshipRoundParticipantsRepository:
 
         return result.scalars().one_or_none()
 
+    async def get_recent_participant_by_user_id_and_role(
+        self,
+        session: AsyncSession,
+        user_id: int,
+        participant_role: ParticipantRole,
+    ) -> MentorshipRoundParticipantsEntity | None:
+        """
+        Retrieve the user's most recent mentorship round participant record
+        for a specific role, ordered by the round's
+        meetings_completion_deadline_at descending.
+
+        Used to pre-fill a new round's registration form with the user's
+        carried-over preferences from a prior round in the SAME role, so a
+        mentee's form is never seeded from a round they attended as a mentor
+        (or vice versa). Rounds without meetings_completion_deadline_at are
+        skipped because their timeline is not finalized.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            user_id (int): User id.
+            participant_role (ParticipantRole): The role to match.
+
+        Returns:
+            MentorshipRoundParticipantsEntity | None: The matching participant or None.
+        """
+        result = await session.execute(
+            select(MentorshipRoundParticipantsEntity)
+            .join(
+                MentorshipRoundEntity,
+                MentorshipRoundEntity.round_id
+                == MentorshipRoundParticipantsEntity.round_id,
+            )
+            .where(
+                MentorshipRoundParticipantsEntity.user_id == user_id,
+                MentorshipRoundParticipantsEntity.participant_role == participant_role,
+                MentorshipRoundEntity.description[
+                    "meetings_completion_deadline_at"
+                ].astext.isnot(None),
+            )
+            .order_by(
+                cast(
+                    MentorshipRoundEntity.description[
+                        "meetings_completion_deadline_at"
+                    ].astext,
+                    TIMESTAMP(timezone=True),
+                ).desc()
+            )
+            .limit(1)
+        )
+
+        return result.scalars().one_or_none()
+
     async def list_distinct_user_roles(
         self, session: AsyncSession
     ) -> list[tuple[int, ParticipantRole]]:
