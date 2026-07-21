@@ -372,10 +372,8 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
         self.emails_repo.upsert_email.assert_not_awaited()
 
     async def test_create_or_swap_first_login_email_sub(self):
-        """First login with email| sub: creates user, identity AND user_emails.
-        email_verified=True (Auth0-verified) -> otp_confirmed True. Uses a
-        fresh (just-happened) iat so the first-login staleness guard
-        (PUR-505) does not trip."""
+        """External passwordless first login is ROW-LESS: creates user +
+        confirmed user_emails, but writes NO user_identities row."""
         user_info = UserContextDto(
             sub="email|xyz",
             primary_email="Carol@Example.com",
@@ -391,22 +389,40 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
 
         self.assertIs(result, created)
         self.users_repo.upsert_users.assert_awaited_once()
-        # new identity row carries last_login_at
-        identity = self.identities_repo.upsert_identity.call_args.kwargs["entity"]
-        self.assertEqual(identity.subject_identifier, "email|xyz")
-        self.assertEqual(identity.user_id, 99)
-        self.assertEqual(identity.last_login_at, self.fresh_iat_dt)
-        # email| sub -> user_emails write
+        # ROW-LESS: no identity row written.
+        self.identities_repo.upsert_identity.assert_not_awaited()
+        # confirmed primary user_emails row still seeded.
         self.emails_repo.upsert_email.assert_awaited_once()
         email_row = self.emails_repo.upsert_email.call_args.kwargs["entity"]
-        self.assertIsInstance(email_row, UserEmailsEntity)
         self.assertEqual(email_row.email, "carol@example.com")
         self.assertTrue(email_row.otp_confirmed)
         self.assertTrue(email_row.is_primary)
-        # non-internal identity: no permission grant
         self.permissions_repo.grant.assert_not_awaited()
-        # DTO user_id write-back
         self.assertEqual(user_info.user_id, 99)
+
+    async def test_create_or_swap_first_login_internal_email_sub_writes_identity(self):
+        """Corp (INTERNAL) passwordless first login is NOT row-less: it still
+        records the identity row so the user is classified internal."""
+        user_info = UserContextDto(
+            sub="email|xyz",
+            primary_email="dev@circlecat.org",
+            identity_type=IdentityType.INTERNAL,
+            last_login_at=self.fresh_iat,
+            email_verified=True,
+        )
+        self.identities_repo.find_swappable_by_email.return_value = None
+        created = MagicMock(spec=UsersEntity, user_id=42)
+        self.users_repo.upsert_users.return_value = created
+
+        result = await self.service.create_or_swap_user(self.session, user_info)
+
+        self.assertIs(result, created)
+        self.identities_repo.upsert_identity.assert_awaited_once()
+        identity = self.identities_repo.upsert_identity.call_args.kwargs["entity"]
+        self.assertEqual(identity.subject_identifier, "email|xyz")
+        self.assertEqual(identity.user_id, 42)
+        # INTERNAL first-login grants the employee bundle.
+        self.permissions_repo.grant.assert_awaited_once()
 
     async def test_create_or_swap_first_login_non_email_sub_untrusted_raises(
         self,

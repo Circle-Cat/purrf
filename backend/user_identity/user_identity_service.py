@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.common.identity_type import IdentityType
+from backend.common.identity_type import IdentityType, is_rowless_login
 from backend.common.mentorship_enums import CommunicationMethod
 from backend.common.permissions import INTERNAL_EMPLOYEE_PERMISSIONS
 from backend.common.trusted_connections import is_trusted_email_assertion
@@ -414,16 +414,20 @@ class UserIdentityService:
             session=session, entity=new_user
         )
 
-        new_identity = UserIdentitiesEntity(
-            user_id=created_user.user_id,
-            subject_identifier=sub,
-            identity_type=user_info.identity_type,
-            email_claim=email,
-            last_login_at=last_login_at,
-        )
-        await self.user_identities_repository.upsert_identity(
-            session=session, entity=new_identity
-        )
+        # Row-less external passwordless leaves no user_identities row — the
+        # confirmed user_emails row seeded below is its sole anchor. google /
+        # INTERNAL (incl. corp passwordless) still record a sub-routed row.
+        if not is_rowless_login(sub, user_info.identity_type):
+            new_identity = UserIdentitiesEntity(
+                user_id=created_user.user_id,
+                subject_identifier=sub,
+                identity_type=user_info.identity_type,
+                email_claim=email,
+                last_login_at=last_login_at,
+            )
+            await self.user_identities_repository.upsert_identity(
+                session=session, entity=new_identity
+            )
 
         # Every login reaching this insert is a trusted assertion (guard 1 in
         # create_or_swap_user refuses anything else before this method runs):
