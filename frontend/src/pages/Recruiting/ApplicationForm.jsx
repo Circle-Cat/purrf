@@ -11,7 +11,7 @@ import { ProfileFields } from "@/constants/ApiEndpoints";
 import {
   buildNewWriteBackRows,
   hasPersonalWriteBackInput,
-  mergeWriteBackPayload,
+  buildWriteBackPayload,
 } from "@/pages/Recruiting/profileWriteBack";
 import { profileToApplicationForm } from "@/pages/Recruiting/profilePrefill";
 
@@ -40,12 +40,13 @@ import { profileToApplicationForm } from "@/pages/Recruiting/profilePrefill";
  * When "save to my profile" is checked, a successful submission is followed
  * by a best-effort write-back of the form's personal fields and complete
  * education/experience rows to the applicant's profile: the current profile
- * is fetched first, personal fields are merged over the stored user, and the
- * new rows are MERGED into its lists (the backend PATCH fully replaces each list, so
- * sending only the new rows would wipe existing entries). Nothing is sent
- * when the form adds nothing new -- no personal input and no complete rows,
- * or everything merged away as already-stored. A write-back failure only
- * toasts a warning and never fails the submission -- `onSubmitted` still
+ * is fetched first, personal fields are merged over the stored user, and each
+ * list is OVERWRITTEN with the form's reviewed rows (the applicant reviewed
+ * their info while applying, so the reviewed version becomes their profile).
+ * A section left empty in the form is not written (it never clears a stored
+ * list), and an unchanged list is skipped; nothing is sent when there is
+ * neither personal input nor any complete row to write. A write-back failure
+ * only toasts a warning and never fails the submission -- `onSubmitted` still
  * fires.
  *
  * @param {{job: object, existing?: object, seed?: object, seedApplicationId?: number,
@@ -113,14 +114,13 @@ const ApplicationForm = ({
   }, []);
 
   /**
-   * Best-effort merge write-back of this form's personal fields and
-   * complete profile rows. Fetches the stored profile, merges the personal
-   * fields over the stored user and the new rows into the stored lists (preserving
-   * existing rows and their ids -- the backend PATCH replaces each list
-   * wholesale), then PATCHes only the keys that actually changed. Skips the
-   * network entirely when the form has neither complete new rows nor any
-   * personal input. Failures (fetch or patch) only toast a warning, never
-   * throw.
+   * Best-effort write-back of this form's personal fields and complete
+   * profile rows. Fetches the stored profile, merges the personal fields over
+   * the stored user, and overwrites each education/experience list with the
+   * form's reviewed rows (see `buildWriteBackPayload`), then PATCHes only the
+   * keys that actually changed. Skips the network entirely when the form has
+   * neither complete rows nor any personal input. Failures (fetch or patch)
+   * only toast a warning, never throw.
    */
   const writeBackProfile = async () => {
     try {
@@ -132,7 +132,7 @@ const ApplicationForm = ({
       const res = await getMyProfile({
         fields: [ProfileFields.WORK_HISTORY, ProfileFields.EDUCATION],
       });
-      const payload = mergeWriteBackPayload(
+      const payload = buildWriteBackPayload(
         res?.data?.profile,
         newRows,
         profileValue.personal,

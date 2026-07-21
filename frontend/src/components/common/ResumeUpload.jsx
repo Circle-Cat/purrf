@@ -37,13 +37,19 @@ const EMPTY_PARSED = {
  * Defaults to `false`, so existing render-only usages (the Profile page's
  * resume upload) are unaffected.
  *
+ * When `onRemove` is provided (preview mode), a "Remove" control is offered
+ * next to "Change": it revokes the blob URL, clears the preview back to the
+ * empty dropzone, resets the file input (so the same file can be re-picked),
+ * and calls `onRemove` — letting the caller drop its stored résumé reference.
+ *
  * @param {{ onParsed: (parsed: object) => void, onFile?: (file: File) => void,
- *          showPreview?: boolean }} props
+ *          onRemove?: () => void, showPreview?: boolean }} props
  * @returns {JSX.Element}
  */
 export default function ResumeUpload({
   onParsed,
   onFile,
+  onRemove,
   showPreview = false,
 }) {
   const inputRef = useRef(null);
@@ -86,6 +92,17 @@ export default function ResumeUpload({
     onParsed(result ?? EMPTY_PARSED);
   };
 
+  const handleRemove = () => {
+    if (previewUrlRef.current) {
+      URL.revokeObjectURL(previewUrlRef.current);
+      previewUrlRef.current = null;
+    }
+    setPreview(null);
+    setError("");
+    if (inputRef.current) inputRef.current.value = "";
+    onRemove?.();
+  };
+
   const dragHandlers = {
     onDragOver: (e) => {
       e.preventDefault();
@@ -111,14 +128,26 @@ export default function ResumeUpload({
           )}
           {...dragHandlers}
         >
-          <button
-            type="button"
-            disabled={isParsing}
-            onClick={() => inputRef.current?.click()}
-            className="text-sm font-medium text-slate-700 hover:underline disabled:opacity-70"
-          >
-            {preview.name} · {isParsing ? "Parsing…" : "Change"}
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              disabled={isParsing}
+              onClick={() => inputRef.current?.click()}
+              className="text-sm font-medium text-slate-700 hover:underline disabled:opacity-70"
+            >
+              {preview.name} · {isParsing ? "Parsing…" : "Change"}
+            </button>
+            {onRemove && (
+              <button
+                type="button"
+                disabled={isParsing}
+                onClick={handleRemove}
+                className="text-sm font-medium text-destructive hover:underline disabled:opacity-70"
+              >
+                Remove
+              </button>
+            )}
+          </div>
           <iframe
             src={preview.url}
             title={`Preview of ${preview.name}`}

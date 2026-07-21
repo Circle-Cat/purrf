@@ -125,6 +125,17 @@ const RecruitingProfileForm = ({
   };
 
   /**
+   * Drop the résumé reference held by the parent (via `onResumeStored`), so a
+   * removed résumé -- whether picked this session or inherited from a prior
+   * application -- is no longer submitted. Clearing the object key also hides
+   * the "on file" banner, since the parent recomputes it from the stored key.
+   * The parsed profile fields it filled are left untouched (edit them below).
+   */
+  const handleResumeRemoved = () => {
+    onResumeStored?.({ sha256: null, objectKey: null });
+  };
+
+  /**
    * Persist a resume file via `uploadResume` and forward the resulting
    * `{sha256, objectKey}` to the parent through `onResumeStored`. Runs
    * independently of parsing/autofill above -- a failure here only toasts
@@ -176,13 +187,22 @@ const RecruitingProfileForm = ({
           <div className="rounded-md border border-muted-foreground/30 p-2 text-sm">
             <div className="flex items-center justify-between">
               <span>✓ Résumé on file from your previous application</span>
-              <button
-                type="button"
-                className="text-muted-foreground underline"
-                onClick={() => setResumeExpanded((v) => !v)}
-              >
-                {resumeExpanded ? "Collapse" : "Expand"}
-              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  className="text-muted-foreground underline"
+                  onClick={() => setResumeExpanded((v) => !v)}
+                >
+                  {resumeExpanded ? "Collapse" : "Expand"}
+                </button>
+                <button
+                  type="button"
+                  className="text-destructive underline"
+                  onClick={handleResumeRemoved}
+                >
+                  Remove
+                </button>
+              </div>
             </div>
             {resumeExpanded && (
               <iframe
@@ -196,6 +216,7 @@ const RecruitingProfileForm = ({
         <ResumeUpload
           onParsed={handleParsed}
           onFile={handleResumeFile}
+          onRemove={handleResumeRemoved}
           showPreview
         />
       </section>

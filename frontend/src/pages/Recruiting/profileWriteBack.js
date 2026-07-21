@@ -181,18 +181,42 @@ const mergeUserWriteBack = (fetchedUser, personal) => {
 };
 
 /**
- * Merge the application form's write-back data into the user's FETCHED
- * profile, producing the partial PATCH payload for `updateMyProfile` -- or
- * `null` when there is nothing to write.
+ * Whether two request-shaped row lists hold the same rows by content key,
+ * order-insensitive -- used to skip a no-op overwrite of an unchanged list.
  *
- * The backend's profile upsert has full-overwrite semantics (a PATCHed
- * list fully replaces what's stored), so each written list must carry ALL
- * existing rows -- mapped back to request shape with their real ids
- * preserved -- plus the appended new rows. A new row content-identical to
- * an existing one is skipped, and a list whose new rows all dedup away is
- * omitted from the payload entirely: unchanged lists are never sent. The
- * `user` key is likewise included only when the merged personal fields
- * actually differ from the fetched ones (see `mergeUserWriteBack`).
+ * @param {object[]} a
+ * @param {object[]} b
+ * @param {(row: object) => string} keyFn - `educationKey` or `workKey`.
+ * @returns {boolean}
+ */
+const sameRowSet = (a, b, keyFn) => {
+  if (a.length !== b.length) return false;
+  const bKeys = new Set(b.map(keyFn));
+  return a.every((row) => bKeys.has(keyFn(row)));
+};
+
+/**
+ * Build the profile PATCH payload from the application form's reviewed
+ * write-back data, OVERWRITING the user's profile lists with what the form
+ * shows -- the applicant reviewed their info while applying (opt-in via
+ * "save to my profile"), so the reviewed version becomes their profile.
+ *
+ * The backend's profile upsert has full-overwrite semantics (a PATCHed list
+ * fully replaces what's stored), so each written list is simply the form's
+ * complete rows. Two deliberate guards:
+ *
+ * - A section the form has NO complete rows for is left out of the payload
+ *   entirely -- an empty section means "not filled in here", never "clear my
+ *   profile", so it never wipes a stored list to empty.
+ * - A section whose form rows already match the stored ones (by content,
+ *   order-insensitive) is omitted too, so no-op writes are never sent.
+ *
+ * The `user` key is included only when the merged personal fields differ
+ * from the fetched ones (see `mergeUserWriteBack`).
+ *
+ * Note: overwriting a list drops any stored rows the form doesn't show
+ * (what-you-see-is-what-your-profile-becomes) and assigns fresh ids to the
+ * written rows, since the form's rows carry no profile-DB id.
  *
  * @param {object|undefined} fetchedProfile - Profile from `getMyProfile`
  *   ({user?: object, education?: object[], workHistory?: object[]} in
@@ -203,7 +227,7 @@ const mergeUserWriteBack = (fetchedUser, personal) => {
  *   The form's `profileValue.personal`.
  * @returns {{user?: object, education?: object[], workHistory?: object[]}|null}
  */
-export const mergeWriteBackPayload = (fetchedProfile, newRows, personal) => {
+export const buildWriteBackPayload = (fetchedProfile, newRows, personal) => {
   const existingEducation = (fetchedProfile?.education ?? []).map(
     fetchedEducationToRequest,
   );
@@ -211,25 +235,22 @@ export const mergeWriteBackPayload = (fetchedProfile, newRows, personal) => {
     fetchedWorkToRequest,
   );
 
-  const educationKeys = new Set(existingEducation.map(educationKey));
-  const workKeys = new Set(existingWork.map(workKey));
-  const appendEducation = newRows.education.filter(
-    (row) => !educationKeys.has(educationKey(row)),
-  );
-  const appendWork = newRows.workHistory.filter(
-    (row) => !workKeys.has(workKey(row)),
-  );
-
   const payload = {};
   const user = mergeUserWriteBack(fetchedProfile?.user, personal);
   if (user) {
     payload.user = user;
   }
-  if (appendEducation.length) {
-    payload.education = [...existingEducation, ...appendEducation];
+  if (
+    newRows.education.length &&
+    !sameRowSet(newRows.education, existingEducation, educationKey)
+  ) {
+    payload.education = newRows.education;
   }
-  if (appendWork.length) {
-    payload.workHistory = [...existingWork, ...appendWork];
+  if (
+    newRows.workHistory.length &&
+    !sameRowSet(newRows.workHistory, existingWork, workKey)
+  ) {
+    payload.workHistory = newRows.workHistory;
   }
   return Object.keys(payload).length > 0 ? payload : null;
 };

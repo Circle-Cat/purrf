@@ -103,6 +103,41 @@ describe("RecruitingProfileForm", () => {
     expect(screen.queryByTitle("Your résumé on file")).not.toBeInTheDocument();
   });
 
+  it("clears the stored résumé via onResumeStored(nulls) when the on-file résumé is removed", () => {
+    api.resumeUrl.mockImplementation(
+      (id) => `/api/recruiting/applications/${id}/resume`,
+    );
+    const onResumeStored = vi.fn();
+    renderForm({}, { existingResume: { applicationId: 7 }, onResumeStored });
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+
+    expect(onResumeStored).toHaveBeenCalledWith({
+      sha256: null,
+      objectKey: null,
+    });
+  });
+
+  it("clears the stored résumé via onResumeStored(nulls) when a session-uploaded résumé is removed", async () => {
+    api.uploadResume.mockResolvedValue({
+      data: { sha256: "abc123", objectKey: "resumes/abc123.pdf" },
+    });
+    const onResumeStored = vi.fn();
+    renderForm({}, { onResumeStored });
+
+    selectResumeFile(pdfFile());
+    await waitFor(() =>
+      expect(screen.getByText(/resume\.pdf · Change/)).toBeInTheDocument(),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+
+    expect(onResumeStored).toHaveBeenLastCalledWith({
+      sha256: null,
+      objectKey: null,
+    });
+  });
+
   it("toasts an error and does not call onResumeStored when the resume upload fails", async () => {
     api.uploadResume.mockRejectedValue(new Error("upload failed"));
     const onResumeStored = vi.fn();
