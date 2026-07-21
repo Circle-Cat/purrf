@@ -186,6 +186,108 @@ describe("AuthProvider", () => {
     expect(result.current.accessDeniedMessage).toBe("");
   });
 
+  it("captures the server's refusal message on a 400 with a message", async () => {
+    const message = "Sign in with a supported method.";
+    getUserPermissions.mockRejectedValue({
+      response: { status: 400, data: { message } },
+    });
+
+    const { result } = renderHook(() => useAuth(), {
+      wrapper: AuthProvider,
+    });
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.authError).toBe(true);
+    expect(result.current.authRefusalMessage).toBe(message);
+    expect(result.current.accessDenied).toBe(false);
+    expect(result.current.sessionExpired).toBe(false);
+  });
+
+  it("leaves authRefusalMessage null on a 400 without a message", async () => {
+    getUserPermissions.mockRejectedValue({
+      response: { status: 400 },
+    });
+
+    const { result } = renderHook(() => useAuth(), {
+      wrapper: AuthProvider,
+    });
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.authError).toBe(true);
+    expect(result.current.authRefusalMessage).toBe(null);
+  });
+
+  it("leaves authRefusalMessage null on a network error", async () => {
+    getUserPermissions.mockRejectedValue(new Error("Network Error"));
+
+    const { result } = renderHook(() => useAuth(), {
+      wrapper: AuthProvider,
+    });
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.authRefusalMessage).toBe(null);
+  });
+
+  it("leaves authRefusalMessage null on a 5xx", async () => {
+    getUserPermissions.mockRejectedValue({
+      response: { status: 500, data: { message: "boom" } },
+    });
+
+    const { result } = renderHook(() => useAuth(), {
+      wrapper: AuthProvider,
+    });
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.authRefusalMessage).toBe(null);
+  });
+
+  it("leaves authRefusalMessage null on a 401", async () => {
+    getUserPermissions.mockRejectedValue({
+      response: { status: 401, data: { message: "expired" } },
+    });
+
+    const { result } = renderHook(() => useAuth(), {
+      wrapper: AuthProvider,
+    });
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.authRefusalMessage).toBe(null);
+  });
+
+  it("leaves authRefusalMessage null on a 403", async () => {
+    getUserPermissions.mockRejectedValue({
+      response: { status: 403, data: { message: "deactivated" } },
+    });
+
+    const { result } = renderHook(() => useAuth(), {
+      wrapper: AuthProvider,
+    });
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.authRefusalMessage).toBe(null);
+  });
+
+  it("clears a captured refusal message once a retry succeeds", async () => {
+    const message = "Sign in with a supported method.";
+    getUserPermissions
+      .mockRejectedValueOnce({ response: { status: 400, data: { message } } })
+      .mockResolvedValueOnce({ data: { permissions: [] } });
+
+    const { result } = renderHook(() => useAuth(), {
+      wrapper: AuthProvider,
+    });
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.authRefusalMessage).toBe(message);
+
+    await act(async () => {
+      await result.current.refreshAuth();
+    });
+
+    expect(result.current.authRefusalMessage).toBe(null);
+    expect(result.current.authError).toBe(false);
+  });
+
   it("exposes hasVerifiedEmail true when the API reports a verified email", async () => {
     getUserPermissions.mockResolvedValue({
       data: { permissions: [], has_verified_email: true },

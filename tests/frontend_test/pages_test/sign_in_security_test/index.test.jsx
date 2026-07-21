@@ -41,7 +41,6 @@ vi.mock("@/pages/SignInSecurity/components/SignInMethodList", () => ({
     isLoading,
     onUnlink,
     onSetPrimary,
-    onVerify,
     onRemove,
   }) => (
     <div data-testid="sign-in-method-list">
@@ -66,13 +65,6 @@ vi.mock("@/pages/SignInSecurity/components/SignInMethodList", () => ({
       </button>
       <button
         onClick={() =>
-          onVerify({ emailId: 3, email: "backup@x.com", otpConfirmed: false })
-        }
-      >
-        trigger-verify
-      </button>
-      <button
-        onClick={() =>
           onRemove({ emailId: 3, email: "backup@x.com", otpConfirmed: false })
         }
       >
@@ -87,16 +79,6 @@ vi.mock("@/pages/SignInSecurity/components/AddEmailDialog", () => ({
     open ? (
       <div data-testid="add-dialog">
         <button onClick={() => onAdded()}>add-onAdded</button>
-      </div>
-    ) : null,
-}));
-
-vi.mock("@/pages/SignInSecurity/components/VerifyEmailDialog", () => ({
-  default: ({ open, email, onVerified }) =>
-    open ? (
-      <div data-testid="verify-dialog">
-        <span data-testid="verify-email">{email}</span>
-        <button onClick={() => onVerified()}>verify-onVerified</button>
       </div>
     ) : null,
 }));
@@ -193,25 +175,6 @@ describe("SignInSecurity page", () => {
 
       await user.click(screen.getByRole("button", { name: "add-onAdded" }));
       expect(refresh).toHaveBeenCalledTimes(1);
-    });
-  });
-
-  describe("Verify email", () => {
-    it("opens the verify dialog for the picked address and refreshes after verify", async () => {
-      const user = userEvent.setup();
-      render(<SignInSecurity />);
-
-      await user.click(screen.getByRole("button", { name: "trigger-verify" }));
-      expect(screen.getByTestId("verify-dialog")).toBeInTheDocument();
-      expect(screen.getByTestId("verify-email")).toHaveTextContent(
-        "backup@x.com",
-      );
-
-      await user.click(
-        screen.getByRole("button", { name: "verify-onVerified" }),
-      );
-      expect(refresh).toHaveBeenCalledTimes(1);
-      expect(screen.queryByTestId("verify-dialog")).not.toBeInTheDocument();
     });
   });
 
@@ -406,6 +369,21 @@ describe("SignInSecurity page", () => {
       // identityLabel maps google-oauth2 → Google and appends the email claim.
       expect(screen.getByTestId("stepup-desc")).toHaveTextContent(
         "Google (ext@gmail.com)",
+      );
+    });
+
+    it("tells the two-doors truth: unlinking only removes the sign-in shortcut", async () => {
+      const user = userEvent.setup();
+      initiateUnlink.mockResolvedValue({ data: { state: "st-2" } });
+      render(<SignInSecurity />);
+
+      await user.click(screen.getByRole("button", { name: "trigger-unlink" }));
+
+      await screen.findByTestId("stepup-dialog");
+      expect(screen.getByTestId("stepup-desc")).toHaveTextContent(
+        "This removes only the sign-in shortcut. Its email address stays " +
+          "on your account and can still be used to sign in. To fully cut " +
+          "this sign-in off, also remove that address.",
       );
     });
 

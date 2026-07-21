@@ -86,35 +86,24 @@ const IdentityRow = ({
 
 /**
  * One contact-only email row: an address with no sign-in identity behind it
- * (a legacy unverified backup from before verify-at-add, or a verified address
- * whose email method was removed). Shows the primary/unverified state; a
- * legacy unverified address still offers a "Verify" action (dead post-migration,
- * kept until the follow-up that removes it), which unlocks it as a sign-in
- * method. Any non-primary address — confirmed or legacy-unverified — offers
- * "Remove"; the server refuses to remove the address backing the caller's own
- * current passwordless session, and that rejection surfaces here as a toast.
- * A confirmed, non-primary address also offers "Set as primary contact" (the
- * same step-up flow the sign-in method rows use).
+ * (e.g. a verified address whose email sign-in method was removed). Shows
+ * the primary state; a non-primary address offers "Remove" — the server
+ * refuses to remove the address backing the caller's own current
+ * passwordless session, and that rejection surfaces here as a toast — and,
+ * if not already primary, "Set as primary contact" (the same step-up flow
+ * the sign-in method rows use).
  *
  * @param {Object} props
  * @param {object} props.emailRow
  * @param {{kind: string, id: (number|string)}|null} props.busy - in-flight action.
- * @param {(emailRow: object) => void} [props.onVerify]
  * @param {(emailRow: object) => void} [props.onRemove]
  * @param {(emailRow: object) => void} [props.onSetPrimary]
  */
-const ContactEmailRow = ({
-  emailRow,
-  busy,
-  onVerify,
-  onRemove,
-  onSetPrimary,
-}) => (
+const ContactEmailRow = ({ emailRow, busy, onRemove, onSetPrimary }) => (
   <li className="flex items-center justify-between gap-2 py-3">
     <div className="flex items-center gap-2">
       <span className="font-medium">{emailRow.email}</span>
       {emailRow.isPrimary && <Badge variant="secondary">Primary contact</Badge>}
-      {!emailRow.otpConfirmed && <Badge variant="outline">Unverified</Badge>}
     </div>
     <div className="flex items-center gap-1">
       {emailRow.otpConfirmed && !emailRow.isPrimary && !!onSetPrimary && (
@@ -127,16 +116,6 @@ const ContactEmailRow = ({
           {busy?.kind === "primary" && busy.id === emailRow.emailId
             ? "Setting…"
             : "Set as primary contact"}
-        </Button>
-      )}
-      {!emailRow.otpConfirmed && !!onVerify && (
-        <Button
-          size="sm"
-          variant="ghost"
-          disabled={busy !== null}
-          onClick={() => onVerify(emailRow)}
-        >
-          Verify
         </Button>
       )}
       {!emailRow.isPrimary && !!onRemove && (
@@ -158,19 +137,22 @@ const ContactEmailRow = ({
 /**
  * Merged list of the caller's sign-in methods and contact emails: the
  * internal (work) identities, if any, then external identities, then the
- * contact-only addresses (emails with no identity claiming them — e.g. an
- * unverified backup added without OTP). An employee may hold more than one
- * internal identity (e.g. an SSO login plus an OTP-linked corp email).
- * Internal identities cannot be unlinked here; an external identity can be
- * unless it is the only remaining sign-in method (the backend additionally
+ * contact-only addresses (emails with no identity claiming them — e.g. a
+ * verified address whose email sign-in method was removed). An employee may
+ * hold more than one internal identity (e.g. an SSO login plus an OTP-linked
+ * corp email). Internal identities cannot be unlinked here; an external
+ * identity can always be removed, current session excepted — the always-live
+ * email OTP path to the primary contact means removing the last remaining
+ * sign-in method can never lock the caller out (the backend additionally
  * refuses the current session's identity and an active employee's corp
  * sign-in).
  *
- * An email sign-in method's row carries its contact-email state: a verified,
+ * An email sign-in method's row carries its contact-email state: a
  * non-primary address can be set as the primary contact from there. A
- * contact-only unverified address offers "Verify" instead, which unlocks it
- * as a sign-in method. A single in-flight action disables every action
- * button on the list.
+ * contact-only address offers the same "Set as primary contact" action when
+ * it is not already primary, and "Remove" when it is not the primary
+ * contact. A single in-flight action disables every action button on the
+ * list.
  *
  * @component
  * @param {Object} props
@@ -180,7 +162,6 @@ const ContactEmailRow = ({
  * @param {boolean} props.isLoading
  * @param {(identity: object) => Promise<void>} props.onUnlink
  * @param {(emailRow: object) => Promise<void>} [props.onSetPrimary] - start promoting a contact email.
- * @param {(emailRow: object) => void} [props.onVerify] - start verifying a contact-only address.
  * @param {(emailRow: object) => Promise<void>} [props.onRemove] - remove a non-primary contact-only address.
  */
 const SignInMethodList = ({
@@ -190,7 +171,6 @@ const SignInMethodList = ({
   isLoading,
   onUnlink,
   onSetPrimary,
-  onVerify,
   onRemove,
 }) => {
   const [busy, setBusy] = useState(null);
@@ -258,9 +238,6 @@ const SignInMethodList = ({
     );
   }
 
-  const total = internalIdentities.length + externalIdentities.length;
-  const canUnlink = total > 1;
-
   return (
     <ul className="divide-y">
       {internalIdentities.map((identity) => (
@@ -278,7 +255,7 @@ const SignInMethodList = ({
         <IdentityRow
           key={identity.identityId}
           identity={identity}
-          canUnlink={canUnlink}
+          canUnlink
           emailRow={emailRowFor(identity)}
           busy={busy}
           onUnlink={handleUnlink}
@@ -290,7 +267,6 @@ const SignInMethodList = ({
           key={`email-${emailRow.emailId}`}
           emailRow={emailRow}
           busy={busy}
-          onVerify={onVerify}
           onRemove={onRemove ? handleRemove : undefined}
           onSetPrimary={onSetPrimary ? handleSetPrimary : undefined}
         />

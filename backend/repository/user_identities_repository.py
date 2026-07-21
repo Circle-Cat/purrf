@@ -77,25 +77,6 @@ class UserIdentitiesRepository:
         )
         return list(result.scalars().all())
 
-    async def list_by_user(
-        self, session: AsyncSession, user_id: int
-    ) -> list[UserIdentitiesEntity]:
-        """
-        Return all of this user's identity rows, backing the unlink flow's
-        only-remaining / still-claimed checks.
-
-        Thin alias of :meth:`list_by_user_id` so the query lives in one place.
-
-        Args:
-            session (AsyncSession): The active async database session.
-            user_id (int): user_id whose identity rows to list.
-
-        Returns:
-            list[UserIdentitiesEntity]: The user's identity rows ordered by
-            identity_id; empty when the user has none.
-        """
-        return await self.list_by_user_id(session, user_id)
-
     async def get_by_id(
         self, session: AsyncSession, identity_id: int
     ) -> UserIdentitiesEntity | None:

@@ -230,35 +230,6 @@ class TestUserIdentitiesRepository(BaseRepositoryTestLib):
         rows = await self.repo.list_by_user_id(self.session, self.user.user_id)
         self.assertEqual(rows, [])
 
-    # list_by_user — alias backing the unlink precondition checks
-    async def test_list_by_user_returns_only_this_users_rows(self):
-        mine = UserIdentitiesEntity(
-            user_id=self.user.user_id,
-            subject_identifier="email|mine",
-            identity_type="external",
-            email_claim="alice@gmail.com",
-        )
-        await self.insert_entities([mine])
-
-        other = _make_user()
-        await self.insert_entities([other])
-        await self.insert_entities([
-            UserIdentitiesEntity(
-                user_id=other.user_id,
-                subject_identifier="email|bob",
-                identity_type="external",
-                email_claim="bob@gmail.com",
-            )
-        ])
-
-        rows = await self.repo.list_by_user(self.session, self.user.user_id)
-
-        self.assertEqual({r.subject_identifier for r in rows}, {"email|mine"})
-
-    async def test_list_by_user_empty(self):
-        rows = await self.repo.list_by_user(self.session, self.user.user_id)
-        self.assertEqual(rows, [])
-
     # exists_active_internal — active employee = is_active AND an INTERNAL identity
     async def test_exists_active_internal_true_for_active_internal(self):
         await self.insert_entities([
@@ -357,7 +328,7 @@ class TestUserIdentitiesRepository(BaseRepositoryTestLib):
         await self.repo.delete(self.session, drop.identity_id)
 
         self.assertIsNone(await self.repo.get_by_id(self.session, drop.identity_id))
-        remaining = await self.repo.list_by_user(self.session, self.user.user_id)
+        remaining = await self.repo.list_by_user_id(self.session, self.user.user_id)
         self.assertEqual(
             {r.subject_identifier for r in remaining}, {"google-oauth2|keep"}
         )
