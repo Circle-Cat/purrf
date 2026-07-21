@@ -24,9 +24,9 @@ describe("SignInSecurity providers", () => {
 
   describe("providerLabel", () => {
     it("maps known providers to their human label", () => {
-      expect(providerLabel("google-oauth2|1")).toBe("Google");
-      expect(providerLabel("google|1")).toBe("Google");
-      expect(providerLabel(`${EMAIL_PROVIDER}|1`)).toBe("Email");
+      expect(providerLabel("google-oauth2|1")).toBe("Google account");
+      expect(providerLabel("google|1")).toBe("Google account");
+      expect(providerLabel(`${EMAIL_PROVIDER}|1`)).toBe("Email OTP");
       expect(providerLabel("auth0|1")).toBe("Email & password");
     });
 
@@ -59,7 +59,7 @@ describe("SignInSecurity providers", () => {
           subjectIdentifier: "google-oauth2|1",
           emailClaim: "alice@gmail.com",
         }),
-      ).toBe("Google (alice@gmail.com)");
+      ).toBe("Google account (alice@gmail.com)");
     });
 
     it("uses just the provider label when there is no email claim", () => {
@@ -76,6 +76,6 @@ describe("SignInSecurity providers", () => {
   });
 
   it("labels every mapped provider", () => {
-    expect(PROVIDER_LABELS[EMAIL_PROVIDER]).toBe("Email");
+    expect(PROVIDER_LABELS[EMAIL_PROVIDER]).toBe("Email OTP");
   });
 });

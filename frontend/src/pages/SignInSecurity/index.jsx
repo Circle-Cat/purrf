@@ -175,7 +175,7 @@ const SignInSecurity = () => {
         }}
         title="Set primary contact email"
         description={`Enter the 6-digit code we sent to ${primaryEmail} to make ${primaryTarget?.email} your primary contact email.`}
-        confirmLabel="Set as primary"
+        confirmLabel="Set as primary contact"
         otpEmail={primaryEmail}
         onConfirm={handleConfirmSetPrimary}
         onResend={handleResendSetPrimary}
@@ -187,7 +187,7 @@ const SignInSecurity = () => {
           if (!o) setUnlinkTarget(null);
         }}
         title="Remove sign-in method"
-        description={`Enter the 6-digit code we sent to ${primaryEmail} to confirm removing ${unlinkTarget?.label}. This removes only the sign-in shortcut. Its email address stays on your account and can still be used to sign in. To fully cut this sign-in off, also remove that address.`}
+        description={`Enter the 6-digit code we sent to ${primaryEmail} to confirm removing ${unlinkTarget?.label}. This removes only that sign-in. Its email address stays on your account and can still be used to sign in with Email OTP. To fully disconnect this address, also remove its Email OTP.`}
         confirmLabel="Remove sign-in method"
         confirmVariant="destructive"
         otpEmail={primaryEmail}

@@ -21,6 +21,15 @@ const makeIdentity = (overrides = {}) => ({
   ...overrides,
 });
 
+const makeEmail = (overrides = {}) => ({
+  emailId: 1,
+  email: "alice@gmail.com",
+  otpConfirmed: true,
+  isPrimary: false,
+  addedAt: "2026-01-01T00:00:00Z",
+  ...overrides,
+});
+
 describe("SignInMethodList", () => {
   afterEach(cleanup);
 
@@ -36,7 +45,7 @@ describe("SignInMethodList", () => {
     expect(screen.getByText("Loading…")).toBeInTheDocument();
   });
 
-  it("shows an empty-state message when there are no identities", () => {
+  it("shows an empty-state message when there are no addresses", () => {
     render(
       <SignInMethodList
         internalIdentities={[]}
@@ -48,62 +57,10 @@ describe("SignInMethodList", () => {
     expect(screen.getByText("No sign-in methods yet.")).toBeInTheDocument();
   });
 
-  it("badges the identity backing the current session", () => {
-    const current = makeIdentity({ identityId: 1, isCurrentSession: true });
-    const other = makeIdentity({
-      identityId: 2,
-      subjectIdentifier: "email|abc",
-      emailClaim: "bob@gmail.com",
-    });
+  it("never shows an Unverified badge or a Verify action", () => {
     render(
       <SignInMethodList
-        internalIdentities={[]}
-        externalIdentities={[current, other]}
-        isLoading={false}
-        onUnlink={vi.fn()}
-      />,
-    );
-
-    const rows = screen.getAllByRole("listitem");
-    expect(within(rows[0]).getByText("Current session")).toBeInTheDocument();
-    expect(
-      within(rows[1]).queryByText("Current session"),
-    ).not.toBeInTheDocument();
-  });
-
-  it("renders an email without a matching identity as its own contact row", () => {
-    const backup = {
-      emailId: 3,
-      email: "backup@x.com",
-      otpConfirmed: true,
-      isPrimary: false,
-    };
-    render(
-      <SignInMethodList
-        emails={[backup]}
-        internalIdentities={[]}
-        externalIdentities={[makeIdentity()]}
-        isLoading={false}
-        onUnlink={vi.fn()}
-      />,
-    );
-
-    const rows = screen.getAllByRole("listitem");
-    expect(rows).toHaveLength(2);
-    // Identity rows come first; the contact-only address trails.
-    expect(within(rows[1]).getByText("backup@x.com")).toBeInTheDocument();
-  });
-
-  it("never shows an Unverified badge or a Verify action, confirmed or not", () => {
-    const backup = {
-      emailId: 3,
-      email: "backup@x.com",
-      otpConfirmed: false,
-      isPrimary: false,
-    };
-    render(
-      <SignInMethodList
-        emails={[backup]}
+        emails={[makeEmail({ emailId: 3, email: "backup@x.com" })]}
         internalIdentities={[]}
         externalIdentities={[makeIdentity()]}
         isLoading={false}
@@ -117,333 +74,315 @@ describe("SignInMethodList", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("does not repeat an email already shown on its sign-in method row", () => {
-    const emailRow = {
-      emailId: 1,
-      email: "alice@gmail.com",
-      otpConfirmed: true,
-      isPrimary: true,
-    };
-    render(
-      <SignInMethodList
-        emails={[emailRow]}
-        internalIdentities={[]}
-        externalIdentities={[makeIdentity({ subjectIdentifier: "email|abc" })]}
-        isLoading={false}
-        onUnlink={vi.fn()}
-      />,
-    );
-
-    expect(screen.getAllByRole("listitem")).toHaveLength(1);
-    expect(screen.getAllByText("alice@gmail.com")).toHaveLength(1);
-  });
-
-  it("lists contact-only emails even when there are no identities", () => {
-    render(
-      <SignInMethodList
-        emails={[
-          {
-            emailId: 3,
-            email: "backup@x.com",
-            otpConfirmed: false,
-            isPrimary: false,
-          },
-        ]}
-        internalIdentities={[]}
-        externalIdentities={[]}
-        isLoading={false}
-      />,
-    );
-
-    expect(
-      screen.queryByText("No sign-in methods yet."),
-    ).not.toBeInTheDocument();
-    expect(screen.getByText("backup@x.com")).toBeInTheDocument();
-  });
-
-  it("renders the internal identity first and tags it Internal", () => {
-    const internalIdentity = makeIdentity({
-      identityId: 99,
-      subjectIdentifier: "auth0|work",
-      emailClaim: "alice@circlecat.org",
-    });
-
-    render(
-      <SignInMethodList
-        internalIdentities={[internalIdentity]}
-        externalIdentities={[]}
-        isLoading={false}
-      />,
-    );
-
-    const rows = screen.getAllByRole("listitem");
-    expect(rows).toHaveLength(1);
-    expect(within(rows[0]).getByText("Internal")).toBeInTheDocument();
-    expect(
-      within(rows[0]).getByText("alice@circlecat.org"),
-    ).toBeInTheDocument();
-  });
-
-  it("renders external identities without the Internal badge", () => {
-    const externalIdentities = [
-      makeIdentity({ identityId: 1, subjectIdentifier: "google-oauth2|1" }),
-      makeIdentity({ identityId: 2, subjectIdentifier: "auth0|2" }),
-    ];
-
-    render(
-      <SignInMethodList
-        internalIdentities={[]}
-        externalIdentities={externalIdentities}
-        isLoading={false}
-      />,
-    );
-
-    expect(screen.getAllByRole("listitem")).toHaveLength(2);
-    expect(screen.queryByText("Internal")).not.toBeInTheDocument();
-  });
-
-  it("lists the internal identity ahead of external identities", () => {
-    const internalIdentity = makeIdentity({
-      identityId: 99,
-      subjectIdentifier: "auth0|work",
-      emailClaim: "work@circlecat.org",
-    });
-    const externalIdentities = [
-      makeIdentity({
-        identityId: 1,
-        subjectIdentifier: "google-oauth2|1",
-        emailClaim: "personal@gmail.com",
-      }),
-    ];
-
-    render(
-      <SignInMethodList
-        internalIdentities={[internalIdentity]}
-        externalIdentities={externalIdentities}
-        isLoading={false}
-      />,
-    );
-
-    const rows = screen.getAllByRole("listitem");
-    expect(rows).toHaveLength(2);
-    expect(within(rows[0]).getByText("Internal")).toBeInTheDocument();
-    expect(within(rows[0]).getByText("work@circlecat.org")).toBeInTheDocument();
-    expect(within(rows[1]).getByText("personal@gmail.com")).toBeInTheDocument();
-  });
-
-  it("renders every internal identity, each tagged Internal, ahead of external ones", () => {
-    const internalIdentities = [
-      makeIdentity({
-        identityId: 2,
-        subjectIdentifier: "google-oauth2|sso",
-        emailClaim: "alice@circlecat.org",
-      }),
-      makeIdentity({
-        identityId: 193,
-        subjectIdentifier: "email|otp",
-        emailClaim: "alice@circlecat.org",
-      }),
-    ];
-    const externalIdentities = [
-      makeIdentity({
-        identityId: 1,
-        subjectIdentifier: "google-oauth2|1",
-        emailClaim: "personal@gmail.com",
-      }),
-    ];
-
-    render(
-      <SignInMethodList
-        internalIdentities={internalIdentities}
-        externalIdentities={externalIdentities}
-        isLoading={false}
-        onUnlink={vi.fn()}
-      />,
-    );
-
-    const rows = screen.getAllByRole("listitem");
-    expect(rows).toHaveLength(3);
-    // Both internal identities render up front, each badged Internal, and neither
-    // offers Remove (active employees keep their corp sign-ins).
-    expect(within(rows[0]).getByText("Internal")).toBeInTheDocument();
-    expect(within(rows[1]).getByText("Internal")).toBeInTheDocument();
-    expect(screen.getAllByText("Internal")).toHaveLength(2);
-    expect(
-      within(rows[0]).queryByRole("button", { name: "Remove" }),
-    ).not.toBeInTheDocument();
-    expect(
-      within(rows[1]).queryByRole("button", { name: "Remove" }),
-    ).not.toBeInTheDocument();
-    expect(within(rows[2]).getByText("personal@gmail.com")).toBeInTheDocument();
-  });
-
-  it("maps known provider prefixes to human-friendly labels", () => {
-    const externalIdentities = [
-      makeIdentity({ identityId: 1, subjectIdentifier: "google-oauth2|1" }),
-      makeIdentity({ identityId: 2, subjectIdentifier: "google|2" }),
-      makeIdentity({ identityId: 3, subjectIdentifier: "email|3" }),
-      makeIdentity({ identityId: 4, subjectIdentifier: "auth0|4" }),
-    ];
-
-    render(
-      <SignInMethodList
-        internalIdentities={[]}
-        externalIdentities={externalIdentities}
-        isLoading={false}
-      />,
-    );
-
-    expect(screen.getAllByText("Google")).toHaveLength(2);
-    expect(screen.getByText("Email")).toBeInTheDocument();
-    expect(screen.getByText("Email & password")).toBeInTheDocument();
-  });
-
-  it("falls back to the raw provider for unknown prefixes", () => {
-    const externalIdentities = [
-      makeIdentity({ identityId: 1, subjectIdentifier: "github|1" }),
-    ];
-
-    render(
-      <SignInMethodList
-        internalIdentities={[]}
-        externalIdentities={externalIdentities}
-        isLoading={false}
-      />,
-    );
-
-    expect(screen.getByText("github")).toBeInTheDocument();
-  });
-
-  it("labels an empty or malformed subject identifier as Unknown", () => {
-    const externalIdentities = [
-      makeIdentity({ identityId: 1, subjectIdentifier: "" }),
-    ];
-
-    render(
-      <SignInMethodList
-        internalIdentities={[]}
-        externalIdentities={externalIdentities}
-        isLoading={false}
-      />,
-    );
-
-    expect(screen.getByText("Unknown")).toBeInTheDocument();
-  });
-
-  it("omits the email claim text when it is missing", () => {
-    const externalIdentities = [
-      makeIdentity({
-        identityId: 1,
-        subjectIdentifier: "google-oauth2|1",
-        emailClaim: null,
-      }),
-    ];
-
-    render(
-      <SignInMethodList
-        internalIdentities={[]}
-        externalIdentities={externalIdentities}
-        isLoading={false}
-      />,
-    );
-
-    const rows = screen.getAllByRole("listitem");
-    expect(rows).toHaveLength(1);
-    expect(within(rows[0]).getByText("Google")).toBeInTheDocument();
-    // Only the provider label is present, no email claim line.
-    expect(within(rows[0]).queryByText(/@/)).not.toBeInTheDocument();
-  });
-
-  describe("Remove action", () => {
-    it("never offers Remove for the internal identity", () => {
-      const internalIdentity = makeIdentity({
-        identityId: 99,
-        subjectIdentifier: "auth0|work",
-      });
-      const externalIdentities = [
-        makeIdentity({ identityId: 1, subjectIdentifier: "google-oauth2|1" }),
-      ];
-
+  describe("Address grouping", () => {
+    it("collapses an email and the identity that claims it into one row", () => {
       render(
         <SignInMethodList
-          internalIdentities={[internalIdentity]}
-          externalIdentities={externalIdentities}
+          emails={[makeEmail({ isPrimary: true })]}
+          internalIdentities={[]}
+          externalIdentities={[makeIdentity()]}
+          isLoading={false}
+          onUnlink={vi.fn()}
+        />,
+      );
+
+      expect(screen.getAllByRole("listitem")).toHaveLength(1);
+      expect(screen.getAllByText("alice@gmail.com")).toHaveLength(1);
+    });
+
+    it("matches an email to its identity claim regardless of casing", () => {
+      render(
+        <SignInMethodList
+          emails={[makeEmail({ email: "Alice@Gmail.com" })]}
+          internalIdentities={[]}
+          externalIdentities={[makeIdentity({ emailClaim: "alice@gmail.com" })]}
+          isLoading={false}
+          onUnlink={vi.fn()}
+        />,
+      );
+
+      expect(screen.getAllByRole("listitem")).toHaveLength(1);
+    });
+
+    it("renders distinct addresses as separate rows", () => {
+      render(
+        <SignInMethodList
+          emails={[makeEmail({ emailId: 3, email: "backup@x.com" })]}
+          internalIdentities={[]}
+          externalIdentities={[makeIdentity()]}
           isLoading={false}
           onUnlink={vi.fn()}
         />,
       );
 
       const rows = screen.getAllByRole("listitem");
-      // Internal row (first) has no Remove; the external one always does.
+      expect(rows).toHaveLength(2);
+      expect(screen.getByText("alice@gmail.com")).toBeInTheDocument();
+      expect(screen.getByText("backup@x.com")).toBeInTheDocument();
+    });
+
+    it("puts the primary-contact address first", () => {
+      render(
+        <SignInMethodList
+          emails={[
+            makeEmail({ emailId: 3, email: "backup@x.com", isPrimary: false }),
+            makeEmail({ emailId: 1, email: "main@x.com", isPrimary: true }),
+          ]}
+          internalIdentities={[]}
+          externalIdentities={[]}
+          isLoading={false}
+        />,
+      );
+
+      const rows = screen.getAllByRole("listitem");
+      expect(within(rows[0]).getByText("main@x.com")).toBeInTheDocument();
+      expect(within(rows[1]).getByText("backup@x.com")).toBeInTheDocument();
+    });
+
+    it("renders an unconfirmed contact-only email as its own row", () => {
+      render(
+        <SignInMethodList
+          emails={[
+            makeEmail({ emailId: 3, email: "new@x.com", otpConfirmed: false }),
+          ]}
+          internalIdentities={[]}
+          externalIdentities={[]}
+          isLoading={false}
+        />,
+      );
+
       expect(
-        within(rows[0]).queryByRole("button", { name: "Remove" }),
+        screen.queryByText("No sign-in methods yet."),
+      ).not.toBeInTheDocument();
+      expect(screen.getByText("new@x.com")).toBeInTheDocument();
+      // Not confirmed → no Email OTP capability chip.
+      expect(screen.queryByText("Email OTP")).not.toBeInTheDocument();
+    });
+
+    it("renders a claimless identity as a lone provider row with no chips", () => {
+      render(
+        <SignInMethodList
+          internalIdentities={[]}
+          externalIdentities={[
+            makeIdentity({
+              subjectIdentifier: "google-oauth2|1",
+              emailClaim: null,
+            }),
+          ]}
+          isLoading={false}
+          onUnlink={vi.fn()}
+        />,
+      );
+
+      const rows = screen.getAllByRole("listitem");
+      expect(rows).toHaveLength(1);
+      expect(within(rows[0]).getByText("Google account")).toBeInTheDocument();
+      expect(within(rows[0]).queryByText(/@/)).not.toBeInTheDocument();
+    });
+  });
+
+  describe("Capability chips", () => {
+    it("labels a Google identity's address 'Google account'", () => {
+      render(
+        <SignInMethodList
+          emails={[makeEmail()]}
+          internalIdentities={[]}
+          externalIdentities={[makeIdentity()]}
+          isLoading={false}
+          onUnlink={vi.fn()}
+        />,
+      );
+
+      expect(screen.getByText("Google account")).toBeInTheDocument();
+    });
+
+    it("shows an Email OTP chip on a confirmed email", () => {
+      render(
+        <SignInMethodList
+          emails={[makeEmail({ emailId: 3, email: "backup@x.com" })]}
+          internalIdentities={[]}
+          externalIdentities={[]}
+          isLoading={false}
+        />,
+      );
+
+      expect(screen.getByText("Email OTP")).toBeInTheDocument();
+    });
+
+    it("shows both chips when an address has a Google sign-in and Email OTP", () => {
+      render(
+        <SignInMethodList
+          emails={[makeEmail()]}
+          internalIdentities={[]}
+          externalIdentities={[makeIdentity()]}
+          isLoading={false}
+          onUnlink={vi.fn()}
+        />,
+      );
+
+      const rows = screen.getAllByRole("listitem");
+      expect(within(rows[0]).getByText("Google account")).toBeInTheDocument();
+      expect(within(rows[0]).getByText("Email OTP")).toBeInTheDocument();
+    });
+
+    it("shows a single Email OTP chip for an email| identity on a confirmed email", () => {
+      render(
+        <SignInMethodList
+          emails={[makeEmail()]}
+          internalIdentities={[]}
+          externalIdentities={[
+            makeIdentity({ subjectIdentifier: "email|abc" }),
+          ]}
+          isLoading={false}
+          onUnlink={vi.fn()}
+        />,
+      );
+
+      expect(screen.getAllByText("Email OTP")).toHaveLength(1);
+    });
+  });
+
+  describe("Status badges", () => {
+    it("tags an internal identity's address Internal", () => {
+      render(
+        <SignInMethodList
+          emails={[makeEmail({ email: "work@circlecat.org", isPrimary: true })]}
+          internalIdentities={[
+            makeIdentity({
+              subjectIdentifier: "google-oauth2|work",
+              emailClaim: "work@circlecat.org",
+            }),
+          ]}
+          externalIdentities={[]}
+          isLoading={false}
+        />,
+      );
+
+      expect(screen.getByText("Internal")).toBeInTheDocument();
+    });
+
+    it("badges the primary contact address", () => {
+      render(
+        <SignInMethodList
+          emails={[makeEmail({ isPrimary: true })]}
+          internalIdentities={[]}
+          externalIdentities={[]}
+          isLoading={false}
+        />,
+      );
+
+      expect(screen.getByText("Primary contact")).toBeInTheDocument();
+    });
+
+    it("badges the address backing the current session", () => {
+      render(
+        <SignInMethodList
+          internalIdentities={[]}
+          externalIdentities={[
+            makeIdentity({ identityId: 1, isCurrentSession: true }),
+            makeIdentity({
+              identityId: 2,
+              subjectIdentifier: "google-oauth2|2",
+              emailClaim: "bob@gmail.com",
+            }),
+          ]}
+          isLoading={false}
+          onUnlink={vi.fn()}
+        />,
+      );
+
+      const rows = screen.getAllByRole("listitem");
+      expect(within(rows[0]).getByText("Current session")).toBeInTheDocument();
+      expect(
+        within(rows[1]).queryByText("Current session"),
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  describe("Remove sign-in identity", () => {
+    it("offers 'Remove Google account sign-in' for an external identity", () => {
+      render(
+        <SignInMethodList
+          internalIdentities={[]}
+          externalIdentities={[makeIdentity()]}
+          isLoading={false}
+          onUnlink={vi.fn()}
+        />,
+      );
+
+      expect(
+        screen.getByRole("button", { name: "Remove Google account sign-in" }),
+      ).toBeInTheDocument();
+    });
+
+    it("never offers to remove an internal identity", () => {
+      render(
+        <SignInMethodList
+          emails={[makeEmail({ email: "work@circlecat.org", isPrimary: true })]}
+          internalIdentities={[
+            makeIdentity({
+              subjectIdentifier: "google-oauth2|work",
+              emailClaim: "work@circlecat.org",
+            }),
+          ]}
+          externalIdentities={[]}
+          isLoading={false}
+          onUnlink={vi.fn()}
+        />,
+      );
+
+      expect(
+        screen.queryByRole("button", { name: /Remove .* sign-in/ }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("does not offer to remove the current-session identity", () => {
+      render(
+        <SignInMethodList
+          internalIdentities={[]}
+          externalIdentities={[
+            makeIdentity({ identityId: 1, isCurrentSession: true }),
+            makeIdentity({
+              identityId: 2,
+              subjectIdentifier: "google-oauth2|2",
+              emailClaim: "bob@gmail.com",
+            }),
+          ]}
+          isLoading={false}
+          onUnlink={vi.fn()}
+        />,
+      );
+
+      const rows = screen.getAllByRole("listitem");
+      expect(
+        within(rows[0]).queryByRole("button", { name: /sign-in/ }),
       ).not.toBeInTheDocument();
       expect(
-        within(rows[1]).getByRole("button", { name: "Remove" }),
+        within(rows[1]).getByRole("button", {
+          name: "Remove Google account sign-in",
+        }),
       ).toBeInTheDocument();
-    });
-
-    it("offers Remove for a lone non-current-session external identity", () => {
-      // The deleted-guard era withheld Remove when only one sign-in method
-      // remained; a verified primary email is always a login path, so no
-      // lockout is possible and Remove is always offered here.
-      const externalIdentities = [
-        makeIdentity({ identityId: 1, subjectIdentifier: "google-oauth2|1" }),
-      ];
-
-      render(
-        <SignInMethodList
-          internalIdentities={[]}
-          externalIdentities={externalIdentities}
-          isLoading={false}
-          onUnlink={vi.fn()}
-        />,
-      );
-
-      expect(
-        screen.getByRole("button", { name: "Remove" }),
-      ).toBeInTheDocument();
-    });
-
-    it("offers Remove on every external identity when more than one exists", () => {
-      const externalIdentities = [
-        makeIdentity({ identityId: 1, subjectIdentifier: "google-oauth2|1" }),
-        makeIdentity({ identityId: 2, subjectIdentifier: "auth0|2" }),
-      ];
-
-      render(
-        <SignInMethodList
-          internalIdentities={[]}
-          externalIdentities={externalIdentities}
-          isLoading={false}
-          onUnlink={vi.fn()}
-        />,
-      );
-
-      expect(screen.getAllByRole("button", { name: "Remove" })).toHaveLength(2);
     });
 
     it("calls onUnlink with the identity when clicked", async () => {
       const user = userEvent.setup();
       const onUnlink = vi.fn().mockResolvedValue();
-      const externalIdentities = [
-        makeIdentity({ identityId: 1, subjectIdentifier: "google-oauth2|1" }),
-        makeIdentity({ identityId: 2, subjectIdentifier: "auth0|2" }),
-      ];
+      const identity = makeIdentity({ emailClaim: "bob@gmail.com" });
 
       render(
         <SignInMethodList
           internalIdentities={[]}
-          externalIdentities={externalIdentities}
+          externalIdentities={[identity]}
           isLoading={false}
           onUnlink={onUnlink}
         />,
       );
 
-      const rows = screen.getAllByRole("listitem");
-      await user.click(within(rows[1]).getByRole("button", { name: "Remove" }));
+      await user.click(
+        screen.getByRole("button", { name: "Remove Google account sign-in" }),
+      );
 
-      expect(onUnlink).toHaveBeenCalledWith(externalIdentities[1]);
+      expect(onUnlink).toHaveBeenCalledWith(identity);
     });
 
     it("shows a busy label and disables actions while unlinking", async () => {
@@ -455,22 +394,19 @@ describe("SignInMethodList", () => {
             resolve = r;
           }),
       );
-      const externalIdentities = [
-        makeIdentity({ identityId: 1, subjectIdentifier: "google-oauth2|1" }),
-        makeIdentity({ identityId: 2, subjectIdentifier: "auth0|2" }),
-      ];
 
       render(
         <SignInMethodList
           internalIdentities={[]}
-          externalIdentities={externalIdentities}
+          externalIdentities={[makeIdentity({ emailClaim: "bob@gmail.com" })]}
           isLoading={false}
           onUnlink={onUnlink}
         />,
       );
 
-      const [firstButton] = screen.getAllByRole("button", { name: "Remove" });
-      await user.click(firstButton);
+      await user.click(
+        screen.getByRole("button", { name: "Remove Google account sign-in" }),
+      );
 
       expect(screen.getByText("Removing…")).toBeInTheDocument();
       screen
@@ -484,140 +420,54 @@ describe("SignInMethodList", () => {
     });
   });
 
-  describe("Contact email Set as primary action", () => {
-    const verified = {
-      emailId: 4,
-      email: "kept@x.com",
-      otpConfirmed: true,
-      isPrimary: false,
-    };
-
-    it("offers Set as primary on a verified non-primary contact-only row", async () => {
+  describe("Remove email", () => {
+    it("offers Remove email on a non-primary email and calls onRemove", async () => {
       const user = userEvent.setup();
-      const onSetPrimary = vi.fn().mockResolvedValue();
+      const onRemove = vi.fn().mockResolvedValue();
+      const email = makeEmail({ emailId: 3, email: "backup@x.com" });
+
       render(
         <SignInMethodList
-          emails={[verified]}
-          internalIdentities={[]}
-          externalIdentities={[makeIdentity()]}
-          isLoading={false}
-          onUnlink={vi.fn()}
-          onSetPrimary={onSetPrimary}
-        />,
-      );
-
-      const rows = screen.getAllByRole("listitem");
-      await user.click(
-        within(rows[1]).getByRole("button", { name: "Set as primary contact" }),
-      );
-      expect(onSetPrimary).toHaveBeenCalledWith(verified);
-    });
-
-    it("does not offer Set as primary on the primary or an unverified row", () => {
-      render(
-        <SignInMethodList
-          emails={[
-            { ...verified, isPrimary: true },
-            {
-              emailId: 5,
-              email: "new@x.com",
-              otpConfirmed: false,
-              isPrimary: false,
-            },
-          ]}
+          emails={[email]}
           internalIdentities={[]}
           externalIdentities={[]}
           isLoading={false}
-          onUnlink={vi.fn()}
-          onSetPrimary={vi.fn()}
-        />,
-      );
-
-      expect(
-        screen.queryByRole("button", { name: "Set as primary contact" }),
-      ).not.toBeInTheDocument();
-    });
-  });
-
-  describe("Contact email Remove action", () => {
-    const backup = {
-      emailId: 3,
-      email: "backup@x.com",
-      otpConfirmed: false,
-      isPrimary: false,
-    };
-
-    it("offers Remove on an unverified contact-only row and calls onRemove", async () => {
-      const user = userEvent.setup();
-      const onRemove = vi.fn().mockResolvedValue();
-      render(
-        <SignInMethodList
-          emails={[backup]}
-          internalIdentities={[]}
-          externalIdentities={[makeIdentity()]}
-          isLoading={false}
-          onUnlink={vi.fn()}
           onRemove={onRemove}
         />,
       );
 
-      const rows = screen.getAllByRole("listitem");
-      await user.click(within(rows[1]).getByRole("button", { name: "Remove" }));
-      expect(onRemove).toHaveBeenCalledWith(backup);
+      await user.click(screen.getByRole("button", { name: "Remove email" }));
+      expect(onRemove).toHaveBeenCalledWith(email);
     });
 
-    it("offers Remove on a confirmed non-primary contact-only row and calls onRemove", async () => {
-      const user = userEvent.setup();
-      const onRemove = vi.fn().mockResolvedValue();
-      const verified = { ...backup, otpConfirmed: true, isPrimary: false };
+    it("does not offer Remove email on the primary contact", () => {
       render(
         <SignInMethodList
-          emails={[verified]}
+          emails={[makeEmail({ isPrimary: true })]}
           internalIdentities={[]}
-          externalIdentities={[makeIdentity()]}
+          externalIdentities={[]}
           isLoading={false}
-          onUnlink={vi.fn()}
-          onRemove={onRemove}
-        />,
-      );
-
-      const rows = screen.getAllByRole("listitem");
-      await user.click(within(rows[1]).getByRole("button", { name: "Remove" }));
-      expect(onRemove).toHaveBeenCalledWith(verified);
-    });
-
-    it("does not offer Remove on the primary contact row, confirmed or not", () => {
-      const primary = { ...backup, otpConfirmed: true, isPrimary: true };
-      render(
-        <SignInMethodList
-          emails={[primary]}
-          internalIdentities={[]}
-          externalIdentities={[makeIdentity()]}
-          isLoading={false}
-          onUnlink={vi.fn()}
           onRemove={vi.fn()}
         />,
       );
 
-      const rows = screen.getAllByRole("listitem");
       expect(
-        within(rows[1]).queryByRole("button", { name: "Remove" }),
+        screen.queryByRole("button", { name: "Remove email" }),
       ).not.toBeInTheDocument();
     });
 
-    it("does not offer Remove when onRemove is not provided", () => {
+    it("does not offer Remove email when onRemove is not provided", () => {
       render(
         <SignInMethodList
-          emails={[backup]}
+          emails={[makeEmail({ emailId: 3, email: "backup@x.com" })]}
           internalIdentities={[]}
           externalIdentities={[]}
           isLoading={false}
-          onUnlink={vi.fn()}
         />,
       );
 
       expect(
-        screen.queryByRole("button", { name: "Remove" }),
+        screen.queryByRole("button", { name: "Remove email" }),
       ).not.toBeInTheDocument();
     });
 
@@ -630,18 +480,18 @@ describe("SignInMethodList", () => {
             resolve = r;
           }),
       );
+
       render(
         <SignInMethodList
-          emails={[backup]}
+          emails={[makeEmail({ emailId: 3, email: "backup@x.com" })]}
           internalIdentities={[]}
           externalIdentities={[]}
           isLoading={false}
-          onUnlink={vi.fn()}
           onRemove={onRemove}
         />,
       );
 
-      await user.click(screen.getByRole("button", { name: "Remove" }));
+      await user.click(screen.getByRole("button", { name: "Remove email" }));
 
       expect(screen.getByText("Removing…")).toBeInTheDocument();
       screen
@@ -655,158 +505,42 @@ describe("SignInMethodList", () => {
     });
   });
 
-  describe("Current session identity", () => {
-    it("does not show a 'Primary sign-in' badge on the current-session identity", () => {
-      const externalIdentities = [
-        makeIdentity({
-          identityId: 1,
-          subjectIdentifier: "google-oauth2|1",
-          isCurrentSession: true,
-        }),
-      ];
-
-      render(
-        <SignInMethodList
-          internalIdentities={[]}
-          externalIdentities={externalIdentities}
-          isLoading={false}
-          onUnlink={vi.fn()}
-        />,
-      );
-
-      expect(screen.queryByText("Primary sign-in")).not.toBeInTheDocument();
-    });
-
-    it("hides Remove for the current-session identity while peers keep theirs", () => {
-      const externalIdentities = [
-        makeIdentity({
-          identityId: 1,
-          subjectIdentifier: "google-oauth2|1",
-          isCurrentSession: true,
-        }),
-        makeIdentity({
-          identityId: 2,
-          subjectIdentifier: "auth0|2",
-          isCurrentSession: false,
-        }),
-      ];
-
-      render(
-        <SignInMethodList
-          internalIdentities={[]}
-          externalIdentities={externalIdentities}
-          isLoading={false}
-          onUnlink={vi.fn()}
-        />,
-      );
-
-      const rows = screen.getAllByRole("listitem");
-      // The current-session row still has no Remove control regardless of
-      // canUnlink; the other external identity keeps its own.
-      expect(
-        within(rows[0]).queryByRole("button", { name: "Remove" }),
-      ).not.toBeInTheDocument();
-      expect(
-        within(rows[1]).getByRole("button", { name: "Remove" }),
-      ).toBeInTheDocument();
-    });
-
-    it("shows the Internal badge but no 'Primary sign-in' badge on an internal current-session identity", () => {
-      const internalIdentity = makeIdentity({
-        identityId: 99,
-        subjectIdentifier: "auth0|work",
-        isCurrentSession: true,
-      });
-      const externalIdentities = [
-        makeIdentity({ identityId: 1, subjectIdentifier: "google-oauth2|1" }),
-      ];
-
-      render(
-        <SignInMethodList
-          internalIdentities={[internalIdentity]}
-          externalIdentities={externalIdentities}
-          isLoading={false}
-          onUnlink={vi.fn()}
-        />,
-      );
-
-      const rows = screen.getAllByRole("listitem");
-      expect(within(rows[0]).getByText("Internal")).toBeInTheDocument();
-      expect(
-        within(rows[0]).queryByText("Primary sign-in"),
-      ).not.toBeInTheDocument();
-      expect(
-        within(rows[0]).queryByRole("button", { name: "Remove" }),
-      ).not.toBeInTheDocument();
-    });
-  });
-
   describe("Set as primary contact", () => {
-    const verifiedNonPrimary = {
-      emailId: 50,
-      email: "alice@gmail.com",
-      isPrimary: false,
-      otpConfirmed: true,
-    };
+    it("offers the action for a verified, non-primary email on a non-internal account", async () => {
+      const user = userEvent.setup();
+      const onSetPrimary = vi.fn().mockResolvedValue();
+      const email = makeEmail({ emailId: 3, email: "backup@x.com" });
 
-    it("offers the action for a verified, non-primary contact email", () => {
       render(
         <SignInMethodList
-          emails={[verifiedNonPrimary]}
+          emails={[email]}
           internalIdentities={[]}
-          externalIdentities={[
-            makeIdentity({
-              subjectIdentifier: "email|1",
-              emailClaim: "alice@gmail.com",
-            }),
-          ]}
+          externalIdentities={[]}
           isLoading={false}
-          onUnlink={vi.fn()}
-          onSetPrimary={vi.fn()}
+          onSetPrimary={onSetPrimary}
         />,
       );
 
-      expect(
+      await user.click(
         screen.getByRole("button", { name: "Set as primary contact" }),
-      ).toBeInTheDocument();
-    });
-
-    it("badges the primary contact email and offers no action for it", () => {
-      render(
-        <SignInMethodList
-          emails={[{ ...verifiedNonPrimary, isPrimary: true }]}
-          internalIdentities={[]}
-          externalIdentities={[
-            makeIdentity({
-              subjectIdentifier: "email|1",
-              emailClaim: "alice@gmail.com",
-            }),
-          ]}
-          isLoading={false}
-          onUnlink={vi.fn()}
-          onSetPrimary={vi.fn()}
-        />,
       );
-
-      expect(screen.getByText("Primary contact")).toBeInTheDocument();
-      expect(
-        screen.queryByRole("button", { name: "Set as primary contact" }),
-      ).not.toBeInTheDocument();
+      expect(onSetPrimary).toHaveBeenCalledWith(email);
     });
 
-    it("does not offer the action for an unverified contact email", () => {
+    it("does not offer the action on the primary or an unverified email", () => {
       render(
         <SignInMethodList
-          emails={[{ ...verifiedNonPrimary, otpConfirmed: false }]}
-          internalIdentities={[]}
-          externalIdentities={[
-            makeIdentity({
-              subjectIdentifier: "email|1",
-              emailClaim: "alice@gmail.com",
+          emails={[
+            makeEmail({ emailId: 1, email: "main@x.com", isPrimary: true }),
+            makeEmail({
+              emailId: 2,
+              email: "new@x.com",
+              otpConfirmed: false,
             }),
           ]}
+          internalIdentities={[]}
+          externalIdentities={[]}
           isLoading={false}
-          onUnlink={vi.fn()}
           onSetPrimary={vi.fn()}
         />,
       );
@@ -816,14 +550,18 @@ describe("SignInMethodList", () => {
       ).not.toBeInTheDocument();
     });
 
-    it("offers the action on an internal identity whose email qualifies", () => {
+    it("never offers the action on an internal account", () => {
+      // Internal accounts keep a corp-managed primary; the action is withheld
+      // even for a qualifying non-corp email.
       render(
         <SignInMethodList
-          emails={[{ ...verifiedNonPrimary, email: "work@circlecat.org" }]}
+          emails={[
+            makeEmail({ email: "work@circlecat.org", isPrimary: true }),
+            makeEmail({ emailId: 2, email: "personal@gmail.com" }),
+          ]}
           internalIdentities={[
             makeIdentity({
-              identityId: 99,
-              subjectIdentifier: "email|work",
+              subjectIdentifier: "google-oauth2|work",
               emailClaim: "work@circlecat.org",
             }),
           ]}
@@ -834,38 +572,26 @@ describe("SignInMethodList", () => {
       );
 
       expect(
-        screen.getByRole("button", { name: "Set as primary contact" }),
-      ).toBeInTheDocument();
+        screen.queryByRole("button", { name: "Set as primary contact" }),
+      ).not.toBeInTheDocument();
     });
 
-    it("calls onSetPrimary with the matching contact-email row when clicked", async () => {
-      const user = userEvent.setup();
-      const onSetPrimary = vi.fn().mockResolvedValue();
-
+    it("offers no action without onSetPrimary", () => {
       render(
         <SignInMethodList
-          emails={[verifiedNonPrimary]}
+          emails={[makeEmail({ emailId: 3, email: "backup@x.com" })]}
           internalIdentities={[]}
-          externalIdentities={[
-            makeIdentity({
-              subjectIdentifier: "email|1",
-              emailClaim: "alice@gmail.com",
-            }),
-          ]}
+          externalIdentities={[]}
           isLoading={false}
-          onUnlink={vi.fn()}
-          onSetPrimary={onSetPrimary}
         />,
       );
 
-      await user.click(
-        screen.getByRole("button", { name: "Set as primary contact" }),
-      );
-
-      expect(onSetPrimary).toHaveBeenCalledWith(verifiedNonPrimary);
+      expect(
+        screen.queryByRole("button", { name: "Set as primary contact" }),
+      ).not.toBeInTheDocument();
     });
 
-    it("shows a busy label and disables actions while setting the contact email", async () => {
+    it("shows a busy label and disables actions while setting the primary", async () => {
       const user = userEvent.setup();
       let resolve;
       const onSetPrimary = vi.fn(
@@ -877,22 +603,10 @@ describe("SignInMethodList", () => {
 
       render(
         <SignInMethodList
-          emails={[verifiedNonPrimary]}
+          emails={[makeEmail({ emailId: 3, email: "backup@x.com" })]}
           internalIdentities={[]}
-          externalIdentities={[
-            makeIdentity({
-              identityId: 1,
-              subjectIdentifier: "email|1",
-              emailClaim: "alice@gmail.com",
-            }),
-            makeIdentity({
-              identityId: 2,
-              subjectIdentifier: "auth0|2",
-              emailClaim: "other@gmail.com",
-            }),
-          ]}
+          externalIdentities={[]}
           isLoading={false}
-          onUnlink={vi.fn()}
           onSetPrimary={onSetPrimary}
         />,
       );
@@ -911,106 +625,57 @@ describe("SignInMethodList", () => {
         expect(screen.queryByText("Setting…")).not.toBeInTheDocument(),
       );
     });
+  });
 
-    it("offers no set-primary action without emails/onSetPrimary", () => {
+  describe("Multi-path hint", () => {
+    it("warns when an address has both a removable sign-in and a removable Email OTP", () => {
       render(
         <SignInMethodList
+          emails={[makeEmail()]}
           internalIdentities={[]}
-          externalIdentities={[
-            makeIdentity({
-              subjectIdentifier: "email|1",
-              emailClaim: "alice@gmail.com",
-            }),
-          ]}
+          externalIdentities={[makeIdentity()]}
           isLoading={false}
           onUnlink={vi.fn()}
+          onRemove={vi.fn()}
         />,
       );
 
       expect(
-        screen.queryByRole("button", { name: "Set as primary contact" }),
-      ).not.toBeInTheDocument();
-    });
-
-    it("moves the set-primary action to the contact row for a non-email sign-in method", () => {
-      // A non-email method (Google) never exposes contact-email management on
-      // its own row; the verified address renders as a contact-only row, and
-      // THAT row carries the set-primary action so it is never stranded.
-      render(
-        <SignInMethodList
-          emails={[verifiedNonPrimary]}
-          internalIdentities={[]}
-          externalIdentities={[
-            makeIdentity({
-              subjectIdentifier: "google-oauth2|1",
-              emailClaim: "alice@gmail.com",
-            }),
-          ]}
-          isLoading={false}
-          onUnlink={vi.fn()}
-          onSetPrimary={vi.fn()}
-        />,
-      );
-
-      const rows = screen.getAllByRole("listitem");
-      expect(
-        within(rows[0]).queryByRole("button", {
-          name: "Set as primary contact",
-        }),
-      ).not.toBeInTheDocument();
-      expect(
-        within(rows[1]).getByRole("button", { name: "Set as primary contact" }),
+        screen.getByText(/won.t fully disconnect this address/i),
       ).toBeInTheDocument();
     });
 
-    it("matches the contact email regardless of casing", () => {
+    it("shows no hint for an address with only Email OTP", () => {
       render(
         <SignInMethodList
-          emails={[{ ...verifiedNonPrimary, email: "Alice@Gmail.com" }]}
+          emails={[makeEmail({ emailId: 3, email: "backup@x.com" })]}
           internalIdentities={[]}
-          externalIdentities={[
-            makeIdentity({
-              subjectIdentifier: "email|1",
-              emailClaim: "alice@gmail.com",
-            }),
-          ]}
+          externalIdentities={[]}
           isLoading={false}
-          onUnlink={vi.fn()}
-          onSetPrimary={vi.fn()}
+          onRemove={vi.fn()}
         />,
       );
 
       expect(
-        screen.getByRole("button", { name: "Set as primary contact" }),
-      ).toBeInTheDocument();
+        screen.queryByText(/won.t fully disconnect this address/i),
+      ).not.toBeInTheDocument();
     });
 
-    it("keeps the primary-contact badge off a non-email sign-in method row", () => {
+    it("shows no hint when the Email OTP address is the primary (not removable)", () => {
       render(
         <SignInMethodList
-          emails={[{ ...verifiedNonPrimary, isPrimary: true }]}
+          emails={[makeEmail({ isPrimary: true })]}
           internalIdentities={[]}
-          externalIdentities={[
-            makeIdentity({
-              subjectIdentifier: "google-oauth2|1",
-              emailClaim: "alice@gmail.com",
-            }),
-          ]}
+          externalIdentities={[makeIdentity()]}
           isLoading={false}
           onUnlink={vi.fn()}
-          onSetPrimary={vi.fn()}
+          onRemove={vi.fn()}
         />,
       );
 
-      // The Google row itself carries no contact-email state; the address —
-      // unclaimed by any email sign-in method — trails as its own contact
-      // row, which is where the badge lives.
-      const rows = screen.getAllByRole("listitem");
-      expect(rows).toHaveLength(2);
       expect(
-        within(rows[0]).queryByText("Primary contact"),
+        screen.queryByText(/won.t fully disconnect this address/i),
       ).not.toBeInTheDocument();
-      expect(within(rows[1]).getByText("Primary contact")).toBeInTheDocument();
     });
   });
 });

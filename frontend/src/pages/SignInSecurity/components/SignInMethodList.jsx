@@ -2,167 +2,258 @@ import { useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { providerLabel, isEmailMethod } from "@/pages/SignInSecurity/providers";
+import { providerLabel } from "@/pages/SignInSecurity/providers";
 
 /**
- * One sign-in method row. Only an email sign-in method exposes contact-email
- * management: when its email maps to a synced contact email, the row shows its
- * primary state and — if that email is verified and not already primary — a
- * "Set as primary contact" action (the same step-up flow the standalone email
- * card used). The caller passes `emailRow` only for email methods, so non-email
- * methods (SSO, email-and-password) never show either. An external,
- * non-current-session method can also be removed.
+ * Group the account's confirmed emails and sign-in identities by address.
+ *
+ * The page is address-centric: one row per address, carrying every capability
+ * that address grants (a `Google account` sign-in, `Email OTP` passwordless, or
+ * both). An email and the identities whose `emailClaim` matches it collapse into
+ * a single group so an address is never listed twice. Identities with no email
+ * claim (rare) key on their subject identifier and render as their own,
+ * chip-less row.
+ *
+ * @param {Array<object>} emails - confirmed contact-email rows.
+ * @param {Array<object>} internalIdentities - INTERNAL sign-in identities.
+ * @param {Array<object>} externalIdentities - EXTERNAL sign-in identities.
+ * @returns {Array<{
+ *   key: string,
+ *   address: string,
+ *   hasEmail: boolean,
+ *   emailRow: (object|undefined),
+ *   identities: Array<object>,
+ * }>} Address groups, primary-contact address first.
+ */
+const buildAddressGroups = (emails, internalIdentities, externalIdentities) => {
+  const groups = new Map();
+  const order = [];
+
+  const ensure = (key, address) => {
+    if (!groups.has(key)) {
+      groups.set(key, {
+        key,
+        address,
+        hasEmail: false,
+        emailRow: undefined,
+        identities: [],
+      });
+      order.push(key);
+    }
+    return groups.get(key);
+  };
+
+  emails.forEach((email) => {
+    const group = ensure((email.email || "").toLowerCase(), email.email);
+    group.emailRow = email;
+    group.hasEmail = true;
+  });
+
+  const addIdentity = (identity, internal) => {
+    const claim = identity.emailClaim || "";
+    // Claimless identities can't share an address, so they key on their sub and
+    // render as a lone provider row; email-claimed ones join their address.
+    const key = claim
+      ? claim.toLowerCase()
+      : `identity:${identity.subjectIdentifier}`;
+    const group = ensure(
+      key,
+      claim || providerLabel(identity.subjectIdentifier),
+    );
+    if (claim) group.hasEmail = true;
+    group.identities.push({
+      // Keep the raw identity so callbacks receive the exact object the caller
+      // passed in, unenriched.
+      raw: identity,
+      internal,
+      // Active employees keep their corp sign-ins; only external identities
+      // can be unlinked here (the backend enforces the same rule).
+      canUnlink: !internal,
+    });
+  };
+
+  internalIdentities.forEach((identity) => addIdentity(identity, true));
+  externalIdentities.forEach((identity) => addIdentity(identity, false));
+
+  const ordered = order.map((key) => groups.get(key));
+  // Primary-contact address leads; everything else keeps insertion order.
+  const primary = ordered.filter((group) => group.emailRow?.isPrimary);
+  const rest = ordered.filter((group) => !group.emailRow?.isPrimary);
+  return [...primary, ...rest];
+};
+
+/**
+ * The capability chips for an address, in reading order: each sign-in
+ * identity's provider label, then `Email OTP` when the address is a confirmed
+ * (passwordless-capable) email. Deduplicated, so an `email|` identity and its
+ * confirmed email row surface a single `Email OTP` chip.
+ *
+ * @param {{hasEmail: boolean, emailRow: (object|undefined), identities: Array<{raw: object}>}} group
+ * @returns {string[]} Distinct capability labels; empty for a chip-less row.
+ */
+const capabilityChips = (group) => {
+  if (!group.hasEmail) return [];
+  const chips = [];
+  const add = (label) => {
+    if (!chips.includes(label)) chips.push(label);
+  };
+  group.identities.forEach((entry) =>
+    add(providerLabel(entry.raw.subjectIdentifier)),
+  );
+  if (group.emailRow?.otpConfirmed) add("Email OTP");
+  return chips;
+};
+
+/**
+ * One address row: the address, its status badges (primary / internal /
+ * current session), its capability chips, and the actions that apply to it —
+ * set the contact email as primary, remove a sign-in identity, or remove the
+ * email. When an address grants more than one sign-in path (an identity plus
+ * Email OTP) and both are removable, a note explains that removing just one
+ * leaves the other live.
  *
  * @param {Object} props
- * @param {object} props.identity
- * @param {boolean} props.internal
- * @param {boolean} props.canUnlink
- * @param {object|undefined} props.emailRow - matching contact-email row, if any.
+ * @param {object} props.group - one entry from {@link buildAddressGroups}.
+ * @param {boolean} props.accountIsInternal - the account holds an INTERNAL
+ *   identity, so the primary contact is corp-managed and cannot be changed here.
  * @param {{kind: string, id: (number|string)}|null} props.busy - in-flight action.
  * @param {(identity: object) => void} [props.onUnlink]
  * @param {(emailRow: object) => void} [props.onSetPrimary]
+ * @param {(emailRow: object) => void} [props.onRemove]
  */
-const IdentityRow = ({
-  identity,
-  internal,
-  canUnlink,
-  emailRow,
+const AddressRow = ({
+  group,
+  accountIsInternal,
   busy,
   onUnlink,
   onSetPrimary,
+  onRemove,
 }) => {
   const isBusy = busy !== null;
+  const { emailRow, identities } = group;
+
+  const isInternal = identities.some((entry) => entry.internal);
+  const isCurrentSession = identities.some(
+    (entry) => entry.raw.isCurrentSession,
+  );
+  const chips = capabilityChips(group);
+
+  const removableIdentities = identities.filter(
+    (entry) => entry.canUnlink && !entry.raw.isCurrentSession,
+  );
   const canSetPrimary =
-    !!onSetPrimary && emailRow && emailRow.otpConfirmed && !emailRow.isPrimary;
+    !accountIsInternal &&
+    !!onSetPrimary &&
+    !!emailRow &&
+    emailRow.otpConfirmed &&
+    !emailRow.isPrimary;
+  const canRemoveEmail = !!onRemove && !!emailRow && !emailRow.isPrimary;
+  // Removing one path never fully disconnects an address that has two removable
+  // ones — say so, so nobody assumes "Remove ... sign-in" also kills Email OTP.
+  const showMultiPathHint =
+    !!onUnlink &&
+    removableIdentities.length > 0 &&
+    canRemoveEmail &&
+    emailRow.otpConfirmed;
 
   return (
-    <li className="flex items-center justify-between gap-2 py-3">
-      <div className="flex items-center gap-2">
-        <span className="font-medium">
-          {providerLabel(identity.subjectIdentifier)}
-        </span>
-        {identity.emailClaim && (
-          <span className="text-sm text-muted-foreground">
-            {identity.emailClaim}
-          </span>
-        )}
-        {internal && <Badge>Internal</Badge>}
-        {identity.isCurrentSession && (
-          <Badge variant="outline">Current session</Badge>
-        )}
-        {emailRow?.isPrimary && (
-          <Badge variant="secondary">Primary contact</Badge>
-        )}
+    <li className="flex flex-col gap-1 py-3">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="font-medium">{group.address}</span>
+          {emailRow?.isPrimary && (
+            <Badge variant="secondary">Primary contact</Badge>
+          )}
+          {isInternal && <Badge>Internal</Badge>}
+          {isCurrentSession && <Badge variant="outline">Current session</Badge>}
+        </div>
+        <div className="flex flex-wrap items-center justify-end gap-1">
+          {canSetPrimary && (
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={isBusy}
+              onClick={() => onSetPrimary(emailRow)}
+            >
+              {busy?.kind === "primary" && busy.id === emailRow.emailId
+                ? "Setting…"
+                : "Set as primary contact"}
+            </Button>
+          )}
+          {!!onUnlink &&
+            removableIdentities.map((entry) => (
+              <Button
+                key={entry.raw.identityId}
+                size="sm"
+                variant="ghost"
+                disabled={isBusy}
+                onClick={() => onUnlink(entry.raw)}
+              >
+                {busy?.kind === "unlink" && busy.id === entry.raw.identityId
+                  ? "Removing…"
+                  : `Remove ${providerLabel(entry.raw.subjectIdentifier)} sign-in`}
+              </Button>
+            ))}
+          {canRemoveEmail && (
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={isBusy}
+              onClick={() => onRemove(emailRow)}
+            >
+              {busy?.kind === "removeEmail" && busy.id === emailRow.emailId
+                ? "Removing…"
+                : "Remove email"}
+            </Button>
+          )}
+        </div>
       </div>
-      <div className="flex items-center gap-1">
-        {canSetPrimary && (
-          <Button
-            size="sm"
-            variant="ghost"
-            disabled={isBusy}
-            onClick={() => onSetPrimary(emailRow)}
-          >
-            {busy?.kind === "primary" && busy.id === emailRow.emailId
-              ? "Setting…"
-              : "Set as primary contact"}
-          </Button>
-        )}
-        {canUnlink && !identity.isCurrentSession && (
-          <Button
-            size="sm"
-            variant="ghost"
-            disabled={isBusy}
-            onClick={() => onUnlink(identity)}
-          >
-            {busy?.kind === "unlink" && busy.id === identity.identityId
-              ? "Removing…"
-              : "Remove"}
-          </Button>
-        )}
-      </div>
+      {chips.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1">
+          {chips.map((chip) => (
+            <Badge
+              key={chip}
+              variant="outline"
+              className="font-normal text-muted-foreground"
+            >
+              {chip}
+            </Badge>
+          ))}
+        </div>
+      )}
+      {showMultiPathHint && (
+        <p className="text-xs text-muted-foreground">
+          Removing one method won&apos;t fully disconnect this address — remove
+          both its sign-in and Email OTP to cut it off.
+        </p>
+      )}
     </li>
   );
 };
 
 /**
- * One contact-only email row: an address with no sign-in identity behind it
- * (e.g. a verified address whose email sign-in method was removed). Shows
- * the primary state; a non-primary address offers "Remove" — the server
- * refuses to remove the address backing the caller's own current
- * passwordless session, and that rejection surfaces here as a toast — and,
- * if not already primary, "Set as primary contact" (the same step-up flow
- * the sign-in method rows use).
+ * Address-centric list of how the account signs in: one row per address, each
+ * showing the sign-in paths that address grants as capability chips
+ * (`Google account`, `Email OTP`) alongside its status badges, plus the actions
+ * that apply to it. An address is never listed twice — a confirmed email and
+ * the identities claiming it collapse into one row.
  *
- * @param {Object} props
- * @param {object} props.emailRow
- * @param {{kind: string, id: (number|string)}|null} props.busy - in-flight action.
- * @param {(emailRow: object) => void} [props.onRemove]
- * @param {(emailRow: object) => void} [props.onSetPrimary]
- */
-const ContactEmailRow = ({ emailRow, busy, onRemove, onSetPrimary }) => (
-  <li className="flex items-center justify-between gap-2 py-3">
-    <div className="flex items-center gap-2">
-      <span className="font-medium">{emailRow.email}</span>
-      {emailRow.isPrimary && <Badge variant="secondary">Primary contact</Badge>}
-    </div>
-    <div className="flex items-center gap-1">
-      {emailRow.otpConfirmed && !emailRow.isPrimary && !!onSetPrimary && (
-        <Button
-          size="sm"
-          variant="ghost"
-          disabled={busy !== null}
-          onClick={() => onSetPrimary(emailRow)}
-        >
-          {busy?.kind === "primary" && busy.id === emailRow.emailId
-            ? "Setting…"
-            : "Set as primary contact"}
-        </Button>
-      )}
-      {!emailRow.isPrimary && !!onRemove && (
-        <Button
-          size="sm"
-          variant="ghost"
-          disabled={busy !== null}
-          onClick={() => onRemove(emailRow)}
-        >
-          {busy?.kind === "removeEmail" && busy.id === emailRow.emailId
-            ? "Removing…"
-            : "Remove"}
-        </Button>
-      )}
-    </div>
-  </li>
-);
-
-/**
- * Merged list of the caller's sign-in methods and contact emails: the
- * internal (work) identities, if any, then external identities, then the
- * contact-only addresses (emails with no identity claiming them — e.g. a
- * verified address whose email sign-in method was removed). An employee may
- * hold more than one internal identity (e.g. an SSO login plus an OTP-linked
- * corp email). Internal identities cannot be unlinked here; an external
- * identity can always be removed, current session excepted — the always-live
- * email OTP path to the primary contact means removing the last remaining
- * sign-in method can never lock the caller out (the backend additionally
- * refuses the current session's identity and an active employee's corp
- * sign-in).
- *
- * An email sign-in method's row carries its contact-email state: a
- * non-primary address can be set as the primary contact from there. A
- * contact-only address offers the same "Set as primary contact" action when
- * it is not already primary, and "Remove" when it is not the primary
- * contact. A single in-flight action disables every action button on the
- * list.
+ * Actions per row: set a confirmed, non-primary email as the primary contact
+ * (hidden for internal accounts, whose primary is corp-managed); remove an
+ * external, non-current-session sign-in identity; and remove a non-primary
+ * email. A confirmed primary email is always a passwordless login path, so
+ * removing the last identity can never lock the caller out. A single in-flight
+ * action disables every button.
  *
  * @component
  * @param {Object} props
- * @param {Array<object>} [props.emails] - contact-email rows from `GET /auth/emails`.
+ * @param {Array<object>} [props.emails] - confirmed contact-email rows from `GET /auth/emails`.
  * @param {Array<object>} props.internalIdentities
  * @param {Array<object>} props.externalIdentities
  * @param {boolean} props.isLoading
- * @param {(identity: object) => Promise<void>} props.onUnlink
+ * @param {(identity: object) => Promise<void>} [props.onUnlink] - remove a sign-in identity.
  * @param {(emailRow: object) => Promise<void>} [props.onSetPrimary] - start promoting a contact email.
- * @param {(emailRow: object) => Promise<void>} [props.onRemove] - remove a non-primary contact-only address.
+ * @param {(emailRow: object) => Promise<void>} [props.onRemove] - remove a non-primary email.
  */
 const SignInMethodList = ({
   emails = [],
@@ -175,64 +266,33 @@ const SignInMethodList = ({
 }) => {
   const [busy, setBusy] = useState(null);
 
-  // Keyed case-insensitively so a contact row matches its identity's email
-  // claim regardless of casing, mirroring the backend's lower-cased join.
-  const emailByAddress = new Map(
-    emails.map((email) => [(email.email || "").toLowerCase(), email]),
+  const groups = buildAddressGroups(
+    emails,
+    internalIdentities,
+    externalIdentities,
   );
+  const accountIsInternal = internalIdentities.length > 0;
 
-  // The synced contact-email row for an identity, but only for email sign-in
-  // methods — non-email methods do not expose contact-email management.
-  const emailRowFor = (identity) =>
-    isEmailMethod(identity.subjectIdentifier)
-      ? emailByAddress.get((identity.emailClaim || "").toLowerCase())
-      : undefined;
-
-  // Addresses no email sign-in method claims render as their own rows.
-  const claimedAddresses = new Set(
-    [...internalIdentities, ...externalIdentities]
-      .filter((identity) => isEmailMethod(identity.subjectIdentifier))
-      .map((identity) => (identity.emailClaim || "").toLowerCase()),
-  );
-  const contactOnlyEmails = emails.filter(
-    (email) => !claimedAddresses.has((email.email || "").toLowerCase()),
-  );
-
-  const handleUnlink = async (identity) => {
-    setBusy({ kind: "unlink", id: identity.identityId });
+  const runBusy = async (kind, id, action) => {
+    setBusy({ kind, id });
     try {
-      await onUnlink(identity);
+      await action();
     } finally {
       setBusy(null);
     }
   };
 
-  const handleSetPrimary = async (emailRow) => {
-    setBusy({ kind: "primary", id: emailRow.emailId });
-    try {
-      await onSetPrimary(emailRow);
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const handleRemove = async (emailRow) => {
-    setBusy({ kind: "removeEmail", id: emailRow.emailId });
-    try {
-      await onRemove(emailRow);
-    } finally {
-      setBusy(null);
-    }
-  };
+  const handleUnlink = (identity) =>
+    runBusy("unlink", identity.identityId, () => onUnlink(identity));
+  const handleSetPrimary = (emailRow) =>
+    runBusy("primary", emailRow.emailId, () => onSetPrimary(emailRow));
+  const handleRemove = (emailRow) =>
+    runBusy("removeEmail", emailRow.emailId, () => onRemove(emailRow));
 
   if (isLoading) {
     return <p className="text-sm text-muted-foreground">Loading…</p>;
   }
-  if (
-    !internalIdentities.length &&
-    !externalIdentities.length &&
-    !contactOnlyEmails.length
-  ) {
+  if (groups.length === 0) {
     return (
       <p className="text-sm text-muted-foreground">No sign-in methods yet.</p>
     );
@@ -240,35 +300,15 @@ const SignInMethodList = ({
 
   return (
     <ul className="divide-y">
-      {internalIdentities.map((identity) => (
-        <IdentityRow
-          key={identity.identityId}
-          identity={identity}
-          internal
-          canUnlink={false}
-          emailRow={emailRowFor(identity)}
+      {groups.map((group) => (
+        <AddressRow
+          key={group.key}
+          group={group}
+          accountIsInternal={accountIsInternal}
           busy={busy}
-          onSetPrimary={handleSetPrimary}
-        />
-      ))}
-      {externalIdentities.map((identity) => (
-        <IdentityRow
-          key={identity.identityId}
-          identity={identity}
-          canUnlink
-          emailRow={emailRowFor(identity)}
-          busy={busy}
-          onUnlink={handleUnlink}
-          onSetPrimary={handleSetPrimary}
-        />
-      ))}
-      {contactOnlyEmails.map((emailRow) => (
-        <ContactEmailRow
-          key={`email-${emailRow.emailId}`}
-          emailRow={emailRow}
-          busy={busy}
-          onRemove={onRemove ? handleRemove : undefined}
+          onUnlink={onUnlink ? handleUnlink : undefined}
           onSetPrimary={onSetPrimary ? handleSetPrimary : undefined}
+          onRemove={onRemove ? handleRemove : undefined}
         />
       ))}
     </ul>

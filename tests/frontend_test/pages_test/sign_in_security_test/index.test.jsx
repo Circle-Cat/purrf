@@ -366,9 +366,9 @@ describe("SignInSecurity page", () => {
       expect(screen.getByTestId("stepup-title")).toHaveTextContent(
         UNLINK_TITLE,
       );
-      // identityLabel maps google-oauth2 → Google and appends the email claim.
+      // identityLabel maps google-oauth2 → Google account and appends the claim.
       expect(screen.getByTestId("stepup-desc")).toHaveTextContent(
-        "Google (ext@gmail.com)",
+        "Google account (ext@gmail.com)",
       );
     });
 
@@ -381,9 +381,9 @@ describe("SignInSecurity page", () => {
 
       await screen.findByTestId("stepup-dialog");
       expect(screen.getByTestId("stepup-desc")).toHaveTextContent(
-        "This removes only the sign-in shortcut. Its email address stays " +
-          "on your account and can still be used to sign in. To fully cut " +
-          "this sign-in off, also remove that address.",
+        "This removes only that sign-in. Its email address stays on your " +
+          "account and can still be used to sign in with Email OTP. To fully " +
+          "disconnect this address, also remove its Email OTP.",
       );
     });
 
