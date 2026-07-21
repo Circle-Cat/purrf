@@ -329,7 +329,7 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
         """External passwordless swap is row-less: confirm the migrated claim
         and DELETE the manual| placeholder — never overwrite it into an email|
         row."""
-        mocked, resolved = self._arrange_swap_hit()
+        _, resolved = self._arrange_swap_hit()
         row = MagicMock(spec=UserEmailsEntity, otp_confirmed=False, is_primary=False)
         self.emails_repo.get_by_user_and_email.return_value = row
         self.emails_repo.has_primary.return_value = False
@@ -354,7 +354,7 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
     async def test_swap_google_still_overwrites_and_keeps_row(self):
         """Google swap is NOT row-less: overwrite the placeholder with the real
         sub (row kept), and never delete it — regression guard."""
-        mocked, resolved = self._arrange_swap_hit()
+        self._arrange_swap_hit()
         row = MagicMock(spec=UserEmailsEntity, otp_confirmed=False, is_primary=False)
         self.emails_repo.get_by_user_and_email.return_value = row
         self.emails_repo.has_primary.return_value = False
