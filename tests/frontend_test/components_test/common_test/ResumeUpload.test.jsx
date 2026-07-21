@@ -221,6 +221,46 @@ describe("ResumeUpload with showPreview", () => {
     await waitFor(() => expect(onParsed).toHaveBeenCalledTimes(1));
   });
 
+  it("shows a Remove control alongside Change after a valid pick when onRemove is given", async () => {
+    render(<ResumeUpload onParsed={vi.fn()} onRemove={vi.fn()} showPreview />);
+    selectFile(pdfFile());
+    await waitFor(() =>
+      expect(screen.getByText(/resume\.pdf · Change/)).toBeInTheDocument(),
+    );
+    expect(screen.getByRole("button", { name: "Remove" })).toBeInTheDocument();
+  });
+
+  it("does not show a Remove control when onRemove is not given", async () => {
+    render(<ResumeUpload onParsed={vi.fn()} showPreview />);
+    selectFile(pdfFile());
+    await waitFor(() =>
+      expect(screen.getByText(/resume\.pdf · Change/)).toBeInTheDocument(),
+    );
+    expect(
+      screen.queryByRole("button", { name: "Remove" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("Remove clears the preview back to the dropzone, revokes the blob URL, and calls onRemove", async () => {
+    const revokeSpy = vi.spyOn(URL, "revokeObjectURL");
+    const onRemove = vi.fn();
+    render(<ResumeUpload onParsed={vi.fn()} onRemove={onRemove} showPreview />);
+    selectFile(pdfFile());
+    await waitFor(() =>
+      expect(screen.getByText(/resume\.pdf · Change/)).toBeInTheDocument(),
+    );
+    const src = screen.getByTitle("Preview of resume.pdf").getAttribute("src");
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+
+    expect(onRemove).toHaveBeenCalledTimes(1);
+    expect(revokeSpy).toHaveBeenCalledWith(src);
+    expect(screen.getByText(/drag a resume PDF/i)).toBeInTheDocument();
+    expect(
+      screen.queryByTitle("Preview of resume.pdf"),
+    ).not.toBeInTheDocument();
+  });
+
   it("revokes the current blob URL on unmount", async () => {
     const revokeSpy = vi.spyOn(URL, "revokeObjectURL");
     const { unmount } = render(<ResumeUpload onParsed={vi.fn()} showPreview />);

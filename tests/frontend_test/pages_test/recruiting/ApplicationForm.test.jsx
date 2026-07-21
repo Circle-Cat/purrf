@@ -334,7 +334,7 @@ describe("ApplicationForm", () => {
     await waitFor(() => expect(button).not.toBeDisabled());
   });
 
-  it("merges complete new rows into the fetched profile (preserving existing rows and ids) when save-to-profile is checked", async () => {
+  it("overwrites the profile lists with the reviewed form rows (dropping stored rows the form omits) when save-to-profile is checked", async () => {
     const user = userEvent.setup();
     api.updateApplication.mockResolvedValue({ data: { id: 7 } });
     profileApi.getMyProfile.mockResolvedValue({
@@ -376,18 +376,12 @@ describe("ApplicationForm", () => {
     expect(profileApi.getMyProfile).toHaveBeenCalledWith({
       fields: ["workHistory", "education"],
     });
-    // Exact match doubles as the "personal identical to fetched -> NO user
-    // key" case: the form's {firstName: "Ann"} matches FETCHED_USER_ANN.
+    // Overwrite: the stored Stanford row is dropped -- the profile lists
+    // become exactly the form's reviewed rows. Exact match also doubles as
+    // the "personal identical to fetched -> NO user key" case (the form's
+    // {firstName: "Ann"} matches FETCHED_USER_ANN).
     expect(profileApi.updateMyProfile).toHaveBeenCalledWith({
       education: [
-        {
-          id: 33,
-          school: "Stanford",
-          degree: "Master",
-          fieldOfStudy: "EE",
-          startDate: "2010-09-01",
-          endDate: "2012-06-01",
-        },
         {
           school: "MIT",
           degree: "Bachelor",
@@ -408,11 +402,11 @@ describe("ApplicationForm", () => {
     });
   });
 
-  it("skips duplicate rows and omits lists that gained nothing", async () => {
+  it("omits an unchanged list and overwrites a changed one", async () => {
     const user = userEvent.setup();
     api.updateApplication.mockResolvedValue({ data: { id: 7 } });
-    // Profile already holds a content-identical SWE@Acme job, but not the
-    // MIT education row.
+    // Profile already holds a content-identical SWE@Acme job (so workHistory
+    // is unchanged and skipped), but no education (so it's overwritten).
     profileApi.getMyProfile.mockResolvedValue({
       data: {
         profile: {
@@ -460,6 +454,53 @@ describe("ApplicationForm", () => {
         },
       ],
     });
+  });
+
+  it("does not clear a stored profile list when the form's section is empty", async () => {
+    const user = userEvent.setup();
+    api.updateApplication.mockResolvedValue({ data: { id: 7 } });
+    // The form collects only personal fields (education/experience empty), but
+    // the profile already has an education row -- an empty form section must
+    // never overwrite (wipe) it.
+    profileApi.getMyProfile.mockResolvedValue({
+      data: {
+        profile: {
+          user: FETCHED_USER_NEW,
+          education: [
+            {
+              id: 5,
+              school: "MIT",
+              degree: "Bachelor",
+              fieldOfStudy: "CS",
+              startDate: "2016-09-01",
+              endDate: "2020-05-01",
+            },
+          ],
+          workHistory: [],
+        },
+      },
+    });
+    profileApi.updateMyProfile.mockResolvedValue({ data: {} });
+    render(
+      <ApplicationForm
+        job={JOB}
+        existing={PERSONAL_ONLY_EXISTING}
+        onSubmitted={vi.fn()}
+      />,
+    );
+
+    await user.click(
+      screen.getByRole("checkbox", { name: /save to my profile/i }),
+    );
+    await user.click(screen.getByRole("button", { name: /submit/i }));
+
+    await waitFor(() =>
+      expect(profileApi.updateMyProfile).toHaveBeenCalledTimes(1),
+    );
+    const payload = profileApi.updateMyProfile.mock.calls[0][0];
+    expect(payload).not.toHaveProperty("education");
+    expect(payload).not.toHaveProperty("workHistory");
+    expect(payload).toHaveProperty("user");
   });
 
   it("sends no PATCH when every complete new row already exists in the profile", async () => {
@@ -841,6 +882,45 @@ describe("ApplicationForm", () => {
     expect(
       screen.queryByText(/on file from your previous application/i),
     ).not.toBeInTheDocument();
+  });
+
+  it("removing the carried-forward résumé hides the banner and submits no résumé", async () => {
+    const user = userEvent.setup();
+    api.resumeUrl.mockImplementation((id) => `/resume/${id}`);
+    api.submitApplication.mockResolvedValue({ data: { id: 101 } });
+    const seedWithResume = {
+      ...FILLED_EXISTING.current,
+      resumeSha256: "old",
+      resumeObjectKey: "resumes/old.pdf",
+    };
+    render(
+      <ApplicationForm
+        job={JOB}
+        seed={seedWithResume}
+        seedApplicationId={9}
+        onSubmitted={vi.fn()}
+      />,
+    );
+
+    expect(
+      await screen.findByText(/on file from your previous application/i),
+    ).toBeInTheDocument();
+    // Keep the test focused on the résumé fields, not profile write-back.
+    await user.click(
+      screen.getByRole("checkbox", { name: /save to my profile/i }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+
+    expect(
+      screen.queryByText(/on file from your previous application/i),
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /submit/i }));
+    expect(api.submitApplication.mock.calls[0][0]).toMatchObject({
+      resumeSha256: null,
+      resumeObjectKey: null,
+    });
   });
 
   it("hides the résumé-on-file banner once a fresh file replaces the carried-forward résumé", async () => {
