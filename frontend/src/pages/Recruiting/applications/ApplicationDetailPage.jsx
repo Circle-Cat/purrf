@@ -634,6 +634,13 @@ const OtherApplicationsSection = ({
         {otherApplications.map((other) => {
           const isExpanded = other.application.id === expandedId;
           const otherSubmission = other.application.current?.submission ?? {};
+          // Shared between the full (tabbed) and reduced (evaluator) views.
+          const evaluationSummary = (
+            <EvaluationSummary
+              evaluations={other.evaluations}
+              interviewPool={interviewPool}
+            />
+          );
           return (
             <li key={other.application.id} className="rounded border p-2">
               <button
@@ -678,10 +685,7 @@ const OtherApplicationsSection = ({
                         <TabsTrigger value="comments">Comments</TabsTrigger>
                       </TabsList>
                       <TabsContent value="evaluations">
-                        <EvaluationSummary
-                          evaluations={other.evaluations}
-                          interviewPool={interviewPool}
-                        />
+                        {evaluationSummary}
                       </TabsContent>
                       <TabsContent value="timeline">
                         <ActivityTimeline
@@ -698,10 +702,7 @@ const OtherApplicationsSection = ({
                       <h3 className="text-xs font-semibold uppercase text-slate-500">
                         Evaluations
                       </h3>
-                      <EvaluationSummary
-                        evaluations={other.evaluations}
-                        interviewPool={interviewPool}
-                      />
+                      {evaluationSummary}
                     </div>
                   )}
                 </div>
