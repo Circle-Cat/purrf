@@ -335,7 +335,8 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
         self.emails_repo.has_primary.return_value = False
 
         result = await self.service.create_or_swap_user(
-            self.session, self._swap_passwordless_user_info()  # email|xyz, external
+            self.session,
+            self._swap_passwordless_user_info(),  # email|xyz, external
         )
 
         self.assertIs(result, resolved)

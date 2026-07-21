@@ -190,9 +190,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         """
         async with self.database.session() as session:
             async with session.begin():
-                rowless = is_rowless_login(
-                    user_context.sub, user_context.identity_type
-                )
+                rowless = is_rowless_login(user_context.sub, user_context.identity_type)
                 user = None
                 if not rowless:
                     # Sub-routed (google / INTERNAL, incl. corp passwordless):
