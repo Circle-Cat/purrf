@@ -401,6 +401,58 @@ class TestAuthMiddleware(unittest.TestCase):
             datetime.fromtimestamp(1_700_000_000, tz=timezone.utc),
         )
 
+    def test_rowless_login_skips_find_by_sub(self):
+        """External passwordless (row-less): find_user_by_sub is skipped
+        entirely; resolution goes straight to create_or_swap_user."""
+        user_context = make_user_context(sub="email|abc", identity_type="external")
+        self.mock_user_identity_service.create_or_swap_user.return_value = (
+            SimpleNamespace(
+                user_id=5, is_super_admin=False, is_active=True, last_login_at=None
+            )
+        )
+
+        middleware = AuthMiddleware(
+            app=MagicMock(),
+            auth_service=self.mock_auth_service,
+            database=self.mock_database,
+            user_identity_service=self.mock_user_identity_service,
+            user_permissions_repository=self.mock_user_permissions_repository,
+            logger=self.mock_logger,
+        )
+
+        asyncio.run(middleware._bootstrap_user(user_context))
+
+        self.mock_user_identity_service.find_user_by_sub.assert_not_called()
+        self.mock_user_identity_service.create_or_swap_user.assert_awaited_once()
+
+    def test_rowless_integrity_error_refinds_via_create_or_swap(self):
+        """Row-less concurrent first login: the winner wrote NO identity row, so
+        recovery re-resolves by confirmed address (create_or_swap again), never
+        by sub."""
+        user_context = make_user_context(sub="email|abc", identity_type="external")
+        self.mock_user_identity_service.create_or_swap_user.side_effect = [
+            IntegrityError("stmt", "params", Exception("unique")),
+            SimpleNamespace(
+                user_id=5, is_super_admin=False, is_active=True, last_login_at=None
+            ),
+        ]
+
+        middleware = AuthMiddleware(
+            app=MagicMock(),
+            auth_service=self.mock_auth_service,
+            database=self.mock_database,
+            user_identity_service=self.mock_user_identity_service,
+            user_permissions_repository=self.mock_user_permissions_repository,
+            logger=self.mock_logger,
+        )
+
+        asyncio.run(middleware._bootstrap_user(user_context))
+
+        self.assertEqual(
+            self.mock_user_identity_service.create_or_swap_user.await_count, 2
+        )
+        self.mock_user_identity_service.find_user_by_sub.assert_not_called()
+
     def test_bootstrap_skips_account_last_login_when_not_newer(self):
         """In-session requests (same iat) must not issue a pointless UPDATE:
         the stored value is left untouched (identity comparison)."""

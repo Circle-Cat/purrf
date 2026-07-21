@@ -160,3 +160,11 @@ py_test(
         "//backend/common:trusted_connections",
     ],
 )
+
+py_test(
+    name = "identity_type_test",
+    srcs = ["identity_type_test.py"],
+    deps = [
+        "//backend/common:identity_type",
+    ],
+)
