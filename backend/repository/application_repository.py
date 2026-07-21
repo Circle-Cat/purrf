@@ -208,6 +208,34 @@ class ApplicationRepository:
         )
         return result.scalars().first()
 
+    async def get_recent_hired_activity_role(
+        self, session: AsyncSession, user_id: int
+    ) -> ParticipantRole | None:
+        """Return the mentorship role of the user's most recent HIRED
+        ACTIVITY application, or None when they have none.
+
+        Source of truth for a user's participant role in a round: the role
+        is taken from the activity application they were hired into, not
+        from any prior round-participation record. When a user has been
+        hired into more than one role-bearing activity posting (e.g. both a
+        mentor and a mentee posting), the most recent application — the one
+        with the highest application_id — wins. (Future: allow a user to
+        register under multiple roles.)
+        """
+        result = await session.execute(
+            select(JobEntity.mentorship_role)
+            .join(ApplicationEntity, ApplicationEntity.job_id == JobEntity.job_id)
+            .where(
+                ApplicationEntity.user_id == user_id,
+                ApplicationEntity.stage == ApplicationStage.HIRED,
+                JobEntity.kind == JobKind.ACTIVITY,
+                JobEntity.mentorship_role.is_not(None),
+            )
+            .order_by(ApplicationEntity.application_id.desc())
+            .limit(1)
+        )
+        return result.scalars().first()
+
     async def get_by_id(
         self,
         session: AsyncSession,
