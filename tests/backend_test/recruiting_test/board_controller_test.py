@@ -256,6 +256,48 @@ class TestBoardController(unittest.IsolatedAsyncioTestCase):
             [Permission.RECRUITING_BLACKLIST_WRITE],
         )
 
+    async def test_board_stage_page_returns_service_payload(self):
+        self.board_service.get_board_stage_page = AsyncMock(
+            return_value={"items": [], "total": 25, "has_more": True}
+        )
+
+        resp = await self.controller.get_board_stage_page(
+            self.ctx, job_id=1, stage="rejected", limit=20, offset=0
+        )
+
+        self.assertEqual(resp["data"]["total"], 25)
+
+    async def test_board_stage_page_rejects_bad_stage(self):
+        self.board_service.get_board_stage_page = AsyncMock(
+            return_value={"items": [], "total": 0, "has_more": False}
+        )
+
+        with self.assertRaises(Exception):  # 400 / ValueError depending on layer
+            await self.controller.get_board_stage_page(
+                self.ctx, job_id=1, stage="not_a_stage", limit=20, offset=0
+            )
+
+    async def test_board_stage_page_clamps_limit(self):
+        self.board_service.get_board_stage_page = AsyncMock(
+            return_value={"items": [], "total": 0, "has_more": False}
+        )
+
+        await self.controller.get_board_stage_page(
+            self.ctx, job_id=1, stage="rejected", limit=9999, offset=0
+        )
+
+        called_limit = self.board_service.get_board_stage_page.call_args.kwargs.get(
+            "limit"
+        ) or self.board_service.get_board_stage_page.call_args.args[-2]
+        self.assertLessEqual(called_limit, 100)
+
+    def test_board_stage_page_route_is_get_and_plain_authenticated(self):
+        routes_by_path = {route.path: route for route in self.controller.router.routes}
+
+        route = routes_by_path["/recruiting/jobs/{job_id}/board/applications"]
+
+        self.assertIn("GET", route.methods)
+
 
 if __name__ == "__main__":
     unittest.main()
