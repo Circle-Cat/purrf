@@ -1357,7 +1357,8 @@ class BoardService:
         dto: BlacklistDto,
     ) -> ApplicationDto:
         """Block a user org-wide and close out the triggering application
-        and every other in-flight application of the user.
+        and every other application of the user (including already-HIRED
+        ones; already-rejected ones keep their stage but get the tag).
 
         Deliberately NOT owner-gated: unlike every other write in this
         service, this does not check whether ``current_user`` owns the
@@ -1417,11 +1418,13 @@ class BoardService:
             details={"fromStage": from_stage.value, "reason": dto.reason},
         )
 
-        # Close out every OTHER in-flight application of the same user: the
-        # org-wide flag already auto-rejects future submissions, and leaving
-        # live applications on other boards after a sanction was the gap
-        # (2026-07-15 decision). Completed outcomes (HIRED) and already-
-        # rejected rows are left untouched. Each row is re-fetched FOR UPDATE
+        # Close out EVERY other application of the same user, so a blacklisted
+        # person ends up rejected + tagged on all of them (2026-07-22 decision,
+        # superseding the 2026-07-15 one that spared HIRED/already-rejected
+        # rows). In-flight and already-HIRED rows get the full close-out;
+        # already-rejected rows keep their stage but have the ``blacklisted``
+        # tag backfilled. Rows already tagged blacklisted are left untouched so
+        # a re-run logs no duplicate activity. Each row is re-fetched FOR UPDATE
         # so a concurrent stage decision on it can't interleave.
         rows = await self.application_repository.list_by_user(session, dto.user_id)
         for other, _job in rows:
@@ -1430,17 +1433,18 @@ class BoardService:
             locked = await self.application_repository.get_by_id(
                 session, other.application_id, for_update=True
             )
-            if locked is None or locked.stage in (
-                ApplicationStage.REJECTED,
-                ApplicationStage.HIRED,
-            ):
+            if locked is None or (locked.tags or {}).get("blacklisted"):
                 continue
             other_from_stage = locked.stage
-            locked.stage = ApplicationStage.REJECTED
             locked.tags = {**(locked.tags or {}), "blacklisted": True}
-            locked.sub_status = None
-            locked.current_round = 1
-            await self._freeze_current_submission(session, locked.application_id)
+            if locked.stage != ApplicationStage.REJECTED:
+                # In-flight or HIRED: fully close it out. Already-rejected rows
+                # keep their historical stage/round/sub_status and frozen
+                # submission — only the tag is backfilled.
+                locked.stage = ApplicationStage.REJECTED
+                locked.sub_status = None
+                locked.current_round = 1
+                await self._freeze_current_submission(session, locked.application_id)
             await self.application_repository.update(session, locked)
             await self.application_activity_repository.create(
                 session,
