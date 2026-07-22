@@ -121,7 +121,7 @@ describe("BoardPage", () => {
             applicantEmail: "bob@example.com",
             stage: "hired",
             subStatus: null,
-            tags: { coldFreeze: true },
+            tags: { cold_freeze: { thaw_date: "2099-01-01" } },
             appliedAt: "2026-06-02T00:00:00Z",
           },
         ],
@@ -145,7 +145,9 @@ describe("BoardPage", () => {
 
     const hiredLane = screen.getByTestId("lane-hired");
     expect(within(hiredLane).getByText("Bob Jones")).toBeInTheDocument();
-    expect(within(hiredLane).getByText("Cold freeze")).toBeInTheDocument();
+    expect(
+      within(hiredLane).getByText(/Cold freeze ·/),
+    ).toBeInTheDocument();
 
     // empty lane message
     const techLane = screen.getByTestId("lane-tech");
