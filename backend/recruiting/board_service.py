@@ -42,6 +42,12 @@ INTERVIEW_STAGES = {
     ApplicationStage.BOARD_REVIEW,
 }
 
+# Board pagination (sub-project #3 slice 2): terminal lanes (rejected/hired)
+# can grow unbounded over a job's lifetime, unlike active pipeline stages,
+# so get_board loads them one page at a time instead of in full.
+TERMINAL_PAGE_SIZE = 20
+TERMINAL_STAGES = (ApplicationStage.REJECTED, ApplicationStage.HIRED)
+
 # Per-event-type map of (raw assignee id field in `details`) -> (resolved
 # name field to add). get_application_activity uses this to know which
 # fields to look up and inject, without hardcoding each event type inline.
@@ -263,36 +269,25 @@ class BoardService:
             raise ValueError("you are not an owner of this job")
         return job
 
-    async def get_board(
-        self, session: AsyncSession, current_user: UserContextDto, job_id: int
-    ) -> dict[str, list[BoardCardDto]]:
-        """Return a job's applications grouped by stage, for the board columns.
-
-        Each interview-stage card's ``reviewer_name`` resolves to: the
-        explicit assignment for that card's ``(stage, current_round)`` if
-        one exists; otherwise, only at round 1 and only for
-        recruiter_screening/behavioral, the job's configured
-        ``default_assignee_id`` for that stage; otherwise None. Non-interview
-        stages always get ``reviewer_name=None``.
+    async def _cards_for_rows(self, session, job, rows) -> list[BoardCardDto]:
+        """Build BoardCardDto list for (application, user) rows, resolving
+        reviewer names + contact emails in batch (same logic get_board used).
 
         Args:
             session (AsyncSession): Active database async session.
-            current_user (UserContextDto): The authenticated caller.
-            job_id (int): The posting whose board to load.
+            job (JobEntity): The rows' job (for default-assignee resolution).
+            rows (list[tuple[ApplicationEntity, UsersEntity]]): The
+                (application, user) pairs to build cards for.
 
         Returns:
-            dict[str, list[BoardCardDto]]: Applicant cards keyed by the
-                application's stage value. Stages with zero cards are
-                absent keys — the frontend must ``.get(stage, [])``.
-
-        Raises:
-            ValueError: If the caller is not an owner of the job.
+            list[BoardCardDto]: One card per row, in the same order, with
+                each interview-stage card's ``reviewer_name`` resolved to:
+                the explicit assignment for that card's
+                ``(stage, current_round)`` if one exists; otherwise, only at
+                round 1, the job's configured ``default_assignee_id`` for
+                that stage; otherwise None. Non-interview stages always get
+                ``reviewer_name=None``.
         """
-        job = await self._require_owner(
-            session, current_user, job_id, allow_read_all=True
-        )
-        rows = await self.application_repository.list_by_job(session, job_id)
-
         default_by_stage: dict[ApplicationStage, int] = {}
         for entry in (job.pipeline_config or {}).get("stages") or []:
             if not isinstance(entry, dict):
@@ -307,48 +302,143 @@ class BoardService:
             default_by_stage[stage] = default_id
 
         application_ids = [application.application_id for application, _ in rows]
-        assignments = (
-            await self.application_assignment_repository.list_by_application_ids(
-                session, application_ids
-            )
+        assignments = await self.application_assignment_repository.list_by_application_ids(
+            session, application_ids
         )
         assignment_by_key: dict[tuple[int, ApplicationStage, int], int] = {
             (a.application_id, a.stage, a.round): a.assignee_id for a in assignments
         }
-
         name_ids = {a.assignee_id for a in assignments} | set(default_by_stage.values())
         reviewers = await self.users_repository.get_all_by_ids(session, list(name_ids))
         names_by_id = {
             u.user_id: f"{u.first_name} {u.last_name}".strip() for u in reviewers
         }
-
-        contact_by_user_id = (
-            await self.user_emails_repository.get_contact_emails_by_user_ids(
-                session, [user.user_id for _, user in rows]
-            )
+        contact_by_user_id = await self.user_emails_repository.get_contact_emails_by_user_ids(
+            session, [user.user_id for _, user in rows]
         )
 
-        board: dict[str, list[BoardCardDto]] = {}
+        cards = []
         for application, user in rows:
             reviewer_name = None
             if application.stage in INTERVIEW_STAGES:
-                assignee_id = assignment_by_key.get((
-                    application.application_id,
-                    application.stage,
-                    application.current_round,
-                ))
+                assignee_id = assignment_by_key.get(
+                    (application.application_id, application.stage, application.current_round)
+                )
                 if assignee_id is None and application.current_round == 1:
                     assignee_id = default_by_stage.get(application.stage)
                 if assignee_id is not None:
                     reviewer_name = names_by_id.get(assignee_id)
-            card = self.recruiting_mapper.to_board_card_dto(
-                application,
-                user,
-                reviewer_name=reviewer_name,
-                applicant_email=contact_by_user_id.get(user.user_id, ""),
+            cards.append(
+                self.recruiting_mapper.to_board_card_dto(
+                    application,
+                    user,
+                    reviewer_name=reviewer_name,
+                    applicant_email=contact_by_user_id.get(user.user_id, ""),
+                )
             )
-            board.setdefault(application.stage.value, []).append(card)
-        return board
+        return cards
+
+    async def get_board(
+        self, session: AsyncSession, current_user: UserContextDto, job_id: int
+    ) -> dict:
+        """Return a job's applications grouped by stage, for the board columns.
+
+        Active (non-terminal) stages are loaded in full. Terminal stages
+        (``TERMINAL_STAGES`` — rejected/hired) can grow unbounded over a
+        job's lifetime, so each gets only its first ``TERMINAL_PAGE_SIZE``
+        page here; the frontend pages further via ``get_board_stage_page``.
+
+        Each interview-stage card's ``reviewer_name`` resolves to: the
+        explicit assignment for that card's ``(stage, current_round)`` if
+        one exists; otherwise, only at round 1 and only for
+        recruiter_screening/behavioral, the job's configured
+        ``default_assignee_id`` for that stage; otherwise None. Non-interview
+        stages always get ``reviewer_name=None``.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            current_user (UserContextDto): The authenticated caller.
+            job_id (int): The posting whose board to load.
+
+        Returns:
+            dict: ``{"stages": {stage_value: {"items": [BoardCardDto],
+                "total": int, "has_more": bool}}}``. Active stages always
+                have ``total == len(items)`` and ``has_more=False``. Stages
+                with zero cards are absent keys — the frontend must
+                ``.get(stage, {"items": [], "total": 0, "has_more": False})``.
+
+        Raises:
+            ValueError: If the caller is not an owner of the job.
+        """
+        job = await self._require_owner(
+            session, current_user, job_id, allow_read_all=True
+        )
+
+        active_rows = await self.application_repository.list_by_job(
+            session, job_id, exclude_stages=set(TERMINAL_STAGES)
+        )
+        stages: dict[str, dict] = {}
+        for card in await self._cards_for_rows(session, job, active_rows):
+            bucket = stages.setdefault(
+                card.stage.value, {"items": [], "total": 0, "has_more": False}
+            )
+            bucket["items"].append(card)
+        for bucket in stages.values():
+            bucket["total"] = len(bucket["items"])
+
+        for stage in TERMINAL_STAGES:
+            total = await self.application_repository.count_latest_by_job_and_stage(
+                session, job_id, stage
+            )
+            rows = await self.application_repository.list_by_job_and_stage(
+                session, job_id, stage, limit=TERMINAL_PAGE_SIZE, offset=0
+            )
+            items = await self._cards_for_rows(session, job, rows)
+            if items or total:
+                stages[stage.value] = {
+                    "items": items,
+                    "total": total,
+                    "has_more": total > len(items),
+                }
+        return {"stages": stages}
+
+    async def get_board_stage_page(
+        self,
+        session: AsyncSession,
+        current_user: UserContextDto,
+        job_id: int,
+        stage: ApplicationStage,
+        limit: int,
+        offset: int,
+    ) -> dict:
+        """Return one page of a single stage's applications, for paging a
+        terminal board lane (rejected/hired) past its first page.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            current_user (UserContextDto): The authenticated caller.
+            job_id (int): The posting whose board to page.
+            stage (ApplicationStage): The stage to page.
+            limit (int): Max rows to return.
+            offset (int): Rows to skip, for paging.
+
+        Returns:
+            dict: ``{"items": [BoardCardDto], "total": int, "has_more": bool}``.
+
+        Raises:
+            ValueError: If the caller is not an owner of the job.
+        """
+        job = await self._require_owner(
+            session, current_user, job_id, allow_read_all=True
+        )
+        total = await self.application_repository.count_latest_by_job_and_stage(
+            session, job_id, stage
+        )
+        rows = await self.application_repository.list_by_job_and_stage(
+            session, job_id, stage, limit=limit, offset=offset
+        )
+        items = await self._cards_for_rows(session, job, rows)
+        return {"items": items, "total": total, "has_more": offset + len(items) < total}
 
     async def _load_owned_application(
         self,
