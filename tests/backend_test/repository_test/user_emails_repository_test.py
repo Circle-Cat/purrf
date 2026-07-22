@@ -30,6 +30,9 @@ class TestUserEmailsRepository(BaseRepositoryTestLib):
         self.user = _make_user()
         await self.insert_entities([self.user])
 
+        self.t1 = datetime(2026, 7, 1, tzinfo=timezone.utc)
+        self.t2 = datetime(2026, 7, 2, tzinfo=timezone.utc)
+
     async def test_upsert_email_insert(self):
         email_row = UserEmailsEntity(
             user_id=self.user.user_id,
@@ -391,6 +394,52 @@ class TestUserEmailsRepository(BaseRepositoryTestLib):
         self.assertIsNone(
             await self.repo.get_contact_email(self.session, self.user.user_id)
         )
+
+    # update_last_login — only-if-newer guard
+    async def test_update_last_login_sets_when_null(self):
+        email_row = UserEmailsEntity(
+            user_id=self.user.user_id,
+            email="alice@example.com",
+            otp_confirmed=True,
+            is_primary=True,
+            last_login_at=None,
+        )
+        await self.insert_entities([email_row])
+
+        await self.repo.update_last_login(self.session, email_row.email_id, self.t1)
+
+        row = await self.repo.get_by_id(self.session, email_row.email_id)
+        self.assertEqual(row.last_login_at, self.t1)
+
+    async def test_update_last_login_advances_when_newer(self):
+        email_row = UserEmailsEntity(
+            user_id=self.user.user_id,
+            email="alice@example.com",
+            otp_confirmed=True,
+            is_primary=True,
+            last_login_at=self.t1,
+        )
+        await self.insert_entities([email_row])
+
+        await self.repo.update_last_login(self.session, email_row.email_id, self.t2)
+
+        row = await self.repo.get_by_id(self.session, email_row.email_id)
+        self.assertEqual(row.last_login_at, self.t2)
+
+    async def test_update_last_login_ignores_older(self):
+        email_row = UserEmailsEntity(
+            user_id=self.user.user_id,
+            email="alice@example.com",
+            otp_confirmed=True,
+            is_primary=True,
+            last_login_at=self.t2,
+        )
+        await self.insert_entities([email_row])
+
+        await self.repo.update_last_login(self.session, email_row.email_id, self.t1)
+
+        row = await self.repo.get_by_id(self.session, email_row.email_id)
+        self.assertEqual(row.last_login_at, self.t2)
 
 
 if __name__ == "__main__":

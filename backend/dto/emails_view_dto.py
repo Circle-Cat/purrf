@@ -11,6 +11,7 @@ class EmailEntryDto(BaseDto):
     added_at: datetime
     linked_identity_count: int
     is_corp: bool
+    last_login_at: datetime | None = None
 
 
 class IdentityDto(BaseDto):

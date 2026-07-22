@@ -141,10 +141,12 @@ class UserIdentityService:
         the absorb lifecycle hook, same as every other corp-join path; on
         miss, checks step 2.5 (trusted-assertion routing: a login whose sub
         is allowlisted and whose address an account has OTP-confirmed
-        returns that account directly — a passwordless login writes nothing,
-        a routed social sub additionally gets its identity row upserted, so
-        the next login resolves at step 1; an INTERNAL routed login of
-        either kind also runs the absorb hook). Otherwise falls through to
+        returns that account directly — a passwordless login stamps the
+        resolved user_emails row's last_login_at (if newer) and records no
+        identity row, while a routed social sub additionally upserts its
+        identity row (which carries its own last_login_at), so the next
+        login resolves at step 1; an INTERNAL routed login of either kind
+        also runs the absorb hook). Otherwise falls through to
         step 3 (first-login insert). Writes the resolved user_id back onto
         `user_info` (mutates the DTO).
 
@@ -198,7 +200,7 @@ class UserIdentityService:
                 # swap must ALSO run absorb (flag + bundle); the external swap
                 # does not. (Correctness trap: absorb lives only in the
                 # sibling branch pre-widening.)
-                await self._confirm_swapped_claim_email(
+                stamped = await self._confirm_swapped_claim_email(
                     session=session, user_id=mocked.user_id, email=email
                 )
                 await self.user_identities_repository.delete(
@@ -214,6 +216,13 @@ class UserIdentityService:
                         users_repository=self.users_repository,
                         logger=self.logger,
                     )
+                # Passwordless is row-less: the email row IS the credential,
+                # so it (not an identity row) carries this method's
+                # last_login_at.
+                if stamped is not None and login_dt is not None:
+                    await self.user_emails_repository.update_last_login(
+                        session=session, email_id=stamped.email_id, login_dt=login_dt
+                    )
                 user = await self.users_repository.get_user_by_user_id(
                     session=session, user_id=mocked.user_id
                 )
@@ -224,7 +233,6 @@ class UserIdentityService:
                 session=session,
                 identity=mocked,
                 sub=user_info.sub,
-                identity_type=user_info.identity_type,
                 last_login_at=login_dt,
             )
             # Guard 1 already required a trusted assertion, so the confirm +
@@ -253,10 +261,12 @@ class UserIdentityService:
         # verified login from an allowlisted social IdP — for an address some
         # account has OTP-confirmed logs straight into that account. Guard 1
         # above already refused any assertion that isn't trusted, so every
-        # login reaching here qualifies. Passwordless writes nothing
-        # (row-less, idempotent re-resolution); a routed social sub
-        # additionally gets its identity row upserted below, so the next
-        # login resolves at step 1.
+        # login reaching here qualifies. Passwordless stays row-less: it
+        # stamps the resolved user_emails row's last_login_at (if newer) and
+        # records no identity row (idempotent re-resolution); a routed
+        # social sub additionally gets its identity row upserted below
+        # (carrying its own last_login_at), so the next login resolves at
+        # step 1.
         confirmed = await self.user_emails_repository.get_confirmed_by_email(
             session=session, email=email
         )
@@ -276,10 +286,16 @@ class UserIdentityService:
                     entity=UserIdentitiesEntity(
                         user_id=user.user_id,
                         subject_identifier=user_info.sub,
-                        identity_type=user_info.identity_type,
                         email_claim=email,
                         last_login_at=login_dt,
                     ),
+                )
+            elif login_dt is not None:
+                # Passwordless routing stays row-less: the resolved email
+                # row (not an identity row) carries this method's
+                # last_login_at — no cross-update into user_identities.
+                await self.user_emails_repository.update_last_login(
+                    session=session, email_id=confirmed.email_id, login_dt=login_dt
                 )
             if (
                 IdentityType.INTERNAL == user_info.identity_type
@@ -333,7 +349,6 @@ class UserIdentityService:
         session: AsyncSession,
         identity: UserIdentitiesEntity,
         sub: str,
-        identity_type: str,
         last_login_at: datetime | None,
     ) -> UsersEntity:
         """
@@ -352,7 +367,6 @@ class UserIdentityService:
             identity.user_id,
         )
         identity.subject_identifier = sub
-        identity.identity_type = identity_type
         if last_login_at is not None:
             identity.last_login_at = last_login_at
         await self.user_identities_repository.upsert_identity(
@@ -367,7 +381,7 @@ class UserIdentityService:
         session: AsyncSession,
         user_id: int,
         email: str,
-    ) -> None:
+    ) -> UserEmailsEntity | None:
         """
         Confirm the claim address after a trusted-assertion swap login (step 2).
 
@@ -385,12 +399,18 @@ class UserIdentityService:
             session (AsyncSession): Active database async session.
             user_id (int): The swapped account's user_id.
             email (str): Lowercased claim email of the passwordless login.
+
+        Returns:
+            UserEmailsEntity | None: The confirmed row (existing or newly
+            seeded) so the row-less swap path can stamp its last_login_at
+            without a redundant re-fetch; None only if nothing could be
+            resolved (defensive — the repos never actually return that here).
         """
         row = await self.user_emails_repository.get_by_user_and_email(
             session=session, user_id=user_id, email=email
         )
         if row is not None and row.otp_confirmed:
-            return
+            return row
 
         make_primary = not await self.user_emails_repository.has_primary(
             session=session, user_id=user_id
@@ -406,7 +426,9 @@ class UserIdentityService:
             row.otp_confirmed = True
             if make_primary:
                 row.is_primary = True
-        await self.user_emails_repository.upsert_email(session=session, entity=row)
+        row = await self.user_emails_repository.upsert_email(
+            session=session, entity=row
+        )
         self.logger.info(
             "[UserIdentityService] confirmed swapped trusted-assertion claim %s "
             "for user_id=%s (promoted_primary=%s)",
@@ -414,6 +436,7 @@ class UserIdentityService:
             user_id,
             make_primary,
         )
+        return row
 
     async def _first_login_insert(
         self,
@@ -432,6 +455,11 @@ class UserIdentityService:
         and primary by construction — the login itself is the mailbox proof
         (a passwordless round-trip, or a verified assertion from an
         allowlisted social IdP).
+
+        The seeded user_emails row's last_login_at is set to login_dt only
+        for a row-less (passwordless) first login; it is None for a
+        google/social first login, which instead records its last_login_at
+        on the new user_identities row.
         """
         sub = user_info.sub
         email = user_info.primary_email.lower()
@@ -461,7 +489,6 @@ class UserIdentityService:
             new_identity = UserIdentitiesEntity(
                 user_id=created_user.user_id,
                 subject_identifier=sub,
-                identity_type=user_info.identity_type,
                 email_claim=email,
                 last_login_at=last_login_at,
             )
@@ -478,11 +505,20 @@ class UserIdentityService:
         # round-trip is done at login. 'google-oauth2|' is Google, the
         # mailbox authority for its verified addresses. The claim is
         # therefore always seeded confirmed and primary.
+        # last_login_at is seeded here only for row-less passwordless: the
+        # email row IS its credential. Google/social first-logins record
+        # last_login_at on the identity row above instead (leave this None
+        # so the two methods' clocks never cross-update).
         new_email_row = UserEmailsEntity(
             user_id=created_user.user_id,
             email=email,
             otp_confirmed=True,
             is_primary=True,
+            last_login_at=(
+                last_login_at
+                if is_rowless_login(sub, user_info.identity_type)
+                else None
+            ),
         )
         await self.user_emails_repository.upsert_email(
             session=session, entity=new_email_row

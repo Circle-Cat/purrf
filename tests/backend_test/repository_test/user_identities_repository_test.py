@@ -38,7 +38,6 @@ class TestUserIdentitiesRepository(BaseRepositoryTestLib):
         identity = UserIdentitiesEntity(
             user_id=self.user.user_id,
             subject_identifier="google-oauth2|join",
-            identity_type="external",
             email_claim="alice@example.com",
             last_login_at=self.t1,
         )
@@ -65,7 +64,6 @@ class TestUserIdentitiesRepository(BaseRepositoryTestLib):
         manual = UserIdentitiesEntity(
             user_id=self.user.user_id,
             subject_identifier="manual|alice@example.com",
-            identity_type="external",
             email_claim="alice@example.com",
         )
         await self.insert_entities([manual])
@@ -81,7 +79,6 @@ class TestUserIdentitiesRepository(BaseRepositoryTestLib):
         real = UserIdentitiesEntity(
             user_id=self.user.user_id,
             subject_identifier="google-oauth2|abc",
-            identity_type="external",
             email_claim="alice@example.com",
         )
         await self.insert_entities([real])
@@ -102,7 +99,6 @@ class TestUserIdentitiesRepository(BaseRepositoryTestLib):
         identity = UserIdentitiesEntity(
             user_id=self.user.user_id,
             subject_identifier="email|new",
-            identity_type="external",
             email_claim="alice@example.com",
         )
         merged = await self.repo.upsert_identity(self.session, identity)
@@ -112,7 +108,6 @@ class TestUserIdentitiesRepository(BaseRepositoryTestLib):
         identity = UserIdentitiesEntity(
             user_id=self.user.user_id,
             subject_identifier="manual|alice@example.com",
-            identity_type="external",
             email_claim="alice@example.com",
         )
         await self.insert_entities([identity])
@@ -128,7 +123,6 @@ class TestUserIdentitiesRepository(BaseRepositoryTestLib):
         identity = UserIdentitiesEntity(
             user_id=self.user.user_id,
             subject_identifier="email|null",
-            identity_type="external",
             email_claim="alice@example.com",
             last_login_at=None,
         )
@@ -144,7 +138,6 @@ class TestUserIdentitiesRepository(BaseRepositoryTestLib):
         identity = UserIdentitiesEntity(
             user_id=self.user.user_id,
             subject_identifier="email|newer",
-            identity_type="external",
             email_claim="alice@example.com",
             last_login_at=self.t1,
         )
@@ -160,7 +153,6 @@ class TestUserIdentitiesRepository(BaseRepositoryTestLib):
         identity = UserIdentitiesEntity(
             user_id=self.user.user_id,
             subject_identifier="email|older",
-            identity_type="external",
             email_claim="alice@example.com",
             last_login_at=self.t2,
         )
@@ -176,7 +168,6 @@ class TestUserIdentitiesRepository(BaseRepositoryTestLib):
         identity = UserIdentitiesEntity(
             user_id=self.user.user_id,
             subject_identifier="google-oauth2|sub",
-            identity_type="external",
             email_claim="alice@example.com",
         )
         await self.insert_entities([identity])
@@ -197,13 +188,11 @@ class TestUserIdentitiesRepository(BaseRepositoryTestLib):
         internal = UserIdentitiesEntity(
             user_id=self.user.user_id,
             subject_identifier="google-oauth2|internal",
-            identity_type="internal",
             email_claim="alice@circlecat.org",
         )
         external = UserIdentitiesEntity(
             user_id=self.user.user_id,
             subject_identifier="email|external",
-            identity_type="external",
             email_claim="alice@gmail.com",
         )
         await self.insert_entities([internal, external])
@@ -214,7 +203,6 @@ class TestUserIdentitiesRepository(BaseRepositoryTestLib):
             UserIdentitiesEntity(
                 user_id=other.user_id,
                 subject_identifier="email|bob",
-                identity_type="external",
                 email_claim="bob@gmail.com",
             )
         ])
@@ -235,7 +223,6 @@ class TestUserIdentitiesRepository(BaseRepositoryTestLib):
         identity = UserIdentitiesEntity(
             user_id=self.user.user_id,
             subject_identifier="email|byid",
-            identity_type="external",
             email_claim="alice@gmail.com",
         )
         await self.insert_entities([identity])
@@ -252,13 +239,11 @@ class TestUserIdentitiesRepository(BaseRepositoryTestLib):
         keep = UserIdentitiesEntity(
             user_id=self.user.user_id,
             subject_identifier="google-oauth2|keep",
-            identity_type="internal",
             email_claim="alice@circlecat.org",
         )
         drop = UserIdentitiesEntity(
             user_id=self.user.user_id,
             subject_identifier="email|drop",
-            identity_type="external",
             email_claim="alice@gmail.com",
         )
         await self.insert_entities([keep, drop])
@@ -278,19 +263,16 @@ class TestUserIdentitiesRepository(BaseRepositoryTestLib):
         google = UserIdentitiesEntity(
             user_id=self.user.user_id,
             subject_identifier="google-oauth2|12345",
-            identity_type="external",
             email_claim="alice@example.com",
         )
         email = UserIdentitiesEntity(
             user_id=self.user.user_id,
             subject_identifier="email|abc",
-            identity_type="external",
             email_claim="alice@example.com",
         )
         other_google = UserIdentitiesEntity(
             user_id=other_user.user_id,
             subject_identifier="google-oauth2|99999",
-            identity_type="external",
             email_claim="bob@example.com",
         )
         await self.insert_entities([google, email, other_google])
@@ -311,13 +293,11 @@ class TestUserIdentitiesRepository(BaseRepositoryTestLib):
         google_one = UserIdentitiesEntity(
             user_id=self.user.user_id,
             subject_identifier="google-oauth2|first",
-            identity_type="external",
             email_claim="alice@example.com",
         )
         google_two = UserIdentitiesEntity(
             user_id=self.user.user_id,
             subject_identifier="google-oauth2|second",
-            identity_type="external",
             email_claim="alice@work.com",
         )
         await self.insert_entities([google_one, google_two])
@@ -339,7 +319,6 @@ class TestUserIdentitiesRepository(BaseRepositoryTestLib):
         email = UserIdentitiesEntity(
             user_id=self.user.user_id,
             subject_identifier="email|onlyemail",
-            identity_type="external",
             email_claim="alice@example.com",
         )
         await self.insert_entities([email])

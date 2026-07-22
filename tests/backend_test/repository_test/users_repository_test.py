@@ -257,7 +257,6 @@ class TestUsersRepository(BaseRepositoryTestLib):
             UserIdentitiesEntity(
                 user_id=user.user_id,
                 subject_identifier=f"email|{token}",
-                identity_type="external",
                 email_claim=f"external-{token}@gmail.com",
             )
         ])
@@ -676,7 +675,6 @@ class TestUsersRepository(BaseRepositoryTestLib):
             UserIdentitiesEntity(
                 user_id=external_user.user_id,
                 subject_identifier=f"email|ext-{token}",
-                identity_type="external",
                 email_claim=f"ext-{token}@gmail.com",
             ),
         ])
@@ -701,7 +699,6 @@ class TestUsersRepository(BaseRepositoryTestLib):
             UserIdentitiesEntity(
                 user_id=external_user.user_id,
                 subject_identifier=f"email|ext2-{token}",
-                identity_type="external",
                 email_claim=f"ext2-{token}@gmail.com",
             ),
         ])
