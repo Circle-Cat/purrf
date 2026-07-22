@@ -1,5 +1,7 @@
+from datetime import datetime
+
 from backend.entity.user_emails_entity import UserEmailsEntity
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -356,5 +358,31 @@ class UserEmailsRepository:
         """
         await session.execute(
             delete(UserEmailsEntity).where(UserEmailsEntity.email_id == email_id)
+        )
+        await session.flush()
+
+    async def update_last_login(
+        self, session: AsyncSession, email_id: int, login_dt: datetime
+    ) -> None:
+        """
+        Stamp this email's last_login_at to ``login_dt`` only when it is newer
+        than the stored value (or unset). Mirrors the identity repo's
+        if-newer update so out-of-order/replayed tokens never regress the time.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            email_id (int): The user_emails row to stamp.
+            login_dt (datetime): The login instant (JWT iat as tz-aware datetime).
+        """
+        await session.execute(
+            update(UserEmailsEntity)
+            .where(
+                UserEmailsEntity.email_id == email_id,
+                or_(
+                    UserEmailsEntity.last_login_at.is_(None),
+                    UserEmailsEntity.last_login_at < login_dt,
+                ),
+            )
+            .values(last_login_at=login_dt)
         )
         await session.flush()
