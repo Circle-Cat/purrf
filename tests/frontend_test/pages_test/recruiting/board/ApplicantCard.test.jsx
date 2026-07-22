@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import ApplicantCard from "@/pages/Recruiting/board/ApplicantCard";
 
@@ -90,8 +90,6 @@ describe("ApplicantCard reviewer", () => {
     expect(screen.queryByText(/^Reviewer:/)).not.toBeInTheDocument();
   });
 });
-
-import { beforeEach, afterEach } from "vitest";
 
 describe("ApplicantCard cold-freeze countdown", () => {
   beforeEach(() => {
