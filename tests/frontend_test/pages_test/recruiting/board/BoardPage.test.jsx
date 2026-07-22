@@ -82,7 +82,13 @@ describe("BoardPage", () => {
     api.listBoardJobs.mockResolvedValue({ data: [jobA] });
     api.getJobBoard
       .mockRejectedValueOnce(new Error("board boom"))
-      .mockResolvedValue({ data: { recruiter_screening: [] } });
+      .mockResolvedValue({
+        data: {
+          stages: {
+            recruiter_screening: { items: [], total: 0, has_more: false },
+          },
+        },
+      });
 
     renderPage();
 
@@ -103,28 +109,38 @@ describe("BoardPage", () => {
     api.listBoardJobs.mockResolvedValue({ data: [jobA, jobB] });
     api.getJobBoard.mockResolvedValue({
       data: {
-        recruiter_screening: [
-          {
-            id: 101,
-            applicantName: "Alice Smith",
-            applicantEmail: "alice@example.com",
-            stage: "recruiter_screening",
-            subStatus: "pending",
-            tags: null,
-            appliedAt: "2026-06-01T00:00:00Z",
+        stages: {
+          recruiter_screening: {
+            items: [
+              {
+                id: 101,
+                applicantName: "Alice Smith",
+                applicantEmail: "alice@example.com",
+                stage: "recruiter_screening",
+                subStatus: "pending",
+                tags: null,
+                appliedAt: "2026-06-01T00:00:00Z",
+              },
+            ],
+            total: 1,
+            has_more: false,
           },
-        ],
-        hired: [
-          {
-            id: 102,
-            applicantName: "Bob Jones",
-            applicantEmail: "bob@example.com",
-            stage: "hired",
-            subStatus: null,
-            tags: { cold_freeze: { thaw_date: "2099-01-01" } },
-            appliedAt: "2026-06-02T00:00:00Z",
+          hired: {
+            items: [
+              {
+                id: 102,
+                applicantName: "Bob Jones",
+                applicantEmail: "bob@example.com",
+                stage: "hired",
+                subStatus: null,
+                tags: { cold_freeze: { thaw_date: "2099-01-01" } },
+                appliedAt: "2026-06-02T00:00:00Z",
+              },
+            ],
+            total: 1,
+            has_more: false,
           },
-        ],
+        },
       },
     });
 
@@ -210,8 +226,24 @@ describe("BoardPage", () => {
     api.listBoardJobs.mockResolvedValue({ data: [jobA, jobB] });
     api.getJobBoard.mockImplementation((jobId) =>
       jobId === 1
-        ? Promise.resolve({ data: { recruiter_screening: [] } })
-        : Promise.resolve({ data: { board_review: [] } }),
+        ? Promise.resolve({
+            data: {
+              stages: {
+                recruiter_screening: {
+                  items: [],
+                  total: 0,
+                  has_more: false,
+                },
+              },
+            },
+          })
+        : Promise.resolve({
+            data: {
+              stages: {
+                board_review: { items: [], total: 0, has_more: false },
+              },
+            },
+          }),
     );
 
     renderPage();
@@ -233,7 +265,13 @@ describe("BoardPage", () => {
   it("opens the How it works guide with the board's title and steps", async () => {
     const user = userEvent.setup();
     api.listBoardJobs.mockResolvedValue({ data: [jobA] });
-    api.getJobBoard.mockResolvedValue({ data: { recruiter_screening: [] } });
+    api.getJobBoard.mockResolvedValue({
+      data: {
+        stages: {
+          recruiter_screening: { items: [], total: 0, has_more: false },
+        },
+      },
+    });
 
     renderPage();
     await waitFor(() =>
@@ -252,31 +290,41 @@ describe("BoardPage", () => {
     api.listBoardJobs.mockResolvedValue({ data: [jobA] });
     api.getJobBoard.mockResolvedValue({
       data: {
-        recruiter_screening: [
-          {
-            id: 101,
-            applicantName: "Alice Smith",
-            applicantEmail: "alice@example.com",
-            stage: "recruiter_screening",
-            subStatus: "in_progress",
-            tags: null,
-            appliedAt: "2026-06-01T00:00:00Z",
+        stages: {
+          recruiter_screening: {
+            items: [
+              {
+                id: 101,
+                applicantName: "Alice Smith",
+                applicantEmail: "alice@example.com",
+                stage: "recruiter_screening",
+                subStatus: "in_progress",
+                tags: null,
+                appliedAt: "2026-06-01T00:00:00Z",
+              },
+            ],
+            total: 1,
+            has_more: false,
           },
-        ],
-        rejected: [
-          {
-            id: 103,
-            applicantName: "Cara Lee",
-            applicantEmail: "cara@example.com",
-            stage: "rejected",
-            // Non-null on purpose: proves the badge is hidden by the
-            // showStatus={false} gating for terminal lanes, not merely
-            // because there's nothing to show.
-            subStatus: "closed_out",
-            tags: null,
-            appliedAt: "2026-06-03T00:00:00Z",
+          rejected: {
+            items: [
+              {
+                id: 103,
+                applicantName: "Cara Lee",
+                applicantEmail: "cara@example.com",
+                stage: "rejected",
+                // Non-null on purpose: proves the badge is hidden by the
+                // showStatus={false} gating for terminal lanes, not merely
+                // because there's nothing to show.
+                subStatus: "closed_out",
+                tags: null,
+                appliedAt: "2026-06-03T00:00:00Z",
+              },
+            ],
+            total: 1,
+            has_more: false,
           },
-        ],
+        },
       },
     });
 
@@ -298,29 +346,39 @@ describe("BoardPage", () => {
     api.listBoardJobs.mockResolvedValue({ data: [jobA] });
     api.getJobBoard.mockResolvedValue({
       data: {
-        recruiter_screening: [
-          {
-            id: 104,
-            applicantName: "Dana White",
-            applicantEmail: "dana@example.com",
-            stage: "recruiter_screening",
-            subStatus: "pending",
-            tags: null,
-            appliedAt: "2026-06-04T00:00:00Z",
+        stages: {
+          recruiter_screening: {
+            items: [
+              {
+                id: 104,
+                applicantName: "Dana White",
+                applicantEmail: "dana@example.com",
+                stage: "recruiter_screening",
+                subStatus: "pending",
+                tags: null,
+                appliedAt: "2026-06-04T00:00:00Z",
+              },
+            ],
+            total: 1,
+            has_more: false,
           },
-        ],
-        hired: [
-          {
-            id: 105,
-            applicantName: "Evan Ng",
-            applicantEmail: "evan@example.com",
-            stage: "hired",
-            subStatus: null,
-            tags: { blacklisted: true },
-            isBlocked: true,
-            appliedAt: "2026-06-05T00:00:00Z",
+          hired: {
+            items: [
+              {
+                id: 105,
+                applicantName: "Evan Ng",
+                applicantEmail: "evan@example.com",
+                stage: "hired",
+                subStatus: null,
+                tags: { blacklisted: true },
+                isBlocked: true,
+                appliedAt: "2026-06-05T00:00:00Z",
+              },
+            ],
+            total: 1,
+            has_more: false,
           },
-        ],
+        },
       },
     });
 
@@ -346,17 +404,23 @@ describe("BoardPage", () => {
     api.listBoardJobs.mockResolvedValue({ data: [jobA] });
     api.getJobBoard.mockResolvedValue({
       data: {
-        recruiter_screening: [
-          {
-            id: 101,
-            applicantName: "Alice Smith",
-            applicantEmail: "alice@example.com",
-            stage: "recruiter_screening",
-            subStatus: "pending",
-            tags: null,
-            appliedAt: "2026-06-01T00:00:00Z",
+        stages: {
+          recruiter_screening: {
+            items: [
+              {
+                id: 101,
+                applicantName: "Alice Smith",
+                applicantEmail: "alice@example.com",
+                stage: "recruiter_screening",
+                subStatus: "pending",
+                tags: null,
+                appliedAt: "2026-06-01T00:00:00Z",
+              },
+            ],
+            total: 1,
+            has_more: false,
           },
-        ],
+        },
       },
     });
 
@@ -384,28 +448,34 @@ describe("BoardPage", () => {
     api.listBoardJobs.mockResolvedValue({ data: [jobC] });
     api.getJobBoard.mockResolvedValue({
       data: {
-        tech: [
-          {
-            id: 201,
-            applicantName: "Round One Person",
-            applicantEmail: "r1@example.com",
-            stage: "tech",
-            subStatus: "pending",
-            tags: null,
-            appliedAt: "2026-06-01T00:00:00Z",
-            round: 1,
+        stages: {
+          tech: {
+            items: [
+              {
+                id: 201,
+                applicantName: "Round One Person",
+                applicantEmail: "r1@example.com",
+                stage: "tech",
+                subStatus: "pending",
+                tags: null,
+                appliedAt: "2026-06-01T00:00:00Z",
+                round: 1,
+              },
+              {
+                id: 202,
+                applicantName: "Round Two Person",
+                applicantEmail: "r2@example.com",
+                stage: "tech",
+                subStatus: "pending",
+                tags: null,
+                appliedAt: "2026-06-02T00:00:00Z",
+                round: 2,
+              },
+            ],
+            total: 2,
+            has_more: false,
           },
-          {
-            id: 202,
-            applicantName: "Round Two Person",
-            applicantEmail: "r2@example.com",
-            stage: "tech",
-            subStatus: "pending",
-            tags: null,
-            appliedAt: "2026-06-02T00:00:00Z",
-            round: 2,
-          },
-        ],
+        },
       },
     });
 
@@ -443,30 +513,36 @@ describe("BoardPage", () => {
     api.listBoardJobs.mockResolvedValue({ data: [jobD] });
     api.getJobBoard.mockResolvedValue({
       data: {
-        tech: [
-          {
-            id: 301,
-            applicantName: "Round Two Person",
-            applicantEmail: "r2@example.com",
-            stage: "tech",
-            subStatus: "pending",
-            tags: null,
-            appliedAt: "2026-06-01T00:00:00Z",
-            round: 2,
+        stages: {
+          tech: {
+            items: [
+              {
+                id: 301,
+                applicantName: "Round Two Person",
+                applicantEmail: "r2@example.com",
+                stage: "tech",
+                subStatus: "pending",
+                tags: null,
+                appliedAt: "2026-06-01T00:00:00Z",
+                round: 2,
+              },
+              {
+                // Stale: was staged at round 3 before the posting's pipeline
+                // config shrank "tech" from 3 rounds down to 2.
+                id: 302,
+                applicantName: "Stale Round Three Person",
+                applicantEmail: "r3@example.com",
+                stage: "tech",
+                subStatus: "pending",
+                tags: null,
+                appliedAt: "2026-06-02T00:00:00Z",
+                round: 3,
+              },
+            ],
+            total: 2,
+            has_more: false,
           },
-          {
-            // Stale: was staged at round 3 before the posting's pipeline
-            // config shrank "tech" from 3 rounds down to 2.
-            id: 302,
-            applicantName: "Stale Round Three Person",
-            applicantEmail: "r3@example.com",
-            stage: "tech",
-            subStatus: "pending",
-            tags: null,
-            appliedAt: "2026-06-02T00:00:00Z",
-            round: 3,
-          },
-        ],
+        },
       },
     });
 
@@ -481,6 +557,98 @@ describe("BoardPage", () => {
     expect(within(lastLane).getByText("Round Two Person")).toBeInTheDocument();
     expect(
       within(lastLane).getByText("Stale Round Three Person"),
+    ).toBeInTheDocument();
+  });
+
+  it("shows Load more on a terminal lane and appends deduped cards", async () => {
+    const user = userEvent.setup();
+    const makeCard = (id) => ({
+      id,
+      applicantName: `Rejected Person ${id}`,
+      applicantEmail: `rejected${id}@example.com`,
+      stage: "rejected",
+      subStatus: null,
+      tags: null,
+      appliedAt: "2026-06-01T00:00:00Z",
+    });
+    const firstPage = Array.from({ length: 20 }, (_, i) => makeCard(i + 1));
+    const secondPage = Array.from({ length: 5 }, (_, i) => makeCard(i + 21));
+
+    api.listBoardJobs.mockResolvedValue({ data: [jobA] });
+    api.getJobBoard.mockResolvedValue({
+      data: {
+        stages: {
+          rejected: { items: firstPage, total: 25, has_more: true },
+        },
+      },
+    });
+    api.getJobBoardStagePage.mockResolvedValue({
+      data: { items: secondPage, total: 25, has_more: false },
+    });
+
+    renderPage();
+
+    const rejectedLane = await screen.findByTestId("lane-rejected");
+    expect(
+      within(rejectedLane).getByText("Load more"),
+    ).toBeInTheDocument();
+    expect(within(rejectedLane).getAllByRole("button").length).toBe(
+      firstPage.length + 1, // 20 cards + the Load more button
+    );
+
+    await user.click(within(rejectedLane).getByText("Load more"));
+
+    expect(api.getJobBoardStagePage).toHaveBeenCalledWith(1, {
+      stage: "rejected",
+      limit: 20,
+      offset: 20,
+    });
+
+    await waitFor(() =>
+      expect(
+        within(rejectedLane).getByText("Rejected Person 25"),
+      ).toBeInTheDocument(),
+    );
+    // All 25 unique cards rendered, no duplicates, and the button is gone.
+    expect(within(rejectedLane).getAllByRole("button").length).toBe(25);
+    expect(
+      within(rejectedLane).queryByText("Load more"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows an error toast and keeps existing items when Load more fails", async () => {
+    const user = userEvent.setup();
+    const makeCard = (id) => ({
+      id,
+      applicantName: `Rejected Person ${id}`,
+      applicantEmail: `rejected${id}@example.com`,
+      stage: "rejected",
+      subStatus: null,
+      tags: null,
+      appliedAt: "2026-06-01T00:00:00Z",
+    });
+    const firstPage = Array.from({ length: 20 }, (_, i) => makeCard(i + 1));
+
+    api.listBoardJobs.mockResolvedValue({ data: [jobA] });
+    api.getJobBoard.mockResolvedValue({
+      data: {
+        stages: {
+          rejected: { items: firstPage, total: 25, has_more: true },
+        },
+      },
+    });
+    api.getJobBoardStagePage.mockRejectedValue(new Error("page boom"));
+
+    renderPage();
+
+    const rejectedLane = await screen.findByTestId("lane-rejected");
+    await user.click(within(rejectedLane).getByText("Load more"));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("page boom"));
+    // Existing items are left unchanged and the button is still shown.
+    expect(within(rejectedLane).getAllByRole("button").length).toBe(21);
+    expect(
+      within(rejectedLane).getByText("Load more"),
     ).toBeInTheDocument();
   });
 });
