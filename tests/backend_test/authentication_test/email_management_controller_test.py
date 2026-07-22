@@ -57,6 +57,7 @@ class TestEmailManagementController(unittest.TestCase):
                         is_primary=True,
                         added_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
                         linked_identity_count=1,
+                        is_corp=False,
                     )
                 ],
                 internal_identities=[],

@@ -233,18 +233,11 @@ class TestUsersRepository(BaseRepositoryTestLib):
         self.assertEqual(total, 0)
         self.assertEqual(rows, [])
 
-    async def test_list_users_internal_flag_true_when_has_internal_identity(self):
+    async def test_list_users_internal_flag_true_when_is_internal_flag_set(self):
         token = uuid.uuid4().hex[:10]
         user = self._make_user(email=f"internal-{token}@example.com")
         await self.insert_entities([user])
-        await self.insert_entities([
-            UserIdentitiesEntity(
-                user_id=user.user_id,
-                subject_identifier=f"google-oauth2|{token}",
-                identity_type="internal",
-                email_claim=f"internal-{token}@circlecat.org",
-            )
-        ])
+        await self.repo.set_internal(self.session, user.user_id)
 
         rows, total = await self.repo.list_users(
             self.session, search=token, limit=10, offset=0
@@ -254,7 +247,9 @@ class TestUsersRepository(BaseRepositoryTestLib):
         self.assertEqual(entity.user_id, user.user_id)
         self.assertTrue(is_internal)
 
-    async def test_list_users_internal_flag_false_when_no_internal_identity(self):
+    async def test_list_users_internal_flag_false_when_is_internal_flag_unset(self):
+        # A non-internal identity row must not, by itself, make is_internal
+        # True — the flag column is the sole source now.
         token = uuid.uuid4().hex[:10]
         user = self._make_user(email=f"external-{token}@example.com")
         await self.insert_entities([user])
@@ -311,42 +306,33 @@ class TestUsersRepository(BaseRepositoryTestLib):
         entity, _ = rows[0]
         self.assertIsNone(entity.preferred_name)
 
-    async def test_is_internal_true_when_has_internal_identity(self):
-        token = uuid.uuid4().hex[:10]
-        user = self._make_user(email=f"isint-{token}@example.com")
-        await self.insert_entities([user])
-        await self.insert_entities([
-            UserIdentitiesEntity(
-                user_id=user.user_id,
-                subject_identifier=f"google-oauth2|isint-{token}",
-                identity_type="internal",
-                email_claim=f"isint-{token}@circlecat.org",
-            )
-        ])
-        result = await self.repo.is_internal(self.session, user.user_id)
-        self.assertTrue(result)
+    async def test_is_internal_true_when_flag_set(self):
+        user_id = self.users[0].user_id
+        await self.repo.set_internal(self.session, user_id)
+        self.assertTrue(await self.repo.is_internal(self.session, user_id))
 
-    async def test_is_internal_false_when_only_external_identity(self):
-        token = uuid.uuid4().hex[:10]
-        user = self._make_user(email=f"isext-{token}@example.com")
-        await self.insert_entities([user])
-        await self.insert_entities([
-            UserIdentitiesEntity(
-                user_id=user.user_id,
-                subject_identifier=f"email|isext-{token}",
-                identity_type="external",
-                email_claim=f"isext-{token}@gmail.com",
-            )
-        ])
-        result = await self.repo.is_internal(self.session, user.user_id)
-        self.assertFalse(result)
+    async def test_is_internal_false_when_flag_unset(self):
+        self.assertFalse(
+            await self.repo.is_internal(self.session, self.users[1].user_id)
+        )
 
-    async def test_is_internal_false_when_no_identities(self):
-        token = uuid.uuid4().hex[:10]
-        user = self._make_user(email=f"isnone-{token}@example.com")
-        await self.insert_entities([user])
-        result = await self.repo.is_internal(self.session, user.user_id)
-        self.assertFalse(result)
+    async def test_exists_active_internal_true_when_active_and_internal(self):
+        user_id = self.users[0].user_id  # is_active=True from setUp
+        await self.repo.set_internal(self.session, user_id)
+        self.assertTrue(await self.repo.exists_active_internal(self.session, user_id))
+
+    async def test_exists_active_internal_false_when_inactive(self):
+        # self.users[2] ("Charlie Inactive") is created with is_active=False
+        # in setUp, following this file's existing pattern for inactive users.
+        user_id = self.users[2].user_id
+        await self.repo.set_internal(self.session, user_id)
+        self.assertTrue(self.users[2].is_active is False)
+        self.assertFalse(await self.repo.exists_active_internal(self.session, user_id))
+
+    async def test_exists_active_internal_false_when_not_internal(self):
+        self.assertFalse(
+            await self.repo.exists_active_internal(self.session, self.users[0].user_id)
+        )
 
     async def test_set_super_admin_flips_flag(self):
         token = uuid.uuid4().hex[:10]
@@ -362,6 +348,23 @@ class TestUsersRepository(BaseRepositoryTestLib):
 
     async def test_set_super_admin_missing_user_updates_nothing(self):
         updated = await self.repo.set_super_admin(self.session, 9_999_999, True)
+        self.assertEqual(updated, 0)
+
+    async def test_set_internal_flips_flag(self):
+        user_id = self.users[0].user_id
+        updated = await self.repo.set_internal(self.session, user_id)
+        self.assertEqual(updated, 1)
+        refreshed = await self.repo.get_user_by_user_id(self.session, user_id)
+        self.assertTrue(refreshed.is_internal)
+
+    async def test_set_internal_idempotent_second_call_noops(self):
+        user_id = self.users[0].user_id
+        await self.repo.set_internal(self.session, user_id)
+        updated_again = await self.repo.set_internal(self.session, user_id)
+        self.assertEqual(updated_again, 0)  # already True -> writes 0 rows
+
+    async def test_set_internal_missing_user_updates_nothing(self):
+        updated = await self.repo.set_internal(self.session, 9_999_999)
         self.assertEqual(updated, 0)
 
     async def test_list_blocked_users_returns_only_blocked(self):
@@ -662,19 +665,14 @@ class TestUsersRepository(BaseRepositoryTestLib):
         self.assertFalse(rows[0][0].is_super_admin)
 
     async def test_list_users_filter_user_type_internal(self):
-        """user_type='internal' returns only users with an internal identity."""
+        """user_type='internal' returns only users with the is_internal flag set."""
         token = uuid.uuid4().hex[:10]
         internal_user = self._make_user(email=f"int-{token}@example.com")
         external_user = self._make_user(email=f"ext-{token}@example.com")
         no_identity_user = self._make_user(email=f"none-{token}@example.com")
         await self.insert_entities([internal_user, external_user, no_identity_user])
+        await self.repo.set_internal(self.session, internal_user.user_id)
         await self.insert_entities([
-            UserIdentitiesEntity(
-                user_id=internal_user.user_id,
-                subject_identifier=f"google-oauth2|int-{token}",
-                identity_type="internal",
-                email_claim=f"int-{token}@circlecat.org",
-            ),
             UserIdentitiesEntity(
                 user_id=external_user.user_id,
                 subject_identifier=f"email|ext-{token}",
@@ -692,19 +690,14 @@ class TestUsersRepository(BaseRepositoryTestLib):
         self.assertTrue(rows[0][1])  # is_internal flag
 
     async def test_list_users_filter_user_type_external(self):
-        """user_type='external' returns only users WITHOUT an internal identity."""
+        """user_type='external' returns only users WITHOUT the is_internal flag set."""
         token = uuid.uuid4().hex[:10]
         internal_user = self._make_user(email=f"int2-{token}@example.com")
         external_user = self._make_user(email=f"ext2-{token}@example.com")
         no_identity_user = self._make_user(email=f"none2-{token}@example.com")
         await self.insert_entities([internal_user, external_user, no_identity_user])
+        await self.repo.set_internal(self.session, internal_user.user_id)
         await self.insert_entities([
-            UserIdentitiesEntity(
-                user_id=internal_user.user_id,
-                subject_identifier=f"google-oauth2|int2-{token}",
-                identity_type="internal",
-                email_claim=f"int2-{token}@circlecat.org",
-            ),
             UserIdentitiesEntity(
                 user_id=external_user.user_id,
                 subject_identifier=f"email|ext2-{token}",
@@ -726,20 +719,13 @@ class TestUsersRepository(BaseRepositoryTestLib):
             self.assertFalse(row[1])
 
     async def test_list_users_sort_by_user_type(self):
-        """sort_by='user_type' orders by the derived internal/external flag:
-        ascending lists external (no internal identity) before internal."""
+        """sort_by='user_type' orders by the is_internal flag column:
+        ascending lists external (flag unset) before internal (flag set)."""
         token = uuid.uuid4().hex[:10]
         internal_user = self._make_user(email=f"sint-{token}@example.com")
         external_user = self._make_user(email=f"sext-{token}@example.com")
         await self.insert_entities([internal_user, external_user])
-        await self.insert_entities([
-            UserIdentitiesEntity(
-                user_id=internal_user.user_id,
-                subject_identifier=f"google-oauth2|sint-{token}",
-                identity_type="internal",
-                email_claim=f"sint-{token}@circlecat.org",
-            ),
-        ])
+        await self.repo.set_internal(self.session, internal_user.user_id)
 
         asc_rows, _ = await self.repo.list_users(
             self.session, search=token, sort_by="user_type", order="asc"
