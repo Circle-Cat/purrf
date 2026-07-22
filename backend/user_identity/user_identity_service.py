@@ -281,12 +281,20 @@ class UserIdentityService:
                         last_login_at=login_dt,
                     ),
                 )
-            if IdentityType.INTERNAL == user_info.identity_type:
+            if (
+                IdentityType.INTERNAL == user_info.identity_type
+                and not user.is_internal
+            ):
                 # An employee's corp sign-in joining an existing account
-                # mirrors the first-login lifecycle hook. Runs for ANY
-                # routed login, not just social: absorb is idempotent
-                # (diffed grants, promotion guarded), so per-request
-                # re-routing of row-less passwordless subs is safe.
+                # mirrors the first-login lifecycle hook. Gated on the
+                # persisted is_internal flag so it runs only the FIRST time a
+                # corp login joins (bridge link / in-account verify / routing);
+                # once the user is flagged internal, the steady-state
+                # per-request re-routing of a row-less passwordless sub skips
+                # absorb entirely — no permission-bundle re-grant, no primary
+                # re-promotion, no set_internal no-op UPDATE. This trades the
+                # former per-request self-healing (a revoked baseline grant is
+                # no longer silently restored) for the cheaper hot path.
                 await absorb_internal_identity(
                     session,
                     user.user_id,

@@ -41,7 +41,7 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
         self.fresh_iat = int(time.time())
         self.fresh_iat_dt = datetime.fromtimestamp(self.fresh_iat, tz=timezone.utc)
 
-        self.user = MagicMock(spec=UsersEntity, user_id=10)
+        self.user = MagicMock(spec=UsersEntity, user_id=10, is_internal=False)
 
         # Default: no confirmed owner found for the email address (routing
         # doesn't apply). Email-routing tests override this explicitly.
@@ -779,9 +779,10 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
     async def test_create_or_swap_routed_passwordless_internal_absorbs_lifecycle(
         self,
     ):
-        """A routed passwordless (email|) INTERNAL login also runs the
-        absorb hook — INTERNAL absorb applies to ANY routed login, not just
-        social — while staying row-less (no identity upsert)."""
+        """The FIRST time a routed passwordless (email|) INTERNAL login joins
+        (is_internal not yet set) it runs the absorb hook — applies to any
+        routed login, not just social — while staying row-less (no identity
+        upsert). Steady-state re-routing is covered by the skip test below."""
         user_info = UserContextDto(
             sub="email|x",
             primary_email="emp@circlecat.org",
@@ -802,6 +803,38 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
 
         self.assertIs(result, self.user)
         self.permissions_repo.grant.assert_awaited_once()
+        self.identities_repo.upsert_identity.assert_not_awaited()
+
+    async def test_create_or_swap_routed_internal_already_internal_skips_absorb(self):
+        """The steady-state hot path: a row-less corp passwordless sub
+        re-routes on every request, but once the user is already flagged
+        internal the absorb hook is skipped entirely — no permission-bundle
+        re-grant, no set_internal, no primary re-promotion. The login still
+        routes to the account and stays row-less."""
+        user_info = UserContextDto(
+            sub="email|x",
+            primary_email="emp@circlecat.org",
+            identity_type=IdentityType.INTERNAL,
+            email_verified=True,
+        )
+        self.user.is_internal = True
+        self.identities_repo.find_swappable_by_email.return_value = None
+        self.emails_repo.get_confirmed_by_email.return_value = MagicMock(
+            spec=UserEmailsEntity, user_id=10, otp_confirmed=True
+        )
+        self.users_repo.get_user_by_user_id.return_value = self.user
+
+        result = await self.service.create_or_swap_user(self.session, user_info)
+
+        self.assertIs(result, self.user)
+        self.assertEqual(user_info.user_id, 10)
+        # Absorb skipped: none of its reads or writes run.
+        self.users_repo.set_internal.assert_not_awaited()
+        self.permissions_repo.get_active_permission_names.assert_not_awaited()
+        self.permissions_repo.grant.assert_not_awaited()
+        self.emails_repo.get_by_user_and_email.assert_not_awaited()
+        self.emails_repo.set_primary.assert_not_awaited()
+        # Still row-less.
         self.identities_repo.upsert_identity.assert_not_awaited()
 
     async def test_create_or_swap_untrusted_sub_never_email_routes(self):
