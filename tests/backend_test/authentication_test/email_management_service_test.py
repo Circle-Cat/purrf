@@ -658,12 +658,8 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
             self.session, _USER_ID, _CURRENT_SUB
         )
 
-        self.assertEqual(
-            {i.identity_id for i in result.internal_identities}, {1}
-        )
-        self.assertEqual(
-            {i.identity_id for i in result.external_identities}, {2, 3}
-        )
+        self.assertEqual({i.identity_id for i in result.internal_identities}, {1})
+        self.assertEqual({i.identity_id for i in result.external_identities}, {2, 3})
 
     async def test_emails_view_flags_corp_email_as_internal(self):
         added_at = datetime(2026, 1, 1, tzinfo=timezone.utc)

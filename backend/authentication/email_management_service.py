@@ -568,9 +568,9 @@ class EmailManagementService:
                 "log in with another method first"
             )
 
-        if is_company_email(identity.email_claim or "") and await self._users.exists_active_internal(
-            session, current_user_id
-        ):
+        if is_company_email(
+            identity.email_claim or ""
+        ) and await self._users.exists_active_internal(session, current_user_id):
             raise PermissionError("Active employees cannot remove corp sign-in")
 
     async def initiate_unlink(

@@ -515,7 +515,9 @@ class UserIdentityService:
             otp_confirmed=True,
             is_primary=True,
             last_login_at=(
-                last_login_at if is_rowless_login(sub, user_info.identity_type) else None
+                last_login_at
+                if is_rowless_login(sub, user_info.identity_type)
+                else None
             ),
         )
         await self.user_emails_repository.upsert_email(
