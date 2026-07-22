@@ -62,6 +62,14 @@ class ApplicationEntity(Base):
     current_round: Mapped[int] = mapped_column(
         Integer, nullable=False, default=1, server_default="1"
     )
+    # Timestamp the application entered its CURRENT stage. Single source of
+    # truth for terminal-lane (rejected/hired) ordering, which needs "most
+    # recently rejected/hired first" and cannot rely on updated_timestamp
+    # (later non-stage writes, e.g. a blacklist tag backfill, would move it).
+    # server_default covers INSERT paths; stage-change UPDATEs set it explicitly.
+    stage_entered_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
     # Advisory flags (e.g. {"cold_freeze": {"thaw_date": "2026-04-01"}}).
     tags: Mapped[dict | None] = mapped_column(JSONB)
     created_datetime: Mapped[datetime] = mapped_column(

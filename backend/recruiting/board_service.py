@@ -990,6 +990,7 @@ class BoardService:
                 },
             }
         application.stage = dto.to_stage
+        application.stage_entered_at = datetime.now(timezone.utc)
         application.sub_status = (
             "pending"
             if dto.to_stage in stage_machine.configured_stages(job.pipeline_config)
@@ -1404,6 +1405,7 @@ class BoardService:
 
         from_stage = application.stage
         application.stage = ApplicationStage.REJECTED
+        application.stage_entered_at = datetime.now(timezone.utc)
         application.tags = {**(application.tags or {}), "blacklisted": True}
         application.sub_status = None
         application.current_round = 1
@@ -1442,6 +1444,7 @@ class BoardService:
                 # keep their historical stage/round/sub_status and frozen
                 # submission — only the tag is backfilled.
                 locked.stage = ApplicationStage.REJECTED
+                locked.stage_entered_at = datetime.now(timezone.utc)
                 locked.sub_status = None
                 locked.current_round = 1
                 await self._freeze_current_submission(session, locked.application_id)

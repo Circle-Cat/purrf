@@ -1,5 +1,5 @@
 import unittest
-from datetime import datetime
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, call, create_autospec
 
@@ -1373,6 +1373,26 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.evaluation_repo.has_confirmed.assert_not_awaited()
         details = self.activity_repo.create.await_args.kwargs["details"]
         self.assertNotIn("advancedWithoutEvaluation", details)
+
+    async def test_change_stage_sets_stage_entered_at(self):
+        """Every stage-write must stamp stage_entered_at so terminal-lane
+        (rejected/hired) ordering has a dedicated timestamp that doesn't
+        drift with later non-stage writes (e.g. updated_timestamp would)."""
+        job = self._job(job_id=1, owner_ids=(2,), stages=("tech",))
+        application = self._application(
+            application_id=10, job_id=1, stage=ApplicationStage.TECH
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+
+        before = datetime.now(timezone.utc)
+        dto = StageChangeDto(to_stage=ApplicationStage.HIRED)
+        await self.service.change_stage(self.session, self._ctx(user_id=2), 10, dto)
+
+        saved = self.app_repo.update.call_args.args[1]
+        self.assertIsNotNone(saved.stage_entered_at)
+        self.assertGreaterEqual(saved.stage_entered_at, before)
 
     # -- reassign --
 
