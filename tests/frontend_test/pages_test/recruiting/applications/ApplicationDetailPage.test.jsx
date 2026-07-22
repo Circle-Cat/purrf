@@ -509,9 +509,12 @@ describe("ApplicationDetailPage — role-adaptive right column", () => {
     expect(
       screen.queryByRole("button", { name: "Blacklist" }),
     ).not.toBeInTheDocument();
-    // Owner-only follow-up fetches are skipped for a non-owner
+    // Owner-only follow-up fetches are skipped for a non-owner...
     expect(api.getJob).not.toHaveBeenCalled();
-    expect(api.listInterviewPool).not.toHaveBeenCalled();
+    // ...but the evaluator DOES fetch the candidate aggregate + (best-effort)
+    // interview pool for the history panels.
+    expect(api.getOtherApplications).toHaveBeenCalledWith("101");
+    expect(api.listInterviewPool).toHaveBeenCalled();
   });
 
   it("an owner who is also the current-stage assignee sees only the decision footer on the plain detail link", async () => {
@@ -2859,5 +2862,136 @@ describe("ApplicationDetailPage — advance-without-evaluation soft reminder", (
         /Advanced to round 2 of Tech \(no evaluation recorded\), by Owen Owner/,
       ),
     ).toBeInTheDocument();
+  });
+});
+
+describe("ApplicationDetailPage — evaluator candidate history", () => {
+  // A previous attempt at THIS posting, carrying a prior evaluation.
+  const previousAttempt = makeOtherApplication({
+    id: 301,
+    jobTitle: "Mentor",
+    stage: "tech",
+    evaluations: [
+      {
+        id: 50,
+        stage: "tech",
+        round: 1,
+        evaluatorId: 77, // deliberately not in INTERVIEW_POOL
+        // "correctness" (not "bg_strength") is a valid tech-rubric field id,
+        // matching this fixture's "tech" stage (rubricFor("tech") has no
+        // bg_strength field, so that id would silently render nothing).
+        responses: { correctness: { value: 2, notes: "prior-attempt note" } },
+        isConfirmed: true,
+      },
+    ],
+    activity: [], // backend empties these for a pure assignee
+    comments: [],
+  });
+
+  it("shows the history panels to the current-stage assignee in evaluate mode", async () => {
+    authState.userId = ASSIGNEE_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: false, assigneeId: ASSIGNEE_ID }),
+    });
+    api.getOtherApplications.mockResolvedValue({
+      data: { otherJobs: [], previousSameJob: [previousAttempt] },
+    });
+    renderEvaluatorPage();
+    await waitLoaded();
+
+    expect(
+      screen.getByText("Previous applications for this posting"),
+    ).toBeInTheDocument();
+    expect(api.getOtherApplications).toHaveBeenCalledWith("101");
+    // Must NOT pull the current application's own audit timeline for an assignee.
+    expect(api.getApplicationActivity).not.toHaveBeenCalled();
+  });
+
+  it("expands a history entry to show evaluations but no Timeline/Comments tabs", async () => {
+    const user = userEvent.setup();
+    authState.userId = ASSIGNEE_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: false, assigneeId: ASSIGNEE_ID }),
+    });
+    api.getOtherApplications.mockResolvedValue({
+      data: { otherJobs: [], previousSameJob: [previousAttempt] },
+    });
+    renderEvaluatorPage();
+    await waitLoaded();
+
+    const viewButton = screen.getByRole("button", { name: /View/ });
+    await user.click(viewButton);
+    // Scoped to the expanded row: the page's own rubric-form Tabs also has
+    // a "Comments" tab trigger (unrelated to this history row), so an
+    // unscoped query would find that one instead.
+    const row = viewButton.closest("li");
+
+    // Prior evaluation (with score/notes) is shown...
+    expect(within(row).getByText(/prior-attempt note/)).toBeInTheDocument();
+    // ...but the reduced view exposes no audit/comment tabs.
+    expect(
+      within(row).queryByRole("tab", { name: "Timeline" }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(row).queryByRole("tab", { name: "Comments" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not show history to an evaluate-mode viewer who is not the current assignee", async () => {
+    authState.userId = 999; // neither owner nor assignee
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({
+        isOwner: false,
+        canView: false,
+        assigneeId: ASSIGNEE_ID,
+      }),
+    });
+    api.getOtherApplications.mockResolvedValue({
+      data: { otherJobs: [], previousSameJob: [previousAttempt] },
+    });
+    renderEvaluatorPage();
+    await waitLoaded();
+
+    expect(
+      screen.getByText(
+        "You are not currently assigned to evaluate this application.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("Previous applications for this posting"),
+    ).not.toBeInTheDocument();
+    expect(api.getOtherApplications).not.toHaveBeenCalled();
+  });
+
+  it("degrades to 'User {id}' and still loads when the interview pool is unreadable", async () => {
+    const user = userEvent.setup();
+    authState.userId = ASSIGNEE_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: false, assigneeId: ASSIGNEE_ID }),
+    });
+    api.getOtherApplications.mockResolvedValue({
+      data: { otherJobs: [], previousSameJob: [previousAttempt] },
+    });
+    api.listInterviewPool.mockRejectedValue(new Error("Forbidden"));
+    renderEvaluatorPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole("button", { name: /View/ }));
+    expect(screen.getByText(/Evaluated by: User 77/)).toBeInTheDocument();
+  });
+
+  it("renders no history panel when the candidate has none", async () => {
+    authState.userId = ASSIGNEE_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: false, assigneeId: ASSIGNEE_ID }),
+    });
+    // beforeEach already stubs getOtherApplications -> empty.
+    renderEvaluatorPage();
+    await waitLoaded();
+
+    expect(
+      screen.queryByText("Previous applications for this posting"),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Other applications")).not.toBeInTheDocument();
   });
 });

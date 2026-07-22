@@ -601,13 +601,21 @@ const CommentsPanel = ({ comments, onPost, posting, mentionableUsers }) => {
  * so activity-posting rows narrate hired as "Admitted" even when viewed
  * from an employment posting's page.
  *
+ * `showHistoryTabs` (default `true`) controls whether each expanded row's
+ * tab strip includes Timeline/Comments alongside Evaluations: the owner/
+ * read.all layout shows all three, while the assigned-evaluator layout (see
+ * the `showRubric` render branch below) passes `false` to show only the
+ * evaluations, since the backend already empties `activity`/`comments` for
+ * a pure assignee and those tabs would just render "No … yet." noise.
+ *
  * @param {{title: string, otherApplications: {application: object,
  *          jobTitle: string, jobKind: string, resumeAvailable: boolean,
  *          evaluations: object[], activity: object[],
  *          comments: object[]}[],
  *          interviewPool: {userId: number, name: string}[],
  *          expandedId: number|null, onToggle: (id: number) => void,
- *          labelFor: (other: object) => string}} props
+ *          labelFor: (other: object) => string,
+ *          showHistoryTabs?: boolean}} props
  */
 const OtherApplicationsSection = ({
   title,
@@ -616,6 +624,7 @@ const OtherApplicationsSection = ({
   expandedId,
   onToggle,
   labelFor,
+  showHistoryTabs = true,
 }) => {
   if (otherApplications.length === 0) return null;
   return (
@@ -625,6 +634,13 @@ const OtherApplicationsSection = ({
         {otherApplications.map((other) => {
           const isExpanded = other.application.id === expandedId;
           const otherSubmission = other.application.current?.submission ?? {};
+          // Shared between the full (tabbed) and reduced (evaluator) views.
+          const evaluationSummary = (
+            <EvaluationSummary
+              evaluations={other.evaluations}
+              interviewPool={interviewPool}
+            />
+          );
           return (
             <li key={other.application.id} className="rounded border p-2">
               <button
@@ -659,28 +675,36 @@ const OtherApplicationsSection = ({
                       title="Résumé"
                     />
                   )}
-                  <Tabs defaultValue="evaluations">
-                    <TabsList>
-                      <TabsTrigger value="evaluations">Evaluations</TabsTrigger>
-                      <TabsTrigger value="timeline">Timeline</TabsTrigger>
-                      <TabsTrigger value="comments">Comments</TabsTrigger>
-                    </TabsList>
-                    <TabsContent value="evaluations">
-                      <EvaluationSummary
-                        evaluations={other.evaluations}
-                        interviewPool={interviewPool}
-                      />
-                    </TabsContent>
-                    <TabsContent value="timeline">
-                      <ActivityTimeline
-                        activity={other.activity ?? []}
-                        jobKind={other.jobKind}
-                      />
-                    </TabsContent>
-                    <TabsContent value="comments">
-                      <CommentsPanel comments={other.comments ?? []} />
-                    </TabsContent>
-                  </Tabs>
+                  {showHistoryTabs ? (
+                    <Tabs defaultValue="evaluations">
+                      <TabsList>
+                        <TabsTrigger value="evaluations">
+                          Evaluations
+                        </TabsTrigger>
+                        <TabsTrigger value="timeline">Timeline</TabsTrigger>
+                        <TabsTrigger value="comments">Comments</TabsTrigger>
+                      </TabsList>
+                      <TabsContent value="evaluations">
+                        {evaluationSummary}
+                      </TabsContent>
+                      <TabsContent value="timeline">
+                        <ActivityTimeline
+                          activity={other.activity ?? []}
+                          jobKind={other.jobKind}
+                        />
+                      </TabsContent>
+                      <TabsContent value="comments">
+                        <CommentsPanel comments={other.comments ?? []} />
+                      </TabsContent>
+                    </Tabs>
+                  ) : (
+                    <div className="space-y-2">
+                      <h3 className="text-xs font-semibold uppercase text-slate-500">
+                        Evaluations
+                      </h3>
+                      {evaluationSummary}
+                    </div>
+                  )}
                 </div>
               )}
             </li>
@@ -827,6 +851,27 @@ const ApplicationDetailPage = () => {
           setOtherApplications(aggregate.otherJobs ?? []);
           setPreviousApplications(aggregate.previousSameJob ?? []);
         }
+        // The assigned evaluator (evaluate mode) gets the candidate's other/previous
+        // applications for context. `canView` is false for a pure assignee, so this
+        // is a separate branch. The backend already reduces the payload for an
+        // assignee (audit timeline + comments of those apps come back empty), so we
+        // surface only the snapshot + evaluations. Do NOT fetch getApplicationActivity
+        // here — it's owner/read.all only and would fail the whole load. The interview
+        // pool (evaluator-name lookup) is best-effort: an evaluator without job.read
+        // can't read it, which must degrade to "User {id}", not break the page.
+        else if (evaluatorMode && detailData.assigneeId === currentUserId) {
+          const otherApplicationsRes =
+            await getOtherApplications(applicationId);
+          const aggregate = otherApplicationsRes?.data ?? {};
+          setOtherApplications(aggregate.otherJobs ?? []);
+          setPreviousApplications(aggregate.previousSameJob ?? []);
+          try {
+            const { data: pool } = await listInterviewPool();
+            setInterviewPool(pool ?? []);
+          } catch {
+            // Evaluator lacks job.read; names fall back to "User {id}".
+          }
+        }
         // Comments (and who can be @-mentioned in them) are readable by
         // the owner AND the current-stage assignee (unlike job/pool/
         // activity above, which stay owner-only) -- the one fetch here
@@ -846,7 +891,7 @@ const ApplicationDetailPage = () => {
         setLoadError(true);
         toast.error(e.message);
       });
-  }, [applicationId, currentUserId]);
+  }, [applicationId, currentUserId, evaluatorMode]);
 
   useEffect(() => {
     load();
@@ -1393,33 +1438,73 @@ const ApplicationDetailPage = () => {
 
           {evaluatorMode &&
             (showRubric ? (
-              <Tabs defaultValue="evaluation">
-                <TabsList>
-                  <TabsTrigger value="evaluation">Your evaluation</TabsTrigger>
-                  <TabsTrigger value="comments">Comments</TabsTrigger>
-                </TabsList>
-                <TabsContent value="evaluation">
-                  <EvaluationRubricForm
-                    key={`eval-${detail.application.stage}-${
-                      myEntry?.isConfirmed ? "confirmed" : "draft"
-                    }`}
-                    stage={detail.application.stage}
-                    initialResponses={myEntry?.responses ?? {}}
-                    readOnly={Boolean(myEntry?.isConfirmed)}
-                    saving={savingEvaluation}
-                    onSaveDraft={handleSaveDraft}
-                    onConfirm={handleConfirmEvaluation}
-                  />
-                </TabsContent>
-                <TabsContent value="comments">
-                  <CommentsPanel
-                    comments={comments}
-                    onPost={handlePostComment}
-                    posting={postingComment}
-                    mentionableUsers={mentionableUsers}
-                  />
-                </TabsContent>
-              </Tabs>
+              <>
+                <Tabs defaultValue="evaluation">
+                  <TabsList>
+                    <TabsTrigger value="evaluation">
+                      Your evaluation
+                    </TabsTrigger>
+                    <TabsTrigger value="comments">Comments</TabsTrigger>
+                  </TabsList>
+                  <TabsContent value="evaluation">
+                    <EvaluationRubricForm
+                      key={`eval-${detail.application.stage}-${
+                        myEntry?.isConfirmed ? "confirmed" : "draft"
+                      }`}
+                      stage={detail.application.stage}
+                      initialResponses={myEntry?.responses ?? {}}
+                      readOnly={Boolean(myEntry?.isConfirmed)}
+                      saving={savingEvaluation}
+                      onSaveDraft={handleSaveDraft}
+                      onConfirm={handleConfirmEvaluation}
+                    />
+                  </TabsContent>
+                  <TabsContent value="comments">
+                    <CommentsPanel
+                      comments={comments}
+                      onPost={handlePostComment}
+                      posting={postingComment}
+                      mentionableUsers={mentionableUsers}
+                    />
+                  </TabsContent>
+                </Tabs>
+
+                <OtherApplicationsSection
+                  title="Previous applications for this posting"
+                  otherApplications={previousApplications}
+                  interviewPool={interviewPool}
+                  expandedId={expandedPreviousId}
+                  onToggle={(id) =>
+                    setExpandedPreviousId((cur) => (cur === id ? null : id))
+                  }
+                  showHistoryTabs={false}
+                  labelFor={(other) =>
+                    `Applied ${
+                      other.application.current?.submittedAt
+                        ? new Date(
+                            other.application.current.submittedAt,
+                          ).toLocaleDateString()
+                        : "earlier"
+                    } — ${humanize(other.application.stage)}`
+                  }
+                />
+
+                <OtherApplicationsSection
+                  title="Other applications"
+                  otherApplications={otherApplications}
+                  interviewPool={interviewPool}
+                  expandedId={expandedOtherApplicationId}
+                  onToggle={(id) =>
+                    setExpandedOtherApplicationId((prev) =>
+                      prev === id ? null : id,
+                    )
+                  }
+                  showHistoryTabs={false}
+                  labelFor={(other) =>
+                    `${other.jobTitle} — ${humanize(other.application.stage)}`
+                  }
+                />
+              </>
             ) : (
               <p className="text-sm text-slate-500">
                 You are not currently assigned to evaluate this application.
