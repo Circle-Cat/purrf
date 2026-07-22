@@ -106,8 +106,10 @@ class EmailManagementService:
 
         Raises:
             ValueError: The row is missing or owned by another user.
-            ConflictError: The row is the primary contact, or it is the
-                address the caller's own passwordless session signed in with.
+            ConflictError: The row is the primary contact, it is the
+                address the caller's own passwordless session signed in
+                with, or the caller is an active employee removing any
+                corp-domain email.
         """
         row = await self._user_emails.get_by_id(session, email_id)
         if row is None or row.user_id != current_user_id:
@@ -122,6 +124,13 @@ class EmailManagementService:
             raise ConflictError(
                 "Cannot remove the email used for the current session; "
                 "log in with another method first"
+            )
+        if is_company_email(row.email) and await self._users.exists_active_internal(
+            session, current_user_id
+        ):
+            raise ConflictError(
+                "Active employees cannot remove a corp email; "
+                "it is their required internal contact"
             )
 
         await self._user_emails.delete(session, email_id)

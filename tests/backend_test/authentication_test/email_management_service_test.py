@@ -253,6 +253,46 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         self.user_emails.delete.assert_awaited_once_with(self.session, 12)
         self.assertEqual(result, {"ok": True})
 
+    async def test_remove_email_blocks_active_internal_deleting_corp(self):
+        """An active internal employee cannot remove ANY corp email."""
+        row = self._email_row("dev@circlecat.org")
+        row.email_id = 99
+        self.user_emails.get_by_id.return_value = row
+        self.users.exists_active_internal.return_value = True
+
+        with self.assertRaises(ConflictError):
+            await self.service.remove_email(
+                self.session, _USER_ID, "google-oauth2|x", None, 99
+            )
+        self.user_emails.delete.assert_not_awaited()
+
+    async def test_remove_email_allows_internal_deleting_non_corp(self):
+        row = self._email_row("alice@gmail.com")
+        row.email_id = 99
+        self.user_emails.get_by_id.return_value = row
+        self.users.exists_active_internal.return_value = True
+
+        result = await self.service.remove_email(
+            self.session, _USER_ID, "google-oauth2|x", None, 99
+        )
+
+        self.user_emails.delete.assert_awaited_once()
+        self.assertEqual(result, {"ok": True})
+
+    async def test_remove_email_allows_external_deleting_corp_domain(self):
+        # Non-employee (exists_active_internal False) is unaffected by the guard.
+        row = self._email_row("dev@circlecat.org")
+        row.email_id = 99
+        self.user_emails.get_by_id.return_value = row
+        self.users.exists_active_internal.return_value = False
+
+        result = await self.service.remove_email(
+            self.session, _USER_ID, "google-oauth2|x", None, 99
+        )
+
+        self.user_emails.delete.assert_awaited_once()
+        self.assertEqual(result, {"ok": True})
+
     async def test_verify_confirms_without_creating_sign_in_identity(self):
         """Normal-mode verify only confirms the address; it must not create a
         user_identities row for the OTP's email| sub — the confirmed address
