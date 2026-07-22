@@ -38,6 +38,14 @@ class UsersEntity(Base):
         Boolean, nullable=False, server_default=text("false")
     )
 
+    # Persisted internal-employee state (row-less identity model): set True by
+    # the corp-join lifecycle (absorb_internal_identity) and never cleared this
+    # pass. Sole source of truth for internal classification now that corp
+    # passwordless keeps no user_identities row.
+    is_internal: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
+
     is_blocked: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("false"), default=False
     )

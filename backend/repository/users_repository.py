@@ -295,6 +295,34 @@ class UsersRepository:
         await session.flush()
         return result.rowcount
 
+    async def set_internal(self, session: AsyncSession, user_id: int) -> int:
+        """
+        Mark a user as an internal employee — idempotent, no-op when already set.
+
+        Writes only when ``is_internal`` is currently False, so the per-request
+        corp-passwordless re-resolution (row-less logins route through
+        ``absorb_internal_identity`` on every request) never issues a redundant
+        UPDATE. Never clears the flag; deactivation is handled by ``is_active``.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            user_id (int): The user to mark internal.
+
+        Returns:
+            int: Rows updated — 1 on the False->True flip, 0 when already
+            internal or ``user_id`` is unknown.
+        """
+        result = await session.execute(
+            update(UsersEntity)
+            .where(
+                UsersEntity.user_id == user_id,
+                UsersEntity.is_internal.is_(False),
+            )
+            .values(is_internal=True)
+        )
+        await session.flush()
+        return result.rowcount
+
     async def list_blocked_users(
         self, session: AsyncSession, *, search: str | None = None
     ) -> list[UsersEntity]:

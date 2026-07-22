@@ -364,6 +364,23 @@ class TestUsersRepository(BaseRepositoryTestLib):
         updated = await self.repo.set_super_admin(self.session, 9_999_999, True)
         self.assertEqual(updated, 0)
 
+    async def test_set_internal_flips_flag(self):
+        user_id = self.users[0].user_id
+        updated = await self.repo.set_internal(self.session, user_id)
+        self.assertEqual(updated, 1)
+        refreshed = await self.repo.get_user_by_user_id(self.session, user_id)
+        self.assertTrue(refreshed.is_internal)
+
+    async def test_set_internal_idempotent_second_call_noops(self):
+        user_id = self.users[0].user_id
+        await self.repo.set_internal(self.session, user_id)
+        updated_again = await self.repo.set_internal(self.session, user_id)
+        self.assertEqual(updated_again, 0)  # already True -> writes 0 rows
+
+    async def test_set_internal_missing_user_updates_nothing(self):
+        updated = await self.repo.set_internal(self.session, 9_999_999)
+        self.assertEqual(updated, 0)
+
     async def test_list_blocked_users_returns_only_blocked(self):
         token = uuid.uuid4().hex[:10]
         blocked = self._make_user(
