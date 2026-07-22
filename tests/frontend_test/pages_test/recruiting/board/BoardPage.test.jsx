@@ -438,7 +438,7 @@ describe("BoardPage", () => {
     );
   });
 
-  it("splits a multi-round stage into one lane per round and buckets cards by round", async () => {
+  it("splits a multi-round stage into one lane per round, buckets cards by round, and badges each round lane with its own count (not the whole-stage total)", async () => {
     const jobC = {
       id: 3,
       title: "Staff Engineer",
@@ -475,6 +475,24 @@ describe("BoardPage", () => {
             total: 2,
             has_more: false,
           },
+          // Terminal lane with a total that outruns what's loaded, so the
+          // test also proves terminal lanes still badge off `total` (they're
+          // paginated, so cards.length would undercount them).
+          hired: {
+            items: [
+              {
+                id: 501,
+                applicantName: "Hired Person",
+                applicantEmail: "hired@example.com",
+                stage: "hired",
+                subStatus: null,
+                tags: null,
+                appliedAt: "2026-06-03T00:00:00Z",
+              },
+            ],
+            total: 5,
+            has_more: true,
+          },
         },
       },
     });
@@ -493,6 +511,9 @@ describe("BoardPage", () => {
     expect(
       within(round1Lane).queryByText("Round Two Person"),
     ).not.toBeInTheDocument();
+    // Each round lane badges its own 1-card round bucket, not the
+    // whole-stage total of 2.
+    expect(within(round1Lane).getByText("1")).toBeInTheDocument();
 
     const round2Lane = screen.getByTestId("lane-tech:2");
     expect(
@@ -501,6 +522,12 @@ describe("BoardPage", () => {
     expect(
       within(round2Lane).queryByText("Round One Person"),
     ).not.toBeInTheDocument();
+    expect(within(round2Lane).getByText("1")).toBeInTheDocument();
+
+    // Terminal lane still shows the whole-stage total (5), not the 1 card
+    // that happens to be loaded on screen.
+    const hiredLane = screen.getByTestId("lane-hired");
+    expect(within(hiredLane).getByText("5")).toBeInTheDocument();
   });
 
   it("falls back applicants above the current max round into the last lane instead of hiding them", async () => {
@@ -560,7 +587,7 @@ describe("BoardPage", () => {
     ).toBeInTheDocument();
   });
 
-  it("shows Load more on a terminal lane and appends deduped cards", async () => {
+  it("shows Load more on a terminal lane and appends deduped cards, dropping an id the first page already rendered", async () => {
     const user = userEvent.setup();
     const makeCard = (id) => ({
       id,
@@ -572,18 +599,22 @@ describe("BoardPage", () => {
       appliedAt: "2026-06-01T00:00:00Z",
     });
     const firstPage = Array.from({ length: 20 }, (_, i) => makeCard(i + 1));
-    const secondPage = Array.from({ length: 5 }, (_, i) => makeCard(i + 21));
+    // Overlaps with the first page on id 20 (e.g. a slow fetch racing an
+    // insert ahead of the offset) plus 4 genuinely new ids — this is the
+    // case plain concatenation would double-render, but the Set-based
+    // dedupe in loadMore must drop.
+    const secondPage = [makeCard(20), makeCard(21), makeCard(22), makeCard(23), makeCard(24)];
 
     api.listBoardJobs.mockResolvedValue({ data: [jobA] });
     api.getJobBoard.mockResolvedValue({
       data: {
         stages: {
-          rejected: { items: firstPage, total: 25, has_more: true },
+          rejected: { items: firstPage, total: 24, has_more: true },
         },
       },
     });
     api.getJobBoardStagePage.mockResolvedValue({
-      data: { items: secondPage, total: 25, has_more: false },
+      data: { items: secondPage, total: 24, has_more: false },
     });
 
     renderPage();
@@ -606,11 +637,74 @@ describe("BoardPage", () => {
 
     await waitFor(() =>
       expect(
-        within(rejectedLane).getByText("Rejected Person 25"),
+        within(rejectedLane).getByText("Rejected Person 24"),
       ).toBeInTheDocument(),
     );
-    // All 25 unique cards rendered, no duplicates, and the button is gone.
-    expect(within(rejectedLane).getAllByRole("button").length).toBe(25);
+    // The repeated id 20 renders exactly once, not twice.
+    expect(
+      within(rejectedLane).getAllByText("Rejected Person 20").length,
+    ).toBe(1);
+    // 20 original cards + 4 genuinely new ones = 24 unique cards rendered
+    // (not 25, which is what concatenation-without-dedupe would produce),
+    // and the button is gone.
+    expect(within(rejectedLane).getAllByRole("button").length).toBe(24);
+    expect(
+      within(rejectedLane).queryByText("Load more"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("guards against a double-click on Load more firing two requests for the same stage", async () => {
+    const user = userEvent.setup();
+    const makeCard = (id) => ({
+      id,
+      applicantName: `Rejected Person ${id}`,
+      applicantEmail: `rejected${id}@example.com`,
+      stage: "rejected",
+      subStatus: null,
+      tags: null,
+      appliedAt: "2026-06-01T00:00:00Z",
+    });
+    const firstPage = Array.from({ length: 20 }, (_, i) => makeCard(i + 1));
+    let resolvePage;
+    const pagePromise = new Promise((resolve) => {
+      resolvePage = resolve;
+    });
+
+    api.listBoardJobs.mockResolvedValue({ data: [jobA] });
+    api.getJobBoard.mockResolvedValue({
+      data: {
+        stages: {
+          rejected: { items: firstPage, total: 21, has_more: true },
+        },
+      },
+    });
+    api.getJobBoardStagePage.mockImplementation(() => pagePromise);
+
+    renderPage();
+
+    const rejectedLane = await screen.findByTestId("lane-rejected");
+    const loadMoreButton = within(rejectedLane).getByText("Load more");
+
+    // Two rapid clicks while the first request is still in flight.
+    await user.click(loadMoreButton);
+    await user.click(loadMoreButton);
+
+    // Only one request fired for the stage, and the button is disabled
+    // while its load is pending.
+    expect(api.getJobBoardStagePage).toHaveBeenCalledTimes(1);
+    expect(loadMoreButton).toBeDisabled();
+
+    resolvePage({
+      data: { items: [makeCard(21)], total: 21, has_more: false },
+    });
+
+    await waitFor(() =>
+      expect(
+        within(rejectedLane).getByText("Rejected Person 21"),
+      ).toBeInTheDocument(),
+    );
+    // Load finished, button is gone (has_more is now false) — nothing left
+    // stuck disabled.
     expect(
       within(rejectedLane).queryByText("Load more"),
     ).not.toBeInTheDocument();

@@ -42,6 +42,9 @@ const BoardPage = () => {
   const [selectedJobId, setSelectedJobId] = useState(null);
   const [board, setBoard] = useState(null);
   const [boardError, setBoardError] = useState(false);
+  /** Stages with an in-flight "Load more" fetch, so a fast double-click on
+   * the same lane can't fire a second request against a stale offset. */
+  const [loadingMore, setLoadingMore] = useState(() => new Set());
 
   /** Fetch (or re-fetch, via Retry) the caller's owned jobs. */
   const loadJobs = useCallback(async () => {
@@ -86,6 +89,8 @@ const BoardPage = () => {
    * deduping by card id so a slow double-click can't render duplicates. */
   const loadMore = useCallback(
     async (stage) => {
+      if (loadingMore.has(stage)) return;
+      setLoadingMore((prev) => new Set(prev).add(stage));
       const lane = board[stage];
       try {
         const { data } = await getJobBoardStagePage(selectedJobId, {
@@ -106,9 +111,15 @@ const BoardPage = () => {
         });
       } catch (e) {
         toast.error(e.message);
+      } finally {
+        setLoadingMore((prev) => {
+          const next = new Set(prev);
+          next.delete(stage);
+          return next;
+        });
       }
     },
-    [board, selectedJobId],
+    [board, selectedJobId, loadingMore],
   );
 
   const selectedJob = useMemo(
@@ -246,7 +257,7 @@ const BoardPage = () => {
                   <span
                     className={`rounded-full px-2 py-0.5 text-xs font-semibold ${colors.count}`}
                   >
-                    {board[lane.stage]?.total ?? cards.length}
+                    {isTerminal ? (board[lane.stage]?.total ?? cards.length) : cards.length}
                   </span>
                 </div>
                 <div className="flex flex-col gap-2 p-3">
@@ -268,7 +279,8 @@ const BoardPage = () => {
                     <button
                       type="button"
                       onClick={() => loadMore(lane.stage)}
-                      className="mt-1 rounded-md border border-border px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-muted"
+                      disabled={loadingMore.has(lane.stage)}
+                      className="mt-1 rounded-md border border-border px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       Load more
                     </button>
