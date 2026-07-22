@@ -141,10 +141,12 @@ class UserIdentityService:
         the absorb lifecycle hook, same as every other corp-join path; on
         miss, checks step 2.5 (trusted-assertion routing: a login whose sub
         is allowlisted and whose address an account has OTP-confirmed
-        returns that account directly — a passwordless login writes nothing,
-        a routed social sub additionally gets its identity row upserted, so
-        the next login resolves at step 1; an INTERNAL routed login of
-        either kind also runs the absorb hook). Otherwise falls through to
+        returns that account directly — a passwordless login stamps the
+        resolved user_emails row's last_login_at (if newer) and records no
+        identity row, while a routed social sub additionally upserts its
+        identity row (which carries its own last_login_at), so the next
+        login resolves at step 1; an INTERNAL routed login of either kind
+        also runs the absorb hook). Otherwise falls through to
         step 3 (first-login insert). Writes the resolved user_id back onto
         `user_info` (mutates the DTO).
 
@@ -260,10 +262,12 @@ class UserIdentityService:
         # verified login from an allowlisted social IdP — for an address some
         # account has OTP-confirmed logs straight into that account. Guard 1
         # above already refused any assertion that isn't trusted, so every
-        # login reaching here qualifies. Passwordless writes nothing
-        # (row-less, idempotent re-resolution); a routed social sub
-        # additionally gets its identity row upserted below, so the next
-        # login resolves at step 1.
+        # login reaching here qualifies. Passwordless stays row-less: it
+        # stamps the resolved user_emails row's last_login_at (if newer) and
+        # records no identity row (idempotent re-resolution); a routed
+        # social sub additionally gets its identity row upserted below
+        # (carrying its own last_login_at), so the next login resolves at
+        # step 1.
         confirmed = await self.user_emails_repository.get_confirmed_by_email(
             session=session, email=email
         )
@@ -455,6 +459,11 @@ class UserIdentityService:
         and primary by construction — the login itself is the mailbox proof
         (a passwordless round-trip, or a verified assertion from an
         allowlisted social IdP).
+
+        The seeded user_emails row's last_login_at is set to login_dt only
+        for a row-less (passwordless) first login; it is None for a
+        google/social first login, which instead records its last_login_at
+        on the new user_identities row.
         """
         sub = user_info.sub
         email = user_info.primary_email.lower()

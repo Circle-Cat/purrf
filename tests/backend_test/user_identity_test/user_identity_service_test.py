@@ -386,6 +386,7 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
 
         self.identities_repo.upsert_identity.assert_awaited()
         self.identities_repo.delete.assert_not_awaited()
+        self.emails_repo.update_last_login.assert_not_awaited()
 
     async def test_swap_internal_passwordless_absorbs_and_deletes_placeholder(self):
         """Corp passwordless migration swap is row-less: confirm + delete
