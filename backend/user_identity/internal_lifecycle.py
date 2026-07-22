@@ -1,8 +1,8 @@
-"""Shared internal-employee lifecycle hook for corp sign-ins joining an
-EXISTING account (bridge link, in-account verify, or trusted-assertion
-routing): grant the internal-employee permission bundle and promote the
-corp address to the primary contact. Lives outside both services so the
-logic exists once."""
+"""Shared internal-employee lifecycle hook, used both for brand-new
+first-login inserts and for corp sign-ins joining an EXISTING account
+(bridge link, in-account verify, or trusted-assertion routing): grant the
+internal-employee permission bundle and promote the corp address to the
+primary contact. Lives outside both services so the logic exists once."""
 
 from backend.common.permissions import INTERNAL_EMPLOYEE_PERMISSIONS
 
@@ -18,10 +18,11 @@ async def absorb_internal_identity(
     logger,
 ) -> None:
     """
-    Mirror the first-login lifecycle hook when a corp sign-in joins an
-    EXISTING account (bridge link, in-account verify, or trusted-assertion
-    routing): grant the internal-employee permission bundle and promote the
-    corp address to the primary contact.
+    Shared internal-employee lifecycle hook, called both for brand-new
+    first-login inserts and when a corp sign-in joins an EXISTING account
+    (bridge link, in-account verify, or trusted-assertion routing): grant the
+    internal-employee permission bundle and promote the corp address to the
+    primary contact.
 
     Without this, an employee who linked their corp sign-in into a
     pre-existing external account would be INTERNAL without the baseline

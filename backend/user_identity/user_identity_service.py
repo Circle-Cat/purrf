@@ -445,9 +445,10 @@ class UserIdentityService:
             session=session, entity=new_user
         )
 
-        # Row-less external passwordless leaves no user_identities row — the
-        # confirmed user_emails row seeded below is its sole anchor. google /
-        # INTERNAL (incl. corp passwordless) still record a sub-routed row.
+        # Row-less passwordless (internal and external) leaves no
+        # user_identities row — the confirmed user_emails row seeded below is
+        # its sole anchor. Only google / social subs still record a
+        # sub-routed row.
         if not is_rowless_login(sub, user_info.identity_type):
             new_identity = UserIdentitiesEntity(
                 user_id=created_user.user_id,

@@ -153,7 +153,7 @@ class UsersRepository:
             sort_by (str | None): Column to sort by. Allowed values:
                 ``"user_id"``, ``"first_name"``, ``"last_name"``,
                 ``"preferred_name"``, ``"is_active"``, ``"is_super_admin"``,
-                ``"user_type"`` (by the derived internal/external flag).
+                ``"user_type"`` (by the persisted internal/external flag).
                 Unknown or None values fall back to deterministic ``user_id``
                 order.
             order (str): ``"asc"`` (default) or ``"desc"``. Only applied when
