@@ -22,7 +22,7 @@ export const POSTINGS_GUIDE = {
     {
       title: "Submit for review",
       detail:
-        "Pick a reviewer and add an optional message. The posting moves to pending review.",
+        'Pick a reviewer and add an optional message. The posting needs at least one pipeline stage and one owner ("Managed by") before it can be submitted; once submitted it moves to pending review.',
     },
     {
       title: "Get a decision",
@@ -108,7 +108,7 @@ export const POSTING_EDITOR_GUIDE = {
     {
       title: "Screening rules",
       detail:
-        "Optional conditions that auto-reject an applicant based on their answers as soon as they apply.",
+        "Optional conditions checked the moment an applicant applies, matched against their answers or their verified email domain. Each rule can reject, qualify (let them through like an unscreened applicant), or auto-hire (send them straight to Hired with no human review).",
     },
     {
       title: "Profile requirements",
@@ -136,7 +136,7 @@ export const POSTING_EDITOR_GUIDE = {
     {
       name: "Screen rule",
       description:
-        "An automatic reject condition checked against an applicant's answers when they apply.",
+        "An automatic condition checked against an applicant's answers or verified email domain when they apply — it can reject, qualify, or auto-hire them.",
     },
     {
       name: "Profile requirement",
@@ -146,6 +146,7 @@ export const POSTING_EDITOR_GUIDE = {
   ],
   notes: [
     "Kind and mentorship role can only be changed while the posting is a draft.",
+    'Submitting for review needs at least one pipeline stage and one owner ("Managed by").',
     "The live preview on the right updates as you edit.",
   ],
 };
@@ -167,7 +168,7 @@ export const REVIEWS_GUIDE = {
     {
       title: "Approve",
       detail:
-        "Approving advances the posting — publishing, revising, closing, or reopening it as requested.",
+        "Approving advances the posting — publishing, revising, closing, or reopening it as requested. Approving a reopen that carries a staged edit republishes the proposed version, not the old one.",
     },
     {
       title: "Reject",
@@ -196,6 +197,8 @@ export const REVIEWS_GUIDE = {
   notes: [
     "A comment is required when you reject.",
     "You cannot review your own submissions.",
+    "You're notified when a posting is submitted to you, and the author is notified of your decision.",
+    "The posting's Review history tab records every review decision.",
   ],
 };
 
@@ -207,12 +210,12 @@ export const APPLICATIONS_BOARD_GUIDE = {
     {
       title: "Pick a posting",
       detail:
-        "Switch between postings you own using the dropdown next to the title.",
+        "Switch between postings using the dropdown next to the title — the postings you own, or every posting if you have read-all access.",
     },
     {
       title: "Read the lanes",
       detail:
-        "Each lane is one pipeline stage (multi-round stages split into Round 1, Round 2, ...), followed by fixed Offer, Hired, and Rejected lanes.",
+        'Each lane is one pipeline stage (multi-round stages split into Round 1, Round 2, ...), followed by the terminal lanes. Employment postings end with Offer, Hired, and Rejected; activity postings have no Offer lane and label the success lane "Admitted" instead of "Hired".',
     },
     {
       title: "Open an applicant",
@@ -223,6 +226,7 @@ export const APPLICATIONS_BOARD_GUIDE = {
   notes: [
     'A "Cold freeze" tag means this applicant is reapplying within the posting\'s cooldown window.',
     '"Blacklisted" vs "Blacklist Lifted" distinguishes a currently-blocked applicant from one who was blacklisted but has since been unblocked.',
+    "A blacklist chip can appear even if no one was blacklisted from this posting — blacklisting sweeps every posting the person has applied to.",
   ],
 };
 
@@ -239,7 +243,7 @@ export const APPLICATION_OWNER_GUIDE = {
     {
       title: "Advance",
       detail:
-        "Moves the applicant to the next stage (or next round, if the stage has more than one). Interview stages let you pick an assignee, or leave it for later.",
+        "Moves the applicant to the next stage (or next round, if the stage has more than one). If the current round has no confirmed evaluation yet, you're asked to confirm before advancing. Interview stages let you pick an assignee, or leave it for later.",
     },
     {
       title: "Reassign",
@@ -249,7 +253,7 @@ export const APPLICATION_OWNER_GUIDE = {
     {
       title: "Reject or Blacklist",
       detail:
-        "Reject ends this application with a reason. Blacklist also rejects it and blocks the applicant from every future posting.",
+        "Reject ends this application with a reason. Blacklist rejects this application, blocks the applicant from every future posting, and also closes out all of their other applications everywhere — including any already Hired — tagging each as blacklisted.",
     },
     {
       title: "Review evaluations",
@@ -259,6 +263,8 @@ export const APPLICATION_OWNER_GUIDE = {
   ],
   notes: [
     "Scheduling an interview stage requires an assignee first.",
+    'The "Evaluated" sub-status can only be set once a confirmed evaluation exists for the current round.',
+    "Blacklisting needs the blacklist permission; without it the button is disabled.",
     "read.all viewers see this same panel read-only — they can't act on it.",
   ],
 };
@@ -270,7 +276,8 @@ export const APPLICATION_EVALUATOR_GUIDE = {
   steps: [
     {
       title: "Fill out the rubric",
-      detail: "Each field is Pass/Fail or a 1-5 score, some with notes.",
+      detail:
+        "Fields are Pass/Fail, a 1-5 score, or a notes-only field for free-form comments (some Pass/Fail and score fields also take notes).",
     },
     {
       title: "Save draft",
@@ -289,5 +296,6 @@ export const APPLICATION_EVALUATOR_GUIDE = {
   ],
   notes: [
     "If you've been reassigned away from this stage, you'll see a message instead of the form.",
+    "You can expand the candidate's other and previous applications for this posting to see their snapshot and past evaluation scores — the audit timeline and comments there stay hidden from evaluators.",
   ],
 };
