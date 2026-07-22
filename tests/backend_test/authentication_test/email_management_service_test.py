@@ -632,6 +632,34 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(ids[2].is_current_session)
         self.assertFalse(ids[193].is_current_session)
 
+    async def test_emails_view_flags_corp_email_as_internal(self):
+        added_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        self.user_emails.list_by_user_id.return_value = [
+            MagicMock(
+                email_id=1,
+                email="dev@circlecat.org",
+                otp_confirmed=True,
+                is_primary=True,
+                added_at=added_at,
+            ),
+            MagicMock(
+                email_id=2,
+                email="alice@gmail.com",
+                otp_confirmed=True,
+                is_primary=False,
+                added_at=added_at,
+            ),
+        ]
+        self.user_identities.list_by_user_id.return_value = []
+
+        view = await self.service.list_emails_and_identities(
+            self.session, current_user_id=_USER_ID, current_sub=_CURRENT_SUB
+        )
+
+        by_email = {e.email: e.is_corp for e in view.emails}
+        self.assertTrue(by_email["dev@circlecat.org"])
+        self.assertFalse(by_email["alice@gmail.com"])
+
     # initiate_set_primary — step 1: validate target, OTP the current primary
     async def test_initiate_set_primary_sends_otp_to_current_primary(self):
         self.user_emails.get_by_id.return_value = self._email_row(

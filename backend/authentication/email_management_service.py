@@ -295,6 +295,7 @@ class EmailManagementService:
                 is_primary=row.is_primary,
                 added_at=row.added_at,
                 linked_identity_count=claim_counts.get(row.email.lower(), 0),
+                is_corp=is_company_email(row.email),
             )
             for row in emails
         ]
