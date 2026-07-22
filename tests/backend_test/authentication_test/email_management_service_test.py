@@ -92,10 +92,10 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         self.user_emails.has_primary.return_value = False
         self.user_identities = AsyncMock()
         self.user_identities.get_by_subject_identifier.return_value = None
-        self.user_identities.exists_active_internal.return_value = False
         self.user_permissions = AsyncMock()
         self.user_permissions.get_active_permission_names.return_value = []
         self.users = AsyncMock()
+        self.users.exists_active_internal.return_value = False
         self.session = AsyncMock()
         self.service = EmailManagementService(
             self.auth0,
@@ -639,7 +639,7 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         self.user_emails.get_by_id.return_value = self._email_row(
             "alice.personal@gmail.com", otp_confirmed=True
         )
-        self.user_identities.exists_active_internal.return_value = True
+        self.users.exists_active_internal.return_value = True
 
         with self.assertRaises(PermissionError):
             await self.service.initiate_set_primary(self.session, _USER_ID, 18)
@@ -653,7 +653,7 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         self.user_emails.get_primary.return_value = self._email_row(
             "old@circlecat.org", is_primary=True
         )
-        self.user_identities.exists_active_internal.return_value = True
+        self.users.exists_active_internal.return_value = True
 
         await self.service.initiate_set_primary(self.session, _USER_ID, 5)
 
@@ -812,7 +812,7 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
             7, "google-oauth2|corp", "internal", "yuji@circlecat.org"
         )
         self._arrange_unlink(target)
-        self.user_identities.exists_active_internal.return_value = True
+        self.users.exists_active_internal.return_value = True
         with self.assertRaises(PermissionError):
             await self.service.initiate_unlink(self.session, _USER_ID, _CURRENT_SUB, 7)
         self.auth0.start_passwordless.assert_not_called()
@@ -956,7 +956,7 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         self.user_emails.get_primary.return_value = self._email_row(
             "old@example.com", is_primary=True
         )
-        self.user_identities.exists_active_internal.return_value = True
+        self.users.exists_active_internal.return_value = True
         state = _unlink_state(target_identity_id=7, primary_email="old@example.com")
         with self.assertRaises(PermissionError):
             await self.service.confirm_unlink(

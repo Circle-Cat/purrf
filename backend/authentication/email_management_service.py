@@ -395,9 +395,9 @@ class EmailManagementService:
         Shared guard for promoting ``target`` to primary: it must be the
         caller's, OTP-confirmed, and — for an active employee — a corp address.
 
-        An active employee is ``users.is_active`` True AND holding a
-        user_identities row of type INTERNAL; such a user must keep a
-        ``circlecat.org`` address as primary so HR / IT can reach them.
+        An active employee is ``users.is_active`` True AND ``users.is_internal``
+        True; such a user must keep a ``circlecat.org`` address as primary so
+        HR / IT can reach them.
 
         Raises:
             ValueError: missing / owned by another user / not OTP-confirmed.
@@ -412,9 +412,7 @@ class EmailManagementService:
         # active employee must keep a company address as primary.
         if not is_company_email(
             target.email
-        ) and await self._user_identities.exists_active_internal(
-            session, current_user_id
-        ):
+        ) and await self._users.exists_active_internal(session, current_user_id):
             raise PermissionError("Active employees must keep a corp email as primary")
 
     def _sign_state(self, flow: str, **claims) -> str:
@@ -562,9 +560,7 @@ class EmailManagementService:
 
         if (
             IdentityType.INTERNAL == identity.identity_type
-            and await self._user_identities.exists_active_internal(
-                session, current_user_id
-            )
+            and await self._users.exists_active_internal(session, current_user_id)
         ):
             raise PermissionError("Active employees cannot remove corp sign-in")
 
