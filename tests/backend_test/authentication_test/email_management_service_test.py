@@ -95,12 +95,14 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         self.user_identities.exists_active_internal.return_value = False
         self.user_permissions = AsyncMock()
         self.user_permissions.get_active_permission_names.return_value = []
+        self.users = AsyncMock()
         self.session = AsyncMock()
         self.service = EmailManagementService(
             self.auth0,
             self.user_emails,
             self.user_identities,
             self.user_permissions,
+            self.users,
             MagicMock(),
         )
 
@@ -301,6 +303,8 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         self.user_emails.set_primary.assert_awaited_once_with(
             self.session, _USER_ID, 31
         )
+        # The row-less classification signal is set alongside the bundle grant.
+        self.users.set_internal.assert_awaited_once_with(self.session, _USER_ID)
         self.session.commit.assert_awaited_once()
 
     async def test_verify_company_email_skips_held_bundle_and_existing_primary(self):
@@ -1033,7 +1037,7 @@ class TestSignState(unittest.TestCase):
     def setUp(self):
         os.environ["EMAIL_OTP_STATE_JWT_SECRET"] = _SECRET
         self.service = EmailManagementService(
-            MagicMock(), AsyncMock(), AsyncMock(), AsyncMock(), MagicMock()
+            MagicMock(), AsyncMock(), AsyncMock(), AsyncMock(), AsyncMock(), MagicMock()
         )
 
     def test_sign_state_stamps_envelope_and_roundtrips(self):
@@ -1077,6 +1081,7 @@ class TestConsumeStepUpOtp(unittest.IsolatedAsyncioTestCase):
         self.service = EmailManagementService(
             self.auth0,
             self.user_emails,
+            AsyncMock(),
             AsyncMock(),
             AsyncMock(),
             MagicMock(),

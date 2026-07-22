@@ -46,6 +46,7 @@ class EmailManagementService:
         user_emails_repository,
         user_identities_repository,
         user_permissions_repository,
+        users_repository,
         logger,
     ):
         """
@@ -58,12 +59,16 @@ class EmailManagementService:
             user_permissions_repository (UserPermissionsRepository): Repository
                 handling permission grants; used to mirror the internal-employee
                 lifecycle hook when a corp sign-in joins an existing account.
+            users_repository (UsersRepository): Repository handling UsersEntity;
+                used to mirror the internal-employee lifecycle hook when a corp
+                sign-in joins an existing account.
             logger: Application logger.
         """
         self._auth0 = auth0_client
         self._user_emails = user_emails_repository
         self._user_identities = user_identities_repository
         self._user_permissions = user_permissions_repository
+        self._users = users_repository
         self._state_secret = os.getenv(EMAIL_OTP_STATE_JWT_SECRET)
         self._logger = logger
 
@@ -470,6 +475,7 @@ class EmailManagementService:
             email,
             user_permissions_repository=self._user_permissions,
             user_emails_repository=self._user_emails,
+            users_repository=self._users,
             logger=self._logger,
         )
 
