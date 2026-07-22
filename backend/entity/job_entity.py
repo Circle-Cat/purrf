@@ -44,8 +44,9 @@ class JobEntity(Base):
     pending_payload: Mapped[dict | None] = mapped_column(JSONB)
     screen_rules: Mapped[dict | None] = mapped_column(JSONB)
     profile_config: Mapped[dict | None] = mapped_column(JSONB)
-    # Fixed cold-freeze window (days) for employment postings; activity
-    # postings ignore this and use the mentorship round calendar instead.
+    # Cold-freeze window in days before a rejected applicant may reapply to
+    # this posting. Applies uniformly to activity and employment postings;
+    # unset behaves as 0 (reapply allowed immediately).
     cooldown_days: Mapped[int | None] = mapped_column(Integer)
     was_published: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("false"), default=False
