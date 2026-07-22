@@ -367,6 +367,34 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
         self.identities_repo.upsert_identity.assert_awaited()
         self.identities_repo.delete.assert_not_awaited()
 
+    async def test_swap_internal_passwordless_absorbs_and_deletes_placeholder(self):
+        """Corp passwordless migration swap is row-less: confirm + delete
+        placeholder AND run absorb (flag + bundle) — the correctness trap."""
+        mocked, resolved = self._arrange_swap_hit()
+        self.emails_repo.get_by_user_and_email.return_value = MagicMock(
+            spec=UserEmailsEntity, otp_confirmed=True, is_primary=True, email_id=1
+        )
+        self.permissions_repo.get_active_permission_names.return_value = []
+        user_info = UserContextDto(
+            sub="email|xyz",
+            primary_email="Alice@Example.com",
+            identity_type=IdentityType.INTERNAL,
+            last_login_at=self.iat,
+            email_verified=True,
+        )
+
+        result = await self.service.create_or_swap_user(self.session, user_info)
+
+        self.assertIs(result, resolved)
+        self.identities_repo.delete.assert_awaited_once_with(
+            session=self.session, identity_id=mocked.identity_id
+        )
+        self.identities_repo.upsert_identity.assert_not_awaited()
+        self.users_repo.set_internal.assert_awaited_once_with(
+            self.session, mocked.user_id
+        )
+        self.permissions_repo.grant.assert_awaited_once()
+
     async def test_create_or_swap_untrusted_sub_never_swaps(self):
         """The backfill swap is trust-gated: an unlisted connection's email
         claim must not swap into (and thereby enter) a backfilled account.
@@ -442,33 +470,9 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
         self.permissions_repo.grant.assert_not_awaited()
         self.assertEqual(user_info.user_id, 99)
 
-    async def test_create_or_swap_first_login_internal_email_sub_writes_identity(self):
-        """Corp (INTERNAL) passwordless first login is NOT row-less: it still
-        records the identity row so the user is classified internal."""
-        user_info = UserContextDto(
-            sub="email|xyz",
-            primary_email="dev@circlecat.org",
-            identity_type=IdentityType.INTERNAL,
-            last_login_at=self.fresh_iat,
-            email_verified=True,
-        )
-        self.identities_repo.find_swappable_by_email.return_value = None
-        created = MagicMock(spec=UsersEntity, user_id=42)
-        self.users_repo.upsert_users.return_value = created
-
-        result = await self.service.create_or_swap_user(self.session, user_info)
-
-        self.assertIs(result, created)
-        self.identities_repo.upsert_identity.assert_awaited_once()
-        identity = self.identities_repo.upsert_identity.call_args.kwargs["entity"]
-        self.assertEqual(identity.subject_identifier, "email|xyz")
-        self.assertEqual(identity.user_id, 42)
-        # INTERNAL first-login grants the employee bundle.
-        self.permissions_repo.grant.assert_awaited_once()
-
-    async def test_first_login_internal_sets_flag_and_grants_via_absorb(self):
-        """Corp first login routes its lifecycle through absorb: sets the
-        is_internal flag and grants the employee bundle (single writer)."""
+    async def test_first_login_internal_is_rowless_no_identity_row(self):
+        """Corp first login is now row-less: NO user_identities row, but the
+        is_internal flag is set and the employee bundle granted."""
         user_info = UserContextDto(
             sub="email|xyz",
             primary_email="dev@circlecat.org",
@@ -487,6 +491,7 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
 
         await self.service.create_or_swap_user(self.session, user_info)
 
+        self.identities_repo.upsert_identity.assert_not_awaited()
         self.users_repo.set_internal.assert_awaited_once_with(self.session, 42)
         self.permissions_repo.grant.assert_awaited_once()
 

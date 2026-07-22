@@ -191,16 +191,29 @@ class UserIdentityService:
         )
         if mocked:
             if is_rowless_login(user_info.sub, user_info.identity_type):
-                # Row-less external passwordless: the OTP round-trip proves the
+                # Row-less passwordless: the OTP round-trip proves the
                 # mailbox, so confirm the backfilled claim and DROP the
                 # migration placeholder — no email| row is recorded. Next login
-                # resolves by confirmed address (step 2.5).
+                # resolves by confirmed address (step 2.5). A corp (INTERNAL)
+                # swap must ALSO run absorb (flag + bundle); the external swap
+                # does not. (Correctness trap: absorb lives only in the
+                # sibling branch pre-widening.)
                 await self._confirm_swapped_claim_email(
                     session=session, user_id=mocked.user_id, email=email
                 )
                 await self.user_identities_repository.delete(
                     session=session, identity_id=mocked.identity_id
                 )
+                if IdentityType.INTERNAL == user_info.identity_type:
+                    await absorb_internal_identity(
+                        session,
+                        mocked.user_id,
+                        email,
+                        user_permissions_repository=self.user_permissions_repository,
+                        user_emails_repository=self.user_emails_repository,
+                        users_repository=self.users_repository,
+                        logger=self.logger,
+                    )
                 user = await self.users_repository.get_user_by_user_id(
                     session=session, user_id=mocked.user_id
                 )
