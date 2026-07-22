@@ -617,6 +617,221 @@ class TestApplicationRepository(BaseRepositoryTestLib):
                 ),
             )
 
+    async def test_list_by_job_and_stage_orders_by_entry_desc_and_pages(self):
+        job = JobEntity(kind=JobKind.ACTIVITY, title="T", status=JobStatus.PUBLISHED)
+        user_1 = _make_user("A", "One", "page1@b.com")
+        user_2 = _make_user("B", "Two", "page2@b.com")
+        user_3 = _make_user("C", "Three", "page3@b.com")
+        await self.insert_entities([job, user_1, user_2, user_3])
+        await self.session.flush()
+
+        repo = ApplicationRepository()
+        t1 = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        t2 = datetime(2026, 1, 2, tzinfo=timezone.utc)
+        t3 = datetime(2026, 1, 3, tzinfo=timezone.utc)
+        app_t1 = await repo.create(
+            self.session,
+            ApplicationEntity(
+                job_id=job.job_id,
+                user_id=user_1.user_id,
+                stage=ApplicationStage.REJECTED,
+                stage_entered_at=t1,
+            ),
+        )
+        app_t2 = await repo.create(
+            self.session,
+            ApplicationEntity(
+                job_id=job.job_id,
+                user_id=user_2.user_id,
+                stage=ApplicationStage.REJECTED,
+                stage_entered_at=t2,
+            ),
+        )
+        app_t3 = await repo.create(
+            self.session,
+            ApplicationEntity(
+                job_id=job.job_id,
+                user_id=user_3.user_id,
+                stage=ApplicationStage.REJECTED,
+                stage_entered_at=t3,
+            ),
+        )
+
+        page = await repo.list_by_job_and_stage(
+            self.session, job.job_id, ApplicationStage.REJECTED, limit=2, offset=0
+        )
+        self.assertEqual(
+            [a.application_id for a, _ in page],
+            [app_t3.application_id, app_t2.application_id],
+        )
+
+        page2 = await repo.list_by_job_and_stage(
+            self.session, job.job_id, ApplicationStage.REJECTED, limit=2, offset=2
+        )
+        self.assertEqual([a.application_id for a, _ in page2], [app_t1.application_id])
+
+    async def test_list_by_job_and_stage_excludes_reapplied_users_old_rejected_row(
+        self,
+    ):
+        job = JobEntity(kind=JobKind.ACTIVITY, title="T", status=JobStatus.PUBLISHED)
+        reapplied_user = _make_user("A", "One", "reapplied@b.com")
+        still_rejected_user = _make_user("B", "Two", "stillrejected@b.com")
+        await self.insert_entities([job, reapplied_user, still_rejected_user])
+        await self.session.flush()
+
+        repo = ApplicationRepository()
+        old_rejected = await repo.create(
+            self.session,
+            ApplicationEntity(
+                job_id=job.job_id,
+                user_id=reapplied_user.user_id,
+                stage=ApplicationStage.REJECTED,
+                stage_entered_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            ),
+        )
+        # Newer, active (non-rejected) row for the same user — this is their
+        # latest attempt and must be what "counts" for this user.
+        await repo.create(
+            self.session,
+            ApplicationEntity(
+                job_id=job.job_id,
+                user_id=reapplied_user.user_id,
+                stage=ApplicationStage.APPLIED,
+                stage_entered_at=datetime(2026, 1, 5, tzinfo=timezone.utc),
+            ),
+        )
+        currently_rejected = await repo.create(
+            self.session,
+            ApplicationEntity(
+                job_id=job.job_id,
+                user_id=still_rejected_user.user_id,
+                stage=ApplicationStage.REJECTED,
+                stage_entered_at=datetime(2026, 1, 2, tzinfo=timezone.utc),
+            ),
+        )
+
+        page = await repo.list_by_job_and_stage(
+            self.session, job.job_id, ApplicationStage.REJECTED, limit=50, offset=0
+        )
+
+        page_ids = [a.application_id for a, _ in page]
+        self.assertNotIn(old_rejected.application_id, page_ids)
+        self.assertIn(currently_rejected.application_id, page_ids)
+
+    async def test_count_latest_by_job_and_stage_matches_items(self):
+        job = JobEntity(kind=JobKind.ACTIVITY, title="T", status=JobStatus.PUBLISHED)
+        reapplied_user = _make_user("A", "One", "count-reapplied@b.com")
+        rejected_user_1 = _make_user("B", "Two", "count-rej1@b.com")
+        rejected_user_2 = _make_user("C", "Three", "count-rej2@b.com")
+        await self.insert_entities(
+            [job, reapplied_user, rejected_user_1, rejected_user_2]
+        )
+        await self.session.flush()
+
+        repo = ApplicationRepository()
+        # Old rejected row superseded by a newer active row — must not count.
+        await repo.create(
+            self.session,
+            ApplicationEntity(
+                job_id=job.job_id,
+                user_id=reapplied_user.user_id,
+                stage=ApplicationStage.REJECTED,
+                stage_entered_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            ),
+        )
+        await repo.create(
+            self.session,
+            ApplicationEntity(
+                job_id=job.job_id,
+                user_id=reapplied_user.user_id,
+                stage=ApplicationStage.APPLIED,
+                stage_entered_at=datetime(2026, 1, 5, tzinfo=timezone.utc),
+            ),
+        )
+        await repo.create(
+            self.session,
+            ApplicationEntity(
+                job_id=job.job_id,
+                user_id=rejected_user_1.user_id,
+                stage=ApplicationStage.REJECTED,
+                stage_entered_at=datetime(2026, 1, 2, tzinfo=timezone.utc),
+            ),
+        )
+        await repo.create(
+            self.session,
+            ApplicationEntity(
+                job_id=job.job_id,
+                user_id=rejected_user_2.user_id,
+                stage=ApplicationStage.REJECTED,
+                stage_entered_at=datetime(2026, 1, 3, tzinfo=timezone.utc),
+            ),
+        )
+
+        total = await repo.count_latest_by_job_and_stage(
+            self.session, job.job_id, ApplicationStage.REJECTED
+        )
+        page = await repo.list_by_job_and_stage(
+            self.session, job.job_id, ApplicationStage.REJECTED, limit=1000, offset=0
+        )
+        self.assertEqual(total, len(page))
+        self.assertEqual(total, 2)
+
+    async def test_list_by_job_exclude_stages_drops_terminal(self):
+        job = JobEntity(kind=JobKind.ACTIVITY, title="T", status=JobStatus.PUBLISHED)
+        applied_user = _make_user("A", "One", "exclude-applied@b.com")
+        tech_user = _make_user("B", "Two", "exclude-tech@b.com")
+        rejected_user = _make_user("C", "Three", "exclude-rejected@b.com")
+        hired_user = _make_user("D", "Four", "exclude-hired@b.com")
+        await self.insert_entities(
+            [job, applied_user, tech_user, rejected_user, hired_user]
+        )
+        await self.session.flush()
+
+        repo = ApplicationRepository()
+        await repo.create(
+            self.session,
+            ApplicationEntity(
+                job_id=job.job_id,
+                user_id=applied_user.user_id,
+                stage=ApplicationStage.APPLIED,
+            ),
+        )
+        await repo.create(
+            self.session,
+            ApplicationEntity(
+                job_id=job.job_id,
+                user_id=tech_user.user_id,
+                stage=ApplicationStage.TECH,
+            ),
+        )
+        await repo.create(
+            self.session,
+            ApplicationEntity(
+                job_id=job.job_id,
+                user_id=rejected_user.user_id,
+                stage=ApplicationStage.REJECTED,
+            ),
+        )
+        await repo.create(
+            self.session,
+            ApplicationEntity(
+                job_id=job.job_id,
+                user_id=hired_user.user_id,
+                stage=ApplicationStage.HIRED,
+            ),
+        )
+
+        rows = await repo.list_by_job(
+            self.session,
+            job.job_id,
+            exclude_stages={ApplicationStage.REJECTED, ApplicationStage.HIRED},
+        )
+
+        stages = {a.stage for a, _ in rows}
+        self.assertNotIn(ApplicationStage.REJECTED, stages)
+        self.assertNotIn(ApplicationStage.HIRED, stages)
+        self.assertEqual(stages, {ApplicationStage.APPLIED, ApplicationStage.TECH})
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -18,10 +18,13 @@ class ApplicationRepository:
     """
 
     async def list_by_job(
-        self, session: AsyncSession, job_id: int
+        self,
+        session: AsyncSession,
+        job_id: int,
+        exclude_stages: set[ApplicationStage] | None = None,
     ) -> list[tuple[ApplicationEntity, UsersEntity]]:
         """Return each user's latest application for a job, joined with its
-        applicant.
+        applicant, ordered by application_id (stable board card order).
 
         Each user's latest attempt only — prior rejected attempts are
         history, surfaced on the application detail page instead of the
@@ -30,10 +33,56 @@ class ApplicationRepository:
         Args:
             session (AsyncSession): The active DB session.
             job_id (int): The job whose applications to list.
+            exclude_stages: if given, latest rows in these stages are dropped
+                (the board loads active stages here and paginates terminal
+                stages separately).
 
         Returns:
             list[tuple[ApplicationEntity, UsersEntity]]: (application, user)
                 pairs ordered by application_id (stable board card order).
+        """
+        latest_ids = (
+            select(func.max(ApplicationEntity.application_id))
+            .where(ApplicationEntity.job_id == job_id)
+            .group_by(ApplicationEntity.user_id)
+        )
+        stmt = (
+            select(ApplicationEntity, UsersEntity)
+            .join(UsersEntity, ApplicationEntity.user_id == UsersEntity.user_id)
+            .where(
+                ApplicationEntity.job_id == job_id,
+                ApplicationEntity.application_id.in_(latest_ids),
+            )
+        )
+        if exclude_stages:
+            stmt = stmt.where(ApplicationEntity.stage.notin_(exclude_stages))
+        stmt = stmt.order_by(ApplicationEntity.application_id)
+        result = await session.execute(stmt)
+        return [tuple(row) for row in result.all()]
+
+    async def list_by_job_and_stage(
+        self,
+        session: AsyncSession,
+        job_id: int,
+        stage: ApplicationStage,
+        limit: int,
+        offset: int,
+    ) -> list[tuple[ApplicationEntity, UsersEntity]]:
+        """One page of a single stage's latest-per-user applications,
+        newest-entry first. The stage filter is applied to the LATEST row
+        (outer query), so a user who re-applied does not surface an old
+        rejected attempt here.
+
+        Args:
+            session (AsyncSession): The active DB session.
+            job_id (int): The job whose applications to list.
+            stage (ApplicationStage): The terminal (or any) stage to page.
+            limit (int): Max rows to return.
+            offset (int): Rows to skip, for paging.
+
+        Returns:
+            list[tuple[ApplicationEntity, UsersEntity]]: (application, user)
+                pairs ordered by stage_entered_at desc, application_id desc.
         """
         latest_ids = (
             select(func.max(ApplicationEntity.application_id))
@@ -45,11 +94,51 @@ class ApplicationRepository:
             .join(UsersEntity, ApplicationEntity.user_id == UsersEntity.user_id)
             .where(
                 ApplicationEntity.job_id == job_id,
+                ApplicationEntity.stage == stage,
                 ApplicationEntity.application_id.in_(latest_ids),
             )
-            .order_by(ApplicationEntity.application_id)
+            .order_by(
+                ApplicationEntity.stage_entered_at.desc(),
+                ApplicationEntity.application_id.desc(),
+            )
+            .limit(limit)
+            .offset(offset)
         )
         return [tuple(row) for row in result.all()]
+
+    async def count_latest_by_job_and_stage(
+        self, session: AsyncSession, job_id: int, stage: ApplicationStage
+    ) -> int:
+        """Count latest-per-user applications for a job in one stage. Uses the
+        SAME outer stage filter as list_by_job_and_stage so total == items.
+
+        NOTE: deliberately named apart from the pre-existing
+        count_by_job_and_stage (audit page; GROUP BY stage, no
+        latest-per-user semantics).
+
+        Args:
+            session (AsyncSession): The active DB session.
+            job_id (int): The job whose applications to count.
+            stage (ApplicationStage): The terminal (or any) stage to count.
+
+        Returns:
+            int: Number of latest-per-user rows in this stage for this job.
+        """
+        latest_ids = (
+            select(func.max(ApplicationEntity.application_id))
+            .where(ApplicationEntity.job_id == job_id)
+            .group_by(ApplicationEntity.user_id)
+        )
+        result = await session.execute(
+            select(func.count())
+            .select_from(ApplicationEntity)
+            .where(
+                ApplicationEntity.job_id == job_id,
+                ApplicationEntity.stage == stage,
+                ApplicationEntity.application_id.in_(latest_ids),
+            )
+        )
+        return int(result.scalar_one())
 
     async def list_by_user(
         self, session: AsyncSession, user_id: int
