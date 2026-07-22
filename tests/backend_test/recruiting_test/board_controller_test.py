@@ -286,9 +286,10 @@ class TestBoardController(unittest.IsolatedAsyncioTestCase):
             self.ctx, job_id=1, stage="rejected", limit=9999, offset=0
         )
 
-        called_limit = self.board_service.get_board_stage_page.call_args.kwargs.get(
-            "limit"
-        ) or self.board_service.get_board_stage_page.call_args.args[-2]
+        called_limit = (
+            self.board_service.get_board_stage_page.call_args.kwargs.get("limit")
+            or self.board_service.get_board_stage_page.call_args.args[-2]
+        )
         self.assertLessEqual(called_limit, 100)
 
     def test_board_stage_page_route_is_get_and_plain_authenticated(self):

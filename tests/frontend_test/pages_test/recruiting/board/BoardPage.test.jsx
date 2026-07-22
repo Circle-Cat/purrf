@@ -603,7 +603,13 @@ describe("BoardPage", () => {
     // insert ahead of the offset) plus 4 genuinely new ids — this is the
     // case plain concatenation would double-render, but the Set-based
     // dedupe in loadMore must drop.
-    const secondPage = [makeCard(20), makeCard(21), makeCard(22), makeCard(23), makeCard(24)];
+    const secondPage = [
+      makeCard(20),
+      makeCard(21),
+      makeCard(22),
+      makeCard(23),
+      makeCard(24),
+    ];
 
     api.listBoardJobs.mockResolvedValue({ data: [jobA] });
     api.getJobBoard.mockResolvedValue({
@@ -620,9 +626,7 @@ describe("BoardPage", () => {
     renderPage();
 
     const rejectedLane = await screen.findByTestId("lane-rejected");
-    expect(
-      within(rejectedLane).getByText("Load more"),
-    ).toBeInTheDocument();
+    expect(within(rejectedLane).getByText("Load more")).toBeInTheDocument();
     expect(within(rejectedLane).getAllByRole("button").length).toBe(
       firstPage.length + 1, // 20 cards + the Load more button
     );
@@ -641,9 +645,9 @@ describe("BoardPage", () => {
       ).toBeInTheDocument(),
     );
     // The repeated id 20 renders exactly once, not twice.
-    expect(
-      within(rejectedLane).getAllByText("Rejected Person 20").length,
-    ).toBe(1);
+    expect(within(rejectedLane).getAllByText("Rejected Person 20").length).toBe(
+      1,
+    );
     // 20 original cards + 4 genuinely new ones = 24 unique cards rendered
     // (not 25, which is what concatenation-without-dedupe would produce),
     // and the button is gone.
@@ -741,8 +745,6 @@ describe("BoardPage", () => {
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith("page boom"));
     // Existing items are left unchanged and the button is still shown.
     expect(within(rejectedLane).getAllByRole("button").length).toBe(21);
-    expect(
-      within(rejectedLane).getByText("Load more"),
-    ).toBeInTheDocument();
+    expect(within(rejectedLane).getByText("Load more")).toBeInTheDocument();
   });
 });

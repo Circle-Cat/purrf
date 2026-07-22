@@ -302,8 +302,10 @@ class BoardService:
             default_by_stage[stage] = default_id
 
         application_ids = [application.application_id for application, _ in rows]
-        assignments = await self.application_assignment_repository.list_by_application_ids(
-            session, application_ids
+        assignments = (
+            await self.application_assignment_repository.list_by_application_ids(
+                session, application_ids
+            )
         )
         assignment_by_key: dict[tuple[int, ApplicationStage, int], int] = {
             (a.application_id, a.stage, a.round): a.assignee_id for a in assignments
@@ -313,17 +315,21 @@ class BoardService:
         names_by_id = {
             u.user_id: f"{u.first_name} {u.last_name}".strip() for u in reviewers
         }
-        contact_by_user_id = await self.user_emails_repository.get_contact_emails_by_user_ids(
-            session, [user.user_id for _, user in rows]
+        contact_by_user_id = (
+            await self.user_emails_repository.get_contact_emails_by_user_ids(
+                session, [user.user_id for _, user in rows]
+            )
         )
 
         cards = []
         for application, user in rows:
             reviewer_name = None
             if application.stage in INTERVIEW_STAGES:
-                assignee_id = assignment_by_key.get(
-                    (application.application_id, application.stage, application.current_round)
-                )
+                assignee_id = assignment_by_key.get((
+                    application.application_id,
+                    application.stage,
+                    application.current_round,
+                ))
                 if assignee_id is None and application.current_round == 1:
                     assignee_id = default_by_stage.get(application.stage)
                 if assignee_id is not None:

@@ -723,9 +723,12 @@ class TestApplicationRepository(BaseRepositoryTestLib):
         reapplied_user = _make_user("A", "One", "count-reapplied@b.com")
         rejected_user_1 = _make_user("B", "Two", "count-rej1@b.com")
         rejected_user_2 = _make_user("C", "Three", "count-rej2@b.com")
-        await self.insert_entities(
-            [job, reapplied_user, rejected_user_1, rejected_user_2]
-        )
+        await self.insert_entities([
+            job,
+            reapplied_user,
+            rejected_user_1,
+            rejected_user_2,
+        ])
         await self.session.flush()
 
         repo = ApplicationRepository()
@@ -782,9 +785,13 @@ class TestApplicationRepository(BaseRepositoryTestLib):
         tech_user = _make_user("B", "Two", "exclude-tech@b.com")
         rejected_user = _make_user("C", "Three", "exclude-rejected@b.com")
         hired_user = _make_user("D", "Four", "exclude-hired@b.com")
-        await self.insert_entities(
-            [job, applied_user, tech_user, rejected_user, hired_user]
-        )
+        await self.insert_entities([
+            job,
+            applied_user,
+            tech_user,
+            rejected_user,
+            hired_user,
+        ])
         await self.session.flush()
 
         repo = ApplicationRepository()

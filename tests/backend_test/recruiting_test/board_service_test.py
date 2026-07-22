@@ -266,7 +266,9 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         result = await self.service.get_board(self.session, self._ctx(user_id=2), 1)
 
         stages = result["stages"]
-        self.assertEqual({c.id for c in stages["recruiter_screening"]["items"]}, {10, 12})
+        self.assertEqual(
+            {c.id for c in stages["recruiter_screening"]["items"]}, {10, 12}
+        )
         self.assertEqual({c.id for c in stages["tech"]["items"]}, {11})
         self.assertEqual(stages["recruiter_screening"]["total"], 2)
         self.assertFalse(stages["recruiter_screening"]["has_more"])
@@ -421,9 +423,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             application_id=10, stage=ApplicationStage.RECRUITER_SCREENING
         )
         active_user = self._user(user_id=3)
-        self.app_repo.list_by_job = AsyncMock(
-            return_value=[(active_app, active_user)]
-        )
+        self.app_repo.list_by_job = AsyncMock(return_value=[(active_app, active_user)])
 
         rejected_rows = [
             (

@@ -257,7 +257,9 @@ const BoardPage = () => {
                   <span
                     className={`rounded-full px-2 py-0.5 text-xs font-semibold ${colors.count}`}
                   >
-                    {isTerminal ? (board[lane.stage]?.total ?? cards.length) : cards.length}
+                    {isTerminal
+                      ? (board[lane.stage]?.total ?? cards.length)
+                      : cards.length}
                   </span>
                 </div>
                 <div className="flex flex-col gap-2 p-3">
