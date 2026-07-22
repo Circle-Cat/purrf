@@ -248,4 +248,3 @@ class UserIdentitiesRepository:
             )
         )
         return result.scalars().one_or_none()
-

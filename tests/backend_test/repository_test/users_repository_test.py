@@ -312,7 +312,9 @@ class TestUsersRepository(BaseRepositoryTestLib):
         self.assertTrue(await self.repo.is_internal(self.session, user_id))
 
     async def test_is_internal_false_when_flag_unset(self):
-        self.assertFalse(await self.repo.is_internal(self.session, self.users[1].user_id))
+        self.assertFalse(
+            await self.repo.is_internal(self.session, self.users[1].user_id)
+        )
 
     async def test_exists_active_internal_true_when_active_and_internal(self):
         user_id = self.users[0].user_id  # is_active=True from setUp
