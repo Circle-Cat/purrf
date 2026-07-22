@@ -1,8 +1,7 @@
 from backend.entity.users_entity import UsersEntity
 from backend.entity.user_emails_entity import UserEmailsEntity
-from backend.entity.user_identities_entity import UserIdentitiesEntity
 from backend.common.identity_type import IdentityType
-from sqlalchemy import exists, func, or_, select, update
+from sqlalchemy import and_, exists, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -154,31 +153,24 @@ class UsersRepository:
             sort_by (str | None): Column to sort by. Allowed values:
                 ``"user_id"``, ``"first_name"``, ``"last_name"``,
                 ``"preferred_name"``, ``"is_active"``, ``"is_super_admin"``,
-                ``"user_type"`` (by the derived internal/external flag).
+                ``"user_type"`` (by the persisted internal/external flag).
                 Unknown or None values fall back to deterministic ``user_id``
                 order.
             order (str): ``"asc"`` (default) or ``"desc"``. Only applied when
                 ``sort_by`` resolves to a whitelisted column.
             is_super_admin (bool | None): When not None, restricts results to
                 users whose ``is_super_admin`` flag matches this value.
-            user_type (str | None): When ``"internal"`` keeps only users that
-                have an INTERNAL identity row; when ``"external"`` keeps only
-                users without one; otherwise no filter.
+            user_type (str | None): When ``"internal"`` keeps only users whose
+                ``is_internal`` flag is set; when ``"external"`` keeps only
+                users whose flag is unset; otherwise no filter.
 
         Returns:
             tuple[list[tuple[UsersEntity, bool]], int]: (page rows where each
             element is (entity, is_internal), total number of rows matching all
             active filters across all pages).
         """
-        internal_identity_exists = exists(
-            select(UserIdentitiesEntity.identity_id).where(
-                UserIdentitiesEntity.user_id == UsersEntity.user_id,
-                UserIdentitiesEntity.identity_type == IdentityType.INTERNAL,
-            )
-        )
-
-        # "user_type" sorts by the derived internal/external flag; ascending
-        # puts external (no internal identity) before internal.
+        # "user_type" sorts by the persisted internal/external flag; ascending
+        # puts external (flag unset) before internal.
         _SORT_WHITELIST: dict[str, object] = {
             "user_id": UsersEntity.user_id,
             "first_name": UsersEntity.first_name,
@@ -186,7 +178,7 @@ class UsersRepository:
             "preferred_name": UsersEntity.preferred_name,
             "is_active": UsersEntity.is_active,
             "is_super_admin": UsersEntity.is_super_admin,
-            "user_type": internal_identity_exists,
+            "user_type": UsersEntity.is_internal,
         }
 
         filters = []
@@ -204,11 +196,11 @@ class UsersRepository:
         if is_super_admin is not None:
             filters.append(UsersEntity.is_super_admin == is_super_admin)
         if user_type == IdentityType.INTERNAL:
-            filters.append(internal_identity_exists)
+            filters.append(UsersEntity.is_internal.is_(True))
         elif user_type == IdentityType.EXTERNAL:
-            filters.append(~internal_identity_exists)
+            filters.append(UsersEntity.is_internal.is_(False))
 
-        is_internal_col = internal_identity_exists.label("is_internal")
+        is_internal_col = UsersEntity.is_internal.label("is_internal")
 
         # Build ORDER BY: whitelisted column (asc/desc) + user_id tiebreaker.
         sort_col = _SORT_WHITELIST.get(sort_by) if sort_by else None
@@ -251,27 +243,48 @@ class UsersRepository:
 
     async def is_internal(self, session: AsyncSession, user_id: int) -> bool:
         """
-        Returns True if the user has at least one identity_type='internal' row
-        in user_identities.
+        Whether the user is an internal employee, read from the persisted
+        ``users.is_internal`` state column (the row-less classification source).
 
         Args:
             session (AsyncSession): The active async database session.
             user_id (int): The user to check.
 
         Returns:
-            bool: True if an INTERNAL identity row exists for this user.
+            bool: The user's ``is_internal`` flag (False if user missing).
         """
         result = await session.scalar(
-            select(
-                exists(
-                    select(UserIdentitiesEntity.identity_id).where(
-                        UserIdentitiesEntity.user_id == user_id,
-                        UserIdentitiesEntity.identity_type == IdentityType.INTERNAL,
+            select(UsersEntity.is_internal).where(UsersEntity.user_id == user_id)
+        )
+        return bool(result)
+
+    async def exists_active_internal(self, session: AsyncSession, user_id: int) -> bool:
+        """
+        Whether ``user_id`` is an active internal employee — the
+        "still-employed staffer" guard — resolved on the users row alone
+        (``is_active AND is_internal``). Replaces the former JOIN over
+        user_identities now that internal state lives on the users row.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            user_id (int): The user to evaluate.
+
+        Returns:
+            bool: True when active and internal; else False.
+        """
+        return bool(
+            await session.scalar(
+                select(
+                    exists().where(
+                        and_(
+                            UsersEntity.user_id == user_id,
+                            UsersEntity.is_active.is_(True),
+                            UsersEntity.is_internal.is_(True),
+                        )
                     )
                 )
             )
         )
-        return bool(result)
 
     async def set_super_admin(
         self, session: AsyncSession, user_id: int, is_super_admin: bool
@@ -291,6 +304,34 @@ class UsersRepository:
             update(UsersEntity)
             .where(UsersEntity.user_id == user_id)
             .values(is_super_admin=is_super_admin)
+        )
+        await session.flush()
+        return result.rowcount
+
+    async def set_internal(self, session: AsyncSession, user_id: int) -> int:
+        """
+        Mark a user as an internal employee — idempotent, no-op when already set.
+
+        Writes only when ``is_internal`` is currently False, so the per-request
+        corp-passwordless re-resolution (row-less logins route through
+        ``absorb_internal_identity`` on every request) never issues a redundant
+        UPDATE. Never clears the flag; deactivation is handled by ``is_active``.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            user_id (int): The user to mark internal.
+
+        Returns:
+            int: Rows updated — 1 on the False->True flip, 0 when already
+            internal or ``user_id`` is unknown.
+        """
+        result = await session.execute(
+            update(UsersEntity)
+            .where(
+                UsersEntity.user_id == user_id,
+                UsersEntity.is_internal.is_(False),
+            )
+            .values(is_internal=True)
         )
         await session.flush()
         return result.rowcount

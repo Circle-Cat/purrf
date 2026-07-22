@@ -4,7 +4,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.identity_type import IdentityType, is_rowless_login
 from backend.common.mentorship_enums import CommunicationMethod
-from backend.common.permissions import INTERNAL_EMPLOYEE_PERMISSIONS
 from backend.common.trusted_connections import is_trusted_email_assertion
 from backend.dto.user_context_dto import UserContextDto
 from backend.entity.user_emails_entity import UserEmailsEntity
@@ -192,16 +191,29 @@ class UserIdentityService:
         )
         if mocked:
             if is_rowless_login(user_info.sub, user_info.identity_type):
-                # Row-less external passwordless: the OTP round-trip proves the
+                # Row-less passwordless: the OTP round-trip proves the
                 # mailbox, so confirm the backfilled claim and DROP the
                 # migration placeholder — no email| row is recorded. Next login
-                # resolves by confirmed address (step 2.5).
+                # resolves by confirmed address (step 2.5). A corp (INTERNAL)
+                # swap must ALSO run absorb (flag + bundle); the external swap
+                # does not. (Correctness trap: absorb lives only in the
+                # sibling branch pre-widening.)
                 await self._confirm_swapped_claim_email(
                     session=session, user_id=mocked.user_id, email=email
                 )
                 await self.user_identities_repository.delete(
                     session=session, identity_id=mocked.identity_id
                 )
+                if IdentityType.INTERNAL == user_info.identity_type:
+                    await absorb_internal_identity(
+                        session,
+                        mocked.user_id,
+                        email,
+                        user_permissions_repository=self.user_permissions_repository,
+                        user_emails_repository=self.user_emails_repository,
+                        users_repository=self.users_repository,
+                        logger=self.logger,
+                    )
                 user = await self.users_repository.get_user_by_user_id(
                     session=session, user_id=mocked.user_id
                 )
@@ -230,6 +242,7 @@ class UserIdentityService:
                     email,
                     user_permissions_repository=self.user_permissions_repository,
                     user_emails_repository=self.user_emails_repository,
+                    users_repository=self.users_repository,
                     logger=self.logger,
                 )
             user_info.user_id = user.user_id
@@ -268,18 +281,27 @@ class UserIdentityService:
                         last_login_at=login_dt,
                     ),
                 )
-            if IdentityType.INTERNAL == user_info.identity_type:
+            if (
+                IdentityType.INTERNAL == user_info.identity_type
+                and not user.is_internal
+            ):
                 # An employee's corp sign-in joining an existing account
-                # mirrors the first-login lifecycle hook. Runs for ANY
-                # routed login, not just social: absorb is idempotent
-                # (diffed grants, promotion guarded), so per-request
-                # re-routing of row-less passwordless subs is safe.
+                # mirrors the first-login lifecycle hook. Gated on the
+                # persisted is_internal flag so it runs only the FIRST time a
+                # corp login joins (bridge link / in-account verify / routing);
+                # once the user is flagged internal, the steady-state
+                # per-request re-routing of a row-less passwordless sub skips
+                # absorb entirely — no permission-bundle re-grant, no primary
+                # re-promotion, no set_internal no-op UPDATE. This trades the
+                # former per-request self-healing (a revoked baseline grant is
+                # no longer silently restored) for the cheaper hot path.
                 await absorb_internal_identity(
                     session,
                     user.user_id,
                     email,
                     user_permissions_repository=self.user_permissions_repository,
                     user_emails_repository=self.user_emails_repository,
+                    users_repository=self.users_repository,
                     logger=self.logger,
                 )
             user_info.user_id = user.user_id
@@ -431,9 +453,10 @@ class UserIdentityService:
             session=session, entity=new_user
         )
 
-        # Row-less external passwordless leaves no user_identities row — the
-        # confirmed user_emails row seeded below is its sole anchor. google /
-        # INTERNAL (incl. corp passwordless) still record a sub-routed row.
+        # Row-less passwordless (internal and external) leaves no
+        # user_identities row — the confirmed user_emails row seeded below is
+        # its sole anchor. Only google / social subs still record a
+        # sub-routed row.
         if not is_rowless_login(sub, user_info.identity_type):
             new_identity = UserIdentitiesEntity(
                 user_id=created_user.user_id,
@@ -465,14 +488,18 @@ class UserIdentityService:
             session=session, entity=new_email_row
         )
 
-        # Lifecycle hook: a new internal employee gets the internal
-        # permission bundle auto-injected.
+        # Lifecycle hook: a new internal employee gets the permission bundle and
+        # the is_internal flag via the shared absorb (single writer). The corp
+        # address seeded above is already primary, so absorb's promotion no-ops.
         if user_info.identity_type == IdentityType.INTERNAL:
-            await self.user_permissions_repository.grant(
-                session=session,
-                user_id=created_user.user_id,
-                permission_names=INTERNAL_EMPLOYEE_PERMISSIONS,
-                granted_source="system_internal",
+            await absorb_internal_identity(
+                session,
+                created_user.user_id,
+                email,
+                user_permissions_repository=self.user_permissions_repository,
+                user_emails_repository=self.user_emails_repository,
+                users_repository=self.users_repository,
+                logger=self.logger,
             )
 
         self.logger.info(

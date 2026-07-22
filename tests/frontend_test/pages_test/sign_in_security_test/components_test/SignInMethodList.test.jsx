@@ -678,4 +678,114 @@ describe("SignInMethodList", () => {
       ).not.toBeInTheDocument();
     });
   });
+
+  describe("Row-less corp (is_corp)", () => {
+    it("tags a corp email's address Internal even with no internal identity", () => {
+      // A row-less corp employee has NO internal identity row; the corp email's
+      // isCorp flag is the only internal signal left.
+      render(
+        <SignInMethodList
+          emails={[
+            makeEmail({
+              email: "dev@circlecat.org",
+              isPrimary: true,
+              isCorp: true,
+            }),
+          ]}
+          internalIdentities={[]}
+          externalIdentities={[]}
+          isLoading={false}
+        />,
+      );
+
+      expect(screen.getByText("Internal")).toBeInTheDocument();
+    });
+
+    it("withholds Set as primary when the account has a corp email but no internal identity", () => {
+      // The backend locks a corp employee's primary to a corp address, so the
+      // control must stay hidden even though there is no internal identity row.
+      render(
+        <SignInMethodList
+          emails={[
+            makeEmail({
+              email: "dev@circlecat.org",
+              isPrimary: true,
+              isCorp: true,
+            }),
+            makeEmail({
+              emailId: 2,
+              email: "personal@gmail.com",
+              isCorp: false,
+            }),
+          ]}
+          internalIdentities={[]}
+          externalIdentities={[]}
+          isLoading={false}
+          onSetPrimary={vi.fn()}
+        />,
+      );
+
+      expect(
+        screen.queryByRole("button", { name: "Set as primary contact" }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("does not offer Remove email on a non-primary corp address for a corp account", () => {
+      // Rule c: an active internal employee cannot remove any corp email; the
+      // backend rejects it, so the control must not appear.
+      render(
+        <SignInMethodList
+          emails={[
+            makeEmail({
+              email: "dev@circlecat.org",
+              isPrimary: true,
+              isCorp: true,
+            }),
+            makeEmail({
+              emailId: 2,
+              email: "ops@circlecat.org",
+              isPrimary: false,
+              isCorp: true,
+            }),
+          ]}
+          internalIdentities={[]}
+          externalIdentities={[]}
+          isLoading={false}
+          onRemove={vi.fn()}
+        />,
+      );
+
+      expect(
+        screen.queryByRole("button", { name: "Remove email" }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("still offers Remove email on a non-corp address for a corp account", () => {
+      render(
+        <SignInMethodList
+          emails={[
+            makeEmail({
+              email: "dev@circlecat.org",
+              isPrimary: true,
+              isCorp: true,
+            }),
+            makeEmail({
+              emailId: 2,
+              email: "personal@gmail.com",
+              isPrimary: false,
+              isCorp: false,
+            }),
+          ]}
+          internalIdentities={[]}
+          externalIdentities={[]}
+          isLoading={false}
+          onRemove={vi.fn()}
+        />,
+      );
+
+      expect(
+        screen.getByRole("button", { name: "Remove email" }),
+      ).toBeInTheDocument();
+    });
+  });
 });

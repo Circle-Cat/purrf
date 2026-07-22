@@ -1,8 +1,8 @@
-"""Shared internal-employee lifecycle hook for corp sign-ins joining an
-EXISTING account (bridge link, in-account verify, or trusted-assertion
-routing): grant the internal-employee permission bundle and promote the
-corp address to the primary contact. Lives outside both services so the
-logic exists once."""
+"""Shared internal-employee lifecycle hook, used both for brand-new
+first-login inserts and for corp sign-ins joining an EXISTING account
+(bridge link, in-account verify, or trusted-assertion routing): grant the
+internal-employee permission bundle and promote the corp address to the
+primary contact. Lives outside both services so the logic exists once."""
 
 from backend.common.permissions import INTERNAL_EMPLOYEE_PERMISSIONS
 
@@ -14,13 +14,15 @@ async def absorb_internal_identity(
     *,
     user_permissions_repository,
     user_emails_repository,
+    users_repository,
     logger,
 ) -> None:
     """
-    Mirror the first-login lifecycle hook when a corp sign-in joins an
-    EXISTING account (bridge link, in-account verify, or trusted-assertion
-    routing): grant the internal-employee permission bundle and promote the
-    corp address to the primary contact.
+    Shared internal-employee lifecycle hook, called both for brand-new
+    first-login inserts and when a corp sign-in joins an EXISTING account
+    (bridge link, in-account verify, or trusted-assertion routing): grant the
+    internal-employee permission bundle and promote the corp address to the
+    primary contact.
 
     Without this, an employee who linked their corp sign-in into a
     pre-existing external account would be INTERNAL without the baseline
@@ -35,7 +37,13 @@ async def absorb_internal_identity(
         session (AsyncSession): The active async database session.
         user_id (int): The account the corp sign-in was linked into.
         email (str): The corp address (normalized) that was just verified.
+        users_repository (UsersRepository): Repository handling UsersEntity,
+            used to set the is_internal flag.
     """
+    # Persist the internal-employee state (idempotent — set_internal no-ops
+    # when already True), the sole classification signal in the row-less model.
+    await users_repository.set_internal(session, user_id)
+
     active = await user_permissions_repository.get_active_permission_names(
         session, user_id
     )

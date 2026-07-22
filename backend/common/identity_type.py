@@ -23,15 +23,12 @@ _PASSWORDLESS_SUB_PREFIX = "email|"
 def is_rowless_login(sub: str, identity_type) -> bool:
     """Whether this login leaves NO row in user_identities.
 
-    Only an EXTERNAL passwordless login is row-less. A passwordless ('email|')
-    sub merely proves control of a mailbox; the confirmed user_emails row is
-    the identity anchor, so the login is resolved by confirmed address on every
-    request and never recorded as a sub. A corp (INTERNAL) passwordless login
-    still records an identity row — internal classification is derived from the
-    presence of an INTERNAL identity row — and google logins are durable
-    third-party credentials that stay sub-routed. ``identity_type`` may be an
-    ``IdentityType`` member or its string value; both compare equal (StrEnum).
+    Every passwordless ('email|') login is now row-less — internal and
+    external alike. A passwordless sub merely proves control of a mailbox;
+    the confirmed user_emails row is the anchor, and internal classification
+    lives on the ``users.is_internal`` state column, so no passwordless login
+    is recorded as a sub. Google / social subs are durable third-party
+    credentials that stay sub-routed. ``identity_type`` is accepted for
+    call-site compatibility but no longer affects the result.
     """
-    return sub.startswith(_PASSWORDLESS_SUB_PREFIX) and (
-        identity_type == IdentityType.EXTERNAL
-    )
+    return sub.startswith(_PASSWORDLESS_SUB_PREFIX)

@@ -114,8 +114,9 @@ const capabilityChips = (group) => {
  *
  * @param {Object} props
  * @param {object} props.group - one entry from {@link buildAddressGroups}.
- * @param {boolean} props.accountIsInternal - the account holds an INTERNAL
- *   identity, so the primary contact is corp-managed and cannot be changed here.
+ * @param {boolean} props.accountIsInternal - the account is internal (holds an
+ *   INTERNAL identity or a confirmed corp email), so the primary contact is
+ *   corp-managed and cannot be changed here.
  * @param {{kind: string, id: (number|string)}|null} props.busy - in-flight action.
  * @param {(identity: object) => void} [props.onUnlink]
  * @param {(emailRow: object) => void} [props.onSetPrimary]
@@ -132,7 +133,11 @@ const AddressRow = ({
   const isBusy = busy !== null;
   const { emailRow, identities } = group;
 
-  const isInternal = identities.some((entry) => entry.internal);
+  // An address is internal if it carries an INTERNAL sign-in identity OR its
+  // email is a corp-domain address. Row-less corp employees keep no identity
+  // row, so `isCorp` is their only remaining internal signal.
+  const isInternal =
+    identities.some((entry) => entry.internal) || !!emailRow?.isCorp;
   const isCurrentSession = identities.some(
     (entry) => entry.raw.isCurrentSession,
   );
@@ -147,7 +152,14 @@ const AddressRow = ({
     !!emailRow &&
     emailRow.otpConfirmed &&
     !emailRow.isPrimary;
-  const canRemoveEmail = !!onRemove && !!emailRow && !emailRow.isPrimary;
+  // A corp email on an internal account is a locked contact — the backend
+  // refuses to remove it (an active employee must keep a corp address), so
+  // the control is withheld here too.
+  const canRemoveEmail =
+    !!onRemove &&
+    !!emailRow &&
+    !emailRow.isPrimary &&
+    !(accountIsInternal && emailRow.isCorp);
   // Removing one path never fully disconnects an address that has two removable
   // ones — say so, so nobody assumes "Remove ... sign-in" also kills Email OTP.
   const showMultiPathHint =
@@ -271,7 +283,11 @@ const SignInMethodList = ({
     internalIdentities,
     externalIdentities,
   );
-  const accountIsInternal = internalIdentities.length > 0;
+  // Internal for UI purposes when the account holds an INTERNAL identity OR any
+  // confirmed corp email — the latter covers row-less corp employees, who have
+  // no internal identity row but whose corp primary is still corp-locked.
+  const accountIsInternal =
+    internalIdentities.length > 0 || emails.some((email) => email.isCorp);
 
   const runBusy = async (kind, id, action) => {
     setBusy({ kind, id });

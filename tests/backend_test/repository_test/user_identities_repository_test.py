@@ -230,68 +230,6 @@ class TestUserIdentitiesRepository(BaseRepositoryTestLib):
         rows = await self.repo.list_by_user_id(self.session, self.user.user_id)
         self.assertEqual(rows, [])
 
-    # exists_active_internal — active employee = is_active AND an INTERNAL identity
-    async def test_exists_active_internal_true_for_active_internal(self):
-        await self.insert_entities([
-            UserIdentitiesEntity(
-                user_id=self.user.user_id,
-                subject_identifier="google-oauth2|internal",
-                identity_type="internal",
-                email_claim="alice@circlecat.org",
-            )
-        ])
-
-        result = await self.repo.exists_active_internal(self.session, self.user.user_id)
-        self.assertTrue(result)
-
-    async def test_exists_active_internal_false_without_internal_identity(self):
-        await self.insert_entities([
-            UserIdentitiesEntity(
-                user_id=self.user.user_id,
-                subject_identifier="email|external",
-                identity_type="external",
-                email_claim="alice@gmail.com",
-            )
-        ])
-
-        result = await self.repo.exists_active_internal(self.session, self.user.user_id)
-        self.assertFalse(result)
-
-    async def test_exists_active_internal_false_when_inactive(self):
-        inactive = _make_user(is_active=False)
-        await self.insert_entities([inactive])
-        await self.insert_entities([
-            UserIdentitiesEntity(
-                user_id=inactive.user_id,
-                subject_identifier="google-oauth2|inactive",
-                identity_type="internal",
-                email_claim="ex@circlecat.org",
-            )
-        ])
-
-        result = await self.repo.exists_active_internal(self.session, inactive.user_id)
-        self.assertFalse(result)
-
-    async def test_exists_active_internal_false_for_unknown_user(self):
-        result = await self.repo.exists_active_internal(self.session, 9999999)
-        self.assertFalse(result)
-
-    async def test_exists_active_internal_ignores_other_users_internal(self):
-        """Another user's INTERNAL identity must not make this user qualify."""
-        other = _make_user()
-        await self.insert_entities([other])
-        await self.insert_entities([
-            UserIdentitiesEntity(
-                user_id=other.user_id,
-                subject_identifier="google-oauth2|other-internal",
-                identity_type="internal",
-                email_claim="bob@circlecat.org",
-            )
-        ])
-
-        result = await self.repo.exists_active_internal(self.session, self.user.user_id)
-        self.assertFalse(result)
-
     # get_by_id / delete — back the unlink flow
     async def test_get_by_id_returns_row(self):
         identity = UserIdentitiesEntity(

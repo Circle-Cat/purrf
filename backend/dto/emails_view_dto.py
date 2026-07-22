@@ -10,6 +10,7 @@ class EmailEntryDto(BaseDto):
     is_primary: bool
     added_at: datetime
     linked_identity_count: int
+    is_corp: bool
 
 
 class IdentityDto(BaseDto):

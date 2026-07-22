@@ -46,6 +46,7 @@ class EmailManagementService:
         user_emails_repository,
         user_identities_repository,
         user_permissions_repository,
+        users_repository,
         logger,
     ):
         """
@@ -58,12 +59,16 @@ class EmailManagementService:
             user_permissions_repository (UserPermissionsRepository): Repository
                 handling permission grants; used to mirror the internal-employee
                 lifecycle hook when a corp sign-in joins an existing account.
+            users_repository (UsersRepository): Repository handling UsersEntity;
+                used to mirror the internal-employee lifecycle hook when a corp
+                sign-in joins an existing account.
             logger: Application logger.
         """
         self._auth0 = auth0_client
         self._user_emails = user_emails_repository
         self._user_identities = user_identities_repository
         self._user_permissions = user_permissions_repository
+        self._users = users_repository
         self._state_secret = os.getenv(EMAIL_OTP_STATE_JWT_SECRET)
         self._logger = logger
 
@@ -101,8 +106,10 @@ class EmailManagementService:
 
         Raises:
             ValueError: The row is missing or owned by another user.
-            ConflictError: The row is the primary contact, or it is the
-                address the caller's own passwordless session signed in with.
+            ConflictError: The row is the primary contact, it is the
+                address the caller's own passwordless session signed in
+                with, or the caller is an active employee removing any
+                corp-domain email.
         """
         row = await self._user_emails.get_by_id(session, email_id)
         if row is None or row.user_id != current_user_id:
@@ -117,6 +124,13 @@ class EmailManagementService:
             raise ConflictError(
                 "Cannot remove the email used for the current session; "
                 "log in with another method first"
+            )
+        if is_company_email(row.email) and await self._users.exists_active_internal(
+            session, current_user_id
+        ):
+            raise ConflictError(
+                "Active employees cannot remove a corp email; "
+                "it is their required internal contact"
             )
 
         await self._user_emails.delete(session, email_id)
@@ -281,6 +295,7 @@ class EmailManagementService:
                 is_primary=row.is_primary,
                 added_at=row.added_at,
                 linked_identity_count=claim_counts.get(row.email.lower(), 0),
+                is_corp=is_company_email(row.email),
             )
             for row in emails
         ]
@@ -390,9 +405,9 @@ class EmailManagementService:
         Shared guard for promoting ``target`` to primary: it must be the
         caller's, OTP-confirmed, and — for an active employee — a corp address.
 
-        An active employee is ``users.is_active`` True AND holding a
-        user_identities row of type INTERNAL; such a user must keep a
-        ``circlecat.org`` address as primary so HR / IT can reach them.
+        An active employee is ``users.is_active`` True AND ``users.is_internal``
+        True; such a user must keep a ``circlecat.org`` address as primary so
+        HR / IT can reach them.
 
         Raises:
             ValueError: missing / owned by another user / not OTP-confirmed.
@@ -407,9 +422,7 @@ class EmailManagementService:
         # active employee must keep a company address as primary.
         if not is_company_email(
             target.email
-        ) and await self._user_identities.exists_active_internal(
-            session, current_user_id
-        ):
+        ) and await self._users.exists_active_internal(session, current_user_id):
             raise PermissionError("Active employees must keep a corp email as primary")
 
     def _sign_state(self, flow: str, **claims) -> str:
@@ -470,6 +483,7 @@ class EmailManagementService:
             email,
             user_permissions_repository=self._user_permissions,
             user_emails_repository=self._user_emails,
+            users_repository=self._users,
             logger=self._logger,
         )
 
@@ -556,9 +570,7 @@ class EmailManagementService:
 
         if (
             IdentityType.INTERNAL == identity.identity_type
-            and await self._user_identities.exists_active_internal(
-                session, current_user_id
-            )
+            and await self._users.exists_active_internal(session, current_user_id)
         ):
             raise PermissionError("Active employees cannot remove corp sign-in")
 

@@ -448,6 +448,7 @@ class AppDependencyBuilder:
             user_emails_repository=self.user_emails_repository,
             user_identities_repository=self.user_identities_repository,
             user_permissions_repository=self.user_permissions_repository,
+            users_repository=self.users_repository,
             logger=self.logger,
         )
         self.mentorship_round_repository = MentorshipRoundRepository()

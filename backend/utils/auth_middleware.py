@@ -193,8 +193,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 rowless = is_rowless_login(user_context.sub, user_context.identity_type)
                 user = None
                 if not rowless:
-                    # Sub-routed (google / INTERNAL, incl. corp passwordless):
-                    # single JOIN resolves the steady state.
+                    # Sub-routed (google / social only — passwordless, both
+                    # internal and external, is row-less): single JOIN
+                    # resolves the steady state.
                     user = await self.user_identity_service.find_user_by_sub(
                         session, user_context.sub, user_context.last_login_at
                     )

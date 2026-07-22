@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from http import HTTPStatus
 
+from backend.common.identity_type import IdentityType
 from backend.common.permissions import Permission
 from backend.common.api_endpoints import (
     MICROSOFT_LDAPS_ENDPOINT,
@@ -95,6 +96,11 @@ class TestInternalActivityControllerIntegration(unittest.TestCase):
         mock_user.is_service_account = False
         mock_user.is_super_admin = False
         mock_user.last_login_at = None
+        # A non-passwordless sub keeps is_rowless_login False, so the middleware
+        # resolves the user via the mocked sub-routed find_user_by_sub instead of
+        # the (unmocked) row-less create_or_swap_user path.
+        mock_user.sub = "google-oauth2|test-user"
+        mock_user.identity_type = IdentityType.INTERNAL
         self.mock_auth_service.authenticate_request.return_value = mock_user
         self.mock_user_permissions_repository.get_active_permission_names.return_value = [
             p.value for p in permissions

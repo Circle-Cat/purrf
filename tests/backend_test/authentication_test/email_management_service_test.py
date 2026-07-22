@@ -92,15 +92,17 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         self.user_emails.has_primary.return_value = False
         self.user_identities = AsyncMock()
         self.user_identities.get_by_subject_identifier.return_value = None
-        self.user_identities.exists_active_internal.return_value = False
         self.user_permissions = AsyncMock()
         self.user_permissions.get_active_permission_names.return_value = []
+        self.users = AsyncMock()
+        self.users.exists_active_internal.return_value = False
         self.session = AsyncMock()
         self.service = EmailManagementService(
             self.auth0,
             self.user_emails,
             self.user_identities,
             self.user_permissions,
+            self.users,
             MagicMock(),
         )
 
@@ -251,6 +253,46 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         self.user_emails.delete.assert_awaited_once_with(self.session, 12)
         self.assertEqual(result, {"ok": True})
 
+    async def test_remove_email_blocks_active_internal_deleting_corp(self):
+        """An active internal employee cannot remove ANY corp email."""
+        row = self._email_row("dev@circlecat.org")
+        row.email_id = 99
+        self.user_emails.get_by_id.return_value = row
+        self.users.exists_active_internal.return_value = True
+
+        with self.assertRaises(ConflictError):
+            await self.service.remove_email(
+                self.session, _USER_ID, "google-oauth2|x", None, 99
+            )
+        self.user_emails.delete.assert_not_awaited()
+
+    async def test_remove_email_allows_internal_deleting_non_corp(self):
+        row = self._email_row("alice@gmail.com")
+        row.email_id = 99
+        self.user_emails.get_by_id.return_value = row
+        self.users.exists_active_internal.return_value = True
+
+        result = await self.service.remove_email(
+            self.session, _USER_ID, "google-oauth2|x", None, 99
+        )
+
+        self.user_emails.delete.assert_awaited_once()
+        self.assertEqual(result, {"ok": True})
+
+    async def test_remove_email_allows_external_deleting_corp_domain(self):
+        # Non-employee (exists_active_internal False) is unaffected by the guard.
+        row = self._email_row("dev@circlecat.org")
+        row.email_id = 99
+        self.user_emails.get_by_id.return_value = row
+        self.users.exists_active_internal.return_value = False
+
+        result = await self.service.remove_email(
+            self.session, _USER_ID, "google-oauth2|x", None, 99
+        )
+
+        self.user_emails.delete.assert_awaited_once()
+        self.assertEqual(result, {"ok": True})
+
     async def test_verify_confirms_without_creating_sign_in_identity(self):
         """Normal-mode verify only confirms the address; it must not create a
         user_identities row for the OTP's email| sub — the confirmed address
@@ -301,6 +343,8 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         self.user_emails.set_primary.assert_awaited_once_with(
             self.session, _USER_ID, 31
         )
+        # The row-less classification signal is set alongside the bundle grant.
+        self.users.set_internal.assert_awaited_once_with(self.session, _USER_ID)
         self.session.commit.assert_awaited_once()
 
     async def test_verify_company_email_skips_held_bundle_and_existing_primary(self):
@@ -588,6 +632,34 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(ids[2].is_current_session)
         self.assertFalse(ids[193].is_current_session)
 
+    async def test_emails_view_flags_corp_email_as_internal(self):
+        added_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        self.user_emails.list_by_user_id.return_value = [
+            MagicMock(
+                email_id=1,
+                email="dev@circlecat.org",
+                otp_confirmed=True,
+                is_primary=True,
+                added_at=added_at,
+            ),
+            MagicMock(
+                email_id=2,
+                email="alice@gmail.com",
+                otp_confirmed=True,
+                is_primary=False,
+                added_at=added_at,
+            ),
+        ]
+        self.user_identities.list_by_user_id.return_value = []
+
+        view = await self.service.list_emails_and_identities(
+            self.session, current_user_id=_USER_ID, current_sub=_CURRENT_SUB
+        )
+
+        by_email = {e.email: e.is_corp for e in view.emails}
+        self.assertTrue(by_email["dev@circlecat.org"])
+        self.assertFalse(by_email["alice@gmail.com"])
+
     # initiate_set_primary — step 1: validate target, OTP the current primary
     async def test_initiate_set_primary_sends_otp_to_current_primary(self):
         self.user_emails.get_by_id.return_value = self._email_row(
@@ -635,7 +707,7 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         self.user_emails.get_by_id.return_value = self._email_row(
             "alice.personal@gmail.com", otp_confirmed=True
         )
-        self.user_identities.exists_active_internal.return_value = True
+        self.users.exists_active_internal.return_value = True
 
         with self.assertRaises(PermissionError):
             await self.service.initiate_set_primary(self.session, _USER_ID, 18)
@@ -649,7 +721,7 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         self.user_emails.get_primary.return_value = self._email_row(
             "old@circlecat.org", is_primary=True
         )
-        self.user_identities.exists_active_internal.return_value = True
+        self.users.exists_active_internal.return_value = True
 
         await self.service.initiate_set_primary(self.session, _USER_ID, 5)
 
@@ -808,7 +880,7 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
             7, "google-oauth2|corp", "internal", "yuji@circlecat.org"
         )
         self._arrange_unlink(target)
-        self.user_identities.exists_active_internal.return_value = True
+        self.users.exists_active_internal.return_value = True
         with self.assertRaises(PermissionError):
             await self.service.initiate_unlink(self.session, _USER_ID, _CURRENT_SUB, 7)
         self.auth0.start_passwordless.assert_not_called()
@@ -952,7 +1024,7 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         self.user_emails.get_primary.return_value = self._email_row(
             "old@example.com", is_primary=True
         )
-        self.user_identities.exists_active_internal.return_value = True
+        self.users.exists_active_internal.return_value = True
         state = _unlink_state(target_identity_id=7, primary_email="old@example.com")
         with self.assertRaises(PermissionError):
             await self.service.confirm_unlink(
@@ -1033,7 +1105,7 @@ class TestSignState(unittest.TestCase):
     def setUp(self):
         os.environ["EMAIL_OTP_STATE_JWT_SECRET"] = _SECRET
         self.service = EmailManagementService(
-            MagicMock(), AsyncMock(), AsyncMock(), AsyncMock(), MagicMock()
+            MagicMock(), AsyncMock(), AsyncMock(), AsyncMock(), AsyncMock(), MagicMock()
         )
 
     def test_sign_state_stamps_envelope_and_roundtrips(self):
@@ -1077,6 +1149,7 @@ class TestConsumeStepUpOtp(unittest.IsolatedAsyncioTestCase):
         self.service = EmailManagementService(
             self.auth0,
             self.user_emails,
+            AsyncMock(),
             AsyncMock(),
             AsyncMock(),
             MagicMock(),
