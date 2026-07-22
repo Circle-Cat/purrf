@@ -216,8 +216,8 @@ py_test(
 )
 
 py_test(
-    name = "stage_entered_at_backfill_test",
-    srcs = ["stage_entered_at_backfill_test.py"],
+    name = "stage_entered_at_migration_test",
+    srcs = ["stage_entered_at_migration_test.py"],
     env_inherit = ["DATABASE_URL"],
     deps = [
         ":base_repository_test_lib",

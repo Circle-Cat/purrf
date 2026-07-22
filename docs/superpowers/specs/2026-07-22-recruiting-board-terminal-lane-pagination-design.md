@@ -48,7 +48,10 @@ within the terminal lanes.
   that ordering — the timestamp the application entered its *current* stage.
   Added `NOT NULL` **with `server_default=func.now()`** so every INSERT path
   (including grandfather scripts, §3) is safe; stage-*change* UPDATE sites set it
-  explicitly to `now()`. Backfilled for existing rows (§3). `updated_timestamp`
+  explicitly to `now()`. **No historical backfill** — the feature is not
+  launched, so existing rows simply get the migration-time `now()` via the
+  server default; terminal-lane ordering of pre-existing rows is not
+  meaningful and isn't a design concern (§3). `updated_timestamp`
   is unusable here: later non-stage writes (e.g. a blacklist tag backfill) move it
   and would corrupt the order. Deriving the time from `application_activity` at
   query time was rejected — it can't use a plain index and works against the goal
@@ -85,32 +88,14 @@ are the grandfather backfill script):
 6. `backfill_activity_application_gate.py:82` — INSERT new HIRED row. `server_default`
    covers it, but set explicitly for clarity.
 
-**Backfill (in the migration).** The entry time for a row's *current* stage is the
-latest activity that represents entering that stage — which is **not always**
-`stage_changed`:
-- manual advance/reject/hire → `stage_changed` with `details->>'toStage' = stage`
-- blacklist (single or sweep) → `"blacklisted"` (stage becomes `REJECTED`; no
-  `stage_changed`). Mutually exclusive with a `stage_changed→rejected` on the same
-  row, since a row enters `REJECTED` only once (terminal).
-- auto-screen reject/hire at submit → `"auto_rejected"` / `"application_submitted"`
-  (no `stage_changed`); entry time = submit time.
-
-So:
-```sql
-stage_entered_at = COALESCE(
-  (SELECT max(a.created_at) FROM application_activity a
-   WHERE a.application_id = application.application_id
-     AND ( a.event_type = 'blacklisted'
-        OR (a.event_type = 'stage_changed'
-            AND a.details->>'toStage' = application.stage::text) )),
-  application.created_datetime
-)
-```
-Rows with none of those events (pure auto-land) fall back to `created_datetime`.
-Add the column nullable, backfill, then `ALTER … SET NOT NULL` in the same
-migration. (Known minor gap: the grandfather promote path, §write-site 5, wrote no
-activity, so legacy promoted-HIRED rows backfill to apply time, not promote time —
-low impact, legacy only.)
+**No historical backfill.** The column is added in one step —
+`NOT NULL` with `server_default=func.now()` — so Postgres populates every
+existing row with the migration-time `now()` in the same statement that adds
+the column; there is no separate backfill UPDATE. This is a deliberate
+simplification: the feature is not launched, so there is no real traffic to
+preserve accurate history for, and terminal-lane ordering of pre-existing rows
+is not meaningful. Going forward, the runtime write sites above are what make
+the column trustworthy for newly-created and newly-transitioned rows.
 
 **Index:** `(job_id, stage, stage_entered_at DESC, application_id DESC)` on
 `application`, covering the terminal page's `WHERE job_id=? AND stage=?` +
@@ -122,8 +107,7 @@ low impact, legacy only.)
 not O(page); the index above does not fix that. Consider a supporting index
 `(job_id, user_id, application_id)` for the subquery, and **validate the final plan
 with `EXPLAIN` on realistic data** (confirm no extra Sort node) before assuming the
-scaling win. Adding a `NOT NULL` column on a large table also takes a lock — the
-add-nullable → backfill → set-not-null sequence keeps the exclusive lock short.
+scaling win.
 
 ## 4. Backend
 
@@ -237,10 +221,9 @@ New shape wraps each stage:
 
 **Tests**
 
-- Migration/backfill (DB-backed): `stage_entered_at` after backfill equals — the
-  last `stage_changed→stage` time for a manually-moved row; the `"blacklisted"`
-  activity time for a blacklisted row (including a **HIRED→sweep→REJECTED** row,
-  which must NOT get its hire time); `created_datetime` for an auto-landed row.
+- Migration (DB-backed): inserting an `application` row without specifying
+  `stage_entered_at` gets the `server_default` (`now()`); the
+  `ix_application_job_stage_entered` index exists.
 - Repository: `list_by_job_and_stage` ordering (`stage_entered_at DESC`, id
   tiebreaker), limit/offset windows, **latest-per-user with outer stage filter** (a
   user whose latest app is active but who has an older rejected row does NOT appear
@@ -260,8 +243,8 @@ New shape wraps each stage:
 
 ## 9. Migration / rollout
 
-One Alembic migration (add column with `server_default` + backfill + `SET NOT NULL`
-+ index; §3). Backend and frontend ship together because the board response shape
+One Alembic migration (add column `NOT NULL` with `server_default` + index, no
+backfill; §3). Backend and frontend ship together because the board response shape
 changes; the board endpoint has a single frontend consumer, so there is no external
 contract to version. Deploy runs the migration before the new code (migrate-before-deploy
 convention).
