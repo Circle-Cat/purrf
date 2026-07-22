@@ -81,7 +81,7 @@ describe("PostingEditor", () => {
     expect(api.createJob.mock.calls[0][0]).toMatchObject({
       title: "SWE",
       kind: "activity",
-      cooldownDays: null,
+      cooldownDays: 0,
       mentorshipRole: null,
       formSchema: { questions: [] },
     });
@@ -359,5 +359,10 @@ describe("PostingEditor", () => {
   it("leaves Kind editable for a brand-new posting", () => {
     renderAt("/postings/new");
     expect(screen.getByRole("combobox", { name: "Kind" })).not.toBeDisabled();
+  });
+
+  it("defaults the Cooldown days field to 0 on a new posting", () => {
+    renderAt("/postings/new");
+    expect(screen.getByLabelText("Cooldown days").value).toBe("0");
   });
 });
