@@ -4,7 +4,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.identity_type import IdentityType, is_rowless_login
 from backend.common.mentorship_enums import CommunicationMethod
-from backend.common.permissions import INTERNAL_EMPLOYEE_PERMISSIONS
 from backend.common.trusted_connections import is_trusted_email_assertion
 from backend.dto.user_context_dto import UserContextDto
 from backend.entity.user_emails_entity import UserEmailsEntity
@@ -230,6 +229,7 @@ class UserIdentityService:
                     email,
                     user_permissions_repository=self.user_permissions_repository,
                     user_emails_repository=self.user_emails_repository,
+                    users_repository=self.users_repository,
                     logger=self.logger,
                 )
             user_info.user_id = user.user_id
@@ -280,6 +280,7 @@ class UserIdentityService:
                     email,
                     user_permissions_repository=self.user_permissions_repository,
                     user_emails_repository=self.user_emails_repository,
+                    users_repository=self.users_repository,
                     logger=self.logger,
                 )
             user_info.user_id = user.user_id
@@ -465,14 +466,18 @@ class UserIdentityService:
             session=session, entity=new_email_row
         )
 
-        # Lifecycle hook: a new internal employee gets the internal
-        # permission bundle auto-injected.
+        # Lifecycle hook: a new internal employee gets the permission bundle and
+        # the is_internal flag via the shared absorb (single writer). The corp
+        # address seeded above is already primary, so absorb's promotion no-ops.
         if user_info.identity_type == IdentityType.INTERNAL:
-            await self.user_permissions_repository.grant(
-                session=session,
-                user_id=created_user.user_id,
-                permission_names=INTERNAL_EMPLOYEE_PERMISSIONS,
-                granted_source="system_internal",
+            await absorb_internal_identity(
+                session,
+                created_user.user_id,
+                email,
+                user_permissions_repository=self.user_permissions_repository,
+                user_emails_repository=self.user_emails_repository,
+                users_repository=self.users_repository,
+                logger=self.logger,
             )
 
         self.logger.info(

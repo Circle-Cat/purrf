@@ -466,6 +466,30 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
         # INTERNAL first-login grants the employee bundle.
         self.permissions_repo.grant.assert_awaited_once()
 
+    async def test_first_login_internal_sets_flag_and_grants_via_absorb(self):
+        """Corp first login routes its lifecycle through absorb: sets the
+        is_internal flag and grants the employee bundle (single writer)."""
+        user_info = UserContextDto(
+            sub="email|xyz",
+            primary_email="dev@circlecat.org",
+            identity_type=IdentityType.INTERNAL,
+            last_login_at=self.fresh_iat,
+            email_verified=True,
+        )
+        self.identities_repo.find_swappable_by_email.return_value = None
+        created = MagicMock(spec=UsersEntity, user_id=42)
+        self.users_repo.upsert_users.return_value = created
+        # absorb reads the just-seeded corp email (already primary) + no perms yet
+        self.emails_repo.get_by_user_and_email.return_value = MagicMock(
+            spec=UserEmailsEntity, otp_confirmed=True, is_primary=True, email_id=1
+        )
+        self.permissions_repo.get_active_permission_names.return_value = []
+
+        await self.service.create_or_swap_user(self.session, user_info)
+
+        self.users_repo.set_internal.assert_awaited_once_with(self.session, 42)
+        self.permissions_repo.grant.assert_awaited_once()
+
     async def test_create_or_swap_first_login_non_email_sub_untrusted_raises(
         self,
     ):
@@ -588,14 +612,17 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
         self.identities_repo.find_swappable_by_email.return_value = None
         created = MagicMock(spec=UsersEntity, user_id=55)
         self.users_repo.upsert_users.return_value = created
+        # absorb diffs grants against active permissions; none held yet.
+        self.permissions_repo.get_active_permission_names.return_value = []
 
         result = await self.service.create_or_swap_user(self.session, user_info)
 
         self.assertIs(result, created)
+        self.users_repo.set_internal.assert_awaited_once_with(self.session, 55)
         self.permissions_repo.grant.assert_awaited_once_with(
             session=self.session,
             user_id=55,
-            permission_names=INTERNAL_EMPLOYEE_PERMISSIONS,
+            permission_names=sorted(INTERNAL_EMPLOYEE_PERMISSIONS, key=str),
             granted_source="system_internal",
         )
         self.assertEqual(user_info.user_id, 55)

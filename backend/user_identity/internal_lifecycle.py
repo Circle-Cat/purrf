@@ -14,6 +14,7 @@ async def absorb_internal_identity(
     *,
     user_permissions_repository,
     user_emails_repository,
+    users_repository,
     logger,
 ) -> None:
     """
@@ -35,7 +36,13 @@ async def absorb_internal_identity(
         session (AsyncSession): The active async database session.
         user_id (int): The account the corp sign-in was linked into.
         email (str): The corp address (normalized) that was just verified.
+        users_repository (UsersRepository): Repository handling UsersEntity,
+            used to set the is_internal flag.
     """
+    # Persist the internal-employee state (idempotent — set_internal no-ops
+    # when already True), the sole classification signal in the row-less model.
+    await users_repository.set_internal(session, user_id)
+
     active = await user_permissions_repository.get_active_permission_names(
         session, user_id
     )
