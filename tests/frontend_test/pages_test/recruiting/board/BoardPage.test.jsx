@@ -145,9 +145,7 @@ describe("BoardPage", () => {
 
     const hiredLane = screen.getByTestId("lane-hired");
     expect(within(hiredLane).getByText("Bob Jones")).toBeInTheDocument();
-    expect(
-      within(hiredLane).getByText(/Cold freeze ·/),
-    ).toBeInTheDocument();
+    expect(within(hiredLane).getByText(/Cold freeze ·/)).toBeInTheDocument();
 
     // empty lane message
     const techLane = screen.getByTestId("lane-tech");
