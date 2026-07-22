@@ -27,7 +27,7 @@
 - `backend/recruiting/board_service.py` — **modify**: set `stage_entered_at` on 3 UPDATE stage-writes; rewrite `get_board`; add `get_board_stage_page`.
 - `backend/recruiting/application_service.py` — **modify**: set `stage_entered_at` on the submit INSERT.
 - `backend/backfill/backfill_activity_application_gate.py` — **modify**: set `stage_entered_at` on the promote UPDATE.
-- `alembic_setup/versions/<rev>_add_stage_entered_at_to_application.py` — **create**: column + backfill + NOT NULL + index.
+- `alembic_setup/versions/<rev>_add_stage_entered_at_to_application.py` — **create**: column (NOT NULL + server_default now()) + index. No backfill.
 - `backend/repository/application_repository.py` — **modify**: `list_by_job(exclude_stages=)`; add `list_by_job_and_stage`, `count_latest_by_job_and_stage`.
 - `backend/dto/board_dto.py` — **modify**: add `BoardStageDto`, `BoardStagePageDto`.
 - `backend/common/api_endpoints.py` — **modify**: add `RECRUITING_JOB_BOARD_STAGE_ENDPOINT`.
@@ -35,7 +35,7 @@
 - `frontend/src/constants/ApiEndpoints.js` — **modify**: add `RECRUITING_JOB_BOARD_STAGE`.
 - `frontend/src/api/recruitingApi.js` — **modify**: add `getJobBoardStagePage`.
 - `frontend/src/pages/Recruiting/board/BoardPage.jsx` — **modify**: adapt to wrapped shape + "Load more" + dedupe.
-- Tests: `application_repository_test.py`, `board_service_test.py`, `board_controller_test.py` (all exist — extend), plus a new backfill migration test and BoardPage frontend test.
+- Tests: `application_repository_test.py`, `board_service_test.py`, `board_controller_test.py` (all exist — extend), plus a new migration test and BoardPage frontend test.
 
 ---
 
