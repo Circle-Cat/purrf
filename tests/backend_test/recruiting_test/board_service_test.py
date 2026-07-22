@@ -2013,9 +2013,10 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.job_repo.get_by_job_id.assert_not_awaited()
 
     async def test_blacklist_rejects_other_in_flight_applications(self):
-        """Blacklisting closes out every other in-flight application of the
-        same user (2026-07-15 decision), not just the triggering one.
-        HIRED and already-REJECTED rows are left untouched."""
+        """Blacklisting closes out EVERY other application of the same user
+        (2026-07-22 decision), not just the triggering one. In-flight and
+        already-HIRED rows are rejected + tagged; already-REJECTED rows that
+        aren't yet tagged get the ``blacklisted`` tag backfilled (stage kept)."""
         user = self._user(user_id=3)
         job_a = self._job(job_id=1, owner_ids=(2,))
         job_b = self._job(job_id=2, owner_ids=(2,))
@@ -2034,6 +2035,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         fourth = self._application(
             application_id=13, job_id=4, user_id=3, stage=ApplicationStage.REJECTED
         )
+        fourth.current_round = 4
         apps_by_id = {10: trigger, 11: second, 12: third, 13: fourth}
         self.users_repo.get_user_by_user_id = AsyncMock(return_value=user)
         self.app_repo.get_by_id = AsyncMock(
@@ -2056,28 +2058,71 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         )
         await self.service.blacklist(self.session, self._ctx(user_id=99), dto)
 
+        # In-flight -> full close-out.
         self.assertEqual(second.stage, ApplicationStage.REJECTED)
         self.assertTrue(second.tags["blacklisted"])
         self.assertIsNone(second.sub_status)
         self.assertEqual(second.current_round, 1)
-        self.assertEqual(third.stage, ApplicationStage.HIRED)
-        self.assertIsNone(fourth.tags)
+        # HIRED -> now also rejected + tagged (was previously left untouched).
+        self.assertEqual(third.stage, ApplicationStage.REJECTED)
+        self.assertTrue(third.tags["blacklisted"])
+        self.assertIsNone(third.sub_status)
+        self.assertEqual(third.current_round, 1)
+        # Already-REJECTED, untagged -> stage kept, tag backfilled, round kept.
+        self.assertEqual(fourth.stage, ApplicationStage.REJECTED)
+        self.assertTrue(fourth.tags["blacklisted"])
+        self.assertEqual(fourth.current_round, 4)
         self.app_repo.list_by_user.assert_awaited_once_with(self.session, 3)
-        self.assertEqual(self.activity_repo.create.call_count, 2)
-        second_call = self.activity_repo.create.call_args_list[1]
+        # trigger (10) + second (11) + third (12) + fourth (13).
+        self.assertEqual(self.activity_repo.create.call_count, 4)
+        by_app = {
+            call.args[1]: call for call in self.activity_repo.create.call_args_list
+        }
+        self.assertEqual(by_app[12].args, (self.session, 12, 99, "blacklisted"))
         self.assertEqual(
-            second_call.args,
-            (self.session, 11, 99, "blacklisted"),
+            by_app[12].kwargs["details"]["fromStage"], ApplicationStage.HIRED.value
         )
+        self.assertEqual(by_app[13].args, (self.session, 13, 99, "blacklisted"))
         self.assertEqual(
-            second_call.kwargs,
-            {
-                "details": {
-                    "fromStage": ApplicationStage.APPLIED.value,
-                    "reason": "Fabricated credentials",
-                }
-            },
+            by_app[13].kwargs["details"]["fromStage"], ApplicationStage.REJECTED.value
         )
+
+    async def test_blacklist_skips_already_tagged_rejected_applications(self):
+        """A prior blacklist already rejected + tagged some rows; re-running
+        blacklist leaves those rows untouched and logs no duplicate activity."""
+        user = self._user(user_id=3)
+        job_a = self._job(job_id=1, owner_ids=(2,))
+        job_b = self._job(job_id=2, owner_ids=(2,))
+        trigger = self._application(
+            application_id=10, job_id=1, user_id=3, stage=ApplicationStage.TECH
+        )
+        prior = self._application(
+            application_id=11, job_id=2, user_id=3, stage=ApplicationStage.REJECTED
+        )
+        prior.tags = {"blacklisted": True}
+        prior.current_round = 5
+        apps_by_id = {10: trigger, 11: prior}
+        self.users_repo.get_user_by_user_id = AsyncMock(return_value=user)
+        self.app_repo.get_by_id = AsyncMock(
+            side_effect=lambda _session, application_id, for_update=False: apps_by_id[
+                application_id
+            ]
+        )
+        self.app_repo.list_by_user = AsyncMock(
+            return_value=[(trigger, job_a), (prior, job_b)]
+        )
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+
+        dto = BlacklistDto(user_id=3, application_id=10, reason="Repeat offender")
+        await self.service.blacklist(self.session, self._ctx(user_id=99), dto)
+
+        self.assertEqual(prior.stage, ApplicationStage.REJECTED)
+        self.assertEqual(prior.tags, {"blacklisted": True})
+        self.assertEqual(prior.current_round, 5)
+        # Only the triggering application (10) is logged; the already-tagged
+        # rejected row logs nothing.
+        self.assertEqual(self.activity_repo.create.call_count, 1)
+        self.assertEqual(self.activity_repo.create.call_args_list[0].args[1], 10)
 
     # -- set_round --
 
