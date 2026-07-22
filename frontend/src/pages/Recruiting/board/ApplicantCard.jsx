@@ -7,9 +7,9 @@ import {
 /**
  * One applicant card on the board: applicant name, an optional sub-status
  * badge (pipeline lanes only), a reviewer line (interview-stage cards
- * only), tag chips (cold freeze / blacklisted, when present), and the
- * applied date. The whole card is a button so any lane can open the detail
- * view for it.
+ * only), tag chips (a live cold-freeze countdown shown only during the
+ * cooldown window, plus blacklisted, when present), and the applied date.
+ * The whole card is a button so any lane can open the detail view for it.
  *
  * The blacklist tag chip distinguishes two states: `tags.blacklisted` alone
  * just records that this application was once rejected by a blacklist
@@ -27,7 +27,27 @@ import {
  *   onOpen: (id: number) => void,
  * }} props
  */
+
+/**
+ * Whole days from local midnight today until the given date-only string
+ * ("YYYY-MM-DD"). Timezone-stable: compares calendar dates, not instants.
+ * Returns 0 for a missing/unparseable date. Positive means the date is in
+ * the future; 0 or negative means today or past.
+ */
+const daysUntil = (isoDate) => {
+  if (!isoDate) return 0;
+  const [y, m, d] = isoDate.split("-").map(Number);
+  if (!y || !m || !d) return 0;
+  const thaw = new Date(y, m - 1, d);
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return Math.round((thaw - today) / 86400000);
+};
+
 const ApplicantCard = ({ card, showStatus, onOpen }) => {
+  const daysLeft = daysUntil(card.tags?.cold_freeze?.thaw_date);
+  const showColdFreeze = daysLeft > 0;
+
   return (
     <button
       type="button"
@@ -51,10 +71,12 @@ const ApplicantCard = ({ card, showStatus, onOpen }) => {
           Reviewer: {card.reviewerName ?? "N/A"}
         </p>
       )}
-      {card.tags?.coldFreeze || card.tags?.blacklisted ? (
+      {showColdFreeze || card.tags?.blacklisted ? (
         <div className="flex flex-wrap gap-1">
-          {card.tags?.coldFreeze && (
-            <Badge variant="secondary">Cold freeze</Badge>
+          {showColdFreeze && (
+            <Badge variant="secondary">
+              Cold freeze · {daysLeft} {daysLeft === 1 ? "day" : "days"} left
+            </Badge>
           )}
           {card.tags?.blacklisted &&
             (card.isBlocked ? (

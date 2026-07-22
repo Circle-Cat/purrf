@@ -81,7 +81,7 @@ describe("PostingEditor", () => {
     expect(api.createJob.mock.calls[0][0]).toMatchObject({
       title: "SWE",
       kind: "activity",
-      cooldownDays: null,
+      cooldownDays: 0,
       mentorshipRole: null,
       formSchema: { questions: [] },
     });
@@ -359,5 +359,25 @@ describe("PostingEditor", () => {
   it("leaves Kind editable for a brand-new posting", () => {
     renderAt("/postings/new");
     expect(screen.getByRole("combobox", { name: "Kind" })).not.toBeDisabled();
+  });
+
+  it("defaults the Cooldown days field to 0 on a new posting", () => {
+    renderAt("/postings/new");
+    expect(screen.getByLabelText("Cooldown days").value).toBe("0");
+  });
+
+  it("shows 0 when loading an existing posting whose cooldown is unset", async () => {
+    // beforeEach mocks getJob with cooldownDays: null; the load fallback
+    // (`source.cooldownDays ?? 0`) must render it as "0", not blank.
+    const router = createMemoryRouter(
+      [
+        { path: "/postings/:id/edit", element: <PostingEditor /> },
+        { path: ROUTE_PATHS.RECRUITING_POSTINGS, element: <div /> },
+      ],
+      { initialEntries: ["/postings/5/edit"] },
+    );
+    render(<RouterProvider router={router} />);
+    const input = await screen.findByLabelText("Cooldown days");
+    await waitFor(() => expect(input.value).toBe("0"));
   });
 });

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import ApplicantCard from "@/pages/Recruiting/board/ApplicantCard";
 
@@ -88,5 +88,76 @@ describe("ApplicantCard reviewer", () => {
     );
 
     expect(screen.queryByText(/^Reviewer:/)).not.toBeInTheDocument();
+  });
+});
+
+describe("ApplicantCard cold-freeze countdown", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 6, 22)); // 2026-07-22 local
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("shows a countdown when the thaw date is still in the future", () => {
+    render(
+      <ApplicantCard
+        card={{
+          ...baseCard,
+          tags: { cold_freeze: { thaw_date: "2026-07-27" } }, // 5 days out
+          isBlocked: false,
+        }}
+        showStatus={false}
+        onOpen={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Cold freeze · 5 days left")).toBeInTheDocument();
+  });
+
+  it("uses the singular form when exactly one day remains", () => {
+    render(
+      <ApplicantCard
+        card={{
+          ...baseCard,
+          tags: { cold_freeze: { thaw_date: "2026-07-23" } }, // 1 day out
+          isBlocked: false,
+        }}
+        showStatus={false}
+        onOpen={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Cold freeze · 1 day left")).toBeInTheDocument();
+  });
+
+  it("hides the chip once the thaw date is today or past", () => {
+    render(
+      <ApplicantCard
+        card={{
+          ...baseCard,
+          tags: { cold_freeze: { thaw_date: "2026-07-22" } }, // today
+          isBlocked: false,
+        }}
+        showStatus={false}
+        onOpen={vi.fn()}
+      />,
+    );
+    expect(screen.queryByText(/Cold freeze/)).not.toBeInTheDocument();
+  });
+
+  it("still renders the blacklist chip when an expired cold-freeze is hidden", () => {
+    render(
+      <ApplicantCard
+        card={{
+          ...baseCard,
+          tags: { cold_freeze: { thaw_date: "2026-01-01" }, blacklisted: true },
+          isBlocked: true,
+        }}
+        showStatus={false}
+        onOpen={vi.fn()}
+      />,
+    );
+    expect(screen.queryByText(/Cold freeze/)).not.toBeInTheDocument();
+    expect(screen.getByText("Blacklisted")).toBeInTheDocument();
   });
 });
