@@ -31,6 +31,8 @@ class UserEmailsEntity(Base):
         DateTime(timezone=True), server_default=func.now()
     )
 
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
     __table_args__ = (
         # Kept although implied by uq_user_emails_email: its (user_id, email)
         # btree doubles as the index for user_id lookups.

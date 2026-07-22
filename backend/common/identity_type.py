@@ -3,8 +3,8 @@ from enum import StrEnum
 
 class IdentityType(StrEnum):
     """
-    Identity source bucket on UserContextDto / user_identities.identity_type,
-    set by the auth layer.
+    Identity source bucket on UserContextDto, set by the auth layer
+    (per-request, domain-derived; no longer persisted on user_identities).
 
     EXTERNAL  - default for Cloudflare-authenticated users
     CRONJOB   - Google service accounts; the middleware skips first-login

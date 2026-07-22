@@ -1,6 +1,5 @@
 import asyncio
 import unittest
-from datetime import datetime, timezone
 from http import HTTPStatus
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -376,12 +375,13 @@ class TestAuthMiddleware(unittest.TestCase):
         ]
         self.assertEqual(len(matching), 1)
 
-    def test_bootstrap_records_account_last_login_when_newer(self):
-        """Any successful sign-in path stamps users.last_login_at when the
-        token iat is newer than the stored value."""
-        user = SimpleNamespace(
-            user_id=42, is_super_admin=False, is_active=True, last_login_at=None
-        )
+    def test_bootstrap_no_longer_stamps_account_last_login(self):
+        """The account-level users.last_login_at column is retired: bootstrap
+        must not write it, even though user_context.last_login_at is still
+        threaded down to find_user_by_sub for identity/email stamping."""
+        # Note: no last_login_at attribute on user at all -- the middleware
+        # must not need or set one.
+        user = SimpleNamespace(user_id=5, is_super_admin=False, is_active=True)
         self.mock_user_identity_service.find_user_by_sub.return_value = user
         user_context = make_user_context(last_login_at=1_700_000_000)
 
@@ -396,9 +396,10 @@ class TestAuthMiddleware(unittest.TestCase):
 
         asyncio.run(middleware._bootstrap_user(user_context))
 
-        self.assertEqual(
-            user.last_login_at,
-            datetime.fromtimestamp(1_700_000_000, tz=timezone.utc),
+        self.assertFalse(hasattr(user, "last_login_at"))
+        # last_login_at is still threaded down for identity/email stamping.
+        self.mock_user_identity_service.find_user_by_sub.assert_awaited_once_with(
+            self.mock_session, user_context.sub, user_context.last_login_at
         )
 
     def test_rowless_login_skips_find_by_sub(self):
@@ -452,29 +453,6 @@ class TestAuthMiddleware(unittest.TestCase):
             self.mock_user_identity_service.create_or_swap_user.await_count, 2
         )
         self.mock_user_identity_service.find_user_by_sub.assert_not_called()
-
-    def test_bootstrap_skips_account_last_login_when_not_newer(self):
-        """In-session requests (same iat) must not issue a pointless UPDATE:
-        the stored value is left untouched (identity comparison)."""
-        stored = datetime.fromtimestamp(1_700_000_000, tz=timezone.utc)
-        user = SimpleNamespace(
-            user_id=42, is_super_admin=False, is_active=True, last_login_at=stored
-        )
-        self.mock_user_identity_service.find_user_by_sub.return_value = user
-        user_context = make_user_context(last_login_at=1_700_000_000)
-
-        middleware = AuthMiddleware(
-            app=MagicMock(),
-            auth_service=self.mock_auth_service,
-            database=self.mock_database,
-            user_identity_service=self.mock_user_identity_service,
-            user_permissions_repository=self.mock_user_permissions_repository,
-            logger=self.mock_logger,
-        )
-
-        asyncio.run(middleware._bootstrap_user(user_context))
-
-        self.assertIs(user.last_login_at, stored)
 
 
 if __name__ == "__main__":

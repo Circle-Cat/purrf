@@ -55,8 +55,6 @@ class UsersEntity(Base):
     blocked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     blocked_reason: Mapped[str | None] = mapped_column(String)
 
-    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-
     updated_timestamp: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=func.now(), onupdate=func.now()
     )
