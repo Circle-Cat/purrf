@@ -146,7 +146,6 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
         )
         # mocked sub overwritten in place with the real sub (same row persisted)
         self.assertEqual(mocked.subject_identifier, "google-oauth2|abc")
-        self.assertEqual(mocked.identity_type, "external")
         self.assertEqual(mocked.last_login_at, self.iat_dt)
         self.identities_repo.upsert_identity.assert_awaited_once_with(
             session=self.session, entity=mocked
@@ -745,7 +744,6 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(linked.user_id, 10)
         self.assertEqual(linked.subject_identifier, "google-oauth2|123")
         self.assertEqual(linked.email_claim, "owner@example.com")
-        self.assertEqual(linked.identity_type, IdentityType.EXTERNAL)
         # Routing links the credential but never creates users or email rows.
         self.users_repo.upsert_users.assert_not_awaited()
         self.emails_repo.upsert_email.assert_not_awaited()

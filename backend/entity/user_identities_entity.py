@@ -19,8 +19,6 @@ class UserIdentitiesEntity(Base):
 
     subject_identifier: Mapped[str] = mapped_column(String(255), unique=True)
 
-    identity_type: Mapped[str] = mapped_column(String(32))
-
     email_claim: Mapped[str | None] = mapped_column(String(255))
 
     linked_at: Mapped[datetime] = mapped_column(

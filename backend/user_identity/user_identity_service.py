@@ -233,7 +233,6 @@ class UserIdentityService:
                 session=session,
                 identity=mocked,
                 sub=user_info.sub,
-                identity_type=user_info.identity_type,
                 last_login_at=login_dt,
             )
             # Guard 1 already required a trusted assertion, so the confirm +
@@ -287,7 +286,6 @@ class UserIdentityService:
                     entity=UserIdentitiesEntity(
                         user_id=user.user_id,
                         subject_identifier=user_info.sub,
-                        identity_type=user_info.identity_type,
                         email_claim=email,
                         last_login_at=login_dt,
                     ),
@@ -351,7 +349,6 @@ class UserIdentityService:
         session: AsyncSession,
         identity: UserIdentitiesEntity,
         sub: str,
-        identity_type: str,
         last_login_at: datetime | None,
     ) -> UsersEntity:
         """
@@ -370,7 +367,6 @@ class UserIdentityService:
             identity.user_id,
         )
         identity.subject_identifier = sub
-        identity.identity_type = identity_type
         if last_login_at is not None:
             identity.last_login_at = last_login_at
         await self.user_identities_repository.upsert_identity(
@@ -493,7 +489,6 @@ class UserIdentityService:
             new_identity = UserIdentitiesEntity(
                 user_id=created_user.user_id,
                 subject_identifier=sub,
-                identity_type=user_info.identity_type,
                 email_claim=email,
                 last_login_at=last_login_at,
             )

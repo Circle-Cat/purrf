@@ -543,14 +543,12 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         internal = UserIdentitiesEntity(
             user_id=_USER_ID,
             subject_identifier="google-oauth2|internal",
-            identity_type="internal",
             email_claim="yuji@circlecat.org",
         )
         internal.identity_id = 5
         external_current = UserIdentitiesEntity(
             user_id=_USER_ID,
             subject_identifier=_CURRENT_SUB,
-            identity_type="external",
             # mixed case to prove case-insensitive linked_identity_count match
             email_claim="Alice@Gmail.com",
         )
@@ -587,7 +585,6 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         external = UserIdentitiesEntity(
             user_id=_USER_ID,
             subject_identifier="email|other",
-            identity_type="external",
             email_claim="alice@gmail.com",
         )
         external.identity_id = 9
@@ -608,14 +605,12 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         sso = UserIdentitiesEntity(
             user_id=_USER_ID,
             subject_identifier=_CURRENT_SUB,
-            identity_type="internal",
             email_claim="yuji@circlecat.org",
         )
         sso.identity_id = 2
         otp_corp = UserIdentitiesEntity(
             user_id=_USER_ID,
             subject_identifier="email|abc123",
-            identity_type="internal",
             email_claim="yuji@circlecat.org",
         )
         otp_corp.identity_id = 193
@@ -631,6 +626,44 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         # The session's own identity (the SSO sub) is still flagged, not dropped.
         self.assertTrue(ids[2].is_current_session)
         self.assertFalse(ids[193].is_current_session)
+
+    async def test_emails_view_splits_identities_by_email_claim_domain(self):
+        # The internal/external split is now driven purely by the identity's
+        # email_claim domain (is_company_email), not a stored identity_type
+        # column: a corp claim -> internal, a personal claim -> external, and
+        # a missing claim falls back to external (defensive; email_claim is
+        # code-guaranteed non-null in practice).
+        self.user_emails.list_by_user_id.return_value = []
+        corp = UserIdentitiesEntity(
+            user_id=_USER_ID,
+            subject_identifier="google-oauth2|corp",
+            email_claim="dev@circlecat.org",
+        )
+        corp.identity_id = 1
+        personal = UserIdentitiesEntity(
+            user_id=_USER_ID,
+            subject_identifier="google-oauth2|personal",
+            email_claim="alice@gmail.com",
+        )
+        personal.identity_id = 2
+        no_claim = UserIdentitiesEntity(
+            user_id=_USER_ID,
+            subject_identifier="email|no-claim",
+            email_claim=None,
+        )
+        no_claim.identity_id = 3
+        self.user_identities.list_by_user_id.return_value = [corp, personal, no_claim]
+
+        result = await self.service.list_emails_and_identities(
+            self.session, _USER_ID, _CURRENT_SUB
+        )
+
+        self.assertEqual(
+            {i.identity_id for i in result.internal_identities}, {1}
+        )
+        self.assertEqual(
+            {i.identity_id for i in result.external_identities}, {2, 3}
+        )
 
     async def test_emails_view_flags_corp_email_as_internal(self):
         added_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
@@ -852,13 +885,11 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         self,
         identity_id,
         subject_identifier,
-        identity_type="external",
         email_claim=None,
     ):
         row = UserIdentitiesEntity(
             user_id=_USER_ID,
             subject_identifier=subject_identifier,
-            identity_type=identity_type,
             email_claim=email_claim,
         )
         row.identity_id = identity_id
@@ -870,7 +901,7 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
 
     # initiate_unlink — step 1: validate, OTP the current primary, sign state
     async def test_initiate_unlink_sends_otp_to_primary_and_returns_state(self):
-        target = self._identity(7, "email|todelete", "external", "alice@gmail.com")
+        target = self._identity(7, "email|todelete", "alice@gmail.com")
         self._arrange_unlink(target)
         self.user_emails.get_primary.return_value = self._email_row(
             "old@example.com", is_primary=True
@@ -894,7 +925,7 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         self.auth0.start_passwordless.assert_not_called()
 
     async def test_initiate_unlink_rejects_unowned_identity(self):
-        target = self._identity(7, "email|todelete", "external", "x@x.com")
+        target = self._identity(7, "email|todelete", "x@x.com")
         target.user_id = 999
         self.user_identities.get_by_id.return_value = target
         with self.assertRaises(ValueError):
@@ -902,24 +933,43 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         self.auth0.start_passwordless.assert_not_called()
 
     async def test_initiate_unlink_rejects_current_session_identity(self):
-        target = self._identity(7, _CURRENT_SUB, "external", "x@x.com")
+        target = self._identity(7, _CURRENT_SUB, "x@x.com")
         self._arrange_unlink(target)
         with self.assertRaises(ConflictError):
             await self.service.initiate_unlink(self.session, _USER_ID, _CURRENT_SUB, 7)
         self.auth0.start_passwordless.assert_not_called()
 
     async def test_initiate_unlink_rejects_active_employee_internal(self):
-        target = self._identity(
-            7, "google-oauth2|corp", "internal", "yuji@circlecat.org"
-        )
+        target = self._identity(7, "google-oauth2|corp", "yuji@circlecat.org")
         self._arrange_unlink(target)
         self.users.exists_active_internal.return_value = True
         with self.assertRaises(PermissionError):
             await self.service.initiate_unlink(self.session, _USER_ID, _CURRENT_SUB, 7)
         self.auth0.start_passwordless.assert_not_called()
 
+    async def test_unlink_blocks_corp_claim_for_active_internal(self):
+        # The unlink guard is now driven by the identity's own email_claim
+        # domain (is_company_email), not a stored identity_type column.
+        target = self._identity(7, "google-oauth2|corp", "dev@circlecat.org")
+        self.users.exists_active_internal.return_value = True
+
+        with self.assertRaises(PermissionError):
+            await self.service._validate_unlinkable(
+                self.session, _USER_ID, _CURRENT_SUB, target
+            )
+
+    async def test_unlink_allows_personal_claim(self):
+        # A personal-domain claim never trips the active-employee guard,
+        # even for an active internal employee.
+        target = self._identity(7, "google-oauth2|personal", "alice@gmail.com")
+        self.users.exists_active_internal.return_value = True
+
+        await self.service._validate_unlinkable(
+            self.session, _USER_ID, _CURRENT_SUB, target
+        )
+
     async def test_initiate_unlink_rejects_when_no_primary(self):
-        target = self._identity(7, "email|todelete", "external", "alice@gmail.com")
+        target = self._identity(7, "email|todelete", "alice@gmail.com")
         self._arrange_unlink(target)
         self.user_emails.get_primary.return_value = None
         with self.assertRaises(ValueError):
@@ -935,7 +985,7 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         # usable). So the chain "step-up needs a primary -> primary can't be
         # removed -> primary always logs in" makes the old only-identity
         # refusal unreachable, and it is gone.
-        target = self._identity(7, "email|todelete", "external", "alice@gmail.com")
+        target = self._identity(7, "email|todelete", "alice@gmail.com")
         self.user_identities.get_by_id.return_value = target
         self.user_emails.get_primary.return_value = self._email_row(
             "old@example.com", is_primary=True
@@ -962,7 +1012,7 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
 
     # confirm_unlink — step 2: recheck primary + preconditions, verify OTP, unlink
     async def test_confirm_unlink_happy_path_detaches_and_deletes_identity(self):
-        target = self._identity(7, "email|todelete", "external", "alice@gmail.com")
+        target = self._identity(7, "email|todelete", "alice@gmail.com")
         self._arrange_unlink(target)
         self.user_emails.get_primary.return_value = self._email_row(
             "old@example.com", is_primary=True
@@ -983,7 +1033,7 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
     async def test_confirm_unlink_auth0_delete_failure_aborts_before_commit(self):
         # The Auth0 user delete happens before the commit so a failure rolls
         # the whole unlink back instead of leaving an orphan Auth0 user.
-        target = self._identity(7, "email|todelete", "external", "alice@gmail.com")
+        target = self._identity(7, "email|todelete", "alice@gmail.com")
         self._arrange_unlink(target)
         self.user_emails.get_primary.return_value = self._email_row(
             "old@example.com", is_primary=True
@@ -1050,9 +1100,7 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
 
     async def test_confirm_unlink_revalidates_active_employee_after_initiate(self):
         # TOCTOU: the user became an active employee; the corp sign-in is locked.
-        target = self._identity(
-            7, "google-oauth2|corp", "internal", "yuji@circlecat.org"
-        )
+        target = self._identity(7, "google-oauth2|corp", "yuji@circlecat.org")
         self._arrange_unlink(target)
         self.user_emails.get_primary.return_value = self._email_row(
             "old@example.com", is_primary=True
@@ -1085,7 +1133,7 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         # Unlink is decoupled from user_emails entirely now: an address left
         # unreferenced by any surviving identity is still not inspected or
         # deleted — it leaves the account only via remove_email.
-        target = self._identity(7, "email|todelete", "external", "alice@gmail.com")
+        target = self._identity(7, "email|todelete", "alice@gmail.com")
         self._arrange_unlink(target)
         self.user_emails.get_primary.return_value = self._email_row(
             "old@example.com", is_primary=True
@@ -1102,7 +1150,7 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
     async def test_confirm_unlink_leaves_contact_email_row_untouched_when_referenced_by_other_identity(
         self,
     ):
-        target = self._identity(7, "email|todelete", "external", "alice@gmail.com")
+        target = self._identity(7, "email|todelete", "alice@gmail.com")
         # Another identity still claims the same address (case-insensitive) —
         # irrelevant now, since unlink never looks at user_emails at all.
         self._arrange_unlink(target)
@@ -1119,7 +1167,7 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         self.user_emails.get_by_user_and_email.assert_not_awaited()
 
     async def test_confirm_unlink_leaves_primary_contact_email_untouched(self):
-        target = self._identity(7, "email|todelete", "external", "alice@gmail.com")
+        target = self._identity(7, "email|todelete", "alice@gmail.com")
         self._arrange_unlink(target)
         self.user_emails.get_primary.return_value = self._email_row(
             "old@example.com", is_primary=True

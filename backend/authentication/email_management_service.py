@@ -21,7 +21,6 @@ import jwt
 from backend.common.constants import is_company_email
 from backend.common.environment_constants import EMAIL_OTP_STATE_JWT_SECRET
 from backend.common.exceptions import ConflictError
-from backend.common.identity_type import IdentityType
 from backend.dto.emails_view_dto import (
     EmailEntryDto,
     EmailsViewDto,
@@ -282,9 +281,9 @@ class EmailManagementService:
             if identity.email_claim is not None:
                 key = identity.email_claim.lower()
                 claim_counts[key] = claim_counts.get(key, 0) + 1
-            if IdentityType.INTERNAL == identity.identity_type:
+            if is_company_email(identity.email_claim or ""):
                 internal_identities.append(self._to_identity_dto(identity, current_sub))
-            elif IdentityType.EXTERNAL == identity.identity_type:
+            else:
                 external_identities.append(self._to_identity_dto(identity, current_sub))
 
         email_views = [
@@ -569,9 +568,8 @@ class EmailManagementService:
                 "log in with another method first"
             )
 
-        if (
-            IdentityType.INTERNAL == identity.identity_type
-            and await self._users.exists_active_internal(session, current_user_id)
+        if is_company_email(identity.email_claim or "") and await self._users.exists_active_internal(
+            session, current_user_id
         ):
             raise PermissionError("Active employees cannot remove corp sign-in")
 
