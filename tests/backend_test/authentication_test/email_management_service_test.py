@@ -660,6 +660,39 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(by_email["dev@circlecat.org"])
         self.assertFalse(by_email["alice@gmail.com"])
 
+    async def test_emails_view_exposes_last_login_at(self):
+        """Each row's per-method last_login_at (Task 1's column) passes
+        through into the view untouched, including a never-logged-in None."""
+        added_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        stamped_at = datetime(2026, 7, 20, tzinfo=timezone.utc)
+        self.user_emails.list_by_user_id.return_value = [
+            MagicMock(
+                email_id=1,
+                email="dev@circlecat.org",
+                otp_confirmed=True,
+                is_primary=True,
+                added_at=added_at,
+                last_login_at=stamped_at,
+            ),
+            MagicMock(
+                email_id=2,
+                email="alice@gmail.com",
+                otp_confirmed=True,
+                is_primary=False,
+                added_at=added_at,
+                last_login_at=None,
+            ),
+        ]
+        self.user_identities.list_by_user_id.return_value = []
+
+        view = await self.service.list_emails_and_identities(
+            self.session, current_user_id=_USER_ID, current_sub=_CURRENT_SUB
+        )
+
+        by_id = {e.email_id: e.last_login_at for e in view.emails}
+        self.assertEqual(by_id[1], stamped_at)
+        self.assertIsNone(by_id[2])
+
     # initiate_set_primary — step 1: validate target, OTP the current primary
     async def test_initiate_set_primary_sends_otp_to_current_primary(self):
         self.user_emails.get_by_id.return_value = self._email_row(

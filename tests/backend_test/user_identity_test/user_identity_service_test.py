@@ -351,6 +351,26 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
         )
         self.identities_repo.upsert_identity.assert_not_awaited()
 
+    async def test_swap_passwordless_stamps_confirmed_email_last_login(self):
+        """Row-less passwordless swap: after confirming the claim, THAT
+        email row is stamped with the login's last_login_at."""
+        self._arrange_swap_hit()
+        row = MagicMock(
+            spec=UserEmailsEntity, otp_confirmed=False, is_primary=False, email_id=55
+        )
+        self.emails_repo.get_by_user_and_email.return_value = row
+        self.emails_repo.has_primary.return_value = False
+        self.emails_repo.upsert_email.return_value = row
+
+        await self.service.create_or_swap_user(
+            self.session,
+            self._swap_passwordless_user_info(),  # email|xyz, external
+        )
+
+        self.emails_repo.update_last_login.assert_awaited_once_with(
+            session=self.session, email_id=55, login_dt=self.iat_dt
+        )
+
     async def test_swap_google_still_overwrites_and_keeps_row(self):
         """Google swap is NOT row-less: overwrite the placeholder with the real
         sub (row kept), and never delete it — regression guard."""
@@ -1039,6 +1059,92 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
 
         self.assertIs(result, created)
         self.assertEqual(user_info.user_id, 66)
+
+    # per-method last_login_at: passwordless stamps user_emails, google
+    # stamps user_identities only — no cross-update either way.
+    async def test_passwordless_routing_stamps_email_last_login(self):
+        """A row-less passwordless login resolving to a confirmed email stamps
+        THAT email's last_login_at; no identity row is touched."""
+        user_info = UserContextDto(
+            sub="email|xyz",
+            primary_email="Owner@Example.com",
+            identity_type=IdentityType.EXTERNAL,
+            last_login_at=self.iat,
+            email_verified=True,
+        )
+        self.identities_repo.find_swappable_by_email.return_value = None
+        self.emails_repo.get_confirmed_by_email.return_value = MagicMock(
+            spec=UserEmailsEntity, user_id=10, email_id=7, otp_confirmed=True
+        )
+        self.users_repo.get_user_by_user_id.return_value = self.user
+
+        await self.service.create_or_swap_user(self.session, user_info)
+
+        self.emails_repo.update_last_login.assert_awaited_once_with(
+            session=self.session, email_id=7, login_dt=self.iat_dt
+        )
+        self.identities_repo.upsert_identity.assert_not_awaited()
+
+    async def test_google_routing_does_not_stamp_email(self):
+        """A google login routing via a confirmed email updates its identity
+        row, NOT the email row (no cross-update)."""
+        user_info = UserContextDto(
+            sub="google-oauth2|abc",
+            primary_email="Owner@Example.com",
+            identity_type=IdentityType.EXTERNAL,
+            last_login_at=self.iat,
+            email_verified=True,
+        )
+        self.identities_repo.find_swappable_by_email.return_value = None
+        self.emails_repo.get_confirmed_by_email.return_value = MagicMock(
+            spec=UserEmailsEntity, user_id=10, email_id=7, otp_confirmed=True
+        )
+        self.users_repo.get_user_by_user_id.return_value = self.user
+
+        await self.service.create_or_swap_user(self.session, user_info)
+
+        self.emails_repo.update_last_login.assert_not_awaited()
+        self.identities_repo.upsert_identity.assert_awaited_once()
+
+    async def test_passwordless_first_login_seeds_email_last_login(self):
+        """Row-less passwordless first login: the seeded user_emails row
+        carries last_login_at from the login itself."""
+        user_info = UserContextDto(
+            sub="email|xyz",
+            primary_email="Carol@Example.com",
+            identity_type=IdentityType.EXTERNAL,
+            last_login_at=self.fresh_iat,
+            email_verified=True,
+        )
+        self.identities_repo.find_swappable_by_email.return_value = None
+        self.emails_repo.get_confirmed_by_email.return_value = None
+        created = MagicMock(spec=UsersEntity, user_id=99)
+        self.users_repo.upsert_users.return_value = created
+
+        await self.service.create_or_swap_user(self.session, user_info)
+
+        row = self.emails_repo.upsert_email.call_args.kwargs["entity"]
+        self.assertEqual(row.last_login_at, self.fresh_iat_dt)
+
+    async def test_google_first_login_leaves_email_last_login_null(self):
+        """Google (identity-routed) first login: the seeded user_emails row
+        leaves last_login_at unset — google stamps its identity row instead."""
+        user_info = UserContextDto(
+            sub="google-oauth2|abc",
+            primary_email="Dave@Example.com",
+            identity_type=IdentityType.EXTERNAL,
+            last_login_at=self.fresh_iat,
+            email_verified=True,
+        )
+        self.identities_repo.find_swappable_by_email.return_value = None
+        self.emails_repo.get_confirmed_by_email.return_value = None
+        created = MagicMock(spec=UsersEntity, user_id=99)
+        self.users_repo.upsert_users.return_value = created
+
+        await self.service.create_or_swap_user(self.session, user_info)
+
+        row = self.emails_repo.upsert_email.call_args.kwargs["entity"]
+        self.assertIsNone(row.last_login_at)
 
     # _iat_as_datetime helper
     async def test_iat_as_datetime_none(self):
