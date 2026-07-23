@@ -202,9 +202,11 @@ class TestGmailClient(TestCase):
         self.assertEqual(kwargs["refresh_token"], TEST_REFRESH_TOKEN)
         self.assertEqual(kwargs["client_id"], TEST_CLIENT_ID)
         self.assertEqual(kwargs["client_secret"], TEST_CLIENT_SECRET)
-        # google-auth needs the token endpoint and scopes to refresh on its own.
+        # google-auth needs the token endpoint to refresh on its own.
         self.assertTrue(kwargs["token_uri"])
-        self.assertTrue(kwargs["scopes"])
+        # Scopes must NOT be sent on a refresh-token grant: Google rejects any
+        # scope that is not a subset of what the token was granted.
+        self.assertNotIn("scopes", kwargs)
 
     # ---- get_thread ---------------------------------------------------
 
