@@ -296,7 +296,7 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
     async def test_verify_confirms_without_creating_sign_in_identity(self):
         """Normal-mode verify only confirms the address; it must not create a
         user_identities row for the OTP's email| sub — the confirmed address
-        is already a valid passwordless login identifier via routing (PR1),
+        is already a valid passwordless login identifier via routing,
         and the OTP's Auth0 user stays inert (verify-to-sign-in retired)."""
         result = await self.service.verify(
             self.session, _USER_ID, _CURRENT_SUB, _state(), "123456"

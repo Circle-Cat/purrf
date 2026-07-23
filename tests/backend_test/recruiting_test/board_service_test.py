@@ -587,9 +587,9 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
 
     async def test_get_application_detail_succeeds_for_current_stage_assignee(self):
         """A caller who is the current-stage assignee (but not an owner) can
-        still read the detail view — needed once PR 3 merges the owner's
-        board dialog and the assignee's evaluation view into one shared
-        page served by this same read endpoint."""
+        still read the detail view — the owner's board dialog and the
+        assignee's evaluation view are one shared page served by this same
+        read endpoint."""
         job = self._job(job_id=1, owner_ids=(9,))
         application = self._application(
             application_id=10,

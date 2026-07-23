@@ -9,7 +9,7 @@ class ApplicationSubmissionEntity(Base):
     """An append-only submission version for an application.
 
     While the application is Applied the current version is overwritten in
-    place; freezing (sub-project #2) or re-applying after a rejection mints a
+    place; freezing or re-applying after a rejection mints a
     new version, so prior versions survive for a later diff.
     """
 

@@ -10,7 +10,7 @@ class ApplicationAssignmentEntity(Base):
 
     One active row per (application_id, stage, round) — reassigning
     overwrites the row rather than appending history; the outgoing
-    assignee's `evaluation` row (sub-project #3 slice 1) survives
+    assignee's `evaluation` row survives
     independently, keyed by its own evaluator_id.
     """
 

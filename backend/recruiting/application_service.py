@@ -60,7 +60,7 @@ class ApplicationService:
                 notifies the materialized default assignee here.
             profile_writeback (callable | None): ``async (session, user_id, dto)``
                 invoked best-effort when save_to_profile is set. Defaults to a
-                no-op (wired in a later task).
+                no-op.
         """
         self.application_repository = application_repository
         self.application_submission_repository = application_submission_repository
