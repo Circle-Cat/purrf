@@ -108,6 +108,8 @@ py_test(
     name = "board_service_test",
     srcs = ["board_service_test.py"],
     deps = [
+        "//backend/common:communication_enums",
+        "//backend/common:permissions",
         "//backend/common:recruiting_enums",
         "//backend/dto",
         "//backend/entity:entities",

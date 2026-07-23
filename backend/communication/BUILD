@@ -7,5 +7,6 @@ py_library(
     srcs = glob(["*.py"]),
     deps = [
         "//backend/common:communication_enums",
+        "//backend/dto",
     ],
 )
