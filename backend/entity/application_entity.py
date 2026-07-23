@@ -63,7 +63,7 @@ class ApplicationEntity(Base):
         server_default=ApplicationStage.APPLIED.value,
         nullable=False,
     )
-    # Card sub-status within a stage; reserved here, exercised by sub-project #2.
+    # Card sub-status within a stage.
     sub_status: Mapped[str | None] = mapped_column(String)
     # Which round of the current stage the applicant is on (1-indexed).
     # Resets to 1 on every stage change; advanced only via an explicit owner

@@ -1,4 +1,4 @@
-"""Read-side admin service for the permission system (PR1).
+"""Read-side admin service for the permission system.
 
 Orchestrates UsersRepository and UserPermissionsRepository to back the
 read-only /admin endpoints. The permission catalog is the code enum; any

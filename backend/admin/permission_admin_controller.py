@@ -1,4 +1,4 @@
-"""Admin permission routes (read-only, PR1), mounted under /api/admin.
+"""Admin permission routes (read-only), mounted under /api/admin.
 
 All routes are gated by Permission.PERMISSION_MANAGE. The caller is resolved by
 AuthMiddleware; handlers read the request context and do not re-authenticate.

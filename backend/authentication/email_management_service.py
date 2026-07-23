@@ -197,7 +197,7 @@ class EmailManagementService:
 
         Only confirms the address as a Purrf contact; it does not create a
         ``user_identities`` row for the OTP's passwordless ``email|`` sub.
-        That row would be redundant: since PR1, any OTP-confirmed address
+        That row would be redundant: any OTP-confirmed address
         already works as a passwordless login identifier through routing in
         ``UserIdentityService.create_or_swap_user``, so no separate sign-in
         identity is needed to make it usable. The OTP's Auth0 ``email|`` user
