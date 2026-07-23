@@ -17,7 +17,12 @@ from backend.dto.board_dto import (
 from backend.dto.user_context_dto import UserContextDto
 from backend.common.communication_enums import ContextType
 from backend.common.permissions import Permission
-from backend.dto.email_dto import EmailConversationDto, EmailSendRequestDto
+from backend.dto.email_dto import (
+    EmailConversationDto,
+    EmailMessageDto,
+    EmailSendRequestDto,
+    EmailThreadDto,
+)
 from backend.entity.application_assignment_entity import ApplicationAssignmentEntity
 from backend.entity.application_entity import ApplicationEntity
 from backend.entity.application_submission_entity import ApplicationSubmissionEntity
@@ -196,6 +201,17 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             to=list(to), cc=list(cc), subject=subject, body=body, thread_id=thread_id
         )
 
+    def _caller(self, user_id=3):
+        """A UserContextDto for the recruiter making the call."""
+        return self._ctx(user_id=user_id)
+
+    def _email_service(self):
+        """The already-constructed BoardService plus its email-related mocks."""
+        return self.service, SimpleNamespace(
+            email_conversation_service=self.email_svc,
+            user_emails_repository=self.user_emails_repo,
+        )
+
     def _setup_owned_application(
         self, application_id=7, job_id=100, user_id=5, owner=2
     ):
@@ -305,6 +321,56 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
                 self.session, ctx, 7, self._email_dto()
             )
         self.email_svc.send.assert_not_awaited()
+
+    async def test_conversation_default_cc_is_recruiter_only_for_new(self):
+        service, mocks = self._email_service()
+        mocks.email_conversation_service.list_conversation = AsyncMock(return_value=[])
+        # candidate contact = candidate@x ; recruiter (caller 3) contact = rec@x
+        mocks.user_emails_repository.get_contact_email = AsyncMock(
+            side_effect=lambda s, uid: "candidate@x" if uid == 42 else "rec@x"
+        )
+        mocks.email_conversation_service.sender_address = "recruiting@corp.com"
+        result = await service._build_application_conversation(
+            self.session, self._caller(user_id=3), application_id=7, user_id=42
+        )
+        self.assertEqual(result.default_cc, ["rec@x"])
+        self.assertEqual(result.default_to, "candidate@x")
+
+    async def test_thread_default_cc_unions_recruiter_and_history(self):
+        service, mocks = self._email_service()
+        thread = EmailThreadDto(
+            thread_id=10,
+            subject="S",
+            synced_at=None,
+            created_at=datetime.now(timezone.utc),
+            messages=[
+                EmailMessageDto(
+                    message_id=1,
+                    direction="outbound",
+                    cc_addresses="Boss <boss@x>, candidate@x",
+                    created_at=datetime.now(timezone.utc),
+                ),
+                EmailMessageDto(
+                    message_id=2,
+                    direction="inbound",
+                    cc_addresses="BOSS@x, ally@x, recruiting@corp.com",
+                    created_at=datetime.now(timezone.utc),
+                ),
+            ],
+        )
+        mocks.email_conversation_service.list_conversation = AsyncMock(
+            return_value=[thread]
+        )
+        mocks.user_emails_repository.get_contact_email = AsyncMock(
+            side_effect=lambda s, uid: "candidate@x" if uid == 42 else "rec@x"
+        )
+        mocks.email_conversation_service.sender_address = "recruiting@corp.com"
+        result = await service._build_application_conversation(
+            self.session, self._caller(user_id=3), application_id=7, user_id=42
+        )
+        # recruiter first; boss deduped case-insensitively; candidate (To) and
+        # company sender excluded; order preserved.
+        self.assertEqual(result.threads[0].default_cc, ["rec@x", "boss@x", "ally@x"])
 
     def _assignment(self, application_id, stage, round, assignee_id, assigned_by=2):
         return ApplicationAssignmentEntity(
