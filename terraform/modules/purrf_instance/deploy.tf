@@ -46,13 +46,22 @@ resource "kubernetes_secret" "purrf_app" {
     AUTH0_TENANT_DOMAIN              = data.auth0_tenant.current.domain
     AUTH0_PASSWORDLESS_CLIENT_ID     = auth0_client.purrf_auth0.client_id
     AUTH0_PASSWORDLESS_CLIENT_SECRET = auth0_client_credentials.purrf_auth0.client_secret
-    AUTH0_M2M_CLIENT_ID              = auth0_client.link_action_m2m.client_id
-    AUTH0_M2M_CLIENT_SECRET          = auth0_client_credentials.link_action_m2m.client_secret
+    AUTH0_M2M_CLIENT_ID              = auth0_client.backend_management_m2m.client_id
+    AUTH0_M2M_CLIENT_SECRET          = auth0_client_credentials.backend_management_m2m.client_secret
     AUTH0_M2M_AUDIENCE               = "https://${data.auth0_tenant.current.domain}/api/v2/"
 
     # App-internal HMAC secret signing the OTP state JWT (CSRF guard); generated
     # here, not an Auth0 value.
     EMAIL_OTP_STATE_JWT_SECRET = random_password.email_otp_state_secret.result
+
+    # Gmail API integration for recruiting candidate emails. Client credentials
+    # come from the purrf-auth GCP project; the refresh token is minted once via
+    # interactive consent (not Terraform-managed). test/staging point at a test
+    # mailbox, prod at the real sender -- all four supplied per-env via TF_VAR.
+    GMAIL_CLIENT_ID      = var.gmail_client_id
+    GMAIL_CLIENT_SECRET  = var.gmail_client_secret
+    GMAIL_REFRESH_TOKEN  = var.gmail_refresh_token
+    GMAIL_SENDER_ADDRESS = var.gmail_sender_address
   }
 }
 
@@ -62,57 +71,6 @@ resource "kubernetes_secret" "purrf_app" {
 resource "random_password" "email_otp_state_secret" {
   length  = 64
   special = false
-}
-
-# Deployed by Terraform only when this environment is not managed by ArgoCD.
-# The test environment sets deploy_via_helm = false (Argo owns its release).
-moved {
-  from = helm_release.purrf_app
-  to   = helm_release.purrf_app[0]
-}
-
-resource "helm_release" "purrf_app" {
-  count            = var.deploy_via_helm ? 1 : 0
-  name             = local.name_prefix
-  chart            = "${path.module}/../../../helm/purrf"
-  namespace        = local.name_prefix
-  create_namespace = true
-  atomic           = true
-  cleanup_on_fail  = true
-  timeout          = 300
-  depends_on       = [kubernetes_secret.purrf_app]
-  values = [
-    yamlencode({
-
-      fullnameOverride = local.name_prefix
-
-      image = {
-        repository = "us-docker.pkg.dev/k8s-dev-437501/purrf/purrf"
-        tag        = var.image_tag
-      }
-      envFrom = [
-        {
-          secretRef = { name = local.name_prefix }
-        }
-      ]
-
-      ingress = {
-        enabled   = true
-        className = var.ingress_class_name
-        hosts = [
-          {
-            host = local.domains.api
-            paths = [
-              {
-                path     = "/"
-                pathType = "Prefix"
-              }
-            ]
-          }
-        ]
-      }
-    })
-  ]
 }
 
 resource "google_service_account_iam_member" "purrf_service_wi" {
