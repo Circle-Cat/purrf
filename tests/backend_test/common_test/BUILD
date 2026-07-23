@@ -59,6 +59,7 @@ py_test(
         "//backend/common:exceptions",
         "//backend/common:gmail_client",
         "@pypi//google_api_python_client",
+        "@pypi//google_auth",
     ],
 )
 
