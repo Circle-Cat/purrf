@@ -10,7 +10,7 @@ image:
   # [skip ci]); the purrf-test ArgoCD Application syncs it. The "main" value
   # here is just the bootstrap before the first deploy-test run pins a SHA.
   repository: ghcr.io/circle-cat/purrf
-  tag: "e90149825e03221a1641110b34930635a6faf89a"
+  tag: "ac8c59edf4713025d8a629e5236fb41e96750024"
 envFrom:
   - secretRef:
       name: purrf-test
