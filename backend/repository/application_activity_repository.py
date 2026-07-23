@@ -13,6 +13,7 @@ class ApplicationActivityRepository:
         actor_id: int,
         event_type: str,
         details: dict | None = None,
+        created_at=None,
     ) -> ApplicationActivityEntity:
         """Append one audit entry to an application's timeline.
 
@@ -23,6 +24,10 @@ class ApplicationActivityRepository:
             event_type (str): One of the fixed event-type strings used by
                 the callers in ``application_service.py``/``board_service.py``.
             details (dict | None): Event-specific payload; defaults to ``{}``.
+            created_at (datetime | None): Real-world event time. When provided
+                (e.g. a synced reply's receive time) it is stored verbatim so
+                the timeline sorts by when the event actually happened; when
+                ``None`` the server ``now()`` default applies.
 
         Returns:
             ApplicationActivityEntity: The created row.
@@ -33,6 +38,8 @@ class ApplicationActivityRepository:
             event_type=event_type,
             details=details or {},
         )
+        if created_at is not None:
+            entity.created_at = created_at
         session.add(entity)
         await session.flush()
         return entity
