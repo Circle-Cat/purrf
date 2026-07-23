@@ -12,6 +12,9 @@ import { Check, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import DOMPurify from "dompurify";
 import {
   Select,
   SelectContent,
@@ -65,6 +68,8 @@ import {
   reassignApplication,
   submitEvaluation,
   postComment,
+  getApplicationEmails,
+  sendApplicationEmail,
   resumeUrl,
 } from "@/api/recruitingApi";
 import {
@@ -577,6 +582,219 @@ const CommentsPanel = ({ comments, onPost, posting, mentionableUsers }) => {
   );
 };
 
+const EMAIL_DIRECTION_LABELS = { outbound: "Sent", inbound: "Received" };
+
+const splitAddresses = (value) =>
+  value
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+/**
+ * Turn the composer's plain text into safe HTML (escape, keep line breaks).
+ * The body is stored/sent as HTML; authoring stays plain text for the MVP.
+ */
+const plainTextToHtml = (text) =>
+  text
+    .split("\n")
+    .map((line) =>
+      line.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"),
+    )
+    .join("<br>");
+
+const EmailMessageBubble = ({ message }) => {
+  const html =
+    message.bodyHtml != null && message.bodyHtml !== ""
+      ? DOMPurify.sanitize(message.bodyHtml)
+      : null;
+  const when = message.gmailInternalDate ?? message.createdAt;
+  return (
+    <li className="rounded border p-2 text-sm">
+      <div className="mb-1 text-slate-500">
+        <span className="font-medium text-slate-700">
+          {EMAIL_DIRECTION_LABELS[message.direction] ?? message.direction}
+        </span>{" "}
+        · {message.fromAddress}
+        {when ? ` · ${new Date(when).toLocaleString()}` : ""}
+      </div>
+      {html != null ? (
+        <div
+          className="max-w-none text-slate-700"
+          dangerouslySetInnerHTML={{ __html: html }}
+        />
+      ) : (
+        <p className="whitespace-pre-wrap text-slate-700">
+          {message.bodyText ?? ""}
+        </p>
+      )}
+    </li>
+  );
+};
+
+const EmailsPanel = ({
+  conversation,
+  canSend,
+  onCompose,
+  onReply,
+  onRefresh,
+  refreshing,
+}) => {
+  const threads = conversation?.threads ?? [];
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2">
+        {canSend && (
+          <Button type="button" size="sm" onClick={onCompose}>
+            Send email
+          </Button>
+        )}
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={onRefresh}
+          disabled={refreshing}
+        >
+          Refresh
+        </Button>
+      </div>
+      {threads.length === 0 ? (
+        <p className="text-sm text-slate-400">No emails yet.</p>
+      ) : (
+        <ul className="space-y-4">
+          {threads.map((thread) => (
+            <li key={thread.threadId} className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-slate-700">
+                  {thread.subject || "(no subject)"}
+                </span>
+                {canSend && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => onReply(thread)}
+                  >
+                    Reply
+                  </Button>
+                )}
+              </div>
+              <ul className="space-y-2">
+                {thread.messages.map((message) => (
+                  <EmailMessageBubble
+                    key={message.messageId}
+                    message={message}
+                  />
+                ))}
+              </ul>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+};
+
+const ComposeEmailDialog = ({
+  open,
+  onOpenChange,
+  defaultTo,
+  replyThread,
+  onSend,
+  sending,
+}) => {
+  const [to, setTo] = useState("");
+  const [cc, setCc] = useState("");
+  const [subject, setSubject] = useState("");
+  const [body, setBody] = useState("");
+
+  useEffect(() => {
+    if (!open) return;
+    setTo(defaultTo ?? "");
+    setCc("");
+    const base = replyThread?.subject ?? "";
+    setSubject(
+      replyThread ? (base.startsWith("Re:") ? base : `Re: ${base}`) : "",
+    );
+    setBody("");
+  }, [open, defaultTo, replyThread]);
+
+  const handleSubmit = () => {
+    if (sending) return;
+    const recipients = splitAddresses(to);
+    if (recipients.length === 0 || !subject.trim() || !body.trim()) return;
+    onSend({
+      to: recipients,
+      cc: splitAddresses(cc),
+      subject: subject.trim(),
+      body: plainTextToHtml(body),
+      threadId: replyThread?.threadId ?? null,
+    }).then(
+      () => onOpenChange(false),
+      () => {},
+    );
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{replyThread ? "Reply" : "Send email"}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="space-y-1">
+            <Label htmlFor="email-to">To</Label>
+            <Input
+              id="email-to"
+              value={to}
+              onChange={(e) => setTo(e.target.value)}
+              placeholder="candidate@example.com"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="email-cc">Cc</Label>
+            <Input
+              id="email-cc"
+              value={cc}
+              onChange={(e) => setCc(e.target.value)}
+              placeholder="Comma-separated (optional)"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="email-subject">Subject</Label>
+            <Input
+              id="email-subject"
+              value={subject}
+              onChange={(e) => setSubject(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="email-body">Message</Label>
+            <Textarea
+              id="email-body"
+              value={body}
+              onChange={(e) => setBody(e.target.value)}
+              rows={8}
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+          >
+            Cancel
+          </Button>
+          <Button type="button" onClick={handleSubmit} disabled={sending}>
+            Send
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
 /**
  * A candidate's other applications, for the cross-posting aggregation view.
  * Renders nothing when there are none. Each row expands in place — no
@@ -817,6 +1035,12 @@ const ApplicationDetailPage = () => {
   const [postingComment, setPostingComment] = useState(false);
   const [mentionableUsers, setMentionableUsers] = useState([]);
 
+  const [emails, setEmails] = useState({ threads: [], defaultTo: null });
+  const [sendingEmail, setSendingEmail] = useState(false);
+  const [refreshingEmails, setRefreshingEmails] = useState(false);
+  const [composeOpen, setComposeOpen] = useState(false);
+  const [replyThread, setReplyThread] = useState(null);
+
   const load = useCallback(() => {
     if (applicationId == null) return;
     setLoadError(false);
@@ -838,15 +1062,18 @@ const ApplicationDetailPage = () => {
             { data: pool },
             { data: activityRows },
             otherApplicationsRes,
+            { data: emailData },
           ] = await Promise.all([
             getJob(detailData.application.jobId),
             listInterviewPool(),
             getApplicationActivity(applicationId),
             getOtherApplications(applicationId),
+            getApplicationEmails(applicationId),
           ]);
           setJob(jobData);
           setInterviewPool(pool ?? []);
           setActivity(activityRows ?? []);
+          setEmails(emailData ?? { threads: [], defaultTo: null });
           const aggregate = otherApplicationsRes?.data ?? {};
           setOtherApplications(aggregate.otherJobs ?? []);
           setPreviousApplications(aggregate.previousSameJob ?? []);
@@ -1231,6 +1458,43 @@ const ApplicationDetailPage = () => {
       .finally(() => setPostingComment(false));
   };
 
+  const handleSendEmail = (payload) => {
+    if (sendingEmail) return Promise.resolve();
+    setSendingEmail(true);
+    return sendApplicationEmail(applicationId, payload)
+      .then(({ data }) => {
+        setEmails(data);
+        toast.success("Email sent.");
+      })
+      .catch((e) => {
+        toast.error(e.message);
+        throw e;
+      })
+      .finally(() => setSendingEmail(false));
+  };
+
+  const handleRefreshEmails = () => {
+    if (refreshingEmails) return;
+    setRefreshingEmails(true);
+    getApplicationEmails(applicationId, { refresh: true })
+      .then(({ data }) => {
+        setEmails(data);
+        toast.success("Refreshed.");
+      })
+      .catch((e) => toast.error(e.message))
+      .finally(() => setRefreshingEmails(false));
+  };
+
+  const openCompose = () => {
+    setReplyThread(null);
+    setComposeOpen(true);
+  };
+
+  const openReply = (thread) => {
+    setReplyThread(thread);
+    setComposeOpen(true);
+  };
+
   if (!loaded || !detail) {
     return (
       <LoadGate
@@ -1380,6 +1644,7 @@ const ApplicationDetailPage = () => {
                   <TabsTrigger value="evaluations">Evaluations</TabsTrigger>
                   <TabsTrigger value="timeline">Timeline</TabsTrigger>
                   <TabsTrigger value="comments">Comments</TabsTrigger>
+                  <TabsTrigger value="emails">Emails</TabsTrigger>
                 </TabsList>
                 <TabsContent value="evaluations">
                   <EvaluationSummary
@@ -1396,6 +1661,24 @@ const ApplicationDetailPage = () => {
                     onPost={handlePostComment}
                     posting={postingComment}
                     mentionableUsers={mentionableUsers}
+                  />
+                </TabsContent>
+                <TabsContent value="emails">
+                  <EmailsPanel
+                    conversation={emails}
+                    canSend={detail.isOwner}
+                    onCompose={openCompose}
+                    onReply={openReply}
+                    onRefresh={handleRefreshEmails}
+                    refreshing={refreshingEmails}
+                  />
+                  <ComposeEmailDialog
+                    open={composeOpen}
+                    onOpenChange={setComposeOpen}
+                    defaultTo={emails.defaultTo}
+                    replyThread={replyThread}
+                    onSend={handleSendEmail}
+                    sending={sendingEmail}
                   />
                 </TabsContent>
               </Tabs>

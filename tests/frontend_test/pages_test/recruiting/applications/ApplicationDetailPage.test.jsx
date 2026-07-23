@@ -182,6 +182,12 @@ beforeEach(() => {
   api.getOtherApplications.mockResolvedValue({
     data: { otherJobs: [], previousSameJob: [] },
   });
+  api.getApplicationEmails.mockResolvedValue({
+    data: { threads: [], defaultTo: null },
+  });
+  api.sendApplicationEmail.mockResolvedValue({
+    data: { threads: [], defaultTo: null },
+  });
 });
 
 /** Render the page at the detail route for a given application id. */
@@ -2993,5 +2999,100 @@ describe("ApplicationDetailPage — evaluator candidate history", () => {
       screen.queryByText("Previous applications for this posting"),
     ).not.toBeInTheDocument();
     expect(screen.queryByText("Other applications")).not.toBeInTheDocument();
+  });
+});
+
+describe("ApplicationDetailPage — Emails tab", () => {
+  const ownerViewing = () => {
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true }),
+    });
+  };
+
+  it("owner sees the Emails tab and stored threads render", async () => {
+    ownerViewing();
+    api.getApplicationEmails.mockResolvedValue({
+      data: {
+        defaultTo: "cand@x.com",
+        threads: [
+          {
+            threadId: 1,
+            subject: "Interview Availability",
+            messages: [
+              {
+                messageId: 11,
+                direction: "outbound",
+                fromAddress: "recruiting@circlecat.org",
+                bodyHtml: "<p>Hello there</p>",
+                bodyText: "Hello there",
+                createdAt: "2026-07-23T00:00:00Z",
+              },
+            ],
+          },
+        ],
+      },
+    });
+    const user = userEvent.setup();
+    renderPage();
+    await waitLoaded();
+    await user.click(screen.getByRole("tab", { name: "Emails" }));
+    expect(screen.getByText("Interview Availability")).toBeInTheDocument();
+    expect(screen.getByText("Hello there")).toBeInTheDocument();
+  });
+
+  it("owner composes and sends a new email", async () => {
+    ownerViewing();
+    api.getApplicationEmails.mockResolvedValue({
+      data: { threads: [], defaultTo: "cand@x.com" },
+    });
+    const user = userEvent.setup();
+    renderPage();
+    await waitLoaded();
+    await user.click(screen.getByRole("tab", { name: "Emails" }));
+    await user.click(screen.getByRole("button", { name: "Send email" }));
+    await user.type(screen.getByLabelText("Subject"), "Hi there");
+    await user.type(screen.getByLabelText("Message"), "welcome");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() =>
+      expect(api.sendApplicationEmail).toHaveBeenCalledWith("101", {
+        to: ["cand@x.com"],
+        cc: [],
+        subject: "Hi there",
+        body: "welcome",
+        threadId: null,
+      }),
+    );
+    expect(toast.success).toHaveBeenCalledWith("Email sent.");
+  });
+
+  it("Refresh re-fetches with refresh=true", async () => {
+    ownerViewing();
+    const user = userEvent.setup();
+    renderPage();
+    await waitLoaded();
+    await user.click(screen.getByRole("tab", { name: "Emails" }));
+    api.getApplicationEmails.mockClear();
+    await user.click(screen.getByRole("button", { name: "Refresh" }));
+    await waitFor(() =>
+      expect(api.getApplicationEmails).toHaveBeenCalledWith("101", {
+        refresh: true,
+      }),
+    );
+    expect(toast.success).toHaveBeenCalledWith("Refreshed.");
+  });
+
+  it("read.all viewer who is not an owner sees no compose control", async () => {
+    authState.userId = 999;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: false, canView: true }),
+    });
+    const user = userEvent.setup();
+    renderPage();
+    await waitLoaded();
+    await user.click(screen.getByRole("tab", { name: "Emails" }));
+    expect(
+      screen.queryByRole("button", { name: "Send email" }),
+    ).not.toBeInTheDocument();
   });
 });
