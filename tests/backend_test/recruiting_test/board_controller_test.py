@@ -11,6 +11,7 @@ from backend.dto.board_dto import (
     StageChangeDto,
     SubStatusChangeDto,
 )
+from backend.dto.email_dto import EmailSendRequestDto
 from backend.dto.user_context_dto import UserContextDto
 from backend.common.permissions import Permission
 from backend.common.recruiting_enums import ApplicationStage
@@ -94,6 +95,31 @@ class TestBoardController(unittest.IsolatedAsyncioTestCase):
             self.session, self.ctx, 10
         )
         self.assertEqual(resp["data"], others)
+
+    async def test_get_application_emails_delegates(self):
+        conversation = {"threads": [], "defaultTo": "c@x.com"}
+        self.board_service.get_application_conversation = AsyncMock(
+            return_value=conversation
+        )
+        resp = await self.controller.get_application_emails(
+            self.ctx, application_id=10, refresh=True
+        )
+        self.board_service.get_application_conversation.assert_awaited_once_with(
+            self.session, self.ctx, 10, refresh=True
+        )
+        self.assertEqual(resp["data"], conversation)
+
+    async def test_send_application_email_delegates(self):
+        conversation = {"threads": [], "defaultTo": "c@x.com"}
+        self.board_service.send_application_email = AsyncMock(return_value=conversation)
+        dto = EmailSendRequestDto(to=["c@x.com"], subject="Hi", body="<p>x</p>")
+        resp = await self.controller.send_application_email(
+            self.ctx, application_id=10, email_data=dto
+        )
+        self.board_service.send_application_email.assert_awaited_once_with(
+            self.session, self.ctx, 10, dto
+        )
+        self.assertEqual(resp["data"], conversation)
 
     async def test_list_mentionable_users_delegates(self):
         users = [{"userId": 7, "name": "Eve Evaluator"}]

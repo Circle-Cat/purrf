@@ -15,13 +15,15 @@ from backend.dto.board_dto import (
     SubStatusChangeDto,
 )
 from backend.dto.user_context_dto import UserContextDto
+from backend.common.communication_enums import ContextType
+from backend.common.permissions import Permission
+from backend.dto.email_dto import EmailConversationDto, EmailSendRequestDto
 from backend.entity.application_assignment_entity import ApplicationAssignmentEntity
 from backend.entity.application_entity import ApplicationEntity
 from backend.entity.application_submission_entity import ApplicationSubmissionEntity
 from backend.entity.evaluation_entity import EvaluationEntity
 from backend.entity.job_entity import JobEntity
 from backend.entity.users_entity import UsersEntity
-from backend.common.permissions import Permission
 from backend.common.recruiting_enums import (
     ApplicationStage,
     JobKind,
@@ -86,6 +88,8 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             return_value={}
         )
         self.user_emails_repo.get_contact_email = AsyncMock(return_value=None)
+        self.email_svc = AsyncMock()
+        self.email_svc.list_conversation = AsyncMock(return_value=[])
         self.service = BoardService(
             self.job_repo,
             self.app_repo,
@@ -101,6 +105,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             self.evaluation_repo,
             self.notification_repo,
             self.user_emails_repo,
+            self.email_svc,
         )
         # Default persistence mocks: echo the entity back, like SQLAlchemy's
         # merge-and-flush does when nothing else stubs them out.
@@ -171,8 +176,135 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         app.application_id = application_id
         return app
 
-    def _ctx(self, user_id=2):
-        return UserContextDto(sub="s", primary_email="owner@b.com", user_id=user_id)
+    def _ctx(self, user_id=2, permissions=None):
+        return UserContextDto(
+            sub="s",
+            primary_email="owner@b.com",
+            user_id=user_id,
+            permissions=frozenset(permissions or []),
+        )
+
+    def _email_dto(
+        self,
+        to=("cand@example.com",),
+        cc=(),
+        subject="Hi",
+        body="<p>x</p>",
+        thread_id=None,
+    ):
+        return EmailSendRequestDto(
+            to=list(to), cc=list(cc), subject=subject, body=body, thread_id=thread_id
+        )
+
+    def _setup_owned_application(
+        self, application_id=7, job_id=100, user_id=5, owner=2
+    ):
+        app = self._application(
+            application_id=application_id, job_id=job_id, user_id=user_id
+        )
+        self.app_repo.get_by_id = AsyncMock(return_value=app)
+        self.job_repo.get_by_job_id = AsyncMock(
+            return_value=self._job(job_id=job_id, owner_ids=(owner,))
+        )
+        return app
+
+    # -- application email: send --
+
+    async def test_send_application_email_delegates_to_conversation_service(self):
+        self._setup_owned_application(application_id=7, user_id=5, owner=2)
+        result = await self.service.send_application_email(
+            self.session, self._ctx(user_id=2), 7, self._email_dto(to=["c@x.com"])
+        )
+        self.email_svc.send.assert_awaited_once()
+        _, kw = self.email_svc.send.call_args
+        self.assertEqual(kw["user_id"], 5)
+        self.assertEqual(kw["context_type"], ContextType.APPLICATION)
+        self.assertEqual(kw["context_id"], 7)
+        self.assertEqual(kw["to"], ["c@x.com"])
+        self.assertEqual(kw["sender_user_id"], 2)
+        self.assertIsNone(kw["thread_id"])
+        self.assertIsInstance(result, EmailConversationDto)
+
+    async def test_send_application_email_rejects_non_owner(self):
+        self._setup_owned_application(owner=2)
+        with self.assertRaises(ValueError):
+            await self.service.send_application_email(
+                self.session, self._ctx(user_id=99), 7, self._email_dto()
+            )
+        self.email_svc.send.assert_not_awaited()
+
+    async def test_send_application_email_missing_application(self):
+        self.app_repo.get_by_id = AsyncMock(return_value=None)
+        with self.assertRaises(ValueError):
+            await self.service.send_application_email(
+                self.session, self._ctx(user_id=2), 7, self._email_dto()
+            )
+        self.email_svc.send.assert_not_awaited()
+
+    async def test_send_application_email_empty_to_uses_contact_email(self):
+        self._setup_owned_application(user_id=5, owner=2)
+        self.user_emails_repo.get_contact_email = AsyncMock(return_value="fb@x.com")
+        await self.service.send_application_email(
+            self.session, self._ctx(user_id=2), 7, self._email_dto(to=[])
+        )
+        _, kw = self.email_svc.send.call_args
+        self.assertEqual(kw["to"], ["fb@x.com"])
+
+    async def test_send_application_email_no_recipient_raises(self):
+        self._setup_owned_application(user_id=5, owner=2)
+        self.user_emails_repo.get_contact_email = AsyncMock(return_value=None)
+        with self.assertRaises(ValueError):
+            await self.service.send_application_email(
+                self.session, self._ctx(user_id=2), 7, self._email_dto(to=[])
+            )
+        self.email_svc.send.assert_not_awaited()
+
+    async def test_send_application_email_reply_passes_thread_id(self):
+        self._setup_owned_application(owner=2)
+        await self.service.send_application_email(
+            self.session, self._ctx(user_id=2), 7, self._email_dto(thread_id=55)
+        )
+        _, kw = self.email_svc.send.call_args
+        self.assertEqual(kw["thread_id"], 55)
+
+    # -- application email: get / refresh --
+
+    async def test_get_application_conversation_pure_read_does_not_sync(self):
+        self._setup_owned_application(owner=2)
+        result = await self.service.get_application_conversation(
+            self.session, self._ctx(user_id=2), 7, refresh=False
+        )
+        self.email_svc.sync_context.assert_not_awaited()
+        self.email_svc.list_conversation.assert_awaited_once()
+        self.assertIsInstance(result, EmailConversationDto)
+
+    async def test_get_application_conversation_refresh_syncs_first(self):
+        self._setup_owned_application(owner=2)
+        await self.service.get_application_conversation(
+            self.session, self._ctx(user_id=2), 7, refresh=True
+        )
+        self.email_svc.sync_context.assert_awaited_once()
+
+    async def test_get_application_conversation_allows_read_all_non_owner(self):
+        self._setup_owned_application(owner=2)
+        ctx = self._ctx(
+            user_id=99, permissions=[Permission.RECRUITING_APPLICATION_READ_ALL]
+        )
+        result = await self.service.get_application_conversation(
+            self.session, ctx, 7, refresh=False
+        )
+        self.assertIsInstance(result, EmailConversationDto)
+
+    async def test_send_application_email_write_forbids_read_all_non_owner(self):
+        self._setup_owned_application(owner=2)
+        ctx = self._ctx(
+            user_id=99, permissions=[Permission.RECRUITING_APPLICATION_READ_ALL]
+        )
+        with self.assertRaises(ValueError):
+            await self.service.send_application_email(
+                self.session, ctx, 7, self._email_dto()
+            )
+        self.email_svc.send.assert_not_awaited()
 
     def _assignment(self, application_id, stage, round, assignee_id, assigned_by=2):
         return ApplicationAssignmentEntity(

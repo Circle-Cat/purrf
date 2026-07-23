@@ -4,6 +4,10 @@ from backend.utils.app_dependency_builder import AppDependencyBuilder
 from backend.common.environment_constants import (
     JIRA_SERVER,
     JIRA_USER,
+    GMAIL_CLIENT_ID,
+    GMAIL_CLIENT_SECRET,
+    GMAIL_REFRESH_TOKEN,
+    GMAIL_SENDER_ADDRESS,
 )
 
 
@@ -238,6 +242,10 @@ class TestAppDependencyBuilder(TestCase):
         mock_os_getenv.side_effect = lambda key: {
             JIRA_SERVER: JIRA_SERVER_VAL,
             JIRA_USER: JIRA_USER_VAL,
+            GMAIL_CLIENT_ID: "gmail-client-id",
+            GMAIL_CLIENT_SECRET: "gmail-client-secret",
+            GMAIL_REFRESH_TOKEN: "gmail-refresh-token",
+            GMAIL_SENDER_ADDRESS: "recruiting@circlecat.org",
         }.get(key)
 
         mock_gerrit_client = mock_gerrit_client_cls.return_value

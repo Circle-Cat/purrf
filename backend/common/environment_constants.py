@@ -67,6 +67,12 @@ EMAIL_OTP_STATE_JWT_SECRET = "EMAIL_OTP_STATE_JWT_SECRET"
 # Company-wide Gmail account used to send and read candidate email, authorized
 # once via OAuth2 refresh token (no in-app OAuth flow). The sender address must
 # be a real, receivable mailbox (e.g. recruiting@circlecat.org) — never noreply@.
+#
+# GmailClient is built eagerly at startup, so these must be set for the app to
+# boot — but for LOCAL development you can use any placeholder values (e.g.
+# "x"): they are only validated for presence and no network call is made until
+# an email is actually sent or read. Real secrets live in the deployed secret
+# store; you only need them locally if you are exercising the email feature.
 GMAIL_CLIENT_ID = "GMAIL_CLIENT_ID"
 GMAIL_CLIENT_SECRET = "GMAIL_CLIENT_SECRET"
 GMAIL_REFRESH_TOKEN = "GMAIL_REFRESH_TOKEN"

@@ -13,7 +13,9 @@ from backend.dto.board_dto import (
     SubStatusChangeDto,
 )
 from backend.dto.user_context_dto import UserContextDto
+from backend.dto.email_dto import EmailSendRequestDto
 from backend.common.api_endpoints import (
+    RECRUITING_APPLICATION_EMAILS_ENDPOINT,
     RECRUITING_BOARD_JOBS_ENDPOINT,
     RECRUITING_JOB_BOARD_ENDPOINT,
     RECRUITING_JOB_BOARD_STAGE_ENDPOINT,
@@ -103,6 +105,23 @@ class BoardController:
             RECRUITING_APPLICATION_OTHER_APPLICATIONS_ENDPOINT,
             endpoint=authenticate()(self.get_other_applications),
             methods=["GET"],
+            response_model=None,
+        )
+        # Emails tab: reading is login-gated (owner / read.all enforced in the
+        # service, like the other read tabs); sending reuses the advance
+        # permission (owner-only, enforced in the service).
+        self.router.add_api_route(
+            RECRUITING_APPLICATION_EMAILS_ENDPOINT,
+            endpoint=authenticate()(self.get_application_emails),
+            methods=["GET"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            RECRUITING_APPLICATION_EMAILS_ENDPOINT,
+            endpoint=authenticate(
+                permissions=[Permission.RECRUITING_APPLICATION_ADVANCE]
+            )(self.send_application_email),
+            methods=["POST"],
             response_model=None,
         )
         self.router.add_api_route(
@@ -230,6 +249,32 @@ class BoardController:
                 session, current_user, application_id
             )
         return api_response(message="Application activity fetched.", data=result)
+
+    async def get_application_emails(
+        self, current_user: UserContextDto, application_id: int, refresh: bool = False
+    ):
+        """Return an application's email conversation.
+
+        Pure DB read by default; ``?refresh=true`` syncs from Gmail first.
+        """
+        async with self.database.session() as session:
+            result = await self.board_service.get_application_conversation(
+                session, current_user, application_id, refresh=refresh
+            )
+        return api_response(message="Emails fetched.", data=result)
+
+    async def send_application_email(
+        self,
+        current_user: UserContextDto,
+        application_id: int,
+        email_data: EmailSendRequestDto,
+    ):
+        """Send (or reply to) a candidate email, returning the updated conversation."""
+        async with self.database.session() as session:
+            result = await self.board_service.send_application_email(
+                session, current_user, application_id, email_data
+            )
+        return api_response(message="Email sent.", data=result)
 
     async def get_other_applications(
         self, current_user: UserContextDto, application_id: int

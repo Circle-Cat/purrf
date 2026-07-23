@@ -7,6 +7,7 @@ py_library(
     srcs = glob(["*.py"]),
     deps = [
         "//backend/common:api_endpoints",
+        "//backend/common:communication_enums",
         "//backend/common:fast_api_response_wrapper",
         "//backend/common:mentorship_enums",
         "//backend/common:permissions",

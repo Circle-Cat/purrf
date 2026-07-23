@@ -127,6 +127,10 @@ from backend.common.auth0_client import Auth0Client
 from backend.repository.users_repository import UsersRepository
 from backend.repository.user_identities_repository import UserIdentitiesRepository
 from backend.repository.user_emails_repository import UserEmailsRepository
+from backend.repository.email_thread_repository import EmailThreadRepository
+from backend.repository.email_message_repository import EmailMessageRepository
+from backend.common.gmail_client import GmailClient
+from backend.communication.email_conversation_service import EmailConversationService
 from backend.repository.user_permissions_repository import UserPermissionsRepository
 from backend.repository.experience_repository import ExperienceRepository
 from backend.repository.training_repository import TrainingRepository
@@ -602,6 +606,23 @@ class AppDependencyBuilder:
             self.resume_storage,
             self.database,
         )
+        # Person-anchored email (recruiting Emails tab). Constructed eagerly to
+        # match the other clients; GmailClient reads GMAIL_* from the env (use
+        # placeholder values locally — real secrets are only needed to actually
+        # send/read mail).
+        self.gmail_client = GmailClient(
+            logger=self.logger,
+            retry_utils=self.retry_utils,
+        )
+        self.email_thread_repository = EmailThreadRepository()
+        self.email_message_repository = EmailMessageRepository()
+        self.email_conversation_service = EmailConversationService(
+            gmail_client=self.gmail_client,
+            thread_repository=self.email_thread_repository,
+            message_repository=self.email_message_repository,
+            sender_address=self.gmail_client.sender_address,
+        )
+
         self.board_service = BoardService(
             self.job_repository,
             self.application_repository,
@@ -617,6 +638,7 @@ class AppDependencyBuilder:
             self.evaluation_repository,
             self.notification_repository,
             self.user_emails_repository,
+            self.email_conversation_service,
         )
         self.board_controller = BoardController(
             self.board_service,

@@ -115,7 +115,10 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
 
     async def test_send_reply_uses_existing_thread_and_headers(self):
         self.thread_repo.get.return_value = SimpleNamespace(
-            thread_id=10, gmail_thread_id="gt1"
+            thread_id=10,
+            gmail_thread_id="gt1",
+            context_type=ContextType.APPLICATION,
+            context_id=7,
         )
         self.message_repo.list_by_thread.return_value = [
             SimpleNamespace(rfc822_message_id="<r1@mail>"),
@@ -149,6 +152,68 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
         self.thread_repo.create.assert_not_awaited()
         _, mkw = self.message_repo.create.call_args
         self.assertEqual(mkw["thread_id"], 10)
+
+    async def test_send_reply_rejects_thread_from_other_context(self):
+        # Replying into a thread that belongs to a different (context_type,
+        # context_id) must be refused — no cross-context leakage, no send.
+        self.thread_repo.get.return_value = SimpleNamespace(
+            thread_id=10,
+            gmail_thread_id="gt1",
+            context_type=ContextType.APPLICATION,
+            context_id=999,
+        )
+        with self.assertRaises(ValueError):
+            await self.service.send(
+                self.session,
+                user_id=5,
+                context_type=ContextType.APPLICATION,
+                context_id=7,
+                to=["cand@example.com"],
+                cc=[],
+                subject="Re: Hi",
+                body="<p>x</p>",
+                sender_user_id=3,
+                thread_id=10,
+            )
+        self.gmail.send_message.assert_not_called()
+        self.message_repo.create.assert_not_awaited()
+
+    # ---- list_conversation --------------------------------------------
+
+    async def test_list_conversation_assembles_threads_with_messages(self):
+        self.thread_repo.list_by_context.return_value = [
+            SimpleNamespace(
+                thread_id=10,
+                subject="Hi",
+                synced_at=None,
+                created_at="2026-07-23T00:00:00Z",
+            ),
+        ]
+        self.message_repo.list_by_thread.return_value = [
+            SimpleNamespace(
+                message_id=1,
+                direction="outbound",
+                from_address="recruiting@circlecat.org",
+                to_addresses="cand@example.com",
+                cc_addresses=None,
+                subject="Hi",
+                body_html="<p>hi</p>",
+                body_text="hi",
+                snippet="hi",
+                sent_by_user_id=3,
+                gmail_internal_date=None,
+                created_at="2026-07-23T00:00:00Z",
+            ),
+        ]
+        threads = await self.service.list_conversation(
+            self.session, ContextType.APPLICATION, 7
+        )
+        self.assertEqual(len(threads), 1)
+        self.assertEqual(threads[0].thread_id, 10)
+        self.assertEqual(len(threads[0].messages), 1)
+        self.assertEqual(threads[0].messages[0].message_id, 1)
+        self.assertEqual(threads[0].messages[0].direction, "outbound")
+        self.message_repo.list_by_thread.assert_awaited_once_with(self.session, 10)
 
     # ---- sync ---------------------------------------------------------
 

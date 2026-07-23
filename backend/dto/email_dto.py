@@ -39,3 +39,29 @@ class EmailThreadDto(BaseDto):
     synced_at: datetime | None = None
     created_at: datetime
     messages: list[EmailMessageDto]
+
+
+class EmailConversationDto(BaseDto):
+    """The full email view for one scenario (e.g. one application).
+
+    Returned by the recruiting Emails tab GET and by POST (send returns the
+    refreshed conversation). ``default_to`` is the candidate's contact address,
+    for prefilling the compose ``To`` field.
+    """
+
+    threads: list[EmailThreadDto]
+    default_to: str | None = None
+
+
+class EmailSendRequestDto(BaseDto):
+    """Compose payload for sending / replying (recruiting Emails tab POST).
+
+    ``to`` is the (prefilled-then-editable) recipient list; ``thread_id`` is set
+    only when replying into an existing thread.
+    """
+
+    to: list[str]
+    cc: list[str] = []
+    subject: str
+    body: str
+    thread_id: int | None = None

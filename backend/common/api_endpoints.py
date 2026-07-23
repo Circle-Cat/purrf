@@ -128,6 +128,9 @@ RECRUITING_APPLICATION_EVALUATIONS_ENDPOINT = (
 RECRUITING_APPLICATION_ACTIVITY_ENDPOINT = (
     "/recruiting/applications/{application_id}/activity"
 )
+RECRUITING_APPLICATION_EMAILS_ENDPOINT = (
+    "/recruiting/applications/{application_id}/emails"
+)
 RECRUITING_APPLICATION_OTHER_APPLICATIONS_ENDPOINT = (
     "/recruiting/applications/{application_id}/other-applications"
 )

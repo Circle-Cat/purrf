@@ -23,6 +23,7 @@ from datetime import datetime, timezone
 from email.utils import parseaddr
 
 from backend.common.communication_enums import EmailDirection
+from backend.dto.email_dto import EmailMessageDto, EmailThreadDto
 
 
 class EmailConversationService:
@@ -86,6 +87,13 @@ class EmailConversationService:
             thread = await self._thread_repo.get(session, thread_id)
             if thread is None:
                 raise ValueError(f"Unknown email thread: {thread_id}")
+            # A reply must stay within the context the caller claims — you
+            # cannot reply into a thread that belongs to a different person or
+            # scenario (prevents cross-context leakage).
+            if thread.context_type != context_type or thread.context_id != context_id:
+                raise ValueError(
+                    f"Thread {thread_id} does not belong to the given context"
+                )
             gmail_thread_id = thread.gmail_thread_id
             prior = await self._message_repo.list_by_thread(session, thread_id)
             rfc_ids = [m.rfc822_message_id for m in prior if m.rfc822_message_id]
@@ -127,6 +135,41 @@ class EmailConversationService:
             rfc822_message_id=sent["rfc822_message_id"],
             sent_by_user_id=sender_user_id,
         )
+
+    async def list_conversation(self, session, context_type, context_id):
+        """Read the stored conversation for one (context_type, context_id).
+
+        Pure DB read (no Gmail call): opening a conversation never triggers a
+        sync — that is done explicitly via ``sync_context`` (daily cron /
+        manual Refresh).
+
+        Args:
+            session (AsyncSession): The active DB session.
+            context_type (str): A ``ContextType`` value.
+            context_id (int | None): The scenario entity id.
+
+        Returns:
+            list[EmailThreadDto]: One per thread (oldest first), each with its
+                messages assembled (oldest first).
+        """
+        threads = await self._thread_repo.list_by_context(
+            session, context_type, context_id
+        )
+        conversation = []
+        for thread in threads:
+            messages = await self._message_repo.list_by_thread(
+                session, thread.thread_id
+            )
+            conversation.append(
+                EmailThreadDto(
+                    thread_id=thread.thread_id,
+                    subject=thread.subject,
+                    synced_at=thread.synced_at,
+                    created_at=thread.created_at,
+                    messages=[EmailMessageDto.model_validate(m) for m in messages],
+                )
+            )
+        return conversation
 
     async def sync_context(self, session, context_type, context_id):
         """Sync every thread for one scenario (e.g. one application).
