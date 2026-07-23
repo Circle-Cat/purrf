@@ -34,7 +34,7 @@ const BLANK = {
 
 /**
  * Build the create/update request body from a draft. Config sections not
- * edited in PR1 (pipeline/screen-rules/profile) pass through as loaded.
+ * edited here (pipeline/screen-rules/profile) pass through as loaded.
  * `cooldownDays` and `mentorshipRole` are actively edited and pass through
  * as `null` when unset.
  *

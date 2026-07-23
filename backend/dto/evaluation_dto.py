@@ -1,4 +1,4 @@
-"""Evaluation DTOs for the interview evaluation feature (PR2).
+"""Evaluation DTOs for the interview evaluation feature.
 
 Covers submitting/confirming an evaluator's scorecard for an application and
 the shapes returned to the client (single evaluation and the caller's "My

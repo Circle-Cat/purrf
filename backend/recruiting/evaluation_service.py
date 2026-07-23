@@ -14,7 +14,7 @@ from backend.common.permissions import Permission
 
 
 class EvaluationService:
-    """Assignee-facing writes for interview evaluation scorecards (sub-project #3 slice 1).
+    """Assignee-facing writes for interview evaluation scorecards.
 
     Authorization is row-level against application_assignment (is the
     caller the current stage's assignee), not an enum permission — mirrors

@@ -33,8 +33,7 @@ from backend.recruiting.pipeline_owners import normalized_owner_ids
 
 _MENTION_TOKEN_RE = re.compile(r"@\[(\d+)\]")
 
-# Stages that carry an interview assignment/evaluation (sub-project #3
-# slice 1); OFFER has no rubric and is not assignable.
+# Stages that carry an interview assignment/evaluation; OFFER has no rubric and is not assignable.
 INTERVIEW_STAGES = {
     ApplicationStage.RECRUITER_SCREENING,
     ApplicationStage.BEHAVIORAL,
@@ -42,7 +41,7 @@ INTERVIEW_STAGES = {
     ApplicationStage.BOARD_REVIEW,
 }
 
-# Board pagination (sub-project #3 slice 2): terminal lanes (rejected/hired)
+# Board pagination: terminal lanes (rejected/hired)
 # can grow unbounded over a job's lifetime, unlike active pipeline stages,
 # so get_board loads them one page at a time instead of in full.
 TERMINAL_PAGE_SIZE = 20
@@ -103,7 +102,7 @@ def _screen_rule_label(rule: dict) -> str:
 
 
 class BoardService:
-    """Owner-facing reads for the recruiting application board (PR2).
+    """Owner-facing reads for the recruiting application board.
 
     Every read here is row-level owner-gated against a job's
     ``pipeline_config`` owner ids (see ``pipeline_owners.normalized_owner_ids``)
@@ -111,7 +110,7 @@ class BoardService:
     yourself as an owner of this posting", not a role. ``blacklist`` is the
     one exception: it's an org-level sanction gated only by the
     ``RECRUITING_BLACKLIST_WRITE`` permission at the route, not by job
-    ownership (see its docstring).
+    ownership.
     """
 
     def __init__(
@@ -469,8 +468,8 @@ class BoardService:
             allow_assignee (bool): When True, a caller who is the
                 application's current-stage assignee (but not an owner)
                 also passes — used by the read path (``get_application_detail``)
-                now that owners and assignees share one detail page
-                (sub-project #3 slice 1). Mutation paths (``change_stage``,
+                now that owners and assignees share one detail page.
+                Mutation paths (``change_stage``,
                 ``set_sub_status``, ``reassign``, ``blacklist``) leave this
                 False and stay owner-only.
             allow_self (bool): When True, a caller who is the application's
@@ -537,9 +536,9 @@ class BoardService:
         """Return the full view of one application, for its owner, assignee, or read.all holder.
 
         Readable by any of: a configured owner of the job, the application's
-        current-stage assignee (as of sub-project #3 slice 1, merging the
-        owner's board dialog and the assignee's evaluation view into one
-        shared page), or a caller holding ``Permission.RECRUITING_APPLICATION_READ_ALL``.
+        current-stage assignee (owners and assignees share one detail page,
+        merging the owner's board dialog and the assignee's evaluation view),
+        or a caller holding ``Permission.RECRUITING_APPLICATION_READ_ALL``.
 
         Args:
             session (AsyncSession): Active database async session.
@@ -1174,8 +1173,7 @@ class BoardService:
         "scheduled") is left exactly as it was — it already reflects an
         in-flight state that reassignment doesn't change. Any evaluation
         the outgoing assignee already confirmed is untouched (it's a
-        separate row keyed by its own evaluator_id — sub-project #3 slice
-        1's evaluation feature).
+        separate row keyed by its own evaluator_id).
 
         Args:
             session (AsyncSession): Active database async session.

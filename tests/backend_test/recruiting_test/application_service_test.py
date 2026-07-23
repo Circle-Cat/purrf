@@ -264,7 +264,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
     async def test_blocked_user_resubmit_on_active_application_still_errors(self):
         """A blocked user whose latest attempt is still active (not
         REJECTED) hits the same "edit it instead" guard as anyone else —
-        the blacklist check never even runs. Post-PR4 this combination
+        the blacklist check never even runs. This combination
         shouldn't occur in practice (blacklisting now closes in-flight
         applications), but the guard order must hold regardless."""
         self.users_repo.get_user_by_user_id = AsyncMock(
