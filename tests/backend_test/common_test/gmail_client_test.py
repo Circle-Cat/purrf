@@ -4,6 +4,7 @@ import os
 from unittest import TestCase, main
 from unittest.mock import Mock, patch
 
+from google.auth.exceptions import RefreshError
 from googleapiclient.errors import HttpError
 
 from backend.common.exceptions import RateLimitedError
@@ -170,6 +171,18 @@ class TestGmailClient(TestCase):
                 to=["a@example.com"], cc=[], subject="Hi", body="<p>x</p>"
             )
 
+    def test_send_message_refresh_error_translated(self):
+        # A revoked/expired refresh token surfaces as RefreshError from inside
+        # execute(); the transport must translate it to a clean RuntimeError
+        # rather than leaking the raw google-auth exception.
+        self.mock_service.users().messages().send().execute.side_effect = RefreshError(
+            "invalid_grant"
+        )
+        with self.assertRaises(RuntimeError):
+            self.client.send_message(
+                to=["a@example.com"], cc=[], subject="Hi", body="<p>x</p>"
+            )
+
     def test_service_built_once_across_calls(self):
         self._stub_send_result()
         self.client.send_message(
@@ -189,6 +202,9 @@ class TestGmailClient(TestCase):
         self.assertEqual(kwargs["refresh_token"], TEST_REFRESH_TOKEN)
         self.assertEqual(kwargs["client_id"], TEST_CLIENT_ID)
         self.assertEqual(kwargs["client_secret"], TEST_CLIENT_SECRET)
+        # google-auth needs the token endpoint and scopes to refresh on its own.
+        self.assertTrue(kwargs["token_uri"])
+        self.assertTrue(kwargs["scopes"])
 
     # ---- get_thread ---------------------------------------------------
 
