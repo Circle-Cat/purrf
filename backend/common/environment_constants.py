@@ -63,3 +63,11 @@ AUTH0_M2M_AUDIENCE = "AUTH0_M2M_AUDIENCE"
 # HMAC secret signing the short-lived state JWT that ties an OTP verify back to
 # the session that initiated it (CSRF guard).
 EMAIL_OTP_STATE_JWT_SECRET = "EMAIL_OTP_STATE_JWT_SECRET"
+
+# Company-wide Gmail account used to send and read candidate email, authorized
+# once via OAuth2 refresh token (no in-app OAuth flow). The sender address must
+# be a real, receivable mailbox (e.g. recruiting@circlecat.org) — never noreply@.
+GMAIL_CLIENT_ID = "GMAIL_CLIENT_ID"
+GMAIL_CLIENT_SECRET = "GMAIL_CLIENT_SECRET"
+GMAIL_REFRESH_TOKEN = "GMAIL_REFRESH_TOKEN"
+GMAIL_SENDER_ADDRESS = "GMAIL_SENDER_ADDRESS"
