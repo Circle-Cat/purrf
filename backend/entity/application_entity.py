@@ -32,6 +32,16 @@ class ApplicationEntity(Base):
             unique=True,
             postgresql_where=text("stage != 'rejected'"),
         ),
+        # Terminal-lane ordering ("most recently rejected/hired first").
+        # Kept in sync with migration 82498a573699 so create_all-based DB
+        # bootstraps (tools/init_db, used by CI) materialize it too.
+        Index(
+            "ix_application_job_stage_entered",
+            "job_id",
+            "stage",
+            text("stage_entered_at DESC"),
+            text("application_id DESC"),
+        ),
     )
 
     application_id: Mapped[int] = mapped_column(
