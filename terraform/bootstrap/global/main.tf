@@ -408,7 +408,9 @@ resource "cloudflare_dns_record" "login_test" {
   name    = "test-login"
   type    = "CNAME"
   content = data.terraform_remote_state.test_env.outputs.auth0_custom_domain_cname
-  proxied = false
+  # Proxied since 2026-05-23 (dashboard change); codified to match the live
+  # record. Note prod/staging login records are DNS-only.
+  proxied = true
   ttl     = 1
   lifecycle {
     ignore_changes = [
@@ -568,6 +570,10 @@ resource "cloudflare_zero_trust_access_application" "purrf_app" {
       id         = "791a5e24-4a75-4d7e-9f7d-5fafd25a1602"
       precedence = 2
     },
+    { # Uptime Kuma health checks (see the uptime_kuma policy resource).
+      id         = cloudflare_zero_trust_access_policy.uptime_kuma.id
+      precedence = 3
+    },
   ]
 }
 
@@ -617,10 +623,16 @@ resource "cloudflare_zero_trust_access_identity_provider" "mentorship_login_test
       "profile",
     ]
 
+    # Matches the live IdP: the extra identity/diagnostic claims were added
+    # in the dashboard while debugging test logins (login_diag) and
+    # phone_number was dropped; codified as-is.
     claims = [
       "email",
-      "phone_number",
       "sub",
+      "iat",
+      "given_name",
+      "family_name",
+      "email_verified",
     ]
 
     email_claim_name = "aud"
@@ -648,13 +660,32 @@ resource "cloudflare_zero_trust_access_identity_provider" "mentorship_login_stag
 
     claims = [
       "email",
-      "phone_number",
       "sub",
+      "iat",
+      "given_name",
+      "family_name",
+      "email_verified",
     ]
 
     email_claim_name = "aud"
     pkce_enabled     = true
   }
+}
+
+# Lets Uptime Kuma probe prod through CF Access: a service token presented
+# from the Gerrit host's IP, no user identity. Replaces the app-scoped policy
+# that was hand-created in the dashboard (id 03ae6b7f…), which Terraform
+# could neither reference nor preserve.
+resource "cloudflare_zero_trust_access_policy" "uptime_kuma" {
+  account_id = local.cloudflare_account_id
+  name       = "Uptime Kuma"
+  decision   = "non_identity"
+  include = [{
+    service_token = { token_id = "3bb268f0-15bc-4626-9d18-e34eb46ef15b" }
+  }]
+  require = [{
+    ip = { ip = "140.83.87.89/32" }
+  }]
 }
 
 resource "cloudflare_zero_trust_access_policy" "purrf_auth0_test" {
@@ -729,14 +760,14 @@ resource "cloudflare_zero_trust_access_application" "purrf_app_staging" {
     { type = "public", uri = local.environments.staging.api_host },
     { type = "public", uri = "staging.purrf.pages.dev" },
   ]
-  allowed_idps = [
-    "762bbddc-6753-4c4b-898e-89e18ecc410c",
-    cloudflare_zero_trust_access_identity_provider.mentorship_login_staging.id,
-  ]
+  # Single IdP + auto-redirect: like test, CF Access skips its own login
+  # chooser and sends visitors straight to the Auth0 page. (Prod keeps the
+  # two-IdP chooser; staging deliberately trades that fidelity away.)
+  allowed_idps         = [cloudflare_zero_trust_access_identity_provider.mentorship_login_staging.id]
   session_duration     = "24h"
   app_launcher_visible = true
 
-  auto_redirect_to_identity = false
+  auto_redirect_to_identity = true
   cors_headers = {
     allow_all_methods = true
     allow_credentials = true

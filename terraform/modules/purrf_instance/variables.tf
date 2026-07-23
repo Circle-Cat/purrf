@@ -108,18 +108,6 @@ variable "ingress_class_name" {
   default     = "cloudflare-tunnel"
 }
 
-variable "image_tag" {
-  type        = string
-  description = "Deployed image tag. Unused when deploy_via_helm is false."
-  default     = null
-}
-
-variable "deploy_via_helm" {
-  type        = bool
-  description = "Whether Terraform manages the app's helm_release. Set false when the deployment is owned by ArgoCD (e.g. the test environment); Terraform then only provisions the namespace, secret, and workload-identity binding."
-  default     = true
-}
-
 variable "jira_password" {
   type      = string
   sensitive = true
@@ -163,5 +151,27 @@ variable "auth0_google_client_secret" {
   description = "Client secret of the Google OAuth app backing the Auth0 Google social connection."
   type        = string
   sensitive   = true
+}
+
+variable "gmail_client_id" {
+  description = "Client ID of the Google OAuth app used to send/read recruiting candidate emails (purrf-auth GCP project)."
+  type        = string
+}
+
+variable "gmail_client_secret" {
+  description = "Client secret paired with gmail_client_id (purrf-auth GCP project)."
+  type        = string
+  sensitive   = true
+}
+
+variable "gmail_refresh_token" {
+  description = "OAuth refresh token authorizing send/read on the sender mailbox. Minted once via interactive consent; not Terraform-managed."
+  type        = string
+  sensitive   = true
+}
+
+variable "gmail_sender_address" {
+  description = "Mailbox the app sends candidate emails from. Real sender in prod; a test mailbox in test/staging."
+  type        = string
 }
 

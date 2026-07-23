@@ -195,24 +195,45 @@ resource "auth0_connection_clients" "google" {
 # *.auth0.com tenant domain, not the Cloudflare-fronted custom domain).
 data "auth0_tenant" "current" {}
 
-# M2M client used by the "Link Accounts with Same Verified Email" post-login
-# Action to call the Management API (find users by email, link identities).
-# Action code lives in the Auth0 Dashboard; only credentials are managed here.
-resource "auth0_client" "link_action_m2m" {
-  name        = "Link Action M2M (${var.env_name})"
-  description = "Managed by Terraform. Backs the post-login account-linking Action."
+# M2M client the Purrf backend uses to call the Auth0 Management API. Its only
+# use today is deleting a user (DELETE /api/v2/users/{id}) when an identity is
+# unlinked -- see backend/common/auth0_client.py. (Historically it backed the
+# now-removed "Link Accounts with Same Verified Email" post-login Action.)
+resource "auth0_client" "backend_management_m2m" {
+  name        = "Purrf Backend Management M2M (${var.env_name})"
+  description = "Managed by Terraform. Backend Management API credential; deletes users on unlink."
   app_type    = "non_interactive"
   grant_types = ["client_credentials"]
 }
 
-resource "auth0_client_credentials" "link_action_m2m" {
-  client_id             = auth0_client.link_action_m2m.id
+resource "auth0_client_credentials" "backend_management_m2m" {
+  client_id             = auth0_client.backend_management_m2m.id
   authentication_method = "client_secret_post"
 }
 
-resource "auth0_client_grant" "link_action_m2m" {
-  client_id = auth0_client.link_action_m2m.id
+# Least privilege: the backend only deletes users, so grant delete:users alone.
+# (read:users/update:users were for the removed account-linking Action.)
+resource "auth0_client_grant" "backend_management_m2m" {
+  client_id = auth0_client.backend_management_m2m.id
   audience  = "https://${data.auth0_tenant.current.domain}/api/v2/"
-  scopes    = ["read:users", "update:users"]
+  scopes    = ["delete:users"]
+}
+
+# Renamed from link_action_m2m (the post-login linking Action it was created for
+# was removed). moved keeps the existing Auth0 client in state -- no recreate, so
+# the client_id/secret the backend already uses stay stable.
+moved {
+  from = auth0_client.link_action_m2m
+  to   = auth0_client.backend_management_m2m
+}
+
+moved {
+  from = auth0_client_credentials.link_action_m2m
+  to   = auth0_client_credentials.backend_management_m2m
+}
+
+moved {
+  from = auth0_client_grant.link_action_m2m
+  to   = auth0_client_grant.backend_management_m2m
 }
 
