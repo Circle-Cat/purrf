@@ -97,11 +97,11 @@ output "auth0_management_domain" {
   value = data.auth0_tenant.current.domain
 }
 
-output "auth0_link_action_m2m_client_id" {
-  value = auth0_client.link_action_m2m.client_id
+output "auth0_backend_management_m2m_client_id" {
+  value = auth0_client.backend_management_m2m.client_id
 }
 
-output "auth0_link_action_m2m_client_secret" {
-  value     = auth0_client_credentials.link_action_m2m.client_secret
+output "auth0_backend_management_m2m_client_secret" {
+  value     = auth0_client_credentials.backend_management_m2m.client_secret
   sensitive = true
 }

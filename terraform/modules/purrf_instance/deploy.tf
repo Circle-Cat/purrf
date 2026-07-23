@@ -46,8 +46,8 @@ resource "kubernetes_secret" "purrf_app" {
     AUTH0_TENANT_DOMAIN              = data.auth0_tenant.current.domain
     AUTH0_PASSWORDLESS_CLIENT_ID     = auth0_client.purrf_auth0.client_id
     AUTH0_PASSWORDLESS_CLIENT_SECRET = auth0_client_credentials.purrf_auth0.client_secret
-    AUTH0_M2M_CLIENT_ID              = auth0_client.link_action_m2m.client_id
-    AUTH0_M2M_CLIENT_SECRET          = auth0_client_credentials.link_action_m2m.client_secret
+    AUTH0_M2M_CLIENT_ID              = auth0_client.backend_management_m2m.client_id
+    AUTH0_M2M_CLIENT_SECRET          = auth0_client_credentials.backend_management_m2m.client_secret
     AUTH0_M2M_AUDIENCE               = "https://${data.auth0_tenant.current.domain}/api/v2/"
 
     # App-internal HMAC secret signing the OTP state JWT (CSRF guard); generated
