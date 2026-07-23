@@ -225,6 +225,7 @@ describe("useMeetingManagement Hook Unit Tests", () => {
       });
       const { result } = renderHook(() => useMeetingManagement(mockRoundId));
       await waitFor(() => expect(result.current.isLoading).toBe(false));
+      vi.clearAllMocks();
 
       const payload = { round_id: mockRoundId, partner_id: 1 };
       let returned;
@@ -234,6 +235,7 @@ describe("useMeetingManagement Hook Unit Tests", () => {
 
       expect(postMyMentorshipMeetingV2).toHaveBeenCalledWith(payload);
       expect(returned).toEqual({ created: [{ meetingId: "g-1" }], failed: [] });
+      expect(getMyMentorshipMeetingsV2).toHaveBeenCalledTimes(1);
     });
 
     it("should log to console and throw error to be caught by the caller when Creating fails", async () => {
