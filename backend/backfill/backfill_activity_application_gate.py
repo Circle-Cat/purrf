@@ -1,6 +1,7 @@
 import asyncio
 import sys
 import traceback
+from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -67,6 +68,7 @@ class ActivityApplicationGateBackfillService:
             )
             if existing_application:
                 existing_application.stage = ApplicationStage.HIRED
+                existing_application.stage_entered_at = datetime.now(timezone.utc)
                 await self.application_repo.update(
                     session=session, entity=existing_application
                 )
@@ -83,6 +85,7 @@ class ActivityApplicationGateBackfillService:
                     job_id=job.job_id,
                     user_id=user_id,
                     stage=ApplicationStage.HIRED,
+                    stage_entered_at=datetime.now(timezone.utc),
                 ),
             )
             logger.info(

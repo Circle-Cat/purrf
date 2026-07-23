@@ -108,6 +108,17 @@ export const getJobBoard = (jobId) =>
   request.get(API_ENDPOINTS.RECRUITING_JOB_BOARD(jobId));
 
 /**
+ * Fetch one page of a terminal lane's applications (offset/limit).
+ */
+export const getJobBoardStagePage = (
+  jobId,
+  { stage, limit = 20, offset = 0 },
+) =>
+  request.get(API_ENDPOINTS.RECRUITING_JOB_BOARD_STAGE(jobId), {
+    params: { stage, limit, offset },
+  });
+
+/**
  * Fetch detailed application information for the application detail view.
  */
 export const getApplicationDetail = (id) =>

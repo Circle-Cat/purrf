@@ -308,6 +308,7 @@ class ApplicationService:
                 job_id=dto.job_id,
                 user_id=current_user.user_id,
                 stage=stage,
+                stage_entered_at=datetime.now(timezone.utc),
                 sub_status=self._screened_sub_status(stage),
                 tags=tags,
             ),

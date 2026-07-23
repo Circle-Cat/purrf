@@ -100,6 +100,7 @@ RECRUITING_APPLICATIONS_MINE_ENDPOINT = "/recruiting/applications/mine"
 RECRUITING_MY_APPLICATIONS_ENDPOINT = "/recruiting/my-applications"
 RECRUITING_BOARD_JOBS_ENDPOINT = "/recruiting/board/jobs"
 RECRUITING_JOB_BOARD_ENDPOINT = "/recruiting/jobs/{job_id}/board"
+RECRUITING_JOB_BOARD_STAGE_ENDPOINT = "/recruiting/jobs/{job_id}/board/applications"
 RECRUITING_APPLICATION_STAGE_ENDPOINT = (
     "/recruiting/applications/{application_id}/stage"
 )

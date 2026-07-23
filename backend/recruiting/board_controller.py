@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Response
+from fastapi import APIRouter, HTTPException, Response
 
 from backend.common.fast_api_response_wrapper import api_response
 from backend.common.permissions import Permission
+from backend.common.recruiting_enums import ApplicationStage
 from backend.utils.permission_decorators import authenticate
 from backend.dto.board_dto import (
     BlacklistDto,
@@ -15,6 +16,7 @@ from backend.dto.user_context_dto import UserContextDto
 from backend.common.api_endpoints import (
     RECRUITING_BOARD_JOBS_ENDPOINT,
     RECRUITING_JOB_BOARD_ENDPOINT,
+    RECRUITING_JOB_BOARD_STAGE_ENDPOINT,
     RECRUITING_APPLICATION_ENDPOINT,
     RECRUITING_APPLICATION_STAGE_ENDPOINT,
     RECRUITING_APPLICATION_SUB_STATUS_ENDPOINT,
@@ -70,6 +72,12 @@ class BoardController:
         self.router.add_api_route(
             RECRUITING_JOB_BOARD_ENDPOINT,
             endpoint=authenticate()(self.get_board),
+            methods=["GET"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            RECRUITING_JOB_BOARD_STAGE_ENDPOINT,
+            endpoint=authenticate()(self.get_board_stage_page),
             methods=["GET"],
             response_model=None,
         )
@@ -167,6 +175,28 @@ class BoardController:
         async with self.database.session() as session:
             result = await self.board_service.get_board(session, current_user, job_id)
         return api_response(message="Board fetched.", data=result)
+
+    async def get_board_stage_page(
+        self,
+        current_user: UserContextDto,
+        job_id: int,
+        stage: str,
+        limit: int = 20,
+        offset: int = 0,
+    ):
+        """One page of a terminal lane's applications (offset/limit)."""
+        try:
+            stage_enum = ApplicationStage(stage)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid stage.")
+        if offset < 0:
+            raise HTTPException(status_code=400, detail="offset must be >= 0.")
+        limit = max(1, min(limit, 100))
+        async with self.database.session() as session:
+            result = await self.board_service.get_board_stage_page(
+                session, current_user, job_id, stage_enum, limit, offset
+            )
+        return api_response(message="Board page fetched.", data=result)
 
     async def get_application_detail(
         self, current_user: UserContextDto, application_id: int

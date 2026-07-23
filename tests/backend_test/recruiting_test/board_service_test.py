@@ -1,9 +1,9 @@
 import unittest
-from datetime import datetime
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, call, create_autospec
 
-from backend.recruiting.board_service import BoardService
+from backend.recruiting.board_service import TERMINAL_STAGES, BoardService
 from backend.recruiting.recruiting_mapper import RecruitingMapper
 from backend.dto.board_dto import (
     REJECT_REASONS,
@@ -109,6 +109,10 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         # Default: candidate has no other applications, so blacklist's
         # close-out-the-rest loop is a no-op unless a test seeds siblings.
         self.app_repo.list_by_user = AsyncMock(return_value=[])
+        # Default: no terminal-stage rows, so get_board's terminal-stage
+        # loop is a no-op (both stages skipped) unless a test seeds pages.
+        self.app_repo.list_by_job_and_stage = AsyncMock(return_value=[])
+        self.app_repo.count_latest_by_job_and_stage = AsyncMock(return_value=0)
 
     def _job(
         self,
@@ -261,8 +265,13 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
 
         result = await self.service.get_board(self.session, self._ctx(user_id=2), 1)
 
-        self.assertEqual({c.id for c in result["recruiter_screening"]}, {10, 12})
-        self.assertEqual({c.id for c in result["tech"]}, {11})
+        stages = result["stages"]
+        self.assertEqual(
+            {c.id for c in stages["recruiter_screening"]["items"]}, {10, 12}
+        )
+        self.assertEqual({c.id for c in stages["tech"]["items"]}, {11})
+        self.assertEqual(stages["recruiter_screening"]["total"], 2)
+        self.assertFalse(stages["recruiter_screening"]["has_more"])
 
     async def test_get_board_raises_for_non_owner(self):
         job = self._job(job_id=1, owner_ids=(9,))
@@ -299,7 +308,8 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         result = await self.service.get_board(self.session, self._ctx(user_id=2), 1)
 
         self.assertEqual(
-            result["recruiter_screening"][0].reviewer_name, "Explicit Assignee"
+            result["stages"]["recruiter_screening"]["items"][0].reviewer_name,
+            "Explicit Assignee",
         )
 
     async def test_get_board_reviewer_falls_back_to_default_when_no_assignment(self):
@@ -322,7 +332,8 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         result = await self.service.get_board(self.session, self._ctx(user_id=2), 1)
 
         self.assertEqual(
-            result["recruiter_screening"][0].reviewer_name, "Default Person"
+            result["stages"]["recruiter_screening"]["items"][0].reviewer_name,
+            "Default Person",
         )
 
     async def test_get_board_reviewer_none_when_no_assignment_and_no_default(self):
@@ -336,7 +347,9 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
 
         result = await self.service.get_board(self.session, self._ctx(user_id=2), 1)
 
-        self.assertIsNone(result["recruiter_screening"][0].reviewer_name)
+        self.assertIsNone(
+            result["stages"]["recruiter_screening"]["items"][0].reviewer_name
+        )
 
     async def test_get_board_reviewer_none_at_round_two_even_with_round_one_default(
         self,
@@ -361,7 +374,9 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
 
         result = await self.service.get_board(self.session, self._ctx(user_id=2), 1)
 
-        self.assertIsNone(result["recruiter_screening"][0].reviewer_name)
+        self.assertIsNone(
+            result["stages"]["recruiter_screening"]["items"][0].reviewer_name
+        )
 
     async def test_get_board_reviewer_none_for_non_interview_stage(self):
         job = self._job(job_id=1, owner_ids=(2,))
@@ -378,7 +393,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
 
         result = await self.service.get_board(self.session, self._ctx(user_id=2), 1)
 
-        self.assertIsNone(result["offer"][0].reviewer_name)
+        self.assertIsNone(result["stages"]["offer"]["items"][0].reviewer_name)
 
     async def test_require_owner_raises_when_job_missing(self):
         self.job_repo.get_by_job_id = AsyncMock(return_value=None)
@@ -399,7 +414,103 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
 
         result = await self.service.get_board(self.session, ctx, 1)
 
-        self.assertEqual(result, {})
+        self.assertEqual(result, {"stages": {}})
+
+    async def test_get_board_wraps_stages_and_pages_terminal(self):
+        job = self._job(job_id=1, owner_ids=(2,), stages=("recruiter_screening",))
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        active_app = self._application(
+            application_id=10, stage=ApplicationStage.RECRUITER_SCREENING
+        )
+        active_user = self._user(user_id=3)
+        self.app_repo.list_by_job = AsyncMock(return_value=[(active_app, active_user)])
+
+        rejected_rows = [
+            (
+                self._application(
+                    application_id=100 + i,
+                    user_id=100 + i,
+                    stage=ApplicationStage.REJECTED,
+                ),
+                self._user(user_id=100 + i),
+            )
+            for i in range(25)
+        ]
+
+        def _count(session, job_id, stage):
+            return 25 if stage == ApplicationStage.REJECTED else 0
+
+        def _page(session, job_id, stage, limit, offset):
+            if stage != ApplicationStage.REJECTED:
+                return []
+            return rejected_rows[offset : offset + limit]
+
+        self.app_repo.count_latest_by_job_and_stage = AsyncMock(side_effect=_count)
+        self.app_repo.list_by_job_and_stage = AsyncMock(side_effect=_page)
+
+        board = await self.service.get_board(self.session, self._ctx(user_id=2), 1)
+
+        active = board["stages"]["recruiter_screening"]
+        self.assertFalse(active["has_more"])
+        self.assertEqual(active["total"], len(active["items"]))
+
+        rej = board["stages"]["rejected"]
+        self.assertEqual(len(rej["items"]), 20)
+        self.assertEqual(rej["total"], 25)
+        self.assertTrue(rej["has_more"])
+
+        self.app_repo.list_by_job.assert_awaited_once_with(
+            self.session, 1, exclude_stages=set(TERMINAL_STAGES)
+        )
+
+    async def test_get_board_stage_page_second_page(self):
+        job = self._job(job_id=1, owner_ids=(2,))
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        rejected_rows = [
+            (
+                self._application(
+                    application_id=100 + i,
+                    user_id=100 + i,
+                    stage=ApplicationStage.REJECTED,
+                ),
+                self._user(user_id=100 + i),
+            )
+            for i in range(25)
+        ]
+        self.app_repo.count_latest_by_job_and_stage = AsyncMock(return_value=25)
+        self.app_repo.list_by_job_and_stage = AsyncMock(
+            return_value=rejected_rows[20:25]
+        )
+
+        page = await self.service.get_board_stage_page(
+            self.session,
+            self._ctx(user_id=2),
+            1,
+            ApplicationStage.REJECTED,
+            limit=20,
+            offset=20,
+        )
+
+        self.assertEqual(len(page["items"]), 5)
+        self.assertEqual(page["total"], 25)
+        self.assertFalse(page["has_more"])
+        self.app_repo.list_by_job_and_stage.assert_awaited_once_with(
+            self.session, 1, ApplicationStage.REJECTED, limit=20, offset=20
+        )
+
+    async def test_get_board_stage_page_requires_owner(self):
+        job = self._job(job_id=1, owner_ids=(9,))
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+
+        with self.assertRaises(ValueError):
+            await self.service.get_board_stage_page(
+                self.session,
+                self._ctx(user_id=2),
+                1,
+                ApplicationStage.REJECTED,
+                limit=20,
+                offset=0,
+            )
 
     # -- get_application_detail --
 
@@ -1373,6 +1484,26 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.evaluation_repo.has_confirmed.assert_not_awaited()
         details = self.activity_repo.create.await_args.kwargs["details"]
         self.assertNotIn("advancedWithoutEvaluation", details)
+
+    async def test_change_stage_sets_stage_entered_at(self):
+        """Every stage-write must stamp stage_entered_at so terminal-lane
+        (rejected/hired) ordering has a dedicated timestamp that doesn't
+        drift with later non-stage writes (e.g. updated_timestamp would)."""
+        job = self._job(job_id=1, owner_ids=(2,), stages=("tech",))
+        application = self._application(
+            application_id=10, job_id=1, stage=ApplicationStage.TECH
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+
+        before = datetime.now(timezone.utc)
+        dto = StageChangeDto(to_stage=ApplicationStage.HIRED)
+        await self.service.change_stage(self.session, self._ctx(user_id=2), 10, dto)
+
+        saved = self.app_repo.update.call_args.args[1]
+        self.assertIsNotNone(saved.stage_entered_at)
+        self.assertGreaterEqual(saved.stage_entered_at, before)
 
     # -- reassign --
 

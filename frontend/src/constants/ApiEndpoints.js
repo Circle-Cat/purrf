@@ -62,6 +62,8 @@ export const API_ENDPOINTS = {
   RECRUITING_MY_APPLICATIONS: "/recruiting/my-applications",
   RECRUITING_BOARD_JOBS: "/recruiting/board/jobs",
   RECRUITING_JOB_BOARD: (jobId) => `/recruiting/jobs/${jobId}/board`,
+  RECRUITING_JOB_BOARD_STAGE: (jobId) =>
+    `/recruiting/jobs/${jobId}/board/applications`,
   RECRUITING_APPLICATION_STAGE: (id) => `/recruiting/applications/${id}/stage`,
   RECRUITING_APPLICATION_SUB_STATUS: (id) =>
     `/recruiting/applications/${id}/sub-status`,
