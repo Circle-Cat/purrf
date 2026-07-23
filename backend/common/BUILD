@@ -209,6 +209,11 @@ py_library(
 )
 
 py_library(
+    name = "communication_enums",
+    srcs = ["communication_enums.py"],
+)
+
+py_library(
     name = "identity_type",
     srcs = [
         "identity_type.py",
