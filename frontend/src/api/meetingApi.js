@@ -41,6 +41,7 @@ export const getMyMentorshipMeetingsV2 = ({ roundId, includeDetails }) =>
 /**
  * Create a mentorship meeting V2.
  * @param {object} data - The meeting data to be created.
+ * @returns {Promise<{message: string, data: {created: Array, failed: Array}, status_code: number, success: boolean}>}
  */
 export const postMyMentorshipMeetingV2 = (data) =>
   request.post(API_ENDPOINTS.MENTORSHIP_MEETINGS_V2, data);

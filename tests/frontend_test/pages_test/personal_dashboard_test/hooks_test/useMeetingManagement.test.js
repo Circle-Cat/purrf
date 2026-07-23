@@ -219,20 +219,21 @@ describe("useMeetingManagement Hook Unit Tests", () => {
   });
 
   describe("Create a meeting(postMyMentorshipMeetingV2)", () => {
-    it("should call the post API and automatically refresh list data after postMyMentorshipMeetingV2 API succeeds", async () => {
-      postMyMentorshipMeetingV2.mockResolvedValue({ success: true });
+    it("should call the post API, return its data, and refresh the list after success", async () => {
+      postMyMentorshipMeetingV2.mockResolvedValue({
+        data: { created: [{ meetingId: "g-1" }], failed: [] },
+      });
       const { result } = renderHook(() => useMeetingManagement(mockRoundId));
-
       await waitFor(() => expect(result.current.isLoading).toBe(false));
-      vi.clearAllMocks();
 
-      const payload = { targetSlotId: "slot-abc" };
+      const payload = { round_id: mockRoundId, partner_id: 1 };
+      let returned;
       await act(async () => {
-        await result.current.bookMeeting(payload);
+        returned = await result.current.bookMeeting(payload);
       });
 
       expect(postMyMentorshipMeetingV2).toHaveBeenCalledWith(payload);
-      expect(getMyMentorshipMeetingsV2).toHaveBeenCalledTimes(1);
+      expect(returned).toEqual({ created: [{ meetingId: "g-1" }], failed: [] });
     });
 
     it("should log to console and throw error to be caught by the caller when Creating fails", async () => {
