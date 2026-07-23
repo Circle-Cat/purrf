@@ -285,6 +285,12 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
             self.mock_current_user
         )
 
+        # session_factory yields the shared mock session as an async CM
+        cm = MagicMock()
+        cm.__aenter__ = AsyncMock(return_value=self.mock_session)
+        cm.__aexit__ = AsyncMock(return_value=None)
+        self.mock_session_factory = MagicMock(return_value=cm)
+
     @patch("backend.mentorship.meeting_service.uuid")
     async def test_create_google_meeting_success(self, mock_uuid):
         """Test successful meeting creation with correct response fields."""
@@ -640,6 +646,48 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
                     }
                 ],
             )
+
+    async def test_create_google_meetings_batch_single_success(self):
+        """count=1: converts wall-clock to UTC and returns one created entry."""
+        from datetime import date
+        result = await self.service.create_google_meetings_batch(
+            session_factory=self.mock_session_factory,
+            user_context=self.user_context,
+            partner_id=2,
+            round_id=1,
+            timezone="America/New_York",
+            start_date=date(2026, 7, 30),
+            start_time="10:00",
+            duration_minutes=30,
+        )
+
+        self.assertEqual(len(result.created), 1)
+        self.assertEqual(len(result.failed), 0)
+        # 10:00 EDT (UTC-4 in July) -> 14:00Z
+        call = self.mock_google_service.insert_google_meeting.call_args
+        self.assertEqual(call.kwargs["start_time"].isoformat(), "2026-07-30T14:00:00+00:00")
+        self.assertEqual(call.kwargs["end_time"].isoformat(), "2026-07-30T14:30:00+00:00")
+
+    async def test_create_google_meetings_batch_best_effort_failure(self):
+        """A per-occurrence Google failure is captured in `failed`, not raised."""
+        from datetime import date
+        self.mock_google_service.insert_google_meeting.side_effect = RuntimeError("boom")
+
+        result = await self.service.create_google_meetings_batch(
+            session_factory=self.mock_session_factory,
+            user_context=self.user_context,
+            partner_id=2,
+            round_id=1,
+            timezone="America/New_York",
+            start_date=date(2026, 7, 30),
+            start_time="10:00",
+            duration_minutes=30,
+        )
+
+        self.assertEqual(len(result.created), 0)
+        self.assertEqual(len(result.failed), 1)
+        self.assertEqual(result.failed[0].index, 0)
+        self.assertIn("boom", result.failed[0].reason)
 
 
 if __name__ == "__main__":
