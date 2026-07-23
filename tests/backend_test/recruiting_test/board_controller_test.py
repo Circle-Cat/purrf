@@ -2,7 +2,7 @@ import unittest
 from http import HTTPStatus
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from fastapi import Response
+from fastapi import HTTPException, Response
 
 from backend.dto.board_dto import (
     BlacklistDto,
@@ -266,18 +266,40 @@ class TestBoardController(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(resp["data"]["total"], 25)
+        # The controller must parse the raw `stage` string into the enum and
+        # forward the page args to the service unchanged.
+        self.board_service.get_board_stage_page.assert_awaited_once_with(
+            self.session, self.ctx, 1, ApplicationStage.REJECTED, 20, 0
+        )
 
     async def test_board_stage_page_rejects_bad_stage(self):
         self.board_service.get_board_stage_page = AsyncMock(
             return_value={"items": [], "total": 0, "has_more": False}
         )
 
-        with self.assertRaises(Exception):  # 400 / ValueError depending on layer
+        with self.assertRaises(HTTPException) as caught:
             await self.controller.get_board_stage_page(
                 self.ctx, job_id=1, stage="not_a_stage", limit=20, offset=0
             )
 
-    async def test_board_stage_page_clamps_limit(self):
+        self.assertEqual(caught.exception.status_code, 400)
+        # Rejection must happen before delegating to the service.
+        self.board_service.get_board_stage_page.assert_not_awaited()
+
+    async def test_board_stage_page_rejects_negative_offset(self):
+        self.board_service.get_board_stage_page = AsyncMock(
+            return_value={"items": [], "total": 0, "has_more": False}
+        )
+
+        with self.assertRaises(HTTPException) as caught:
+            await self.controller.get_board_stage_page(
+                self.ctx, job_id=1, stage="rejected", limit=20, offset=-1
+            )
+
+        self.assertEqual(caught.exception.status_code, 400)
+        self.board_service.get_board_stage_page.assert_not_awaited()
+
+    async def test_board_stage_page_clamps_limit_to_ceiling(self):
         self.board_service.get_board_stage_page = AsyncMock(
             return_value={"items": [], "total": 0, "has_more": False}
         )
@@ -286,11 +308,25 @@ class TestBoardController(unittest.IsolatedAsyncioTestCase):
             self.ctx, job_id=1, stage="rejected", limit=9999, offset=0
         )
 
-        called_limit = (
-            self.board_service.get_board_stage_page.call_args.kwargs.get("limit")
-            or self.board_service.get_board_stage_page.call_args.args[-2]
+        # Delegated positionally: (session, ctx, job_id, stage, limit, offset).
+        _, _, _, _, forwarded_limit, _ = (
+            self.board_service.get_board_stage_page.await_args.args
         )
-        self.assertLessEqual(called_limit, 100)
+        self.assertEqual(forwarded_limit, 100)
+
+    async def test_board_stage_page_clamps_limit_to_floor(self):
+        self.board_service.get_board_stage_page = AsyncMock(
+            return_value={"items": [], "total": 0, "has_more": False}
+        )
+
+        await self.controller.get_board_stage_page(
+            self.ctx, job_id=1, stage="rejected", limit=0, offset=0
+        )
+
+        _, _, _, _, forwarded_limit, _ = (
+            self.board_service.get_board_stage_page.await_args.args
+        )
+        self.assertEqual(forwarded_limit, 1)
 
     def test_board_stage_page_route_is_get_and_plain_authenticated(self):
         routes_by_path = {route.path: route for route in self.controller.router.routes}
@@ -298,6 +334,10 @@ class TestBoardController(unittest.IsolatedAsyncioTestCase):
         route = routes_by_path["/recruiting/jobs/{job_id}/board/applications"]
 
         self.assertIn("GET", route.methods)
+        # "Plain authenticated": login required, but NO permission gate (unlike
+        # the PATCH decision routes). authenticate() with no permissions arg
+        # leaves the wrapper closure's `permissions` cell as None.
+        self.assertIsNone(self._endpoint_permissions(route.endpoint))
 
 
 if __name__ == "__main__":
