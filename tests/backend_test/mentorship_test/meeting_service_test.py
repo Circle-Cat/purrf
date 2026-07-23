@@ -650,6 +650,7 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
     async def test_create_google_meetings_batch_single_success(self):
         """count=1: converts wall-clock to UTC and returns one created entry."""
         from datetime import date
+
         result = await self.service.create_google_meetings_batch(
             session_factory=self.mock_session_factory,
             user_context=self.user_context,
@@ -665,13 +666,20 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(result.failed), 0)
         # 10:00 EDT (UTC-4 in July) -> 14:00Z
         call = self.mock_google_service.insert_google_meeting.call_args
-        self.assertEqual(call.kwargs["start_time"].isoformat(), "2026-07-30T14:00:00+00:00")
-        self.assertEqual(call.kwargs["end_time"].isoformat(), "2026-07-30T14:30:00+00:00")
+        self.assertEqual(
+            call.kwargs["start_time"].isoformat(), "2026-07-30T14:00:00+00:00"
+        )
+        self.assertEqual(
+            call.kwargs["end_time"].isoformat(), "2026-07-30T14:30:00+00:00"
+        )
 
     async def test_create_google_meetings_batch_best_effort_failure(self):
         """A per-occurrence Google failure is captured in `failed`, not raised."""
         from datetime import date
-        self.mock_google_service.insert_google_meeting.side_effect = RuntimeError("boom")
+
+        self.mock_google_service.insert_google_meeting.side_effect = RuntimeError(
+            "boom"
+        )
 
         result = await self.service.create_google_meetings_batch(
             session_factory=self.mock_session_factory,

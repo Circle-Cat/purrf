@@ -392,7 +392,9 @@ class TestMentorshipController(unittest.IsolatedAsyncioTestCase):
         )
         mock_user = MagicMock(spec=UserContextDto)
         mock_result = MagicMock()
-        self.mock_meeting_service.create_google_meetings_batch.return_value = mock_result
+        self.mock_meeting_service.create_google_meetings_batch.return_value = (
+            mock_result
+        )
 
         payload = MeetingBatchCreateDto(
             round_id=1,

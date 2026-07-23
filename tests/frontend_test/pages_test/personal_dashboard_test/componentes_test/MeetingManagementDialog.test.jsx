@@ -335,7 +335,10 @@ describe("MeetingManagementDialog Component", () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     vi.setSystemTime(new Date("2026-07-15T12:00:00-04:00"));
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-    mockBookMeeting.mockResolvedValue({ created: [{ meetingId: "g-1" }], failed: [] });
+    mockBookMeeting.mockResolvedValue({
+      created: [{ meetingId: "g-1" }],
+      failed: [],
+    });
 
     render(
       <MeetingManagementDialog
