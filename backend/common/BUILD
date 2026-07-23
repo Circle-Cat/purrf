@@ -69,6 +69,17 @@ py_library(
 )
 
 py_library(
+    name = "gmail_client",
+    srcs = ["gmail_client.py"],
+    deps = [
+        ":environment_constants",
+        ":exceptions",
+        "@pypi//google_api_python_client",
+        "@pypi//google_auth",
+    ],
+)
+
+py_library(
     name = "redis_client",
     srcs = ["redis_client.py"],
     deps = [

@@ -53,6 +53,16 @@ py_test(
 )
 
 py_test(
+    name = "gmail_client_test",
+    srcs = ["gmail_client_test.py"],
+    deps = [
+        "//backend/common:exceptions",
+        "//backend/common:gmail_client",
+        "@pypi//google_api_python_client",
+    ],
+)
+
+py_test(
     name = "redis_client_test",
     srcs = ["redis_client_test.py"],
     deps = [
