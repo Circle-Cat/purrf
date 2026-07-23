@@ -21,8 +21,10 @@ from backend.dto.board_dto import (
     StageChangeDto,
     SubStatusChangeDto,
 )
+from backend.dto.email_dto import EmailConversationDto
 from backend.dto.evaluation_dto import EvaluationDto
 from backend.dto.user_context_dto import UserContextDto
+from backend.common.communication_enums import ContextType
 from backend.common.permissions import Permission
 from backend.common.recruiting_enums import ApplicationStage, NotificationType
 from backend.entity.application_entity import ApplicationEntity
@@ -129,6 +131,7 @@ class BoardService:
         evaluation_repository,
         notification_repository,
         user_emails_repository,
+        email_conversation_service,
     ):
         """
         Args:
@@ -168,6 +171,10 @@ class BoardService:
                 ``add_comment`` (mentioned users notified) -- independent,
                 explicit calls, not merged with the activity log (see the
                 notification-system design spec for why).
+            email_conversation_service (EmailConversationService): Person-anchored
+                email transport/DB layer; the Emails-tab endpoints resolve an
+                application to its (user_id, APPLICATION:application_id) context
+                and delegate send/sync/read here.
         """
         self.job_repository = job_repository
         self.application_repository = application_repository
@@ -185,6 +192,7 @@ class BoardService:
         self.evaluation_repository = evaluation_repository
         self.notification_repository = notification_repository
         self.user_emails_repository = user_emails_repository
+        self.email_conversation_service = email_conversation_service
 
     async def list_my_jobs(
         self, session: AsyncSession, current_user: UserContextDto
@@ -267,6 +275,135 @@ class BoardService:
         if job is None or not (is_owner or is_read_all):
             raise ValueError("you are not an owner of this job")
         return job
+
+    async def send_application_email(
+        self,
+        session: AsyncSession,
+        current_user: UserContextDto,
+        application_id: int,
+        dto,
+    ) -> EmailConversationDto:
+        """Send (or reply to) a candidate email for one application.
+
+        Owner-only (mirrors advancing the candidate): the caller must be a
+        configured owner of the application's posting. Resolves the application
+        to its candidate ``user_id`` and delegates to the shared email service
+        under ``(APPLICATION, application_id)``. Returns the refreshed
+        conversation so the Emails tab can re-render in one round-trip.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            current_user (UserContextDto): The authenticated caller.
+            application_id (int): The application being emailed about.
+            dto (EmailSendRequestDto): Compose payload (to/cc/subject/body,
+                optional thread_id for a reply).
+
+        Returns:
+            EmailConversationDto: The application's full conversation after send.
+
+        Raises:
+            ValueError: If the application is missing, the caller is not an
+                owner, or no recipient can be determined.
+        """
+        application = await self._require_application_owner(
+            session, current_user, application_id, allow_read_all=False
+        )
+        recipients = list(dto.to)
+        if not recipients:
+            contact = await self.user_emails_repository.get_contact_email(
+                session, application.user_id
+            )
+            if contact:
+                recipients = [contact]
+        if not recipients:
+            raise ValueError(
+                "No recipient: the candidate has no contact email; provide 'to'."
+            )
+        await self.email_conversation_service.send(
+            session,
+            user_id=application.user_id,
+            context_type=ContextType.APPLICATION,
+            context_id=application_id,
+            to=recipients,
+            cc=dto.cc,
+            subject=dto.subject,
+            body=dto.body,
+            sender_user_id=current_user.user_id,
+            thread_id=dto.thread_id,
+        )
+        await session.commit()
+        return await self._build_application_conversation(
+            session, application_id, application.user_id
+        )
+
+    async def get_application_conversation(
+        self,
+        session: AsyncSession,
+        current_user: UserContextDto,
+        application_id: int,
+        refresh: bool = False,
+    ) -> EmailConversationDto:
+        """Read one application's email conversation (owner or read.all).
+
+        Opening the tab is a pure DB read; ``refresh=True`` (manual Refresh)
+        first pulls the threads from Gmail, then reads.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            current_user (UserContextDto): The authenticated caller.
+            application_id (int): The application to read.
+            refresh (bool): When True, sync from Gmail before reading.
+
+        Returns:
+            EmailConversationDto: Threads (with messages) plus the candidate's
+                default contact address for compose prefill.
+
+        Raises:
+            ValueError: If the application is missing, or the caller is neither
+                an owner nor a ``RECRUITING_APPLICATION_READ_ALL`` holder.
+        """
+        application = await self._require_application_owner(
+            session, current_user, application_id, allow_read_all=True
+        )
+        if refresh:
+            await self.email_conversation_service.sync_context(
+                session, ContextType.APPLICATION, application_id
+            )
+            await session.commit()
+        return await self._build_application_conversation(
+            session, application_id, application.user_id
+        )
+
+    async def _require_application_owner(
+        self,
+        session: AsyncSession,
+        current_user: UserContextDto,
+        application_id: int,
+        *,
+        allow_read_all: bool,
+    ) -> ApplicationEntity:
+        """Load an application and assert the caller owns its posting."""
+        application = await self.application_repository.get_by_id(
+            session, application_id
+        )
+        if application is None:
+            raise ValueError(f"Application {application_id} not found")
+        await self._require_owner(
+            session, current_user, application.job_id, allow_read_all=allow_read_all
+        )
+        return application
+
+    async def _build_application_conversation(
+        self, session: AsyncSession, application_id: int, user_id: int
+    ) -> EmailConversationDto:
+        """Assemble the EmailConversationDto for one application."""
+        threads = await self.email_conversation_service.list_conversation(
+            session, ContextType.APPLICATION, application_id
+        )
+        default_to = await self.user_emails_repository.get_contact_email(
+            session, user_id
+        )
+        return EmailConversationDto(threads=threads, default_to=default_to)
 
     async def _cards_for_rows(self, session, job, rows) -> list[BoardCardDto]:
         """Build BoardCardDto list for (application, user) rows, resolving
