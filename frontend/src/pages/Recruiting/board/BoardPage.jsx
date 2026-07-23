@@ -10,7 +10,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { listBoardJobs, getJobBoard } from "@/api/recruitingApi";
+import {
+  listBoardJobs,
+  getJobBoard,
+  getJobBoardStagePage,
+} from "@/api/recruitingApi";
 import { humanize, stageLabel } from "@/pages/Recruiting/board/stageFormat";
 import { getStageColors } from "@/pages/Recruiting/board/stageColors";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
@@ -38,6 +42,9 @@ const BoardPage = () => {
   const [selectedJobId, setSelectedJobId] = useState(null);
   const [board, setBoard] = useState(null);
   const [boardError, setBoardError] = useState(false);
+  /** Stages with an in-flight "Load more" fetch, so a fast double-click on
+   * the same lane can't fire a second request against a stale offset. */
+  const [loadingMore, setLoadingMore] = useState(() => new Set());
 
   /** Fetch (or re-fetch, via Retry) the caller's owned jobs. */
   const loadJobs = useCallback(async () => {
@@ -65,7 +72,7 @@ const BoardPage = () => {
     setBoard(null);
     try {
       const { data } = await getJobBoard(jobId);
-      setBoard(data ?? {});
+      setBoard(data?.stages ?? {});
     } catch (e) {
       setBoardError(true);
       toast.error(e.message);
@@ -77,6 +84,43 @@ const BoardPage = () => {
       loadBoard(selectedJobId);
     }
   }, [selectedJobId, loadBoard]);
+
+  /** Fetch the next page of a terminal lane (hired/rejected) and append it,
+   * deduping by card id so a slow double-click can't render duplicates. */
+  const loadMore = useCallback(
+    async (stage) => {
+      if (loadingMore.has(stage)) return;
+      setLoadingMore((prev) => new Set(prev).add(stage));
+      const lane = board[stage];
+      try {
+        const { data } = await getJobBoardStagePage(selectedJobId, {
+          stage,
+          limit: 20,
+          offset: lane.items.length,
+        });
+        setBoard((prev) => {
+          const seen = new Set(prev[stage].items.map((c) => c.id));
+          const merged = [
+            ...prev[stage].items,
+            ...data.items.filter((c) => !seen.has(c.id)),
+          ];
+          return {
+            ...prev,
+            [stage]: { ...prev[stage], items: merged, has_more: data.has_more },
+          };
+        });
+      } catch (e) {
+        toast.error(e.message);
+      } finally {
+        setLoadingMore((prev) => {
+          const next = new Set(prev);
+          next.delete(stage);
+          return next;
+        });
+      }
+    },
+    [board, selectedJobId, loadingMore],
+  );
 
   const selectedJob = useMemo(
     () => jobs?.find((job) => job.id === selectedJobId) ?? null,
@@ -185,7 +229,7 @@ const BoardPage = () => {
       ) : (
         <div className="flex flex-1 gap-4 overflow-x-auto pb-4">
           {lanes.map((lane) => {
-            const cardsForStage = board[lane.stage] ?? [];
+            const cardsForStage = board[lane.stage]?.items ?? [];
             // A stage's configured rounds can shrink after applicants are
             // already staged past the new max (e.g. an owner edits "tech"
             // from 3 rounds down to 2); the last round lane catches those
@@ -213,7 +257,9 @@ const BoardPage = () => {
                   <span
                     className={`rounded-full px-2 py-0.5 text-xs font-semibold ${colors.count}`}
                   >
-                    {cards.length}
+                    {isTerminal
+                      ? (board[lane.stage]?.total ?? cards.length)
+                      : cards.length}
                   </span>
                 </div>
                 <div className="flex flex-col gap-2 p-3">
@@ -230,6 +276,16 @@ const BoardPage = () => {
                         onOpen={handleOpen}
                       />
                     ))
+                  )}
+                  {isTerminal && board[lane.stage]?.has_more && (
+                    <button
+                      type="button"
+                      onClick={() => loadMore(lane.stage)}
+                      disabled={loadingMore.has(lane.stage)}
+                      className="mt-1 rounded-md border border-border px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Load more
+                    </button>
                   )}
                 </div>
               </div>
