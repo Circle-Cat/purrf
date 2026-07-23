@@ -48,8 +48,6 @@ from backend.common.exceptions import RateLimitedError
 
 # OAuth2 token endpoint the refresh token is redeemed against.
 _TOKEN_URI = "https://oauth2.googleapis.com/token"
-# gmail.modify covers both send and read (threads.get).
-_SCOPES = ["https://www.googleapis.com/auth/gmail.modify"]
 # "me" resolves to the authenticated account (our sender).
 _GMAIL_USER = "me"
 
@@ -92,6 +90,15 @@ class GmailClient:
             raise ValueError("logger must be provided")
         if not self._retry_utils:
             raise ValueError("retry_utils must be provided")
+
+    @property
+    def sender_address(self) -> str:
+        """The company account every message is sent from.
+
+        Exposed so the domain layer can classify a synced message's direction
+        (OUTBOUND when its ``From`` is us, INBOUND otherwise).
+        """
+        return self._sender
 
     def send_message(
         self,
@@ -182,13 +189,18 @@ class GmailClient:
     def _get_service(self):
         """Build the Gmail service once (lazily) and cache it on the instance."""
         if self._service is None:
+            # No scopes are passed: on a refresh-token grant google-auth would
+            # send them as the `scope` param, and Google rejects any value that
+            # is not a subset of what the token was actually granted
+            # (invalid_scope). Omitting it yields an access token carrying the
+            # token's full granted scopes (gmail send + read), which is what we
+            # authorized once out-of-band.
             credentials = Credentials(
                 token=None,
                 refresh_token=self._refresh_token,
                 client_id=self._client_id,
                 client_secret=self._client_secret,
                 token_uri=_TOKEN_URI,
-                scopes=_SCOPES,
             )
             self._service = build(
                 "gmail", "v1", credentials=credentials, cache_discovery=False
