@@ -33,6 +33,7 @@ from email.utils import make_msgid
 from html import unescape
 from http import HTTPStatus
 
+from google.auth.exceptions import RefreshError
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
@@ -198,6 +199,21 @@ class GmailClient:
         """Run a Gmail request with retry, translating errors to domain types."""
         try:
             return self._retry_utils.get_retry_on_transient(request.execute)
+        except RefreshError as error:
+            # google-auth could not exchange the refresh token for an access
+            # token — almost always because the token was revoked or expired
+            # (e.g. the sender account's password changed, or the OAuth app
+            # slipped out of Internal/published status). Re-authorize the
+            # account per the runbook (RFC appendix A) and update the secret.
+            self._logger.error(
+                "[GmailClient] %s failed: refresh token rejected — "
+                "re-authorization of the sender account is required.",
+                operation,
+            )
+            raise RuntimeError(
+                f"Gmail authentication failed during {operation}: "
+                "refresh token rejected (re-authorization required)"
+            ) from error
         except HttpError as error:
             status = getattr(error.resp, "status", None)
             self._logger.error("[GmailClient] %s failed (status=%s)", operation, status)
