@@ -25,7 +25,7 @@ from backend.common.api_endpoints import (
     MENTORSHIP_ROUNDS_FEEDBACK_ENDPOINT,
 )
 from backend.common.permissions import Permission
-from backend.dto.google_meeting_create_dto import GoogleMeetingCreateDto
+from backend.dto.meeting_batch_create_dto import MeetingBatchCreateDto
 from backend.dto.google_meeting_delete_dto import GoogleMeetingDeleteDto
 
 
@@ -379,30 +379,25 @@ class MentorshipController:
         raise PermissionError("Manual submit meeting feature is not yet available.")
 
     async def create_google_meeting(
-        self, current_user: UserContextDto, payload: GoogleMeetingCreateDto
+        self, current_user: UserContextDto, payload: MeetingBatchCreateDto
     ):
         """
-        Create a Google Calendar meeting for a mentorship pair.
+        Create a mentorship meeting from a wall-clock spec.
 
-        Args:
-            current_user (UserContextDto): The context of the currently authenticated user.
-            payload (GoogleMeetingCreateDto): The meeting creation request containing
-                partner_id, round_id, and UTC start/end times.
-
-        Returns:
-            ApiResponse: A standardized API response containing the created meeting details.
+        The server converts the wall-clock inputs to UTC and creates the
+        meeting(s), returning a best-effort {created, failed} result.
         """
         if self.launchdarkly_service.is_create_google_meeting_enabled(current_user):
-            async with self.database.session() as session:
-                result = await self.meeting_service.create_google_meeting(
-                    session=session,
-                    user_context=current_user,
-                    partner_id=payload.partner_id,
-                    round_id=payload.round_id,
-                    start_datetime=payload.start_datetime,
-                    end_datetime=payload.end_datetime,
-                )
-
+            result = await self.meeting_service.create_google_meetings_batch(
+                session_factory=self.database.session,
+                user_context=current_user,
+                partner_id=payload.partner_id,
+                round_id=payload.round_id,
+                timezone=payload.timezone,
+                start_date=payload.start_date,
+                start_time=payload.start_time,
+                duration_minutes=payload.duration_minutes,
+            )
             return api_response(
                 message="Successfully created mentorship meeting.",
                 data=result,

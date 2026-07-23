@@ -23,7 +23,7 @@ import {
  *   upcomingMeetings: Array<Object>,
  *   partners: Map<string, Object>,
  *   isLoading: boolean,
- *   bookMeeting: (payload: Object) => Promise<void>,
+ *   bookMeeting: (payload: Object) => Promise<{created: Array, failed: Array}|undefined>,
  *   cancelMeetings: (meetingsToCancel: Array<Object>) => Promise<void>,
  *   refresh: () => Promise<void>
  * }}
@@ -118,14 +118,15 @@ export function useMeetingManagement(roundId) {
    * Book a new mentorship meeting.
    *
    * @param {Object} payload - Meeting scheduling payload.
-   * @returns {Promise<void>}
+   * @returns {Promise<{created: Array, failed: Array}|undefined>}
    */
   const bookMeeting = useCallback(
     async (payload) => {
       setIsLoading(true);
       try {
-        await postMyMentorshipMeetingV2(payload);
+        const res = await postMyMentorshipMeetingV2(payload);
         await fetchPageData();
+        return res?.data;
       } catch (error) {
         console.error("Book meeting failed:", error);
         throw error;

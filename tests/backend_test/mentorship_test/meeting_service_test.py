@@ -285,6 +285,12 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
             self.mock_current_user
         )
 
+        # session_factory yields the shared mock session as an async CM
+        cm = MagicMock()
+        cm.__aenter__ = AsyncMock(return_value=self.mock_session)
+        cm.__aexit__ = AsyncMock(return_value=None)
+        self.mock_session_factory = MagicMock(return_value=cm)
+
     @patch("backend.mentorship.meeting_service.uuid")
     async def test_create_google_meeting_success(self, mock_uuid):
         """Test successful meeting creation with correct response fields."""
@@ -640,6 +646,150 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
                     }
                 ],
             )
+
+    async def test_create_google_meetings_batch_single_success(self):
+        """count=1: converts wall-clock to UTC and returns one created entry."""
+        from datetime import date
+
+        result = await self.service.create_google_meetings_batch(
+            session_factory=self.mock_session_factory,
+            user_context=self.user_context,
+            partner_id=2,
+            round_id=1,
+            timezone="America/New_York",
+            start_date=date(2026, 7, 30),
+            start_time="10:00",
+            duration_minutes=30,
+        )
+
+        self.assertEqual(len(result.created), 1)
+        self.assertEqual(len(result.failed), 0)
+        # 10:00 EDT (UTC-4 in July) -> 14:00Z
+        call = self.mock_google_service.insert_google_meeting.call_args
+        self.assertEqual(
+            call.kwargs["start_time"].isoformat(), "2026-07-30T14:00:00+00:00"
+        )
+        self.assertEqual(
+            call.kwargs["end_time"].isoformat(), "2026-07-30T14:30:00+00:00"
+        )
+
+    async def test_create_google_meetings_batch_best_effort_failure(self):
+        """A per-occurrence Google failure is captured in `failed`, not raised."""
+        from datetime import date
+
+        self.mock_google_service.insert_google_meeting.side_effect = RuntimeError(
+            "boom"
+        )
+
+        result = await self.service.create_google_meetings_batch(
+            session_factory=self.mock_session_factory,
+            user_context=self.user_context,
+            partner_id=2,
+            round_id=1,
+            timezone="America/New_York",
+            start_date=date(2026, 7, 30),
+            start_time="10:00",
+            duration_minutes=30,
+        )
+
+        self.assertEqual(len(result.created), 0)
+        self.assertEqual(len(result.failed), 1)
+        self.assertEqual(result.failed[0].index, 0)
+        self.assertIn("boom", result.failed[0].reason)
+
+    def test_expand_occurrences_weekly_crosses_dst(self):
+        """Weekly series keeps local wall-clock time constant across a DST end.
+
+        US DST ends Sun 2026-11-01 (America/New_York EDT UTC-4 -> EST UTC-5).
+        Weekly 10:00 local from Oct 22: the occurrence after Nov 1 must stay
+        10:00 local, which is 15:00Z (not 14:00Z) -- the UTC offset shifts an
+        hour precisely because weeks are added to the naive time before
+        localizing.
+        """
+        from datetime import date
+
+        pairs = self.service._expand_occurrences(
+            timezone="America/New_York",
+            start_date=date(2026, 10, 22),
+            start_time="10:00",
+            duration_minutes=30,
+            interval_weeks=1,
+            count=3,
+        )
+
+        starts = [s.isoformat() for s, _ in pairs]
+        ends = [e.isoformat() for _, e in pairs]
+        self.assertEqual(
+            starts,
+            [
+                "2026-10-22T14:00:00+00:00",
+                "2026-10-29T14:00:00+00:00",
+                "2026-11-05T15:00:00+00:00",  # DST ended -> +1h in UTC, still 10:00 local
+            ],
+        )
+        self.assertEqual(
+            ends,
+            [
+                "2026-10-22T14:30:00+00:00",
+                "2026-10-29T14:30:00+00:00",
+                "2026-11-05T15:30:00+00:00",
+            ],
+        )
+
+    def test_expand_occurrences_biweekly_crosses_dst(self):
+        """Bi-weekly (interval_weeks=2) spacing is 14 days and DST-correct."""
+        from datetime import date
+
+        pairs = self.service._expand_occurrences(
+            timezone="America/New_York",
+            start_date=date(2026, 10, 22),
+            start_time="10:00",
+            duration_minutes=30,
+            interval_weeks=2,
+            count=2,
+        )
+
+        starts = [s.isoformat() for s, _ in pairs]
+        self.assertEqual(
+            starts,
+            [
+                "2026-10-22T14:00:00+00:00",
+                "2026-11-05T15:00:00+00:00",  # 14 days later, after DST end
+            ],
+        )
+
+    async def test_create_google_meetings_batch_multi_occurrence_dst(self):
+        """count>1 creates N meetings, each at the DST-correct UTC instant."""
+        from datetime import date
+
+        result = await self.service.create_google_meetings_batch(
+            session_factory=self.mock_session_factory,
+            user_context=self.user_context,
+            partner_id=2,
+            round_id=1,
+            timezone="America/New_York",
+            start_date=date(2026, 10, 22),
+            start_time="10:00",
+            duration_minutes=30,
+            interval_weeks=1,
+            count=3,
+        )
+
+        self.assertEqual(len(result.created), 3)
+        self.assertEqual(len(result.failed), 0)
+        self.assertEqual(self.mock_google_service.insert_google_meeting.call_count, 3)
+        actual_starts = [
+            c.kwargs["start_time"].isoformat()
+            for c in self.mock_google_service.insert_google_meeting.call_args_list
+        ]
+        self.assertEqual(
+            actual_starts,
+            [
+                "2026-10-22T14:00:00+00:00",
+                "2026-10-29T14:00:00+00:00",
+                "2026-11-05T15:00:00+00:00",
+            ],
+        )
 
 
 if __name__ == "__main__":
