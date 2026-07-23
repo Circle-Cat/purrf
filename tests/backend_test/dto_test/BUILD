@@ -38,3 +38,9 @@ py_test(
         "//backend/dto",
     ],
 )
+
+py_test(
+    name = "meeting_batch_create_dto_test",
+    srcs = ["meeting_batch_create_dto_test.py"],
+    deps = ["//backend/dto"],
+)

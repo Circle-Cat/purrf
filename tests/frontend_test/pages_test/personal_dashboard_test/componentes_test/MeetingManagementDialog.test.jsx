@@ -330,6 +330,53 @@ describe("MeetingManagementDialog Component", () => {
     });
   });
 
+  it("should submit a wall-clock payload (no client-side UTC conversion)", async () => {
+    // Pin today to 2026-07-15 so the calendar opens on July 2026.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(new Date("2026-07-15T12:00:00-04:00"));
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    mockBookMeeting.mockResolvedValue({
+      created: [{ meetingId: "g-1" }],
+      failed: [],
+    });
+
+    render(
+      <MeetingManagementDialog
+        roundId={5}
+        onBooked={vi.fn()}
+        userTimezone="America/New_York"
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: /manage meetings/i }));
+
+    await user.selectOptions(screen.getByLabelText("Select Partner"), "1");
+    fireEvent.change(screen.getByTestId("timezone-selector"), {
+      target: { value: "America/New_York" },
+    });
+
+    // Open the date popover and pick July 30, 2026.
+    await user.click(screen.getByRole("button", { name: /pick a date/i }));
+    // react-day-picker renders each day as a button; its accessible name
+    // contains the day-of-month. Match the "30" cell within the open dialog.
+    const dayButtons = screen.getAllByRole("button", { name: /30/ });
+    await user.click(dayButtons[dayButtons.length - 1]);
+
+    fireEvent.submit(document.querySelector("form"));
+
+    await waitFor(() => {
+      expect(mockBookMeeting).toHaveBeenCalledWith({
+        round_id: 5,
+        partner_id: 1,
+        timezone: "America/New_York",
+        start_date: "2026-07-30",
+        start_time: "09:00",
+        duration_minutes: 30,
+      });
+    });
+
+    vi.useRealTimers();
+  });
+
   it("should clear selectedIds when switching tabs or closing the dialog", async () => {
     useMeetingManagement.mockReturnValue({
       partners: mockPartners,

@@ -1,6 +1,7 @@
 import asyncio
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta, timezone as dt_timezone, date
+from zoneinfo import ZoneInfo
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,6 +13,10 @@ from backend.dto.meeting_create_dto import MeetingCreateDto
 from backend.dto.google_meeting_detail_dto import GoogleMeetingDetailDto
 from backend.dto.google_meeting_response_detail_dto import (
     GoogleMeetingResponseDetailDto,
+)
+from backend.dto.google_meeting_batch_create_response_dto import (
+    GoogleMeetingBatchCreateResponseDto,
+    GoogleMeetingCreateFailureDto,
 )
 from backend.dto.user_context_dto import UserContextDto
 from backend.common.permissions import Permission
@@ -348,6 +353,99 @@ class MeetingService:
         )
 
         return response_detail
+
+    def _expand_occurrences(
+        self,
+        timezone: str,
+        start_date: date,
+        start_time: str,
+        duration_minutes: int,
+        interval_weeks: int,
+        count: int,
+    ) -> list[tuple[datetime, datetime]]:
+        """Expand wall-clock recurrence into DST-correct (start_utc, end_utc) pairs."""
+        tz = ZoneInfo(timezone)
+        hour, minute = (int(p) for p in start_time.split(":"))
+        naive_start = datetime(
+            start_date.year, start_date.month, start_date.day, hour, minute
+        )
+        pairs = []
+        for i in range(count):
+            naive_i = naive_start + timedelta(weeks=interval_weeks * i)
+            start_utc = naive_i.replace(tzinfo=tz).astimezone(dt_timezone.utc)
+            end_utc = start_utc + timedelta(minutes=duration_minutes)
+            pairs.append((start_utc, end_utc))
+        return pairs
+
+    async def create_google_meetings_batch(
+        self,
+        session_factory,
+        user_context: UserContextDto,
+        partner_id: int,
+        round_id: int,
+        timezone: str,
+        start_date: date,
+        start_time: str,
+        duration_minutes: int,
+        interval_weeks: int = 1,
+        count: int = 1,
+    ) -> GoogleMeetingBatchCreateResponseDto:
+        """
+        Create one or more mentorship meetings from a wall-clock recurrence spec.
+
+        Wall-clock inputs are expanded to DST-correct UTC pairs, then each
+        occurrence is created via `create_google_meeting` in its own session
+        (best-effort: a single failure is captured, not raised).
+        """
+        occurrences = self._expand_occurrences(
+            timezone=timezone,
+            start_date=start_date,
+            start_time=start_time,
+            duration_minutes=duration_minutes,
+            interval_weeks=interval_weeks,
+            count=count,
+        )
+
+        created = []
+        failed = []
+        for index, (start_utc, end_utc) in enumerate(occurrences):
+            try:
+                async with session_factory() as session:
+                    detail = await self.create_google_meeting(
+                        session=session,
+                        user_context=user_context,
+                        partner_id=partner_id,
+                        round_id=round_id,
+                        start_datetime=start_utc,
+                        end_datetime=end_utc,
+                    )
+                created.append(detail)
+            except Exception as e:
+                self.logger.warning(
+                    "[MeetingService] batch occurrence %d failed for "
+                    "round_id=%s partner_id=%s: %s",
+                    index,
+                    round_id,
+                    partner_id,
+                    e,
+                )
+                failed.append(
+                    GoogleMeetingCreateFailureDto(
+                        index=index,
+                        start_datetime=start_utc.isoformat(),
+                        reason=str(e),
+                    )
+                )
+
+        self.logger.info(
+            "[MeetingService] batch create for round_id=%s partner_id=%s: "
+            "created=%d failed=%d",
+            round_id,
+            partner_id,
+            len(created),
+            len(failed),
+        )
+        return GoogleMeetingBatchCreateResponseDto(created=created, failed=failed)
 
     async def delete_google_meetings(
         self,
