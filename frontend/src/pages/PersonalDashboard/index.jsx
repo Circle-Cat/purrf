@@ -97,6 +97,7 @@ const PersonalDashboard = () => {
         <GoogleMeetingControl
           meetingRoundId={isCurrentRoundActive ? Number(selectedRoundId) : null}
           onRefresh={refreshMeetings}
+          userTimezone={userTimezone}
         />
       </div>
 

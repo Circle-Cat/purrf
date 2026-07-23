@@ -3,26 +3,20 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { GoogleMeetingControl } from "@/pages/PersonalDashboard/components/GoogleMeetingControl";
 import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
-import userEvent from "@testing-library/user-event";
 
 vi.mock("@/hooks/useFeatureFlags", () => ({
   useFeatureFlags: vi.fn(),
 }));
 
-vi.mock("@/components/common/MeetingManagementDialog", () => ({
-  default: ({ roundId }) => {
+vi.mock("@/pages/PersonalDashboard/components/MeetingManagementDialog", () => ({
+  default: ({ roundId, userTimezone }) => {
     const isDisabled = roundId === null || roundId === undefined;
     const tooltipText = isDisabled ? "No active mentorship round" : undefined;
 
-    const handleButtonClick = () => {
-      console.log("Current meetingRoundId:", roundId);
-    };
-
     return (
       <div title={tooltipText}>
-        <button disabled={isDisabled} onClick={handleButtonClick}>
-          Manage Meetings
-        </button>
+        <span data-testid="mock-timezone">{userTimezone}</span>
+        <button disabled={isDisabled}>Manage Meetings</button>
       </div>
     );
   },
@@ -72,20 +66,19 @@ describe("GoogleMeetingControl", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("should trigger click handler and log current meetingRoundId cleanly", async () => {
+  it("should thread down the userTimezone prop to MeetingManagementDialog", () => {
     useFeatureFlags.mockReturnValue({
       [FEATURE_FLAGS.CREATE_GOOGLE_MEETING]: true,
     });
 
-    const consoleLogSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    render(
+      <GoogleMeetingControl
+        meetingRoundId={42}
+        userTimezone="America/New_York"
+      />,
+    );
 
-    render(<GoogleMeetingControl meetingRoundId={99} />);
-
-    const button = screen.getByRole("button", { name: /manage meetings/i });
-    await userEvent.click(button);
-
-    expect(consoleLogSpy).toHaveBeenCalledWith("Current meetingRoundId:", 99);
-
-    consoleLogSpy.mockRestore();
+    const timezoneText = screen.getByTestId("mock-timezone");
+    expect(timezoneText.textContent).toBe("America/New_York");
   });
 });
