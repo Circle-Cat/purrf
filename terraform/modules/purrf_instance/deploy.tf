@@ -53,6 +53,15 @@ resource "kubernetes_secret" "purrf_app" {
     # App-internal HMAC secret signing the OTP state JWT (CSRF guard); generated
     # here, not an Auth0 value.
     EMAIL_OTP_STATE_JWT_SECRET = random_password.email_otp_state_secret.result
+
+    # Gmail API integration for recruiting candidate emails. Client credentials
+    # come from the purrf-auth GCP project; the refresh token is minted once via
+    # interactive consent (not Terraform-managed). test/staging point at a test
+    # mailbox, prod at the real sender -- all four supplied per-env via TF_VAR.
+    GMAIL_CLIENT_ID      = var.gmail_client_id
+    GMAIL_CLIENT_SECRET  = var.gmail_client_secret
+    GMAIL_REFRESH_TOKEN  = var.gmail_refresh_token
+    GMAIL_SENDER_ADDRESS = var.gmail_sender_address
   }
 }
 

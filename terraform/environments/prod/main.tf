@@ -37,4 +37,9 @@ module "purrf_instance" {
   azure_tenant_id             = "08502fd6-503a-4dfd-85b7-f13b141dc0c4"
   ld_sdk_key                  = data.terraform_remote_state.ld.outputs.api_keys["production"]
   tailscale_proxy             = "http://outbound.tailscale.svc.cluster.local:1055"
+
+  gmail_client_id      = var.gmail_client_id
+  gmail_client_secret  = var.gmail_client_secret
+  gmail_refresh_token  = var.gmail_refresh_token
+  gmail_sender_address = var.gmail_sender_address
 }

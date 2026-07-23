@@ -40,4 +40,9 @@ module "purrf_instance" {
 
   auth0_google_client_id     = var.auth0_google_client_id
   auth0_google_client_secret = var.auth0_google_client_secret
+
+  gmail_client_id      = var.gmail_client_id
+  gmail_client_secret  = var.gmail_client_secret
+  gmail_refresh_token  = var.gmail_refresh_token
+  gmail_sender_address = var.gmail_sender_address
 }

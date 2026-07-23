@@ -153,3 +153,25 @@ variable "auth0_google_client_secret" {
   sensitive   = true
 }
 
+variable "gmail_client_id" {
+  description = "Client ID of the Google OAuth app used to send/read recruiting candidate emails (purrf-auth GCP project)."
+  type        = string
+}
+
+variable "gmail_client_secret" {
+  description = "Client secret paired with gmail_client_id (purrf-auth GCP project)."
+  type        = string
+  sensitive   = true
+}
+
+variable "gmail_refresh_token" {
+  description = "OAuth refresh token authorizing send/read on the sender mailbox. Minted once via interactive consent; not Terraform-managed."
+  type        = string
+  sensitive   = true
+}
+
+variable "gmail_sender_address" {
+  description = "Mailbox the app sends candidate emails from. Real sender in prod; a test mailbox in test/staging."
+  type        = string
+}
+
