@@ -30,7 +30,7 @@ import { cn } from "@/lib/utils";
 
 import TimezoneSelector from "@/components/common/TimezoneSelector";
 import { useMeetingManagement } from "@/pages/PersonalDashboard/hooks/useMeetingManagement";
-import { localToUtcIso, todayInTz, formatInTz } from "@/utils/dateTime";
+import { formatLocalYmd, todayInTz, formatInTz } from "@/utils/dateTime";
 
 const DURATION_OPTIONS = [
   { value: "30", label: "30 minutes" },
@@ -198,29 +198,31 @@ export default function MeetingManagementDialog({
     }
 
     try {
-      const startUtc = localToUtcIso(
-        selectedDate,
-        selectedTime,
-        formData.timezone,
-      );
-      const startDateObj = new Date(startUtc);
-      const endDateObj = new Date(
-        startDateObj.getTime() + Number(formData.duration) * 60 * 1000,
-      );
-      const endUtc = endDateObj.toISOString();
-
       const cleanedPayload = {
         round_id: Number(roundId),
         partner_id: Number(formData.partnerId),
-        start_datetime: startUtc,
-        end_datetime: endUtc,
+        timezone: formData.timezone,
+        start_date: formatLocalYmd(selectedDate),
+        start_time: selectedTime,
+        duration_minutes: Number(formData.duration),
       };
 
-      await bookMeeting(cleanedPayload);
+      const result = await bookMeeting(cleanedPayload);
       await onBooked?.();
 
-      if (isOpen) {
+      const created = result?.created ?? [];
+      const failed = result?.failed ?? [];
+      if (failed.length === 0) {
         toast.success("Meeting booked successfully!");
+      } else if (created.length > 0) {
+        toast.error(
+          `Created ${created.length} of ${created.length + failed.length} sessions (${failed.length} failed)`,
+        );
+      } else {
+        toast.error("Failed to book meeting. Please try again.");
+      }
+
+      if (isOpen && created.length > 0) {
         setFormData(initialFormState);
         setSelectedDate(null);
         setIsOpen(false);
