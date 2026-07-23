@@ -35,6 +35,8 @@ import {
   listMyEvaluations,
   submitEvaluation,
   getEvaluationsForApplication,
+  getApplicationEmails,
+  sendApplicationEmail,
 } from "@/api/recruitingApi";
 
 vi.mock("@/utils/request", () => ({
@@ -80,6 +82,34 @@ describe("recruitingApi", () => {
     request.get.mockResolvedValue({ data: [] });
     await listJobActivity(9);
     expect(request.get).toHaveBeenCalledWith("/recruiting/jobs/9/activity");
+  });
+
+  it("getApplicationEmails GETs the emails endpoint (no refresh by default)", async () => {
+    request.get.mockResolvedValue({ data: { threads: [] } });
+    await getApplicationEmails(10);
+    expect(request.get).toHaveBeenCalledWith(
+      "/recruiting/applications/10/emails",
+      { params: {} },
+    );
+  });
+
+  it("getApplicationEmails passes refresh=true when requested", async () => {
+    request.get.mockResolvedValue({ data: { threads: [] } });
+    await getApplicationEmails(10, { refresh: true });
+    expect(request.get).toHaveBeenCalledWith(
+      "/recruiting/applications/10/emails",
+      { params: { refresh: true } },
+    );
+  });
+
+  it("sendApplicationEmail POSTs the compose payload", async () => {
+    request.post.mockResolvedValue({ data: { threads: [] } });
+    const body = { to: ["c@x.com"], cc: [], subject: "Hi", body: "hello" };
+    await sendApplicationEmail(10, body);
+    expect(request.post).toHaveBeenCalledWith(
+      "/recruiting/applications/10/emails",
+      body,
+    );
   });
 
   it("requestClose POSTs the request-close endpoint with body", async () => {
