@@ -43,6 +43,12 @@ class EmailConversationService:
         self._message_repo = message_repository
         self._sender_address = sender_address
 
+    @property
+    def sender_address(self):
+        """The company sender address (for the domain layer's callers to
+        exclude our own address when assembling Cc / classifying direction)."""
+        return self._sender_address
+
     async def send(
         self,
         session,
@@ -180,15 +186,16 @@ class EmailConversationService:
             context_id (int | None): The scenario entity id.
 
         Returns:
-            int: Total number of new messages persisted across the threads.
+            list[EmailMessageEntity]: All messages newly persisted across the
+                scenario's threads.
         """
         threads = await self._thread_repo.list_by_context(
             session, context_type, context_id
         )
-        total = 0
+        created = []
         for thread in threads:
-            total += await self.sync_thread(session, thread)
-        return total
+            created.extend(await self.sync_thread(session, thread))
+        return created
 
     async def sync_thread(self, session, thread):
         """Pull one thread from Gmail and persist any messages we lack.
@@ -198,20 +205,20 @@ class EmailConversationService:
             thread (EmailThreadEntity): The thread to sync.
 
         Returns:
-            int: Number of new messages persisted (idempotent on
-                ``gmail_message_id``, so re-syncing returns 0).
+            list[EmailMessageEntity]: The messages newly persisted this call
+                (idempotent on ``gmail_message_id``, so re-syncing returns []).
         """
         fetched = await asyncio.to_thread(
             self._gmail.get_thread, thread.gmail_thread_id
         )
-        new_count = 0
+        created = []
         for message in fetched:
             existing = await self._message_repo.get_by_gmail_message_id(
                 session, message["gmail_message_id"]
             )
             if existing is not None:
                 continue
-            await self._message_repo.create(
+            entity = await self._message_repo.create(
                 session,
                 thread_id=thread.thread_id,
                 gmail_message_id=message["gmail_message_id"],
@@ -228,9 +235,9 @@ class EmailConversationService:
                     message.get("gmail_internal_date")
                 ),
             )
-            new_count += 1
+            created.append(entity)
         await self._thread_repo.mark_synced(session, thread.thread_id)
-        return new_count
+        return created
 
     def _direction_of(self, from_address):
         """OUTBOUND when the message is from our sender, INBOUND otherwise."""
