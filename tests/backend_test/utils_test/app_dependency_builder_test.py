@@ -509,6 +509,9 @@ class TestAppDependencyBuilder(TestCase):
             training_repository=mock_training_repo_cls.return_value,
             pairs_repository=mock_mentorship_pairs_repo_cls.return_value,
             mentorship_mapper=mock_mentorship_mapper_cls.return_value,
+            date_time_util=mock_date_time_util_cls.return_value,
+            database=mock_database_cls.return_value,
+            logger=mock_logger,
         )
         mock_mentorship_admin_controller_cls.assert_called_once_with(
             mentorship_admin_service=mock_mentorship_admin_service_cls.return_value,

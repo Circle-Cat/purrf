@@ -295,7 +295,7 @@ class MentorshipRoundParticipantsRepository:
 
         return completed if is_completed else not_(completed)
 
-    def _build_admin_search_stmt(self, filters) -> select:
+    def _build_admin_search_stmt(self, filters, *, need_meeting_log: bool = False):
         """
         Build the base SELECT statement for the admin participant search.
 
@@ -306,25 +306,29 @@ class MentorshipRoundParticipantsRepository:
 
         Args:
             filters (ParticipantSearchFilterDto): Filter parameters to apply.
+            need_meeting_log (bool): If True, also select the pair's raw
+                meeting_log JSONB (used by the CSV export's detailed mode).
 
         Returns:
             Select: A SQLAlchemy SELECT statement with all filter conditions applied.
         """
+        columns = [
+            UsersEntity.user_id.label("user_id"),
+            MentorshipRoundParticipantsEntity.round_id.label("round_id"),
+            MentorshipPairsEntity.pair_id.label("pair_id"),
+            MentorshipRoundParticipantsEntity.participant_role.label(
+                "participant_role"
+            ),
+            MentorshipRoundParticipantsEntity.approval_status.label("approval_status"),
+            MentorshipPairsEntity.completed_count.label("completed_count"),
+            MentorshipPairsEntity.mentor_id.label("mentor_id"),
+            MentorshipPairsEntity.mentee_id.label("mentee_id"),
+        ]
+        if need_meeting_log:
+            columns.append(MentorshipPairsEntity.meeting_log.label("meeting_log"))
+
         stmt = (
-            select(
-                UsersEntity.user_id.label("user_id"),
-                MentorshipRoundParticipantsEntity.round_id.label("round_id"),
-                MentorshipPairsEntity.pair_id.label("pair_id"),
-                MentorshipRoundParticipantsEntity.participant_role.label(
-                    "participant_role"
-                ),
-                MentorshipRoundParticipantsEntity.approval_status.label(
-                    "approval_status"
-                ),
-                MentorshipPairsEntity.completed_count.label("completed_count"),
-                MentorshipPairsEntity.mentor_id.label("mentor_id"),
-                MentorshipPairsEntity.mentee_id.label("mentee_id"),
-            )
+            select(*columns)
             .select_from(UsersEntity)
             .outerjoin(
                 MentorshipRoundParticipantsEntity,
@@ -423,6 +427,20 @@ class MentorshipRoundParticipantsRepository:
         "user_id": UsersEntity.user_id,
     }
 
+    def _build_default_order(self) -> list:
+        """
+        Return the shared deterministic default ordering for the admin
+        participant search: last_name, first_name, round_id, pair_id,
+        user_id — all ascending, nulls last.
+        """
+        return [
+            UsersEntity.last_name.asc().nulls_last(),
+            UsersEntity.first_name.asc().nulls_last(),
+            MentorshipRoundParticipantsEntity.round_id.asc().nulls_last(),
+            MentorshipPairsEntity.pair_id.asc().nulls_last(),
+            UsersEntity.user_id.asc(),
+        ]
+
     async def search_participants_for_admin(
         self,
         session: AsyncSession,
@@ -473,13 +491,7 @@ class MentorshipRoundParticipantsRepository:
                 MentorshipPairsEntity.pair_id.asc().nulls_last(),
             ]
         else:
-            order_clauses = [
-                UsersEntity.last_name.asc().nulls_last(),
-                UsersEntity.first_name.asc().nulls_last(),
-                MentorshipRoundParticipantsEntity.round_id.asc().nulls_last(),
-                MentorshipPairsEntity.pair_id.asc().nulls_last(),
-                UsersEntity.user_id.asc(),
-            ]
+            order_clauses = self._build_default_order()
 
         data_stmt = base_stmt.order_by(*order_clauses).limit(limit).offset(offset)
         result = await session.execute(data_stmt)
@@ -497,6 +509,54 @@ class MentorshipRoundParticipantsRepository:
             for row in result.all()
         ]
         return rows, int(total)
+
+    async def iter_search_participants_for_admin(
+        self,
+        session: AsyncSession,
+        filters: ParticipantSearchFilterDto,
+        *,
+        need_meeting_log: bool = False,
+        limit: int = 500,
+        offset: int = 0,
+    ) -> list[ParticipantSearchRow]:
+        """
+        Fetch one page of admin participant search results for CSV export.
+
+        Shares the same base query construction as search_participants_for_admin
+        but skips the COUNT(*) query (the caller streams until an empty page
+        comes back, it never needs a total).
+
+        Args:
+            session (AsyncSession): Active database session.
+            filters (ParticipantSearchFilterDto): Filter parameters.
+            need_meeting_log (bool): If True, populate meeting_log on each
+                row (needed for the detailed CSV mode; skipped for summary).
+            limit (int): Maximum number of rows to return. Defaults to 500.
+            offset (int): Number of rows to skip. Defaults to 0.
+
+        Returns:
+            list[ParticipantSearchRow]: Matching rows for this page.
+        """
+        base_stmt = self._build_admin_search_stmt(
+            filters, need_meeting_log=need_meeting_log
+        )
+        order_clauses = self._build_default_order()
+        data_stmt = base_stmt.order_by(*order_clauses).limit(limit).offset(offset)
+        result = await session.execute(data_stmt)
+        return [
+            ParticipantSearchRow(
+                user_id=row.user_id,
+                round_id=row.round_id,
+                pair_id=row.pair_id,
+                participant_role=row.participant_role,
+                approval_status=row.approval_status,
+                completed_count=row.completed_count,
+                mentor_id=row.mentor_id,
+                mentee_id=row.mentee_id,
+                meeting_log=row.meeting_log if need_meeting_log else None,
+            )
+            for row in result.all()
+        ]
 
     async def upsert_participant(
         self, session: AsyncSession, entity: MentorshipRoundParticipantsEntity
