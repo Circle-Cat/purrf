@@ -15,9 +15,14 @@ from backend.dto.board_dto import (
     SubStatusChangeDto,
 )
 from backend.dto.user_context_dto import UserContextDto
-from backend.common.communication_enums import ContextType
+from backend.common.communication_enums import ContextType, EmailDirection
 from backend.common.permissions import Permission
-from backend.dto.email_dto import EmailConversationDto, EmailSendRequestDto
+from backend.dto.email_dto import (
+    EmailConversationDto,
+    EmailMessageDto,
+    EmailSendRequestDto,
+    EmailThreadDto,
+)
 from backend.entity.application_assignment_entity import ApplicationAssignmentEntity
 from backend.entity.application_entity import ApplicationEntity
 from backend.entity.application_submission_entity import ApplicationSubmissionEntity
@@ -90,6 +95,9 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.user_emails_repo.get_contact_email = AsyncMock(return_value=None)
         self.email_svc = AsyncMock()
         self.email_svc.list_conversation = AsyncMock(return_value=[])
+        # sync returns the list of newly-persisted messages (Task 2); default
+        # empty so a plain refresh writes no timeline activity.
+        self.email_svc.sync_context = AsyncMock(return_value=[])
         self.service = BoardService(
             self.job_repo,
             self.app_repo,
@@ -194,6 +202,17 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
     ):
         return EmailSendRequestDto(
             to=list(to), cc=list(cc), subject=subject, body=body, thread_id=thread_id
+        )
+
+    def _caller(self, user_id=3):
+        """A UserContextDto for the recruiter making the call."""
+        return self._ctx(user_id=user_id)
+
+    def _email_service(self):
+        """The already-constructed BoardService plus its email-related mocks."""
+        return self.service, SimpleNamespace(
+            email_conversation_service=self.email_svc,
+            user_emails_repository=self.user_emails_repo,
         )
 
     def _setup_owned_application(
@@ -305,6 +324,121 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
                 self.session, ctx, 7, self._email_dto()
             )
         self.email_svc.send.assert_not_awaited()
+
+    async def test_conversation_default_cc_is_recruiter_only_for_new(self):
+        service, mocks = self._email_service()
+        mocks.email_conversation_service.list_conversation = AsyncMock(return_value=[])
+        # candidate contact = candidate@x ; recruiter (caller 3) contact = rec@x
+        mocks.user_emails_repository.get_contact_email = AsyncMock(
+            side_effect=lambda s, uid: "candidate@x" if uid == 42 else "rec@x"
+        )
+        mocks.email_conversation_service.sender_address = "recruiting@corp.com"
+        result = await service._build_application_conversation(
+            self.session, self._caller(user_id=3), application_id=7, user_id=42
+        )
+        self.assertEqual(result.default_cc, ["rec@x"])
+        self.assertEqual(result.default_to, "candidate@x")
+
+    async def test_thread_default_cc_unions_recruiter_and_history(self):
+        service, mocks = self._email_service()
+        thread = EmailThreadDto(
+            thread_id=10,
+            subject="S",
+            synced_at=None,
+            created_at=datetime.now(timezone.utc),
+            messages=[
+                EmailMessageDto(
+                    message_id=1,
+                    direction="outbound",
+                    cc_addresses="Boss <boss@x>, candidate@x",
+                    created_at=datetime.now(timezone.utc),
+                ),
+                EmailMessageDto(
+                    message_id=2,
+                    direction="inbound",
+                    cc_addresses="BOSS@x, ally@x, recruiting@corp.com",
+                    created_at=datetime.now(timezone.utc),
+                ),
+            ],
+        )
+        mocks.email_conversation_service.list_conversation = AsyncMock(
+            return_value=[thread]
+        )
+        mocks.user_emails_repository.get_contact_email = AsyncMock(
+            side_effect=lambda s, uid: "candidate@x" if uid == 42 else "rec@x"
+        )
+        mocks.email_conversation_service.sender_address = "recruiting@corp.com"
+        result = await service._build_application_conversation(
+            self.session, self._caller(user_id=3), application_id=7, user_id=42
+        )
+        # recruiter first; boss deduped case-insensitively; candidate (To) and
+        # company sender excluded; order preserved.
+        self.assertEqual(result.threads[0].default_cc, ["rec@x", "boss@x", "ally@x"])
+
+    # -- application email: timeline events --
+
+    async def test_send_application_email_logs_email_sent_activity(self):
+        self._setup_owned_application(application_id=7, user_id=5, owner=2)
+        self.email_svc.send = AsyncMock(return_value=SimpleNamespace(thread_id=10))
+        dto = self._email_dto(to=["c@x"], cc=["boss@x"], subject="Hello")
+        await self.service.send_application_email(
+            self.session, self._ctx(user_id=2), 7, dto
+        )
+        self.activity_repo.create.assert_awaited_once()
+        args, kwargs = self.activity_repo.create.await_args
+        # positional: (session, application_id, actor_id, event_type)
+        self.assertEqual(args[1], 7)
+        self.assertEqual(args[2], 2)  # actor = the sending recruiter
+        self.assertEqual(args[3], "email_sent")
+        self.assertEqual(kwargs["details"]["subject"], "Hello")
+        self.assertEqual(kwargs["details"]["to"], ["c@x"])
+        self.assertEqual(kwargs["details"]["cc"], ["boss@x"])
+        self.assertEqual(kwargs["details"]["threadId"], 10)
+        self.assertEqual(kwargs["details"]["direction"], "outbound")
+
+    async def test_refresh_logs_email_received_for_new_inbound_only(self):
+        app = self._setup_owned_application(application_id=7, user_id=5, owner=2)
+        received_at = datetime(2023, 5, 6, 7, 8, tzinfo=timezone.utc)
+        inbound = SimpleNamespace(
+            direction=EmailDirection.INBOUND,
+            subject="Re: Hello",
+            from_address="cand@x",
+            to_addresses="recruiting@corp.com",
+            cc_addresses="boss@x",
+            thread_id=10,
+            gmail_internal_date=received_at,
+        )
+        outbound = SimpleNamespace(
+            direction=EmailDirection.OUTBOUND,
+            subject="Hello",
+            from_address="recruiting@corp.com",
+            to_addresses="cand@x",
+            cc_addresses=None,
+            thread_id=10,
+            gmail_internal_date=received_at,
+        )
+        self.email_svc.sync_context = AsyncMock(return_value=[inbound, outbound])
+        await self.service.get_application_conversation(
+            self.session, self._ctx(user_id=2), 7, refresh=True
+        )
+        # exactly one activity — the inbound message, not the outbound
+        self.activity_repo.create.assert_awaited_once()
+        args, kwargs = self.activity_repo.create.await_args
+        self.assertEqual(args[1], 7)
+        self.assertEqual(args[2], app.user_id)  # actor = candidate / thread owner
+        self.assertEqual(args[3], "email_received")
+        self.assertEqual(kwargs["details"]["subject"], "Re: Hello")
+        self.assertEqual(kwargs["details"]["from"], "cand@x")
+        self.assertEqual(kwargs["details"]["direction"], "inbound")
+        self.assertEqual(kwargs["created_at"], received_at)
+
+    async def test_refresh_no_new_messages_writes_no_activity(self):
+        self._setup_owned_application(application_id=7, user_id=5, owner=2)
+        self.email_svc.sync_context = AsyncMock(return_value=[])
+        await self.service.get_application_conversation(
+            self.session, self._ctx(user_id=2), 7, refresh=True
+        )
+        self.activity_repo.create.assert_not_awaited()
 
     def _assignment(self, application_id, stage, round, assignee_id, assigned_by=2):
         return ApplicationAssignmentEntity(

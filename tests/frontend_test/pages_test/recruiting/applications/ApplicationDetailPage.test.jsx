@@ -1339,6 +1339,58 @@ describe("ApplicationDetailPage — activity timeline", () => {
     ).toBeInTheDocument();
   });
 
+  it("narrates email_sent and email_received timeline entries", async () => {
+    const user = userEvent.setup();
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
+    });
+    api.getApplicationActivity.mockResolvedValue({
+      data: [
+        {
+          id: 1,
+          eventType: "email_sent",
+          details: {
+            subject: "Interview Availability",
+            to: ["cand@x.com"],
+            cc: ["boss@x.com"],
+            direction: "outbound",
+          },
+          actorId: OWNER_ID,
+          actorName: "Owen Owner",
+          createdAt: "2026-07-04T12:00:00Z",
+        },
+        {
+          id: 2,
+          eventType: "email_received",
+          details: {
+            subject: "Re: Interview Availability",
+            from: "cand@x.com",
+            direction: "inbound",
+          },
+          actorId: 3,
+          actorName: "Cara Candidate",
+          createdAt: "2026-07-04T13:00:00Z",
+        },
+      ],
+    });
+    renderPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole("tab", { name: "Timeline" }));
+
+    expect(
+      screen.getByText(
+        /Sent email "Interview Availability" to cand@x\.com, cc boss@x\.com, by Owen Owner/,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /Received reply "Re: Interview Availability" from cand@x\.com, by Cara Candidate/,
+      ),
+    ).toBeInTheDocument();
+  });
+
   it("shows a rejection's reason and note in the timeline", async () => {
     const user = userEvent.setup();
     authState.userId = OWNER_ID;
@@ -3064,6 +3116,67 @@ describe("ApplicationDetailPage — Emails tab", () => {
       }),
     );
     expect(toast.success).toHaveBeenCalledWith("Email sent.");
+  });
+
+  it("new compose prefills Cc from conversation defaultCc, editable", async () => {
+    ownerViewing();
+    api.getApplicationEmails.mockResolvedValue({
+      data: { threads: [], defaultTo: "cand@x.com", defaultCc: ["rec@x.com"] },
+    });
+    const user = userEvent.setup();
+    renderPage();
+    await waitLoaded();
+    await user.click(screen.getByRole("tab", { name: "Emails" }));
+    await user.click(screen.getByRole("button", { name: "Send email" }));
+    const ccField = screen.getByLabelText("Cc");
+    expect(ccField).toHaveValue("rec@x.com");
+    // still editable
+    await user.type(ccField, ", extra@x.com");
+    await user.type(screen.getByLabelText("Subject"), "Hi");
+    await user.type(screen.getByLabelText("Message"), "welcome");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() =>
+      expect(api.sendApplicationEmail).toHaveBeenCalledWith("101", {
+        to: ["cand@x.com"],
+        cc: ["rec@x.com", "extra@x.com"],
+        subject: "Hi",
+        body: "welcome",
+        threadId: null,
+      }),
+    );
+  });
+
+  it("reply prefills Cc from the thread defaultCc", async () => {
+    ownerViewing();
+    api.getApplicationEmails.mockResolvedValue({
+      data: {
+        defaultTo: "cand@x.com",
+        defaultCc: ["rec@x.com"],
+        threads: [
+          {
+            threadId: 1,
+            subject: "Interview Availability",
+            defaultCc: ["rec@x.com", "boss@x.com"],
+            messages: [
+              {
+                messageId: 11,
+                direction: "outbound",
+                fromAddress: "recruiting@circlecat.org",
+                bodyHtml: "<p>Hello there</p>",
+                bodyText: "Hello there",
+                createdAt: "2026-07-23T00:00:00Z",
+              },
+            ],
+          },
+        ],
+      },
+    });
+    const user = userEvent.setup();
+    renderPage();
+    await waitLoaded();
+    await user.click(screen.getByRole("tab", { name: "Emails" }));
+    await user.click(screen.getByRole("button", { name: "Reply" }));
+    expect(screen.getByLabelText("Cc")).toHaveValue("rec@x.com, boss@x.com");
   });
 
   it("Refresh re-fetches with refresh=true", async () => {
