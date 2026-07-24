@@ -293,9 +293,7 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(self.gmail.get_thread.call_count, 2)
         self.assertEqual(len(result), 2)
-        self.assertEqual(
-            {message.message_id for message in result}, {201, 202}
-        )
+        self.assertEqual({message.message_id for message in result}, {201, 202})
 
     async def test_sender_address_exposes_company_sender(self):
         self.assertEqual(self.service.sender_address, SENDER)

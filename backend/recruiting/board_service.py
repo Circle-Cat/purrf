@@ -478,9 +478,7 @@ class BoardService:
             history = []
             for message in thread.messages:
                 history.extend(_parse_cc_addresses(message.cc_addresses))
-            thread.default_cc = _dedupe_addresses(
-                [recruiter_email, *history], exclude
-            )
+            thread.default_cc = _dedupe_addresses([recruiter_email, *history], exclude)
         return EmailConversationDto(
             threads=threads,
             default_to=default_to,

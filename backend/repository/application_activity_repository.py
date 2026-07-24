@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.entity.application_activity_entity import ApplicationActivityEntity
@@ -13,7 +15,7 @@ class ApplicationActivityRepository:
         actor_id: int,
         event_type: str,
         details: dict | None = None,
-        created_at=None,
+        created_at: datetime | None = None,
     ) -> ApplicationActivityEntity:
         """Append one audit entry to an application's timeline.
 
