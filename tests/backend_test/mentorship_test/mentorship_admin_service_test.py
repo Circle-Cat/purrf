@@ -561,8 +561,8 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
         row = _make_row(user_id=1, participant_role=ParticipantRole.MENTEE)
         trainings_map = {
             1: {
-                TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING: TrainingStatus.COMPLETED,
-                TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING: TrainingStatus.INCOMPLETE,
+                TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING: TrainingStatus.DONE,
+                TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING: TrainingStatus.TO_DO,
             }
         }
 
@@ -570,15 +570,15 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
             row, users_map={}, trainings_map=trainings_map, rounds_map={}
         )
 
-        self.assertEqual(participant[3], "incomplete")
+        self.assertEqual(participant[3], "to_do")
 
     def test_build_participant_export_columns_onboarding_status_mentor_role(self):
         """A mentor-role row's Onboarding Status is the mentor onboarding status."""
         row = _make_row(user_id=1, participant_role=ParticipantRole.MENTOR)
         trainings_map = {
             1: {
-                TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING: TrainingStatus.COMPLETED,
-                TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING: TrainingStatus.INCOMPLETE,
+                TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING: TrainingStatus.DONE,
+                TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING: TrainingStatus.TO_DO,
             }
         }
 
@@ -586,7 +586,7 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
             row, users_map={}, trainings_map=trainings_map, rounds_map={}
         )
 
-        self.assertEqual(participant[3], "completed")
+        self.assertEqual(participant[3], "done")
 
     def test_build_non_participant_export_columns_returns_both_statuses(self):
         """A non-participant row exposes both mentor and mentee onboarding
@@ -594,8 +594,8 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
         row = _make_row(user_id=1)
         trainings_map = {
             1: {
-                TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING: TrainingStatus.COMPLETED,
-                TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING: TrainingStatus.INCOMPLETE,
+                TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING: TrainingStatus.DONE,
+                TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING: TrainingStatus.TO_DO,
             }
         }
 
@@ -603,7 +603,7 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
             row, trainings_map
         )
 
-        self.assertEqual(non_participant, ["completed", "incomplete"])
+        self.assertEqual(non_participant, ["done", "to_do"])
 
     def test_build_non_participant_export_columns_blank_when_no_training(self):
         """A user with no training record has blank onboarding status columns."""
@@ -1033,7 +1033,7 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
             MagicMock(
                 user_id=1,
                 category=TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING,
-                status=TrainingStatus.COMPLETED,
+                status=TrainingStatus.DONE,
             )
         ]
 
@@ -1058,7 +1058,7 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
                 "Mentee Onboarding Status",
             ],
         )
-        self.assertEqual(lines[1], "1,Alice,Doe,,,,completed,")
+        self.assertEqual(lines[1], "1,Alice,Doe,,,,done,")
 
         # need_meeting_log must stay False for a non-participant export even
         # when mode="detailed", since non-participants have no meetings.
