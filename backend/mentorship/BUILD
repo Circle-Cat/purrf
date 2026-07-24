@@ -17,6 +17,7 @@ py_library(
         "//backend/entity:entities",
         "//backend/repository:repositories",
         "//backend/service:launchdarkly_service",
+        "//backend/utils:date_time_util",
         "//backend/utils:permission_decorators",
         "@pypi//intervaltree",
         "@pypi//python_dateutil",

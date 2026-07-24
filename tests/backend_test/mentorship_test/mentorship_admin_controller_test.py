@@ -10,6 +10,7 @@ class TestMentorshipAdminController(unittest.IsolatedAsyncioTestCase):
         self.mock_admin_service = MagicMock()
         self.mock_admin_service.search_participants = AsyncMock()
         self.mock_admin_service.get_meeting_log = AsyncMock()
+        self.mock_admin_service.stream_export_csv = MagicMock()
 
         self.mock_database = MagicMock()
         self.mock_session = AsyncMock()
@@ -101,6 +102,76 @@ class TestMentorshipAdminController(unittest.IsolatedAsyncioTestCase):
             message="Successfully retrieved meeting log.",
             data=mock_result,
         )
+
+    async def test_export_participants_returns_streaming_response(self):
+        """Wraps the service's async generator in a StreamingResponse with CSV headers."""
+
+        async def fake_stream():
+            yield b"header\n"
+            yield b"row\n"
+
+        filters = ParticipantSearchFilterDto(participation_status="participant")
+        self.mock_admin_service.stream_export_csv.return_value = fake_stream()
+
+        response = await self.controller.export_participants(
+            filters=filters, mode="summary"
+        )
+
+        self.mock_admin_service.stream_export_csv.assert_called_once_with(
+            filters, "summary"
+        )
+        self.assertEqual(response.media_type, "text/csv")
+        self.assertIn("attachment", response.headers["content-disposition"])
+        self.assertIn("participant_summary_", response.headers["content-disposition"])
+
+    async def test_export_participants_detailed_mode_filename(self):
+        """Detailed mode's filename includes the 'detailed' marker."""
+
+        async def fake_stream():
+            yield b"header\n"
+
+        filters = ParticipantSearchFilterDto(participation_status="participant")
+        self.mock_admin_service.stream_export_csv.return_value = fake_stream()
+
+        response = await self.controller.export_participants(
+            filters=filters, mode="detailed"
+        )
+
+        self.assertIn("participant_detailed_", response.headers["content-disposition"])
+
+    async def test_export_non_participant_filename_ignores_mode(self):
+        """Non-participant filenames don't include mode."""
+
+        async def fake_stream():
+            yield b"header\n"
+
+        filters = ParticipantSearchFilterDto(participation_status="non_participant")
+        self.mock_admin_service.stream_export_csv.return_value = fake_stream()
+
+        response = await self.controller.export_participants(
+            filters=filters, mode="summary"
+        )
+
+        content_disposition = response.headers["content-disposition"]
+        self.assertIn("non_participant_", content_disposition)
+        self.assertNotIn("summary", content_disposition)
+
+    async def test_export_non_participant_no_mode_filename(self):
+        """mode is optional for a non-participant export; when omitted, the
+        filename has no "None" segment in it."""
+
+        async def fake_stream():
+            yield b"header\n"
+
+        filters = ParticipantSearchFilterDto(participation_status="non_participant")
+        self.mock_admin_service.stream_export_csv.return_value = fake_stream()
+
+        response = await self.controller.export_participants(filters=filters)
+
+        self.mock_admin_service.stream_export_csv.assert_called_once_with(filters, None)
+        content_disposition = response.headers["content-disposition"]
+        self.assertIn("non_participant_", content_disposition)
+        self.assertNotIn("None", content_disposition)
 
 
 if __name__ == "__main__":
