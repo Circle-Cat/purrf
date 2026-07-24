@@ -121,6 +121,32 @@ class TestApplicationActivityRepository(BaseRepositoryTestLib):
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0].application_id, app1.application_id)
 
+    async def test_create_honors_explicit_created_at(self):
+        app, actor = await self._seed_application()
+        repo = ApplicationActivityRepository()
+        backdated = datetime(2023, 1, 2, 3, 4, 5, tzinfo=timezone.utc)
+
+        created = await repo.create(
+            self.session,
+            app.application_id,
+            actor.user_id,
+            "email_received",
+            details={"subject": "Hi"},
+            created_at=backdated,
+        )
+
+        self.assertEqual(created.created_at, backdated)
+
+    async def test_create_defaults_created_at_when_omitted(self):
+        app, actor = await self._seed_application()
+        repo = ApplicationActivityRepository()
+
+        created = await repo.create(
+            self.session, app.application_id, actor.user_id, "stage_changed"
+        )
+
+        self.assertIsNotNone(created.created_at)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -247,7 +247,7 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
         ]
         self.message_repo.create.return_value = SimpleNamespace(message_id=2)
 
-        new_count = await self.service.sync_thread(self.session, self._thread())
+        created = await self.service.sync_thread(self.session, self._thread())
 
         self.gmail.get_thread.assert_called_once_with("gt1")
         self.message_repo.create.assert_awaited_once()
@@ -255,7 +255,9 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(mkw["gmail_message_id"], "g2")
         self.assertEqual(mkw["direction"], EmailDirection.INBOUND)
         self.thread_repo.mark_synced.assert_awaited_once_with(self.session, 10)
-        self.assertEqual(new_count, 1)
+        self.assertEqual(len(created), 1)
+        self.assertIs(created[0], self.message_repo.create.return_value)
+        self.assertEqual(created[0].message_id, 2)
 
     async def test_sync_thread_classifies_outbound_by_sender_even_with_display_name(
         self,
@@ -277,12 +279,24 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
             SimpleNamespace(thread_id=10, gmail_thread_id="gtA"),
             SimpleNamespace(thread_id=11, gmail_thread_id="gtB"),
         ]
-        self.gmail.get_thread.return_value = []
-        total = await self.service.sync_context(
+        self.gmail.get_thread.side_effect = [
+            [self._fetched("gA1", "cand-a@example.com")],
+            [self._fetched("gB1", "cand-b@example.com")],
+        ]
+        self.message_repo.get_by_gmail_message_id.return_value = None
+        self.message_repo.create.side_effect = [
+            SimpleNamespace(message_id=201),
+            SimpleNamespace(message_id=202),
+        ]
+        result = await self.service.sync_context(
             self.session, ContextType.APPLICATION, 7
         )
         self.assertEqual(self.gmail.get_thread.call_count, 2)
-        self.assertEqual(total, 0)
+        self.assertEqual(len(result), 2)
+        self.assertEqual({message.message_id for message in result}, {201, 202})
+
+    async def test_sender_address_exposes_company_sender(self):
+        self.assertEqual(self.service.sender_address, SENDER)
 
 
 if __name__ == "__main__":

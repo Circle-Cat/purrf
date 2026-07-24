@@ -414,6 +414,12 @@ const describeActivity = ({ eventType, details }, jobKind) => {
       return `Blacklisted and rejected from ${humanize(details.fromStage)}: ${details.reason}`;
     case "auto_assigned":
       return `Automatically assigned to ${details.assigneeName} on ${humanize(details.stage)}`;
+    case "email_sent":
+      return `Sent email "${details.subject}" to ${(details.to ?? []).join(", ")}${
+        details.cc?.length ? `, cc ${details.cc.join(", ")}` : ""
+      }`;
+    case "email_received":
+      return `Received reply "${details.subject}" from ${details.from}`;
     default:
       return humanize(eventType);
   }
@@ -699,6 +705,7 @@ const ComposeEmailDialog = ({
   open,
   onOpenChange,
   defaultTo,
+  defaultCc,
   replyThread,
   onSend,
   sending,
@@ -711,13 +718,16 @@ const ComposeEmailDialog = ({
   useEffect(() => {
     if (!open) return;
     setTo(defaultTo ?? "");
-    setCc("");
+    // Prefill (but keep editable) Cc: the thread's prior Cc on a reply,
+    // otherwise the recruiter's own address for a new email.
+    const prefillCc = replyThread?.defaultCc ?? defaultCc ?? [];
+    setCc(prefillCc.join(", "));
     const base = replyThread?.subject ?? "";
     setSubject(
       replyThread ? (base.startsWith("Re:") ? base : `Re: ${base}`) : "",
     );
     setBody("");
-  }, [open, defaultTo, replyThread]);
+  }, [open, defaultTo, defaultCc, replyThread]);
 
   const handleSubmit = () => {
     if (sending) return;
@@ -1035,7 +1045,11 @@ const ApplicationDetailPage = () => {
   const [postingComment, setPostingComment] = useState(false);
   const [mentionableUsers, setMentionableUsers] = useState([]);
 
-  const [emails, setEmails] = useState({ threads: [], defaultTo: null });
+  const [emails, setEmails] = useState({
+    threads: [],
+    defaultTo: null,
+    defaultCc: [],
+  });
   const [sendingEmail, setSendingEmail] = useState(false);
   const [refreshingEmails, setRefreshingEmails] = useState(false);
   const [composeOpen, setComposeOpen] = useState(false);
@@ -1073,7 +1087,9 @@ const ApplicationDetailPage = () => {
           setJob(jobData);
           setInterviewPool(pool ?? []);
           setActivity(activityRows ?? []);
-          setEmails(emailData ?? { threads: [], defaultTo: null });
+          setEmails(
+            emailData ?? { threads: [], defaultTo: null, defaultCc: [] },
+          );
           const aggregate = otherApplicationsRes?.data ?? {};
           setOtherApplications(aggregate.otherJobs ?? []);
           setPreviousApplications(aggregate.previousSameJob ?? []);
@@ -1676,6 +1692,7 @@ const ApplicationDetailPage = () => {
                     open={composeOpen}
                     onOpenChange={setComposeOpen}
                     defaultTo={emails.defaultTo}
+                    defaultCc={emails.defaultCc}
                     replyThread={replyThread}
                     onSend={handleSendEmail}
                     sending={sendingEmail}

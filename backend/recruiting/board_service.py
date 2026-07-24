@@ -1,5 +1,6 @@
 import re
 from datetime import datetime, timezone
+from email.utils import getaddresses
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -24,7 +25,7 @@ from backend.dto.board_dto import (
 from backend.dto.email_dto import EmailConversationDto
 from backend.dto.evaluation_dto import EvaluationDto
 from backend.dto.user_context_dto import UserContextDto
-from backend.common.communication_enums import ContextType
+from backend.common.communication_enums import ContextType, EmailDirection
 from backend.common.permissions import Permission
 from backend.common.recruiting_enums import ApplicationStage, NotificationType
 from backend.entity.application_entity import ApplicationEntity
@@ -101,6 +102,29 @@ def _screen_rule_label(rule: dict) -> str:
     else:
         subject = "condition"
     return f"{subject} {operator} {values}".strip()
+
+
+def _parse_cc_addresses(raw: str | None) -> list[str]:
+    """Extract bare email addresses from a raw RFC-5322 Cc header string."""
+    if not raw:
+        return []
+    return [addr for _, addr in getaddresses([raw]) if addr]
+
+
+def _dedupe_addresses(addresses: list[str], exclude: list[str]) -> list[str]:
+    """Case-insensitive dedupe preserving first-seen order, minus ``exclude``."""
+    excluded = {a.lower() for a in exclude if a}
+    seen: set[str] = set()
+    result: list[str] = []
+    for addr in addresses:
+        if not addr:
+            continue
+        low = addr.lower()
+        if low in excluded or low in seen:
+            continue
+        seen.add(low)
+        result.append(addr)
+    return result
 
 
 class BoardService:
@@ -319,7 +343,7 @@ class BoardService:
             raise ValueError(
                 "No recipient: the candidate has no contact email; provide 'to'."
             )
-        await self.email_conversation_service.send(
+        message = await self.email_conversation_service.send(
             session,
             user_id=application.user_id,
             context_type=ContextType.APPLICATION,
@@ -331,9 +355,22 @@ class BoardService:
             sender_user_id=current_user.user_id,
             thread_id=dto.thread_id,
         )
+        await self.application_activity_repository.create(
+            session,
+            application_id,
+            current_user.user_id,
+            "email_sent",
+            details={
+                "subject": dto.subject,
+                "to": recipients,
+                "cc": list(dto.cc),
+                "threadId": message.thread_id,
+                "direction": "outbound",
+            },
+        )
         await session.commit()
         return await self._build_application_conversation(
-            session, application_id, application.user_id
+            session, current_user, application_id, application.user_id
         )
 
     async def get_application_conversation(
@@ -366,12 +403,30 @@ class BoardService:
             session, current_user, application_id, allow_read_all=True
         )
         if refresh:
-            await self.email_conversation_service.sync_context(
+            new_messages = await self.email_conversation_service.sync_context(
                 session, ContextType.APPLICATION, application_id
             )
+            for message in new_messages:
+                if message.direction != EmailDirection.INBOUND:
+                    continue
+                await self.application_activity_repository.create(
+                    session,
+                    application_id,
+                    application.user_id,
+                    "email_received",
+                    details={
+                        "subject": message.subject,
+                        "from": message.from_address,
+                        "to": message.to_addresses,
+                        "cc": message.cc_addresses,
+                        "threadId": message.thread_id,
+                        "direction": "inbound",
+                    },
+                    created_at=message.gmail_internal_date,
+                )
             await session.commit()
         return await self._build_application_conversation(
-            session, application_id, application.user_id
+            session, current_user, application_id, application.user_id
         )
 
     async def _require_application_owner(
@@ -394,16 +449,41 @@ class BoardService:
         return application
 
     async def _build_application_conversation(
-        self, session: AsyncSession, application_id: int, user_id: int
+        self,
+        session: AsyncSession,
+        current_user: UserContextDto,
+        application_id: int,
+        user_id: int,
     ) -> EmailConversationDto:
-        """Assemble the EmailConversationDto for one application."""
+        """Assemble the EmailConversationDto for one application.
+
+        ``default_cc`` prefills the compose Cc field: the recruiter's own
+        address for a new mail (conversation level), and the recruiter plus
+        that thread's prior Cc for a reply (thread level) — always excluding
+        the company sender and the candidate's To address.
+        """
         threads = await self.email_conversation_service.list_conversation(
             session, ContextType.APPLICATION, application_id
         )
         default_to = await self.user_emails_repository.get_contact_email(
             session, user_id
         )
-        return EmailConversationDto(threads=threads, default_to=default_to)
+        recruiter_email = await self.user_emails_repository.get_contact_email(
+            session, current_user.user_id
+        )
+        sender = self.email_conversation_service.sender_address
+        exclude = [default_to, sender]
+        conversation_default_cc = _dedupe_addresses([recruiter_email], exclude)
+        for thread in threads:
+            history = []
+            for message in thread.messages:
+                history.extend(_parse_cc_addresses(message.cc_addresses))
+            thread.default_cc = _dedupe_addresses([recruiter_email, *history], exclude)
+        return EmailConversationDto(
+            threads=threads,
+            default_to=default_to,
+            default_cc=conversation_default_cc,
+        )
 
     async def _cards_for_rows(self, session, job, rows) -> list[BoardCardDto]:
         """Build BoardCardDto list for (application, user) rows, resolving

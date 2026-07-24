@@ -31,7 +31,8 @@ class EmailThreadDto(BaseDto):
     """One email conversation with its messages, oldest first.
 
     Maps from ``EmailThreadEntity``; ``messages`` is assembled by the service
-    (the entity carries no ORM relationship).
+    (the entity carries no ORM relationship). ``default_cc`` is the recruiter
+    plus this thread's prior Cc, for prefilling reply Cc.
     """
 
     thread_id: int
@@ -39,6 +40,7 @@ class EmailThreadDto(BaseDto):
     synced_at: datetime | None = None
     created_at: datetime
     messages: list[EmailMessageDto]
+    default_cc: list[str] = []
 
 
 class EmailConversationDto(BaseDto):
@@ -46,11 +48,13 @@ class EmailConversationDto(BaseDto):
 
     Returned by the recruiting Emails tab GET and by POST (send returns the
     refreshed conversation). ``default_to`` is the candidate's contact address,
-    for prefilling the compose ``To`` field.
+    for prefilling the compose ``To`` field. ``default_cc`` is the recruiter's
+    own address, for prefilling a new compose's Cc.
     """
 
     threads: list[EmailThreadDto]
     default_to: str | None = None
+    default_cc: list[str] = []
 
 
 class EmailSendRequestDto(BaseDto):
