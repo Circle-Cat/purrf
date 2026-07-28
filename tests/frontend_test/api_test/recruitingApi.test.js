@@ -37,6 +37,7 @@ import {
   getEvaluationsForApplication,
   getApplicationEmails,
   sendApplicationEmail,
+  getApplicationEmailTemplates,
 } from "@/api/recruitingApi";
 
 vi.mock("@/utils/request", () => ({
@@ -109,6 +110,14 @@ describe("recruitingApi", () => {
     expect(request.post).toHaveBeenCalledWith(
       "/recruiting/applications/10/emails",
       body,
+    );
+  });
+
+  it("getApplicationEmailTemplates GETs the email-templates endpoint", async () => {
+    request.get.mockResolvedValue({ data: [] });
+    await getApplicationEmailTemplates(10);
+    expect(request.get).toHaveBeenCalledWith(
+      "/recruiting/applications/10/email-templates",
     );
   });
 

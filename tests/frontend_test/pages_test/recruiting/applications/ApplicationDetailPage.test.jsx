@@ -3429,7 +3429,12 @@ describe("ApplicationDetailPage — Emails tab", () => {
       within(confirmDialog).getByRole("button", { name: "Cancel" }),
     );
 
+    // The trigger is a pure action control now (its committed value never
+    // leaves ""), so it can never name a template; the "Applied: <label>"
+    // text beside it is the only thing that reports an application, and a
+    // cancelled overwrite must not produce it either.
     expect(trigger).not.toHaveTextContent("Rejection");
+    expect(screen.queryByText(/applied:/i)).not.toBeInTheDocument();
     expect(
       screen.queryByText(/replace what you have written/i),
     ).not.toBeInTheDocument();
@@ -3470,6 +3475,48 @@ describe("ApplicationDetailPage — Emails tab", () => {
     expect(
       screen.getByText(/replace what you have written/i),
     ).toBeInTheDocument();
+  });
+
+  it("re-applies the same template when it is picked again after the body was edited", async () => {
+    api.getApplicationEmails.mockResolvedValue({
+      data: { threads: [], defaultTo: "cand@x.com" },
+    });
+    api.getApplicationEmailTemplates.mockResolvedValue({
+      data: [
+        {
+          key: "rejection",
+          label: "Rejection",
+          subject: "S",
+          bodyHtml: "<p>Template body</p>",
+        },
+      ],
+    });
+    const user = await renderComposeOpen();
+    await user.click(screen.getByRole("combobox", { name: /template/i }));
+    await user.click(screen.getByRole("option", { name: "Rejection" }));
+    expect(
+      screen.getByRole("textbox", { name: /message/i }).innerHTML,
+    ).toContain("Template body");
+    expect(screen.getByText("Applied: Rejection")).toBeInTheDocument();
+
+    // Hand-edit the applied template into something the sender wants thrown
+    // away, then reach for the very same template again.
+    const editor = setEditorHtml("<p>mangled draft</p>");
+    await user.click(screen.getByRole("combobox", { name: /template/i }));
+    await user.click(screen.getByRole("option", { name: "Rejection" }));
+
+    // The pick has to register even though the same template is already
+    // applied: the Select's committed value is held at "", so Radix's
+    // controlled-setter guard sees "rejection" !== "" and forwards
+    // onValueChange. Were the applied key the Select's value, this pick would
+    // be a silent no-op and the sender would be stuck with the mangled body.
+    expect(
+      screen.getByText(/replace what you have written/i),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /replace/i }));
+    expect(editor.innerHTML).toContain("Template body");
+    expect(editor.innerHTML).not.toContain("mangled draft");
+    expect(screen.getByText("Applied: Rejection")).toBeInTheDocument();
   });
 
   it("highlights unfilled bracket markers in the editor", async () => {
@@ -3513,6 +3560,44 @@ describe("ApplicationDetailPage — Emails tab", () => {
 
     await user.click(screen.getByRole("button", { name: /send anyway/i }));
     expect(api.sendApplicationEmail).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses singular wording when exactly one placeholder is left", async () => {
+    api.getApplicationEmails.mockResolvedValue({
+      data: { threads: [], defaultTo: "cand@x.com" },
+    });
+    const user = await renderComposeOpen();
+    // One marker is the common case: interview_rescheduled carries exactly one.
+    setEditorHtml("<p>rescheduled to [INTERVIEW DATE/TIME]</p>");
+    await user.type(screen.getByLabelText(/subject/i), "Hi");
+    await user.click(screen.getByRole("button", { name: /^send$/i }));
+
+    expect(
+      screen.getByText(/still has 1 placeholder in square brackets/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/1 placeholders/i)).not.toBeInTheDocument();
+  });
+
+  it("keeps Send disabled while the recipient or subject is empty, body text notwithstanding", async () => {
+    // A candidate with no contact email: the composer opens with To empty.
+    api.getApplicationEmails.mockResolvedValue({
+      data: { threads: [], defaultTo: null },
+    });
+    const user = await renderComposeOpen();
+    setEditorHtml("<p>Ready to go</p>");
+    const send = screen.getByRole("button", { name: /^send$/i });
+    expect(send).toBeDisabled();
+
+    // Body plus subject is still not enough without a recipient — handleSubmit
+    // would return silently, so the button must not invite the click.
+    await user.type(screen.getByLabelText(/subject/i), "Hi");
+    expect(send).toBeDisabled();
+
+    await user.type(screen.getByLabelText("To"), "cand@x.com");
+    expect(send).toBeEnabled();
+
+    await user.clear(screen.getByLabelText(/subject/i));
+    expect(send).toBeDisabled();
   });
 
   it("does not strip the marker text itself when sending anyway", async () => {

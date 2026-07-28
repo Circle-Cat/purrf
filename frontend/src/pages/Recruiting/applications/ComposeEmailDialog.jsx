@@ -48,6 +48,18 @@ const EMAIL_ALLOWED_TAGS = [
 /** Attributes kept on the allowed tags — enough for a working hyperlink. */
 const EMAIL_ALLOWED_ATTR = ["href", "target", "rel"];
 
+/**
+ * The value the template Select is permanently held at. Radix documents "" as
+ * "no selection, show the placeholder" (react-select@2.2.6 forbids it as an
+ * item value for exactly that reason), and because the committed value never
+ * moves off "", every pick — including re-picking the template already
+ * applied — differs from it and so survives the controlled-setter guard in
+ * react-use-controllable-state@1.2.2 that only forwards onValueChange when
+ * `next !== prop`. Picking a template is an action, not a value; what was
+ * applied is reported as adjacent text instead.
+ */
+const TEMPLATE_PICKER_VALUE = "";
+
 /** Sanitize composer HTML down to the tags Gmail bodies are allowed to carry. */
 const sanitizeEmailHtml = (html) =>
   DOMPurify.sanitize(html, {
@@ -113,12 +125,13 @@ const ComposeEmailDialog = ({
   // A template the sender picked while the body already had text — held
   // here until the overwrite confirmation is resolved.
   const [pendingTemplate, setPendingTemplate] = useState(null);
-  // Drives the Select as a controlled component so its displayed label only
-  // ever reflects a template that was actually applied — not merely clicked.
-  // Left stale (i.e. never speculatively set) while a pick is pending
-  // confirmation, so Cancel needs no extra reset and re-picking the same
-  // template after a Cancel still registers as a value change to Radix.
-  const [selectedTemplateKey, setSelectedTemplateKey] = useState("");
+  // Label of the template last actually applied, shown as text beside the
+  // picker. It is NOT the Select's value: the Select is held at "" so that
+  // picking is a pure action (see TEMPLATE_PICKER_VALUE above), which leaves
+  // the trigger permanently on its placeholder and no way for it to claim a
+  // template that was only clicked — or one whose overwrite prompt was
+  // cancelled — was applied.
+  const [appliedTemplateLabel, setAppliedTemplateLabel] = useState("");
   // Count of unfilled `[UPPERCASE]` markers found at Send time; >0 opens the
   // soft-warning confirmation dialog below.
   const [unfilledCount, setUnfilledCount] = useState(0);
@@ -141,7 +154,7 @@ const ComposeEmailDialog = ({
     if (editorRef.current) editorRef.current.innerHTML = "";
     setHasText(false);
     setPendingTemplate(null);
-    setSelectedTemplateKey("");
+    setAppliedTemplateLabel("");
     setUnfilledCount(0);
   }, [open, defaultTo, defaultCc, replyThread]);
 
@@ -162,7 +175,7 @@ const ComposeEmailDialog = ({
       );
       setHasText(Boolean(editorRef.current.textContent?.trim()));
     }
-    setSelectedTemplateKey(template.key);
+    setAppliedTemplateLabel(template.label);
   };
 
   const handleTemplatePick = (key) => {
@@ -199,9 +212,19 @@ const ComposeEmailDialog = ({
     );
   };
 
+  /**
+   * Everything `handleSubmit` requires. It is the Send button's `disabled`
+   * condition too: handleSubmit returns silently — no toast, no field error —
+   * so anything it rejects has to read as a disabled button rather than a dead
+   * click. A candidate with no contact email (`defaultTo: null`) is the real
+   * case: a template fills the body and subject and leaves To empty.
+   */
+  const canSend =
+    splitAddresses(to).length > 0 && Boolean(subject.trim()) && hasText;
+
   const handleSubmit = () => {
     if (sending) return;
-    if (splitAddresses(to).length === 0 || !subject.trim() || !hasText) return;
+    if (!canSend) return;
     const remaining = countUnfilledBrackets(
       editorRef.current?.textContent ?? "",
     );
@@ -249,7 +272,7 @@ const ComposeEmailDialog = ({
             <div className="space-y-1">
               <Label htmlFor="email-template">Template</Label>
               <Select
-                value={selectedTemplateKey}
+                value={TEMPLATE_PICKER_VALUE}
                 onValueChange={handleTemplatePick}
               >
                 <SelectTrigger id="email-template" aria-label="Template">
@@ -263,6 +286,11 @@ const ComposeEmailDialog = ({
                   ))}
                 </SelectContent>
               </Select>
+              {appliedTemplateLabel ? (
+                <p className="text-xs text-muted-foreground">
+                  {`Applied: ${appliedTemplateLabel}`}
+                </p>
+              ) : null}
             </div>
             <div className="space-y-1">
               <Label htmlFor="email-body">Message</Label>
@@ -292,7 +320,7 @@ const ComposeEmailDialog = ({
             <Button
               type="button"
               onClick={handleSubmit}
-              disabled={sending || !hasText}
+              disabled={sending || !canSend}
             >
               Send
             </Button>
@@ -340,8 +368,9 @@ const ComposeEmailDialog = ({
             <DialogTitle>Unfilled placeholders</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            This message still has {unfilledCount} placeholders in square
-            brackets. Send it anyway?
+            {`This message still has ${unfilledCount} ${
+              unfilledCount === 1 ? "placeholder" : "placeholders"
+            } in square brackets. Send it anyway?`}
           </p>
           <DialogFooter>
             <Button
