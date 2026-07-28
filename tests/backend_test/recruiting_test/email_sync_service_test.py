@@ -151,9 +151,7 @@ class TestSyncDueApplications(unittest.IsolatedAsyncioTestCase):
         call = self.application_repo.list_due_email_sync_applications.await_args
         session_arg, cutoff = call.args
         self.assertIs(session_arg, self.session)
-        self.assertAlmostEqual(
-            (before - cutoff).total_seconds(), 7 * 86400, delta=5
-        )
+        self.assertAlmostEqual((before - cutoff).total_seconds(), 7 * 86400, delta=5)
 
     async def test_counts_new_messages_across_applications(self):
         self._due(1, 2)
@@ -177,12 +175,15 @@ class TestSyncDueApplications(unittest.IsolatedAsyncioTestCase):
         summary = await self.service.sync_due_applications(self.session)
 
         self.assertEqual(self.conversation_service.sync_context.await_count, 3)
-        self.assertEqual(summary, {
-            "scanned": 3,
-            "synced": 2,
-            "failed": 1,
-            "newMessages": 0,
-        })
+        self.assertEqual(
+            summary,
+            {
+                "scanned": 3,
+                "synced": 2,
+                "failed": 1,
+                "newMessages": 0,
+            },
+        )
         # The successful ones are still committed; the failed one is rolled back.
         self.assertEqual(self.session.commit.await_count, 2)
         self.session.rollback.assert_awaited_once()

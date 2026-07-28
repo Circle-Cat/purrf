@@ -397,9 +397,10 @@ class ApplicationRepository:
             )
             .where(
                 or_(
-                    ApplicationEntity.stage.not_in(
-                        [ApplicationStage.HIRED, ApplicationStage.REJECTED]
-                    ),
+                    ApplicationEntity.stage.not_in([
+                        ApplicationStage.HIRED,
+                        ApplicationStage.REJECTED,
+                    ]),
                     ApplicationEntity.stage_entered_at >= terminal_cutoff,
                 )
             )
