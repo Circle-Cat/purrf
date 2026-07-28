@@ -1,6 +1,7 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { toast } from "sonner";
 import MeetingManagementDialog from "@/pages/PersonalDashboard/components/MeetingManagementDialog";
 import { useMeetingManagement } from "@/pages/PersonalDashboard/hooks/useMeetingManagement";
 
@@ -371,6 +372,8 @@ describe("MeetingManagementDialog Component", () => {
         start_date: "2026-07-30",
         start_time: "09:00",
         duration_minutes: 30,
+        interval_weeks: 1, 
+        count: 1,
       });
     });
 
@@ -451,6 +454,106 @@ describe("MeetingManagementDialog Component", () => {
       expect(
         screen.getByRole("button", { name: /delete \(0\)/i }),
       ).toBeDisabled();
+    });
+  });
+
+  it("should send interval_weeks and count when a recurrence is chosen", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(new Date("2026-07-15T12:00:00-04:00"));
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    mockBookMeeting.mockResolvedValue({ created: [{ meetingId: "g-1" }], failed: [] });
+
+    render(
+      <MeetingManagementDialog roundId={5} onBooked={vi.fn()} userTimezone="America/New_York" />,
+    );
+    await user.click(screen.getByRole("button", { name: /manage meetings/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+    });
+
+    await user.selectOptions(screen.getByLabelText("Select Partner"), "1");
+    fireEvent.change(screen.getByTestId("timezone-selector"), {
+      target: { value: "America/New_York" },
+    });
+    await user.click(screen.getByRole("button", { name: /pick a date/i }));
+    const dayButtons = screen.getAllByRole("button", { name: /30/ });
+    await user.click(dayButtons[dayButtons.length - 1]);
+
+    const repeatSelect = await screen.findByLabelText(/repeat every/i);
+    const countSelect = await screen.findByLabelText(/number of sessions/i);
+    fireEvent.change(repeatSelect, { target: { value: "2" } });
+    fireEvent.change(countSelect, { target: { value: "4" } });
+
+    fireEvent.submit(document.querySelector("form"));
+
+    await waitFor(() => {
+      expect(mockBookMeeting).toHaveBeenCalledWith({
+        round_id: 5,
+        partner_id: 1,
+        timezone: "America/New_York",
+        start_date: "2026-07-30",
+        start_time: "09:00",
+        duration_minutes: 30,
+        interval_weeks: 2,
+        count: 4,
+      });
+    });
+    vi.useRealTimers();
+  });
+
+  it("shows a partial-failure toast when some sessions fail", async () => {
+    const user = userEvent.setup();
+
+    mockBookMeeting.mockResolvedValue({
+      created: [{ meetingId: "g-1" }, { meetingId: "g-2" }],
+      failed: [{ index: 2, startDatetime: "2026-08-13T14:00:00Z", reason: "boom" }],
+    });
+
+    const { container } = render(
+      <MeetingManagementDialog
+        roundId={2}
+        onBooked={mockOnBooked}
+        userTimezone="America/New_York"
+      />
+    );
+
+    const triggerBtn = screen.getByRole("button", { name: /manage meetings/i });
+    await user.click(triggerBtn);
+
+    const partnerSelect = screen.getByRole("combobox", { name: /select partner/i });
+    await user.selectOptions(partnerSelect, "1");
+
+    const datePickerBtn = screen.getByRole("button", { name: /pick a date/i });
+    await user.click(datePickerBtn);
+    const dayButton = await screen.findByRole("button", { name: /15/i });
+    await user.click(dayButton);
+
+    const timeInput = container.querySelector(".space-y-1\\.5 input") || screen.getByRole("combobox", { name: /Start Time/i });
+    if (timeInput) {
+      await user.click(timeInput);
+      await user.type(timeInput, "10:00");
+      
+      const option = await screen.findByText(/10:00/i);
+      await user.click(option);
+    }
+
+    const durationSelect = screen.getByRole("combobox", { name: /duration/i });
+    await user.selectOptions(durationSelect, "30");
+
+    const intervalSelect = screen.getByRole("combobox", { name: /repeat every/i });
+    await user.selectOptions(intervalSelect, "1");
+
+    const countSelect = screen.getByRole("combobox", { name: /number of sessions/i });
+    await user.selectOptions(countSelect, "3");
+
+    const confirmBtn = screen.getByRole("button", { name: /confirm booking/i });
+    await user.click(confirmBtn);
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith(
+        "Created 2 of 3 sessions (1 failed)",
+      );
     });
   });
 });

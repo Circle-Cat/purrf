@@ -39,6 +39,16 @@ const DURATION_OPTIONS = [
   { value: "90", label: "1.5 hours" },
 ];
 
+const INTERVAL_OPTIONS = [
+  { value: "1", label: "1 week" },
+  { value: "2", label: "2 weeks" },
+];
+
+const SESSION_COUNT_OPTIONS = Array.from({ length: 12 }, (_, i) => ({
+  value: String(i + 1),
+  label: String(i + 1),
+}));
+
 const TIME_SLOTS = Array.from({ length: 48 }, (_, i) => {
   const hour = String(Math.floor(i / 2)).padStart(2, "0");
   const min = i % 2 === 0 ? "00" : "30";
@@ -70,6 +80,8 @@ export default function MeetingManagementDialog({
   const initialFormState = {
     partnerId: "",
     duration: "30",
+    intervalWeeks: "1",
+    count: "1",
     timezone:
       userTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
   };
@@ -205,6 +217,8 @@ export default function MeetingManagementDialog({
         start_date: formatLocalYmd(selectedDate),
         start_time: selectedTime,
         duration_minutes: Number(formData.duration),
+        interval_weeks: Number(formData.intervalWeeks),
+        count: Number(formData.count),
       };
 
       const result = await bookMeeting(cleanedPayload);
@@ -416,6 +430,57 @@ export default function MeetingManagementDialog({
                         required
                       >
                         {DURATION_OPTIONS.map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </option>
+                        ))}
+                      </select>
+                      <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-400">
+                        <ChevronDown className="w-4 h-4" />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Recurrence: interval + number of sessions */}
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium text-gray-700">
+                      Repeat every
+                    </label>
+                    <div className="relative">
+                      <select
+                        name="intervalWeeks"
+                        aria-label="Repeat every"
+                        value={formData.intervalWeeks}
+                        onChange={handleInputChange}
+                        className="w-full appearance-none rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-gray-900 focus:border-[#6035F3] focus:ring-2 focus:ring-[#6035F3]/20 outline-none transition-all"
+                      >
+                        {INTERVAL_OPTIONS.map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </option>
+                        ))}
+                      </select>
+                      <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-400">
+                        <ChevronDown className="w-4 h-4" />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium text-gray-700">
+                      Number of sessions
+                    </label>
+                    <div className="relative">
+                      <select
+                        name="count"
+                        aria-label="Number of sessions"
+                        value={formData.count}
+                        onChange={handleInputChange}
+                        className="w-full appearance-none rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-gray-900 focus:border-[#6035F3] focus:ring-2 focus:ring-[#6035F3]/20 outline-none transition-all"
+                      >
+                        {SESSION_COUNT_OPTIONS.map((opt) => (
                           <option key={opt.value} value={opt.value}>
                             {opt.label}
                           </option>
