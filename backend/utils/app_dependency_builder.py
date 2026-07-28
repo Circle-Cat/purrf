@@ -577,10 +577,6 @@ class AppDependencyBuilder:
             self.job_activity_repository,
             self.user_emails_repository,
         )
-        self.recruiting_controller = RecruitingController(
-            job_service=self.job_service,
-            database=self.database,
-        )
         self.application_assignment_repository = ApplicationAssignmentRepository()
         self.application_activity_repository = ApplicationActivityRepository()
         self.application_comment_repository = ApplicationCommentRepository()
@@ -628,6 +624,11 @@ class AppDependencyBuilder:
             application_activity_repository=self.application_activity_repository,
             application_repository=self.application_repository,
             logger=self.logger,
+        )
+        self.recruiting_controller = RecruitingController(
+            job_service=self.job_service,
+            email_sync_service=self.email_sync_service,
+            database=self.database,
         )
 
         self.board_service = BoardService(

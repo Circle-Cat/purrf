@@ -15,7 +15,7 @@ from backend.dto.board_dto import (
     SubStatusChangeDto,
 )
 from backend.dto.user_context_dto import UserContextDto
-from backend.common.communication_enums import ContextType, EmailDirection
+from backend.common.communication_enums import ContextType
 from backend.common.permissions import Permission
 from backend.dto.email_dto import (
     EmailConversationDto,
