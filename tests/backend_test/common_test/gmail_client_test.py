@@ -291,6 +291,125 @@ class TestGmailClient(TestCase):
         with self.assertRaises(RateLimitedError):
             self.client.get_thread("THREAD")
 
+    # ---- list_thread_message_ids --------------------------------------
+
+    def _stub_thread_ids(self, messages):
+        """Stub threads().get() for the metadata-only id listing."""
+        self.mock_service.users().threads().get().execute.return_value = {
+            "id": "THREAD",
+            "messages": messages,
+        }
+
+    def test_list_thread_message_ids_returns_ids_in_gmail_order(self):
+        self._stub_thread_ids([{"id": "g1"}, {"id": "g2"}, {"id": "g3"}])
+        self.assertEqual(
+            self.client.list_thread_message_ids("THREAD"), ["g1", "g2", "g3"]
+        )
+
+    def test_list_thread_message_ids_requests_metadata_only(self):
+        # The whole point of the split: never pull bodies just to learn ids.
+        self._stub_thread_ids([])
+        self.client.list_thread_message_ids("THREAD")
+        kwargs = self.mock_service.users().threads().get.call_args.kwargs
+        self.assertEqual(kwargs["id"], "THREAD")
+        self.assertEqual(kwargs["format"], "metadata")
+        self.assertEqual(kwargs["fields"], "messages(id)")
+
+    def test_list_thread_message_ids_empty_thread(self):
+        self.mock_service.users().threads().get().execute.return_value = {"id": "T"}
+        self.assertEqual(self.client.list_thread_message_ids("THREAD"), [])
+
+    def test_list_thread_message_ids_rate_limited(self):
+        self.mock_service.users().threads().get().execute.side_effect = _http_error(429)
+        with self.assertRaises(RateLimitedError):
+            self.client.list_thread_message_ids("THREAD")
+
+    # ---- get_message ---------------------------------------------------
+
+    def _stub_message(self, message):
+        self.mock_service.users().messages().get().execute.return_value = message
+
+    def test_get_message_parses_headers_and_bodies(self):
+        self._stub_message({
+            "id": "g1",
+            "threadId": "THREAD",
+            "snippet": "hello there",
+            "internalDate": "1700000000000",
+            "payload": {
+                "mimeType": "multipart/alternative",
+                "headers": [
+                    {"name": "From", "value": TEST_SENDER},
+                    {"name": "To", "value": "alice@example.com"},
+                    {"name": "Cc", "value": "bob@example.com"},
+                    {"name": "Subject", "value": "Hi"},
+                    {"name": "Message-ID", "value": "<g1@mail>"},
+                ],
+                "parts": [
+                    {"mimeType": "text/plain", "body": {"data": _b64("Hello there")}},
+                    {
+                        "mimeType": "text/html",
+                        "body": {"data": _b64("<p>Hello there</p>")},
+                    },
+                ],
+            },
+        })
+        message = self.client.get_message("g1")
+        self.assertEqual(message["gmail_message_id"], "g1")
+        self.assertEqual(message["gmail_thread_id"], "THREAD")
+        self.assertEqual(message["rfc822_message_id"], "<g1@mail>")
+        self.assertEqual(message["from_address"], TEST_SENDER)
+        self.assertEqual(message["to_addresses"], "alice@example.com")
+        self.assertEqual(message["cc_addresses"], "bob@example.com")
+        self.assertEqual(message["subject"], "Hi")
+        self.assertEqual(message["html"], "<p>Hello there</p>")
+        self.assertEqual(message["plain"], "Hello there")
+        self.assertEqual(message["snippet"], "hello there")
+        self.assertEqual(message["gmail_internal_date"], "1700000000000")
+
+    def test_get_message_handles_single_part_plain_body(self):
+        self._stub_message({
+            "id": "g2",
+            "threadId": "THREAD",
+            "snippet": "a reply",
+            "internalDate": "1700000100000",
+            "payload": {
+                "mimeType": "text/plain",
+                "headers": [
+                    {"name": "From", "value": "alice@example.com"},
+                    {"name": "Subject", "value": "Re: Hi"},
+                ],
+                "body": {"data": _b64("a reply")},
+            },
+        })
+        message = self.client.get_message("g2")
+        self.assertEqual(message["from_address"], "alice@example.com")
+        self.assertEqual(message["plain"], "a reply")
+        self.assertIsNone(message["html"])
+
+    def test_get_message_requests_full_format(self):
+        self._stub_message({"id": "g1", "payload": {}})
+        self.client.get_message("g1")
+        kwargs = self.mock_service.users().messages().get.call_args.kwargs
+        self.assertEqual(kwargs["id"], "g1")
+        self.assertEqual(kwargs["format"], "full")
+
+    def test_get_message_rate_limited(self):
+        self.mock_service.users().messages().get().execute.side_effect = _http_error(
+            429
+        )
+        with self.assertRaises(RateLimitedError):
+            self.client.get_message("g1")
+
+    def test_get_message_not_found_raises_runtime_error(self):
+        # A message deleted between listing ids and fetching it -> 404. The
+        # transport must surface it as a clean RuntimeError; the service layer
+        # deliberately lets it propagate (see Task 3).
+        self.mock_service.users().messages().get().execute.side_effect = _http_error(
+            404
+        )
+        with self.assertRaises(RuntimeError):
+            self.client.get_message("gone")
+
 
 if __name__ == "__main__":
     main()
