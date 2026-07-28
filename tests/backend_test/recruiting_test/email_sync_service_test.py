@@ -4,6 +4,8 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
+from sqlalchemy.exc import MissingGreenlet
+
 from backend.common.communication_enums import ContextType, EmailDirection
 from backend.recruiting.email_sync_service import EmailSyncService
 
@@ -20,6 +22,42 @@ def _message(direction, subject="Re: Hello"):
         thread_id=10,
         gmail_internal_date=RECEIVED_AT,
     )
+
+
+class _ExpiringApplication:
+    """Reproduces what a real ``ApplicationEntity`` does after
+    ``session.rollback()``: SQLAlchemy expires every object in the identity
+    map, so the next attribute access performs an implicit refresh SELECT.
+    Inside an async coroutine that SELECT runs outside ``greenlet_spawn`` and
+    raises ``sqlalchemy.exc.MissingGreenlet``.
+
+    ``application_id``/``user_id`` are properties that raise exactly that
+    once ``expired["value"]`` flips to True (which this test's fake
+    ``rollback()`` does). A ``SimpleNamespace``/``AsyncMock`` double cannot
+    reproduce this: plain attribute access on them is never IO, which is
+    exactly why the 13 pre-existing tests never saw this defect.
+    """
+
+    def __init__(self, application_id, user_id, expired):
+        self._application_id = application_id
+        self._user_id = user_id
+        self._expired = expired
+
+    @property
+    def application_id(self):
+        if self._expired["value"]:
+            raise MissingGreenlet(
+                "greenlet_spawn has not been called; can't call await_only() here"
+            )
+        return self._application_id
+
+    @property
+    def user_id(self):
+        if self._expired["value"]:
+            raise MissingGreenlet(
+                "greenlet_spawn has not been called; can't call await_only() here"
+            )
+        return self._user_id
 
 
 class TestSyncApplication(unittest.IsolatedAsyncioTestCase):
@@ -187,6 +225,52 @@ class TestSyncDueApplications(unittest.IsolatedAsyncioTestCase):
         # The successful ones are still committed; the failed one is rolled back.
         self.assertEqual(self.session.commit.await_count, 2)
         self.session.rollback.assert_awaited_once()
+
+    async def test_rollback_expiring_the_application_does_not_crash_the_sweep(self):
+        # Regression test for a Critical review defect: session.rollback()
+        # expires *every* ORM object in the session's identity map, including
+        # every application in `due` and the one currently being handled. The
+        # very next statement in the except block,
+        # logger.exception(..., application.application_id), then performs an
+        # implicit refresh SELECT on that expired instance - IO outside
+        # greenlet_spawn, which raises sqlalchemy.exc.MissingGreenlet from
+        # *inside* the except block, where nothing catches it. That escapes
+        # sync_due_applications entirely: the first bad application (a Gmail
+        # rate limit, a message deleted between listing and fetch, an expired
+        # refresh token) would kill the whole nightly sweep - exactly the
+        # outcome per-application isolation exists to prevent.
+        #
+        # The 13 pre-existing tests use AsyncMock()/SimpleNamespace doubles:
+        # rollback() has no side effect on them and attribute access is never
+        # IO, so none of them can observe this. _ExpiringApplication models
+        # the real mechanism instead: rollback() flips a shared "expired"
+        # flag, and application_id/user_id are properties that raise
+        # MissingGreenlet once that flag is set - reproducing an expired
+        # instance without a real database.
+        expired = {"value": False}
+        applications = [_ExpiringApplication(i, 100 + i, expired) for i in (1, 2, 3)]
+        self.application_repo.list_due_email_sync_applications = AsyncMock(
+            return_value=applications
+        )
+        self.session.rollback = AsyncMock(
+            side_effect=lambda: expired.__setitem__("value", True)
+        )
+        self.conversation_service.sync_context.side_effect = [
+            RuntimeError("Gmail API error"),
+            [],
+            [],
+        ]
+
+        summary = await self.service.sync_due_applications(self.session)
+
+        # One failure must not end the run: the sweep still returns, still
+        # attempts every due application, and reports the failure as a count
+        # rather than letting it escape as an unhandled exception.
+        self.assertEqual(
+            summary,
+            {"scanned": 3, "synced": 2, "failed": 1, "newMessages": 0},
+        )
+        self.assertEqual(self.conversation_service.sync_context.await_count, 3)
 
     async def test_failure_is_logged_with_the_application_id(self):
         self._due(1)

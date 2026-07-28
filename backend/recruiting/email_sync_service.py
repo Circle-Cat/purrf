@@ -50,14 +50,11 @@ class EmailSyncService:
     async def sync_application(self, session, application):
         """Sync one application's email threads and log the new inbound replies.
 
-        Writes an ``email_received`` timeline event per newly-persisted INBOUND
-        message, backdated to when the mail actually arrived. Outbound messages
-        picked up by a sync are deliberately not logged — the send path already
-        wrote an ``email_sent`` event when we sent them.
-
-        Does **not** commit: the caller owns the transaction boundary (manual
-        Refresh commits once; the nightly sweep commits per application so one
-        failure cannot undo its predecessors).
+        Thin wrapper over ``_sync_by_ids``: reads the two fields it needs off
+        the entity up front and delegates. This is the entry point
+        ``board_service.get_application_conversation`` calls with a live
+        ``ApplicationEntity`` — that call site depends on this signature and
+        must not change.
 
         Args:
             session (AsyncSession): The active DB session.
@@ -69,16 +66,48 @@ class EmailSyncService:
         Raises:
             RateLimitedError / RuntimeError: Propagated from the Gmail sync.
         """
+        return await self._sync_by_ids(
+            session, application.application_id, application.user_id
+        )
+
+    async def _sync_by_ids(self, session, application_id, user_id):
+        """Sync one application's email threads and log the new inbound replies.
+
+        Writes an ``email_received`` timeline event per newly-persisted INBOUND
+        message, backdated to when the mail actually arrived. Outbound messages
+        picked up by a sync are deliberately not logged — the send path already
+        wrote an ``email_sent`` event when we sent them.
+
+        Does **not** commit: the caller owns the transaction boundary (manual
+        Refresh commits once; the nightly sweep commits per application so one
+        failure cannot undo its predecessors).
+
+        Takes plain ids rather than an ``ApplicationEntity`` on purpose: this
+        must not touch ORM-loaded state, so it stays safe to call after a
+        sibling application's ``session.rollback()`` has expired the whole
+        identity map (see ``sync_due_applications``).
+
+        Args:
+            session (AsyncSession): The active DB session.
+            application_id: The application's id.
+            user_id: The application owner's user id (the timeline actor).
+
+        Returns:
+            list[EmailMessageEntity]: The messages newly persisted this call.
+
+        Raises:
+            RateLimitedError / RuntimeError: Propagated from the Gmail sync.
+        """
         new_messages = await self._conversation_service.sync_context(
-            session, ContextType.APPLICATION, application.application_id
+            session, ContextType.APPLICATION, application_id
         )
         for message in new_messages:
             if message.direction != EmailDirection.INBOUND:
                 continue
             await self._activity_repo.create(
                 session,
-                application.application_id,
-                application.user_id,
+                application_id,
+                user_id,
                 "email_received",
                 details={
                     "subject": message.subject,
@@ -120,12 +149,24 @@ class EmailSyncService:
             session, cutoff
         )
 
+        # Snapshot the two fields the loop needs as plain values *before* the
+        # loop runs. session.rollback() (below, on a failure) expires every
+        # ORM object in the identity map, including every other entity in
+        # `due` and the one currently being handled — so reading them off the
+        # entities inside the loop (e.g. in the except block, after a
+        # rollback) can trigger an implicit refresh SELECT. That SELECT runs
+        # outside greenlet_spawn and raises sqlalchemy.exc.MissingGreenlet
+        # from inside the except block, uncaught, killing the whole sweep on
+        # the first failure — exactly what per-application isolation exists
+        # to prevent. Do not "simplify" this back to iterating `due` directly.
+        targets = [(a.application_id, a.user_id) for a in due]
+
         synced = 0
         failed = 0
         new_message_count = 0
-        for application in due:
+        for application_id, user_id in targets:
             try:
-                new_messages = await self.sync_application(session, application)
+                new_messages = await self._sync_by_ids(session, application_id, user_id)
                 await session.commit()
                 synced += 1
                 new_message_count += len(new_messages)
@@ -133,7 +174,7 @@ class EmailSyncService:
                 await session.rollback()
                 self._logger.exception(
                     "[EmailSync] application_id=%s sync failed",
-                    application.application_id,
+                    application_id,
                 )
                 failed += 1
 
