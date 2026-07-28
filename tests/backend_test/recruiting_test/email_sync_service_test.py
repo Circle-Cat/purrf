@@ -305,7 +305,11 @@ class TestSyncDueApplications(unittest.IsolatedAsyncioTestCase):
         await self.service.sync_due_applications(self.session)
         call = self.application_repo.list_due_email_sync_applications.await_args
         self.assertIsNone(call.kwargs.get("gmail_thread_ids"))
-        message = self.logger.log.call_args.args[1]
+        # Render the message rather than reading the raw template: the
+        # requirement is about the line that gets emitted, so the test should
+        # be agnostic to whether the label is interpolated eagerly or lazily.
+        call = self.logger.log.call_args
+        message = call.args[1] % call.args[2:]
         self.assertIn("reconcile", message)
         self.assertIn("sweep finished", message)
 
@@ -417,9 +421,26 @@ class TestSyncRecentApplications(unittest.IsolatedAsyncioTestCase):
         self._flagged("T1")
         self._due(1)
         await self.service.sync_recent_applications(self.session)
-        message = self.logger.log.call_args.args[1]
+        call = self.logger.log.call_args
+        message = call.args[1] % call.args[2:]
         self.assertIn("delta", message)
         self.assertIn("sweep finished", message)
+
+    async def test_a_failed_gmail_lookup_is_not_isolated(self):
+        # Per-application failures are caught and counted; this one is not.
+        # Without the flagged set there is no sweep to run, so it propagates
+        # and the endpoint 500s rather than reporting a misleading all-zero
+        # summary.
+        self.gmail.list_recent_message_thread_ids = Mock(
+            side_effect=RuntimeError("Gmail API error")
+        )
+
+        with self.assertRaises(RuntimeError):
+            await self.service.sync_recent_applications(self.session)
+
+        self.application_repo.list_due_email_sync_applications.assert_not_awaited()
+        self.session.commit.assert_not_awaited()
+        self.logger.log.assert_not_called()
 
 
 if __name__ == "__main__":

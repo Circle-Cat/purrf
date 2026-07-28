@@ -260,8 +260,9 @@ class EmailSyncService:
         # when anything failed makes "did tonight go wrong?" greppable.
         self._logger.log(
             logging.WARNING if failed else logging.INFO,
-            f"[EmailSync] {job} sweep finished: scanned=%d synced=%d failed=%d "
+            "[EmailSync] %s sweep finished: scanned=%d synced=%d failed=%d "
             "new_messages=%d",
+            job,
             len(due),
             synced,
             failed,
