@@ -593,6 +593,78 @@ class TestUsersRepository(BaseRepositoryTestLib):
         last_names = [r[0].last_name for r in rows]
         self.assertEqual(last_names, sorted(last_names))
 
+    async def test_list_users_sort_by_last_name_is_case_insensitive(self):
+        """Name sorting is case-insensitive.
+
+        The Neon databases use C.UTF-8 (byte-order) collation, so a bare
+        ORDER BY ranks every uppercase letter before every lowercase one and
+        descending Last Name puts "w" above "Zhu". Sorting on lower() keeps
+        mixed-case surnames interleaved the way a reader expects.
+        """
+        token = uuid.uuid4().hex[:10]
+        users = [
+            self._make_user(last_name=f"Zhu-{token}", email=f"c1-{token}@example.com"),
+            self._make_user(last_name=f"zhao-{token}", email=f"c2-{token}@example.com"),
+            self._make_user(last_name=f"Wang-{token}", email=f"c3-{token}@example.com"),
+            self._make_user(last_name=f"w-{token}", email=f"c4-{token}@example.com"),
+        ]
+        await self.insert_entities(users)
+
+        rows, total = await self.repo.list_users(
+            self.session, search=token, sort_by="last_name", order="desc"
+        )
+        self.assertEqual(total, 4)
+        self.assertEqual(
+            [r[0].last_name for r in rows],
+            [f"Zhu-{token}", f"zhao-{token}", f"Wang-{token}", f"w-{token}"],
+        )
+
+        rows, _ = await self.repo.list_users(
+            self.session, search=token, sort_by="last_name", order="asc"
+        )
+        self.assertEqual(
+            [r[0].last_name for r in rows],
+            [f"w-{token}", f"Wang-{token}", f"zhao-{token}", f"Zhu-{token}"],
+        )
+
+    async def test_list_users_sort_by_preferred_name_puts_nulls_last(self):
+        """preferred_name is the one nullable sortable name column: rows without
+        one sink to the bottom in both directions instead of riding the top of
+        the descending page, and the non-null rows sort case-insensitively."""
+        token = uuid.uuid4().hex[:10]
+        users = [
+            self._make_user(
+                first_name=f"Pn-{token}",
+                last_name=f"n1-{token}",
+                email=f"n1-{token}@example.com",
+            ),
+            self._make_user(
+                first_name=f"Pn-{token}",
+                last_name=f"n2-{token}",
+                email=f"n2-{token}@example.com",
+            ),
+            self._make_user(
+                first_name=f"Pn-{token}",
+                last_name=f"n3-{token}",
+                email=f"n3-{token}@example.com",
+            ),
+        ]
+        users[0].preferred_name = "Bee"
+        users[1].preferred_name = None
+        users[2].preferred_name = "ant"
+        await self.insert_entities(users)
+
+        rows, total = await self.repo.list_users(
+            self.session, search=token, sort_by="preferred_name", order="asc"
+        )
+        self.assertEqual(total, 3)
+        self.assertEqual([r[0].preferred_name for r in rows], ["ant", "Bee", None])
+
+        rows, _ = await self.repo.list_users(
+            self.session, search=token, sort_by="preferred_name", order="desc"
+        )
+        self.assertEqual([r[0].preferred_name for r in rows], ["Bee", "ant", None])
+
     async def test_list_users_default_order_is_by_user_id(self):
         """No sort_by → deterministic ascending user_id order."""
         token = uuid.uuid4().hex[:10]

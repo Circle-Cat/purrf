@@ -154,8 +154,9 @@ class UsersRepository:
                 ``"user_id"``, ``"first_name"``, ``"last_name"``,
                 ``"preferred_name"``, ``"is_active"``, ``"is_super_admin"``,
                 ``"user_type"`` (by the persisted internal/external flag).
-                Unknown or None values fall back to deterministic ``user_id``
-                order.
+                The three name columns are compared case-insensitively and put
+                rows with no value last in both directions. Unknown or None
+                values fall back to deterministic ``user_id`` order.
             order (str): ``"asc"`` (default) or ``"desc"``. Only applied when
                 ``sort_by`` resolves to a whitelisted column.
             is_super_admin (bool | None): When not None, restricts results to
@@ -169,17 +170,24 @@ class UsersRepository:
             element is (entity, is_internal), total number of rows matching all
             active filters across all pages).
         """
+        # Name columns sort on lower(): the databases use C.UTF-8 (byte-order)
+        # collation, under which every uppercase letter precedes every lowercase
+        # one, so a bare ORDER BY ranks "w" above "Zhu" descending.
         # "user_type" sorts by the persisted internal/external flag; ascending
         # puts external (flag unset) before internal.
         _SORT_WHITELIST: dict[str, object] = {
             "user_id": UsersEntity.user_id,
-            "first_name": UsersEntity.first_name,
-            "last_name": UsersEntity.last_name,
-            "preferred_name": UsersEntity.preferred_name,
+            "first_name": func.lower(UsersEntity.first_name),
+            "last_name": func.lower(UsersEntity.last_name),
+            "preferred_name": func.lower(UsersEntity.preferred_name),
             "is_active": UsersEntity.is_active,
             "is_super_admin": UsersEntity.is_super_admin,
             "user_type": UsersEntity.is_internal,
         }
+        # Sortable name columns, which sink rows with no value to the bottom of
+        # the page in both directions rather than letting them head the
+        # descending page (only preferred_name is actually nullable today).
+        _NULLS_LAST_SORTS = frozenset({"first_name", "last_name", "preferred_name"})
 
         filters = []
         if search:
@@ -206,6 +214,8 @@ class UsersRepository:
         sort_col = _SORT_WHITELIST.get(sort_by) if sort_by else None
         if sort_col is not None:
             primary_order = sort_col.desc() if order == "desc" else sort_col.asc()
+            if sort_by in _NULLS_LAST_SORTS:
+                primary_order = primary_order.nulls_last()
             order_clauses = [primary_order, UsersEntity.user_id]
         else:
             order_clauses = [UsersEntity.user_id]
