@@ -57,25 +57,6 @@ class EmailMessageRepository:
         await session.flush()
         return entity
 
-    async def get_by_gmail_message_id(
-        self, session: AsyncSession, gmail_message_id: str
-    ) -> EmailMessageEntity | None:
-        """Look up a message by its Gmail message id (idempotency check on sync).
-
-        Args:
-            session (AsyncSession): The active DB session.
-            gmail_message_id (str): Gmail's message id.
-
-        Returns:
-            EmailMessageEntity | None: The matching message, if already stored.
-        """
-        result = await session.execute(
-            select(EmailMessageEntity).where(
-                EmailMessageEntity.gmail_message_id == gmail_message_id
-            )
-        )
-        return result.scalar_one_or_none()
-
     async def list_gmail_message_ids_by_thread(
         self, session: AsyncSession, thread_id: int
     ) -> set[str]:

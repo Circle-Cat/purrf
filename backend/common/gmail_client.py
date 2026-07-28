@@ -226,35 +226,6 @@ class GmailClient:
         )
         return self._parse_message(self._execute(request, "get_message"))
 
-    # Superseded by list_thread_message_ids + get_message. Kept only until the
-    # conversation service stops calling it; removed in a follow-up commit.
-    def get_thread(self, thread_id):
-        """
-        Fetch and parse every message in a Gmail thread.
-
-        Args:
-            thread_id (str): Gmail thread id.
-
-        Returns:
-            list[dict]: One dict per message, in the order Gmail returns them,
-            each with keys: ``gmail_message_id``, ``gmail_thread_id``,
-            ``rfc822_message_id``, ``from_address``, ``to_addresses``,
-            ``cc_addresses``, ``subject``, ``html``, ``plain``, ``snippet``,
-            ``gmail_internal_date``.
-
-        Raises:
-            RateLimitedError: If Gmail throttles the request (HTTP 429).
-            RuntimeError: For any other Gmail API failure.
-        """
-        request = (
-            self._get_service()
-            .users()
-            .threads()
-            .get(userId=_GMAIL_USER, id=thread_id, format="full")
-        )
-        thread = self._execute(request, "get_thread")
-        return [self._parse_message(message) for message in thread.get("messages", [])]
-
     def _get_service(self):
         """Build the Gmail service once (lazily) and cache it on the instance."""
         if self._service is None:
