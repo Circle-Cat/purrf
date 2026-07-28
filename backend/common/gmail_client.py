@@ -1,7 +1,7 @@
 """
 Gmail transport for the member-email feature.
 
-``GmailClient`` wraps the two Gmail API calls the email feature needs, using a
+``GmailClient`` wraps the Gmail API calls the email feature needs, using a
 company-wide account authorized once via an OAuth2 refresh token (there is no
 in-app OAuth flow):
 
@@ -9,11 +9,14 @@ in-app OAuth flow):
   goes out as ``multipart/alternative`` (HTML plus an auto-derived plain-text
   fallback). Replies carry ``threadId`` plus ``In-Reply-To`` / ``References`` so
   Gmail nests them in the original conversation.
-- ``get_thread``   — pull back every message in a thread, parsed into plain
-  dicts (headers, HTML/plain bodies, snippet, timestamps).
+- ``list_thread_message_ids`` — list a thread's message ids (metadata only, no
+  bodies), so a caller can tell what is new without paying for what it already
+  has.
+- ``get_message`` — pull back and parse one message (headers, HTML/plain
+  bodies, snippet, timestamps).
 
 This class is deliberately **domain-agnostic**: it knows nothing about our DB,
-permissions, templates, contexts, or the OUTBOUND/INBOUND enum. ``get_thread``
+permissions, templates, contexts, or the OUTBOUND/INBOUND enum. ``get_message``
 returns each message's raw ``from_address``; deciding direction (by comparing it
 to the sender) belongs to the domain layer, not here.
 
@@ -159,19 +162,21 @@ class GmailClient:
             "rfc822_message_id": rfc822_message_id,
         }
 
-    def get_thread(self, thread_id):
+    def list_thread_message_ids(self, thread_id):
         """
-        Fetch and parse every message in a Gmail thread.
+        List a thread's Gmail message ids — no headers, no bodies.
+
+        This is the cheap half of an incremental sync: the caller diffs these
+        ids against what it already stored and fetches bodies only for the
+        ones it lacks (``get_message``). ``format="metadata"`` plus a
+        ``messages(id)`` field mask keeps the response to a list of ids
+        regardless of how long the conversation has grown.
 
         Args:
             thread_id (str): Gmail thread id.
 
         Returns:
-            list[dict]: One dict per message, in the order Gmail returns them,
-            each with keys: ``gmail_message_id``, ``gmail_thread_id``,
-            ``rfc822_message_id``, ``from_address``, ``to_addresses``,
-            ``cc_addresses``, ``subject``, ``html``, ``plain``, ``snippet``,
-            ``gmail_internal_date``.
+            list[str]: Gmail message ids, in the order Gmail returns them.
 
         Raises:
             RateLimitedError: If Gmail throttles the request (HTTP 429).
@@ -181,10 +186,45 @@ class GmailClient:
             self._get_service()
             .users()
             .threads()
-            .get(userId=_GMAIL_USER, id=thread_id, format="full")
+            .get(
+                userId=_GMAIL_USER,
+                id=thread_id,
+                format="metadata",
+                fields="messages(id)",
+            )
         )
-        thread = self._execute(request, "get_thread")
-        return [self._parse_message(message) for message in thread.get("messages", [])]
+        thread = self._execute(request, "list_thread_message_ids")
+        return [message["id"] for message in thread.get("messages", [])]
+
+    def get_message(self, message_id):
+        """
+        Fetch and parse one message.
+
+        ``users.messages.get`` returns the same Message resource that appears
+        inside a thread, so the parsed dict is identical in shape to what a
+        whole-thread read used to yield per message.
+
+        Args:
+            message_id (str): Gmail message id.
+
+        Returns:
+            dict: Keys ``gmail_message_id``, ``gmail_thread_id``,
+            ``rfc822_message_id``, ``from_address``, ``to_addresses``,
+            ``cc_addresses``, ``subject``, ``html``, ``plain``, ``snippet``,
+            ``gmail_internal_date``.
+
+        Raises:
+            RateLimitedError: If Gmail throttles the request (HTTP 429).
+            RuntimeError: For any other Gmail API failure, including a 404 when
+                the message was deleted after its id was listed.
+        """
+        request = (
+            self._get_service()
+            .users()
+            .messages()
+            .get(userId=_GMAIL_USER, id=message_id, format="full")
+        )
+        return self._parse_message(self._execute(request, "get_message"))
 
     def _get_service(self):
         """Build the Gmail service once (lazily) and cache it on the instance."""
