@@ -12,10 +12,12 @@ Two responsibilities:
   send never leaves a phantom row. (The narrow reverse — Gmail accepted but the
   DB write then fails — is accepted for the MVP: the message went out but is
   not recorded, and a later sync will pick it up.)
-- ``sync_thread`` / ``sync_context`` — pull threads back from Gmail and upsert
+- ``sync_thread`` / ``sync_context`` — pull threads back from Gmail and store
   any messages we do not already have (idempotent on ``gmail_message_id``),
   classifying each as OUTBOUND/INBOUND by comparing its ``From`` to the
-  company sender.
+  company sender. The fetch is incremental: message ids first, then bodies
+  only for the ids we lack, so re-syncing an unchanged thread stays cheap no
+  matter how long it has grown.
 """
 
 import asyncio
@@ -200,24 +202,40 @@ class EmailConversationService:
     async def sync_thread(self, session, thread):
         """Pull one thread from Gmail and persist any messages we lack.
 
+        Incremental by construction: we list the thread's message ids (cheap,
+        no bodies), ask the DB in one query which of them we already have, and
+        fetch a body only for the ids that are genuinely new. A re-sync of an
+        unchanged thread therefore costs one Gmail call and one query, however
+        long the conversation has grown.
+
+        If a message is deleted between the listing and its fetch, the fetch
+        raises and the whole sync fails rather than silently persisting a
+        partial thread; the retry self-heals, since the id is gone from the
+        next listing.
+
         Args:
             session (AsyncSession): The active DB session.
             thread (EmailThreadEntity): The thread to sync.
 
         Returns:
-            list[EmailMessageEntity]: The messages newly persisted this call
-                (idempotent on ``gmail_message_id``, so re-syncing returns []).
+            list[EmailMessageEntity]: The messages newly persisted this call,
+                in Gmail's order (idempotent on ``gmail_message_id``, so
+                re-syncing an unchanged thread returns []).
+
+        Raises:
+            RateLimitedError / RuntimeError: Propagated from Gmail.
         """
-        fetched = await asyncio.to_thread(
-            self._gmail.get_thread, thread.gmail_thread_id
+        gmail_ids = await asyncio.to_thread(
+            self._gmail.list_thread_message_ids, thread.gmail_thread_id
+        )
+        known = await self._message_repo.list_gmail_message_ids_by_thread(
+            session, thread.thread_id
         )
         created = []
-        for message in fetched:
-            existing = await self._message_repo.get_by_gmail_message_id(
-                session, message["gmail_message_id"]
-            )
-            if existing is not None:
+        for gmail_id in gmail_ids:
+            if gmail_id in known:
                 continue
+            message = await asyncio.to_thread(self._gmail.get_message, gmail_id)
             entity = await self._message_repo.create(
                 session,
                 thread_id=thread.thread_id,
