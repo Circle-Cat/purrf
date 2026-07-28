@@ -25,7 +25,7 @@ from backend.dto.board_dto import (
 from backend.dto.email_dto import EmailConversationDto
 from backend.dto.evaluation_dto import EvaluationDto
 from backend.dto.user_context_dto import UserContextDto
-from backend.common.communication_enums import ContextType, EmailDirection
+from backend.common.communication_enums import ContextType
 from backend.common.permissions import Permission
 from backend.common.recruiting_enums import ApplicationStage, NotificationType
 from backend.entity.application_entity import ApplicationEntity
@@ -156,6 +156,7 @@ class BoardService:
         notification_repository,
         user_emails_repository,
         email_conversation_service,
+        email_sync_service,
     ):
         """
         Args:
@@ -217,6 +218,7 @@ class BoardService:
         self.notification_repository = notification_repository
         self.user_emails_repository = user_emails_repository
         self.email_conversation_service = email_conversation_service
+        self.email_sync_service = email_sync_service
 
     async def list_my_jobs(
         self, session: AsyncSession, current_user: UserContextDto
@@ -403,27 +405,7 @@ class BoardService:
             session, current_user, application_id, allow_read_all=True
         )
         if refresh:
-            new_messages = await self.email_conversation_service.sync_context(
-                session, ContextType.APPLICATION, application_id
-            )
-            for message in new_messages:
-                if message.direction != EmailDirection.INBOUND:
-                    continue
-                await self.application_activity_repository.create(
-                    session,
-                    application_id,
-                    application.user_id,
-                    "email_received",
-                    details={
-                        "subject": message.subject,
-                        "from": message.from_address,
-                        "to": message.to_addresses,
-                        "cc": message.cc_addresses,
-                        "threadId": message.thread_id,
-                        "direction": "inbound",
-                    },
-                    created_at=message.gmail_internal_date,
-                )
+            await self.email_sync_service.sync_application(session, application)
             await session.commit()
         return await self._build_application_conversation(
             session, current_user, application_id, application.user_id

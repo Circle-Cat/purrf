@@ -18,21 +18,25 @@ from backend.common.api_endpoints import (
     RECRUITING_REVIEW_ENDPOINT,
     RECRUITING_INTERVIEW_POOL_ENDPOINT,
     RECRUITING_JOB_OWNERS_ENDPOINT,
+    RECRUITING_EMAIL_SYNC_ENDPOINT,
 )
 
 
 class RecruitingController:
-    """FastAPI routes for recruiting job postings (publishing side)."""
+    """FastAPI routes for recruiting job postings (publishing side), plus the
+    scheduled candidate-email sync the nightly CronJob calls."""
 
-    def __init__(self, job_service, database):
+    def __init__(self, job_service, email_sync_service, database):
         """
-        Initialize the RecruitingController and register job routes.
+        Initialize the RecruitingController and register its routes.
 
         Args:
             job_service: JobService instance for posting lifecycle operations.
+            email_sync_service: EmailSyncService for the scheduled email sweep.
             database: Database access object providing async session management.
         """
         self.job_service = job_service
+        self.email_sync_service = email_sync_service
         self.database = database
         self.router = APIRouter(tags=["recruiting"])
 
@@ -182,6 +186,14 @@ class RecruitingController:
             methods=["GET"],
             response_model=None,
         )
+        self.router.add_api_route(
+            RECRUITING_EMAIL_SYNC_ENDPOINT,
+            endpoint=authenticate(permissions=[Permission.SYSTEM_SYNC])(
+                self.sync_recruiting_emails
+            ),
+            methods=["POST"],
+            response_model=None,
+        )
 
     async def create_job(self, current_user: UserContextDto, job_data: JobCreateDto):
         """Create a DRAFT posting."""
@@ -327,3 +339,20 @@ class RecruitingController:
         async with self.database.session() as session:
             result = await self.job_service.get_job_activity(session, job_id)
         return api_response(message="Job activity fetched.", data=result)
+
+    async def sync_recruiting_emails(self, current_user: UserContextDto):
+        """Sync candidate email threads for every application still in scope.
+
+        Called by the nightly CronJob, not by a person: ``current_user`` is the
+        service account and is deliberately unused — the sweep has no owner
+        gate, which is why it lives here rather than in ``board_controller``.
+
+        Succeeds with the counts even when individual applications failed. The
+        CronJob runs ``curl -f`` under ``restartPolicy: OnFailure``, so a 5xx
+        would make k8s re-run the entire sweep; one permanently-broken thread
+        would then retry every night. Failures are reported in the body and,
+        more importantly, in the log — see ``EmailSyncService``.
+        """
+        async with self.database.session() as session:
+            summary = await self.email_sync_service.sync_due_applications(session)
+        return api_response(message="Recruiting emails synced.", data=summary)

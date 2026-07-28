@@ -132,6 +132,7 @@ py_test(
     env_inherit = ["DATABASE_URL"],
     deps = [
         ":base_repository_test_lib",
+        "//backend/common:communication_enums",
         "//backend/common:recruiting_enums",
         "//backend/entity:entities",
         "//backend/repository:repositories",
