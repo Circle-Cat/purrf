@@ -66,7 +66,10 @@ class TestSyncApplication(unittest.IsolatedAsyncioTestCase):
         self.conversation_service.sync_context = AsyncMock(return_value=[])
         self.activity_repo = AsyncMock()
         self.session = Mock()
+        self.gmail = Mock()
+        self.gmail.list_recent_message_thread_ids = Mock(return_value=set())
         self.service = EmailSyncService(
+            gmail_client=self.gmail,
             email_conversation_service=self.conversation_service,
             application_activity_repository=self.activity_repo,
             application_repository=AsyncMock(),
@@ -131,7 +134,10 @@ class TestSyncDueApplications(unittest.IsolatedAsyncioTestCase):
         self.application_repo = AsyncMock()
         self.logger = Mock()
         self.session = AsyncMock()
+        self.gmail = Mock()
+        self.gmail.list_recent_message_thread_ids = Mock(return_value=set())
         self.service = EmailSyncService(
+            gmail_client=self.gmail,
             email_conversation_service=self.conversation_service,
             application_activity_repository=self.activity_repo,
             application_repository=self.application_repo,
@@ -293,6 +299,127 @@ class TestSyncDueApplications(unittest.IsolatedAsyncioTestCase):
         await self.service.sync_due_applications(self.session)
         self.logger.log.assert_called_once()
         self.assertEqual(self.logger.log.call_args.args[0], logging.WARNING)
+
+    async def test_reconcile_passes_no_thread_filter_and_is_labelled(self):
+        self._due(1)
+        await self.service.sync_due_applications(self.session)
+        call = self.application_repo.list_due_email_sync_applications.await_args
+        self.assertIsNone(call.kwargs.get("gmail_thread_ids"))
+        message = self.logger.log.call_args.args[1]
+        self.assertIn("reconcile", message)
+        self.assertIn("sweep finished", message)
+
+
+class TestSyncRecentApplications(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.conversation_service = AsyncMock()
+        self.conversation_service.sync_context = AsyncMock(return_value=[])
+        self.activity_repo = AsyncMock()
+        self.application_repo = AsyncMock()
+        self.application_repo.list_due_email_sync_applications = AsyncMock(
+            return_value=[]
+        )
+        self.gmail = Mock()
+        self.logger = Mock()
+        self.session = AsyncMock()
+        self.service = EmailSyncService(
+            gmail_client=self.gmail,
+            email_conversation_service=self.conversation_service,
+            application_activity_repository=self.activity_repo,
+            application_repository=self.application_repo,
+            logger=self.logger,
+        )
+
+    def _flagged(self, *thread_ids):
+        self.gmail.list_recent_message_thread_ids = Mock(return_value=set(thread_ids))
+
+    def _due(self, *application_ids):
+        applications = [
+            SimpleNamespace(application_id=i, user_id=100 + i) for i in application_ids
+        ]
+        self.application_repo.list_due_email_sync_applications = AsyncMock(
+            return_value=applications
+        )
+        return applications
+
+    async def test_asks_gmail_for_a_two_day_window(self):
+        # Day-granular operator, so the window carries a day of slack on
+        # purpose — see the design note in GmailClient.
+        self._flagged()
+        await self.service.sync_recent_applications(self.session)
+        self.gmail.list_recent_message_thread_ids.assert_called_once_with(2)
+
+    async def test_passes_the_flagged_threads_to_the_eligibility_query(self):
+        self._flagged("T1", "T2")
+        self._due(1)
+
+        await self.service.sync_recent_applications(self.session)
+
+        call = self.application_repo.list_due_email_sync_applications.await_args
+        self.assertIs(call.args[0], self.session)
+        self.assertEqual(call.kwargs["gmail_thread_ids"], {"T1", "T2"})
+
+    async def test_sweeps_the_terminal_window_like_the_reconcile_does(self):
+        # Same seven-day cutoff as the weekly job: the delta narrows *which*
+        # applications are looked at, never *whether* they are eligible.
+        self._flagged("T1")
+        self._due(1)
+        before = datetime.now(timezone.utc)
+
+        await self.service.sync_recent_applications(self.session)
+
+        cutoff = self.application_repo.list_due_email_sync_applications.await_args.args[
+            1
+        ]
+        self.assertAlmostEqual(
+            (before - cutoff).total_seconds(), 7 * 86400, delta=5
+        )
+
+    async def test_nothing_flagged_skips_the_query_entirely(self):
+        self._flagged()
+
+        summary = await self.service.sync_recent_applications(self.session)
+
+        self.application_repo.list_due_email_sync_applications.assert_not_awaited()
+        self.conversation_service.sync_context.assert_not_awaited()
+        self.session.commit.assert_not_awaited()
+        self.assertEqual(
+            summary, {"scanned": 0, "synced": 0, "failed": 0, "newMessages": 0}
+        )
+
+    async def test_nothing_flagged_still_logs_a_summary(self):
+        # The endpoint always returns 200 and the job is always green, so the
+        # log is the only evidence the run happened at all.
+        self._flagged()
+        await self.service.sync_recent_applications(self.session)
+        self.logger.log.assert_called_once()
+
+    async def test_isolates_failures_like_the_reconcile_does(self):
+        self._flagged("T1")
+        self._due(1, 2, 3)
+        self.conversation_service.sync_context.side_effect = [
+            [],
+            RuntimeError("Gmail API error"),
+            [],
+        ]
+
+        summary = await self.service.sync_recent_applications(self.session)
+
+        self.assertEqual(self.conversation_service.sync_context.await_count, 3)
+        self.assertEqual(
+            summary, {"scanned": 3, "synced": 2, "failed": 1, "newMessages": 0}
+        )
+        self.assertEqual(self.session.commit.await_count, 2)
+        self.session.rollback.assert_awaited_once()
+
+    async def test_summary_log_names_the_delta_job(self):
+        # One log stream carries both jobs; they must be distinguishable.
+        self._flagged("T1")
+        self._due(1)
+        await self.service.sync_recent_applications(self.session)
+        message = self.logger.log.call_args.args[1]
+        self.assertIn("delta", message)
+        self.assertIn("sweep finished", message)
 
 
 if __name__ == "__main__":

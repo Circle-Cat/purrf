@@ -620,6 +620,7 @@ class AppDependencyBuilder:
             sender_address=self.gmail_client.sender_address,
         )
         self.email_sync_service = EmailSyncService(
+            gmail_client=self.gmail_client,
             email_conversation_service=self.email_conversation_service,
             application_activity_repository=self.application_activity_repository,
             application_repository=self.application_repository,

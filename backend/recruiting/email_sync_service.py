@@ -10,8 +10,14 @@ reply).
 Both entry points into a sync go through here — the recruiter pressing
 Refresh (via ``board_service``, which adds the owner gate) and the nightly
 cron sweep — so the timeline-writing rule lives in exactly one place.
+
+Two scheduled passes share one sweep loop: a nightly delta that only visits
+applications whose threads just received mail, and a weekly reconcile that
+asks every tracked thread what it is missing — the backstop for anything the
+delta's window slid past.
 """
 
+import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 
@@ -22,10 +28,19 @@ from backend.common.communication_enums import ContextType, EmailDirection
 # manual Refresh, which has no window at all.
 _TERMINAL_SYNC_WINDOW = timedelta(days=7)
 
+# How far back the nightly delta asks Gmail. Gmail's ``newer_than:Nd`` operator
+# is day-granular and no finer relative form is documented, so this carries a
+# day of slack over the once-a-day schedule rather than trying to be exact.
+# The slack is free: extra ids are dropped by the eligibility filter and by the
+# per-thread id diff, so not one extra message body is fetched. It also buys
+# tolerance for a single missed run.
+_DELTA_LOOKBACK_DAYS = 2
+
 
 class EmailSyncService:
     def __init__(
         self,
+        gmail_client,
         email_conversation_service,
         application_activity_repository,
         application_repository,
@@ -33,15 +48,20 @@ class EmailSyncService:
     ):
         """
         Args:
+            gmail_client (GmailClient): Transport. Used only for the nightly
+                delta's mailbox-wide recent-thread lookup, which is not a
+                per-``(user, context)`` question and so does not belong on the
+                shared conversation service.
             email_conversation_service (EmailConversationService): Shared,
                 domain-agnostic Gmail sync.
             application_activity_repository (ApplicationActivityRepository):
                 Timeline event writes.
             application_repository (ApplicationRepository): Supplies the
-                nightly sweep's eligibility query.
-            logger: Application logger. The sweep's outcome is only visible
-                here — see ``sync_due_applications``.
+                eligibility query.
+            logger: Application logger. A sweep's outcome is only visible
+                here — see ``_sweep``.
         """
+        self._gmail = gmail_client
         self._conversation_service = email_conversation_service
         self._activity_repo = application_activity_repository
         self._application_repo = application_repository
@@ -122,7 +142,66 @@ class EmailSyncService:
         return new_messages
 
     async def sync_due_applications(self, session):
-        """Sync every application whose email threads are still worth watching.
+        """Reconcile every application whose email threads are worth watching.
+
+        The weekly backstop. Asks each tracked thread "which messages am I
+        missing?", so it repairs any gap regardless of age — including
+        anything the nightly delta's window slid past.
+
+        Args:
+            session (AsyncSession): The active DB session.
+
+        Returns:
+            dict: ``{"scanned", "synced", "failed", "newMessages"}``.
+        """
+        due = await self._application_repo.list_due_email_sync_applications(
+            session, self._terminal_cutoff()
+        )
+        return await self._sweep(session, due, "reconcile")
+
+    async def sync_recent_applications(self, session):
+        """Sync only the applications whose threads just received mail.
+
+        The nightly pass. One mailbox-wide Gmail call names the threads that
+        changed; everything else is skipped, so the cost stops scaling with the
+        number of conversations we track.
+
+        Eligibility is unchanged — the flagged set narrows *which* applications
+        are considered, never *whether* one qualifies, so a thread belonging to
+        a long-closed application is still ignored.
+
+        Args:
+            session (AsyncSession): The active DB session.
+
+        Returns:
+            dict: ``{"scanned", "synced", "failed", "newMessages"}``.
+
+        Raises:
+            RateLimitedError / RuntimeError: Propagated if the Gmail lookup
+                itself fails. Unlike a per-application failure this is not
+                isolated — without the flagged set there is no sweep to run.
+        """
+        flagged = await asyncio.to_thread(
+            self._gmail.list_recent_message_thread_ids, _DELTA_LOOKBACK_DAYS
+        )
+        if not flagged:
+            # Skip the query rather than issuing an empty IN (...) that cannot
+            # match anything. The summary is still logged: a quiet night has to
+            # be distinguishable from a night the job never ran.
+            return await self._sweep(session, [], "delta")
+
+        due = await self._application_repo.list_due_email_sync_applications(
+            session, self._terminal_cutoff(), gmail_thread_ids=flagged
+        )
+        return await self._sweep(session, due, "delta")
+
+    @staticmethod
+    def _terminal_cutoff():
+        """Oldest ``stage_entered_at`` still swept for a terminal application."""
+        return datetime.now(timezone.utc) - _TERMINAL_SYNC_WINDOW
+
+    async def _sweep(self, session, due, job):
+        """Sync each application in ``due``, isolating and counting failures.
 
         Each application is its own unit of work: synced, then committed, then
         the next one. A failure is caught, logged and counted, and the sweep
@@ -131,24 +210,22 @@ class EmailSyncService:
         That is deliberately the opposite of ``sync_application``'s own
         behaviour, which propagates. For a recruiter pressing Refresh on one
         application, failing loudly is right — they retry and the retry
-        self-heals. For a nightly pass over everything, one rate-limited or
-        deleted thread must not cost every later application its sync, with
-        nobody watching.
+        self-heals. For a pass over everything, one rate-limited or deleted
+        thread must not cost every later application its sync, with nobody
+        watching.
 
         Committing per application follows from that: a shared transaction
         would let a late failure roll back work that already succeeded.
 
         Args:
             session (AsyncSession): The active DB session.
+            due (list[ApplicationEntity]): The applications to sync.
+            job (str): ``"delta"`` or ``"reconcile"``, for the summary log —
+                both jobs share one log stream and must be distinguishable.
 
         Returns:
             dict: ``{"scanned", "synced", "failed", "newMessages"}``.
         """
-        cutoff = datetime.now(timezone.utc) - _TERMINAL_SYNC_WINDOW
-        due = await self._application_repo.list_due_email_sync_applications(
-            session, cutoff
-        )
-
         # Snapshot the two fields the loop needs as plain values *before* the
         # loop runs. session.rollback() (below, on a failure) expires every
         # ORM object in the identity map, including every other entity in
@@ -183,7 +260,7 @@ class EmailSyncService:
         # when anything failed makes "did tonight go wrong?" greppable.
         self._logger.log(
             logging.WARNING if failed else logging.INFO,
-            "[EmailSync] sweep finished: scanned=%d synced=%d failed=%d "
+            f"[EmailSync] {job} sweep finished: scanned=%d synced=%d failed=%d "
             "new_messages=%d",
             len(due),
             synced,
