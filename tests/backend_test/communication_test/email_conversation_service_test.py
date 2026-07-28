@@ -231,7 +231,7 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
             "rfc822_message_id": f"<{gmail_message_id}@mail>",
             "from_address": from_address,
             "to_addresses": "someone@example.com",
-            "cc_addresses": None,
+            "cc_addresses": "watcher@example.com",
             "subject": "Re: Hi",
             "html": "<p>body</p>",
             "plain": "body",
@@ -257,6 +257,7 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(mkw["direction"], EmailDirection.INBOUND)
         self.assertEqual(mkw["from_address"], "cand@example.com")
         self.assertEqual(mkw["to_addresses"], "someone@example.com")
+        self.assertEqual(mkw["cc_addresses"], "watcher@example.com")
         self.assertEqual(mkw["subject"], "Re: Hi")
         self.assertEqual(mkw["body_html"], "<p>body</p>")
         self.assertEqual(mkw["body_text"], "body")

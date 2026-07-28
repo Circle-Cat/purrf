@@ -1,7 +1,7 @@
 """
 Gmail transport for the member-email feature.
 
-``GmailClient`` wraps the two Gmail API calls the email feature needs, using a
+``GmailClient`` wraps the Gmail API calls the email feature needs, using a
 company-wide account authorized once via an OAuth2 refresh token (there is no
 in-app OAuth flow):
 
