@@ -59,15 +59,13 @@ class EmailTemplatesCatalogTest(unittest.TestCase):
         for template in EMAIL_TEMPLATES:
             found = set(re.findall(r"\{\{(\w+)\}\}", template.body_html))
             with self.subTest(key=template.key):
-                self.assertTrue(found <= PLACEHOLDER_KEYS, f"unknown: {found - PLACEHOLDER_KEYS}")
+                self.assertTrue(
+                    found <= PLACEHOLDER_KEYS, f"unknown: {found - PLACEHOLDER_KEYS}"
+                )
 
     def test_only_templates_one_and_eight_use_position_title(self):
-        using = {
-            t.key for t in EMAIL_TEMPLATES if "{{position_title}}" in t.body_html
-        }
-        self.assertEqual(
-            using, {"screening_passed_cultural_invite", "rejection"}
-        )
+        using = {t.key for t in EMAIL_TEMPLATES if "{{position_title}}" in t.body_html}
+        self.assertEqual(using, {"screening_passed_cultural_invite", "rejection"})
 
     def test_every_bracket_marker_is_uppercase(self):
         for template in EMAIL_TEMPLATES:
@@ -79,7 +77,9 @@ class EmailTemplatesCatalogTest(unittest.TestCase):
         for template in EMAIL_TEMPLATES:
             with self.subTest(key=template.key):
                 self.assertNotIn("[NEW INTERVIEW DATE/TIME]", template.body_html)
-        reschedule = next(t for t in EMAIL_TEMPLATES if t.key == "interview_rescheduled")
+        reschedule = next(
+            t for t in EMAIL_TEMPLATES if t.key == "interview_rescheduled"
+        )
         self.assertIn("[INTERVIEW DATE/TIME]", reschedule.body_html)
 
     def test_signature_block_present_in_every_template(self):
@@ -115,7 +115,9 @@ class RenderTemplateTest(unittest.TestCase):
         self.assertNotIn("{{", body)
 
     def test_html_escapes_substituted_values(self):
-        _, body = render_template("rejection", {**_VALUES, "candidate_name": "Ana & Co"})
+        _, body = render_template(
+            "rejection", {**_VALUES, "candidate_name": "Ana & Co"}
+        )
         self.assertIn("Dear Ana &amp; Co,", body)
         self.assertNotIn("Ana & Co", body)
 

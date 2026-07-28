@@ -90,8 +90,7 @@ _CULTURAL_INTERVIEW_SCHEDULED = EmailTemplate(
         "<p>This round of interview is similar to a traditional behavioral round interview, where you can "
         "expect questions about your past experiences, work style, etc.</p>"
         "<p>If you need any accommodations or a schedule adjustment, please reply to this email and let us "
-        "know. We're happy to help.</p>"
-        + _SIGNATURE
+        "know. We're happy to help.</p>" + _SIGNATURE
     ),
 )
 
@@ -128,8 +127,8 @@ _CULTURAL_PASSED_TECHNICAL_INVITE = EmailTemplate(
         '<li>"Cracking the Coding Interview" (a book that every engineer recommends on our teams!)</li>'
         "</ul>"
         "<p>I would work on problems that make you break down an issue, design the most efficient answer, "
-        "code cleanly, then check your work - typically these are \"parking lot\" type problems and "
-        "\"lottery\" problems. These problems will be designed to push you to the limit, so more than "
+        'code cleanly, then check your work - typically these are "parking lot" type problems and '
+        '"lottery" problems. These problems will be designed to push you to the limit, so more than '
         "finding the perfect answer, you will need to produce the most efficient answer and be able to "
         "justify your method and explain it to the interviewer. It is the approach you take to solving a "
         "problem in our interviews that determines your performance, rather than what you do or do not "
@@ -147,8 +146,7 @@ _CULTURAL_PASSED_TECHNICAL_INVITE = EmailTemplate(
         "device during the interview, to allow for easier conversation while coding.</p>"
         "<p>If you have any questions or concerns, please don't hesitate to reach out. Best of luck during "
         "your interview.<br>"
-        "Thanks!</p>"
-        + _SIGNATURE
+        "Thanks!</p>" + _SIGNATURE
     ),
 )
 
@@ -163,8 +161,7 @@ _TECHNICAL_INTERVIEW_SCHEDULED = EmailTemplate(
         "<p>You will receive a Google Meet invitation in a separate email shortly. Please accept that "
         "invite to confirm your attendance and to ensure the link is saved to your calendar.</p>"
         "<p>If you need any accommodations or a schedule adjustment, please reply to this email and let us "
-        "know. We're happy to help.</p>"
-        + _SIGNATURE
+        "know. We're happy to help.</p>" + _SIGNATURE
     ),
 )
 
@@ -175,8 +172,7 @@ _FEEDBACK_COMPLETE_ASK_START_DATE = EmailTemplate(
     body_html=(
         "<p>Dear {{candidate_name}},</p>"
         "<p>We have received all feedback from your interview. Can you let us know when you want your "
-        "start date to be?</p>"
-        + _SIGNATURE
+        "start date to be?</p>" + _SIGNATURE
     ),
 )
 
@@ -206,8 +202,7 @@ _OFFER_ONBOARDING = EmailTemplate(
         "visit circlecat.org/about or send me an email directly so I can help "
         "you fill out forms required by the DSO or the USCIS.</p>"
         "<p>Please let me know if you have any questions or if I can provide any "
-        "additional information.</p>"
-        + _SIGNATURE
+        "additional information.</p>" + _SIGNATURE
     ),
 )
 
@@ -221,8 +216,7 @@ _REJECTION = EmailTemplate(
         "{{position_title}} with us. I regret to inform you that we have decided not to "
         "progress further with your application.</p>"
         "<p>We wish you every success with your future endeavor and thank you for your interest in "
-        "Circle Cat.</p>"
-        + _SIGNATURE
+        "Circle Cat.</p>" + _SIGNATURE
     ),
 )
 
