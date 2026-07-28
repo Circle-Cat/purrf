@@ -60,6 +60,35 @@ class _ExpiringApplication:
         return self._user_id
 
 
+def _wire_expiring_application_scenario(
+    session, application_repo, conversation_service
+):
+    """Wire the given doubles to reproduce the ``MissingGreenlet`` trap.
+
+    Shared by the reconcile-side and delta-side regression tests: both drive
+    the same ``_sweep`` loop, so both must be protected by the exact same
+    scenario rather than by copies that could drift apart.
+
+    The first ``sync_context`` call raises, which triggers
+    ``session.rollback()``. That flips the shared ``expired`` flag, so the
+    two remaining ``_ExpiringApplication`` doubles left in ``due`` raise
+    ``MissingGreenlet`` from attribute access — exactly like a real
+    ``ApplicationEntity`` would after a real rollback.
+    """
+    expired = {"value": False}
+    applications = [_ExpiringApplication(i, 100 + i, expired) for i in (1, 2, 3)]
+    application_repo.list_due_email_sync_applications = AsyncMock(
+        return_value=applications
+    )
+    session.rollback = AsyncMock(side_effect=lambda: expired.__setitem__("value", True))
+    conversation_service.sync_context.side_effect = [
+        RuntimeError("Gmail API error"),
+        [],
+        [],
+    ]
+    return applications
+
+
 class TestSyncApplication(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.conversation_service = AsyncMock()
@@ -253,19 +282,9 @@ class TestSyncDueApplications(unittest.IsolatedAsyncioTestCase):
         # flag, and application_id/user_id are properties that raise
         # MissingGreenlet once that flag is set - reproducing an expired
         # instance without a real database.
-        expired = {"value": False}
-        applications = [_ExpiringApplication(i, 100 + i, expired) for i in (1, 2, 3)]
-        self.application_repo.list_due_email_sync_applications = AsyncMock(
-            return_value=applications
+        _wire_expiring_application_scenario(
+            self.session, self.application_repo, self.conversation_service
         )
-        self.session.rollback = AsyncMock(
-            side_effect=lambda: expired.__setitem__("value", True)
-        )
-        self.conversation_service.sync_context.side_effect = [
-            RuntimeError("Gmail API error"),
-            [],
-            [],
-        ]
 
         summary = await self.service.sync_due_applications(self.session)
 
@@ -423,6 +442,45 @@ class TestSyncRecentApplications(unittest.IsolatedAsyncioTestCase):
         message = call.args[1] % call.args[2:]
         self.assertIn("delta", message)
         self.assertIn("sweep finished", message)
+
+    async def test_summary_reports_the_flagged_count_when_none_are_due(self):
+        # This is the exact combination that, without a flagged count in the
+        # summary, is indistinguishable from a quiet mailbox: Gmail returned
+        # real thread ids, but the eligibility join matched none of them —
+        # which is also what a silently-broken lookup (wrong mailbox, a
+        # search-index problem, a future edit to the `q`/`fields` strings)
+        # would look like every single night.
+        self._flagged("T1", "T2")
+        self._due()
+
+        await self.service.sync_recent_applications(self.session)
+
+        call = self.logger.log.call_args
+        message = call.args[1] % call.args[2:]
+        self.assertIn("flagged=2", message)
+        self.assertIn("scanned=0", message)
+
+    async def test_rollback_expiring_the_application_does_not_crash_the_sweep(self):
+        # Same MissingGreenlet trap as the reconcile-side test in
+        # TestSyncDueApplications, but driven through sync_recent_applications
+        # instead. Today there is one _sweep loop shared by both entry
+        # points, so this looks redundant — but it pins the guarantee per
+        # entry point rather than per loop. A future edit that gives the
+        # delta its own loop (instead of calling _sweep) would leave every
+        # other delta test green while silently reintroducing this crash;
+        # only this test would catch it.
+        self._flagged("T1")
+        _wire_expiring_application_scenario(
+            self.session, self.application_repo, self.conversation_service
+        )
+
+        summary = await self.service.sync_recent_applications(self.session)
+
+        self.assertEqual(
+            summary,
+            {"scanned": 3, "synced": 2, "failed": 1, "newMessages": 0},
+        )
+        self.assertEqual(self.conversation_service.sync_context.await_count, 3)
 
     async def test_a_failed_gmail_lookup_is_not_isolated(self):
         # Per-application failures are caught and counted; this one is not.

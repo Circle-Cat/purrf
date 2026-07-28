@@ -360,7 +360,7 @@ class RecruitingController:
         Succeeds with the counts even when individual applications failed. The
         CronJob runs ``curl -f`` under ``restartPolicy: OnFailure``, so a 5xx
         would make k8s re-run the entire sweep; one permanently-broken thread
-        would then retry every night. Failures are reported in the body and,
+        would then retry every week. Failures are reported in the body and,
         more importantly, in the log — see ``EmailSyncService``.
         """
         async with self.database.session() as session:

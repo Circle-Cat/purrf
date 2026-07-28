@@ -7,9 +7,10 @@ decides *which* applications are worth syncing and records the domain
 consequence of a sync (an ``email_received`` timeline event per inbound
 reply).
 
-Both entry points into a sync go through here — the recruiter pressing
-Refresh (via ``board_service``, which adds the owner gate) and the nightly
-cron sweep — so the timeline-writing rule lives in exactly one place.
+All three entry points into a sync go through here — the recruiter pressing
+Refresh (via ``board_service``, which adds the owner gate), the nightly delta
+cron, and the weekly reconcile cron — so the timeline-writing rule lives in
+exactly one place.
 
 Two scheduled passes share one sweep loop: a nightly delta that only visits
 applications whose threads just received mail, and a weekly reconcile that
@@ -99,13 +100,13 @@ class EmailSyncService:
         wrote an ``email_sent`` event when we sent them.
 
         Does **not** commit: the caller owns the transaction boundary (manual
-        Refresh commits once; the nightly sweep commits per application so one
+        Refresh commits once; each sweep commits per application so one
         failure cannot undo its predecessors).
 
         Takes plain ids rather than an ``ApplicationEntity`` on purpose: this
         must not touch ORM-loaded state, so it stays safe to call after a
         sibling application's ``session.rollback()`` has expired the whole
-        identity map (see ``sync_due_applications``).
+        identity map (see ``_sweep``).
 
         Args:
             session (AsyncSession): The active DB session.
@@ -188,19 +189,19 @@ class EmailSyncService:
             # Skip the query rather than issuing an empty IN (...) that cannot
             # match anything. The summary is still logged: a quiet night has to
             # be distinguishable from a night the job never ran.
-            return await self._sweep(session, [], "delta")
+            return await self._sweep(session, [], "delta", flagged=0)
 
         due = await self._application_repo.list_due_email_sync_applications(
             session, self._terminal_cutoff(), gmail_thread_ids=flagged
         )
-        return await self._sweep(session, due, "delta")
+        return await self._sweep(session, due, "delta", flagged=len(flagged))
 
     @staticmethod
     def _terminal_cutoff():
         """Oldest ``stage_entered_at`` still swept for a terminal application."""
         return datetime.now(timezone.utc) - _TERMINAL_SYNC_WINDOW
 
-    async def _sweep(self, session, due, job):
+    async def _sweep(self, session, due, job, flagged=None):
         """Sync each application in ``due``, isolating and counting failures.
 
         Each application is its own unit of work: synced, then committed, then
@@ -222,6 +223,13 @@ class EmailSyncService:
             due (list[ApplicationEntity]): The applications to sync.
             job (str): ``"delta"`` or ``"reconcile"``, for the summary log —
                 both jobs share one log stream and must be distinguishable.
+            flagged (int | None): How many threads Gmail's recent-thread
+                lookup flagged, before the eligibility join narrowed them
+                down to ``due``. Only the delta has this number — the
+                reconcile never asks Gmail, so it stays ``None`` and is
+                logged as ``"n/a"``. Without it, a delta that silently stopped
+                receiving thread ids from Gmail would render the exact same
+                summary line as a genuinely quiet mailbox.
 
         Returns:
             dict: ``{"scanned", "synced", "failed", "newMessages"}``.
@@ -260,9 +268,10 @@ class EmailSyncService:
         # when anything failed makes "did tonight go wrong?" greppable.
         self._logger.log(
             logging.WARNING if failed else logging.INFO,
-            "[EmailSync] %s sweep finished: scanned=%d synced=%d failed=%d "
-            "new_messages=%d",
+            "[EmailSync] %s sweep finished: flagged=%s scanned=%d synced=%d "
+            "failed=%d new_messages=%d",
             job,
+            "n/a" if flagged is None else flagged,
             len(due),
             synced,
             failed,
