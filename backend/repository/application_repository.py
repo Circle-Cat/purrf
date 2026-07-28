@@ -1,11 +1,13 @@
-from datetime import date
+from datetime import date, datetime
 
+from backend.common.communication_enums import ContextType
 from backend.common.mentorship_enums import ParticipantRole
 from backend.common.recruiting_enums import ApplicationStage, JobKind
 from backend.entity.application_entity import ApplicationEntity
+from backend.entity.email_thread_entity import EmailThreadEntity
 from backend.entity.job_entity import JobEntity
 from backend.entity.users_entity import UsersEntity
-from sqlalchemy import Date, cast, func, select
+from sqlalchemy import Date, and_, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -362,3 +364,46 @@ class ApplicationRepository:
         merged = await session.merge(entity)
         await session.flush()
         return merged
+
+    async def list_due_email_sync_applications(
+        self, session: AsyncSession, terminal_cutoff: datetime
+    ) -> list[ApplicationEntity]:
+        """Applications the nightly email sweep should sync.
+
+        An application qualifies when it has at least one email thread and is
+        either still in play, or reached a terminal stage recently enough that
+        a late reply is still worth capturing.
+
+        The join is driven by ``email_thread`` on purpose: only applications
+        that have actually exchanged mail appear there, so the sweep never
+        walks the whole application table.
+
+        Args:
+            session (AsyncSession): The active DB session.
+            terminal_cutoff (datetime): Oldest ``stage_entered_at`` still swept
+                for a HIRED/REJECTED application (e.g. now minus seven days).
+
+        Returns:
+            list[ApplicationEntity]: Distinct applications, oldest id first.
+        """
+        result = await session.execute(
+            select(ApplicationEntity)
+            .join(
+                EmailThreadEntity,
+                and_(
+                    EmailThreadEntity.context_type == ContextType.APPLICATION,
+                    EmailThreadEntity.context_id == ApplicationEntity.application_id,
+                ),
+            )
+            .where(
+                or_(
+                    ApplicationEntity.stage.not_in(
+                        [ApplicationStage.HIRED, ApplicationStage.REJECTED]
+                    ),
+                    ApplicationEntity.stage_entered_at >= terminal_cutoff,
+                )
+            )
+            .distinct()
+            .order_by(ApplicationEntity.application_id.asc())
+        )
+        return list(result.scalars().all())
