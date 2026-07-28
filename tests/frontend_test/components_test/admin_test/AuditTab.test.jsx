@@ -6,7 +6,10 @@ import * as api from "@/api/adminPermissionsApi";
 
 vi.mock("@/api/adminPermissionsApi");
 
-const catalog = ["permission.manage"];
+// usePermissionCatalog hands every tab {name, description}[] — not bare names.
+const catalog = [
+  { name: "permission.manage", description: "Manage permissions" },
+];
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -40,6 +43,25 @@ beforeEach(() => {
 });
 
 describe("AuditTab", () => {
+  it("mounts with the catalog objects the page actually passes", async () => {
+    // Regression: the permission filter mapped `catalog.map((name) => ...)`
+    // instead of destructuring, so each SelectItem got the whole {name,
+    // description} object as its child and mounting the tab threw React error
+    // #31 ("Objects are not valid as a React child").
+    render(
+      <AuditTab
+        catalog={[
+          { name: "permission.manage", description: "Manage permissions" },
+          { name: "mentorship.admin.read", description: "Read mentorship" },
+        ]}
+      />,
+    );
+    await act(async () => {});
+    expect(
+      screen.getByRole("combobox", { name: "Permission" }),
+    ).toBeInTheDocument();
+  });
+
   it("does not fetch on mount and shows the empty prompt until Search", async () => {
     render(<AuditTab catalog={catalog} />);
     await act(async () => {});
