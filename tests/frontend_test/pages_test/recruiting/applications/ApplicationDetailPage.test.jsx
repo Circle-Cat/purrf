@@ -3447,6 +3447,76 @@ describe("ApplicationDetailPage — Emails tab", () => {
     expect(screen.getByText(/replace what you have written/i)).toBeInTheDocument();
   });
 
+  it("highlights unfilled bracket markers in the editor", async () => {
+    api.getApplicationEmails.mockResolvedValue({
+      data: { threads: [], defaultTo: "cand@x.com" },
+    });
+    api.getApplicationEmailTemplates.mockResolvedValue({
+      data: [
+        {
+          key: "interview_rescheduled",
+          label: "Interview rescheduled",
+          subject: "S",
+          bodyHtml: "<p>rescheduled to [INTERVIEW DATE/TIME].</p>",
+        },
+      ],
+    });
+    const user = await renderComposeOpen();
+    await user.click(screen.getByRole("combobox", { name: /template/i }));
+    await user.click(
+      screen.getByRole("option", { name: "Interview rescheduled" }),
+    );
+
+    const editor = screen.getByRole("textbox", { name: /message/i });
+    expect(editor.querySelectorAll("mark")).toHaveLength(1);
+    expect(editor.querySelector("mark").textContent).toBe(
+      "[INTERVIEW DATE/TIME]",
+    );
+  });
+
+  it("warns once before sending a body with unfilled markers", async () => {
+    api.getApplicationEmails.mockResolvedValue({
+      data: { threads: [], defaultTo: "cand@x.com" },
+    });
+    const user = await renderComposeOpen();
+    setEditorHtml("<p>on [INTERVIEW DATE/TIME] with [MANAGER NAME]</p>");
+    await user.type(screen.getByLabelText(/subject/i), "Hi");
+    await user.click(screen.getByRole("button", { name: /^send$/i }));
+
+    expect(screen.getByText(/2 placeholders/i)).toBeInTheDocument();
+    expect(api.sendApplicationEmail).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: /send anyway/i }));
+    expect(api.sendApplicationEmail).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not strip the marker text itself when sending anyway", async () => {
+    api.getApplicationEmails.mockResolvedValue({
+      data: { threads: [], defaultTo: "cand@x.com" },
+    });
+    const user = await renderComposeOpen();
+    setEditorHtml("<p>on <mark>[INTERVIEW DATE/TIME]</mark></p>");
+    await user.type(screen.getByLabelText(/subject/i), "Hi");
+    await user.click(screen.getByRole("button", { name: /^send$/i }));
+    await user.click(screen.getByRole("button", { name: /send anyway/i }));
+
+    const sent = api.sendApplicationEmail.mock.calls[0][1].body;
+    expect(sent).not.toContain("<mark>");
+    expect(sent).toContain("[INTERVIEW DATE/TIME]");
+  });
+
+  it("sends straight away when no markers remain", async () => {
+    api.getApplicationEmails.mockResolvedValue({
+      data: { threads: [], defaultTo: "cand@x.com" },
+    });
+    const user = await renderComposeOpen();
+    setEditorHtml("<p>all filled in</p>");
+    await user.type(screen.getByLabelText(/subject/i), "Hi");
+    await user.click(screen.getByRole("button", { name: /^send$/i }));
+
+    expect(api.sendApplicationEmail).toHaveBeenCalledTimes(1);
+  });
+
   it("read.all viewer who is not an owner sees no compose control", async () => {
     authState.userId = 999;
     api.getApplicationDetail.mockResolvedValue({

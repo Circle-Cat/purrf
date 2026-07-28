@@ -55,6 +55,21 @@ const sanitizeEmailHtml = (html) =>
     ALLOWED_ATTR: EMAIL_ALLOWED_ATTR,
   });
 
+/** Matches the free-text `[UPPERCASE]` markers templates leave for the sender to fill in. */
+const BRACKET_RE = /\[[A-Z][^\]]*\]/g;
+
+/**
+ * Wrap `[UPPERCASE]` markers in <mark> so the sender can see what still needs
+ * filling in. `mark` is deliberately absent from EMAIL_ALLOWED_TAGS, so
+ * sanitizing on send drops the tag and keeps the text — the candidate never
+ * sees highlight markup.
+ */
+const highlightBrackets = (html) =>
+  html.replace(BRACKET_RE, (marker) => `<mark>${marker}</mark>`);
+
+/** How many `[UPPERCASE]` markers the sender has not replaced yet. */
+const countUnfilledBrackets = (text) => (text.match(BRACKET_RE) ?? []).length;
+
 /**
  * Compose (or reply to) a candidate email. Recipients/Cc are comma-separated
  * text so the recruiter can add or drop addresses; the body is sent as HTML.
@@ -97,6 +112,9 @@ const ComposeEmailDialog = ({
   // confirmation, so Cancel needs no extra reset and re-picking the same
   // template after a Cancel still registers as a value change to Radix.
   const [selectedTemplateKey, setSelectedTemplateKey] = useState("");
+  // Count of unfilled `[UPPERCASE]` markers found at Send time; >0 opens the
+  // soft-warning confirmation dialog below.
+  const [unfilledCount, setUnfilledCount] = useState(0);
 
   useEffect(() => {
     if (!open) return;
@@ -117,6 +135,7 @@ const ComposeEmailDialog = ({
     setHasText(false);
     setPendingTemplate(null);
     setSelectedTemplateKey("");
+    setUnfilledCount(0);
   }, [open, defaultTo, defaultCc, replyThread]);
 
   useEffect(() => {
@@ -131,7 +150,9 @@ const ComposeEmailDialog = ({
   const applyTemplate = (template) => {
     if (!replyThread) setSubject(template.subject);
     if (editorRef.current) {
-      editorRef.current.innerHTML = sanitizeEmailHtml(template.bodyHtml);
+      editorRef.current.innerHTML = highlightBrackets(
+        sanitizeEmailHtml(template.bodyHtml),
+      );
       setHasText(Boolean(editorRef.current.textContent?.trim()));
     }
     setSelectedTemplateKey(template.key);
@@ -147,21 +168,32 @@ const ComposeEmailDialog = ({
     applyTemplate(template);
   };
 
-  const handleSubmit = () => {
-    if (sending) return;
+  /** Send the message as-is. Called directly, or after the unfilled-marker warning is confirmed. */
+  const doSend = () => {
     const recipients = splitAddresses(to);
-    const html = sanitizeEmailHtml(editorRef.current?.innerHTML ?? "");
-    if (recipients.length === 0 || !subject.trim() || !hasText) return;
     onSend({
       to: recipients,
       cc: splitAddresses(cc),
       subject: subject.trim(),
-      body: html,
+      body: sanitizeEmailHtml(editorRef.current?.innerHTML ?? ""),
       threadId: replyThread?.threadId ?? null,
     }).then(
       () => onOpenChange(false),
       () => {},
     );
+  };
+
+  const handleSubmit = () => {
+    if (sending) return;
+    if (splitAddresses(to).length === 0 || !subject.trim() || !hasText) return;
+    const remaining = countUnfilledBrackets(
+      editorRef.current?.textContent ?? "",
+    );
+    if (remaining > 0) {
+      setUnfilledCount(remaining);
+      return;
+    }
+    doSend();
   };
 
   return (
@@ -273,6 +305,33 @@ const ComposeEmailDialog = ({
               }}
             >
               Replace
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={unfilledCount > 0}
+        onOpenChange={() => setUnfilledCount(0)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Unfilled placeholders</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            This message still has {unfilledCount} placeholders in square
+            brackets. Send it anyway?
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setUnfilledCount(0)}>
+              Keep editing
+            </Button>
+            <Button
+              onClick={() => {
+                setUnfilledCount(0);
+                doSend();
+              }}
+            >
+              Send anyway
             </Button>
           </DialogFooter>
         </DialogContent>
