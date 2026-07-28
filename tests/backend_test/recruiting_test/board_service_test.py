@@ -291,6 +291,59 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         _, kw = self.email_svc.send.call_args
         self.assertEqual(kw["thread_id"], 55)
 
+    # -- application email: templates --
+
+    async def test_list_application_email_templates_renders_for_the_application(self):
+        application = SimpleNamespace(application_id=42, user_id=7, job_id=3)
+        self.service._require_application_owner = AsyncMock(return_value=application)
+        self.users_repo.get_user_by_user_id = AsyncMock(
+            return_value=SimpleNamespace(first_name="Ana", last_name="Lopez")
+        )
+        self.job_repo.get_by_job_id = AsyncMock(
+            return_value=SimpleNamespace(title="Software Engineer Intern (Summer 2026)")
+        )
+        current_user = SimpleNamespace(first_name="Jane", last_name="Smith")
+
+        result = await self.service.list_application_email_templates(
+            self.session, current_user, 42
+        )
+
+        self.assertEqual(len(result), 8)
+        rejection = next(t for t in result if t.key == "rejection")
+        self.assertEqual(rejection.subject, "Your Application to Circle Cat")
+        self.assertIn("Dear Ana,", rejection.body_html)
+        self.assertIn("Software Engineer Intern (Summer 2026)", rejection.body_html)
+        self.assertIn("Jane Smith", rejection.body_html)
+        self.service._require_application_owner.assert_awaited_once_with(
+            self.session, current_user, 42, allow_read_all=False
+        )
+
+    async def test_list_application_email_templates_is_owner_only(self):
+        self.service._require_application_owner = AsyncMock(
+            side_effect=ValueError("not an owner")
+        )
+        with self.assertRaises(ValueError):
+            await self.service.list_application_email_templates(
+                self.session, SimpleNamespace(first_name="J", last_name="S"), 42
+            )
+
+    async def test_list_application_email_templates_tolerates_blank_first_name(self):
+        application = SimpleNamespace(application_id=42, user_id=7, job_id=3)
+        self.service._require_application_owner = AsyncMock(return_value=application)
+        self.users_repo.get_user_by_user_id = AsyncMock(
+            return_value=SimpleNamespace(first_name="", last_name="")
+        )
+        self.job_repo.get_by_job_id = AsyncMock(
+            return_value=SimpleNamespace(title="Mentor")
+        )
+
+        result = await self.service.list_application_email_templates(
+            self.session, SimpleNamespace(first_name="Jane", last_name="Smith"), 42
+        )
+
+        rejection = next(t for t in result if t.key == "rejection")
+        self.assertIn("Dear ,", rejection.body_html)
+
     # -- application email: get / refresh --
 
     async def test_get_application_conversation_pure_read_does_not_sync(self):

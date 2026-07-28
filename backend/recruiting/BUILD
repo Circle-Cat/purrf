@@ -12,6 +12,7 @@ py_library(
         "//backend/common:mentorship_enums",
         "//backend/common:permissions",
         "//backend/common:recruiting_enums",
+        "//backend/communication",
         "//backend/dto",
         "//backend/entity:entities",
         "//backend/repository:repositories",
