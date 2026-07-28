@@ -406,9 +406,7 @@ class ApplicationRepository:
             )
         ]
         if gmail_thread_ids is not None:
-            conditions.append(
-                EmailThreadEntity.gmail_thread_id.in_(gmail_thread_ids)
-            )
+            conditions.append(EmailThreadEntity.gmail_thread_id.in_(gmail_thread_ids))
 
         result = await session.execute(
             select(ApplicationEntity)

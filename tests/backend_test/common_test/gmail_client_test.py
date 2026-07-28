@@ -350,9 +350,7 @@ class TestGmailClient(TestCase):
                 {"threadId": "T1"},
             ]
         })
-        self.assertEqual(
-            self.client.list_recent_message_thread_ids(2), {"T1", "T2"}
-        )
+        self.assertEqual(self.client.list_recent_message_thread_ids(2), {"T1", "T2"})
 
     def test_list_recent_thread_ids_builds_query_and_field_mask(self):
         self._stub_message_pages({"messages": []})

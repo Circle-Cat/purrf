@@ -19,6 +19,7 @@ from backend.common.api_endpoints import (
     RECRUITING_INTERVIEW_POOL_ENDPOINT,
     RECRUITING_JOB_OWNERS_ENDPOINT,
     RECRUITING_EMAIL_SYNC_ENDPOINT,
+    RECRUITING_EMAIL_SYNC_RECENT_ENDPOINT,
 )
 
 
@@ -194,6 +195,14 @@ class RecruitingController:
             methods=["POST"],
             response_model=None,
         )
+        self.router.add_api_route(
+            RECRUITING_EMAIL_SYNC_RECENT_ENDPOINT,
+            endpoint=authenticate(permissions=[Permission.SYSTEM_SYNC])(
+                self.sync_recent_recruiting_emails
+            ),
+            methods=["POST"],
+            response_model=None,
+        )
 
     async def create_job(self, current_user: UserContextDto, job_data: JobCreateDto):
         """Create a DRAFT posting."""
@@ -341,7 +350,7 @@ class RecruitingController:
         return api_response(message="Job activity fetched.", data=result)
 
     async def sync_recruiting_emails(self, current_user: UserContextDto):
-        """Sync candidate email threads for every application still in scope.
+        """Reconcile candidate email threads for every application in scope.
 
         Called by the nightly CronJob, not by a person: ``current_user`` is the
         service account and is deliberately unused — the sweep has no owner
@@ -356,3 +365,19 @@ class RecruitingController:
         async with self.database.session() as session:
             summary = await self.email_sync_service.sync_due_applications(session)
         return api_response(message="Recruiting emails synced.", data=summary)
+
+    async def sync_recent_recruiting_emails(self, current_user: UserContextDto):
+        """Sync only the applications whose email threads just received mail.
+
+        The nightly CronJob's entry point. One mailbox-wide Gmail lookup names
+        the threads that changed, so this costs the same whether we track ten
+        conversations or a thousand — unlike the full reconcile behind
+        ``sync_recruiting_emails``, which the weekly CronJob calls.
+
+        ``current_user`` is the service account and is deliberately unused.
+        Succeeds with the counts even when individual applications failed, for
+        the same reason as the reconcile endpoint — see ``EmailSyncService``.
+        """
+        async with self.database.session() as session:
+            summary = await self.email_sync_service.sync_recent_applications(session)
+        return api_response(message="Recent recruiting emails synced.", data=summary)

@@ -219,6 +219,43 @@ class TestRecruitingController(unittest.IsolatedAsyncioTestCase):
             [Permission.SYSTEM_SYNC],
         )
 
+    async def test_sync_recent_recruiting_emails_returns_the_summary(self):
+        summary = {"scanned": 2, "synced": 1, "failed": 1, "newMessages": 3}
+        self.email_sync_service.sync_recent_applications = AsyncMock(
+            return_value=summary
+        )
+
+        result = await self.controller.sync_recent_recruiting_emails(
+            current_user=self.user
+        )
+
+        self.email_sync_service.sync_recent_applications.assert_awaited_once_with(
+            self.session
+        )
+        # Partial failure is data, not a crash — a 5xx would make k8s re-run
+        # the whole sweep.
+        self.assertEqual(result["data"], summary)
+
+    def test_sync_recent_route_is_system_sync_gated(self):
+        routes_by_path = {route.path: route for route in self.controller.router.routes}
+        route = routes_by_path["/recruiting/emails/sync/recent"]
+
+        self.assertIn("POST", route.methods)
+        self.assertEqual(
+            self._endpoint_permissions(route.endpoint), [Permission.SYSTEM_SYNC]
+        )
+
+    def test_the_two_sync_routes_are_distinct(self):
+        # One is the nightly delta, the other the weekly reconcile; a copy-paste
+        # that pointed both at the same handler would silently disable one job.
+        routes_by_path = {route.path: route for route in self.controller.router.routes}
+        self.assertIn("/recruiting/emails/sync", routes_by_path)
+        self.assertIn("/recruiting/emails/sync/recent", routes_by_path)
+        self.assertIsNot(
+            routes_by_path["/recruiting/emails/sync"].endpoint,
+            routes_by_path["/recruiting/emails/sync/recent"].endpoint,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

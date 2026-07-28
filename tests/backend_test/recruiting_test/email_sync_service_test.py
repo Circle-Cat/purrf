@@ -375,9 +375,7 @@ class TestSyncRecentApplications(unittest.IsolatedAsyncioTestCase):
         cutoff = self.application_repo.list_due_email_sync_applications.await_args.args[
             1
         ]
-        self.assertAlmostEqual(
-            (before - cutoff).total_seconds(), 7 * 86400, delta=5
-        )
+        self.assertAlmostEqual((before - cutoff).total_seconds(), 7 * 86400, delta=5)
 
     async def test_nothing_flagged_skips_the_query_entirely(self):
         self._flagged()
