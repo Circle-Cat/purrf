@@ -24,8 +24,9 @@ from backend.common.api_endpoints import (
 
 
 class RecruitingController:
-    """FastAPI routes for recruiting job postings (publishing side), plus the
-    scheduled candidate-email sync the nightly CronJob calls."""
+    """FastAPI routes for recruiting job postings (publishing side), plus the two
+    scheduled candidate-email syncs the CronJobs call — a nightly delta and a
+    weekly reconcile."""
 
     def __init__(self, job_service, email_sync_service, database):
         """
@@ -352,7 +353,7 @@ class RecruitingController:
     async def sync_recruiting_emails(self, current_user: UserContextDto):
         """Reconcile candidate email threads for every application in scope.
 
-        Called by the nightly CronJob, not by a person: ``current_user`` is the
+        Called by the weekly CronJob, not by a person: ``current_user`` is the
         service account and is deliberately unused — the sweep has no owner
         gate, which is why it lives here rather than in ``board_controller``.
 

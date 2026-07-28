@@ -251,9 +251,24 @@ class TestRecruitingController(unittest.IsolatedAsyncioTestCase):
         routes_by_path = {route.path: route for route in self.controller.router.routes}
         self.assertIn("/recruiting/emails/sync", routes_by_path)
         self.assertIn("/recruiting/emails/sync/recent", routes_by_path)
+        # Compare the wrapped handlers, not the wrappers: authenticate() has no
+        # memoisation, so it mints a fresh wrapper object on every call — the
+        # wrappers would differ even if both routes pointed at the same handler,
+        # which is precisely the copy-paste this test exists to catch.
+        #
+        # __wrapped__ itself isn't enough either: it's a *bound method* looked
+        # up fresh off `self` at decoration time, and two separate attribute
+        # accesses of the same bound method (`self.foo is self.foo`) are always
+        # different objects in CPython even though they wrap the same
+        # underlying function — so assertIsNot on __wrapped__ directly would
+        # pass even under the copy-paste bug. Compare __func__, the underlying
+        # function object, which is a single object shared by every bound
+        # method of that name.
         self.assertIsNot(
-            routes_by_path["/recruiting/emails/sync"].endpoint,
-            routes_by_path["/recruiting/emails/sync/recent"].endpoint,
+            routes_by_path["/recruiting/emails/sync"].endpoint.__wrapped__.__func__,
+            routes_by_path[
+                "/recruiting/emails/sync/recent"
+            ].endpoint.__wrapped__.__func__,
         )
 
 
