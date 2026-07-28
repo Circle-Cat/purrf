@@ -113,6 +113,7 @@ from backend.recruiting.resume_storage import ResumeStorage
 from backend.recruiting.application_service import ApplicationService
 from backend.recruiting.application_controller import ApplicationController
 from backend.recruiting.board_service import BoardService
+from backend.recruiting.email_sync_service import EmailSyncService
 from backend.recruiting.board_controller import BoardController
 from backend.recruiting.blacklist_service import BlacklistService
 from backend.recruiting.blacklist_controller import BlacklistController
@@ -622,6 +623,10 @@ class AppDependencyBuilder:
             message_repository=self.email_message_repository,
             sender_address=self.gmail_client.sender_address,
         )
+        self.email_sync_service = EmailSyncService(
+            email_conversation_service=self.email_conversation_service,
+            application_activity_repository=self.application_activity_repository,
+        )
 
         self.board_service = BoardService(
             self.job_repository,
@@ -639,6 +644,7 @@ class AppDependencyBuilder:
             self.notification_repository,
             self.user_emails_repository,
             self.email_conversation_service,
+            self.email_sync_service,
         )
         self.board_controller = BoardController(
             self.board_service,
