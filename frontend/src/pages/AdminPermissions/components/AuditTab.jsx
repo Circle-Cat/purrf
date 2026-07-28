@@ -17,7 +17,8 @@ const ALL = "__all__";
  * Read-only permission-change audit feed with filters + pagination.
  *
  * @param {Object} props
- * @param {string[]} props.catalog - Grantable permission names (for the filter).
+ * @param {{name: string, description: string}[]} props.catalog - Grantable
+ *   permissions, shared by all three tabs (only the name feeds the filter).
  */
 const AuditTab = ({ catalog }) => {
   const {
@@ -80,7 +81,7 @@ const AuditTab = ({ catalog }) => {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value={ALL}>All permissions</SelectItem>
-            {catalog.map((name) => (
+            {catalog.map(({ name }) => (
               <SelectItem key={name} value={name}>
                 {name}
               </SelectItem>
