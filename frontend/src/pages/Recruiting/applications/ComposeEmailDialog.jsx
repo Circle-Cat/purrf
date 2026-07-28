@@ -91,6 +91,12 @@ const ComposeEmailDialog = ({
   // A template the sender picked while the body already had text — held
   // here until the overwrite confirmation is resolved.
   const [pendingTemplate, setPendingTemplate] = useState(null);
+  // Drives the Select as a controlled component so its displayed label only
+  // ever reflects a template that was actually applied — not merely clicked.
+  // Left stale (i.e. never speculatively set) while a pick is pending
+  // confirmation, so Cancel needs no extra reset and re-picking the same
+  // template after a Cancel still registers as a value change to Radix.
+  const [selectedTemplateKey, setSelectedTemplateKey] = useState("");
 
   useEffect(() => {
     if (!open) return;
@@ -110,6 +116,7 @@ const ComposeEmailDialog = ({
     if (editorRef.current) editorRef.current.innerHTML = "";
     setHasText(false);
     setPendingTemplate(null);
+    setSelectedTemplateKey("");
   }, [open, defaultTo, defaultCc, replyThread]);
 
   useEffect(() => {
@@ -127,6 +134,7 @@ const ComposeEmailDialog = ({
       editorRef.current.innerHTML = sanitizeEmailHtml(template.bodyHtml);
       setHasText(Boolean(editorRef.current.textContent?.trim()));
     }
+    setSelectedTemplateKey(template.key);
   };
 
   const handleTemplatePick = (key) => {
@@ -192,7 +200,10 @@ const ComposeEmailDialog = ({
           </div>
           <div className="space-y-1">
             <Label htmlFor="email-template">Template</Label>
-            <Select onValueChange={handleTemplatePick}>
+            <Select
+              value={selectedTemplateKey}
+              onValueChange={handleTemplatePick}
+            >
               <SelectTrigger id="email-template" aria-label="Template">
                 <SelectValue placeholder="Start from a template (optional)" />
               </SelectTrigger>

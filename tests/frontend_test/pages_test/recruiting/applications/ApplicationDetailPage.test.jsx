@@ -3392,6 +3392,61 @@ describe("ApplicationDetailPage — Emails tab", () => {
     expect(editor.innerHTML).toContain("T");
   });
 
+  it("leaves the template trigger unchanged after Cancel", async () => {
+    api.getApplicationEmails.mockResolvedValue({
+      data: { threads: [], defaultTo: "cand@x.com" },
+    });
+    api.getApplicationEmailTemplates.mockResolvedValue({
+      data: [{ key: "rejection", label: "Rejection", subject: "S", bodyHtml: "<p>T</p>" }],
+    });
+    const user = await renderComposeOpen();
+    setEditorHtml("<p>my own draft</p>");
+
+    const trigger = screen.getByRole("combobox", { name: /template/i });
+    await user.click(trigger);
+    await user.click(screen.getByRole("option", { name: "Rejection" }));
+    const confirmDialog = screen.getByRole("dialog", {
+      name: /replace the current message/i,
+    });
+
+    await user.click(
+      within(confirmDialog).getByRole("button", { name: "Cancel" }),
+    );
+
+    expect(trigger).not.toHaveTextContent("Rejection");
+    expect(
+      screen.queryByText(/replace what you have written/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("prompts again when the same template is re-picked after Cancel", async () => {
+    api.getApplicationEmails.mockResolvedValue({
+      data: { threads: [], defaultTo: "cand@x.com" },
+    });
+    api.getApplicationEmailTemplates.mockResolvedValue({
+      data: [{ key: "rejection", label: "Rejection", subject: "S", bodyHtml: "<p>T</p>" }],
+    });
+    const user = await renderComposeOpen();
+    setEditorHtml("<p>my own draft</p>");
+
+    await user.click(screen.getByRole("combobox", { name: /template/i }));
+    await user.click(screen.getByRole("option", { name: "Rejection" }));
+    const firstConfirmDialog = screen.getByRole("dialog", {
+      name: /replace the current message/i,
+    });
+    await user.click(
+      within(firstConfirmDialog).getByRole("button", { name: "Cancel" }),
+    );
+    expect(
+      screen.queryByText(/replace what you have written/i),
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("combobox", { name: /template/i }));
+    await user.click(screen.getByRole("option", { name: "Rejection" }));
+
+    expect(screen.getByText(/replace what you have written/i)).toBeInTheDocument();
+  });
+
   it("read.all viewer who is not an owner sees no compose control", async () => {
     authState.userId = 999;
     api.getApplicationDetail.mockResolvedValue({
