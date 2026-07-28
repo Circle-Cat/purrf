@@ -206,3 +206,12 @@ py_test(
         "//backend/recruiting",
     ],
 )
+
+py_test(
+    name = "email_sync_service_test",
+    srcs = ["email_sync_service_test.py"],
+    deps = [
+        "//backend/common:communication_enums",
+        "//backend/recruiting",
+    ],
+)

@@ -30,8 +30,15 @@ class TestRecruitingController(unittest.IsolatedAsyncioTestCase):
         self.database.session.return_value.__aenter__.return_value = self.session
         self.database.session.return_value.__aexit__.return_value = None
 
+        self.email_sync_service = MagicMock()
+        self.email_sync_service.sync_due_applications = AsyncMock(
+            return_value={"scanned": 0, "synced": 0, "failed": 0, "newMessages": 0}
+        )
+
         self.controller = RecruitingController(
-            job_service=self.service, database=self.database
+            job_service=self.service,
+            email_sync_service=self.email_sync_service,
+            database=self.database,
         )
 
         self.patcher = patch("backend.recruiting.recruiting_controller.api_response")
@@ -188,6 +195,29 @@ class TestRecruitingController(unittest.IsolatedAsyncioTestCase):
                 route = routes_by_path[path]
                 self.assertIn("GET", route.methods)
                 self.assertEqual(self._endpoint_permissions(route.endpoint), expected)
+
+    async def test_sync_recruiting_emails_returns_the_summary(self):
+        summary = {"scanned": 3, "synced": 2, "failed": 1, "newMessages": 4}
+        self.email_sync_service.sync_due_applications = AsyncMock(return_value=summary)
+
+        result = await self.controller.sync_recruiting_emails(current_user=self.user)
+
+        self.email_sync_service.sync_due_applications.assert_awaited_once_with(
+            self.session
+        )
+        # Partial failure is data, not a crash: the counts come back on a normal
+        # response, so k8s never re-runs the whole sweep over one bad thread.
+        self.assertEqual(result["data"], summary)
+
+    def test_sync_recruiting_emails_route_is_system_sync_gated(self):
+        routes_by_path = {route.path: route for route in self.controller.router.routes}
+        sync_route = routes_by_path["/recruiting/emails/sync"]
+
+        self.assertIn("POST", sync_route.methods)
+        self.assertEqual(
+            self._endpoint_permissions(sync_route.endpoint),
+            [Permission.SYSTEM_SYNC],
+        )
 
 
 if __name__ == "__main__":
