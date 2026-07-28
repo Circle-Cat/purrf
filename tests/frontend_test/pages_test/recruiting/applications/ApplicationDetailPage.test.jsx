@@ -3377,7 +3377,14 @@ describe("ApplicationDetailPage — Emails tab", () => {
       data: { threads: [], defaultTo: "cand@x.com" },
     });
     api.getApplicationEmailTemplates.mockResolvedValue({
-      data: [{ key: "rejection", label: "Rejection", subject: "S", bodyHtml: "<p>T</p>" }],
+      data: [
+        {
+          key: "rejection",
+          label: "Rejection",
+          subject: "S",
+          bodyHtml: "<p>T</p>",
+        },
+      ],
     });
     const user = await renderComposeOpen();
     const editor = setEditorHtml("<p>my own draft</p>");
@@ -3385,7 +3392,9 @@ describe("ApplicationDetailPage — Emails tab", () => {
     await user.click(screen.getByRole("combobox", { name: /template/i }));
     await user.click(screen.getByRole("option", { name: "Rejection" }));
 
-    expect(screen.getByText(/replace what you have written/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/replace what you have written/i),
+    ).toBeInTheDocument();
     expect(editor.innerHTML).toContain("my own draft");
 
     await user.click(screen.getByRole("button", { name: /replace/i }));
@@ -3397,7 +3406,14 @@ describe("ApplicationDetailPage — Emails tab", () => {
       data: { threads: [], defaultTo: "cand@x.com" },
     });
     api.getApplicationEmailTemplates.mockResolvedValue({
-      data: [{ key: "rejection", label: "Rejection", subject: "S", bodyHtml: "<p>T</p>" }],
+      data: [
+        {
+          key: "rejection",
+          label: "Rejection",
+          subject: "S",
+          bodyHtml: "<p>T</p>",
+        },
+      ],
     });
     const user = await renderComposeOpen();
     setEditorHtml("<p>my own draft</p>");
@@ -3424,7 +3440,14 @@ describe("ApplicationDetailPage — Emails tab", () => {
       data: { threads: [], defaultTo: "cand@x.com" },
     });
     api.getApplicationEmailTemplates.mockResolvedValue({
-      data: [{ key: "rejection", label: "Rejection", subject: "S", bodyHtml: "<p>T</p>" }],
+      data: [
+        {
+          key: "rejection",
+          label: "Rejection",
+          subject: "S",
+          bodyHtml: "<p>T</p>",
+        },
+      ],
     });
     const user = await renderComposeOpen();
     setEditorHtml("<p>my own draft</p>");
@@ -3444,7 +3467,9 @@ describe("ApplicationDetailPage — Emails tab", () => {
     await user.click(screen.getByRole("combobox", { name: /template/i }));
     await user.click(screen.getByRole("option", { name: "Rejection" }));
 
-    expect(screen.getByText(/replace what you have written/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/replace what you have written/i),
+    ).toBeInTheDocument();
   });
 
   it("highlights unfilled bracket markers in the editor", async () => {
@@ -3573,7 +3598,9 @@ describe("ApplicationDetailPage — Emails tab", () => {
     await user.click(screen.getByRole("button", { name: /^send$/i }));
 
     expect(api.sendApplicationEmail).toHaveBeenCalledTimes(1);
-    expect(screen.queryByText(/unfilled placeholders/i)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/unfilled placeholders/i),
+    ).not.toBeInTheDocument();
   });
 
   it("disables Send anyway while the send is in flight, to prevent a double-submit", async () => {

@@ -219,84 +219,84 @@ const ComposeEmailDialog = ({
           <DialogHeader>
             <DialogTitle>{replyThread ? "Reply" : "Send email"}</DialogTitle>
           </DialogHeader>
-        <div className="space-y-3">
-          <div className="space-y-1">
-            <Label htmlFor="email-to">To</Label>
-            <Input
-              id="email-to"
-              value={to}
-              onChange={(e) => setTo(e.target.value)}
-              placeholder="candidate@example.com"
-            />
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <Label htmlFor="email-to">To</Label>
+              <Input
+                id="email-to"
+                value={to}
+                onChange={(e) => setTo(e.target.value)}
+                placeholder="candidate@example.com"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="email-cc">Cc</Label>
+              <Input
+                id="email-cc"
+                value={cc}
+                onChange={(e) => setCc(e.target.value)}
+                placeholder="Comma-separated (optional)"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="email-subject">Subject</Label>
+              <Input
+                id="email-subject"
+                value={subject}
+                onChange={(e) => setSubject(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="email-template">Template</Label>
+              <Select
+                value={selectedTemplateKey}
+                onValueChange={handleTemplatePick}
+              >
+                <SelectTrigger id="email-template" aria-label="Template">
+                  <SelectValue placeholder="Start from a template (optional)" />
+                </SelectTrigger>
+                <SelectContent>
+                  {templates.map((t) => (
+                    <SelectItem key={t.key} value={t.key}>
+                      {t.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="email-body">Message</Label>
+              <div
+                id="email-body"
+                ref={editorRef}
+                role="textbox"
+                aria-label="Message"
+                aria-multiline="true"
+                contentEditable
+                suppressContentEditableWarning
+                onInput={() =>
+                  setHasText(Boolean(editorRef.current?.textContent?.trim()))
+                }
+                className="min-h-40 max-h-96 overflow-y-auto rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring [&_a]:underline [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5"
+              />
+            </div>
           </div>
-          <div className="space-y-1">
-            <Label htmlFor="email-cc">Cc</Label>
-            <Input
-              id="email-cc"
-              value={cc}
-              onChange={(e) => setCc(e.target.value)}
-              placeholder="Comma-separated (optional)"
-            />
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor="email-subject">Subject</Label>
-            <Input
-              id="email-subject"
-              value={subject}
-              onChange={(e) => setSubject(e.target.value)}
-            />
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor="email-template">Template</Label>
-            <Select
-              value={selectedTemplateKey}
-              onValueChange={handleTemplatePick}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
             >
-              <SelectTrigger id="email-template" aria-label="Template">
-                <SelectValue placeholder="Start from a template (optional)" />
-              </SelectTrigger>
-              <SelectContent>
-                {templates.map((t) => (
-                  <SelectItem key={t.key} value={t.key}>
-                    {t.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor="email-body">Message</Label>
-            <div
-              id="email-body"
-              ref={editorRef}
-              role="textbox"
-              aria-label="Message"
-              aria-multiline="true"
-              contentEditable
-              suppressContentEditableWarning
-              onInput={() =>
-                setHasText(Boolean(editorRef.current?.textContent?.trim()))
-              }
-              className="min-h-40 max-h-96 overflow-y-auto rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring [&_a]:underline [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5"
-            />
-          </div>
-        </div>
-        <DialogFooter>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-          >
-            Cancel
-          </Button>
-          <Button
-            type="button"
-            onClick={handleSubmit}
-            disabled={sending || !hasText}
-          >
-            Send
-          </Button>
-        </DialogFooter>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={handleSubmit}
+              disabled={sending || !hasText}
+            >
+              Send
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
       <Dialog
