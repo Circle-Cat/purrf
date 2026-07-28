@@ -194,6 +194,7 @@ beforeEach(() => {
   api.sendApplicationEmail.mockResolvedValue({
     data: { threads: [], defaultTo: null },
   });
+  api.getApplicationEmailTemplates.mockResolvedValue({ data: [] });
 });
 
 /** Render the page at the detail route for a given application id. */
@@ -3298,6 +3299,97 @@ describe("ApplicationDetailPage — Emails tab", () => {
       "",
     );
     expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+  });
+
+  it("fills subject and body from the chosen template on a new email", async () => {
+    api.getApplicationEmails.mockResolvedValue({
+      data: { threads: [], defaultTo: "cand@x.com" },
+    });
+    api.getApplicationEmailTemplates.mockResolvedValue({
+      data: [
+        {
+          key: "rejection",
+          label: "Rejection",
+          subject: "Your Application to Circle Cat",
+          bodyHtml: "<p>Dear Ana,</p>",
+        },
+      ],
+    });
+    const user = await renderComposeOpen();
+    await user.click(screen.getByRole("combobox", { name: /template/i }));
+    await user.click(screen.getByRole("option", { name: "Rejection" }));
+
+    expect(screen.getByLabelText(/subject/i)).toHaveValue(
+      "Your Application to Circle Cat",
+    );
+    expect(
+      screen.getByRole("textbox", { name: /message/i }).innerHTML,
+    ).toContain("Dear Ana,");
+    expect(screen.getByRole("button", { name: "Send" })).toBeEnabled();
+  });
+
+  it("keeps the reply subject when a template is applied", async () => {
+    api.getApplicationEmails.mockResolvedValue({
+      data: {
+        defaultTo: "cand@x.com",
+        threads: [
+          {
+            threadId: 9,
+            subject: "Circle Cat Program - Interview Availability",
+            defaultCc: [],
+            messages: [
+              {
+                messageId: 1,
+                direction: "inbound",
+                fromAddress: "cand@x.com",
+                bodyHtml: "<p>Hi</p>",
+                bodyText: "Hi",
+                createdAt: "2026-07-23T00:00:00Z",
+              },
+            ],
+          },
+        ],
+      },
+    });
+    api.getApplicationEmailTemplates.mockResolvedValue({
+      data: [
+        {
+          key: "offer_onboarding",
+          label: "Offer and onboarding",
+          subject: "Welcome to Circle Cat — Onboarding & Next Steps",
+          bodyHtml: "<p>Dear Ana,</p>",
+        },
+      ],
+    });
+    const user = await renderComposeOpen({ replyThread: true });
+    await user.click(screen.getByRole("combobox", { name: /template/i }));
+    await user.click(
+      screen.getByRole("option", { name: "Offer and onboarding" }),
+    );
+
+    expect(screen.getByLabelText(/subject/i)).toHaveValue(
+      "Re: Circle Cat Program - Interview Availability",
+    );
+  });
+
+  it("asks before overwriting a body the sender already typed", async () => {
+    api.getApplicationEmails.mockResolvedValue({
+      data: { threads: [], defaultTo: "cand@x.com" },
+    });
+    api.getApplicationEmailTemplates.mockResolvedValue({
+      data: [{ key: "rejection", label: "Rejection", subject: "S", bodyHtml: "<p>T</p>" }],
+    });
+    const user = await renderComposeOpen();
+    const editor = setEditorHtml("<p>my own draft</p>");
+
+    await user.click(screen.getByRole("combobox", { name: /template/i }));
+    await user.click(screen.getByRole("option", { name: "Rejection" }));
+
+    expect(screen.getByText(/replace what you have written/i)).toBeInTheDocument();
+    expect(editor.innerHTML).toContain("my own draft");
+
+    await user.click(screen.getByRole("button", { name: /replace/i }));
+    expect(editor.innerHTML).toContain("T");
   });
 
   it("read.all viewer who is not an owner sees no compose control", async () => {

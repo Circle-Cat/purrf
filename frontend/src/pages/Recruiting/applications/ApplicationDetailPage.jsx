@@ -1568,6 +1568,7 @@ const ApplicationDetailPage = () => {
                   <ComposeEmailDialog
                     open={composeOpen}
                     onOpenChange={setComposeOpen}
+                    applicationId={applicationId}
                     defaultTo={emails.defaultTo}
                     defaultCc={emails.defaultCc}
                     replyThread={replyThread}

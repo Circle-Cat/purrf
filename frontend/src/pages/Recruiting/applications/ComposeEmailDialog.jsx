@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import DOMPurify from "dompurify";
+import { getApplicationEmailTemplates } from "@/api/recruitingApi";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,6 +11,13 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 const splitAddresses = (value) =>
   value
@@ -52,6 +60,7 @@ const sanitizeEmailHtml = (html) =>
  * text so the recruiter can add or drop addresses; the body is sent as HTML.
  *
  * @param {{open: boolean, onOpenChange: (open: boolean) => void,
+ *          applicationId: number|string,
  *          defaultTo: string|null, defaultCc: string[]|null,
  *          replyThread: {threadId: number, subject: string,
  *                        defaultCc?: string[]}|null,
@@ -63,6 +72,7 @@ const sanitizeEmailHtml = (html) =>
 const ComposeEmailDialog = ({
   open,
   onOpenChange,
+  applicationId,
   defaultTo,
   defaultCc,
   replyThread,
@@ -77,6 +87,10 @@ const ComposeEmailDialog = ({
   // can react to it — an uncontrolled contenteditable gives us no other
   // render-time signal.
   const [hasText, setHasText] = useState(false);
+  const [templates, setTemplates] = useState([]);
+  // A template the sender picked while the body already had text — held
+  // here until the overwrite confirmation is resolved.
+  const [pendingTemplate, setPendingTemplate] = useState(null);
 
   useEffect(() => {
     if (!open) return;
@@ -95,7 +109,35 @@ const ComposeEmailDialog = ({
     // back on send.
     if (editorRef.current) editorRef.current.innerHTML = "";
     setHasText(false);
+    setPendingTemplate(null);
   }, [open, defaultTo, defaultCc, replyThread]);
+
+  useEffect(() => {
+    if (!open) return;
+    getApplicationEmailTemplates(applicationId).then(
+      (res) => setTemplates(res?.data ?? []),
+      () => setTemplates([]),
+    );
+  }, [open, applicationId]);
+
+  /** Write a template into the composer. Reply keeps its `Re:` subject (B4). */
+  const applyTemplate = (template) => {
+    if (!replyThread) setSubject(template.subject);
+    if (editorRef.current) {
+      editorRef.current.innerHTML = sanitizeEmailHtml(template.bodyHtml);
+      setHasText(Boolean(editorRef.current.textContent?.trim()));
+    }
+  };
+
+  const handleTemplatePick = (key) => {
+    const template = templates.find((t) => t.key === key);
+    if (!template) return;
+    if (editorRef.current?.textContent?.trim()) {
+      setPendingTemplate(template);
+      return;
+    }
+    applyTemplate(template);
+  };
 
   const handleSubmit = () => {
     if (sending) return;
@@ -115,11 +157,12 @@ const ComposeEmailDialog = ({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{replyThread ? "Reply" : "Send email"}</DialogTitle>
-        </DialogHeader>
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{replyThread ? "Reply" : "Send email"}</DialogTitle>
+          </DialogHeader>
         <div className="space-y-3">
           <div className="space-y-1">
             <Label htmlFor="email-to">To</Label>
@@ -146,6 +189,21 @@ const ComposeEmailDialog = ({
               value={subject}
               onChange={(e) => setSubject(e.target.value)}
             />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="email-template">Template</Label>
+            <Select onValueChange={handleTemplatePick}>
+              <SelectTrigger id="email-template" aria-label="Template">
+                <SelectValue placeholder="Start from a template (optional)" />
+              </SelectTrigger>
+              <SelectContent>
+                {templates.map((t) => (
+                  <SelectItem key={t.key} value={t.key}>
+                    {t.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div className="space-y-1">
             <Label htmlFor="email-body">Message</Label>
@@ -180,8 +238,35 @@ const ComposeEmailDialog = ({
             Send
           </Button>
         </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={pendingTemplate !== null}
+        onOpenChange={() => setPendingTemplate(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Replace the current message?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Applying this template will replace what you have written.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPendingTemplate(null)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                applyTemplate(pendingTemplate);
+                setPendingTemplate(null);
+              }}
+            >
+              Replace
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 };
 
