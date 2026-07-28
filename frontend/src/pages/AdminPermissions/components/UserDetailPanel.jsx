@@ -13,7 +13,8 @@ import {
 
 /**
  * Body of the per-user permissions Dialog. Renders the DialogHeader, then the
- * SuperAdminControl, PermissionChecklist, and grant history.
+ * SuperAdminControl, PermissionChecklist, and grant history (capped to its own
+ * scroll box so it cannot grow the dialog).
  * Must only be rendered when selectedUser is non-null (the Dialog handles the
  * null/open guard externally).
  *
@@ -91,9 +92,18 @@ const UserDetailPanel = ({
           />
         )}
 
-        <details className="admin-history">
+        {/* History scrolls inside its own box. Without the cap, a long history
+            grows the dialog past its max height, so the whole dialog scrolls
+            instead — which carries the title and the absolutely-positioned
+            close button up out of view. */}
+        <details>
           <summary className="cursor-pointer font-medium mb-2">History</summary>
-          <GrantHistoryTable history={history} />
+          <div
+            className="max-h-64 overflow-y-auto"
+            data-testid="history-scroll"
+          >
+            <GrantHistoryTable history={history} />
+          </div>
         </details>
       </div>
     </>
