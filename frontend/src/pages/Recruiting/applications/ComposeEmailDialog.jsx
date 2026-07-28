@@ -55,8 +55,15 @@ const sanitizeEmailHtml = (html) =>
     ALLOWED_ATTR: EMAIL_ALLOWED_ATTR,
   });
 
-/** Matches the free-text `[UPPERCASE]` markers templates leave for the sender to fill in. */
-const BRACKET_RE = /\[[A-Z][^\]]*\]/g;
+/**
+ * Matches the free-text `[UPPERCASE]` markers templates leave for the sender
+ * to fill in. Every character inside the brackets must be an uppercase
+ * letter, digit, space, or `/` (the only punctuation real markers use) —
+ * requiring the whole marker to be uppercase, not just its first letter,
+ * keeps ordinary bracketed prose like "[See attached resume]" or
+ * "[Re: interview]" from tripping the unfilled-placeholder warning.
+ */
+const BRACKET_RE = /\[[A-Z0-9][A-Z0-9 /]*\]/g;
 
 /**
  * Wrap `[UPPERCASE]` markers in <mark> so the sender can see what still needs
@@ -168,8 +175,14 @@ const ComposeEmailDialog = ({
     applyTemplate(template);
   };
 
-  /** Send the message as-is. Called directly, or after the unfilled-marker warning is confirmed. */
+  /**
+   * Send the message as-is. Called directly, or after the unfilled-marker
+   * warning is confirmed — guarded on `sending` itself (not just at its two
+   * call sites) so a fast double-click on "Send anyway" can't fire a second
+   * send while the first is still in flight.
+   */
   const doSend = () => {
+    if (sending) return;
     const recipients = splitAddresses(to);
     onSend({
       to: recipients,
@@ -178,7 +191,10 @@ const ComposeEmailDialog = ({
       body: sanitizeEmailHtml(editorRef.current?.innerHTML ?? ""),
       threadId: replyThread?.threadId ?? null,
     }).then(
-      () => onOpenChange(false),
+      () => {
+        setUnfilledCount(0);
+        onOpenChange(false);
+      },
       () => {},
     );
   };
@@ -322,15 +338,14 @@ const ComposeEmailDialog = ({
             brackets. Send it anyway?
           </p>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setUnfilledCount(0)}>
+            <Button
+              variant="outline"
+              onClick={() => setUnfilledCount(0)}
+              disabled={sending}
+            >
               Keep editing
             </Button>
-            <Button
-              onClick={() => {
-                setUnfilledCount(0);
-                doSend();
-              }}
-            >
+            <Button onClick={doSend} disabled={sending}>
               Send anyway
             </Button>
           </DialogFooter>

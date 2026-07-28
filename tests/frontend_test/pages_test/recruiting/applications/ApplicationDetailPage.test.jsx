@@ -3517,6 +3517,96 @@ describe("ApplicationDetailPage — Emails tab", () => {
     expect(api.sendApplicationEmail).toHaveBeenCalledTimes(1);
   });
 
+  it("recognizes only fully-uppercase brackets as markers, not ordinary bracketed prose", async () => {
+    api.getApplicationEmails.mockResolvedValue({
+      data: { threads: [], defaultTo: "cand@x.com" },
+    });
+    const MUST_MATCH = [
+      "[INTERVIEW DATE/TIME]",
+      "[SOFTWARE ENGINEER VOLUNTEER / SOFTWARE ENGINEER INTERN]",
+      "[MANAGER NAME]",
+      "[MANAGER EMAIL]",
+      "[START DATE]",
+    ];
+    const MUST_NOT_MATCH = [
+      "[See attached resume]",
+      "[Note: pending]",
+      "[Re: interview]",
+    ];
+    api.getApplicationEmailTemplates.mockResolvedValue({
+      data: [
+        {
+          key: "mixed",
+          label: "Mixed brackets",
+          subject: "S",
+          bodyHtml: `<p>${[...MUST_MATCH, ...MUST_NOT_MATCH].join(" ")}</p>`,
+        },
+      ],
+    });
+    const user = await renderComposeOpen();
+    await user.click(screen.getByRole("combobox", { name: /template/i }));
+    await user.click(screen.getByRole("option", { name: "Mixed brackets" }));
+
+    // highlightBrackets: only the 5 real markers get wrapped, in order, and
+    // the regex's shared `lastIndex` (it carries the `g` flag) doesn't skip
+    // any of them when they all appear in a single pass.
+    const editor = screen.getByRole("textbox", { name: /message/i });
+    const marks = Array.from(editor.querySelectorAll("mark"));
+    expect(marks.map((m) => m.textContent)).toEqual(MUST_MATCH);
+
+    // countUnfilledBrackets: sending should warn about exactly the 5 real
+    // markers, not the 8 total bracketed phrases in the body.
+    await user.type(screen.getByLabelText(/subject/i), "Hi");
+    await user.click(screen.getByRole("button", { name: /^send$/i }));
+    expect(screen.getByText(/5 placeholders/i)).toBeInTheDocument();
+  });
+
+  it("does not warn when the body only has ordinary bracketed prose, no real markers", async () => {
+    api.getApplicationEmails.mockResolvedValue({
+      data: { threads: [], defaultTo: "cand@x.com" },
+    });
+    const user = await renderComposeOpen();
+    setEditorHtml(
+      "<p>[See attached resume] [Note: pending] [Re: interview]</p>",
+    );
+    await user.type(screen.getByLabelText(/subject/i), "Hi");
+    await user.click(screen.getByRole("button", { name: /^send$/i }));
+
+    expect(api.sendApplicationEmail).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(/unfilled placeholders/i)).not.toBeInTheDocument();
+  });
+
+  it("disables Send anyway while the send is in flight, to prevent a double-submit", async () => {
+    api.getApplicationEmails.mockResolvedValue({
+      data: { threads: [], defaultTo: "cand@x.com" },
+    });
+    let resolveSend;
+    api.sendApplicationEmail.mockReturnValue(
+      new Promise((resolve) => {
+        resolveSend = resolve;
+      }),
+    );
+    const user = await renderComposeOpen();
+    setEditorHtml("<p>on [INTERVIEW DATE/TIME]</p>");
+    await user.type(screen.getByLabelText(/subject/i), "Hi");
+    await user.click(screen.getByRole("button", { name: /^send$/i }));
+
+    const sendAnyway = screen.getByRole("button", { name: /send anyway/i });
+    await user.click(sendAnyway);
+    expect(sendAnyway).toBeDisabled();
+
+    // A second click while the first send is still pending must not fire again.
+    await user.click(sendAnyway);
+    expect(api.sendApplicationEmail).toHaveBeenCalledTimes(1);
+
+    resolveSend({ data: {} });
+    await waitFor(() =>
+      expect(
+        screen.queryByText(/unfilled placeholders/i),
+      ).not.toBeInTheDocument(),
+    );
+  });
+
   it("read.all viewer who is not an owner sees no compose control", async () => {
     authState.userId = 999;
     api.getApplicationDetail.mockResolvedValue({
