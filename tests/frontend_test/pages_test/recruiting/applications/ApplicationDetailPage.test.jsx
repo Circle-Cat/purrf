@@ -3607,6 +3607,39 @@ describe("ApplicationDetailPage — Emails tab", () => {
     );
   });
 
+  it("blocks Escape from dismissing the warning dialog while the send is in flight", async () => {
+    api.getApplicationEmails.mockResolvedValue({
+      data: { threads: [], defaultTo: "cand@x.com" },
+    });
+    let resolveSend;
+    api.sendApplicationEmail.mockReturnValue(
+      new Promise((resolve) => {
+        resolveSend = resolve;
+      }),
+    );
+    const user = await renderComposeOpen();
+    setEditorHtml("<p>on [INTERVIEW DATE/TIME]</p>");
+    await user.type(screen.getByLabelText(/subject/i), "Hi");
+    await user.click(screen.getByRole("button", { name: /^send$/i }));
+    await user.click(screen.getByRole("button", { name: /send anyway/i }));
+
+    expect(
+      screen.getByRole("dialog", { name: /unfilled placeholders/i }),
+    ).toBeInTheDocument();
+
+    await user.keyboard("{Escape}");
+    expect(
+      screen.getByRole("dialog", { name: /unfilled placeholders/i }),
+    ).toBeInTheDocument();
+
+    resolveSend({ data: {} });
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: /unfilled placeholders/i }),
+      ).not.toBeInTheDocument(),
+    );
+  });
+
   it("read.all viewer who is not an owner sees no compose control", async () => {
     authState.userId = 999;
     api.getApplicationDetail.mockResolvedValue({

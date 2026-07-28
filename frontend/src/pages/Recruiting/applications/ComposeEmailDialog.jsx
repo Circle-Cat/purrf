@@ -327,7 +327,13 @@ const ComposeEmailDialog = ({
       </Dialog>
       <Dialog
         open={unfilledCount > 0}
-        onOpenChange={() => setUnfilledCount(0)}
+        onOpenChange={(next) => {
+          // Escape / backdrop click route through here too, not just the
+          // footer buttons — block dismissal the same way while a send from
+          // "Send anyway" is in flight, so it can't be sidestepped.
+          if (!next && sending) return;
+          setUnfilledCount(0);
+        }}
       >
         <DialogContent>
           <DialogHeader>
