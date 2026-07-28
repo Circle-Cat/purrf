@@ -117,16 +117,43 @@ class TestSyncDueApplications(unittest.IsolatedAsyncioTestCase):
             {"scanned": 0, "synced": 0, "failed": 0, "newMessages": 0},
         )
         self.session.commit.assert_not_awaited()
+        # The summary must be logged even on an empty sweep — it is the only
+        # signal the job ran at all, since the endpoint always returns 200.
+        self.logger.log.assert_called_once()
 
     async def test_syncs_every_due_application_and_commits_each(self):
         self._due(1, 2, 3)
         summary = await self.service.sync_due_applications(self.session)
         self.assertEqual(self.conversation_service.sync_context.await_count, 3)
+        # Each due application, not the same one three times.
+        self.assertEqual(
+            [
+                call.args[2]
+                for call in self.conversation_service.sync_context.await_args_list
+            ],
+            [1, 2, 3],
+        )
         # One commit per application, not one for the whole sweep.
         self.assertEqual(self.session.commit.await_count, 3)
         self.assertEqual(summary["scanned"], 3)
         self.assertEqual(summary["synced"], 3)
         self.assertEqual(summary["failed"], 0)
+
+    async def test_sweeps_terminal_applications_for_seven_days(self):
+        # Nothing else pins the cutoff: with `now + window` instead of
+        # `now - window`, every terminal application becomes permanently
+        # ineligible and late replies stop being captured, silently.
+        self._due()
+        before = datetime.now(timezone.utc)
+
+        await self.service.sync_due_applications(self.session)
+
+        call = self.application_repo.list_due_email_sync_applications.await_args
+        session_arg, cutoff = call.args
+        self.assertIs(session_arg, self.session)
+        self.assertAlmostEqual(
+            (before - cutoff).total_seconds(), 7 * 86400, delta=5
+        )
 
     async def test_counts_new_messages_across_applications(self):
         self._due(1, 2)
