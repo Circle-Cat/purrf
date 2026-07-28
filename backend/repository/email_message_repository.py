@@ -76,6 +76,29 @@ class EmailMessageRepository:
         )
         return result.scalar_one_or_none()
 
+    async def list_gmail_message_ids_by_thread(
+        self, session: AsyncSession, thread_id: int
+    ) -> set[str]:
+        """The Gmail message ids already stored for one thread.
+
+        One query answers "which of these did we already save?" for a whole
+        thread, so an incremental sync costs a single round trip per thread
+        instead of one per message.
+
+        Args:
+            session (AsyncSession): The active DB session.
+            thread_id (int): The thread to read.
+
+        Returns:
+            set[str]: The stored ``gmail_message_id``s (empty if none).
+        """
+        result = await session.execute(
+            select(EmailMessageEntity.gmail_message_id).where(
+                EmailMessageEntity.thread_id == thread_id
+            )
+        )
+        return set(result.scalars().all())
+
     async def list_by_thread(
         self, session: AsyncSession, thread_id: int
     ) -> list[EmailMessageEntity]:
