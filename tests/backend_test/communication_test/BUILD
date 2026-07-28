@@ -8,3 +8,11 @@ py_test(
         "//backend/communication",
     ],
 )
+
+py_test(
+    name = "email_templates_test",
+    srcs = ["email_templates_test.py"],
+    deps = [
+        "//backend/communication",
+    ],
+)
