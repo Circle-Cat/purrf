@@ -1,3 +1,4 @@
+import logging
 import unittest
 from datetime import datetime, timezone
 from types import SimpleNamespace
@@ -30,6 +31,8 @@ class TestSyncApplication(unittest.IsolatedAsyncioTestCase):
         self.service = EmailSyncService(
             email_conversation_service=self.conversation_service,
             application_activity_repository=self.activity_repo,
+            application_repository=AsyncMock(),
+            logger=Mock(),
         )
         self.application = SimpleNamespace(application_id=7, user_id=5)
 
@@ -80,6 +83,104 @@ class TestSyncApplication(unittest.IsolatedAsyncioTestCase):
         ]
         await self.service.sync_application(self.session, self.application)
         self.session.commit.assert_not_called()
+
+
+class TestSyncDueApplications(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.conversation_service = AsyncMock()
+        self.conversation_service.sync_context = AsyncMock(return_value=[])
+        self.activity_repo = AsyncMock()
+        self.application_repo = AsyncMock()
+        self.logger = Mock()
+        self.session = AsyncMock()
+        self.service = EmailSyncService(
+            email_conversation_service=self.conversation_service,
+            application_activity_repository=self.activity_repo,
+            application_repository=self.application_repo,
+            logger=self.logger,
+        )
+
+    def _due(self, *application_ids):
+        applications = [
+            SimpleNamespace(application_id=i, user_id=100 + i) for i in application_ids
+        ]
+        self.application_repo.list_due_email_sync_applications = AsyncMock(
+            return_value=applications
+        )
+        return applications
+
+    async def test_no_due_applications_is_a_clean_no_op(self):
+        self._due()
+        summary = await self.service.sync_due_applications(self.session)
+        self.assertEqual(
+            summary,
+            {"scanned": 0, "synced": 0, "failed": 0, "newMessages": 0},
+        )
+        self.session.commit.assert_not_awaited()
+
+    async def test_syncs_every_due_application_and_commits_each(self):
+        self._due(1, 2, 3)
+        summary = await self.service.sync_due_applications(self.session)
+        self.assertEqual(self.conversation_service.sync_context.await_count, 3)
+        # One commit per application, not one for the whole sweep.
+        self.assertEqual(self.session.commit.await_count, 3)
+        self.assertEqual(summary["scanned"], 3)
+        self.assertEqual(summary["synced"], 3)
+        self.assertEqual(summary["failed"], 0)
+
+    async def test_counts_new_messages_across_applications(self):
+        self._due(1, 2)
+        self.conversation_service.sync_context.side_effect = [
+            [_message(EmailDirection.INBOUND), _message(EmailDirection.INBOUND)],
+            [_message(EmailDirection.INBOUND)],
+        ]
+        summary = await self.service.sync_due_applications(self.session)
+        self.assertEqual(summary["newMessages"], 3)
+
+    async def test_one_failure_does_not_stop_the_others(self):
+        # The whole point of the sweep's error handling: a single bad thread
+        # must not silently cost every later application its nightly sync.
+        self._due(1, 2, 3)
+        self.conversation_service.sync_context.side_effect = [
+            [],
+            RuntimeError("Gmail API error"),
+            [],
+        ]
+
+        summary = await self.service.sync_due_applications(self.session)
+
+        self.assertEqual(self.conversation_service.sync_context.await_count, 3)
+        self.assertEqual(summary, {
+            "scanned": 3,
+            "synced": 2,
+            "failed": 1,
+            "newMessages": 0,
+        })
+        # The successful ones are still committed; the failed one is rolled back.
+        self.assertEqual(self.session.commit.await_count, 2)
+        self.session.rollback.assert_awaited_once()
+
+    async def test_failure_is_logged_with_the_application_id(self):
+        self._due(1)
+        self.conversation_service.sync_context.side_effect = RuntimeError("boom")
+        await self.service.sync_due_applications(self.session)
+        self.logger.exception.assert_called_once()
+        self.assertIn(1, self.logger.exception.call_args.args)
+
+    async def test_summary_logged_at_info_when_all_succeed(self):
+        self._due(1)
+        await self.service.sync_due_applications(self.session)
+        self.logger.log.assert_called_once()
+        self.assertEqual(self.logger.log.call_args.args[0], logging.INFO)
+
+    async def test_summary_logged_at_warning_when_any_failed(self):
+        # The endpoint always returns 200 and the k8s job is always green, so a
+        # grep-able WARNING is the only signal that something went wrong.
+        self._due(1)
+        self.conversation_service.sync_context.side_effect = RuntimeError("boom")
+        await self.service.sync_due_applications(self.session)
+        self.logger.log.assert_called_once()
+        self.assertEqual(self.logger.log.call_args.args[0], logging.WARNING)
 
 
 if __name__ == "__main__":

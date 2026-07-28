@@ -626,6 +626,8 @@ class AppDependencyBuilder:
         self.email_sync_service = EmailSyncService(
             email_conversation_service=self.email_conversation_service,
             application_activity_repository=self.application_activity_repository,
+            application_repository=self.application_repository,
+            logger=self.logger,
         )
 
         self.board_service = BoardService(
