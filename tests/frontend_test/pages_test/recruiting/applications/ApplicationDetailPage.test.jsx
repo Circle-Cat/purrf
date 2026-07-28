@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { toast } from "sonner";
@@ -3193,6 +3199,105 @@ describe("ApplicationDetailPage — Emails tab", () => {
       }),
     );
     expect(toast.success).toHaveBeenCalledWith("Refreshed.");
+  });
+
+  /**
+   * Render the page as the application's owner, switch to the Emails tab and
+   * open the compose dialog (Reply on the first thread when `replyThread`,
+   * otherwise a fresh Send email). Query with `screen.*` afterwards.
+   *
+   * @param {{replyThread?: boolean}} [options]
+   */
+  const renderComposeOpen = async ({ replyThread = false } = {}) => {
+    ownerViewing();
+    const user = userEvent.setup();
+    renderPage();
+    await waitLoaded();
+    await user.click(screen.getByRole("tab", { name: "Emails" }));
+    await user.click(
+      screen.getByRole("button", {
+        name: replyThread ? "Reply" : "Send email",
+      }),
+    );
+    return user;
+  };
+
+  /**
+   * Put HTML into the contenteditable body. There is no execCommand in jsdom
+   * and userEvent cannot type markup, so write innerHTML and fire the input
+   * event the component listens on.
+   *
+   * @param {string} html
+   */
+  const setEditorHtml = (html) => {
+    const editor = screen.getByRole("textbox", { name: "Message" });
+    editor.innerHTML = html;
+    fireEvent.input(editor);
+    return editor;
+  };
+
+  it("sends the contenteditable HTML, not escaped text", async () => {
+    api.getApplicationEmails.mockResolvedValue({
+      data: { threads: [], defaultTo: "cand@x.com" },
+    });
+    const user = await renderComposeOpen();
+    setEditorHtml(
+      '<p>Hello <b>Ana</b>, see <a href="https://x.com">this</a></p>',
+    );
+    await user.type(screen.getByLabelText("Subject"), "Hi");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() =>
+      expect(api.sendApplicationEmail).toHaveBeenCalledWith("101", {
+        to: ["cand@x.com"],
+        cc: [],
+        subject: "Hi",
+        body: '<p>Hello <b>Ana</b>, see <a href="https://x.com">this</a></p>',
+        threadId: null,
+      }),
+    );
+  });
+
+  it("strips disallowed markup before sending", async () => {
+    api.getApplicationEmails.mockResolvedValue({
+      data: { threads: [], defaultTo: "cand@x.com" },
+    });
+    const user = await renderComposeOpen();
+    setEditorHtml('<p onclick="x()">Hi<script>bad()</script></p>');
+    await user.type(screen.getByLabelText("Subject"), "Hi");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(api.sendApplicationEmail).toHaveBeenCalled());
+    const sent = api.sendApplicationEmail.mock.calls[0][1].body;
+    expect(sent).not.toContain("script");
+    expect(sent).not.toContain("onclick");
+    expect(sent).toContain("Hi");
+  });
+
+  it("keeps Send disabled while the editor has no text", async () => {
+    api.getApplicationEmails.mockResolvedValue({
+      data: { threads: [], defaultTo: "cand@x.com" },
+    });
+    const user = await renderComposeOpen();
+    await user.type(screen.getByLabelText("Subject"), "Hi");
+    expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+    // Markup without text (an empty paragraph) still counts as no message.
+    setEditorHtml("<p></p>");
+    expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+    setEditorHtml("<p>Now there is text</p>");
+    expect(screen.getByRole("button", { name: "Send" })).toBeEnabled();
+  });
+
+  it("clears the editor between composes", async () => {
+    api.getApplicationEmails.mockResolvedValue({
+      data: { threads: [], defaultTo: "cand@x.com" },
+    });
+    const user = await renderComposeOpen();
+    setEditorHtml("<p>First draft</p>");
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    await user.click(screen.getByRole("button", { name: "Send email" }));
+    expect(screen.getByRole("textbox", { name: "Message" })).toHaveTextContent(
+      "",
+    );
+    expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
   });
 
   it("read.all viewer who is not an owner sees no compose control", async () => {

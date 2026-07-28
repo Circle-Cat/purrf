@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import DOMPurify from "dompurify";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
@@ -18,16 +18,34 @@ const splitAddresses = (value) =>
     .filter(Boolean);
 
 /**
- * Turn the composer's plain text into safe HTML (escape, keep line breaks).
- * The body is stored/sent as HTML; authoring stays plain text for the MVP.
+ * Markup a candidate email body may carry. Deliberately narrow: the composer
+ * authors rich text, and what leaves here has to survive Gmail's own
+ * sanitizing anyway, so anything structural (tables, images, styles) or
+ * active (script, iframe, event handlers) is dropped rather than sent.
  */
-const plainTextToHtml = (text) =>
-  text
-    .split("\n")
-    .map((line) =>
-      line.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"),
-    )
-    .join("<br>");
+const EMAIL_ALLOWED_TAGS = [
+  "p",
+  "br",
+  "b",
+  "strong",
+  "i",
+  "em",
+  "u",
+  "ul",
+  "ol",
+  "li",
+  "a",
+];
+
+/** Attributes kept on the allowed tags — enough for a working hyperlink. */
+const EMAIL_ALLOWED_ATTR = ["href", "target", "rel"];
+
+/** Sanitize composer HTML down to the tags Gmail bodies are allowed to carry. */
+const sanitizeEmailHtml = (html) =>
+  DOMPurify.sanitize(html, {
+    ALLOWED_TAGS: EMAIL_ALLOWED_TAGS,
+    ALLOWED_ATTR: EMAIL_ALLOWED_ATTR,
+  });
 
 /**
  * Compose (or reply to) a candidate email. Recipients/Cc are comma-separated
@@ -54,7 +72,11 @@ const ComposeEmailDialog = ({
   const [to, setTo] = useState("");
   const [cc, setCc] = useState("");
   const [subject, setSubject] = useState("");
-  const [body, setBody] = useState("");
+  const editorRef = useRef(null);
+  // Whether the editor holds any text, tracked in state so the Send button
+  // can react to it — an uncontrolled contenteditable gives us no other
+  // render-time signal.
+  const [hasText, setHasText] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -67,18 +89,24 @@ const ComposeEmailDialog = ({
     setSubject(
       replyThread ? (base.startsWith("Re:") ? base : `Re: ${base}`) : "",
     );
-    setBody("");
+    // The body is uncontrolled on purpose: re-rendering a contenteditable
+    // from state on every keystroke resets the caret. We write into it
+    // imperatively (dialog open, and later a template) and read innerHTML
+    // back on send.
+    if (editorRef.current) editorRef.current.innerHTML = "";
+    setHasText(false);
   }, [open, defaultTo, defaultCc, replyThread]);
 
   const handleSubmit = () => {
     if (sending) return;
     const recipients = splitAddresses(to);
-    if (recipients.length === 0 || !subject.trim() || !body.trim()) return;
+    const html = sanitizeEmailHtml(editorRef.current?.innerHTML ?? "");
+    if (recipients.length === 0 || !subject.trim() || !hasText) return;
     onSend({
       to: recipients,
       cc: splitAddresses(cc),
       subject: subject.trim(),
-      body: plainTextToHtml(body),
+      body: html,
       threadId: replyThread?.threadId ?? null,
     }).then(
       () => onOpenChange(false),
@@ -121,11 +149,18 @@ const ComposeEmailDialog = ({
           </div>
           <div className="space-y-1">
             <Label htmlFor="email-body">Message</Label>
-            <Textarea
+            <div
               id="email-body"
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              rows={8}
+              ref={editorRef}
+              role="textbox"
+              aria-label="Message"
+              aria-multiline="true"
+              contentEditable
+              suppressContentEditableWarning
+              onInput={() =>
+                setHasText(Boolean(editorRef.current?.textContent?.trim()))
+              }
+              className="min-h-40 max-h-96 overflow-y-auto rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring [&_a]:underline [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5"
             />
           </div>
         </div>
@@ -137,7 +172,11 @@ const ComposeEmailDialog = ({
           >
             Cancel
           </Button>
-          <Button type="button" onClick={handleSubmit} disabled={sending}>
+          <Button
+            type="button"
+            onClick={handleSubmit}
+            disabled={sending || !hasText}
+          >
             Send
           </Button>
         </DialogFooter>
