@@ -3940,6 +3940,53 @@ describe("ApplicationDetailPage — interview meeting card & scheduling", () => 
     expect(screen.getByText("Not scheduled")).toBeInTheDocument();
   });
 
+  it("shows a read.all non-owner viewer the card's state with no controls", async () => {
+    // Default authState.userId (999) is neither OWNER_ID nor the assignee --
+    // a plain read.all (canView) viewer, same signal (`detail.isOwner`) the
+    // rest of the page already uses to distinguish an owner from a read.all
+    // holder (see canReassign, the Operate row, etc.).
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({
+        isOwner: false,
+        canView: true,
+        stage: "behavioral",
+        interview: INTERVIEW_FIXTURE,
+      }),
+    });
+    renderPage();
+    await waitLoaded();
+
+    // Same state an owner sees...
+    expect(screen.getByText(/2026-08-05/)).toBeInTheDocument();
+    expect(
+      screen.getByText("meet.google.com/abc-defg-hij"),
+    ).toBeInTheDocument();
+    // ...none of the owner's controls.
+    expect(screen.queryByRole("button", { name: "Edit" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Cancel" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Schedule meeting" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps the owner's controls on the same booked card", async () => {
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({
+        isOwner: true,
+        stage: "behavioral",
+        interview: INTERVIEW_FIXTURE,
+      }),
+    });
+    renderPage();
+    await waitLoaded();
+
+    expect(screen.getByRole("button", { name: "Edit" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
+  });
+
   it("does not render the card on recruiter screening", async () => {
     authState.userId = OWNER_ID;
     api.getApplicationDetail.mockResolvedValue({

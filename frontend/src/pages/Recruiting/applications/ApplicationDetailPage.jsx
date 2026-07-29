@@ -1662,17 +1662,20 @@ const ApplicationDetailPage = () => {
                 </div>
               )}
 
-              {/* Booking/editing/cancelling a meeting requires the same
-                  advance permission + ownership the backend enforces, so
-                  this only mounts for an actual owner -- a read.all viewer
-                  sees the assignee name above but not this card, mirroring
-                  canReassign's owner gate right above it. */}
-              {showInterviewCard && detail.isOwner && (
+              {/* Mounted for any canView viewer (owner or read.all), same
+                  as the assignee row above -- the card itself withholds
+                  Schedule/Edit/Cancel from a non-owner via `isOwner`,
+                  mirroring canReassign's owner gate on the Reassign button
+                  right above it. Booking/editing/cancelling a meeting
+                  requires the same advance permission + ownership the
+                  backend enforces either way. */}
+              {showInterviewCard && (
                 <InterviewMeetingCard
                   interview={detail.interview}
                   stage={detail.application.stage}
                   round={detail.application.currentRound ?? 1}
                   isTerminal={isTerminalStage}
+                  isOwner={detail.isOwner}
                   busy={interviewBusy}
                   onSchedule={openScheduleInterview}
                   onEdit={openEditInterview}

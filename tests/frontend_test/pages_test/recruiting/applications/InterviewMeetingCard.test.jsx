@@ -131,4 +131,40 @@ describe("InterviewMeetingCard", () => {
     expect(onEdit).toHaveBeenCalledTimes(1);
     expect(onCancel).toHaveBeenCalledTimes(1);
   });
+
+  it("shows a read.all viewer the booked state with no controls", () => {
+    render(
+      <InterviewMeetingCard
+        interview={INTERVIEW}
+        stage="behavioral"
+        round={1}
+        isOwner={false}
+      />,
+    );
+    // Same state a read.all viewer is entitled to see...
+    expect(screen.getByText(/2026-08-05/)).toBeInTheDocument();
+    expect(screen.getByText(/14:00 - 14:45/)).toBeInTheDocument();
+    expect(screen.getByText(/America\/Los_Angeles/)).toBeInTheDocument();
+    expect(
+      screen.getByText("meet.google.com/abc-defg-hij"),
+    ).toBeInTheDocument();
+    // ...none of the owner's controls.
+    expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
+  });
+
+  it("shows a read.all viewer the not-scheduled state with no Schedule button", () => {
+    render(
+      <InterviewMeetingCard
+        interview={null}
+        stage="behavioral"
+        round={1}
+        isOwner={false}
+      />,
+    );
+    expect(screen.getByText("Not scheduled")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Schedule meeting" }),
+    ).toBeNull();
+  });
 });

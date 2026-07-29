@@ -17,14 +17,22 @@ import { formatInTz } from "@/utils/dateTime";
  * derived abbreviation risks silently disagreeing with it around a DST
  * transition.
  *
+ * A `read.all` viewer who isn't the owner (`isOwner={false}`) sees the exact
+ * same state -- the booked time/link/labels, or "Not scheduled" -- but none
+ * of the action buttons: no "Schedule meeting", no "Edit", no "Cancel". This
+ * mirrors how the rest of the detail page treats a read.all viewer (see
+ * `canReassign`/`detail.isOwner` on `ApplicationDetailPage`): the same
+ * information, none of the controls.
+ *
  * @param {{interview: object|null, stage: string, round: number,
- *          isTerminal?: boolean, busy?: boolean,
+ *          isTerminal?: boolean, isOwner?: boolean, busy?: boolean,
  *          onSchedule?: function, onEdit?: function, onCancel?: function}} props
  */
 const InterviewMeetingCard = ({
   interview,
   round,
   isTerminal = false,
+  isOwner = true,
   busy = false,
   onSchedule,
   onEdit,
@@ -38,14 +46,16 @@ const InterviewMeetingCard = ({
         </CardHeader>
         <CardContent className="space-y-3">
           <p className="text-sm text-slate-500">Not scheduled</p>
-          <Button
-            type="button"
-            size="sm"
-            disabled={busy}
-            onClick={() => onSchedule?.()}
-          >
-            Schedule meeting
-          </Button>
+          {isOwner && (
+            <Button
+              type="button"
+              size="sm"
+              disabled={busy}
+              onClick={() => onSchedule?.()}
+            >
+              Schedule meeting
+            </Button>
+          )}
         </CardContent>
       </Card>
     );
@@ -93,28 +103,30 @@ const InterviewMeetingCard = ({
           </p>
         )}
       </CardContent>
-      <div className="flex flex-wrap items-center gap-2 px-6">
-        {!isTerminal && (
+      {isOwner && (
+        <div className="flex flex-wrap items-center gap-2 px-6">
+          {!isTerminal && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={busy}
+              onClick={() => onEdit?.()}
+            >
+              Edit
+            </Button>
+          )}
           <Button
             type="button"
             size="sm"
             variant="outline"
             disabled={busy}
-            onClick={() => onEdit?.()}
+            onClick={() => onCancel?.()}
           >
-            Edit
+            Cancel
           </Button>
-        )}
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          disabled={busy}
-          onClick={() => onCancel?.()}
-        >
-          Cancel
-        </Button>
-      </div>
+        </div>
+      )}
     </Card>
   );
 };
