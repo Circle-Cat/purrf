@@ -22,10 +22,11 @@ from backend.dto.board_dto import (
     StageChangeDto,
     SubStatusChangeDto,
 )
-from backend.dto.email_dto import EmailConversationDto
+from backend.communication.email_templates import render_all_templates
+from backend.dto.email_dto import EmailConversationDto, EmailTemplateDto
 from backend.dto.evaluation_dto import EvaluationDto
 from backend.dto.user_context_dto import UserContextDto
-from backend.common.communication_enums import ContextType, EmailDirection
+from backend.common.communication_enums import ContextType
 from backend.common.permissions import Permission
 from backend.common.recruiting_enums import ApplicationStage, NotificationType
 from backend.entity.application_entity import ApplicationEntity
@@ -156,6 +157,7 @@ class BoardService:
         notification_repository,
         user_emails_repository,
         email_conversation_service,
+        email_sync_service,
     ):
         """
         Args:
@@ -217,6 +219,7 @@ class BoardService:
         self.notification_repository = notification_repository
         self.user_emails_repository = user_emails_repository
         self.email_conversation_service = email_conversation_service
+        self.email_sync_service = email_sync_service
 
     async def list_my_jobs(
         self, session: AsyncSession, current_user: UserContextDto
@@ -373,6 +376,61 @@ class BoardService:
             session, current_user, application_id, application.user_id
         )
 
+    async def list_application_email_templates(
+        self,
+        session: AsyncSession,
+        current_user: UserContextDto,
+        application_id: int,
+    ) -> list[EmailTemplateDto]:
+        """List the preset candidate-email templates, rendered for one application.
+
+        Owner-only (mirrors sending): the templates carry the candidate's name
+        and the posting title, so this is gated exactly like
+        ``send_application_email``. Placeholder values are resolved here — the
+        shared template module is domain-agnostic and knows nothing about
+        applications.
+
+        A blank applicant first name renders a bare ``Dear ,``; the sender
+        fixes it in the compose editor rather than the backend inventing a
+        fallback.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            current_user (UserContextDto): The authenticated caller (also the
+                signature name).
+            application_id (int): The application being emailed about.
+
+        Returns:
+            list[EmailTemplateDto]: All eight templates in catalog order.
+
+        Raises:
+            ValueError: If the application is missing or the caller is not an
+                owner of its posting.
+        """
+        application = await self._require_application_owner(
+            session, current_user, application_id, allow_read_all=False
+        )
+        candidate = await self.users_repository.get_user_by_user_id(
+            session, application.user_id
+        )
+        job = await self.job_repository.get_by_job_id(session, application.job_id)
+        values = {
+            "candidate_name": (candidate.first_name if candidate else "") or "",
+            "position_title": job.title if job else "",
+            "sender_name": (
+                f"{current_user.first_name or ''} {current_user.last_name or ''}".strip()
+            ),
+        }
+        return [
+            EmailTemplateDto(
+                key=template.key,
+                label=template.label,
+                subject=subject,
+                body_html=body_html,
+            )
+            for template, subject, body_html in render_all_templates(values)
+        ]
+
     async def get_application_conversation(
         self,
         session: AsyncSession,
@@ -403,27 +461,7 @@ class BoardService:
             session, current_user, application_id, allow_read_all=True
         )
         if refresh:
-            new_messages = await self.email_conversation_service.sync_context(
-                session, ContextType.APPLICATION, application_id
-            )
-            for message in new_messages:
-                if message.direction != EmailDirection.INBOUND:
-                    continue
-                await self.application_activity_repository.create(
-                    session,
-                    application_id,
-                    application.user_id,
-                    "email_received",
-                    details={
-                        "subject": message.subject,
-                        "from": message.from_address,
-                        "to": message.to_addresses,
-                        "cc": message.cc_addresses,
-                        "threadId": message.thread_id,
-                        "direction": "inbound",
-                    },
-                    created_at=message.gmail_internal_date,
-                )
+            await self.email_sync_service.sync_application(session, application)
             await session.commit()
         return await self._build_application_conversation(
             session, current_user, application_id, application.user_id

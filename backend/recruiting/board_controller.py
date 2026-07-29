@@ -16,6 +16,7 @@ from backend.dto.user_context_dto import UserContextDto
 from backend.dto.email_dto import EmailSendRequestDto
 from backend.common.api_endpoints import (
     RECRUITING_APPLICATION_EMAILS_ENDPOINT,
+    RECRUITING_APPLICATION_EMAIL_TEMPLATES_ENDPOINT,
     RECRUITING_BOARD_JOBS_ENDPOINT,
     RECRUITING_JOB_BOARD_ENDPOINT,
     RECRUITING_JOB_BOARD_STAGE_ENDPOINT,
@@ -122,6 +123,15 @@ class BoardController:
                 permissions=[Permission.RECRUITING_APPLICATION_ADVANCE]
             )(self.send_application_email),
             methods=["POST"],
+            response_model=None,
+        )
+        # Compose templates: same gate as sending (they embed candidate data).
+        self.router.add_api_route(
+            RECRUITING_APPLICATION_EMAIL_TEMPLATES_ENDPOINT,
+            endpoint=authenticate(
+                permissions=[Permission.RECRUITING_APPLICATION_ADVANCE]
+            )(self.get_application_email_templates),
+            methods=["GET"],
             response_model=None,
         )
         self.router.add_api_route(
@@ -275,6 +285,16 @@ class BoardController:
                 session, current_user, application_id, email_data
             )
         return api_response(message="Email sent.", data=result)
+
+    async def get_application_email_templates(
+        self, current_user: UserContextDto, application_id: int
+    ):
+        """Return the preset email templates rendered for this application."""
+        async with self.database.session() as session:
+            result = await self.board_service.list_application_email_templates(
+                session, current_user, application_id
+            )
+        return api_response(message="Email templates fetched.", data=result)
 
     async def get_other_applications(
         self, current_user: UserContextDto, application_id: int

@@ -1,12 +1,14 @@
 import unittest
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy.exc import IntegrityError
 
 from backend.entity.application_entity import ApplicationEntity
 from backend.entity.application_submission_entity import ApplicationSubmissionEntity
+from backend.entity.email_thread_entity import EmailThreadEntity
 from backend.entity.job_entity import JobEntity
 from backend.entity.users_entity import UsersEntity
+from backend.common.communication_enums import ContextType
 from backend.common.recruiting_enums import ApplicationStage, JobKind, JobStatus
 from backend.common.mentorship_enums import CommunicationMethod, ParticipantRole
 from backend.repository.application_repository import ApplicationRepository
@@ -32,12 +34,30 @@ def _make_user(first_name: str, last_name: str, primary_email: str) -> UsersEnti
 
 
 class TestApplicationRepository(BaseRepositoryTestLib):
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        self.repo = ApplicationRepository()
+
     async def _seed_job_and_user(self):
         job = JobEntity(kind=JobKind.ACTIVITY, title="T", status=JobStatus.PUBLISHED)
         user = _make_user("A", "B", "a@b.com")
         await self.insert_entities([job, user])
         await self.session.flush()
         return job, user
+
+    async def _make_application(
+        self,
+        stage: ApplicationStage = ApplicationStage.APPLIED,
+        stage_entered_at: datetime | None = None,
+    ) -> ApplicationEntity:
+        """Create a job + user + application in one call, for tests that only
+        care about the application's stage. ``stage_entered_at=None`` leaves
+        the column's server default in place."""
+        job, user = await self._seed_job_and_user()
+        entity = ApplicationEntity(job_id=job.job_id, user_id=user.user_id, stage=stage)
+        if stage_entered_at is not None:
+            entity.stage_entered_at = stage_entered_at
+        return await self.repo.create(self.session, entity)
 
     async def test_create_and_get_latest_by_job_and_user(self):
         job, user = await self._seed_job_and_user()
@@ -838,6 +858,140 @@ class TestApplicationRepository(BaseRepositoryTestLib):
         self.assertNotIn(ApplicationStage.REJECTED, stages)
         self.assertNotIn(ApplicationStage.HIRED, stages)
         self.assertEqual(stages, {ApplicationStage.APPLIED, ApplicationStage.TECH})
+
+    # ---- list_due_email_sync_applications -----------------------------
+
+    async def _thread_for(self, application, gmail_thread_id):
+        """Give an application one email thread, so the sweep can see it."""
+        await self.insert_entities([
+            EmailThreadEntity(
+                user_id=application.user_id,
+                gmail_thread_id=gmail_thread_id,
+                subject="Hi",
+                context_type=ContextType.APPLICATION,
+                context_id=application.application_id,
+            )
+        ])
+
+    async def test_due_sync_includes_non_terminal_with_a_thread(self):
+        app = await self._make_application(stage=ApplicationStage.TECH)
+        await self._thread_for(app, "gt-active")
+        cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+
+        due = await self.repo.list_due_email_sync_applications(self.session, cutoff)
+
+        self.assertIn(app.application_id, [a.application_id for a in due])
+
+    async def test_due_sync_excludes_application_without_threads(self):
+        # The sweep must never walk applications that have never had an email.
+        app = await self._make_application(stage=ApplicationStage.TECH)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+
+        due = await self.repo.list_due_email_sync_applications(self.session, cutoff)
+
+        self.assertNotIn(app.application_id, [a.application_id for a in due])
+
+    async def test_due_sync_includes_recently_terminal(self):
+        app = await self._make_application(
+            stage=ApplicationStage.REJECTED,
+            stage_entered_at=datetime.now(timezone.utc) - timedelta(days=3),
+        )
+        await self._thread_for(app, "gt-recent-reject")
+        cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+
+        due = await self.repo.list_due_email_sync_applications(self.session, cutoff)
+
+        self.assertIn(app.application_id, [a.application_id for a in due])
+
+    async def test_due_sync_excludes_long_terminal(self):
+        app = await self._make_application(
+            stage=ApplicationStage.HIRED,
+            stage_entered_at=datetime.now(timezone.utc) - timedelta(days=30),
+        )
+        await self._thread_for(app, "gt-old-hire")
+        cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+
+        due = await self.repo.list_due_email_sync_applications(self.session, cutoff)
+
+        self.assertNotIn(app.application_id, [a.application_id for a in due])
+
+    async def test_due_sync_returns_each_application_once(self):
+        # Two threads on one application must not yield two rows, or the sweep
+        # would sync it twice and double-count the summary.
+        app = await self._make_application(stage=ApplicationStage.TECH)
+        await self._thread_for(app, "gt-one")
+        await self._thread_for(app, "gt-two")
+        cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+
+        due = await self.repo.list_due_email_sync_applications(self.session, cutoff)
+
+        matching = [a for a in due if a.application_id == app.application_id]
+        self.assertEqual(len(matching), 1)
+
+    # ---- list_due_email_sync_applications: thread filter ---------------
+
+    async def test_thread_filter_narrows_to_the_given_threads(self):
+        wanted = await self._make_application(stage=ApplicationStage.TECH)
+        other = await self._make_application(stage=ApplicationStage.TECH)
+        await self._thread_for(wanted, "gt-wanted")
+        await self._thread_for(other, "gt-other")
+        cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+
+        due = await self.repo.list_due_email_sync_applications(
+            self.session, cutoff, gmail_thread_ids={"gt-wanted"}
+        )
+
+        ids = [a.application_id for a in due]
+        self.assertIn(wanted.application_id, ids)
+        self.assertNotIn(other.application_id, ids)
+
+    async def test_thread_filter_still_applies_the_terminal_window(self):
+        # A flagged thread does not override eligibility: an application that
+        # went terminal long ago stays out even when new mail arrives.
+        app = await self._make_application(
+            stage=ApplicationStage.REJECTED,
+            stage_entered_at=datetime.now(timezone.utc) - timedelta(days=30),
+        )
+        await self._thread_for(app, "gt-old-reject")
+        cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+
+        due = await self.repo.list_due_email_sync_applications(
+            self.session, cutoff, gmail_thread_ids={"gt-old-reject"}
+        )
+
+        self.assertNotIn(app.application_id, [a.application_id for a in due])
+
+    async def test_thread_filter_unknown_thread_matches_nothing(self):
+        app = await self._make_application(stage=ApplicationStage.TECH)
+        await self._thread_for(app, "gt-known")
+        cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+
+        due = await self.repo.list_due_email_sync_applications(
+            self.session, cutoff, gmail_thread_ids={"gt-never-seen"}
+        )
+
+        self.assertEqual(due, [])
+
+    async def test_omitting_the_thread_filter_is_unchanged_behaviour(self):
+        # Regression guard: the weekly reconcile passes no filter and must keep
+        # seeing exactly what it saw before this parameter existed. If the two
+        # call shapes ever diverge, the two jobs disagree about eligibility.
+        app = await self._make_application(stage=ApplicationStage.TECH)
+        await self._thread_for(app, "gt-unfiltered")
+        cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+
+        with_default = await self.repo.list_due_email_sync_applications(
+            self.session, cutoff
+        )
+        with_explicit_none = await self.repo.list_due_email_sync_applications(
+            self.session, cutoff, gmail_thread_ids=None
+        )
+
+        self.assertIn(app.application_id, [a.application_id for a in with_default])
+        self.assertEqual(
+            [a.application_id for a in with_default],
+            [a.application_id for a in with_explicit_none],
+        )
 
 
 if __name__ == "__main__":

@@ -15,7 +15,7 @@ from backend.dto.board_dto import (
     SubStatusChangeDto,
 )
 from backend.dto.user_context_dto import UserContextDto
-from backend.common.communication_enums import ContextType, EmailDirection
+from backend.common.communication_enums import ContextType
 from backend.common.permissions import Permission
 from backend.dto.email_dto import (
     EmailConversationDto,
@@ -98,6 +98,10 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         # sync returns the list of newly-persisted messages (Task 2); default
         # empty so a plain refresh writes no timeline activity.
         self.email_svc.sync_context = AsyncMock(return_value=[])
+        # board_service no longer syncs directly — it delegates to
+        # EmailSyncService, which owns the timeline-writing rule.
+        self.email_sync_svc = AsyncMock()
+        self.email_sync_svc.sync_application = AsyncMock(return_value=[])
         self.service = BoardService(
             self.job_repo,
             self.app_repo,
@@ -114,6 +118,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             self.notification_repo,
             self.user_emails_repo,
             self.email_svc,
+            self.email_sync_svc,
         )
         # Default persistence mocks: echo the entity back, like SQLAlchemy's
         # merge-and-flush does when nothing else stubs them out.
@@ -286,6 +291,59 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         _, kw = self.email_svc.send.call_args
         self.assertEqual(kw["thread_id"], 55)
 
+    # -- application email: templates --
+
+    async def test_list_application_email_templates_renders_for_the_application(self):
+        application = SimpleNamespace(application_id=42, user_id=7, job_id=3)
+        self.service._require_application_owner = AsyncMock(return_value=application)
+        self.users_repo.get_user_by_user_id = AsyncMock(
+            return_value=SimpleNamespace(first_name="Ana", last_name="Lopez")
+        )
+        self.job_repo.get_by_job_id = AsyncMock(
+            return_value=SimpleNamespace(title="Software Engineer Intern (Summer 2026)")
+        )
+        current_user = SimpleNamespace(first_name="Jane", last_name="Smith")
+
+        result = await self.service.list_application_email_templates(
+            self.session, current_user, 42
+        )
+
+        self.assertEqual(len(result), 8)
+        rejection = next(t for t in result if t.key == "rejection")
+        self.assertEqual(rejection.subject, "Your Application to Circle Cat")
+        self.assertIn("Dear Ana,", rejection.body_html)
+        self.assertIn("Software Engineer Intern (Summer 2026)", rejection.body_html)
+        self.assertIn("Jane Smith", rejection.body_html)
+        self.service._require_application_owner.assert_awaited_once_with(
+            self.session, current_user, 42, allow_read_all=False
+        )
+
+    async def test_list_application_email_templates_is_owner_only(self):
+        self.service._require_application_owner = AsyncMock(
+            side_effect=ValueError("not an owner")
+        )
+        with self.assertRaises(ValueError):
+            await self.service.list_application_email_templates(
+                self.session, SimpleNamespace(first_name="J", last_name="S"), 42
+            )
+
+    async def test_list_application_email_templates_tolerates_blank_first_name(self):
+        application = SimpleNamespace(application_id=42, user_id=7, job_id=3)
+        self.service._require_application_owner = AsyncMock(return_value=application)
+        self.users_repo.get_user_by_user_id = AsyncMock(
+            return_value=SimpleNamespace(first_name="", last_name="")
+        )
+        self.job_repo.get_by_job_id = AsyncMock(
+            return_value=SimpleNamespace(title="Mentor")
+        )
+
+        result = await self.service.list_application_email_templates(
+            self.session, SimpleNamespace(first_name="Jane", last_name="Smith"), 42
+        )
+
+        rejection = next(t for t in result if t.key == "rejection")
+        self.assertIn("Dear ,", rejection.body_html)
+
     # -- application email: get / refresh --
 
     async def test_get_application_conversation_pure_read_does_not_sync(self):
@@ -293,7 +351,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         result = await self.service.get_application_conversation(
             self.session, self._ctx(user_id=2), 7, refresh=False
         )
-        self.email_svc.sync_context.assert_not_awaited()
+        self.email_sync_svc.sync_application.assert_not_awaited()
         self.email_svc.list_conversation.assert_awaited_once()
         self.assertIsInstance(result, EmailConversationDto)
 
@@ -302,7 +360,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         await self.service.get_application_conversation(
             self.session, self._ctx(user_id=2), 7, refresh=True
         )
-        self.email_svc.sync_context.assert_awaited_once()
+        self.email_sync_svc.sync_application.assert_awaited_once()
 
     async def test_get_application_conversation_allows_read_all_non_owner(self):
         self._setup_owned_application(owner=2)
@@ -396,48 +454,18 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(kwargs["details"]["threadId"], 10)
         self.assertEqual(kwargs["details"]["direction"], "outbound")
 
-    async def test_refresh_logs_email_received_for_new_inbound_only(self):
+    async def test_refresh_delegates_to_email_sync_service_and_commits(self):
         app = self._setup_owned_application(application_id=7, user_id=5, owner=2)
-        received_at = datetime(2023, 5, 6, 7, 8, tzinfo=timezone.utc)
-        inbound = SimpleNamespace(
-            direction=EmailDirection.INBOUND,
-            subject="Re: Hello",
-            from_address="cand@x",
-            to_addresses="recruiting@corp.com",
-            cc_addresses="boss@x",
-            thread_id=10,
-            gmail_internal_date=received_at,
-        )
-        outbound = SimpleNamespace(
-            direction=EmailDirection.OUTBOUND,
-            subject="Hello",
-            from_address="recruiting@corp.com",
-            to_addresses="cand@x",
-            cc_addresses=None,
-            thread_id=10,
-            gmail_internal_date=received_at,
-        )
-        self.email_svc.sync_context = AsyncMock(return_value=[inbound, outbound])
         await self.service.get_application_conversation(
             self.session, self._ctx(user_id=2), 7, refresh=True
         )
-        # exactly one activity — the inbound message, not the outbound
-        self.activity_repo.create.assert_awaited_once()
-        args, kwargs = self.activity_repo.create.await_args
-        self.assertEqual(args[1], 7)
-        self.assertEqual(args[2], app.user_id)  # actor = candidate / thread owner
-        self.assertEqual(args[3], "email_received")
-        self.assertEqual(kwargs["details"]["subject"], "Re: Hello")
-        self.assertEqual(kwargs["details"]["from"], "cand@x")
-        self.assertEqual(kwargs["details"]["direction"], "inbound")
-        self.assertEqual(kwargs["created_at"], received_at)
-
-    async def test_refresh_no_new_messages_writes_no_activity(self):
-        self._setup_owned_application(application_id=7, user_id=5, owner=2)
-        self.email_svc.sync_context = AsyncMock(return_value=[])
-        await self.service.get_application_conversation(
-            self.session, self._ctx(user_id=2), 7, refresh=True
-        )
+        self.email_sync_svc.sync_application.assert_awaited_once()
+        args, _ = self.email_sync_svc.sync_application.await_args
+        self.assertIs(args[0], self.session)
+        self.assertIs(args[1], app)
+        self.session.commit.assert_awaited_once()
+        # The timeline write moved to EmailSyncService; board_service must not
+        # write activities on the refresh path any more.
         self.activity_repo.create.assert_not_awaited()
 
     def _assignment(self, application_id, stage, round, assignee_id, assigned_by=2):

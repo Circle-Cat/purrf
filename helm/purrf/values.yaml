@@ -125,3 +125,9 @@ cronjobs:
   - name: pubsub-sync-hourly
     schedule: "0 * * * *"   # every hour at minute 00
     url: "/api/pubsub/sync"
+  - name: sync-recruiting-emails-recent
+    schedule: "5 11 * * *"   # 11:05 UTC = 04:05 GMT-7, before HR's workday
+    url: "/api/recruiting/emails/sync/recent"
+  - name: sync-recruiting-emails-reconcile
+    schedule: "35 11 * * 0"  # Sundays 11:35 UTC — backstop for the nightly delta
+    url: "/api/recruiting/emails/sync"

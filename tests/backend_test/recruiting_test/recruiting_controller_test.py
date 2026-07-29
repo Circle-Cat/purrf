@@ -30,8 +30,15 @@ class TestRecruitingController(unittest.IsolatedAsyncioTestCase):
         self.database.session.return_value.__aenter__.return_value = self.session
         self.database.session.return_value.__aexit__.return_value = None
 
+        self.email_sync_service = MagicMock()
+        self.email_sync_service.sync_due_applications = AsyncMock(
+            return_value={"scanned": 0, "synced": 0, "failed": 0, "newMessages": 0}
+        )
+
         self.controller = RecruitingController(
-            job_service=self.service, database=self.database
+            job_service=self.service,
+            email_sync_service=self.email_sync_service,
+            database=self.database,
         )
 
         self.patcher = patch("backend.recruiting.recruiting_controller.api_response")
@@ -188,6 +195,81 @@ class TestRecruitingController(unittest.IsolatedAsyncioTestCase):
                 route = routes_by_path[path]
                 self.assertIn("GET", route.methods)
                 self.assertEqual(self._endpoint_permissions(route.endpoint), expected)
+
+    async def test_sync_recruiting_emails_returns_the_summary(self):
+        summary = {"scanned": 3, "synced": 2, "failed": 1, "newMessages": 4}
+        self.email_sync_service.sync_due_applications = AsyncMock(return_value=summary)
+
+        result = await self.controller.sync_recruiting_emails(current_user=self.user)
+
+        self.email_sync_service.sync_due_applications.assert_awaited_once_with(
+            self.session
+        )
+        # Partial failure is data, not a crash: the counts come back on a normal
+        # response, so k8s never re-runs the whole sweep over one bad thread.
+        self.assertEqual(result["data"], summary)
+
+    def test_sync_recruiting_emails_route_is_system_sync_gated(self):
+        routes_by_path = {route.path: route for route in self.controller.router.routes}
+        sync_route = routes_by_path["/recruiting/emails/sync"]
+
+        self.assertIn("POST", sync_route.methods)
+        self.assertEqual(
+            self._endpoint_permissions(sync_route.endpoint),
+            [Permission.SYSTEM_SYNC],
+        )
+
+    async def test_sync_recent_recruiting_emails_returns_the_summary(self):
+        summary = {"scanned": 2, "synced": 1, "failed": 1, "newMessages": 3}
+        self.email_sync_service.sync_recent_applications = AsyncMock(
+            return_value=summary
+        )
+
+        result = await self.controller.sync_recent_recruiting_emails(
+            current_user=self.user
+        )
+
+        self.email_sync_service.sync_recent_applications.assert_awaited_once_with(
+            self.session
+        )
+        # Partial failure is data, not a crash — a 5xx would make k8s re-run
+        # the whole sweep.
+        self.assertEqual(result["data"], summary)
+
+    def test_sync_recent_route_is_system_sync_gated(self):
+        routes_by_path = {route.path: route for route in self.controller.router.routes}
+        route = routes_by_path["/recruiting/emails/sync/recent"]
+
+        self.assertIn("POST", route.methods)
+        self.assertEqual(
+            self._endpoint_permissions(route.endpoint), [Permission.SYSTEM_SYNC]
+        )
+
+    def test_the_two_sync_routes_are_distinct(self):
+        # One is the nightly delta, the other the weekly reconcile; a copy-paste
+        # that pointed both at the same handler would silently disable one job.
+        routes_by_path = {route.path: route for route in self.controller.router.routes}
+        self.assertIn("/recruiting/emails/sync", routes_by_path)
+        self.assertIn("/recruiting/emails/sync/recent", routes_by_path)
+        # Compare the wrapped handlers, not the wrappers: authenticate() has no
+        # memoisation, so it mints a fresh wrapper object on every call — the
+        # wrappers would differ even if both routes pointed at the same handler,
+        # which is precisely the copy-paste this test exists to catch.
+        #
+        # __wrapped__ itself isn't enough either: it's a *bound method* looked
+        # up fresh off `self` at decoration time, and two separate attribute
+        # accesses of the same bound method (`self.foo is self.foo`) are always
+        # different objects in CPython even though they wrap the same
+        # underlying function — so assertIsNot on __wrapped__ directly would
+        # pass even under the copy-paste bug. Compare __func__, the underlying
+        # function object, which is a single object shared by every bound
+        # method of that name.
+        self.assertIsNot(
+            routes_by_path["/recruiting/emails/sync"].endpoint.__wrapped__.__func__,
+            routes_by_path[
+                "/recruiting/emails/sync/recent"
+            ].endpoint.__wrapped__.__func__,
+        )
 
 
 if __name__ == "__main__":

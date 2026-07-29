@@ -218,6 +218,10 @@ export const getApplicationEmails = (id, { refresh = false } = {}) =>
 export const sendApplicationEmail = (id, body) =>
   request.post(API_ENDPOINTS.RECRUITING_APPLICATION_EMAILS(id), body);
 
+/** Preset compose templates, already rendered for this application. */
+export const getApplicationEmailTemplates = (id) =>
+  request.get(API_ENDPOINTS.RECRUITING_APPLICATION_EMAIL_TEMPLATES(id));
+
 /** Everyone who can currently be @-mentioned on this application. */
 export const getMentionableUsers = (id) =>
   request.get(API_ENDPOINTS.RECRUITING_APPLICATION_MENTIONABLE_USERS(id));

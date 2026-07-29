@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { toast } from "sonner";
@@ -188,6 +194,7 @@ beforeEach(() => {
   api.sendApplicationEmail.mockResolvedValue({
     data: { threads: [], defaultTo: null },
   });
+  api.getApplicationEmailTemplates.mockResolvedValue({ data: [] });
 });
 
 /** Render the page at the detail route for a given application id. */
@@ -3193,6 +3200,556 @@ describe("ApplicationDetailPage — Emails tab", () => {
       }),
     );
     expect(toast.success).toHaveBeenCalledWith("Refreshed.");
+  });
+
+  /**
+   * Render the page as the application's owner, switch to the Emails tab and
+   * open the compose dialog (Reply on the first thread when `replyThread`,
+   * otherwise a fresh Send email). Query with `screen.*` afterwards.
+   *
+   * @param {{replyThread?: boolean}} [options]
+   */
+  const renderComposeOpen = async ({ replyThread = false } = {}) => {
+    ownerViewing();
+    const user = userEvent.setup();
+    renderPage();
+    await waitLoaded();
+    await user.click(screen.getByRole("tab", { name: "Emails" }));
+    await user.click(
+      screen.getByRole("button", {
+        name: replyThread ? "Reply" : "Send email",
+      }),
+    );
+    return user;
+  };
+
+  /**
+   * Put HTML into the contenteditable body. There is no execCommand in jsdom
+   * and userEvent cannot type markup, so write innerHTML and fire the input
+   * event the component listens on.
+   *
+   * @param {string} html
+   */
+  const setEditorHtml = (html) => {
+    const editor = screen.getByRole("textbox", { name: "Message" });
+    editor.innerHTML = html;
+    fireEvent.input(editor);
+    return editor;
+  };
+
+  it("sends the contenteditable HTML, not escaped text", async () => {
+    api.getApplicationEmails.mockResolvedValue({
+      data: { threads: [], defaultTo: "cand@x.com" },
+    });
+    const user = await renderComposeOpen();
+    setEditorHtml(
+      '<p>Hello <b>Ana</b>, see <a href="https://x.com">this</a></p>',
+    );
+    await user.type(screen.getByLabelText("Subject"), "Hi");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() =>
+      expect(api.sendApplicationEmail).toHaveBeenCalledWith("101", {
+        to: ["cand@x.com"],
+        cc: [],
+        subject: "Hi",
+        body: '<p>Hello <b>Ana</b>, see <a href="https://x.com">this</a></p>',
+        threadId: null,
+      }),
+    );
+  });
+
+  it("strips disallowed markup before sending", async () => {
+    api.getApplicationEmails.mockResolvedValue({
+      data: { threads: [], defaultTo: "cand@x.com" },
+    });
+    const user = await renderComposeOpen();
+    setEditorHtml('<p onclick="x()">Hi<script>bad()</script></p>');
+    await user.type(screen.getByLabelText("Subject"), "Hi");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(api.sendApplicationEmail).toHaveBeenCalled());
+    const sent = api.sendApplicationEmail.mock.calls[0][1].body;
+    expect(sent).not.toContain("script");
+    expect(sent).not.toContain("onclick");
+    expect(sent).toContain("Hi");
+  });
+
+  it("keeps Send disabled while the editor has no text", async () => {
+    api.getApplicationEmails.mockResolvedValue({
+      data: { threads: [], defaultTo: "cand@x.com" },
+    });
+    const user = await renderComposeOpen();
+    await user.type(screen.getByLabelText("Subject"), "Hi");
+    expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+    // Markup without text (an empty paragraph) still counts as no message.
+    setEditorHtml("<p></p>");
+    expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+    setEditorHtml("<p>Now there is text</p>");
+    expect(screen.getByRole("button", { name: "Send" })).toBeEnabled();
+  });
+
+  it("clears the editor between composes", async () => {
+    api.getApplicationEmails.mockResolvedValue({
+      data: { threads: [], defaultTo: "cand@x.com" },
+    });
+    const user = await renderComposeOpen();
+    setEditorHtml("<p>First draft</p>");
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    await user.click(screen.getByRole("button", { name: "Send email" }));
+    expect(screen.getByRole("textbox", { name: "Message" })).toHaveTextContent(
+      "",
+    );
+    expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+  });
+
+  it("fills subject and body from the chosen template on a new email", async () => {
+    api.getApplicationEmails.mockResolvedValue({
+      data: { threads: [], defaultTo: "cand@x.com" },
+    });
+    api.getApplicationEmailTemplates.mockResolvedValue({
+      data: [
+        {
+          key: "rejection",
+          label: "Rejection",
+          subject: "Your Application to Circle Cat",
+          bodyHtml: "<p>Dear Ana,</p>",
+        },
+      ],
+    });
+    const user = await renderComposeOpen();
+    await user.click(screen.getByRole("combobox", { name: /template/i }));
+    await user.click(screen.getByRole("option", { name: "Rejection" }));
+
+    expect(screen.getByLabelText(/subject/i)).toHaveValue(
+      "Your Application to Circle Cat",
+    );
+    expect(
+      screen.getByRole("textbox", { name: /message/i }).innerHTML,
+    ).toContain("Dear Ana,");
+    expect(screen.getByRole("button", { name: "Send" })).toBeEnabled();
+  });
+
+  it("keeps the reply subject when a template is applied", async () => {
+    api.getApplicationEmails.mockResolvedValue({
+      data: {
+        defaultTo: "cand@x.com",
+        threads: [
+          {
+            threadId: 9,
+            subject: "Circle Cat Program - Interview Availability",
+            defaultCc: [],
+            messages: [
+              {
+                messageId: 1,
+                direction: "inbound",
+                fromAddress: "cand@x.com",
+                bodyHtml: "<p>Hi</p>",
+                bodyText: "Hi",
+                createdAt: "2026-07-23T00:00:00Z",
+              },
+            ],
+          },
+        ],
+      },
+    });
+    api.getApplicationEmailTemplates.mockResolvedValue({
+      data: [
+        {
+          key: "offer_onboarding",
+          label: "Offer and onboarding",
+          subject: "Welcome to Circle Cat — Onboarding & Next Steps",
+          bodyHtml: "<p>Dear Ana,</p>",
+        },
+      ],
+    });
+    const user = await renderComposeOpen({ replyThread: true });
+    await user.click(screen.getByRole("combobox", { name: /template/i }));
+    await user.click(
+      screen.getByRole("option", { name: "Offer and onboarding" }),
+    );
+
+    expect(screen.getByLabelText(/subject/i)).toHaveValue(
+      "Re: Circle Cat Program - Interview Availability",
+    );
+  });
+
+  it("asks before overwriting a body the sender already typed", async () => {
+    api.getApplicationEmails.mockResolvedValue({
+      data: { threads: [], defaultTo: "cand@x.com" },
+    });
+    api.getApplicationEmailTemplates.mockResolvedValue({
+      data: [
+        {
+          key: "rejection",
+          label: "Rejection",
+          subject: "S",
+          bodyHtml: "<p>T</p>",
+        },
+      ],
+    });
+    const user = await renderComposeOpen();
+    const editor = setEditorHtml("<p>my own draft</p>");
+
+    await user.click(screen.getByRole("combobox", { name: /template/i }));
+    await user.click(screen.getByRole("option", { name: "Rejection" }));
+
+    expect(
+      screen.getByText(/replace what you have written/i),
+    ).toBeInTheDocument();
+    expect(editor.innerHTML).toContain("my own draft");
+
+    await user.click(screen.getByRole("button", { name: /replace/i }));
+    expect(editor.innerHTML).toContain("T");
+  });
+
+  it("leaves the template trigger unchanged after Cancel", async () => {
+    api.getApplicationEmails.mockResolvedValue({
+      data: { threads: [], defaultTo: "cand@x.com" },
+    });
+    api.getApplicationEmailTemplates.mockResolvedValue({
+      data: [
+        {
+          key: "rejection",
+          label: "Rejection",
+          subject: "S",
+          bodyHtml: "<p>T</p>",
+        },
+      ],
+    });
+    const user = await renderComposeOpen();
+    setEditorHtml("<p>my own draft</p>");
+
+    const trigger = screen.getByRole("combobox", { name: /template/i });
+    await user.click(trigger);
+    await user.click(screen.getByRole("option", { name: "Rejection" }));
+    const confirmDialog = screen.getByRole("dialog", {
+      name: /replace the current message/i,
+    });
+
+    await user.click(
+      within(confirmDialog).getByRole("button", { name: "Cancel" }),
+    );
+
+    // The trigger is a pure action control now (its committed value never
+    // leaves ""), so it can never name a template; the "Applied: <label>"
+    // text beside it is the only thing that reports an application, and a
+    // cancelled overwrite must not produce it either.
+    expect(trigger).not.toHaveTextContent("Rejection");
+    expect(screen.queryByText(/applied:/i)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/replace what you have written/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("prompts again when the same template is re-picked after Cancel", async () => {
+    api.getApplicationEmails.mockResolvedValue({
+      data: { threads: [], defaultTo: "cand@x.com" },
+    });
+    api.getApplicationEmailTemplates.mockResolvedValue({
+      data: [
+        {
+          key: "rejection",
+          label: "Rejection",
+          subject: "S",
+          bodyHtml: "<p>T</p>",
+        },
+      ],
+    });
+    const user = await renderComposeOpen();
+    setEditorHtml("<p>my own draft</p>");
+
+    await user.click(screen.getByRole("combobox", { name: /template/i }));
+    await user.click(screen.getByRole("option", { name: "Rejection" }));
+    const firstConfirmDialog = screen.getByRole("dialog", {
+      name: /replace the current message/i,
+    });
+    await user.click(
+      within(firstConfirmDialog).getByRole("button", { name: "Cancel" }),
+    );
+    expect(
+      screen.queryByText(/replace what you have written/i),
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("combobox", { name: /template/i }));
+    await user.click(screen.getByRole("option", { name: "Rejection" }));
+
+    expect(
+      screen.getByText(/replace what you have written/i),
+    ).toBeInTheDocument();
+  });
+
+  it("re-applies the same template when it is picked again after the body was edited", async () => {
+    api.getApplicationEmails.mockResolvedValue({
+      data: { threads: [], defaultTo: "cand@x.com" },
+    });
+    api.getApplicationEmailTemplates.mockResolvedValue({
+      data: [
+        {
+          key: "rejection",
+          label: "Rejection",
+          subject: "S",
+          bodyHtml: "<p>Template body</p>",
+        },
+      ],
+    });
+    const user = await renderComposeOpen();
+    await user.click(screen.getByRole("combobox", { name: /template/i }));
+    await user.click(screen.getByRole("option", { name: "Rejection" }));
+    expect(
+      screen.getByRole("textbox", { name: /message/i }).innerHTML,
+    ).toContain("Template body");
+    expect(screen.getByText("Applied: Rejection")).toBeInTheDocument();
+
+    // Hand-edit the applied template into something the sender wants thrown
+    // away, then reach for the very same template again.
+    const editor = setEditorHtml("<p>mangled draft</p>");
+    await user.click(screen.getByRole("combobox", { name: /template/i }));
+    await user.click(screen.getByRole("option", { name: "Rejection" }));
+
+    // The pick has to register even though the same template is already
+    // applied: the Select's committed value is held at "", so Radix's
+    // controlled-setter guard sees "rejection" !== "" and forwards
+    // onValueChange. Were the applied key the Select's value, this pick would
+    // be a silent no-op and the sender would be stuck with the mangled body.
+    expect(
+      screen.getByText(/replace what you have written/i),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /replace/i }));
+    expect(editor.innerHTML).toContain("Template body");
+    expect(editor.innerHTML).not.toContain("mangled draft");
+    expect(screen.getByText("Applied: Rejection")).toBeInTheDocument();
+  });
+
+  it("highlights unfilled bracket markers in the editor", async () => {
+    api.getApplicationEmails.mockResolvedValue({
+      data: { threads: [], defaultTo: "cand@x.com" },
+    });
+    api.getApplicationEmailTemplates.mockResolvedValue({
+      data: [
+        {
+          key: "interview_rescheduled",
+          label: "Interview rescheduled",
+          subject: "S",
+          bodyHtml: "<p>rescheduled to [INTERVIEW DATE/TIME].</p>",
+        },
+      ],
+    });
+    const user = await renderComposeOpen();
+    await user.click(screen.getByRole("combobox", { name: /template/i }));
+    await user.click(
+      screen.getByRole("option", { name: "Interview rescheduled" }),
+    );
+
+    const editor = screen.getByRole("textbox", { name: /message/i });
+    expect(editor.querySelectorAll("mark")).toHaveLength(1);
+    expect(editor.querySelector("mark").textContent).toBe(
+      "[INTERVIEW DATE/TIME]",
+    );
+  });
+
+  it("warns once before sending a body with unfilled markers", async () => {
+    api.getApplicationEmails.mockResolvedValue({
+      data: { threads: [], defaultTo: "cand@x.com" },
+    });
+    const user = await renderComposeOpen();
+    setEditorHtml("<p>on [INTERVIEW DATE/TIME] with [MANAGER NAME]</p>");
+    await user.type(screen.getByLabelText(/subject/i), "Hi");
+    await user.click(screen.getByRole("button", { name: /^send$/i }));
+
+    expect(screen.getByText(/2 placeholders/i)).toBeInTheDocument();
+    expect(api.sendApplicationEmail).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: /send anyway/i }));
+    expect(api.sendApplicationEmail).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses singular wording when exactly one placeholder is left", async () => {
+    api.getApplicationEmails.mockResolvedValue({
+      data: { threads: [], defaultTo: "cand@x.com" },
+    });
+    const user = await renderComposeOpen();
+    // One marker is the common case: interview_rescheduled carries exactly one.
+    setEditorHtml("<p>rescheduled to [INTERVIEW DATE/TIME]</p>");
+    await user.type(screen.getByLabelText(/subject/i), "Hi");
+    await user.click(screen.getByRole("button", { name: /^send$/i }));
+
+    expect(
+      screen.getByText(/still has 1 placeholder in square brackets/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/1 placeholders/i)).not.toBeInTheDocument();
+  });
+
+  it("keeps Send disabled while the recipient or subject is empty, body text notwithstanding", async () => {
+    // A candidate with no contact email: the composer opens with To empty.
+    api.getApplicationEmails.mockResolvedValue({
+      data: { threads: [], defaultTo: null },
+    });
+    const user = await renderComposeOpen();
+    setEditorHtml("<p>Ready to go</p>");
+    const send = screen.getByRole("button", { name: /^send$/i });
+    expect(send).toBeDisabled();
+
+    // Body plus subject is still not enough without a recipient — handleSubmit
+    // would return silently, so the button must not invite the click.
+    await user.type(screen.getByLabelText(/subject/i), "Hi");
+    expect(send).toBeDisabled();
+
+    await user.type(screen.getByLabelText("To"), "cand@x.com");
+    expect(send).toBeEnabled();
+
+    await user.clear(screen.getByLabelText(/subject/i));
+    expect(send).toBeDisabled();
+  });
+
+  it("does not strip the marker text itself when sending anyway", async () => {
+    api.getApplicationEmails.mockResolvedValue({
+      data: { threads: [], defaultTo: "cand@x.com" },
+    });
+    const user = await renderComposeOpen();
+    setEditorHtml("<p>on <mark>[INTERVIEW DATE/TIME]</mark></p>");
+    await user.type(screen.getByLabelText(/subject/i), "Hi");
+    await user.click(screen.getByRole("button", { name: /^send$/i }));
+    await user.click(screen.getByRole("button", { name: /send anyway/i }));
+
+    const sent = api.sendApplicationEmail.mock.calls[0][1].body;
+    expect(sent).not.toContain("<mark>");
+    expect(sent).toContain("[INTERVIEW DATE/TIME]");
+  });
+
+  it("sends straight away when no markers remain", async () => {
+    api.getApplicationEmails.mockResolvedValue({
+      data: { threads: [], defaultTo: "cand@x.com" },
+    });
+    const user = await renderComposeOpen();
+    setEditorHtml("<p>all filled in</p>");
+    await user.type(screen.getByLabelText(/subject/i), "Hi");
+    await user.click(screen.getByRole("button", { name: /^send$/i }));
+
+    expect(api.sendApplicationEmail).toHaveBeenCalledTimes(1);
+  });
+
+  it("recognizes only fully-uppercase brackets as markers, not ordinary bracketed prose", async () => {
+    api.getApplicationEmails.mockResolvedValue({
+      data: { threads: [], defaultTo: "cand@x.com" },
+    });
+    const MUST_MATCH = [
+      "[INTERVIEW DATE/TIME]",
+      "[SOFTWARE ENGINEER VOLUNTEER / SOFTWARE ENGINEER INTERN]",
+      "[MANAGER NAME]",
+      "[MANAGER EMAIL]",
+      "[START DATE]",
+    ];
+    const MUST_NOT_MATCH = [
+      "[See attached resume]",
+      "[Note: pending]",
+      "[Re: interview]",
+    ];
+    api.getApplicationEmailTemplates.mockResolvedValue({
+      data: [
+        {
+          key: "mixed",
+          label: "Mixed brackets",
+          subject: "S",
+          bodyHtml: `<p>${[...MUST_MATCH, ...MUST_NOT_MATCH].join(" ")}</p>`,
+        },
+      ],
+    });
+    const user = await renderComposeOpen();
+    await user.click(screen.getByRole("combobox", { name: /template/i }));
+    await user.click(screen.getByRole("option", { name: "Mixed brackets" }));
+
+    // highlightBrackets: only the 5 real markers get wrapped, in order, and
+    // the regex's shared `lastIndex` (it carries the `g` flag) doesn't skip
+    // any of them when they all appear in a single pass.
+    const editor = screen.getByRole("textbox", { name: /message/i });
+    const marks = Array.from(editor.querySelectorAll("mark"));
+    expect(marks.map((m) => m.textContent)).toEqual(MUST_MATCH);
+
+    // countUnfilledBrackets: sending should warn about exactly the 5 real
+    // markers, not the 8 total bracketed phrases in the body.
+    await user.type(screen.getByLabelText(/subject/i), "Hi");
+    await user.click(screen.getByRole("button", { name: /^send$/i }));
+    expect(screen.getByText(/5 placeholders/i)).toBeInTheDocument();
+  });
+
+  it("does not warn when the body only has ordinary bracketed prose, no real markers", async () => {
+    api.getApplicationEmails.mockResolvedValue({
+      data: { threads: [], defaultTo: "cand@x.com" },
+    });
+    const user = await renderComposeOpen();
+    setEditorHtml(
+      "<p>[See attached resume] [Note: pending] [Re: interview]</p>",
+    );
+    await user.type(screen.getByLabelText(/subject/i), "Hi");
+    await user.click(screen.getByRole("button", { name: /^send$/i }));
+
+    expect(api.sendApplicationEmail).toHaveBeenCalledTimes(1);
+    expect(
+      screen.queryByText(/unfilled placeholders/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("disables Send anyway while the send is in flight, to prevent a double-submit", async () => {
+    api.getApplicationEmails.mockResolvedValue({
+      data: { threads: [], defaultTo: "cand@x.com" },
+    });
+    let resolveSend;
+    api.sendApplicationEmail.mockReturnValue(
+      new Promise((resolve) => {
+        resolveSend = resolve;
+      }),
+    );
+    const user = await renderComposeOpen();
+    setEditorHtml("<p>on [INTERVIEW DATE/TIME]</p>");
+    await user.type(screen.getByLabelText(/subject/i), "Hi");
+    await user.click(screen.getByRole("button", { name: /^send$/i }));
+
+    const sendAnyway = screen.getByRole("button", { name: /send anyway/i });
+    await user.click(sendAnyway);
+    expect(sendAnyway).toBeDisabled();
+
+    // A second click while the first send is still pending must not fire again.
+    await user.click(sendAnyway);
+    expect(api.sendApplicationEmail).toHaveBeenCalledTimes(1);
+
+    resolveSend({ data: {} });
+    await waitFor(() =>
+      expect(
+        screen.queryByText(/unfilled placeholders/i),
+      ).not.toBeInTheDocument(),
+    );
+  });
+
+  it("blocks Escape from dismissing the warning dialog while the send is in flight", async () => {
+    api.getApplicationEmails.mockResolvedValue({
+      data: { threads: [], defaultTo: "cand@x.com" },
+    });
+    let resolveSend;
+    api.sendApplicationEmail.mockReturnValue(
+      new Promise((resolve) => {
+        resolveSend = resolve;
+      }),
+    );
+    const user = await renderComposeOpen();
+    setEditorHtml("<p>on [INTERVIEW DATE/TIME]</p>");
+    await user.type(screen.getByLabelText(/subject/i), "Hi");
+    await user.click(screen.getByRole("button", { name: /^send$/i }));
+    await user.click(screen.getByRole("button", { name: /send anyway/i }));
+
+    expect(
+      screen.getByRole("dialog", { name: /unfilled placeholders/i }),
+    ).toBeInTheDocument();
+
+    await user.keyboard("{Escape}");
+    expect(
+      screen.getByRole("dialog", { name: /unfilled placeholders/i }),
+    ).toBeInTheDocument();
+
+    resolveSend({ data: {} });
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: /unfilled placeholders/i }),
+      ).not.toBeInTheDocument(),
+    );
   });
 
   it("read.all viewer who is not an owner sees no compose control", async () => {
