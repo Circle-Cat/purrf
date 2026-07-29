@@ -3315,6 +3315,24 @@ describe("ApplicationDetailPage — Emails tab", () => {
     await waitFor(() => expect(editorEl().innerHTML).toBe(SIGNATURE_HTML));
   });
 
+  it("highlights an unfilled marker inside the prefilled signature", async () => {
+    // A sender with no name anywhere gets [YOUR NAME] in the signature. The
+    // send-time warning already counts it, but it has to be *visible* too —
+    // that is the whole reason the backend renders a marker instead of a blank.
+    const unnamed =
+      "<p>Best,<br><strong>[YOUR NAME]</strong><br>Director of People Operations</p>";
+    api.getApplicationEmails.mockResolvedValue({
+      data: { threads: [], defaultTo: "cand@x.com" },
+    });
+    api.getApplicationEmailTemplates.mockResolvedValue({
+      data: { templates: [], signatureHtml: unnamed },
+    });
+    await renderComposeOpen();
+    await waitFor(() =>
+      expect(editorEl().innerHTML).toContain("<mark>[YOUR NAME]</mark>"),
+    );
+  });
+
   it("prefills the signature into a reply too", async () => {
     // Replies never apply a template (they keep their `Re:` subject), so
     // without this every single reply went out unsigned.
