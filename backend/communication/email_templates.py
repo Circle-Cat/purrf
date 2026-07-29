@@ -26,9 +26,11 @@ PLACEHOLDER_KEYS = frozenset({"candidate_name", "position_title", "sender_name"}
 
 _PLACEHOLDER_RE = re.compile(r"\{\{(\w+)\}\}")
 
+# No "--" opening line: the sig-delimiter convention is "-- " with a trailing
+# space, so the bare version never read as one to any mail client. It only added
+# a stray line, and a dash line under text is a heading in Markdown.
 _SIGNATURE = (
-    "<p>--<br>Best,<br>{{sender_name}}<br>"
-    "Director of People Operations<br>Circle Cat Inc</p>"
+    "<p>Best,<br>{{sender_name}}<br>Director of People Operations<br>Circle Cat Inc</p>"
 )
 
 
