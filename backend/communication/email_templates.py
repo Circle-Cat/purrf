@@ -27,10 +27,11 @@ PLACEHOLDER_KEYS = frozenset({"candidate_name", "position_title", "sender_name"}
 _PLACEHOLDER_RE = re.compile(r"\{\{(\w+)\}\}")
 
 # No "--" opening line: the sig-delimiter convention is "-- " with a trailing
-# space, so the bare version never read as one to any mail client. It only added
-# a stray line, and a dash line under text is a heading in Markdown.
+# space, so the bare version never read as one to any mail client and no client
+# collapsed the block out of a quoted reply. All it added was a stray line.
 _SIGNATURE = (
-    "<p>Best,<br>{{sender_name}}<br>Director of People Operations<br>Circle Cat Inc</p>"
+    "<p>Best,<br><strong>{{sender_name}}</strong><br>"
+    "Director of People Operations<br>Circle Cat Inc</p>"
 )
 
 
@@ -63,15 +64,15 @@ _SCREENING_PASSED_CULTURAL_INVITE = EmailTemplate(
         "of cultural and value interview and a round of technical interview (if you are applying for "
         "Software or Course design role) with individuals from different teams. Let me know if you have "
         "any questions in the meantime!</p>"
-        "<p>What's next</p>"
+        "<p><strong>What's next?</strong></p>"
         "<p>Before we can schedule your interview, please provide your availability for a 45-minute "
         "cultural and value phone interview. We can schedule the interview from 9PM to 4AM ET. Please "
         "provide 5-6 dates/times over the next 1-2 weeks that will work for your schedule.</p>"
-        "<p>Accommodations</p>"
+        "<p><strong>Accommodations</strong></p>"
         "<p>It's important to us to create an accessible, inclusive workplace for everyone, so please do "
         "not hesitate to contact me if you need any accommodations for your interviews. We will then "
         "connect with you to confidentially discuss your options.</p>"
-        "<p>What equipment will I need?</p>"
+        "<p><strong>What equipment will I need?</strong></p>"
         "<p>You'll need a computer with internet access.<br>"
         "This interview will take place over the Google Meet.</p>"
         "<p>In the meantime, please let me know if you have any questions.</p>"
@@ -115,12 +116,12 @@ _CULTURAL_PASSED_TECHNICAL_INVITE = EmailTemplate(
         "<p>Dear {{candidate_name}},</p>"
         "<p>Congratulations! You did a great job on your behavioral interview and we would like to move "
         "you to the next step in the interview process.</p>"
-        "<p>What's Next?</p>"
+        "<p><strong>What's next?</strong></p>"
         "<p>The next steps will consist of scheduling and prepping for your interview. Please provide your "
         "availability for a 45-minute technical phone interview. We can schedule the interview from 9PM "
         "to 4AM ET. Please provide 5-6 dates/times over the next 1-2 weeks that will work for your "
         "schedule.</p>"
-        "<p>Prep Materials</p>"
+        "<p><strong>Prep materials</strong></p>"
         "<p>The most popular prep websites are below:</p>"
         "<ul>"
         "<li>GeeksForGeeks.org</li>"
@@ -136,11 +137,11 @@ _CULTURAL_PASSED_TECHNICAL_INVITE = EmailTemplate(
         "problem in our interviews that determines your performance, rather than what you do or do not "
         "know. Also, writing solutions out by hand would be beneficial because you will be expected to "
         "do so on a google doc during yourinterview.</p>"
-        "<p>Accommodations</p>"
+        "<p><strong>Accommodations</strong></p>"
         "<p>It's important to us to create an accessible, inclusive workplace for everyone, so please do "
         "not hesitate to contact me if you need any accommodations for your interviews. We will then "
         "connect with you to confidentially discuss your options.</p>"
-        "<p>What equipment will I need?</p>"
+        "<p><strong>What equipment will I need?</strong></p>"
         "<p>You'll need a computer with internet access for the interviews to use Google Docs — a "
         "web-based word processor which lets you share and collaborate your work online. Note: You will "
         "not have access to an editor or compiler.<br>"
@@ -195,7 +196,7 @@ _OFFER_ONBOARDING = EmailTemplate(
         "Your start date: [START DATE]</p>"
         "<p>Once you have filled out the form, there will be a couple of things "
         "coming up:</p>"
-        "<p>Onboard to corp resources</p>"
+        "<p><strong>Onboard to corp resources</strong></p>"
         "<p>You will be given credentials and instructions to onboard corp "
         "resources in 1-2 business days after you have filled out the form. "
         "Follow those instructions and make sure you have access to accounts "

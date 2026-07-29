@@ -39,6 +39,23 @@ _VALUES = {
     "sender_name": "Jane Smith",
 }
 
+# Every subheading in the catalog, in sentence case. Templates not listed here
+# have no subheadings — they are short enough to read as one block.
+_SUBHEADINGS = {
+    "screening_passed_cultural_invite": [
+        "What's next?",
+        "Accommodations",
+        "What equipment will I need?",
+    ],
+    "cultural_passed_technical_invite": [
+        "What's next?",
+        "Prep materials",
+        "Accommodations",
+        "What equipment will I need?",
+    ],
+    "offer_onboarding": ["Onboard to corp resources"],
+}
+
 
 class EmailTemplatesCatalogTest(unittest.TestCase):
     def test_catalog_has_eight_templates_in_spec_order(self):
@@ -91,13 +108,51 @@ class EmailTemplatesCatalogTest(unittest.TestCase):
     def test_signature_starts_at_best_with_no_dash_delimiter(self):
         # The signature used to open with a bare "--" line. That is not the
         # sig-delimiter convention (which is "-- ", with a trailing space), so no
-        # mail client ever treated it as one; it only added a stray line — and a
-        # dash line under text is a heading in Markdown, which the composer now
-        # speaks. The block starts at "Best," instead.
+        # mail client ever treated it as one and no client collapsed the block
+        # out of a quoted reply; all it contributed was a stray line above
+        # "Best,". The block starts at "Best," instead.
         for template in EMAIL_TEMPLATES:
             with self.subTest(key=template.key):
                 self.assertIn("<p>Best,<br>", template.body_html)
                 self.assertNotIn("--", template.body_html)
+
+    def test_subheadings_are_bold(self):
+        # A subheading that renders at body weight reads as just another
+        # paragraph, which is what made these templates look like a wall of
+        # text. The lead-in sentence before the prep list is prose, not a
+        # heading, so it stays unbolded.
+        for key, headings in _SUBHEADINGS.items():
+            template = next(t for t in EMAIL_TEMPLATES if t.key == key)
+            for heading in headings:
+                with self.subTest(key=key, heading=heading):
+                    self.assertIn(
+                        f"<p><strong>{heading}</strong></p>", template.body_html
+                    )
+        prep = next(
+            t for t in EMAIL_TEMPLATES if t.key == "cultural_passed_technical_invite"
+        )
+        self.assertIn(
+            "<p>The most popular prep websites are below:</p>", prep.body_html
+        )
+
+    def test_subheading_casing_is_sentence_case_throughout(self):
+        # The source copy wrote one heading two ways ("What's next" in one
+        # template, "What's Next?" in another) and title-cased another ("Prep
+        # Materials"). Sentence case was already the majority, so the two
+        # outliers moved to it and the shared heading now reads identically in
+        # both templates.
+        for template in EMAIL_TEMPLATES:
+            with self.subTest(key=template.key):
+                self.assertNotIn("What's Next", template.body_html)
+                self.assertNotIn("Prep Materials", template.body_html)
+
+    def test_sender_name_is_bold_in_the_signature(self):
+        for template in EMAIL_TEMPLATES:
+            with self.subTest(key=template.key):
+                self.assertIn(
+                    "<strong>{{sender_name}}</strong>",
+                    template.body_html,
+                )
 
     def test_offer_template_links_the_onboarding_form(self):
         offer = next(t for t in EMAIL_TEMPLATES if t.key == "offer_onboarding")
