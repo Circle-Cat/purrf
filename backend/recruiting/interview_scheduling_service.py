@@ -6,7 +6,7 @@ becomes — and delegates every Google call to the shared
 ``MeetingSchedulingService``.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -440,11 +440,121 @@ class InterviewSchedulingService:
         )
         if interview is None:
             raise ValueError("No interview meeting is scheduled for this round.")
+        await self._delete_meeting(
+            session, interview, application_id, current_user.user_id
+        )
+        # Guarded -- unlike schedule()'s unconditional `sub_status =
+        # "scheduled"` above. See that comment for the other half of the
+        # asymmetry: this only reverts from exactly "scheduled", so
+        # cancelling a past, already-graded interview's calendar entry never
+        # erases "evaluated".
+        if application.sub_status == "scheduled":
+            application.sub_status = "scheduling"
+            await self.application_repository.update(session, application)
+        await session.commit()
+
+    async def cancel_for_round(
+        self,
+        session: AsyncSession,
+        application_id: int,
+        stage: ApplicationStage,
+        round: int,
+        actor_user_id: int,
+        *,
+        via: str,
+    ) -> bool:
+        """Cancel one round's still-upcoming meeting, mid-caller-transaction.
+
+        The ghost-meeting cleanup ``BoardService``'s advance/round-advance/
+        reject paths drive: the detail page only ever surfaces the meeting on
+        the application's CURRENT stage+round, so once a decision moves the
+        application on, a meeting left booked on the round behind it is live on
+        everyone's calendar and invisible in Purrf.
+
+        Four deliberate differences from ``cancel``, which is the recruiter's
+        own explicit "cancel this meeting" action:
+
+        - The stage+round come in as arguments. The caller may already have
+          moved the application, so ``application.current_round`` no longer
+          points at the round being cleaned up.
+        - No ownership check. The caller row-locked the application and gated
+          on ownership before deciding; re-checking here would just repeat a
+          query, and this method deliberately takes an actor id rather than a
+          ``UserContextDto`` to make that non-negotiable.
+        - No commit, and no ``sub_status`` write. It runs inside the caller's
+          transaction, and the caller overwrites ``sub_status`` immediately
+          after (``"pending"``, or ``None`` for a terminal target).
+        - A meeting that has already started is left strictly alone. It is
+          history rather than a ghost, and deleting its Calendar event would
+          mail every attendee a cancellation for something that already
+          happened.
+
+        Args:
+            session (AsyncSession): The caller's active, uncommitted session.
+            application_id (int): The application being decided on.
+            stage (ApplicationStage): The stage being left.
+            round (int): The round being left, within that stage.
+            actor_user_id (int): The recruiter making the decision, recorded
+                as the activity entry's actor.
+            via (str): Which decision triggered this, recorded as the
+                ``interview_cancelled`` entry's ``"via"`` detail so the
+                timeline can tell an automatic cleanup apart from a recruiter
+                cancelling a meeting on purpose. One of ``"stage_changed"``,
+                ``"round_advanced"``, ``"rejected"``.
+
+        Returns:
+            bool: True if a meeting was cancelled; False if that round had
+                none booked, or the one it had has already started.
+        """
+        interview = await self.application_interview_repository.get(
+            session, application_id, stage, round
+        )
+        if interview is None:
+            return False
+        if interview.start_at <= datetime.now(timezone.utc):
+            return False
+        await self._delete_meeting(
+            session,
+            interview,
+            application_id,
+            actor_user_id,
+            extra_details={"via": via},
+        )
+        return True
+
+    async def _delete_meeting(
+        self,
+        session: AsyncSession,
+        interview,
+        application_id: int,
+        actor_user_id: int,
+        extra_details: dict | None = None,
+    ) -> None:
+        """Drop a meeting's Calendar event, its row, and log the cancellation.
+
+        Shared by ``cancel`` and ``cancel_for_round`` so the Google call, the
+        end-state-wins policy on a failed delete, and the activity payload
+        exist in exactly one place. Neither the application's ``sub_status``
+        nor the commit belongs here — those differ between the two callers.
+
+        A Calendar delete that Google refuses is logged and swallowed: the row
+        is removed anyway, because the desired end state is "this meeting is
+        gone from Purrf", and blocking on Google would leave the caller's
+        decision half-applied.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            interview (ApplicationInterviewEntity): The row to remove.
+            application_id (int): Its owning application.
+            actor_user_id (int): Recorded as the activity entry's actor.
+            extra_details (dict | None): Extra keys merged into the
+                ``interview_cancelled`` details payload.
+        """
         # The interview entity stores no attendee snapshot itself (see its
         # docstring); the assignee it was scheduled with comes from the
         # assignment row, read before the row is deleted below.
         assignment = await self.application_assignment_repository.get(
-            session, application_id, application.stage, application.current_round
+            session, application_id, interview.stage, interview.round
         )
         cancelled_assignee_id = assignment.assignee_id if assignment else None
 
@@ -461,22 +571,14 @@ class InterviewSchedulingService:
             )
 
         await self.application_interview_repository.delete(session, interview)
-        # Guarded -- unlike schedule()'s unconditional `sub_status =
-        # "scheduled"` above. See that comment for the other half of the
-        # asymmetry: this only reverts from exactly "scheduled", so
-        # cancelling a past, already-graded interview's calendar entry never
-        # erases "evaluated".
-        if application.sub_status == "scheduled":
-            application.sub_status = "scheduling"
-            await self.application_repository.update(session, application)
         await self.application_activity_repository.create(
             session,
             application_id,
-            current_user.user_id,
+            actor_user_id,
             "interview_cancelled",
             details={
-                "stage": application.stage.value,
-                "round": application.current_round,
+                "stage": interview.stage.value,
+                "round": interview.round,
                 "assigneeId": cancelled_assignee_id,
                 "startAt": interview.start_at.isoformat(),
                 "endAt": interview.end_at.isoformat(),
@@ -485,6 +587,6 @@ class InterviewSchedulingService:
                 # types nothing. The timeline renders these instants in the
                 # reader's own zone anyway.
                 "googleEventId": interview.google_event_id,
+                **(extra_details or {}),
             },
         )
-        await session.commit()

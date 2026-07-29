@@ -123,6 +123,12 @@ class StageChangeDto(BaseRequestDto):
     # Required when to_stage is an interview stage (screening/behavioral/
     # tech/board_review); ignored for terminal targets (hired/rejected).
     assignee_id: int | None = None
+    # Opt in to cancelling the meeting booked on the stage+round being LEFT,
+    # which the UI can no longer reach once the application has moved on (see
+    # BoardService.change_stage). Defaults to False so a client that says
+    # nothing about the meeting never deletes a candidate's calendar invite by
+    # accident; the board's own dialogs default the checkbox to ticked.
+    cancel_interview: bool = False
 
     @model_validator(mode="after")
     def reason_required_for_reject(self) -> "StageChangeDto":
@@ -154,6 +160,10 @@ class RoundChangeDto(BaseRequestDto):
     # later via reassign. Ignored entirely for a non-interview stage, e.g.
     # a multi-round OFFER stage, which has no rubric and is not assignable.
     assignee_id: int | None = None
+    # Same opt-in as StageChangeDto's, for the round being left behind.
+    # Ignored when `round` equals the application's current round, since then
+    # no round is left behind at all.
+    cancel_interview: bool = False
 
     @field_validator("round")
     @classmethod

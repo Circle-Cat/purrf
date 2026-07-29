@@ -1264,7 +1264,12 @@ describe("ApplicationDetailPage — advance round", () => {
     );
 
     await waitFor(() =>
-      expect(api.setApplicationRound).toHaveBeenCalledWith("101", 2, undefined),
+      expect(api.setApplicationRound).toHaveBeenCalledWith(
+        "101",
+        2,
+        undefined,
+        undefined,
+      ),
     );
   });
 
@@ -1301,7 +1306,12 @@ describe("ApplicationDetailPage — advance round", () => {
     await user.click(confirmButton);
 
     await waitFor(() =>
-      expect(api.setApplicationRound).toHaveBeenCalledWith("101", 2, 11),
+      expect(api.setApplicationRound).toHaveBeenCalledWith(
+        "101",
+        2,
+        11,
+        undefined,
+      ),
     );
     // Local state patched in place: the button now reflects round 2 -> 3.
     expect(
@@ -4464,5 +4474,277 @@ describe("ApplicationDetailPage — interview meeting card & scheduling", () => 
         /Rescheduled the Behavioral interview meeting from 2026-08-05 14:00 America\/Los_Angeles to 2026-08-06 15:00 America\/Los_Angeles, and reassigned it from Bob Lee to Ivan Interviewer, by Jane Smith/,
       ),
     ).toBeInTheDocument();
+  });
+});
+
+describe("ApplicationDetailPage — ghost meeting cleanup", () => {
+  // Dated far from any real "now" in both directions, so these never become
+  // time bombs the way a fixture a week out would.
+  const upcomingInterview = (stage = "behavioral") => ({
+    ...INTERVIEW_FIXTURE,
+    stage,
+    startAt: "2099-08-05T21:00:00Z",
+    endAt: "2099-08-05T21:45:00Z",
+  });
+  // makeDetail pins viewerTimezone to America/Los_Angeles, so 21:00Z reads as
+  // 14:00 -- the copy below is in the READER's zone, not the booker's.
+  const startedInterview = (stage = "behavioral") => ({
+    ...INTERVIEW_FIXTURE,
+    stage,
+    startAt: "2000-08-05T21:00:00Z",
+    endAt: "2000-08-05T21:45:00Z",
+  });
+  const CANCEL_BOX =
+    /Cancel the Behavioral interview meeting scheduled for 2099-08-05 14:00 America\/Los_Angeles/;
+
+  beforeEach(() => {
+    authState.userId = OWNER_ID;
+    // The ghost-meeting prompt is what's under test, not the soft
+    // no-evaluation reminder that would otherwise intercept the advance.
+    api.getEvaluationsForApplication.mockResolvedValue({
+      data: [confirmedEval("behavioral", 1)],
+    });
+    api.changeApplicationStage.mockResolvedValue({ data: {} });
+    api.setApplicationRound.mockResolvedValue({ data: {} });
+  });
+
+  const onBehavioral = (interview, currentRound = 1) =>
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({
+        isOwner: true,
+        stage: "behavioral",
+        currentRound,
+        interview,
+      }),
+    });
+
+  /** The base JOB fixture with behavioral opened up to several rounds. */
+  const jobWithBehavioralRounds = (rounds) => ({
+    ...JOB,
+    pipelineConfig: {
+      ...JOB.pipelineConfig,
+      stages: JOB.pipelineConfig.stages.map((s) =>
+        s.stage === "behavioral" ? { ...s, rounds } : s,
+      ),
+    },
+  });
+
+  it("asks before stranding an upcoming meeting, ticked by default", async () => {
+    const user = userEvent.setup();
+    onBehavioral(upcomingInterview());
+    renderPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole("button", { name: "Advance to Tech" }));
+
+    expect(screen.getByRole("checkbox", { name: CANCEL_BOX })).toBeChecked();
+    expect(api.changeApplicationStage).not.toHaveBeenCalled();
+  });
+
+  it("cancels the meeting together with the stage advance", async () => {
+    const user = userEvent.setup();
+    onBehavioral(upcomingInterview());
+    renderPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole("button", { name: "Advance to Tech" }));
+    await user.click(screen.getByRole("button", { name: "Confirm advance" }));
+
+    await waitFor(() =>
+      expect(api.changeApplicationStage).toHaveBeenCalledWith("101", {
+        toStage: "tech",
+        assigneeId: undefined,
+        cancelInterview: true,
+      }),
+    );
+  });
+
+  it("keeps the meeting when the box is unticked", async () => {
+    const user = userEvent.setup();
+    onBehavioral(upcomingInterview());
+    renderPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole("button", { name: "Advance to Tech" }));
+    await user.click(screen.getByRole("checkbox", { name: CANCEL_BOX }));
+    await user.click(screen.getByRole("button", { name: "Confirm advance" }));
+
+    await waitFor(() =>
+      expect(api.changeApplicationStage).toHaveBeenCalledWith("101", {
+        toStage: "tech",
+        assigneeId: undefined,
+        cancelInterview: false,
+      }),
+    );
+  });
+
+  it("never offers to cancel a meeting that has already started", async () => {
+    // A finished interview is history, not a ghost -- cancelling it would mail
+    // every attendee a cancellation for a meeting that already happened.
+    const user = userEvent.setup();
+    onBehavioral(startedInterview());
+    renderPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole("button", { name: "Advance to Tech" }));
+
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(api.changeApplicationStage).toHaveBeenCalledWith("101", {
+        toStage: "tech",
+        assigneeId: undefined,
+      }),
+    );
+  });
+
+  it("advances straight through when no meeting is booked", async () => {
+    const user = userEvent.setup();
+    onBehavioral(null);
+    renderPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole("button", { name: "Advance to Tech" }));
+
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(api.changeApplicationStage).toHaveBeenCalledWith("101", {
+        toStage: "tech",
+        assigneeId: undefined,
+      }),
+    );
+  });
+
+  it("offers the same box on reject", async () => {
+    const user = userEvent.setup();
+    onBehavioral(upcomingInterview());
+    renderPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole("button", { name: "Reject" }));
+    await user.click(
+      screen.getByRole("combobox", { name: /rejection reason/i }),
+    );
+    await user.click(await screen.findByText("Insufficient experience"));
+    expect(screen.getByRole("checkbox", { name: CANCEL_BOX })).toBeChecked();
+    await user.click(screen.getByRole("button", { name: "Confirm reject" }));
+
+    await waitFor(() =>
+      expect(api.changeApplicationStage).toHaveBeenCalledWith("101", {
+        toStage: "rejected",
+        reason: "Insufficient experience",
+        note: undefined,
+        cancelInterview: true,
+      }),
+    );
+  });
+
+  it("offers the same box on a round advance", async () => {
+    const user = userEvent.setup();
+    api.getJob.mockResolvedValue({ data: jobWithBehavioralRounds(3) });
+    onBehavioral(upcomingInterview());
+    renderPage();
+    await waitLoaded();
+
+    await user.click(
+      screen.getByRole("button", { name: "Advance to Round 2" }),
+    );
+    expect(screen.getByRole("checkbox", { name: CANCEL_BOX })).toBeChecked();
+    await user.click(
+      screen.getByRole("button", { name: "Confirm advance round" }),
+    );
+
+    await waitFor(() =>
+      expect(api.setApplicationRound).toHaveBeenCalledWith(
+        "101",
+        2,
+        undefined,
+        true,
+      ),
+    );
+  });
+
+  it("leaves a started meeting alone on a round advance too", async () => {
+    const user = userEvent.setup();
+    api.getJob.mockResolvedValue({ data: jobWithBehavioralRounds(3) });
+    onBehavioral(startedInterview());
+    renderPage();
+    await waitLoaded();
+
+    await user.click(
+      screen.getByRole("button", { name: "Advance to Round 2" }),
+    );
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: "Confirm advance round" }),
+    );
+
+    await waitFor(() =>
+      expect(api.setApplicationRound).toHaveBeenCalledWith(
+        "101",
+        2,
+        undefined,
+        undefined,
+      ),
+    );
+  });
+
+  it("shows the assignee picker and the cancel box together when the target needs one", async () => {
+    // Board review picks its evaluator at advance time, so that dialog must
+    // carry both controls rather than one replacing the other. It is the one
+    // remaining INTERVIEW_STAGES member whose assignee is still picked there,
+    // and it has to be added to the pipeline to become tech's advance target.
+    const user = userEvent.setup();
+    api.getJob.mockResolvedValue({
+      data: {
+        ...JOB,
+        pipelineConfig: {
+          ...JOB.pipelineConfig,
+          stages: [
+            ...JOB.pipelineConfig.stages,
+            { stage: "board_review", rounds: 1 },
+          ],
+        },
+      },
+    });
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({
+        isOwner: true,
+        stage: "tech",
+        currentRound: 1,
+        interview: upcomingInterview("tech"),
+      }),
+    });
+    api.getEvaluationsForApplication.mockResolvedValue({
+      data: [confirmedEval("tech", 1)],
+    });
+    renderPage();
+    await waitLoaded();
+
+    await user.click(
+      screen.getByRole("button", { name: "Advance to Board review" }),
+    );
+
+    expect(screen.getByRole("radio", { name: /decide later/i })).toBeChecked();
+    expect(
+      screen.getByRole("checkbox", {
+        name: /Cancel the Tech interview meeting scheduled for 2099-08-05 14:00 America\/Los_Angeles/,
+      }),
+    ).toBeChecked();
+  });
+
+  it("re-ticks the box for the next decision after one is dismissed", async () => {
+    // The box is a per-decision choice, not a sticky preference: unticking it
+    // and backing out must not silently carry that over.
+    const user = userEvent.setup();
+    onBehavioral(upcomingInterview());
+    renderPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole("button", { name: "Advance to Tech" }));
+    await user.click(screen.getByRole("checkbox", { name: CANCEL_BOX }));
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    await user.click(screen.getByRole("button", { name: "Advance to Tech" }));
+
+    expect(screen.getByRole("checkbox", { name: CANCEL_BOX })).toBeChecked();
   });
 });

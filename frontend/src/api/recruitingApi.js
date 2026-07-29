@@ -126,7 +126,10 @@ export const getApplicationDetail = (id) =>
 
 /**
  * Change an application's stage (e.g., "screening" → "hired", "rejected", etc.).
- * body: { toStage: "hired" | "rejected" | ..., reason?: string, note?: string }
+ * body: { toStage: "hired" | "rejected" | ..., reason?: string, note?: string,
+ *         cancelInterview?: boolean }
+ * `cancelInterview` also cancels the meeting booked on the stage+round being
+ * left, which the UI can no longer reach once the application has moved on.
  */
 export const changeApplicationStage = (id, body) =>
   request.patch(API_ENDPOINTS.RECRUITING_APPLICATION_STAGE(id), body);
@@ -142,12 +145,16 @@ export const setApplicationSubStatus = (id, subStatus) =>
 
 /**
  * Advance an application to a specific round within its current stage.
- * Wraps round and assigneeId in the request body automatically.
+ * Wraps round, assigneeId and cancelInterview in the request body
+ * automatically. `cancelInterview` also cancels the meeting booked on the
+ * round being left (the backend ignores it when that round has no upcoming
+ * meeting); leave it undefined to say nothing about meetings at all.
  */
-export const setApplicationRound = (id, round, assigneeId) =>
+export const setApplicationRound = (id, round, assigneeId, cancelInterview) =>
   request.patch(API_ENDPOINTS.RECRUITING_APPLICATION_ROUND(id), {
     round,
     assigneeId,
+    cancelInterview,
   });
 
 /**

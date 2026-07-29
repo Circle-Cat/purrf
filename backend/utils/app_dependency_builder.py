@@ -655,6 +655,21 @@ class AppDependencyBuilder:
             self.application_assignment_repository,
             self.user_permissions_repository,
         )
+        # Built before BoardService, which delegates its ghost-meeting cleanup
+        # (change_stage/set_round's `cancelInterview`) here. The dependency is
+        # one-way: this service never calls back into BoardService.
+        self.interview_scheduling_service = InterviewSchedulingService(
+            self.logger,
+            self.application_access,
+            self.application_repository,
+            self.application_assignment_repository,
+            self.application_interview_repository,
+            self.application_activity_repository,
+            self.users_repository,
+            self.user_emails_repository,
+            self.meeting_scheduling_service,
+            self.recruiting_mapper,
+        )
         self.board_service = BoardService(
             self.job_repository,
             self.application_repository,
@@ -674,18 +689,7 @@ class AppDependencyBuilder:
             self.email_sync_service,
             self.application_interview_repository,
             self.application_access,
-        )
-        self.interview_scheduling_service = InterviewSchedulingService(
-            self.logger,
-            self.application_access,
-            self.application_repository,
-            self.application_assignment_repository,
-            self.application_interview_repository,
-            self.application_activity_repository,
-            self.users_repository,
-            self.user_emails_repository,
-            self.meeting_scheduling_service,
-            self.recruiting_mapper,
+            self.interview_scheduling_service,
         )
         self.board_controller = BoardController(
             self.board_service,

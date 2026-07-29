@@ -174,6 +174,7 @@ class BoardService:
         email_sync_service,
         application_interview_repository,
         application_access,
+        interview_scheduling_service,
     ):
         """
         Args:
@@ -226,6 +227,11 @@ class BoardService:
                 ``_load_owned_application``/``_validate_interview_assignee``
                 below are thin delegations to it, kept so this class's many
                 existing call sites are untouched.
+            interview_scheduling_service (InterviewSchedulingService): Owns
+                every Calendar-touching interview write. ``change_stage``/
+                ``set_round`` delegate the opt-in "cancel the meeting on the
+                round being left" cleanup to its ``cancel_for_round``, rather
+                than reaching for the Calendar themselves.
         """
         self.job_repository = job_repository
         self.application_repository = application_repository
@@ -247,6 +253,7 @@ class BoardService:
         self.email_sync_service = email_sync_service
         self.application_interview_repository = application_interview_repository
         self.application_access = application_access
+        self.interview_scheduling_service = interview_scheduling_service
 
     async def list_my_jobs(
         self, session: AsyncSession, current_user: UserContextDto
@@ -1386,6 +1393,13 @@ class BoardService:
         exempt (rejecting never requires an evaluation), as is advancing out
         of OFFER (no rubric exists for it).
 
+        When ``dto.cancel_interview`` is set, the meeting booked on the
+        stage+round being LEFT is cancelled in this same transaction (see
+        ``InterviewSchedulingService.cancel_for_round``, which no-ops when that
+        round has no meeting or its meeting has already started). Without it,
+        such a meeting stays live on everyone's calendar while becoming
+        invisible in Purrf, which only ever shows the current stage+round's.
+
         Args:
             session (AsyncSession): Active database async session.
             current_user (UserContextDto): The authenticated caller,
@@ -1444,6 +1458,24 @@ class BoardService:
                 or existing_assignment.assignee_id != dto.assignee_id
             ):
                 new_interview_assignee = dto.assignee_id
+
+        # Last thing before the writes begin, so a rejected transition or an
+        # unqualified assignee never costs the candidate their meeting, and
+        # inside this transaction, so the cancellation and the decision that
+        # asked for it stand or fall together.
+        if dto.cancel_interview:
+            await self.interview_scheduling_service.cancel_for_round(
+                session,
+                application_id,
+                from_stage,
+                application.current_round,
+                current_user.user_id,
+                via=(
+                    "rejected"
+                    if dto.to_stage == ApplicationStage.REJECTED
+                    else "stage_changed"
+                ),
+            )
 
         if dto.to_stage == ApplicationStage.REJECTED:
             application.tags = {
@@ -1735,6 +1767,10 @@ class BoardService:
         soft reminder ``change_stage`` leaves. Moving backward (or re-setting
         the same round) never checks.
 
+        ``dto.cancel_interview`` cancels the meeting on the round being left,
+        exactly as in ``change_stage`` — except when ``dto.round`` is the
+        current round, which leaves no round behind.
+
         Args:
             session (AsyncSession): Active database async session.
             current_user (UserContextDto): The authenticated caller,
@@ -1783,6 +1819,19 @@ class BoardService:
                 session, application_id, application.stage, from_round
             )
         )
+        # Only a move to a DIFFERENT round leaves a round (and therefore a
+        # meeting) behind; re-setting the current round leaves the meeting
+        # exactly where the page still shows it.
+        if dto.cancel_interview and dto.round != from_round:
+            await self.interview_scheduling_service.cancel_for_round(
+                session,
+                application_id,
+                application.stage,
+                from_round,
+                current_user.user_id,
+                via="round_advanced",
+            )
+
         application.current_round = dto.round
         application.sub_status = "pending"
 
