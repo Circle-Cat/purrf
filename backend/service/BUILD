@@ -27,6 +27,7 @@ py_library(
     srcs = ["google_service.py"],
     deps = [
         "//backend/utils:retry_utils",
+        "@pypi//google_api_python_client",
         "@pypi//google_apps_meet",
         "@pypi//protobuf",
     ],
