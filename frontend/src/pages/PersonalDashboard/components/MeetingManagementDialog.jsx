@@ -261,7 +261,7 @@ export default function MeetingManagementDialog({
 
       <DialogContent className="w-full max-w-2xl rounded-xl bg-white shadow-2xl p-0 animate-in fade-in zoom-in-95 duration-200 overflow-visible">
         {/* Header */}
-        <div className="flex items-center justify-between bg-gray-50/50 px-6 py-4 border-b rounded-t-xl">
+        <div className="flex items-center justify-between bg-gray-50/50 px-5 py-3 border-b rounded-t-xl">
           <DialogTitle className="text-xl font-semibold text-gray-900 flex items-center gap-2">
             <CalendarIcon className="w-5 h-5 text-[#6035F3]" />
             Meeting Management
@@ -288,13 +288,13 @@ export default function MeetingManagementDialog({
           </div>
 
           {/* Content Area */}
-          <div className="p-6">
+          <div className="p-4 sm:p-5">
             {/* Schedule Meeting Form */}
             <TabsContent
               value="schedule"
               className="mt-0 focus-visible:outline-none"
             >
-              <form onSubmit={handleSubmit} className="space-y-5">
+              <form onSubmit={handleSubmit} className="space-y-3.5">
                 {/* Mentor / Mentee Selection Dropdown */}
                 <div className="space-y-1.5">
                   <label className="text-sm font-medium text-gray-700">
