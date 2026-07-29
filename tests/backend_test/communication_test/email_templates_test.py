@@ -88,6 +88,17 @@ class EmailTemplatesCatalogTest(unittest.TestCase):
                 self.assertIn("Director of People Operations", template.body_html)
                 self.assertIn("Circle Cat Inc", template.body_html)
 
+    def test_signature_starts_at_best_with_no_dash_delimiter(self):
+        # The signature used to open with a bare "--" line. That is not the
+        # sig-delimiter convention (which is "-- ", with a trailing space), so no
+        # mail client ever treated it as one; it only added a stray line — and a
+        # dash line under text is a heading in Markdown, which the composer now
+        # speaks. The block starts at "Best," instead.
+        for template in EMAIL_TEMPLATES:
+            with self.subTest(key=template.key):
+                self.assertIn("<p>Best,<br>", template.body_html)
+                self.assertNotIn("--", template.body_html)
+
     def test_offer_template_links_the_onboarding_form(self):
         offer = next(t for t in EMAIL_TEMPLATES if t.key == "offer_onboarding")
         self.assertIn(f'<a href="{ONBOARDING_FORM_URL}">this form</a>', offer.body_html)
