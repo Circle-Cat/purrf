@@ -294,6 +294,9 @@ const ComposeEmailDialog = ({
             </div>
             <div className="space-y-1">
               <Label htmlFor="email-body">Message</Label>
+              {/* [&_p] is load-bearing: Tailwind's preflight zeroes p margins,
+                  so without it an applied template collapses into a single
+                  block here even though the mail goes out correctly spaced. */}
               <div
                 id="email-body"
                 ref={editorRef}
@@ -305,7 +308,7 @@ const ComposeEmailDialog = ({
                 onInput={() =>
                   setHasText(Boolean(editorRef.current?.textContent?.trim()))
                 }
-                className="min-h-40 max-h-96 overflow-y-auto rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring [&_a]:underline [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5"
+                className="min-h-40 max-h-96 overflow-y-auto rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring [&_a]:underline [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-3 [&_ul]:list-disc [&_ul]:pl-5"
               />
             </div>
           </div>

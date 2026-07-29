@@ -3140,6 +3140,23 @@ describe("ApplicationDetailPage — Emails tab", () => {
     expect(body.className).toContain("[&_a]:underline");
   });
 
+  it("spaces the paragraphs of a template applied into the compose body", async () => {
+    // Templates are paragraphs of HTML, and Tailwind's preflight zeroes <p>
+    // margins — without a spacing hook an applied template collapses into one
+    // block in the editor, even though the mail itself goes out fine.
+    ownerViewing();
+    api.getApplicationEmails.mockResolvedValue({
+      data: { threads: [], defaultTo: "cand@x.com" },
+    });
+    const user = userEvent.setup();
+    renderPage();
+    await waitLoaded();
+    await user.click(screen.getByRole("tab", { name: "Emails" }));
+    await user.click(screen.getByRole("button", { name: "Send email" }));
+    const editor = screen.getByRole("textbox", { name: "Message" });
+    expect(editor.className).toContain("[&_p]:my-3");
+  });
+
   it("owner composes and sends a new email", async () => {
     ownerViewing();
     api.getApplicationEmails.mockResolvedValue({
