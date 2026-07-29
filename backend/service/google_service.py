@@ -1,7 +1,9 @@
 from datetime import datetime
+from http import HTTPStatus
 
 from google.apps import meet_v2
 from google.protobuf import field_mask_pb2
+from googleapiclient.errors import HttpError
 
 BATCH_DELETE_SIZE = 500
 
@@ -315,6 +317,23 @@ class GoogleService:
     ) -> dict:
         """
         Calls Google Calendar API to create an event with a Meet link.
+
+        Args:
+            summary (str): Event title.
+            start_time (datetime): Event start.
+            end_time (datetime): Event end.
+            attendees_emails (list[str]): Addresses to invite.
+            request_id (str): Idempotency key for the Meet conference creation.
+            event_id (str | None): Calendar event id to create the event under.
+                Supplying one makes the insert idempotent — see
+                ``_recover_duplicate_event``.
+
+        Returns:
+            dict: The created event (or, after a duplicate-id conflict, the
+                event an earlier attempt already created).
+
+        Raises:
+            RuntimeError: If the event could neither be created nor recovered.
         """
         event_body = {
             "summary": summary,
@@ -348,6 +367,16 @@ class GoogleService:
             )
             return response
         except Exception as e:
+            recovered = self._recover_duplicate_event(e, event_id)
+            if recovered is not None:
+                self.logger.warning(
+                    "[GoogleService] Insert of event_id=%s conflicted but the event "
+                    "exists — an earlier attempt succeeded; recovered it "
+                    "(request_id=%s)",
+                    event_id,
+                    request_id,
+                )
+                return recovered
             self.logger.error(
                 "Failed to create Google Meeting (request_id=%s): %s",
                 request_id,
@@ -357,6 +386,65 @@ class GoogleService:
             raise RuntimeError(
                 "Unable to create Google Meeting via Calendar API"
             ) from e
+
+    def _recover_duplicate_event(
+        self, error: Exception, event_id: str | None
+    ) -> dict | None:
+        """Fetch back the event a duplicate-id conflict refers to, if there is one.
+
+        ``events.insert`` is retried on transient errors, so a lost response can
+        leave the event created on Google's side — invitations already mailed,
+        because we insert with ``sendUpdates="all"`` — while this client only
+        sees a failure. The retry then re-sends the same body, collides with the
+        ``event_id`` we minted, and Calendar answers 409 ``duplicate``.
+
+        That 409 is therefore proof the event exists, not a reason to fail: the
+        whole point of passing our own ``event_id`` is that the insert is
+        idempotent. Failing anyway would leave an event on the calendar that
+        never reaches ``meeting_log``, so Purrf can neither show nor delete it,
+        while the user is told to retry — producing a second event at the same
+        time.
+
+        Args:
+            error (Exception): The failure raised by the insert.
+            event_id (str | None): The id we asked Calendar to use, if any.
+
+        Returns:
+            dict | None: The existing event, or None when there is nothing to
+                recover — the error was not a 409, we minted no id for it to
+                collide with, the fetch failed, or the id belongs to a cancelled
+                event (a reused id rather than the event we just tried to
+                create). The caller reports failure in every None case.
+        """
+        if not event_id or not isinstance(error, HttpError):
+            return None
+        if getattr(error.resp, "status", None) != HTTPStatus.CONFLICT:
+            return None
+
+        try:
+            event = self.retry_utils.get_retry_on_transient(
+                self.google_calendar_client.events()
+                .get(calendarId="primary", eventId=event_id)
+                .execute
+            )
+        except Exception as e:
+            self.logger.error(
+                "[GoogleService] event_id=%s conflicted but could not be fetched "
+                "back: %s",
+                event_id,
+                e,
+                exc_info=True,
+            )
+            return None
+
+        if event.get("status") == "cancelled":
+            self.logger.error(
+                "[GoogleService] event_id=%s conflicted with a cancelled event; "
+                "not treating it as created",
+                event_id,
+            )
+            return None
+        return event
 
     async def get_meet_space_name(self, meeting_code: str) -> str:
         """
@@ -542,6 +630,12 @@ class GoogleService:
         """
         Delete one or more Google Calendar events in a single batch HTTP request.
 
+        An event that is already absent from Calendar (404 / 410) counts as
+        succeeded: deletion is about the end state, and the caller clears only
+        the ids it is told succeeded. Reporting "already gone" as a failure
+        would pin the row in ``meeting_log`` permanently — a meeting the UI
+        lists but can never remove, since every retry gets the same 404.
+
         Args:
             event_ids (list[str]): Google Calendar event IDs to delete.
 
@@ -552,15 +646,39 @@ class GoogleService:
             return [], []
 
         failed_event_ids: list[str] = []
+        failed_id_set: set[str] = set()
+        # Events the batch returned a definitive verdict for — deleted now, or
+        # already gone. Tracked so a later batch-level error cannot retract a
+        # verdict the batch already gave (see the except block below).
+        resolved_event_ids: set[str] = set()
+
+        def mark_failed(event_id):
+            if event_id not in failed_id_set:
+                failed_id_set.add(event_id)
+                failed_event_ids.append(event_id)
 
         def handle_response(request_id, response, exception):
-            if exception is not None:
-                self.logger.error(
-                    "[GoogleService] Batch delete failed for event_id=%s: %s",
+            if exception is None:
+                resolved_event_ids.add(request_id)
+                return
+
+            status = getattr(getattr(exception, "resp", None), "status", None)
+            if status in (HTTPStatus.NOT_FOUND, HTTPStatus.GONE):
+                self.logger.info(
+                    "[GoogleService] Batch delete: event_id=%s was already gone "
+                    "(status=%s); counting it as deleted",
                     request_id,
-                    exception,
+                    status,
                 )
-                failed_event_ids.append(request_id)
+                resolved_event_ids.add(request_id)
+                return
+
+            self.logger.error(
+                "[GoogleService] Batch delete failed for event_id=%s: %s",
+                request_id,
+                exception,
+            )
+            mark_failed(request_id)
 
         for start in range(0, len(event_ids), BATCH_DELETE_SIZE):
             chunk = event_ids[start : start + BATCH_DELETE_SIZE]
@@ -587,12 +705,18 @@ class GoogleService:
                     e,
                     exc_info=True,
                 )
-                failed_event_ids.extend(chunk)
+                # googleapiclient runs the callback as each sub-response is
+                # parsed, so an error part-way through leaves earlier events
+                # already deleted. Only the ones the batch never answered for
+                # are genuinely unknown; failing the whole chunk would strand
+                # the rest — gone from Calendar, still shown by Purrf.
+                for event_id in chunk:
+                    if event_id not in resolved_event_ids:
+                        mark_failed(event_id)
                 continue
 
-        failed_set = set(failed_event_ids)
         succeeded_event_ids = [
-            event_id for event_id in event_ids if event_id not in failed_set
+            event_id for event_id in event_ids if event_id not in failed_id_set
         ]
 
         return succeeded_event_ids, failed_event_ids
