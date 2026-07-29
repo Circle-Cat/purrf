@@ -127,6 +127,45 @@ export const searchParticipants = ({
   });
 
 /**
+ * Build the downloadable URL for the participant/non-participant CSV export.
+ * Returns a URL to navigate to (triggering a browser download), not a request.
+ *
+ * @param {{userId?: number, name?: string, email?: string, matchedUser?: string,
+ *          roundId?: number, participantRole?: string, approvalStatus?: string,
+ *          onboardingStatus?: string, participationStatus: "participant"|"non_participant",
+ *          expandMeetings?: boolean}} filters
+ */
+export const getParticipantExportUrl = ({
+  userId,
+  name,
+  email,
+  matchedUser,
+  roundId,
+  participantRole,
+  approvalStatus,
+  onboardingStatus,
+  participationStatus,
+  expandMeetings,
+} = {}) => {
+  const params = {
+    userId,
+    name,
+    email,
+    matchedUser,
+    roundId,
+    participantRole,
+    approvalStatus,
+    onboardingStatus,
+    participationStatus,
+    expand_meetings: expandMeetings,
+  };
+  const query = new URLSearchParams(
+    Object.entries(params).filter(([, v]) => v !== undefined && v !== ""),
+  ).toString();
+  return `${request.defaults.baseURL}${API_ENDPOINTS.MENTORSHIP_ADMIN_PARTICIPANTS_EXPORT}?${query}`;
+};
+
+/**
  * Fetch the mentorship admin view of a pair's meeting log for the round.
  * @param {number} pairId - The mentorship pair's id.
  */

@@ -141,6 +141,7 @@ export const useParticipantSearch = (participationStatus) => {
     total,
     loading,
     hasSearched: query !== null,
+    query,
     userId,
     setUserId,
     name,
