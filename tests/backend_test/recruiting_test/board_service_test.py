@@ -293,23 +293,47 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
 
     # -- application email: templates --
 
+    def _users_by_id(self, rows):
+        """Mock the user lookup per id, so candidate and sender differ.
+
+        The service looks up two people now — the candidate it is writing to and
+        the sender whose name goes in the signature — through the same
+        repository method, so a single ``return_value`` would let the sender
+        silently inherit the candidate's name.
+        """
+
+        async def lookup(_session, user_id):
+            return rows.get(user_id)
+
+        self.users_repo.get_user_by_user_id = AsyncMock(side_effect=lookup)
+
+    def _sender_ctx(self, user_id=2, first_name=None, last_name=None):
+        return UserContextDto(
+            sub="s",
+            primary_email="owner@b.com",
+            user_id=user_id,
+            first_name=first_name,
+            last_name=last_name,
+        )
+
     async def test_list_application_email_templates_renders_for_the_application(self):
         application = SimpleNamespace(application_id=42, user_id=7, job_id=3)
         self.service._require_application_owner = AsyncMock(return_value=application)
-        self.users_repo.get_user_by_user_id = AsyncMock(
-            return_value=SimpleNamespace(first_name="Ana", last_name="Lopez")
-        )
+        self._users_by_id({
+            7: SimpleNamespace(first_name="Ana", last_name="Lopez"),
+            2: SimpleNamespace(first_name="Jane", last_name="Smith"),
+        })
         self.job_repo.get_by_job_id = AsyncMock(
             return_value=SimpleNamespace(title="Software Engineer Intern (Summer 2026)")
         )
-        current_user = SimpleNamespace(first_name="Jane", last_name="Smith")
+        current_user = self._sender_ctx()
 
         result = await self.service.list_application_email_templates(
             self.session, current_user, 42
         )
 
-        self.assertEqual(len(result), 8)
-        rejection = next(t for t in result if t.key == "rejection")
+        self.assertEqual(len(result.templates), 8)
+        rejection = next(t for t in result.templates if t.key == "rejection")
         self.assertEqual(rejection.subject, "Your Application to Circle Cat")
         self.assertIn("Dear Ana,", rejection.body_html)
         self.assertIn("Software Engineer Intern (Summer 2026)", rejection.body_html)
@@ -318,30 +342,132 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             self.session, current_user, 42, allow_read_all=False
         )
 
+    async def test_list_application_email_templates_returns_the_signature(self):
+        # The composer prefills this into an empty body: a message written from
+        # scratch, or any reply, would otherwise go out unsigned.
+        application = SimpleNamespace(application_id=42, user_id=7, job_id=3)
+        self.service._require_application_owner = AsyncMock(return_value=application)
+        self._users_by_id({
+            7: SimpleNamespace(first_name="Ana", last_name="Lopez"),
+            2: SimpleNamespace(first_name="Jane", last_name="Smith"),
+        })
+        self.job_repo.get_by_job_id = AsyncMock(
+            return_value=SimpleNamespace(title="Mentor")
+        )
+
+        result = await self.service.list_application_email_templates(
+            self.session, self._sender_ctx(), 42
+        )
+
+        self.assertIn("<strong>Jane Smith</strong>", result.signature_html)
+        self.assertNotIn("Ana", result.signature_html)
+        for template in result.templates:
+            with self.subTest(key=template.key):
+                self.assertTrue(template.body_html.endswith(result.signature_html))
+
+    async def test_sender_name_comes_from_the_database_not_the_token(self):
+        # first_name/last_name on the context come from the Cloudflare Access
+        # JWT, which only carries them when the IdP asserts them. The users row
+        # is the authority.
+        application = SimpleNamespace(application_id=42, user_id=7, job_id=3)
+        self.service._require_application_owner = AsyncMock(return_value=application)
+        self._users_by_id({
+            7: SimpleNamespace(first_name="Ana", last_name="Lopez"),
+            2: SimpleNamespace(first_name="Ada", last_name="Lovelace"),
+        })
+        self.job_repo.get_by_job_id = AsyncMock(
+            return_value=SimpleNamespace(title="Mentor")
+        )
+
+        result = await self.service.list_application_email_templates(
+            self.session,
+            self._sender_ctx(first_name="Stale", last_name="Claim"),
+            42,
+        )
+
+        self.assertIn("<strong>Ada Lovelace</strong>", result.signature_html)
+        self.assertNotIn("Stale Claim", result.signature_html)
+
+    async def test_sender_name_falls_back_to_the_token_claims(self):
+        application = SimpleNamespace(application_id=42, user_id=7, job_id=3)
+        self.service._require_application_owner = AsyncMock(return_value=application)
+        self._users_by_id({
+            7: SimpleNamespace(first_name="Ana", last_name="Lopez"),
+            2: SimpleNamespace(first_name="", last_name=""),
+        })
+        self.job_repo.get_by_job_id = AsyncMock(
+            return_value=SimpleNamespace(title="Mentor")
+        )
+
+        result = await self.service.list_application_email_templates(
+            self.session,
+            self._sender_ctx(first_name="Jane", last_name="Smith"),
+            42,
+        )
+
+        self.assertIn("<strong>Jane Smith</strong>", result.signature_html)
+
+    async def test_sender_name_renders_a_marker_when_nobody_knows_it(self):
+        # Signing in with a one-time code carries no given_name/family_name, so
+        # an advancer who never filled a profile has no name anywhere. Rendering
+        # an empty bold line put a blank gap above "Director of People
+        # Operations"; a bracket marker is caught by the composer's
+        # unfilled-marker warning instead, so the sender is told to fix it.
+        application = SimpleNamespace(application_id=42, user_id=7, job_id=3)
+        self.service._require_application_owner = AsyncMock(return_value=application)
+        self._users_by_id({
+            7: SimpleNamespace(first_name="Ana", last_name="Lopez"),
+            2: SimpleNamespace(first_name="", last_name=None),
+        })
+        self.job_repo.get_by_job_id = AsyncMock(
+            return_value=SimpleNamespace(title="Mentor")
+        )
+
+        result = await self.service.list_application_email_templates(
+            self.session, self._sender_ctx(), 42
+        )
+
+        self.assertIn("<strong>[YOUR NAME]</strong>", result.signature_html)
+
+    async def test_sender_name_marker_when_the_sender_row_is_missing(self):
+        application = SimpleNamespace(application_id=42, user_id=7, job_id=3)
+        self.service._require_application_owner = AsyncMock(return_value=application)
+        self._users_by_id({7: SimpleNamespace(first_name="Ana", last_name="Lopez")})
+        self.job_repo.get_by_job_id = AsyncMock(
+            return_value=SimpleNamespace(title="Mentor")
+        )
+
+        result = await self.service.list_application_email_templates(
+            self.session, self._sender_ctx(user_id=None), 42
+        )
+
+        self.assertIn("<strong>[YOUR NAME]</strong>", result.signature_html)
+
     async def test_list_application_email_templates_is_owner_only(self):
         self.service._require_application_owner = AsyncMock(
             side_effect=ValueError("not an owner")
         )
         with self.assertRaises(ValueError):
             await self.service.list_application_email_templates(
-                self.session, SimpleNamespace(first_name="J", last_name="S"), 42
+                self.session, self._sender_ctx(), 42
             )
 
     async def test_list_application_email_templates_tolerates_blank_first_name(self):
         application = SimpleNamespace(application_id=42, user_id=7, job_id=3)
         self.service._require_application_owner = AsyncMock(return_value=application)
-        self.users_repo.get_user_by_user_id = AsyncMock(
-            return_value=SimpleNamespace(first_name="", last_name="")
-        )
+        self._users_by_id({
+            7: SimpleNamespace(first_name="", last_name=""),
+            2: SimpleNamespace(first_name="Jane", last_name="Smith"),
+        })
         self.job_repo.get_by_job_id = AsyncMock(
             return_value=SimpleNamespace(title="Mentor")
         )
 
         result = await self.service.list_application_email_templates(
-            self.session, SimpleNamespace(first_name="Jane", last_name="Smith"), 42
+            self.session, self._sender_ctx(), 42
         )
 
-        rejection = next(t for t in result if t.key == "rejection")
+        rejection = next(t for t in result.templates if t.key == "rejection")
         self.assertIn("Dear ,", rejection.body_html)
 
     # -- application email: get / refresh --

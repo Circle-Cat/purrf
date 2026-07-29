@@ -22,8 +22,15 @@ from backend.dto.board_dto import (
     StageChangeDto,
     SubStatusChangeDto,
 )
-from backend.communication.email_templates import render_all_templates
-from backend.dto.email_dto import EmailConversationDto, EmailTemplateDto
+from backend.communication.email_templates import (
+    render_all_templates,
+    render_signature,
+)
+from backend.dto.email_dto import (
+    EmailConversationDto,
+    EmailTemplateCatalogDto,
+    EmailTemplateDto,
+)
 from backend.dto.evaluation_dto import EvaluationDto
 from backend.dto.user_context_dto import UserContextDto
 from backend.common.communication_enums import ContextType
@@ -381,7 +388,7 @@ class BoardService:
         session: AsyncSession,
         current_user: UserContextDto,
         application_id: int,
-    ) -> list[EmailTemplateDto]:
+    ) -> EmailTemplateCatalogDto:
         """List the preset candidate-email templates, rendered for one application.
 
         Owner-only (mirrors sending): the templates carry the candidate's name
@@ -401,7 +408,8 @@ class BoardService:
             application_id (int): The application being emailed about.
 
         Returns:
-            list[EmailTemplateDto]: All eight templates in catalog order.
+            EmailTemplateCatalogDto: All eight templates in catalog order,
+                plus the signature block on its own for prefilling.
 
         Raises:
             ValueError: If the application is missing or the caller is not an
@@ -417,19 +425,59 @@ class BoardService:
         values = {
             "candidate_name": (candidate.first_name if candidate else "") or "",
             "position_title": job.title if job else "",
-            "sender_name": (
-                f"{current_user.first_name or ''} {current_user.last_name or ''}".strip()
-            ),
+            "sender_name": await self._resolve_sender_name(session, current_user),
         }
-        return [
-            EmailTemplateDto(
-                key=template.key,
-                label=template.label,
-                subject=subject,
-                body_html=body_html,
+        return EmailTemplateCatalogDto(
+            templates=[
+                EmailTemplateDto(
+                    key=template.key,
+                    label=template.label,
+                    subject=subject,
+                    body_html=body_html,
+                )
+                for template, subject, body_html in render_all_templates(values)
+            ],
+            signature_html=render_signature(values),
+        )
+
+    async def _resolve_sender_name(
+        self, session: AsyncSession, current_user: UserContextDto
+    ) -> str:
+        """Full name to sign the email with.
+
+        The ``users`` row is the authority: ``first_name``/``last_name`` on the
+        context come from the Cloudflare Access JWT, which only carries them
+        when the identity provider asserts them — signing in with a one-time
+        code carries no name at all. The claims are still used as a fallback for
+        a caller with no row.
+
+        With no name anywhere, this returns the ``[YOUR NAME]`` marker rather
+        than an empty string: an empty signature line is silent, whereas a
+        bracket marker is highlighted and caught by the composer's
+        unfilled-marker warning before the mail goes out.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            current_user (UserContextDto): The authenticated caller.
+
+        Returns:
+            str: The sender's full name, or ``[YOUR NAME]``.
+        """
+        sender = (
+            await self.users_repository.get_user_by_user_id(
+                session, current_user.user_id
             )
-            for template, subject, body_html in render_all_templates(values)
-        ]
+            if current_user.user_id is not None
+            else None
+        )
+        for first, last in (
+            (getattr(sender, "first_name", None), getattr(sender, "last_name", None)),
+            (current_user.first_name, current_user.last_name),
+        ):
+            name = f"{first or ''} {last or ''}".strip()
+            if name:
+                return name
+        return "[YOUR NAME]"
 
     async def get_application_conversation(
         self,
