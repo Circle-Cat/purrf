@@ -1,12 +1,17 @@
 import { render, screen, waitFor, within, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import ParticipantSearchTab from "@/pages/MentorshipManagement/components/ParticipantSearchTab";
-import { searchParticipants, getMeetingLog } from "@/api/mentorshipApi";
+import {
+  searchParticipants,
+  getMeetingLog,
+  getParticipantExportUrl,
+} from "@/api/mentorshipApi";
 
 vi.mock("@/api/mentorshipApi", () => ({
   searchParticipants: vi.fn(),
   getMeetingLog: vi.fn(),
+  getParticipantExportUrl: vi.fn(),
 }));
 
 const TEST_ROUNDS = [
@@ -67,6 +72,11 @@ describe("ParticipantSearchTab", () => {
     getMeetingLog.mockResolvedValue({
       data: { roundVersion: "v2", meetings: [] },
     });
+    getParticipantExportUrl.mockReturnValue("https://example.com/export.csv");
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it("does not fetch on mount in participant mode", () => {
@@ -461,5 +471,97 @@ describe("ParticipantSearchTab", () => {
 
     await screen.findAllByRole("button", { name: "2/5" });
     expect(getMeetingLog).not.toHaveBeenCalled();
+  });
+
+  it("disables Export until a search has been run", () => {
+    renderTab("non_participant");
+    expect(screen.getByRole("button", { name: "Export" })).toBeDisabled();
+  });
+
+  it("clicking Export sends non-participant export filters and triggers download", async () => {
+    searchParticipants.mockResolvedValue({
+      data: { participantRows: [nonParticipantRow()], total: 1 },
+    });
+    const clickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => {});
+    renderTab("non_participant");
+    await userEvent.type(screen.getByPlaceholderText("Name"), "Alice");
+    await search();
+    await waitFor(() => expect(searchParticipants).toHaveBeenCalled());
+
+    await userEvent.click(screen.getByRole("button", { name: "Export" }));
+
+    expect(getParticipantExportUrl).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "Alice",
+        participationStatus: "non_participant",
+        expandMeetings: false,
+      }),
+    );
+    expect(clickSpy).toHaveBeenCalled();
+  });
+
+  it("clicking Summary for participants sends expandMeetings=false, triggers download, and closes the popover", async () => {
+    searchParticipants.mockResolvedValue({
+      data: { participantRows: [participantRow()], total: 1 },
+    });
+    const clickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => {});
+    renderTab("participant");
+    await search();
+    await waitFor(() => expect(searchParticipants).toHaveBeenCalled());
+
+    await userEvent.click(screen.getByRole("button", { name: "Export" }));
+    await userEvent.click(screen.getByText("Summary — one row per person"));
+
+    expect(getParticipantExportUrl).toHaveBeenCalledWith(
+      expect.objectContaining({
+        participationStatus: "participant",
+        expandMeetings: false,
+      }),
+    );
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+    expect(
+      screen.queryByText("Summary — one row per person"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("clicking Detailed for participants sends expandMeetings=true and triggers download", async () => {
+    searchParticipants.mockResolvedValue({
+      data: { participantRows: [participantRow()], total: 1 },
+    });
+    const clickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => {});
+    renderTab("participant");
+    await search();
+    await waitFor(() => expect(searchParticipants).toHaveBeenCalled());
+
+    await userEvent.click(screen.getByRole("button", { name: "Export" }));
+    await userEvent.click(screen.getByText("Detailed — one row per meeting"));
+
+    expect(getParticipantExportUrl).toHaveBeenCalledWith(
+      expect.objectContaining({
+        participationStatus: "participant",
+        expandMeetings: true,
+      }),
+    );
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("clicking Export for non-participants shows no Summary/Detailed choice", async () => {
+    searchParticipants.mockResolvedValue({
+      data: { participantRows: [nonParticipantRow()], total: 1 },
+    });
+    renderTab("non_participant");
+    await search();
+    await waitFor(() => expect(searchParticipants).toHaveBeenCalled());
+
+    await userEvent.click(screen.getByRole("button", { name: "Export" }));
+    expect(
+      screen.queryByText("Summary — one row per person"),
+    ).not.toBeInTheDocument();
   });
 });

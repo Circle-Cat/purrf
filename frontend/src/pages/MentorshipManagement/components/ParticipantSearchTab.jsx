@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Download } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -15,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import Table from "@/components/common/Table";
 import { useParticipantSearch } from "@/pages/MentorshipManagement/hooks/useParticipantSearch";
+import { getParticipantExportUrl } from "@/api/mentorshipApi";
 import { MentorshipParticipantRoles } from "@/constants/MentorshipParticipantRoles";
 import { MentorshipApprovalStatus } from "@/constants/MentorshipApprovalStatus";
 import { partnerDisplayName } from "@/utils/partnerName";
@@ -96,6 +98,13 @@ const AlternativeEmailsCell = ({ emails }) => {
     </span>
   );
 };
+
+/** Triggers a browser download via the backend's Content-Disposition header. */
+function triggerDownload(url) {
+  const link = document.createElement("a");
+  link.href = url;
+  link.click();
+}
 
 /**
  * Resolves the display name for the row's subject.
@@ -197,6 +206,7 @@ const ParticipantSearchTab = ({ participationStatus, rounds }) => {
     total,
     loading,
     hasSearched,
+    query,
     userId,
     setUserId,
     name,
@@ -236,6 +246,19 @@ const ParticipantSearchTab = ({ participationStatus, rounds }) => {
   const handleSort = (accessor) => {
     const field = ACCESSOR_TO_SORT_FIELD[accessor];
     if (field) toggleSort(field);
+  };
+
+  const [exportOpen, setExportOpen] = useState(false);
+
+  const handleExport = (expandMeetings) => {
+    setExportOpen(false);
+    triggerDownload(
+      getParticipantExportUrl({
+        ...query,
+        participationStatus,
+        expandMeetings,
+      }),
+    );
   };
 
   const columns = isParticipant
@@ -411,6 +434,49 @@ const ParticipantSearchTab = ({ participationStatus, rounds }) => {
         <Button type="button" onClick={submitSearch}>
           Search
         </Button>
+      </div>
+
+      <div className="absolute top-4 right-6">
+        {isParticipant ? (
+          <Popover open={exportOpen} onOpenChange={setExportOpen}>
+            <PopoverTrigger asChild>
+              <Button type="button" variant="outline" disabled={!hasSearched}>
+                <Download className="h-4 w-4 mr-1" />
+                Export
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-1" align="end">
+              <div className="flex flex-col">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="justify-start"
+                  onClick={() => handleExport(false)}
+                >
+                  Summary — one row per person
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="justify-start"
+                  onClick={() => handleExport(true)}
+                >
+                  Detailed — one row per meeting
+                </Button>
+              </div>
+            </PopoverContent>
+          </Popover>
+        ) : (
+          <Button
+            type="button"
+            variant="outline"
+            disabled={!hasSearched}
+            onClick={() => handleExport(false)}
+          >
+            <Download className="h-4 w-4 mr-1" />
+            Export
+          </Button>
+        )}
       </div>
 
       {!hasSearched ? (
