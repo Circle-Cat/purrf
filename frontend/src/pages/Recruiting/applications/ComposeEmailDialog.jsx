@@ -180,8 +180,12 @@ const ComposeEmailDialog = ({
         const signature = res?.data?.signatureHtml ?? "";
         if (!signature || !editorRef.current) return;
         if (editorRef.current.textContent?.trim()) return;
-        editorRef.current.innerHTML = signature;
-        prefilledRef.current = signature;
+        // Highlighted like a template body: with no name on record the backend
+        // renders [YOUR NAME] here, and a marker the sender cannot see is no
+        // better than the blank line this replaced. Store what we actually
+        // wrote, so an untouched prefill still compares equal below.
+        editorRef.current.innerHTML = highlightBrackets(signature);
+        prefilledRef.current = editorRef.current.innerHTML;
       },
       () => setTemplates([]),
     );
