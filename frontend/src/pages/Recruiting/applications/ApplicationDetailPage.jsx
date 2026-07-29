@@ -605,8 +605,12 @@ const EmailMessageBubble = ({ message }) => {
         {when ? ` · ${new Date(when).toLocaleString()}` : ""}
       </div>
       {html != null ? (
+        // Mail bodies are foreign HTML, and Tailwind's preflight zeroes <p>
+        // margins, drops list markers and strips link underlines — without
+        // these hooks a message reads as one dense block whose links are
+        // indistinguishable from plain text.
         <div
-          className="max-w-none text-slate-700"
+          className="max-w-none text-slate-700 [&_a]:underline [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-3 [&_ul]:list-disc [&_ul]:pl-5"
           dangerouslySetInnerHTML={{ __html: html }}
         />
       ) : (
