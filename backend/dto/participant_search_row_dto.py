@@ -11,3 +11,4 @@ class ParticipantSearchRow(BaseInternalDTO):
     completed_count: int | None
     mentor_id: int | None
     mentee_id: int | None
+    meeting_log: dict | None = None

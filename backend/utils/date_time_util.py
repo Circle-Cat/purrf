@@ -1,5 +1,6 @@
 from datetime import datetime, timezone, timedelta, date
 from dateutil.relativedelta import relativedelta
+from zoneinfo import ZoneInfo
 from backend.common.constants import (
     DATE_FORMAT_YMD,
     DATETIME_ISO8601_FORMAT,
@@ -132,6 +133,32 @@ class DateTimeUtil:
         except Exception as e:
             self.logger.error(f"Failed to format datetime object: {e}", exc_info=True)
             raise ValueError(f"Failed to format datetime object: {dt_object}.") from e
+
+    def format_iso_utc_to_pt(self, iso_str: str, fmt: str = "%Y-%m-%d %H:%M") -> str:
+        """
+        Convert a UTC ISO 8601 datetime string into a Pacific Time formatted string.
+
+        Args:
+            iso_str (str): ISO 8601 datetime string in UTC, either with a "Z"
+                suffix (e.g. "2024-07-15T22:30:00Z") or a "+00:00" offset.
+            fmt (str): strftime pattern for the output. Defaults to
+                "%Y-%m-%d %H:%M" (e.g. "2024-07-15 15:30"). Include "%Z"
+                if timezone abbreviation (PDT/PST) is needed.
+
+        Returns:
+            str: The datetime formatted in America/Los_Angeles time.
+
+        Raises:
+            ValueError: If iso_str cannot be parsed as a datetime.
+        """
+        normalized = iso_str.replace("Z", "+00:00")
+        try:
+            dt_utc = datetime.fromisoformat(normalized)
+        except ValueError as e:
+            raise ValueError(f"Invalid ISO datetime string: {iso_str}") from e
+        if dt_utc.tzinfo is None:
+            dt_utc = dt_utc.replace(tzinfo=timezone.utc)
+        return dt_utc.astimezone(ZoneInfo("America/Los_Angeles")).strftime(fmt)
 
     def _start_of_day(self, dt: datetime) -> datetime:
         """Return the UTC datetime at the start of the given day (00:00:00)."""
