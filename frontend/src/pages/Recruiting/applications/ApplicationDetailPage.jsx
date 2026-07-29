@@ -70,6 +70,9 @@ import {
   getApplicationEmails,
   sendApplicationEmail,
   resumeUrl,
+  scheduleInterview,
+  updateInterview,
+  cancelInterview,
 } from "@/api/recruitingApi";
 import {
   humanize,
@@ -83,6 +86,8 @@ import {
   APPLICATION_OWNER_GUIDE,
   APPLICATION_EVALUATOR_GUIDE,
 } from "@/pages/Recruiting/components/guideContent";
+import InterviewMeetingCard from "@/pages/Recruiting/applications/InterviewMeetingCard";
+import InterviewMeetingDialog from "@/pages/Recruiting/applications/InterviewMeetingDialog";
 
 /**
  * Advance targets whose assignee picker may be pre-filled from the job's
@@ -92,6 +97,22 @@ import {
  * always picked manually.
  */
 const PREFILL_TARGET_STAGES = new Set(["recruiter_screening", "behavioral"]);
+
+/**
+ * Stages whose interviewer is decided exclusively through the interview
+ * meeting card's own dialog (booking a meeting upserts the assignment --
+ * see InterviewSchedulingService.schedule/update on the backend), mirroring
+ * the backend's own `SCHEDULABLE_STAGES`
+ * (backend/recruiting/interview_scheduling_service.py). Recruiter
+ * screening and board review are interview stages too (INTERVIEW_STAGES)
+ * but evaluate on materials alone -- no meeting is ever booked for them --
+ * so their assignee is still picked via Advance/Round-advance/Reassign as
+ * before.
+ */
+const ASSIGNEE_VIA_CARD_STAGES = new Set(["behavioral", "tech"]);
+
+/** Stages an application never advances out of once reached. */
+const TERMINAL_STAGES = new Set(["rejected", "hired"]);
 
 /**
  * Rejection reasons offered to the reviewer, mirroring the backend's fixed
@@ -413,6 +434,21 @@ const describeActivity = ({ eventType, details }, jobKind) => {
       return `Blacklisted and rejected from ${humanize(details.fromStage)}: ${details.reason}`;
     case "auto_assigned":
       return `Automatically assigned to ${details.assigneeName} on ${humanize(details.stage)}`;
+    // These three carry only {stage, round, assigneeId, startAt, endAt} on
+    // the raw event (interview_cancelled: {stage, round} only) -- unlike
+    // stage_changed/round_advanced/auto_assigned above, the backend does not
+    // resolve assigneeId to a name for these event types
+    // (_ASSIGNEE_NAME_FIELDS in board_service.py has no entry for them), and
+    // it stores no timezone on the activity row (only on the interview
+    // itself), so the description below deliberately doesn't reference
+    // either -- surfacing an unresolved id or a UTC time labeled with the
+    // wrong zone would be worse than omitting them.
+    case "interview_scheduled":
+      return `Scheduled a ${humanize(details.stage)} interview for round ${details.round}`;
+    case "interview_updated":
+      return `Rescheduled the ${humanize(details.stage)} interview for round ${details.round}`;
+    case "interview_cancelled":
+      return `Cancelled the ${humanize(details.stage)} interview for round ${details.round}`;
     case "email_sent":
       return `Sent email "${details.subject}" to ${(details.to ?? []).join(", ")}${
         details.cc?.length ? `, cc ${details.cc.join(", ")}` : ""
@@ -920,6 +956,12 @@ const ApplicationDetailPage = () => {
   const [blacklistReason, setBlacklistReason] = useState("");
   const [blacklisting, setBlacklisting] = useState(false);
 
+  const [interviewDialogOpen, setInterviewDialogOpen] = useState(false);
+  const [interviewDialogMode, setInterviewDialogMode] = useState("schedule");
+  const [interviewBusy, setInterviewBusy] = useState(false);
+  const [cancelInterviewConfirmOpen, setCancelInterviewConfirmOpen] =
+    useState(false);
+
   const [savingEvaluation, setSavingEvaluation] = useState(false);
 
   const [comments, setComments] = useState([]);
@@ -1031,13 +1073,35 @@ const ApplicationDetailPage = () => {
       ? advanceTarget(jobStages, detail.application.stage, job?.kind)
       : null;
   const isPipelineStage = next !== null;
-  const needsAssignee = isPipelineStage && INTERVIEW_STAGES.has(next);
+  // Behavioral/tech are excluded here even though they're INTERVIEW_STAGES:
+  // their interviewer is now picked exclusively via the interview meeting
+  // card's own dialog when booking a meeting, not at advance time -- see
+  // ASSIGNEE_VIA_CARD_STAGES. Advancing into one of them with no dialog at
+  // all mirrors how advancing into a non-interview stage already worked.
+  const needsAssignee =
+    isPipelineStage &&
+    INTERVIEW_STAGES.has(next) &&
+    !ASSIGNEE_VIA_CARD_STAGES.has(next);
   // Reassignment applies only to interview stages, which carry an assignee.
   // The Offer stage has no rubric and is not assignable (the backend rejects
   // a reassign there), so the control must not appear even though Offer has a
-  // next stage to advance to (e.g. "hired" for employment jobs).
+  // next stage to advance to (e.g. "hired" for employment jobs). Behavioral/
+  // tech are additionally excluded: their interviewer is now set exclusively
+  // via the interview meeting card's own dialog (see
+  // ASSIGNEE_VIA_CARD_STAGES), so a generic Reassign control would let
+  // someone silently diverge the assignment from the calendar meeting.
   const canReassign =
-    loaded && detail?.isOwner && INTERVIEW_STAGES.has(detail.application.stage);
+    loaded &&
+    detail?.isOwner &&
+    INTERVIEW_STAGES.has(detail.application.stage) &&
+    !ASSIGNEE_VIA_CARD_STAGES.has(detail.application.stage);
+  // Mirrors canReassign's exclusion, but for the CURRENT stage rather than
+  // the advance target -- the round-advance dialog stays on the same stage,
+  // so a behavioral/tech round-advance must hide its own PeoplePicker too.
+  const roundAdvanceNeedsAssignee =
+    loaded &&
+    detail != null &&
+    !ASSIGNEE_VIA_CARD_STAGES.has(detail.application.stage);
 
   // Rounds configured for the application's *current* stage (a sibling
   // field to `defaultAssigneeId` on the same per-stage job config entries
@@ -1073,6 +1137,32 @@ const ApplicationDetailPage = () => {
     detail != null &&
     INTERVIEW_STAGES.has(detail.application.stage) &&
     !hasCurrentRoundEvaluation;
+
+  // The interview meeting card mounts for a behavioral/tech application, or
+  // -- defensively -- whenever a meeting row is still attached even if the
+  // application has since moved off those stages (e.g. rejected right after
+  // booking, without cancelling first): the recruiter still needs to see
+  // and cancel it from here.
+  const showInterviewCard =
+    loaded &&
+    detail != null &&
+    (ASSIGNEE_VIA_CARD_STAGES.has(detail.application.stage) ||
+      detail.interview != null);
+  const isTerminalStage =
+    loaded && detail != null && TERMINAL_STAGES.has(detail.application.stage);
+  // The interview dialog's starting interviewer pick in "schedule" mode: the
+  // round's current assignee if one is already set (e.g. carried over from a
+  // previous round in the same stage), else the stage's configured default
+  // (the same per-stage `defaultAssigneeId` the advance-time prefill above
+  // reads, just for the CURRENT stage instead of the advance target).
+  const interviewDefaultAssigneeId =
+    loaded && detail != null
+      ? (detail.assigneeId ??
+        (job?.pipelineConfig?.stages ?? []).find(
+          (s) => s.stage === detail.application.stage,
+        )?.defaultAssigneeId ??
+        null)
+      : null;
 
   // Pre-fill the advance-time assignee picker with the target stage's
   // configured default for screening/behavioral targets (tech/board_review
@@ -1317,6 +1407,47 @@ const ApplicationDetailPage = () => {
       .finally(() => setBlacklisting(false));
   };
 
+  const openScheduleInterview = () => {
+    setInterviewDialogMode("schedule");
+    setInterviewDialogOpen(true);
+  };
+
+  const openEditInterview = () => {
+    setInterviewDialogMode("edit");
+    setInterviewDialogOpen(true);
+  };
+
+  const handleInterviewSubmit = (body) => {
+    if (interviewBusy) return;
+    setInterviewBusy(true);
+    const call = interviewDialogMode === "edit" ? updateInterview : scheduleInterview;
+    call(applicationId, body)
+      .then(() => {
+        toast.success(
+          interviewDialogMode === "edit"
+            ? "Interview updated."
+            : "Interview scheduled.",
+        );
+        setInterviewDialogOpen(false);
+        load();
+      })
+      .catch((e) => toast.error(e.message))
+      .finally(() => setInterviewBusy(false));
+  };
+
+  const handleConfirmCancelInterview = () => {
+    if (interviewBusy) return;
+    setInterviewBusy(true);
+    cancelInterview(applicationId)
+      .then(() => {
+        toast.success("Interview cancelled.");
+        setCancelInterviewConfirmOpen(false);
+        load();
+      })
+      .catch((e) => toast.error(e.message))
+      .finally(() => setInterviewBusy(false));
+  };
+
   const handleSaveDraft = (responses) => {
     if (savingEvaluation) return;
     setSavingEvaluation(true);
@@ -1487,6 +1618,24 @@ const ApplicationDetailPage = () => {
                     </Button>
                   )}
                 </div>
+              )}
+
+              {/* Booking/editing/cancelling a meeting requires the same
+                  advance permission + ownership the backend enforces, so
+                  this only mounts for an actual owner -- a read.all viewer
+                  sees the assignee name above but not this card, mirroring
+                  canReassign's owner gate right above it. */}
+              {showInterviewCard && detail.isOwner && (
+                <InterviewMeetingCard
+                  interview={detail.interview}
+                  stage={detail.application.stage}
+                  round={detail.application.currentRound ?? 1}
+                  isTerminal={isTerminalStage}
+                  busy={interviewBusy}
+                  onSchedule={openScheduleInterview}
+                  onEdit={openEditInterview}
+                  onCancel={() => setCancelInterviewConfirmOpen(true)}
+                />
               )}
 
               {detail.isOwner && (
@@ -1829,14 +1978,16 @@ const ApplicationDetailPage = () => {
               Advance to Round {(detail.application.currentRound ?? 1) + 1}
             </DialogTitle>
           </DialogHeader>
-          <PeoplePicker
-            label="Assignee"
-            variant="list"
-            noneLabel="Decide later"
-            pool={interviewPool}
-            value={roundAdvanceAssigneeId || undefined}
-            onChange={(v) => setRoundAdvanceAssigneeId(v ? String(v) : "")}
-          />
+          {roundAdvanceNeedsAssignee && (
+            <PeoplePicker
+              label="Assignee"
+              variant="list"
+              noneLabel="Decide later"
+              pool={interviewPool}
+              value={roundAdvanceAssigneeId || undefined}
+              onChange={(v) => setRoundAdvanceAssigneeId(v ? String(v) : "")}
+            />
+          )}
           <DialogFooter>
             <Button
               variant="outline"
@@ -1877,12 +2028,6 @@ const ApplicationDetailPage = () => {
             value={advanceAssigneeId || undefined}
             onChange={(v) => setAdvanceAssigneeId(v ? String(v) : "")}
           />
-          {(next === "behavioral" || next === "tech") && (
-            <p className="text-sm text-slate-500">
-              You can leave this unassigned for now — an assignee will be
-              required before marking this stage as Scheduled.
-            </p>
-          )}
           <DialogFooter>
             <Button
               variant="outline"
@@ -1932,6 +2077,49 @@ const ApplicationDetailPage = () => {
               disabled={!reassignAssigneeId || reassigning}
             >
               Confirm reassign
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <InterviewMeetingDialog
+        open={interviewDialogOpen}
+        onOpenChange={setInterviewDialogOpen}
+        mode={interviewDialogMode}
+        interview={detail.interview}
+        defaultAssigneeId={interviewDefaultAssigneeId}
+        interviewPool={interviewPool}
+        onSubmit={handleInterviewSubmit}
+        submitting={interviewBusy}
+      />
+
+      <Dialog
+        open={cancelInterviewConfirmOpen}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) setCancelInterviewConfirmOpen(false);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Cancel this interview meeting?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-slate-700">
+            The Calendar invite will be cancelled for every attendee.
+          </p>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setCancelInterviewConfirmOpen(false)}
+              disabled={interviewBusy}
+            >
+              Keep it
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleConfirmCancelInterview}
+              disabled={interviewBusy}
+            >
+              Cancel meeting
             </Button>
           </DialogFooter>
         </DialogContent>
