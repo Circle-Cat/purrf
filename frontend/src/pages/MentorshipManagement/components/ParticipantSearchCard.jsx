@@ -14,7 +14,7 @@ const ParticipantSearchCard = () => {
       <CardHeader>
         <CardTitle>Participant Search</CardTitle>
       </CardHeader>
-      <CardContent>
+      <CardContent className="relative">
         <Tabs defaultValue="participant">
           <TabsList className="mb-4 gap-1">
             <TabsTrigger
