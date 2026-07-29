@@ -21,6 +21,7 @@ py_test(
     name = "meeting_scheduling_service_test",
     srcs = ["meeting_scheduling_service_test.py"],
     deps = [
+        "//backend/common:exceptions",
         "//backend/communication",
     ],
 )

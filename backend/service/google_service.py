@@ -5,6 +5,8 @@ from google.apps import meet_v2
 from google.protobuf import field_mask_pb2
 from googleapiclient.errors import HttpError
 
+from backend.common.exceptions import MeetingGoneError
+
 BATCH_DELETE_SIZE = 500
 
 
@@ -445,6 +447,85 @@ class GoogleService:
             )
             return None
         return event
+
+    def update_google_meeting(
+        self,
+        event_id: str,
+        start_time: datetime,
+        end_time: datetime,
+        attendees_emails: list[str],
+    ) -> dict:
+        """Move an existing event and/or replace its attendee list.
+
+        Patches **only** ``start`` / ``end`` / ``attendees``. ``conferenceData``
+        is deliberately absent from the body: including it would mint a new
+        conference and invalidate the Meet link already mailed to the
+        attendees, which is the whole reason we patch instead of
+        delete-and-recreate.
+
+        ``sendUpdates="all"`` makes Google mail everyone the change — an
+        attendee dropped from the list gets a cancellation, a new one gets an
+        invitation. Unlike ``insert``, patch is naturally idempotent (the same
+        body applied twice yields the same event), so it needs no
+        client-minted id or duplicate recovery.
+
+        Args:
+            event_id (str): The Calendar event to patch.
+            start_time (datetime): New start, tz-aware.
+            end_time (datetime): New end, tz-aware.
+            attendees_emails (list[str]): The complete attendee list after the
+                change (not a delta).
+
+        Returns:
+            dict: The patched event.
+
+        Raises:
+            MeetingGoneError: The event is absent (404) or deleted (410).
+            RuntimeError: Any other failure.
+        """
+        req = self.google_calendar_client.events().patch(
+            calendarId="primary",
+            eventId=event_id,
+            body={
+                "start": {"dateTime": start_time.isoformat(), "timeZone": "Etc/UTC"},
+                "end": {"dateTime": end_time.isoformat(), "timeZone": "Etc/UTC"},
+                "attendees": [{"email": email} for email in attendees_emails],
+            },
+            sendUpdates="all",
+        )
+        try:
+            response = self.retry_utils.get_retry_on_transient(req.execute)
+            self.logger.info(
+                "[GoogleService] Patched Google Meeting event_id=%s", event_id
+            )
+            return response
+        except HttpError as e:
+            status = getattr(e.resp, "status", None)
+            if status in (HTTPStatus.NOT_FOUND, HTTPStatus.GONE):
+                self.logger.error(
+                    "[GoogleService] Cannot patch event_id=%s: it is gone "
+                    "(status=%s)",
+                    event_id,
+                    status,
+                )
+                raise MeetingGoneError(
+                    f"Calendar event {event_id} no longer exists"
+                ) from e
+            self.logger.error(
+                "[GoogleService] Failed to patch event_id=%s: %s",
+                event_id,
+                e,
+                exc_info=True,
+            )
+            raise RuntimeError("Unable to update Google Meeting via Calendar API") from e
+        except Exception as e:
+            self.logger.error(
+                "[GoogleService] Failed to patch event_id=%s: %s",
+                event_id,
+                e,
+                exc_info=True,
+            )
+            raise RuntimeError("Unable to update Google Meeting via Calendar API") from e
 
     async def get_meet_space_name(self, meeting_code: str) -> str:
         """
