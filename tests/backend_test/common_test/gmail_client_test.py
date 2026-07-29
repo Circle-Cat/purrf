@@ -80,6 +80,13 @@ class TestGmailClient(TestCase):
         raw = send.call_args.kwargs["body"]["raw"]
         return email.message_from_bytes(base64.urlsafe_b64decode(raw))
 
+    def _plain_part(self):
+        """Decode the text/plain alternative of the sent message."""
+        for part in self._sent_mime().walk():
+            if part.get_content_type() == "text/plain":
+                return part.get_payload(decode=True).decode("utf-8")
+        self.fail("message has no text/plain alternative")
+
     def _stub_send_result(self, message_id="m1", thread_id="t1"):
         self.mock_service.users().messages().send().execute.return_value = {
             "id": message_id,
@@ -105,6 +112,37 @@ class TestGmailClient(TestCase):
         self.assertIn("<p>Hello</p>", parts["text/html"])
         self.assertIn("Hello", parts["text/plain"])
         self.assertNotIn("<p>", parts["text/plain"])
+
+    def _send_body(self, body):
+        self._stub_send_result()
+        self.client.send_message(
+            to=["alice@example.com"], cc=[], subject="Hi", body=body
+        )
+
+    def test_plain_part_keeps_the_url_of_a_link(self):
+        url = "https://docs.google.com/forms/d/e/1FAIpQLS/viewform"
+        self._send_body(f'<p>Please fill out <a href="{url}">this form</a>.</p>')
+        self.assertEqual(
+            self._plain_part().strip(), f"Please fill out this form ({url})."
+        )
+
+    def test_plain_part_strips_markup_inside_the_link_label(self):
+        self._send_body(
+            '<a href="https://x.test" target="_blank">click <b>here</b></a>'
+        )
+        self.assertEqual(self._plain_part().strip(), "click here (https://x.test)")
+
+    def test_plain_part_does_not_repeat_a_url_that_is_its_own_label(self):
+        self._send_body('<a href="https://x.test/a">https://x.test/a</a>')
+        self.assertEqual(self._plain_part().strip(), "https://x.test/a")
+
+    def test_plain_part_hides_the_mailto_scheme_when_the_label_is_the_address(self):
+        self._send_body('<a href="mailto:hr@circlecat.org">hr@circlecat.org</a>')
+        self.assertEqual(self._plain_part().strip(), "hr@circlecat.org")
+
+    def test_plain_part_leaves_an_anchor_without_href_alone(self):
+        self._send_body('<a name="top">Back to top</a>')
+        self.assertEqual(self._plain_part().strip(), "Back to top")
 
     def test_send_message_sets_cc(self):
         self._stub_send_result()
