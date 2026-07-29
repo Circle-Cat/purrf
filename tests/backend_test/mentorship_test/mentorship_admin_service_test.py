@@ -1,5 +1,6 @@
 import unittest
 from unittest.mock import MagicMock, AsyncMock
+from pydantic import ValidationError
 from backend.mentorship.mentorship_admin_service import MentorshipAdminService
 from backend.dto.participant_search_filter_dto import ParticipantSearchFilterDto
 from backend.dto.participant_search_row_dto import ParticipantSearchRow
@@ -454,9 +455,7 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(common[5], "'+alt@evil.com")  # alternative_emails joined
 
     def test_build_common_export_columns_sanitizes_leading_whitespace(self):
-        """A formula-trigger character preceded by leading whitespace is still
-        sanitized, since some spreadsheet apps strip it before checking the
-        prefix; the original (unstripped) value is what gets quoted."""
+        """Sanitizes formula fields with leading whitespace while preserving the original value."""
         row = _make_row(user_id=1)
         users_map = {
             1: MagicMock(
@@ -496,7 +495,7 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
 
     def test_build_participant_export_columns_no_pair_leaves_matched_user_blank(self):
         """A row with no pair_id has blank Matched User columns."""
-        row = _make_row(user_id=1)
+        row = _make_row()
 
         participant = self.service._build_participant_export_columns(
             row, users_map={}, trainings_map={}, rounds_map={}
@@ -531,8 +530,7 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(participant[5], "'@pref")  # matched_user_name
 
     def test_build_participant_export_columns_matched_name_fallback(self):
-        """Matched User Name falls back to "first last" when the partner has no
-        preferred_name, and the combined result is still sanitized."""
+        """Falls back to first last name and sanitizes the combined value."""
         row = _make_row(
             user_id=1,
             pair_id=10,
@@ -607,7 +605,7 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
 
     def test_build_non_participant_export_columns_blank_when_no_training(self):
         """A user with no training record has blank onboarding status columns."""
-        row = _make_row(user_id=1)
+        row = _make_row()
 
         non_participant = self.service._build_non_participant_export_columns(
             row, trainings_map={}
@@ -621,7 +619,7 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.service._extract_meetings_for_row(row), [])
 
     def test_extract_meetings_for_row_v2_resolves_notes(self):
-        """A v2 meeting_log maps through the same AdminMeetingDto/note logic as get_meeting_log."""
+        """Resolves v2 meeting notes using the same note logic as get_meeting_log."""
         row = _make_row(
             user_id=1,
             mentor_id=10,
@@ -647,9 +645,7 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(meetings[0].note, [MeetingNoteTag.MENTOR_ABSENT])
 
     def test_extract_meetings_for_row_v2_malformed_datetime_raises(self):
-        """A meeting with start_datetime=None now surfaces as a DTO
-        validation error instead of being defaulted — the caller
-        (stream_export_csv) is responsible for catching and skipping."""
+        """Raises a validation error for a meeting with start_datetime=None."""
         row = _make_row(
             user_id=1,
             mentor_id=10,
@@ -666,25 +662,14 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
                 ]
             },
         )
-        with self.assertRaises(Exception):
+        with self.assertRaises(ValidationError):
             self.service._extract_meetings_for_row(row)
 
     async def test_missing_participation_status_raises_value_error(self):
-        """participation_status decides which column set to use, so it must
-        be set — an unfiltered ("both") export isn't a supported mode."""
+        """Requires participation_status — an unfiltered "both" export isn't supported."""
         with self.assertRaises(ValueError):
             await self.service.stream_export_csv(
-                ParticipantSearchFilterDto(), "summary"
-            ).__anext__()
-
-    async def test_participant_export_missing_mode_raises_value_error(self):
-        """mode decides which meeting column set to use for a participant
-        export, so it must be set there — unlike a non-participant export,
-        which has no meeting data and can safely ignore mode."""
-        with self.assertRaises(ValueError):
-            await self.service.stream_export_csv(
-                ParticipantSearchFilterDto(participation_status="participant"),
-                None,
+                ParticipantSearchFilterDto(), expand_meetings=False
             ).__anext__()
 
     async def test_summary_mode_emits_header_and_one_row_per_person(self):
@@ -706,7 +691,7 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
         csv_text = await _collect_csv(
             self.service.stream_export_csv(
                 ParticipantSearchFilterDto(participation_status="participant"),
-                "summary",
+                expand_meetings=False,
             )
         )
 
@@ -739,42 +724,6 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
         ]
         self.assertFalse(first_call.kwargs["need_meeting_log"])
 
-    async def test_summary_mode_skips_row_on_build_failure_and_logs(self):
-        """A row whose common-column build fails (e.g. missing from
-        users_map) is logged and skipped in summary mode too — this
-        protection isn't limited to detailed mode's meeting handling."""
-        bad_row = _make_row(user_id=1, round_id=10, pair_id=100)
-        good_row = _make_row(user_id=2, round_id=20, pair_id=200)
-        self.mock_participants_repo.iter_search_participants_for_admin.side_effect = [
-            [bad_row, good_row],
-            [],
-        ]
-        self.mock_users_repo.get_users_and_emails_by_ids.return_value = (
-            {
-                2: MagicMock(
-                    user_id=2, first_name="Bob", last_name="Lee", preferred_name=None
-                )
-            },
-            {2: []},
-        )
-
-        csv_text = await _collect_csv(
-            self.service.stream_export_csv(
-                ParticipantSearchFilterDto(participation_status="participant"),
-                "summary",
-            )
-        )
-
-        lines = csv_text.strip("\r\n").split("\r\n")
-        self.assertEqual(len(lines), 2)  # header + only the good row
-        self.assertTrue(lines[1].startswith("2,Bob,Lee"))
-
-        self.mock_logger.exception.assert_called_once()
-        _, user_id_arg, pair_id_arg, round_id_arg = (
-            self.mock_logger.exception.call_args.args
-        )
-        self.assertEqual((user_id_arg, pair_id_arg, round_id_arg), (1, 100, 10))
-
     async def test_summary_mode_first_chunk_starts_with_utf8_bom(self):
         """The raw byte stream is prefixed with a UTF-8 BOM so Excel on
         Windows doesn't mojibake non-ASCII names."""
@@ -786,7 +735,7 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
             chunk
             async for chunk in self.service.stream_export_csv(
                 ParticipantSearchFilterDto(participation_status="participant"),
-                "summary",
+                expand_meetings=False,
             )
         ]
 
@@ -826,7 +775,7 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
         csv_text = await _collect_csv(
             self.service.stream_export_csv(
                 ParticipantSearchFilterDto(participation_status="participant"),
-                "detailed",
+                expand_meetings=True,
             )
         )
 
@@ -849,9 +798,7 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(second_call.kwargs["need_meeting_log"])
 
     async def test_detailed_mode_skips_row_on_processing_failure_and_logs(self):
-        """A row whose meeting data fails to process (e.g. malformed datetime)
-        is logged with its identifying info and skipped — the stream
-        continues with the next row instead of aborting."""
+        """Logs and skips a row whose meeting data fails to process."""
         bad_row = _make_row(
             user_id=1,
             round_id=10,
@@ -907,7 +854,7 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
         csv_text = await _collect_csv(
             self.service.stream_export_csv(
                 ParticipantSearchFilterDto(participation_status="participant"),
-                "detailed",
+                expand_meetings=True,
             )
         )
 
@@ -922,10 +869,7 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((user_id_arg, pair_id_arg, round_id_arg), (1, 100, 10))
 
     async def test_detailed_mode_skips_whole_row_not_partial_meetings(self):
-        """A pair with two meetings where both DTOs construct fine but only
-        the second fails to *format* emits neither meeting — a partial
-        failure must not leave the first, already-formatted meeting written
-        to the buffer before the second one blows up."""
+        """Skips the whole row when one meeting fails, avoiding partial meeting output."""
 
         def _format_or_raise(iso, fmt="%Y-%m-%d %H:%M %Z"):
             if iso == "bad-datetime":
@@ -975,7 +919,7 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
         csv_text = await _collect_csv(
             self.service.stream_export_csv(
                 ParticipantSearchFilterDto(participation_status="participant"),
-                "detailed",
+                expand_meetings=True,
             )
         )
 
@@ -984,9 +928,7 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
         self.mock_logger.exception.assert_called_once()
 
     async def test_detailed_mode_keeps_row_with_no_meetings_blank(self):
-        """A row with pair_id but empty meeting_log still gets one CSV row,
-        with the meeting columns left blank — it isn't dropped just because
-        it has no meetings yet."""
+        """Keeps a row with no meetings instead of dropping it, with blank meeting columns."""
         row = _make_row(user_id=1, pair_id=5, meeting_log={})
         self.mock_participants_repo.iter_search_participants_for_admin.side_effect = [
             [row],
@@ -1004,7 +946,7 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
         csv_text = await _collect_csv(
             self.service.stream_export_csv(
                 ParticipantSearchFilterDto(participation_status="participant"),
-                "detailed",
+                expand_meetings=True,
             )
         )
 
@@ -1012,10 +954,8 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(lines), 2)  # header + one blank-meeting row
         self.assertEqual(lines[1].split(",")[-4:], ["", "", "", ""])
 
-    async def test_non_participant_export_ignores_mode_value(self):
-        """A non-participant export accepts any mode value but ignores it
-        entirely: header/columns still use the common + non-participant
-        set, and meeting logs are never queried, even when mode="detailed"."""
+    async def test_non_participant_export_ignores_expand_meetings(self):
+        """Ignores expand_meetings for non-participant exports."""
         row = _make_row(user_id=1, participant_role=None, pair_id=None)
         self.mock_participants_repo.iter_search_participants_for_admin.side_effect = [
             [row],
@@ -1040,7 +980,7 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
         csv_text = await _collect_csv(
             self.service.stream_export_csv(
                 ParticipantSearchFilterDto(participation_status="non_participant"),
-                "detailed",
+                expand_meetings=True,
             )
         )
 
@@ -1061,67 +1001,11 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(lines[1], "1,Alice,Doe,,,,done,")
 
         # need_meeting_log must stay False for a non-participant export even
-        # when mode="detailed", since non-participants have no meetings.
+        # when expand_meetings=True, since non-participants have no meetings.
         first_call = self.mock_participants_repo.iter_search_participants_for_admin.call_args_list[
             0
         ]
         self.assertFalse(first_call.kwargs["need_meeting_log"])
-
-    async def test_non_participant_export_with_no_mode_succeeds(self):
-        """mode is optional for a non-participant export because it has no
-        meeting data."""
-        row = _make_row(user_id=1, participant_role=None, pair_id=None)
-        self.mock_participants_repo.iter_search_participants_for_admin.side_effect = [
-            [row],
-            [],
-        ]
-        self.mock_users_repo.get_users_and_emails_by_ids.return_value = (
-            {
-                1: MagicMock(
-                    user_id=1, first_name="Alice", last_name="Doe", preferred_name=None
-                )
-            },
-            {1: []},
-        )
-
-        csv_text = await _collect_csv(
-            self.service.stream_export_csv(
-                ParticipantSearchFilterDto(participation_status="non_participant")
-            )
-        )
-
-        lines = csv_text.strip("\r\n").split("\r\n")
-        self.assertEqual(len(lines), 2)  # header + the one row
-
-    async def test_non_participant_mode_skips_row_on_build_failure_and_logs(self):
-        """A non-participant row whose common-column build fails is logged
-        and skipped, same protection as the participant path."""
-        bad_row = _make_row(user_id=1, round_id=None, pair_id=None)
-        good_row = _make_row(user_id=2, round_id=None, pair_id=None)
-        self.mock_participants_repo.iter_search_participants_for_admin.side_effect = [
-            [bad_row, good_row],
-            [],
-        ]
-        self.mock_users_repo.get_users_and_emails_by_ids.return_value = (
-            {
-                2: MagicMock(
-                    user_id=2, first_name="Bob", last_name="Lee", preferred_name=None
-                )
-            },
-            {2: []},
-        )
-
-        csv_text = await _collect_csv(
-            self.service.stream_export_csv(
-                ParticipantSearchFilterDto(participation_status="non_participant"),
-                "summary",
-            )
-        )
-
-        lines = csv_text.strip("\r\n").split("\r\n")
-        self.assertEqual(len(lines), 2)  # header + only the good row
-        self.assertTrue(lines[1].startswith("2,Bob,Lee"))
-        self.mock_logger.exception.assert_called_once()
 
     async def test_stops_paginating_on_empty_page(self):
         """The batch loop stops as soon as a page comes back empty."""
@@ -1142,7 +1026,7 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
         await _collect_csv(
             self.service.stream_export_csv(
                 ParticipantSearchFilterDto(participation_status="participant"),
-                "summary",
+                expand_meetings=False,
             )
         )
 
@@ -1154,9 +1038,7 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
     async def test_multiple_batches_paginate_with_incrementing_offset_and_bom_once(
         self,
     ):
-        """Two non-empty pages: offset increments by the batch size on each
-        call, every row from both pages is emitted, and the BOM appears only
-        in the first chunk, not re-prepended to later batches."""
+        """Paginates across batches with incrementing offsets and a single BOM."""
         row1 = _make_row(user_id=1)
         row2 = _make_row(user_id=2)
         self.mock_participants_repo.iter_search_participants_for_admin.side_effect = [
@@ -1180,7 +1062,7 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
             chunk
             async for chunk in self.service.stream_export_csv(
                 ParticipantSearchFilterDto(participation_status="participant"),
-                "summary",
+                expand_meetings=False,
             )
         ]
 

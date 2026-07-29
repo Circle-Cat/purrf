@@ -1,4 +1,3 @@
-from typing import Literal
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends
@@ -80,7 +79,7 @@ class MentorshipAdminController:
     async def export_participants(
         self,
         filters: ParticipantSearchFilterDto = Depends(),
-        mode: Literal["summary", "detailed"] | None = None,
+        expand_meetings: bool = False,
     ):
         """
         Stream the participant search results as a downloadable CSV.
@@ -88,21 +87,20 @@ class MentorshipAdminController:
         Args:
             filters (ParticipantSearchFilterDto): Search filters used for
                 the export. filters.participation_status must be set.
-            mode (Literal["summary", "detailed"] | None): "summary" (one row
-                per participant record) or "detailed" (one row per meeting).
-                Required for a participant export. Ignored for a
-                non-participant export.
+            expand_meetings (bool): Whether participant exports include
+                meeting rows. Ignored for non-participant exports.
 
         Returns:
             StreamingResponse: Streaming CSV file response.
         """
         today = datetime.now(ZoneInfo("America/Los_Angeles")).strftime("%Y-%m-%d")
-        if filters.participation_status == "participant" and mode:
-            filename = f"{filters.participation_status}_{mode}_{today}.csv"
+        if filters.participation_status == "participant":
+            mode_label = "detailed" if expand_meetings else "summary"
+            filename = f"{filters.participation_status}_{mode_label}_{today}.csv"
         else:
             filename = f"{filters.participation_status}_{today}.csv"
         return StreamingResponse(
-            self.mentorship_admin_service.stream_export_csv(filters, mode),
+            self.mentorship_admin_service.stream_export_csv(filters, expand_meetings),
             media_type="text/csv",
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )

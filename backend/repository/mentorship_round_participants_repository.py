@@ -434,8 +434,8 @@ class MentorshipRoundParticipantsRepository:
         user_id — all ascending, nulls last.
         """
         return [
-            UsersEntity.last_name.asc().nulls_last(),
-            UsersEntity.first_name.asc().nulls_last(),
+            func.lower(UsersEntity.last_name).asc().nulls_last(),
+            func.lower(UsersEntity.first_name).asc().nulls_last(),
             MentorshipRoundParticipantsEntity.round_id.asc().nulls_last(),
             MentorshipPairsEntity.pair_id.asc().nulls_last(),
             UsersEntity.user_id.asc(),

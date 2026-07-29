@@ -1,6 +1,5 @@
 import csv
 import io
-from typing import Literal
 from collections.abc import AsyncIterator
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.dto.participant_search_filter_dto import ParticipantSearchFilterDto
@@ -518,7 +517,7 @@ class MentorshipAdminService:
     async def stream_export_csv(
         self,
         filters: ParticipantSearchFilterDto,
-        mode: Literal["summary", "detailed"] | None = None,
+        expand_meetings: bool = False,
     ) -> AsyncIterator[bytes]:
         """
         Stream participant search results as BOM-prefixed UTF-8 CSV data chunks.
@@ -527,33 +526,30 @@ class MentorshipAdminService:
         this generator after the controller returns.
 
         An export row that fails to build is logged and skipped instead of
-        aborting the stream. In detailed mode, a pair's meeting rows are
-        built before writing to avoid partially exporting a participant
+        aborting the stream. When expanding meetings, a pair's meeting rows
+        are built before writing to avoid partially exporting a participant
         when one meeting fails.
 
         Args:
             filters (ParticipantSearchFilterDto): Same filters as the search
                 endpoint. filters.participation_status must be set, since it
                 decides which column set the export uses.
-            mode (Literal["summary", "detailed"] | None): "summary" (one row
-                per participant record) or "detailed" (one row per meeting;
-                a participant with no meetings still gets one row, with the
-                meeting columns left blank). Required for a participant
-                export. Ignored for a non-participant export.
+            expand_meetings (bool): False (default) yields one row per
+                participant record. True yields one row per meeting (a
+                participant with no meetings still gets one row, with the
+                meeting columns left blank). Ignored for a non-participant
+                export, which has no meeting data.
 
         Yields:
             bytes: UTF-8 encoded CSV batch bytes.
 
         Raises:
-            ValueError: If filters.participation_status is not set, or
-                mode is not set for a participant export.
+            ValueError: If filters.participation_status is not set.
         """
         if filters.participation_status is None:
             raise ValueError("filters.participation_status is required for CSV export.")
         is_participant = filters.participation_status == "participant"
-        if is_participant and mode is None:
-            raise ValueError("mode is required for participant export.")
-        need_meeting_log = is_participant and mode == "detailed"
+        need_meeting_log = is_participant and expand_meetings
         buffer = io.StringIO()
         writer = csv.writer(buffer)
 
@@ -566,7 +562,7 @@ class MentorshipAdminService:
         if is_participant:
             meeting_columns = (
                 _EXPORT_MEETING_DETAIL_COLUMNS
-                if mode == "detailed"
+                if expand_meetings
                 else _EXPORT_MEETING_SUMMARY_COLUMNS
             )
             header = (
@@ -608,7 +604,7 @@ class MentorshipAdminService:
                             participant = self._build_participant_export_columns(
                                 row, users_map, trainings_map, rounds_map
                             )
-                            if mode == "summary":
+                            if not expand_meetings:
                                 csv_rows = [
                                     common
                                     + participant
