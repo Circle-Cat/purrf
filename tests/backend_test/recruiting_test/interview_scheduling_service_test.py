@@ -75,6 +75,13 @@ class _BaseTest(unittest.IsolatedAsyncioTestCase):
             side_effect=self._update_interview_schedule
         )
         self.interview_repo.delete = AsyncMock()
+        # The "existing assignment" update()/cancel() read before overwriting/
+        # deleting -- default matches _interview_row()'s implied assignee so
+        # a test that doesn't care about the "from" assignee still gets a
+        # real int rather than an unconfigured autospec MagicMock.
+        self.assignment_repo.get = AsyncMock(
+            return_value=self._assignment_row(assignee_id=ASSIGNEE_ID)
+        )
 
         self.service = InterviewSchedulingService(
             self.logger,
@@ -148,6 +155,17 @@ class _BaseTest(unittest.IsolatedAsyncioTestCase):
             "conference_id": "conf-1",
             "created": "2026-08-01T00:00:00Z",
         }
+
+    def _assignment_row(self, **overrides):
+        base = dict(
+            application_id=APPLICATION_ID,
+            stage=ApplicationStage.BEHAVIORAL,
+            round=1,
+            assignee_id=ASSIGNEE_ID,
+            assigned_by=OWNER_ID,
+        )
+        base.update(overrides)
+        return SimpleNamespace(**base)
 
     def _interview_row(self, **overrides):
         base = dict(
@@ -266,6 +284,29 @@ class ScheduleTest(_BaseTest):
         self.assertEqual(args[:3], (self.session, APPLICATION_ID, OWNER_ID))
         self.assertEqual(args[3], "interview_scheduled")
         self.assertEqual(kwargs["details"]["assigneeId"], ASSIGNEE_ID)
+
+    async def test_interview_scheduled_activity_carries_the_full_detail_set(self):
+        # The timeline needs the zone and the calendar event id (not just the
+        # UTC instant) to render "Scheduled the Behavioral interview meeting
+        # for 2026-08-05 14:00 America/Los_Angeles with <name>" without
+        # guessing -- see get_application_activity's _ASSIGNEE_NAME_FIELDS
+        # entry, which resolves assigneeId -> assigneeName from this same dict.
+        await self.service.schedule(
+            self.session, self._ctx(user_id=OWNER_ID), APPLICATION_ID, self._dto()
+        )
+        _args, kwargs = self.activity_repo.create.call_args
+        self.assertEqual(
+            kwargs["details"],
+            {
+                "stage": "behavioral",
+                "round": 1,
+                "assigneeId": ASSIGNEE_ID,
+                "startAt": "2026-08-05T21:00:00+00:00",
+                "endAt": "2026-08-05T21:45:00+00:00",
+                "timezone": "America/Los_Angeles",
+                "googleEventId": "evt-1",
+            },
+        )
 
     async def test_overwrites_the_rounds_assignment(self):
         await self.service.schedule(
@@ -458,6 +499,51 @@ class UpdateTest(_BaseTest):
         args, _kwargs = self.activity_repo.create.call_args
         self.assertEqual(args[3], "interview_updated")
 
+    async def test_interview_updated_activity_carries_the_full_detail_set_incl_from_fields(
+        self,
+    ):
+        # The "from*" trio lets the timeline say what actually changed (time
+        # moved, interviewer swapped, or both) -- see the `fromAssigneeId` ->
+        # `fromAssigneeName` entry in get_application_activity's
+        # _ASSIGNEE_NAME_FIELDS, which resolves it from this same dict.
+        new_assignee = 55
+        self._users_by_id({
+            CANDIDATE_ID: SimpleNamespace(first_name="Ana", last_name="Lopez"),
+            ASSIGNEE_ID: SimpleNamespace(first_name="Ivy", last_name="Interviewer"),
+            OWNER_ID: SimpleNamespace(first_name="Rae", last_name="Recruiter"),
+            new_assignee: SimpleNamespace(first_name="Sam", last_name="Sub"),
+        })
+        dto = self._dto(assignee_id=new_assignee, day=date(2026, 8, 6), start_time="15:00")
+        await self.service.update(
+            self.session, self._ctx(user_id=OWNER_ID), APPLICATION_ID, dto
+        )
+        _args, kwargs = self.activity_repo.create.call_args
+        self.assertEqual(
+            kwargs["details"],
+            {
+                "stage": "behavioral",
+                "round": 1,
+                "assigneeId": new_assignee,
+                "startAt": "2026-08-06T22:00:00+00:00",
+                "endAt": "2026-08-06T22:45:00+00:00",
+                "timezone": "America/Los_Angeles",
+                "googleEventId": "evt-1",
+                "fromStartAt": "2026-08-05T21:00:00+00:00",
+                "fromEndAt": "2026-08-05T21:45:00+00:00",
+                "fromAssigneeId": ASSIGNEE_ID,
+            },
+        )
+
+    async def test_interview_updated_from_assignee_is_none_when_no_assignment_row_exists(
+        self,
+    ):
+        self.assignment_repo.get = AsyncMock(return_value=None)
+        await self.service.update(
+            self.session, self._ctx(user_id=OWNER_ID), APPLICATION_ID, self._dto()
+        )
+        _args, kwargs = self.activity_repo.create.call_args
+        self.assertIsNone(kwargs["details"]["fromAssigneeId"])
+
     async def test_no_booking_yet_is_rejected(self):
         self.interview_repo.get = AsyncMock(return_value=None)
         with self.assertRaises(ValueError):
@@ -496,6 +582,41 @@ class CancelTest(_BaseTest):
         self.assertEqual(args[3], "interview_cancelled")
         self.meeting_svc.cancel.assert_awaited_once_with(["evt-1"])
         self.session.commit.assert_awaited_once()
+
+    async def test_interview_cancelled_activity_carries_the_full_detail_set(self):
+        # Unlike schedule/update, this used to write only {stage, round}: the
+        # timeline needs what was cancelled (who, when, which zone) to say
+        # "Cancelled the Behavioral interview meeting that was set for
+        # 2026-08-05 14:00 America/Los_Angeles" -- read from the interview
+        # row (start/end/timezone/event id) and the assignment row (assignee,
+        # since the interview entity itself stores no attendee snapshot),
+        # both BEFORE the row is deleted.
+        await self.service.cancel(
+            self.session, self._ctx(user_id=OWNER_ID), APPLICATION_ID
+        )
+        _args, kwargs = self.activity_repo.create.call_args
+        self.assertEqual(
+            kwargs["details"],
+            {
+                "stage": "behavioral",
+                "round": 1,
+                "assigneeId": ASSIGNEE_ID,
+                "startAt": "2026-08-05T21:00:00+00:00",
+                "endAt": "2026-08-05T21:45:00+00:00",
+                "timezone": "America/Los_Angeles",
+                "googleEventId": "evt-1",
+            },
+        )
+
+    async def test_interview_cancelled_assignee_is_none_when_no_assignment_row_exists(
+        self,
+    ):
+        self.assignment_repo.get = AsyncMock(return_value=None)
+        await self.service.cancel(
+            self.session, self._ctx(user_id=OWNER_ID), APPLICATION_ID
+        )
+        _args, kwargs = self.activity_repo.create.call_args
+        self.assertIsNone(kwargs["details"]["assigneeId"])
 
     async def test_scheduled_sub_status_falls_back_to_scheduling(self):
         self.application.sub_status = "scheduled"

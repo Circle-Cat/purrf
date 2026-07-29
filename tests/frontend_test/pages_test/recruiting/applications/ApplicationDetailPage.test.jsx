@@ -4149,55 +4149,154 @@ describe("ApplicationDetailPage — interview meeting card & scheduling", () => 
     );
   });
 
-  it("describes the three interview activity events", async () => {
+  /** Render the Timeline tab with one activity row and return the user. */
+  const renderTimelineWith = async (row) => {
     const user = userEvent.setup();
     authState.userId = OWNER_ID;
     api.getApplicationDetail.mockResolvedValue({
       data: makeDetail({ isOwner: true, stage: "behavioral" }),
     });
-    api.getApplicationActivity.mockResolvedValue({
-      data: [
-        {
-          id: 1,
-          eventType: "interview_scheduled",
-          details: { stage: "behavioral", round: 1 },
-          actorName: "Jane Smith",
-          createdAt: "2026-07-20T00:00:00Z",
-        },
-        {
-          id: 2,
-          eventType: "interview_updated",
-          details: { stage: "behavioral", round: 1 },
-          actorName: "Jane Smith",
-          createdAt: "2026-07-21T00:00:00Z",
-        },
-        {
-          id: 3,
-          eventType: "interview_cancelled",
-          details: { stage: "behavioral", round: 1 },
-          actorName: "Jane Smith",
-          createdAt: "2026-07-22T00:00:00Z",
-        },
-      ],
-    });
+    api.getApplicationActivity.mockResolvedValue({ data: [row] });
     renderPage();
     await waitLoaded();
-
     await user.click(screen.getByRole("tab", { name: "Timeline" }));
+    return user;
+  };
+
+  it("describes interview_scheduled with the resolved zone, time and interviewer", async () => {
+    await renderTimelineWith({
+      id: 1,
+      eventType: "interview_scheduled",
+      details: {
+        stage: "behavioral",
+        round: 1,
+        assigneeId: 10,
+        assigneeName: "Bob Lee",
+        startAt: "2026-08-05T21:00:00Z",
+        endAt: "2026-08-05T21:45:00Z",
+        timezone: "America/Los_Angeles",
+        googleEventId: "evt-1",
+      },
+      actorName: "Jane Smith",
+      createdAt: "2026-07-20T00:00:00Z",
+    });
+
+    // 21:00Z is 14:00 in America/Los_Angeles; IANA name verbatim, no PDT/PST.
+    expect(
+      screen.getByText(
+        /Scheduled the Behavioral interview meeting for 2026-08-05 14:00 America\/Los_Angeles with Bob Lee, by Jane Smith/,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/PDT|PST/)).toBeNull();
+  });
+
+  it("describes interview_cancelled with what was cancelled and when", async () => {
+    await renderTimelineWith({
+      id: 3,
+      eventType: "interview_cancelled",
+      details: {
+        stage: "behavioral",
+        round: 1,
+        assigneeId: 10,
+        assigneeName: "Bob Lee",
+        startAt: "2026-08-05T21:00:00Z",
+        endAt: "2026-08-05T21:45:00Z",
+        timezone: "America/Los_Angeles",
+        googleEventId: "evt-1",
+      },
+      actorName: "Jane Smith",
+      createdAt: "2026-07-22T00:00:00Z",
+    });
 
     expect(
       screen.getByText(
-        /Scheduled a Behavioral interview for round 1, by Jane Smith/,
+        /Cancelled the Behavioral interview meeting that was set for 2026-08-05 14:00 America\/Los_Angeles, by Jane Smith/,
       ),
     ).toBeInTheDocument();
+  });
+
+  it("describes interview_updated as a reschedule when only the time moved", async () => {
+    await renderTimelineWith({
+      id: 2,
+      eventType: "interview_updated",
+      details: {
+        stage: "behavioral",
+        round: 1,
+        assigneeId: 10,
+        assigneeName: "Bob Lee",
+        startAt: "2026-08-06T22:00:00Z",
+        endAt: "2026-08-06T22:45:00Z",
+        timezone: "America/Los_Angeles",
+        googleEventId: "evt-1",
+        fromStartAt: "2026-08-05T21:00:00Z",
+        fromEndAt: "2026-08-05T21:45:00Z",
+        fromAssigneeId: 10,
+      },
+      actorName: "Jane Smith",
+      createdAt: "2026-07-21T00:00:00Z",
+    });
+
     expect(
       screen.getByText(
-        /Rescheduled the Behavioral interview for round 1, by Jane Smith/,
+        /Rescheduled the Behavioral interview meeting from 2026-08-05 14:00 America\/Los_Angeles to 2026-08-06 15:00 America\/Los_Angeles, by Jane Smith/,
       ),
     ).toBeInTheDocument();
+  });
+
+  it("describes interview_updated as a reassignment when only the interviewer swapped", async () => {
+    await renderTimelineWith({
+      id: 2,
+      eventType: "interview_updated",
+      details: {
+        stage: "behavioral",
+        round: 1,
+        assigneeId: 11,
+        assigneeName: "Ivan Interviewer",
+        startAt: "2026-08-05T21:00:00Z",
+        endAt: "2026-08-05T21:45:00Z",
+        timezone: "America/Los_Angeles",
+        googleEventId: "evt-1",
+        fromStartAt: "2026-08-05T21:00:00Z",
+        fromEndAt: "2026-08-05T21:45:00Z",
+        fromAssigneeId: 10,
+        fromAssigneeName: "Bob Lee",
+      },
+      actorName: "Jane Smith",
+      createdAt: "2026-07-21T00:00:00Z",
+    });
+
     expect(
       screen.getByText(
-        /Cancelled the Behavioral interview for round 1, by Jane Smith/,
+        /Reassigned the Behavioral interview meeting from Bob Lee to Ivan Interviewer, by Jane Smith/,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("describes interview_updated as both when the time and the interviewer both changed", async () => {
+    await renderTimelineWith({
+      id: 2,
+      eventType: "interview_updated",
+      details: {
+        stage: "behavioral",
+        round: 1,
+        assigneeId: 11,
+        assigneeName: "Ivan Interviewer",
+        startAt: "2026-08-06T22:00:00Z",
+        endAt: "2026-08-06T22:45:00Z",
+        timezone: "America/Los_Angeles",
+        googleEventId: "evt-1",
+        fromStartAt: "2026-08-05T21:00:00Z",
+        fromEndAt: "2026-08-05T21:45:00Z",
+        fromAssigneeId: 10,
+        fromAssigneeName: "Bob Lee",
+      },
+      actorName: "Jane Smith",
+      createdAt: "2026-07-21T00:00:00Z",
+    });
+
+    expect(
+      screen.getByText(
+        /Rescheduled the Behavioral interview meeting from 2026-08-05 14:00 America\/Los_Angeles to 2026-08-06 15:00 America\/Los_Angeles, and reassigned it from Bob Lee to Ivan Interviewer, by Jane Smith/,
       ),
     ).toBeInTheDocument();
   });

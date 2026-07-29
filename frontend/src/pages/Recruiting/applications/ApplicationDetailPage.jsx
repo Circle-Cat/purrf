@@ -81,6 +81,7 @@ import {
 } from "@/pages/Recruiting/board/stageFormat";
 import { useAuth } from "@/context/auth/AuthContext";
 import { PERMISSIONS } from "@/constants/Permissions";
+import { formatInTz } from "@/utils/dateTime";
 import HowItWorksDialog from "@/pages/Recruiting/components/HowItWorksDialog";
 import {
   APPLICATION_OWNER_GUIDE,
@@ -361,6 +362,22 @@ const EvaluationSummary = ({ evaluations, interviewPool }) => (
 );
 
 /**
+ * Format an interview activity detail's UTC instant in the zone the meeting
+ * was booked in, printing the IANA name verbatim (no derived `PDT`/`PST`
+ * abbreviation) -- same rule as `InterviewMeetingCard`. Returns null when
+ * either input is missing, so callers can degrade gracefully rather than
+ * rendering "undefined undefined".
+ *
+ * @param {string|null|undefined} startAt UTC ISO datetime string.
+ * @param {string|null|undefined} tz IANA timezone string.
+ * @returns {string|null}
+ */
+const formatInterviewWhen = (startAt, tz) =>
+  startAt && tz
+    ? `${formatInTz(startAt, tz, "yyyy-MM-dd")} ${formatInTz(startAt, tz, "HH:mm")} ${tz}`
+    : null;
+
+/**
  * Human-readable one-line description of a single activity entry, built
  * from its `details` payload. `details.assigneeName`/`fromAssigneeName`/
  * `toAssigneeName` are present only when the corresponding raw id existed
@@ -434,21 +451,46 @@ const describeActivity = ({ eventType, details }, jobKind) => {
       return `Blacklisted and rejected from ${humanize(details.fromStage)}: ${details.reason}`;
     case "auto_assigned":
       return `Automatically assigned to ${details.assigneeName} on ${humanize(details.stage)}`;
-    // These three carry only {stage, round, assigneeId, startAt, endAt} on
-    // the raw event (interview_cancelled: {stage, round} only) -- unlike
-    // stage_changed/round_advanced/auto_assigned above, the backend does not
-    // resolve assigneeId to a name for these event types
-    // (_ASSIGNEE_NAME_FIELDS in board_service.py has no entry for them), and
-    // it stores no timezone on the activity row (only on the interview
-    // itself), so the description below deliberately doesn't reference
-    // either -- surfacing an unresolved id or a UTC time labeled with the
-    // wrong zone would be worse than omitting them.
-    case "interview_scheduled":
-      return `Scheduled a ${humanize(details.stage)} interview for round ${details.round}`;
-    case "interview_updated":
-      return `Rescheduled the ${humanize(details.stage)} interview for round ${details.round}`;
-    case "interview_cancelled":
-      return `Cancelled the ${humanize(details.stage)} interview for round ${details.round}`;
+    case "interview_scheduled": {
+      const when = formatInterviewWhen(details.startAt, details.timezone);
+      return `Scheduled the ${humanize(details.stage)} interview meeting${
+        when ? ` for ${when}` : ""
+      }${details.assigneeName ? ` with ${details.assigneeName}` : ""}`;
+    }
+    case "interview_updated": {
+      const stageText = humanize(details.stage);
+      const newWhen = formatInterviewWhen(details.startAt, details.timezone);
+      // No `fromTimezone` is stored -- only one `timezone` field exists on
+      // this event (the post-edit zone) -- so the pre-edit instant is
+      // rendered in that same zone. Usually correct (the zone rarely
+      // changes independently of the slot); flagged here rather than
+      // silently assumed.
+      const oldWhen = formatInterviewWhen(details.fromStartAt, details.timezone);
+      const timeChanged =
+        details.fromStartAt !== details.startAt ||
+        details.fromEndAt !== details.endAt;
+      const assigneeChanged = details.fromAssigneeId !== details.assigneeId;
+      const timeRange = oldWhen && newWhen ? ` from ${oldWhen} to ${newWhen}` : "";
+      const fromAssignee = details.fromAssigneeName ?? "unassigned";
+      const toAssignee = details.assigneeName ?? "unassigned";
+
+      if (timeChanged && assigneeChanged) {
+        return `Rescheduled the ${stageText} interview meeting${timeRange}, and reassigned it from ${fromAssignee} to ${toAssignee}`;
+      }
+      if (timeChanged) {
+        return `Rescheduled the ${stageText} interview meeting${timeRange}`;
+      }
+      if (assigneeChanged) {
+        return `Reassigned the ${stageText} interview meeting from ${fromAssignee} to ${toAssignee}`;
+      }
+      return `Updated the ${stageText} interview meeting${newWhen ? ` for ${newWhen}` : ""}`;
+    }
+    case "interview_cancelled": {
+      const when = formatInterviewWhen(details.startAt, details.timezone);
+      return `Cancelled the ${humanize(details.stage)} interview meeting${
+        when ? ` that was set for ${when}` : ""
+      }`;
+    }
     case "email_sent":
       return `Sent email "${details.subject}" to ${(details.to ?? []).join(", ")}${
         details.cc?.length ? `, cc ${details.cc.join(", ")}` : ""

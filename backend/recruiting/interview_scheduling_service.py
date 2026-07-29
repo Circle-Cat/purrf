@@ -256,6 +256,8 @@ class InterviewSchedulingService:
                 "assigneeId": dto.assignee_id,
                 "startAt": start_utc.isoformat(),
                 "endAt": end_utc.isoformat(),
+                "timezone": dto.timezone,
+                "googleEventId": meeting["google_event_id"],
             },
         )
         await session.commit()
@@ -318,6 +320,20 @@ class InterviewSchedulingService:
         await self.application_access.validate_interview_assignee(
             session, dto.assignee_id
         )
+        # Snapshot the pre-edit slot/interviewer before anything below
+        # overwrites them, so the activity entry can say what actually
+        # changed (see the "from*" fields on the interview_updated details
+        # below). The interview entity stores no attendee snapshot itself
+        # (see its docstring), so the "from" assignee comes from the
+        # assignment row instead, read before `upsert` below overwrites it.
+        from_start_at = interview.start_at
+        from_end_at = interview.end_at
+        existing_assignment = await self.application_assignment_repository.get(
+            session, application_id, application.stage, application.current_round
+        )
+        from_assignee_id = (
+            existing_assignment.assignee_id if existing_assignment else None
+        )
         start_utc, end_utc = _to_utc(
             dto.date, dto.start_time, dto.duration_minutes, dto.timezone
         )
@@ -366,6 +382,11 @@ class InterviewSchedulingService:
                 "assigneeId": dto.assignee_id,
                 "startAt": start_utc.isoformat(),
                 "endAt": end_utc.isoformat(),
+                "timezone": dto.timezone,
+                "googleEventId": meeting["google_event_id"],
+                "fromStartAt": from_start_at.isoformat(),
+                "fromEndAt": from_end_at.isoformat(),
+                "fromAssigneeId": from_assignee_id,
             },
         )
         await session.commit()
@@ -419,6 +440,13 @@ class InterviewSchedulingService:
         )
         if interview is None:
             raise ValueError("No interview meeting is scheduled for this round.")
+        # The interview entity stores no attendee snapshot itself (see its
+        # docstring); the assignee it was scheduled with comes from the
+        # assignment row, read before the row is deleted below.
+        assignment = await self.application_assignment_repository.get(
+            session, application_id, application.stage, application.current_round
+        )
+        cancelled_assignee_id = assignment.assignee_id if assignment else None
 
         _succeeded, failed = await self.meeting_scheduling_service.cancel([
             interview.google_event_id
@@ -449,6 +477,11 @@ class InterviewSchedulingService:
             details={
                 "stage": application.stage.value,
                 "round": application.current_round,
+                "assigneeId": cancelled_assignee_id,
+                "startAt": interview.start_at.isoformat(),
+                "endAt": interview.end_at.isoformat(),
+                "timezone": interview.timezone,
+                "googleEventId": interview.google_event_id,
             },
         )
         await session.commit()

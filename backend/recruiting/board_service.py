@@ -70,6 +70,12 @@ _ASSIGNEE_NAME_FIELDS: dict[str, tuple[tuple[str, str], ...]] = {
         ("fromAssigneeId", "fromAssigneeName"),
         ("toAssigneeId", "toAssigneeName"),
     ),
+    "interview_scheduled": (("assigneeId", "assigneeName"),),
+    "interview_cancelled": (("assigneeId", "assigneeName"),),
+    "interview_updated": (
+        ("assigneeId", "assigneeName"),
+        ("fromAssigneeId", "fromAssigneeName"),
+    ),
 }
 
 # Per-event-type map of (raw screen-rule id field in `details`) -> (resolved
