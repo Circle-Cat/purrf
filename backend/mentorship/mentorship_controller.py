@@ -397,6 +397,8 @@ class MentorshipController:
                 start_date=payload.start_date,
                 start_time=payload.start_time,
                 duration_minutes=payload.duration_minutes,
+                interval_weeks=payload.interval_weeks,
+                count=payload.count,
             )
             return api_response(
                 message="Successfully created mentorship meeting.",

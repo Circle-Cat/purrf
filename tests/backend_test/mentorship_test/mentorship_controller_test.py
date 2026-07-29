@@ -403,6 +403,8 @@ class TestMentorshipController(unittest.IsolatedAsyncioTestCase):
             start_date="2026-07-30",
             start_time="10:00",
             duration_minutes=30,
+            interval_weeks=2,
+            count=4,
         )
 
         response = await self.controller.create_google_meeting(
@@ -418,6 +420,8 @@ class TestMentorshipController(unittest.IsolatedAsyncioTestCase):
             start_date=payload.start_date,
             start_time=payload.start_time,
             duration_minutes=payload.duration_minutes,
+            interval_weeks=payload.interval_weeks,
+            count=payload.count,
         )
         self.mock_api_response.assert_called_once_with(
             message="Successfully created mentorship meeting.",

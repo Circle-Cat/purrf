@@ -47,6 +47,33 @@ class TestMeetingBatchCreateDto(unittest.TestCase):
         with self.assertRaises(ValidationError):
             MeetingBatchCreateDto(**kwargs)
 
+    def test_defaults_to_single_weekly(self):
+        dto = MeetingBatchCreateDto(**self._valid_kwargs())
+        self.assertEqual(dto.count, 1)
+        self.assertEqual(dto.interval_weeks, 1)
+
+    def test_accepts_biweekly_multi_session(self):
+        kwargs = self._valid_kwargs()
+        kwargs["interval_weeks"] = 2
+        kwargs["count"] = 12
+        dto = MeetingBatchCreateDto(**kwargs)
+        self.assertEqual(dto.interval_weeks, 2)
+        self.assertEqual(dto.count, 12)
+
+    def test_rejects_interval_weeks_out_of_set(self):
+        for bad in (0, 3, 4):
+            kwargs = self._valid_kwargs()
+            kwargs["interval_weeks"] = bad
+            with self.assertRaises(ValidationError):
+                MeetingBatchCreateDto(**kwargs)
+
+    def test_rejects_count_out_of_range(self):
+        for bad in (0, 13, 100):
+            kwargs = self._valid_kwargs()
+            kwargs["count"] = bad
+            with self.assertRaises(ValidationError):
+                MeetingBatchCreateDto(**kwargs)
+
 
 if __name__ == "__main__":
     unittest.main()
