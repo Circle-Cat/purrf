@@ -215,3 +215,16 @@ py_test(
         "//backend/recruiting",
     ],
 )
+
+py_test(
+    name = "interview_scheduling_service_test",
+    srcs = ["interview_scheduling_service_test.py"],
+    deps = [
+        "//backend/common:exceptions",
+        "//backend/common:recruiting_enums",
+        "//backend/dto",
+        "//backend/entity:entities",
+        "//backend/recruiting",
+        "//backend/repository:repositories",
+    ],
+)

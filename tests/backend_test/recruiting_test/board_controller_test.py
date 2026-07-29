@@ -12,6 +12,7 @@ from backend.dto.board_dto import (
     SubStatusChangeDto,
 )
 from backend.dto.email_dto import EmailSendRequestDto
+from backend.dto.interview_dto import InterviewScheduleRequestDto
 from backend.dto.user_context_dto import UserContextDto
 from backend.common.api_endpoints import (
     RECRUITING_APPLICATION_EMAIL_TEMPLATES_ENDPOINT,
@@ -40,7 +41,18 @@ class TestBoardController(unittest.IsolatedAsyncioTestCase):
         self.board_service.get_application_activity = AsyncMock(return_value=[])
         self.board_service.list_mentionable_users = AsyncMock(return_value=[])
 
-        self.controller = BoardController(self.board_service, self.database)
+        self.interview_scheduling_service = MagicMock()
+        self.interview_scheduling_service.schedule = AsyncMock(
+            return_value={"interviewId": 1}
+        )
+        self.interview_scheduling_service.update = AsyncMock(
+            return_value={"interviewId": 1}
+        )
+        self.interview_scheduling_service.cancel = AsyncMock(return_value=None)
+
+        self.controller = BoardController(
+            self.board_service, self.database, self.interview_scheduling_service
+        )
 
         self.patcher = patch("backend.recruiting.board_controller.api_response")
         self.mock_api_response = self.patcher.start()
@@ -379,6 +391,64 @@ class TestBoardController(unittest.IsolatedAsyncioTestCase):
             self.board_service.get_board_stage_page.await_args.args
         )
         self.assertEqual(forwarded_limit, 1)
+
+    # -- interview scheduling: delegation --
+
+    async def test_schedule_interview_delegates(self):
+        interview_data = InterviewScheduleRequestDto(
+            assignee_id=42,
+            date="2026-08-05",
+            start_time="14:00",
+            duration_minutes=45,
+            timezone="America/Los_Angeles",
+        )
+        resp = await self.controller.schedule_interview(self.ctx, 10, interview_data)
+        self.interview_scheduling_service.schedule.assert_awaited_once_with(
+            self.session, self.ctx, 10, interview_data
+        )
+        self.assertEqual(resp["data"], {"interviewId": 1})
+
+    async def test_update_interview_delegates(self):
+        interview_data = InterviewScheduleRequestDto(
+            assignee_id=42,
+            date="2026-08-06",
+            start_time="15:00",
+            duration_minutes=30,
+            timezone="America/Los_Angeles",
+        )
+        resp = await self.controller.update_interview(self.ctx, 10, interview_data)
+        self.interview_scheduling_service.update.assert_awaited_once_with(
+            self.session, self.ctx, 10, interview_data
+        )
+        self.assertEqual(resp["data"], {"interviewId": 1})
+
+    async def test_cancel_interview_delegates(self):
+        resp = await self.controller.cancel_interview(self.ctx, 10)
+        self.interview_scheduling_service.cancel.assert_awaited_once_with(
+            self.session, self.ctx, 10
+        )
+        self.assertIsNone(resp["data"])
+
+    # -- interview scheduling: route registration --
+
+    def test_interview_routes_are_registered_with_the_advance_permission(self):
+        interview_routes_by_method = {
+            method: route
+            for route in self.controller.router.routes
+            if route.path == "/recruiting/applications/{application_id}/interview"
+            for method in route.methods
+            if method in ("POST", "PATCH", "DELETE")
+        }
+
+        self.assertEqual(
+            set(interview_routes_by_method.keys()), {"POST", "PATCH", "DELETE"}
+        )
+        for method, route in interview_routes_by_method.items():
+            self.assertEqual(
+                self._endpoint_permissions(route.endpoint),
+                [Permission.RECRUITING_APPLICATION_ADVANCE],
+                f"{method} interview route should require the advance permission",
+            )
 
     def test_board_stage_page_route_is_get_and_plain_authenticated(self):
         routes_by_path = {route.path: route for route in self.controller.router.routes}

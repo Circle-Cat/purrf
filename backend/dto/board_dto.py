@@ -10,6 +10,7 @@ from pydantic import field_validator, model_validator
 
 from backend.dto.application_dto import ApplicationDto
 from backend.dto.evaluation_dto import EvaluationDto
+from backend.dto.interview_dto import InterviewDto
 from backend.dto.base_dto import BaseDto
 from backend.dto.base_request_dto import BaseRequestDto
 from backend.common.recruiting_enums import ApplicationStage, JobKind
@@ -86,6 +87,7 @@ class ApplicationDetailDto(BaseDto):
     # actionable control (those still gate on is_owner specifically).
     can_view: bool = False
     assignee_id: int | None = None
+    interview: InterviewDto | None = None
 
 
 class ApplicationActivityDto(BaseDto):
