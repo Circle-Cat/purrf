@@ -928,6 +928,71 @@ class TestApplicationRepository(BaseRepositoryTestLib):
         matching = [a for a in due if a.application_id == app.application_id]
         self.assertEqual(len(matching), 1)
 
+    # ---- list_due_email_sync_applications: thread filter ---------------
+
+    async def test_thread_filter_narrows_to_the_given_threads(self):
+        wanted = await self._make_application(stage=ApplicationStage.TECH)
+        other = await self._make_application(stage=ApplicationStage.TECH)
+        await self._thread_for(wanted, "gt-wanted")
+        await self._thread_for(other, "gt-other")
+        cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+
+        due = await self.repo.list_due_email_sync_applications(
+            self.session, cutoff, gmail_thread_ids={"gt-wanted"}
+        )
+
+        ids = [a.application_id for a in due]
+        self.assertIn(wanted.application_id, ids)
+        self.assertNotIn(other.application_id, ids)
+
+    async def test_thread_filter_still_applies_the_terminal_window(self):
+        # A flagged thread does not override eligibility: an application that
+        # went terminal long ago stays out even when new mail arrives.
+        app = await self._make_application(
+            stage=ApplicationStage.REJECTED,
+            stage_entered_at=datetime.now(timezone.utc) - timedelta(days=30),
+        )
+        await self._thread_for(app, "gt-old-reject")
+        cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+
+        due = await self.repo.list_due_email_sync_applications(
+            self.session, cutoff, gmail_thread_ids={"gt-old-reject"}
+        )
+
+        self.assertNotIn(app.application_id, [a.application_id for a in due])
+
+    async def test_thread_filter_unknown_thread_matches_nothing(self):
+        app = await self._make_application(stage=ApplicationStage.TECH)
+        await self._thread_for(app, "gt-known")
+        cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+
+        due = await self.repo.list_due_email_sync_applications(
+            self.session, cutoff, gmail_thread_ids={"gt-never-seen"}
+        )
+
+        self.assertEqual(due, [])
+
+    async def test_omitting_the_thread_filter_is_unchanged_behaviour(self):
+        # Regression guard: the weekly reconcile passes no filter and must keep
+        # seeing exactly what it saw before this parameter existed. If the two
+        # call shapes ever diverge, the two jobs disagree about eligibility.
+        app = await self._make_application(stage=ApplicationStage.TECH)
+        await self._thread_for(app, "gt-unfiltered")
+        cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+
+        with_default = await self.repo.list_due_email_sync_applications(
+            self.session, cutoff
+        )
+        with_explicit_none = await self.repo.list_due_email_sync_applications(
+            self.session, cutoff, gmail_thread_ids=None
+        )
+
+        self.assertIn(app.application_id, [a.application_id for a in with_default])
+        self.assertEqual(
+            [a.application_id for a in with_default],
+            [a.application_id for a in with_explicit_none],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
