@@ -178,6 +178,13 @@ class InterviewSchedulingService:
         await self.application_access.validate_interview_assignee(
             session, dto.assignee_id
         )
+        # Hard reject, unlike MeetingSchedulingService.resolve_attendee_emails'
+        # own "skip a missing address with a warning" default (see its
+        # docstring: "callers for whom a missing address is fatal must check
+        # that themselves"). The candidate IS that fatal case: a meeting the
+        # candidate never gets invited to is pointless, whereas a missing
+        # interviewer/recruiter address is merely degraded (they can still
+        # be reached some other way) -- so only the candidate is checked here.
         contact_by_user_id = (
             await self.user_emails_repository.get_contact_emails_by_user_ids(
                 session, [application.user_id]
@@ -231,6 +238,14 @@ class InterviewSchedulingService:
             timezone=dto.timezone,
             scheduled_by=current_user.user_id,
         )
+        # Unconditional -- unlike cancel()'s `if sub_status == "scheduled"`
+        # guard below. The two are asymmetric on purpose: booking a NEW
+        # meeting means another interview is genuinely about to happen, so
+        # moving even an "evaluated" round forward to "scheduled" is correct
+        # progress (e.g. a redo after `reassign`). Cancelling a past,
+        # already-evaluated interview's calendar entry must NOT erase that
+        # evaluation progress, which is why that path only reverts from
+        # exactly "scheduled".
         application.sub_status = "scheduled"
         await self.application_repository.update(session, application)
         await self.application_activity_repository.create(
@@ -422,6 +437,11 @@ class InterviewSchedulingService:
             )
 
         await self.application_interview_repository.delete(session, interview)
+        # Guarded -- unlike schedule()'s unconditional `sub_status =
+        # "scheduled"` above. See that comment for the other half of the
+        # asymmetry: this only reverts from exactly "scheduled", so
+        # cancelling a past, already-graded interview's calendar entry never
+        # erases "evaluated".
         if application.sub_status == "scheduled":
             application.sub_status = "scheduling"
             await self.application_repository.update(session, application)

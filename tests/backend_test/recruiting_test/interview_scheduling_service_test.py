@@ -282,6 +282,18 @@ class ScheduleTest(_BaseTest):
             OWNER_ID,
         )
 
+    async def test_requests_owner_only_access_not_assignee_or_read_all(self):
+        # Booking a meeting is a job-ownership decision, not something a
+        # mere assignee or a read.all holder may do -- assert exactly which
+        # access flags this service asks ApplicationAccess for, so a
+        # regression here (e.g. `allow_assignee=True`) is caught even though
+        # every other test mocks load_owned_application to always succeed.
+        ctx = self._ctx(user_id=OWNER_ID)
+        await self.service.schedule(self.session, ctx, APPLICATION_ID, self._dto())
+        self.application_access.load_owned_application.assert_awaited_once_with(
+            self.session, ctx, APPLICATION_ID, for_update=True
+        )
+
 
 # -- schedule: rejection paths --
 
@@ -425,13 +437,18 @@ class UpdateTest(_BaseTest):
         self.assertIn("no longer exists on the calendar", str(ctx.exception))
 
     async def test_a_gone_calendar_event_leaves_the_row_unchanged(self):
+        # A DTO with a DIFFERENT slot than `_interview_row()`'s default, so a
+        # reordering bug (writing the row before the Google call) can't hide
+        # behind "the new value happens to equal the old one".
         original_start = self.existing.start_at
+        original_meet_link = self.existing.meet_link
+        dto = self._dto(day=date(2026, 8, 6), start_time="09:00")
         self.meeting_svc.update = AsyncMock(side_effect=MeetingGoneError("gone"))
         with self.assertRaises(ValueError):
-            await self.service.update(
-                self.session, self._ctx(), APPLICATION_ID, self._dto()
-            )
+            await self.service.update(self.session, self._ctx(), APPLICATION_ID, dto)
+        self.interview_repo.update_schedule.assert_not_awaited()
         self.assertEqual(self.existing.start_at, original_start)
+        self.assertEqual(self.existing.meet_link, original_meet_link)
         self.assignment_repo.upsert.assert_not_awaited()
         self.session.commit.assert_not_awaited()
 
@@ -450,6 +467,16 @@ class UpdateTest(_BaseTest):
                 self.session, self._ctx(), APPLICATION_ID, self._dto()
             )
         self.meeting_svc.update.assert_not_awaited()
+
+    async def test_requests_owner_only_access_not_assignee_or_read_all(self):
+        # Same access-flag guard as schedule's: rescheduling/reassigning a
+        # meeting is an owner decision, not something a mere assignee or a
+        # read.all holder may do.
+        ctx = self._ctx(user_id=OWNER_ID)
+        await self.service.update(self.session, ctx, APPLICATION_ID, self._dto())
+        self.application_access.load_owned_application.assert_awaited_once_with(
+            self.session, ctx, APPLICATION_ID, for_update=True
+        )
 
 
 # -- cancel --
@@ -493,6 +520,16 @@ class CancelTest(_BaseTest):
         with self.assertRaises(ValueError):
             await self.service.cancel(self.session, self._ctx(), APPLICATION_ID)
         self.meeting_svc.cancel.assert_not_awaited()
+
+    async def test_requests_owner_only_access_not_assignee_or_read_all(self):
+        # Same access-flag guard as schedule's/update's: cancelling a
+        # meeting is an owner decision, not something a mere assignee or a
+        # read.all holder may do.
+        ctx = self._ctx(user_id=OWNER_ID)
+        await self.service.cancel(self.session, ctx, APPLICATION_ID)
+        self.application_access.load_owned_application.assert_awaited_once_with(
+            self.session, ctx, APPLICATION_ID, for_update=True
+        )
 
 
 if __name__ == "__main__":
