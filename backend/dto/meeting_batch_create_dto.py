@@ -6,6 +6,9 @@ from pydantic import field_validator
 from backend.dto.base_request_dto import BaseRequestDto
 
 ALLOWED_DURATION_MINUTES = {30, 45, 60, 90}
+ALLOWED_INTERVAL_WEEKS = {1, 2}
+MIN_SESSION_COUNT = 1
+MAX_SESSION_COUNT = 12
 
 
 class MeetingBatchCreateDto(BaseRequestDto):
@@ -15,6 +18,8 @@ class MeetingBatchCreateDto(BaseRequestDto):
     start_date: date
     start_time: str  # local wall-clock time, "HH:MM"
     duration_minutes: int
+    interval_weeks: int = 1
+    count: int = 1
 
     @field_validator("timezone")
     def validate_timezone(cls, v: str) -> str:
@@ -37,5 +42,21 @@ class MeetingBatchCreateDto(BaseRequestDto):
         if v not in ALLOWED_DURATION_MINUTES:
             raise ValueError(
                 f"duration_minutes must be one of {sorted(ALLOWED_DURATION_MINUTES)}"
+            )
+        return v
+
+    @field_validator("interval_weeks")
+    def validate_interval_weeks(cls, v: int) -> int:
+        if v not in ALLOWED_INTERVAL_WEEKS:
+            raise ValueError(
+                f"interval_weeks must be one of {sorted(ALLOWED_INTERVAL_WEEKS)}"
+            )
+        return v
+
+    @field_validator("count")
+    def validate_count(cls, v: int) -> int:
+        if not (MIN_SESSION_COUNT <= v <= MAX_SESSION_COUNT):
+            raise ValueError(
+                f"count must be between {MIN_SESSION_COUNT} and {MAX_SESSION_COUNT}"
             )
         return v

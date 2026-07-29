@@ -1,6 +1,7 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { toast } from "sonner";
 import MeetingManagementDialog from "@/pages/PersonalDashboard/components/MeetingManagementDialog";
 import { useMeetingManagement } from "@/pages/PersonalDashboard/hooks/useMeetingManagement";
 
@@ -8,12 +9,8 @@ vi.mock("@/pages/PersonalDashboard/hooks/useMeetingManagement", () => ({
   useMeetingManagement: vi.fn(),
 }));
 
-vi.mock("sonner", () => ({
-  toast: {
-    success: vi.fn(),
-    error: vi.fn(),
-  },
-}));
+vi.spyOn(toast, "success").mockImplementation(() => {});
+vi.spyOn(toast, "error").mockImplementation(() => {});
 
 const localTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
@@ -371,6 +368,8 @@ describe("MeetingManagementDialog Component", () => {
         start_date: "2026-07-30",
         start_time: "09:00",
         duration_minutes: 30,
+        interval_weeks: 1,
+        count: 1,
       });
     });
 
@@ -452,5 +451,108 @@ describe("MeetingManagementDialog Component", () => {
         screen.getByRole("button", { name: /delete \(0\)/i }),
       ).toBeDisabled();
     });
+  });
+
+  it("should send interval_weeks and count when a recurrence is chosen", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(new Date("2026-07-15T12:00:00-04:00"));
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    mockBookMeeting.mockResolvedValue({
+      created: [{ meetingId: "g-1" }],
+      failed: [],
+    });
+
+    render(
+      <MeetingManagementDialog
+        roundId={5}
+        onBooked={vi.fn()}
+        userTimezone="America/New_York"
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: /manage meetings/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+    });
+
+    await user.selectOptions(screen.getByLabelText("Select Partner"), "1");
+    fireEvent.change(screen.getByTestId("timezone-selector"), {
+      target: { value: "America/New_York" },
+    });
+    await user.click(screen.getByRole("button", { name: /pick a date/i }));
+    const dayButtons = screen.getAllByRole("button", { name: /30/ });
+    await user.click(dayButtons[dayButtons.length - 1]);
+
+    const repeatSelect = await screen.findByLabelText(/repeat every/i);
+    const countSelect = await screen.findByLabelText(/number of sessions/i);
+    fireEvent.change(repeatSelect, { target: { value: "2" } });
+    fireEvent.change(countSelect, { target: { value: "4" } });
+
+    fireEvent.submit(document.querySelector("form"));
+
+    await waitFor(() => {
+      expect(mockBookMeeting).toHaveBeenCalledWith({
+        round_id: 5,
+        partner_id: 1,
+        timezone: "America/New_York",
+        start_date: "2026-07-30",
+        start_time: "09:00",
+        duration_minutes: 30,
+        interval_weeks: 2,
+        count: 4,
+      });
+    });
+    vi.useRealTimers();
+  });
+
+  it("shows a partial-failure toast when some sessions fail", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(new Date("2026-07-15T12:00:00-04:00"));
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+
+    mockBookMeeting.mockResolvedValue({
+      created: [{ meetingId: "g-1" }, { meetingId: "g-2" }],
+      failed: [
+        { index: 2, startDatetime: "2026-08-13T14:00:00Z", reason: "boom" },
+      ],
+    });
+
+    render(
+      <MeetingManagementDialog
+        roundId={2}
+        onBooked={mockOnBooked}
+        userTimezone="America/New_York"
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /manage meetings/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+    });
+
+    await user.selectOptions(screen.getByLabelText("Select Partner"), "1");
+
+    fireEvent.change(screen.getByTestId("timezone-selector"), {
+      target: { value: "America/New_York" },
+    });
+
+    await user.click(screen.getByRole("button", { name: /pick a date/i }));
+    const dayButtons = screen.getAllByRole("button", { name: /30/ });
+    await user.click(dayButtons[dayButtons.length - 1]);
+
+    const repeatSelect = await screen.findByLabelText(/repeat every/i);
+    const countSelect = await screen.findByLabelText(/number of sessions/i);
+    fireEvent.change(repeatSelect, { target: { value: "1" } });
+    fireEvent.change(countSelect, { target: { value: "3" } });
+
+    fireEvent.submit(document.querySelector("form"));
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith(
+        "Created 2 of 3 sessions (1 failed)",
+      );
+    });
+
+    vi.useRealTimers();
   });
 });
