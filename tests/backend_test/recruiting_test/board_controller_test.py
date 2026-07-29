@@ -13,6 +13,9 @@ from backend.dto.board_dto import (
 )
 from backend.dto.email_dto import EmailSendRequestDto
 from backend.dto.user_context_dto import UserContextDto
+from backend.common.api_endpoints import (
+    RECRUITING_APPLICATION_EMAIL_TEMPLATES_ENDPOINT,
+)
 from backend.common.permissions import Permission
 from backend.common.recruiting_enums import ApplicationStage
 from backend.recruiting.board_controller import BoardController
@@ -120,6 +123,18 @@ class TestBoardController(unittest.IsolatedAsyncioTestCase):
             self.session, self.ctx, 10, dto
         )
         self.assertEqual(resp["data"], conversation)
+
+    async def test_get_application_email_templates_delegates_to_the_service(self):
+        self.board_service.list_application_email_templates = AsyncMock(
+            return_value=["t1", "t2"]
+        )
+        resp = await self.controller.get_application_email_templates(
+            self.ctx, application_id=10
+        )
+        self.board_service.list_application_email_templates.assert_awaited_once_with(
+            self.session, self.ctx, 10
+        )
+        self.assertEqual(resp["data"], ["t1", "t2"])
 
     async def test_list_mentionable_users_delegates(self):
         users = [{"userId": 7, "name": "Eve Evaluator"}]
@@ -280,6 +295,17 @@ class TestBoardController(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             self._endpoint_permissions(blacklist_route.endpoint),
             [Permission.RECRUITING_BLACKLIST_WRITE],
+        )
+
+    def test_email_templates_route_requires_the_advance_permission(self):
+        routes_by_path = {route.path: route for route in self.controller.router.routes}
+
+        route = routes_by_path[RECRUITING_APPLICATION_EMAIL_TEMPLATES_ENDPOINT]
+
+        self.assertIn("GET", route.methods)
+        self.assertEqual(
+            self._endpoint_permissions(route.endpoint),
+            [Permission.RECRUITING_APPLICATION_ADVANCE],
         )
 
     async def test_board_stage_page_returns_service_payload(self):

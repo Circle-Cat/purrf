@@ -69,3 +69,16 @@ class EmailSendRequestDto(BaseDto):
     subject: str
     body: str
     thread_id: int | None = None
+
+
+class EmailTemplateDto(BaseDto):
+    """One preset email template, already rendered for a given application.
+
+    ``subject`` is placeholder-free; ``body_html`` has ``{{...}}`` substituted
+    but still carries ``[UPPERCASE]`` markers for the sender to fill in.
+    """
+
+    key: str
+    label: str
+    subject: str
+    body_html: str

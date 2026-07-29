@@ -131,6 +131,9 @@ RECRUITING_APPLICATION_ACTIVITY_ENDPOINT = (
 RECRUITING_APPLICATION_EMAILS_ENDPOINT = (
     "/recruiting/applications/{application_id}/emails"
 )
+RECRUITING_APPLICATION_EMAIL_TEMPLATES_ENDPOINT = (
+    "/recruiting/applications/{application_id}/email-templates"
+)
 RECRUITING_APPLICATION_OTHER_APPLICATIONS_ENDPOINT = (
     "/recruiting/applications/{application_id}/other-applications"
 )
