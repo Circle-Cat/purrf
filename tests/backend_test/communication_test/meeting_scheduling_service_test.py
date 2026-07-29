@@ -174,10 +174,12 @@ class ScheduleTest(unittest.IsolatedAsyncioTestCase):
 class CancelTest(unittest.IsolatedAsyncioTestCase):
     async def test_delegates_to_the_batch_delete(self):
         service, kwargs = _service()
-        succeeded, failed = await service.cancel(["evt-1"])
+        succeeded, failed = await service.cancel(["evt-1", "evt-2"])
         self.assertEqual(succeeded, ["evt-1"])
         self.assertEqual(failed, [])
-        kwargs["google_service"].batch_delete_google_meetings.assert_called_once()
+        kwargs["google_service"].batch_delete_google_meetings.assert_called_once_with(
+            event_ids=["evt-1", "evt-2"]
+        )
 
 
 if __name__ == "__main__":
