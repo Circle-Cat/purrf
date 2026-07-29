@@ -219,6 +219,117 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(threads[0].messages[0].direction, "outbound")
         self.message_repo.list_by_thread.assert_awaited_once_with(self.session, 10)
 
+    def _msg(self, message_id, when, gmail_date=None):
+        return SimpleNamespace(
+            message_id=message_id,
+            direction="inbound",
+            from_address="cand@example.com",
+            to_addresses="recruiting@circlecat.org",
+            cc_addresses=None,
+            subject="Hi",
+            body_html="<p>hi</p>",
+            body_text="hi",
+            snippet="hi",
+            sent_by_user_id=None,
+            gmail_internal_date=gmail_date,
+            created_at=when,
+        )
+
+    def _thread_row(self, thread_id, created_at):
+        return SimpleNamespace(
+            thread_id=thread_id,
+            subject=f"t{thread_id}",
+            synced_at=None,
+            created_at=created_at,
+        )
+
+    async def test_list_conversation_orders_messages_newest_first(self):
+        self.thread_repo.list_by_context.return_value = [
+            self._thread_row(10, "2026-07-01T00:00:00Z")
+        ]
+        # The repository hands them over oldest first — that order is what the
+        # reply headers depend on, so the display order is applied here instead.
+        self.message_repo.list_by_thread.return_value = [
+            self._msg(1, "2026-07-01T00:00:00Z"),
+            self._msg(2, "2026-07-05T00:00:00Z"),
+            self._msg(3, "2026-07-09T00:00:00Z"),
+        ]
+
+        threads = await self.service.list_conversation(
+            self.session, ContextType.APPLICATION, 7
+        )
+
+        self.assertEqual([m.message_id for m in threads[0].messages], [3, 2, 1])
+
+    async def test_list_conversation_orders_threads_by_latest_activity(self):
+        # Thread 10 started first but 20 has the newer reply, so 20 goes on top —
+        # ordering by the thread's own created_at would have pinned 10 there
+        # forever, however recently it was replied to.
+        self.thread_repo.list_by_context.return_value = [
+            self._thread_row(10, "2026-07-01T00:00:00Z"),
+            self._thread_row(20, "2026-07-02T00:00:00Z"),
+        ]
+        by_thread = {
+            10: [
+                self._msg(1, "2026-07-01T00:00:00Z"),
+                self._msg(2, "2026-07-03T00:00:00Z"),
+            ],
+            20: [
+                self._msg(3, "2026-07-02T00:00:00Z"),
+                self._msg(4, "2026-07-08T00:00:00Z"),
+            ],
+        }
+        self.message_repo.list_by_thread.side_effect = (
+            lambda _session, thread_id: by_thread[thread_id]
+        )
+
+        threads = await self.service.list_conversation(
+            self.session, ContextType.APPLICATION, 7
+        )
+
+        self.assertEqual([t.thread_id for t in threads], [20, 10])
+
+    async def test_list_conversation_prefers_the_gmail_timestamp_for_ordering(self):
+        # created_at is our insert time; a synced message's real send time is
+        # the Gmail one, and a backfilled thread can have the two disagree.
+        self.thread_repo.list_by_context.return_value = [
+            self._thread_row(10, "2026-07-01T00:00:00Z"),
+            self._thread_row(20, "2026-07-02T00:00:00Z"),
+        ]
+        by_thread = {
+            10: [
+                self._msg(1, "2026-07-20T00:00:00Z", gmail_date="2026-07-09T00:00:00Z")
+            ],
+            20: [
+                self._msg(2, "2026-07-21T00:00:00Z", gmail_date="2026-07-03T00:00:00Z")
+            ],
+        }
+        self.message_repo.list_by_thread.side_effect = (
+            lambda _session, thread_id: by_thread[thread_id]
+        )
+
+        threads = await self.service.list_conversation(
+            self.session, ContextType.APPLICATION, 7
+        )
+
+        self.assertEqual([t.thread_id for t in threads], [10, 20])
+
+    async def test_list_conversation_sorts_an_empty_thread_by_its_own_timestamp(self):
+        self.thread_repo.list_by_context.return_value = [
+            self._thread_row(10, "2026-07-01T00:00:00Z"),
+            self._thread_row(20, "2026-07-10T00:00:00Z"),
+        ]
+        by_thread = {10: [self._msg(1, "2026-07-05T00:00:00Z")], 20: []}
+        self.message_repo.list_by_thread.side_effect = (
+            lambda _session, thread_id: by_thread[thread_id]
+        )
+
+        threads = await self.service.list_conversation(
+            self.session, ContextType.APPLICATION, 7
+        )
+
+        self.assertEqual([t.thread_id for t in threads], [20, 10])
+
     # ---- sync ---------------------------------------------------------
 
     def _thread(self):

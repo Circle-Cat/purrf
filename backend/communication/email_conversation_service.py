@@ -28,6 +28,31 @@ from backend.common.communication_enums import EmailDirection
 from backend.dto.email_dto import EmailMessageDto, EmailThreadDto
 
 
+def _as_utc(moment: datetime) -> datetime:
+    """Make a timestamp safe to compare with any other one.
+
+    Both timestamp columns are ``timestamptz``, so rows read from the database
+    are aware; a naive value can only reach here from a fixture or a legacy
+    row, and mixing the two raises. Assume UTC for those rather than crash the
+    whole conversation over one message.
+    """
+    return moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
+
+
+def _latest_activity(thread: EmailThreadDto) -> datetime:
+    """Sort key: when this thread last saw traffic.
+
+    The newest message's Gmail timestamp, which is its real send time, falling
+    back to our insert time for a message that has not been synced yet. A thread
+    with no messages sorts by its own creation, so it cannot vanish to the
+    bottom. Messages are already newest first, so the first one is the newest.
+    """
+    if thread.messages:
+        newest = thread.messages[0]
+        return _as_utc(newest.gmail_internal_date or newest.created_at)
+    return _as_utc(thread.created_at)
+
+
 class EmailConversationService:
     def __init__(
         self, gmail_client, thread_repository, message_repository, sender_address
@@ -157,8 +182,8 @@ class EmailConversationService:
             context_id (int | None): The scenario entity id.
 
         Returns:
-            list[EmailThreadDto]: One per thread (oldest first), each with its
-                messages assembled (oldest first).
+            list[EmailThreadDto]: Newest first — threads by their most recent
+                message, and the messages inside each thread newest first too.
         """
         threads = await self._thread_repo.list_by_context(
             session, context_type, context_id
@@ -168,15 +193,23 @@ class EmailConversationService:
             messages = await self._message_repo.list_by_thread(
                 session, thread.thread_id
             )
+            # The repository hands messages over oldest first, which is what
+            # ``send`` relies on to build In-Reply-To (the last id) and a
+            # References header in the chronological order RFC 5322 requires.
+            # Reading is a different job, so the reversal for display lives
+            # here rather than in the repository.
             conversation.append(
                 EmailThreadDto(
                     thread_id=thread.thread_id,
                     subject=thread.subject,
                     synced_at=thread.synced_at,
                     created_at=thread.created_at,
-                    messages=[EmailMessageDto.model_validate(m) for m in messages],
+                    messages=[
+                        EmailMessageDto.model_validate(m) for m in reversed(messages)
+                    ],
                 )
             )
+        conversation.sort(key=_latest_activity, reverse=True)
         return conversation
 
     async def sync_context(self, session, context_type, context_id):
