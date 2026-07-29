@@ -21,6 +21,7 @@ py_test(
     srcs = ["google_service_test.py"],
     deps = [
         "//backend/service:google_service",
+        "@pypi//google_api_python_client",
     ],
 )
 

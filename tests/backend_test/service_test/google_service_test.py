@@ -1,9 +1,21 @@
 import unittest
+from datetime import datetime, timezone
+from http import HTTPStatus
 from unittest import TestCase, main
 from unittest.mock import AsyncMock, MagicMock
 
+from googleapiclient.errors import HttpError
+
 from backend.service.google_service import GoogleService
 from backend.utils.retry_utils import RetryUtils
+
+
+def make_http_error(status: int, reason: str = "error") -> HttpError:
+    """Build an HttpError carrying a given HTTP status, as googleapiclient raises."""
+    return HttpError(
+        resp=MagicMock(status=status),
+        content=f'{{"error": {{"message": "{reason}"}}}}'.encode(),
+    )
 
 
 class TestGoogleService(TestCase):
@@ -576,6 +588,159 @@ class TestGoogleService(TestCase):
             mock_batch.execute
         )
         self.assertEqual(result, (["event-1"], ["event-2"]))
+
+    def _batch_with_callback(self, responses):
+        """Wire a mocked batch whose ``add`` replays ``{event_id: exception}``.
+
+        ``responses`` maps an event id to the exception googleapiclient would
+        hand the callback for it (``None`` for a successful delete). Ids absent
+        from the mapping get no callback at all.
+        """
+        mock_batch = MagicMock()
+        self.mock_google_calendar_client.new_batch_http_request.return_value = (
+            mock_batch
+        )
+
+        def add(request, request_id):
+            if request_id not in responses:
+                return
+            callback = self.mock_google_calendar_client.new_batch_http_request.call_args.kwargs[
+                "callback"
+            ]
+            callback(request_id, None, responses[request_id])
+
+        mock_batch.add.side_effect = add
+        return mock_batch
+
+    def test_batch_delete_google_meetings_counts_already_gone_as_succeeded(self):
+        """An event deleted outside Purrf is already in the desired end state.
+
+        Calendar answers 404/410 for it. Reporting that as a failure would keep
+        the row in ``meeting_log`` forever, since the caller only clears the
+        ids it is told succeeded — leaving a meeting the UI can never remove.
+        """
+        for status in (HTTPStatus.NOT_FOUND, HTTPStatus.GONE):
+            with self.subTest(status=status):
+                self._batch_with_callback({"event-2": make_http_error(status)})
+
+                result = self.service.batch_delete_google_meetings([
+                    "event-1",
+                    "event-2",
+                ])
+
+                self.assertEqual(result, (["event-1", "event-2"], []))
+
+    def test_batch_delete_google_meetings_keeps_forbidden_as_failed(self):
+        """Only 'already gone' is forgiven — a 403 is still a real failure."""
+        self._batch_with_callback({
+            "event-2": make_http_error(HTTPStatus.FORBIDDEN, "forbidden")
+        })
+
+        result = self.service.batch_delete_google_meetings(["event-1", "event-2"])
+
+        self.assertEqual(result, (["event-1"], ["event-2"]))
+
+    def test_batch_delete_google_meetings_execute_error_keeps_reported_results(self):
+        """A batch-level error must not retract per-event verdicts already given.
+
+        googleapiclient invokes the callback as each sub-response is parsed, so
+        an error part-way through leaves some events already deleted. Marking
+        the whole chunk failed would strand those deletions: gone from Calendar,
+        still shown by Purrf.
+        """
+        self._batch_with_callback({"event-1": None})
+        self.mock_retry_utils.get_retry_on_transient.side_effect = Exception("network")
+
+        result = self.service.batch_delete_google_meetings(["event-1", "event-2"])
+
+        self.assertEqual(result, (["event-1"], ["event-2"]))
+
+    def _calendar_events(self):
+        """The mocked Calendar ``events()`` resource."""
+        return self.mock_google_calendar_client.events.return_value
+
+    def _insert_meeting(self, event_id="evt-1"):
+        """Call insert_google_meeting with fixed, uninteresting meeting details."""
+        return self.service.insert_google_meeting(
+            summary="Mentorship: A / B",
+            start_time=datetime(2026, 8, 1, 1, 0, tzinfo=timezone.utc),
+            end_time=datetime(2026, 8, 1, 1, 45, tzinfo=timezone.utc),
+            attendees_emails=["a@example.com", "b@example.com"],
+            request_id="req-1",
+            event_id=event_id,
+        )
+
+    def test_insert_google_meeting_success(self):
+        """Test a created event is returned as-is and requests a Meet conference."""
+        expected = {"id": "evt-1", "hangoutLink": "https://meet.google.com/a-b-c"}
+        self._calendar_events().insert.return_value.execute.return_value = expected
+
+        result = self._insert_meeting()
+
+        self.assertEqual(result, expected)
+        kwargs = self._calendar_events().insert.call_args.kwargs
+        self.assertEqual(kwargs["calendarId"], "primary")
+        self.assertEqual(kwargs["conferenceDataVersion"], 1)
+        self.assertEqual(kwargs["sendUpdates"], "all")
+        self.assertEqual(kwargs["body"]["id"], "evt-1")
+        self._calendar_events().get.assert_not_called()
+
+    def test_insert_google_meeting_recovers_event_when_our_id_already_exists(self):
+        """A 409 on an id we minted means an earlier attempt already created it.
+
+        The insert is retried on transient errors, so a lost response leaves the
+        event created (invitations already sent) while the client sees a failure.
+        The re-send then collides with itself. Fetching the event back turns that
+        into the success it actually was, instead of an orphan on the calendar
+        that Purrf has no record of.
+        """
+        existing = {"id": "evt-1", "status": "confirmed", "hangoutLink": "link"}
+        self._calendar_events().insert.return_value.execute.side_effect = (
+            make_http_error(HTTPStatus.CONFLICT, "duplicate")
+        )
+        self._calendar_events().get.return_value.execute.return_value = existing
+
+        result = self._insert_meeting()
+
+        self.assertEqual(result, existing)
+        self._calendar_events().get.assert_called_once_with(
+            calendarId="primary", eventId="evt-1"
+        )
+
+    def test_insert_google_meeting_raises_when_recovered_event_is_cancelled(self):
+        """A 409 whose event is cancelled is not a meeting we can hand back."""
+        self._calendar_events().insert.return_value.execute.side_effect = (
+            make_http_error(HTTPStatus.CONFLICT, "duplicate")
+        )
+        self._calendar_events().get.return_value.execute.return_value = {
+            "id": "evt-1",
+            "status": "cancelled",
+        }
+
+        with self.assertRaises(RuntimeError):
+            self._insert_meeting()
+
+    def test_insert_google_meeting_raises_on_conflict_without_event_id(self):
+        """Without an id of our own there is nothing to recover — stay a failure."""
+        self._calendar_events().insert.return_value.execute.side_effect = (
+            make_http_error(HTTPStatus.CONFLICT, "duplicate")
+        )
+
+        with self.assertRaises(RuntimeError):
+            self._insert_meeting(event_id=None)
+
+        self._calendar_events().get.assert_not_called()
+
+    def test_insert_google_meeting_raises_on_non_conflict_http_error(self):
+        """A 400 stays a failure and must not trigger a recovery fetch."""
+        self._calendar_events().insert.return_value.execute.side_effect = (
+            make_http_error(HTTPStatus.BAD_REQUEST, "invalid")
+        )
+
+        with self.assertRaises(RuntimeError):
+            self._insert_meeting()
+
+        self._calendar_events().get.assert_not_called()
 
 
 class TestGoogleServiceMeet(unittest.IsolatedAsyncioTestCase):
