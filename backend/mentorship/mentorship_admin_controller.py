@@ -1,8 +1,12 @@
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends
+from fastapi.responses import StreamingResponse
 from backend.dto.participant_search_filter_dto import ParticipantSearchFilterDto
 from backend.common.fast_api_response_wrapper import api_response
 from backend.common.api_endpoints import (
     MENTORSHIP_ADMIN_PARTICIPANTS,
+    MENTORSHIP_ADMIN_PARTICIPANTS_EXPORT,
     MENTORSHIP_ADMIN_PAIRS_MEETINGS,
 )
 from backend.common.permissions import Permission
@@ -33,6 +37,15 @@ class MentorshipAdminController:
             response_model=None,
         )
 
+        self.router.add_api_route(
+            MENTORSHIP_ADMIN_PARTICIPANTS_EXPORT,
+            endpoint=authenticate(permissions=[Permission.MENTORSHIP_ADMIN_READ])(
+                self.export_participants
+            ),
+            methods=["GET"],
+            response_model=None,
+        )
+
     async def search_participants(
         self,
         filters: ParticipantSearchFilterDto = Depends(),
@@ -41,6 +54,19 @@ class MentorshipAdminController:
         sort_by: str | None = None,
         order: str = "asc",
     ):
+        """
+        Search mentorship participants and non-participants.
+
+        Args:
+            filters (ParticipantSearchFilterDto): Search filters.
+            limit (int): Maximum number of rows to return.
+            offset (int): Pagination offset.
+            sort_by (str | None): Column to sort by.
+            order (str): Sort direction ("asc" or "desc").
+
+        Returns:
+            API response containing matching participant records.
+        """
         async with self.database.session() as session:
             result = await self.mentorship_admin_service.search_participants(
                 session, filters, limit, offset, sort_by, order
@@ -48,6 +74,35 @@ class MentorshipAdminController:
         return api_response(
             message="Successfully retrieved participant search results.",
             data=result,
+        )
+
+    async def export_participants(
+        self,
+        filters: ParticipantSearchFilterDto = Depends(),
+        expand_meetings: bool = False,
+    ):
+        """
+        Stream the participant search results as a downloadable CSV.
+
+        Args:
+            filters (ParticipantSearchFilterDto): Search filters used for
+                the export. filters.participation_status must be set.
+            expand_meetings (bool): Whether participant exports include
+                meeting rows. Ignored for non-participant exports.
+
+        Returns:
+            StreamingResponse: Streaming CSV file response.
+        """
+        today = datetime.now(ZoneInfo("America/Los_Angeles")).strftime("%Y-%m-%d")
+        if filters.participation_status == "participant":
+            mode_label = "detailed" if expand_meetings else "summary"
+            filename = f"{filters.participation_status}_{mode_label}_{today}.csv"
+        else:
+            filename = f"{filters.participation_status}_{today}.csv"
+        return StreamingResponse(
+            self.mentorship_admin_service.stream_export_csv(filters, expand_meetings),
+            media_type="text/csv",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
 
     async def get_meeting_log(self, pair_id: int):
