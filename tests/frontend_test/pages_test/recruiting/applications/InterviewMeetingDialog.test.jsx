@@ -178,10 +178,15 @@ describe("InterviewMeetingDialog", () => {
   });
 
   it("lists the invitees and names the organizer", () => {
-    renderDialog({ mode: "edit", interview: INTERVIEW });
+    renderDialog({
+      mode: "edit",
+      interview: INTERVIEW,
+      candidateName: "Alice Smith",
+    });
     // Exact strings from the info block -- the combobox's own display and
     // the hidden native <select> fallback both also contain "Eve Evaluator"
     // as substrings, so a loose regex match would be ambiguous.
+    expect(screen.getByText("Candidate: Alice Smith")).toBeInTheDocument();
     expect(screen.getByText("Interviewer: Eve Evaluator")).toBeInTheDocument();
     expect(screen.getByText("Organizer: Jane Smith")).toBeInTheDocument();
   });

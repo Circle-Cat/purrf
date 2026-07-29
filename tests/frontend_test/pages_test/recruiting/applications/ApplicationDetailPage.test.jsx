@@ -1899,7 +1899,7 @@ describe("ApplicationDetailPage — Scheduled requires an assignee", () => {
 
     expect(
       screen.getByText(
-        "Please assign a reviewer before marking this as Scheduled.",
+        "Schedule this interview's meeting first — booking one (see the Interview Meeting card above) assigns the interviewer automatically.",
       ),
     ).toBeInTheDocument();
     expect(api.setApplicationSubStatus).not.toHaveBeenCalled();
@@ -1923,7 +1923,7 @@ describe("ApplicationDetailPage — Scheduled requires an assignee", () => {
 
     expect(
       screen.queryByText(
-        "Please assign a reviewer before marking this as Scheduled.",
+        "Schedule this interview's meeting first — booking one (see the Interview Meeting card above) assigns the interviewer automatically.",
       ),
     ).not.toBeInTheDocument();
   });
@@ -1952,7 +1952,7 @@ describe("ApplicationDetailPage — Scheduled requires an assignee", () => {
     );
     expect(
       screen.queryByText(
-        "Please assign a reviewer before marking this as Scheduled.",
+        "Schedule this interview's meeting first — booking one (see the Interview Meeting card above) assigns the interviewer automatically.",
       ),
     ).not.toBeInTheDocument();
   });
@@ -1981,7 +1981,7 @@ describe("ApplicationDetailPage — Scheduled requires an assignee", () => {
     );
     expect(
       screen.queryByText(
-        "Please assign a reviewer before marking this as Scheduled.",
+        "Schedule this interview's meeting first — booking one (see the Interview Meeting card above) assigns the interviewer automatically.",
       ),
     ).not.toBeInTheDocument();
   });
@@ -3940,6 +3940,28 @@ describe("ApplicationDetailPage — interview meeting card & scheduling", () => 
     expect(screen.getByText("Not scheduled")).toBeInTheDocument();
   });
 
+  it("still renders the card with its terminal warning when the application was rejected with a meeting still on the calendar", async () => {
+    // Defensive mount branch: the application moved off behavioral/tech
+    // (rejected), but the interview row was never cancelled -- the card
+    // must still mount (`showInterviewCard`'s `|| detail.interview != null`)
+    // so the recruiter can see and cancel it, and it must show the
+    // terminal warning with Edit dropped but Cancel kept.
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({
+        isOwner: true,
+        stage: "rejected",
+        interview: INTERVIEW_FIXTURE,
+      }),
+    });
+    renderPage();
+    await waitLoaded();
+
+    expect(screen.getByText(/still on the calendar/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Edit" })).not.toBeInTheDocument();
+  });
+
   it("shows a read.all non-owner viewer the card's state with no controls", async () => {
     // Default authState.userId (999) is neither OWNER_ID nor the assignee --
     // a plain read.all (canView) viewer, same signal (`detail.isOwner`) the
@@ -3993,6 +4015,37 @@ describe("ApplicationDetailPage — interview meeting card & scheduling", () => 
       data: makeDetail({ isOwner: true, stage: "recruiter_screening" }),
     });
     renderPage();
+    await waitLoaded();
+
+    expect(screen.queryByText("Interview Meeting")).not.toBeInTheDocument();
+  });
+
+  it("does not render the card on board review", async () => {
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, stage: "board_review" }),
+    });
+    renderPage();
+    await waitLoaded();
+
+    expect(screen.queryByText("Interview Meeting")).not.toBeInTheDocument();
+  });
+
+  it("does not render the card in the assignee's evaluate-mode view", async () => {
+    // An explicit scope boundary: evaluate mode (the "My Evaluations" link)
+    // is a reduced, rubric-only view for the current-stage assignee -- it
+    // never renders the owner/read.all info panel the card lives in, even
+    // when the assignee's own stage is behavioral/tech.
+    authState.userId = ASSIGNEE_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({
+        isOwner: false,
+        canView: false,
+        assigneeId: ASSIGNEE_ID,
+        stage: "behavioral",
+      }),
+    });
+    renderEvaluatorPage();
     await waitLoaded();
 
     expect(screen.queryByText("Interview Meeting")).not.toBeInTheDocument();

@@ -19,7 +19,7 @@ const INTERVIEW = {
 describe("InterviewMeetingCard", () => {
   it("offers scheduling when nothing is booked", () => {
     render(
-      <InterviewMeetingCard interview={null} stage="behavioral" round={1} />,
+      <InterviewMeetingCard interview={null} round={1} />,
     );
     expect(screen.getByText("Interview Meeting")).toBeInTheDocument();
     expect(screen.getByText("Not scheduled")).toBeInTheDocument();
@@ -34,7 +34,6 @@ describe("InterviewMeetingCard", () => {
     render(
       <InterviewMeetingCard
         interview={null}
-        stage="behavioral"
         round={1}
         assigneeId={null}
       />,
@@ -46,7 +45,7 @@ describe("InterviewMeetingCard", () => {
 
   it("renders the booked time in the stored zone, naming the zone in IANA form", () => {
     render(
-      <InterviewMeetingCard interview={INTERVIEW} stage="behavioral" round={1} />,
+      <InterviewMeetingCard interview={INTERVIEW} round={1} />,
     );
     // 21:00Z on 2026-08-05 is 14:00 in America/Los_Angeles.
     expect(screen.getByText(/2026-08-05/)).toBeInTheDocument();
@@ -58,7 +57,7 @@ describe("InterviewMeetingCard", () => {
 
   it("shows the meet link and both actions once booked", () => {
     render(
-      <InterviewMeetingCard interview={INTERVIEW} stage="behavioral" round={1} />,
+      <InterviewMeetingCard interview={INTERVIEW} round={1} />,
     );
     expect(
       screen.getByText("meet.google.com/abc-defg-hij"),
@@ -71,7 +70,6 @@ describe("InterviewMeetingCard", () => {
     render(
       <InterviewMeetingCard
         interview={{ ...INTERVIEW, startAt: "2020-01-01T00:00:00Z", endAt: "2020-01-01T00:45:00Z" }}
-        stage="behavioral"
         round={1}
       />,
     );
@@ -81,7 +79,7 @@ describe("InterviewMeetingCard", () => {
 
   it("labels the round when past the first", () => {
     render(
-      <InterviewMeetingCard interview={{ ...INTERVIEW, round: 2 }} stage="behavioral" round={2} />,
+      <InterviewMeetingCard interview={{ ...INTERVIEW, round: 2 }} round={2} />,
     );
     expect(screen.getByText("Round 2")).toBeInTheDocument();
   });
@@ -90,7 +88,6 @@ describe("InterviewMeetingCard", () => {
     render(
       <InterviewMeetingCard
         interview={INTERVIEW}
-        stage="behavioral"
         round={1}
         isTerminal
       />,
@@ -109,7 +106,6 @@ describe("InterviewMeetingCard", () => {
     const { rerender } = render(
       <InterviewMeetingCard
         interview={null}
-        stage="behavioral"
         round={1}
         onSchedule={onSchedule}
       />,
@@ -120,7 +116,6 @@ describe("InterviewMeetingCard", () => {
     rerender(
       <InterviewMeetingCard
         interview={INTERVIEW}
-        stage="behavioral"
         round={1}
         onEdit={onEdit}
         onCancel={onCancel}
@@ -136,7 +131,6 @@ describe("InterviewMeetingCard", () => {
     render(
       <InterviewMeetingCard
         interview={INTERVIEW}
-        stage="behavioral"
         round={1}
         isOwner={false}
       />,
@@ -157,7 +151,6 @@ describe("InterviewMeetingCard", () => {
     render(
       <InterviewMeetingCard
         interview={null}
-        stage="behavioral"
         round={1}
         isOwner={false}
       />,

@@ -1672,7 +1672,6 @@ const ApplicationDetailPage = () => {
               {showInterviewCard && (
                 <InterviewMeetingCard
                   interview={detail.interview}
-                  stage={detail.application.stage}
                   round={detail.application.currentRound ?? 1}
                   isTerminal={isTerminalStage}
                   isOwner={detail.isOwner}
@@ -1956,7 +1955,9 @@ const ApplicationDetailPage = () => {
             <DialogTitle>Assignee required</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-slate-700">
-            Please assign a reviewer before marking this as Scheduled.
+            Schedule this interview's meeting first — booking one (see the
+            Interview Meeting card above) assigns the interviewer
+            automatically.
           </p>
           <DialogFooter>
             <Button onClick={() => setScheduleAssigneeWarningOpen(false)}>
@@ -2134,6 +2135,7 @@ const ApplicationDetailPage = () => {
         interview={detail.interview}
         defaultAssigneeId={interviewDefaultAssigneeId}
         interviewPool={interviewPool}
+        candidateName={detail.applicantName}
         onSubmit={handleInterviewSubmit}
         submitting={interviewBusy}
       />

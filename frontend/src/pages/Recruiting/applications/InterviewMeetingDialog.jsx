@@ -48,12 +48,16 @@ const DURATION_OPTIONS = [
  * stage's configured default when the round is unassigned -- this component
  * doesn't distinguish the two, it just prefills from whichever one value it
  * gets). In "edit" mode every field prefills from the existing `interview`
- * instead, and a notice warns that attendees will be notified.
+ * instead, and a notice warns that attendees will be notified, listing every
+ * invitee: the candidate (`candidateName`, passed in separately -- the
+ * candidate isn't part of `InterviewDto`), the interviewer, and the
+ * organizer.
  *
  * @param {{open: boolean, onOpenChange: (open: boolean) => void,
  *          mode: "schedule"|"edit", interview: object|null,
  *          defaultAssigneeId: number|null,
  *          interviewPool: {userId: number, name: string, email: string}[],
+ *          candidateName?: string|null,
  *          onSubmit: (body: {assigneeId: number, date: string,
  *            startTime: string, durationMinutes: number,
  *            timezone: string}) => void,
@@ -66,6 +70,7 @@ const InterviewMeetingDialog = ({
   interview,
   defaultAssigneeId,
   interviewPool,
+  candidateName,
   onSubmit,
   submitting = false,
 }) => {
@@ -138,10 +143,14 @@ const InterviewMeetingDialog = ({
           </DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* PeoplePicker's default "select" variant always renders its
+              "— none —" placeholder regardless of `allowNone` (that prop
+              only takes effect on the "list"/radio variant) -- omitted here
+              rather than passed misleadingly. Submission is still hard-
+              gated on a real pick via `canSubmit` below. */}
           <PeoplePicker
             label="Interviewer"
             pool={interviewPool}
-            allowNone={false}
             value={assigneeId}
             onChange={(v) => setAssigneeId(v)}
           />
@@ -197,6 +206,7 @@ const InterviewMeetingDialog = ({
           {isEdit && (
             <div className="space-y-1 rounded border bg-slate-50 p-3 text-sm text-slate-600">
               <p>Attendees will be notified of this change.</p>
+              <p>Candidate: {candidateName ?? "Unknown"}</p>
               <p>Interviewer: {interview.assigneeName}</p>
               <p>Organizer: {interview.scheduledByName}</p>
             </div>

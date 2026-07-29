@@ -24,7 +24,7 @@ import { formatInTz } from "@/utils/dateTime";
  * `canReassign`/`detail.isOwner` on `ApplicationDetailPage`): the same
  * information, none of the controls.
  *
- * @param {{interview: object|null, stage: string, round: number,
+ * @param {{interview: object|null, round: number,
  *          isTerminal?: boolean, isOwner?: boolean, busy?: boolean,
  *          onSchedule?: function, onEdit?: function, onCancel?: function}} props
  */
