@@ -8,6 +8,7 @@ from backend.communication.email_templates import (
     ONBOARDING_FORM_URL,
     PLACEHOLDER_KEYS,
     render_all_templates,
+    render_signature,
     render_template,
 )
 
@@ -169,6 +170,29 @@ class EmailTemplatesCatalogTest(unittest.TestCase):
         )
         self.assertIn("over the Google Meet", screening.body_html)
         self.assertIn("from a colleague", screening.body_html)
+
+
+class RenderSignatureTest(unittest.TestCase):
+    def test_renders_the_same_block_the_templates_end_with(self):
+        # The composer prefills the signature into an empty body, so it has to
+        # be available on its own — not only welded to the end of a template.
+        signature = render_signature(_VALUES)
+        for template in EMAIL_TEMPLATES:
+            _, body_html = render_template(template.key, _VALUES)
+            with self.subTest(key=template.key):
+                self.assertTrue(
+                    body_html.endswith(signature),
+                    "template signature drifted from render_signature()",
+                )
+
+    def test_substitutes_the_sender_name(self):
+        self.assertIn("<strong>Jane Smith</strong>", render_signature(_VALUES))
+        self.assertNotIn("{{sender_name}}", render_signature(_VALUES))
+
+    def test_ignores_values_the_signature_does_not_use(self):
+        signature = render_signature(_VALUES)
+        self.assertNotIn("Ana", signature)
+        self.assertNotIn("Software Engineer Intern", signature)
 
 
 class RenderTemplateTest(unittest.TestCase):
