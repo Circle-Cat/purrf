@@ -3100,6 +3100,46 @@ describe("ApplicationDetailPage — Emails tab", () => {
     expect(screen.getByText("Hello there")).toBeInTheDocument();
   });
 
+  it("styles a received body so paragraphs, lists and links stay readable", async () => {
+    // Tailwind's preflight zeroes <p> margins, drops list markers and strips
+    // link underlines and colour. A mail body rendered without these hooks
+    // arrives as one dense block with invisible bullets and links that look
+    // exactly like ordinary text.
+    ownerViewing();
+    api.getApplicationEmails.mockResolvedValue({
+      data: {
+        defaultTo: "cand@x.com",
+        threads: [
+          {
+            threadId: 1,
+            subject: "Interview Availability",
+            messages: [
+              {
+                messageId: 11,
+                direction: "inbound",
+                fromAddress: "cand@x.com",
+                bodyHtml:
+                  "<p>first para</p><p>second para</p><ul><li>bullet</li></ul>" +
+                  '<p><a href="https://x.test">a link</a></p>',
+                bodyText: "first para",
+                createdAt: "2026-07-23T00:00:00Z",
+              },
+            ],
+          },
+        ],
+      },
+    });
+    const user = userEvent.setup();
+    renderPage();
+    await waitLoaded();
+    await user.click(screen.getByRole("tab", { name: "Emails" }));
+    const body = screen.getByText("first para").parentElement;
+    expect(body.className).toContain("[&_p]:my-3");
+    expect(body.className).toContain("[&_ul]:list-disc");
+    expect(body.className).toContain("[&_ol]:list-decimal");
+    expect(body.className).toContain("[&_a]:underline");
+  });
+
   it("owner composes and sends a new email", async () => {
     ownerViewing();
     api.getApplicationEmails.mockResolvedValue({
