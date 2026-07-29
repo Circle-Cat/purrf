@@ -147,3 +147,4 @@ RECRUITING_APPLICATION_MENTIONABLE_USERS_ENDPOINT = (
 RECRUITING_NOTIFICATIONS_ENDPOINT = "/recruiting/notifications"
 RECRUITING_NOTIFICATION_ENDPOINT = "/recruiting/notifications/{notification_id}"
 RECRUITING_EMAIL_SYNC_ENDPOINT = "/recruiting/emails/sync"
+RECRUITING_EMAIL_SYNC_RECENT_ENDPOINT = "/recruiting/emails/sync/recent"

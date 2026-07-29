@@ -327,6 +327,71 @@ class TestGmailClient(TestCase):
         with self.assertRaises(RuntimeError):
             self.client.get_message("gone")
 
+    # ---- list_recent_message_thread_ids --------------------------------
+
+    def _stub_message_pages(self, *pages):
+        """Stub messages().list() with one response per page.
+
+        Uses ``list.return_value`` rather than ``list()`` so the stub does not
+        record a call — the pagination tests below assert on
+        ``list.call_args_list`` and must see only the production calls.
+        """
+        self.mock_service.users().messages().list.return_value.execute.side_effect = (
+            list(pages)
+        )
+
+    def test_list_recent_thread_ids_returns_deduped_set(self):
+        # Two messages in the same thread must yield one thread id: the caller
+        # syncs per thread, not per message.
+        self._stub_message_pages({
+            "messages": [
+                {"threadId": "T1"},
+                {"threadId": "T2"},
+                {"threadId": "T1"},
+            ]
+        })
+        self.assertEqual(self.client.list_recent_message_thread_ids(2), {"T1", "T2"})
+
+    def test_list_recent_thread_ids_builds_query_and_field_mask(self):
+        self._stub_message_pages({"messages": []})
+        self.client.list_recent_message_thread_ids(2)
+        kwargs = self.mock_service.users().messages().list.call_args.kwargs
+        self.assertEqual(kwargs["q"], "newer_than:2d")
+        # We only need threadId; id and resultSizeEstimate are dead weight.
+        self.assertEqual(kwargs["fields"], "messages/threadId,nextPageToken")
+
+    def test_list_recent_thread_ids_honours_lookback_days(self):
+        self._stub_message_pages({"messages": []})
+        self.client.list_recent_message_thread_ids(7)
+        kwargs = self.mock_service.users().messages().list.call_args.kwargs
+        self.assertEqual(kwargs["q"], "newer_than:7d")
+
+    def test_list_recent_thread_ids_follows_pagination(self):
+        self._stub_message_pages(
+            {"messages": [{"threadId": "T1"}], "nextPageToken": "page2"},
+            {"messages": [{"threadId": "T2"}]},
+        )
+
+        result = self.client.list_recent_message_thread_ids(2)
+
+        self.assertEqual(result, {"T1", "T2"})
+        calls = self.mock_service.users().messages().list.call_args_list
+        self.assertEqual(len(calls), 2)
+        self.assertIsNone(calls[0].kwargs["pageToken"])
+        self.assertEqual(calls[1].kwargs["pageToken"], "page2")
+
+    def test_list_recent_thread_ids_empty_mailbox_window(self):
+        # Gmail omits "messages" entirely when nothing matches.
+        self._stub_message_pages({})
+        self.assertEqual(self.client.list_recent_message_thread_ids(2), set())
+
+    def test_list_recent_thread_ids_rate_limited(self):
+        self.mock_service.users().messages().list.return_value.execute.side_effect = (
+            _http_error(429)
+        )
+        with self.assertRaises(RateLimitedError):
+            self.client.list_recent_message_thread_ids(2)
+
 
 if __name__ == "__main__":
     main()
