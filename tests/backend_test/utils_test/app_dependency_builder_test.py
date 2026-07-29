@@ -23,6 +23,7 @@ from backend.common.environment_constants import (
 @patch("backend.utils.app_dependency_builder.UserIdentityService")
 @patch("backend.utils.app_dependency_builder.MentorshipController")
 @patch("backend.utils.app_dependency_builder.MeetAttendanceService")
+@patch("backend.utils.app_dependency_builder.MeetingSchedulingService")
 @patch("backend.utils.app_dependency_builder.MeetingService")
 @patch("backend.utils.app_dependency_builder.RegistrationService")
 @patch("backend.utils.app_dependency_builder.ParticipationService")
@@ -158,6 +159,7 @@ class TestAppDependencyBuilder(TestCase):
         mock_participation_service_cls,
         mock_registration_service_cls,
         mock_meeting_service_cls,
+        mock_meeting_scheduling_service_cls,
         mock_meet_attendance_service_cls,
         mock_mentorship_controller_cls,
         mock_user_identity_service_cls,
@@ -541,13 +543,17 @@ class TestAppDependencyBuilder(TestCase):
             training_repository=mock_training_repo_cls.return_value,
             application_repository=builder.application_repository,
         )
+        mock_meeting_scheduling_service_cls.assert_called_once_with(
+            logger=mock_logger,
+            google_service=mock_google_service.return_value,
+            user_emails_repository=mock_user_emails_repo_cls.return_value,
+        )
         mock_meeting_service_cls.assert_called_once_with(
             logger=mock_logger,
             mentorship_pairs_repository=mock_mentorship_pairs_repo_cls.return_value,
             mentorship_mapper=mock_mentorship_mapper_cls.return_value,
             users_repository=mock_users_repo_cls.return_value,
-            google_service=mock_google_service.return_value,
-            user_emails_repository=mock_user_emails_repo_cls.return_value,
+            meeting_scheduling_service=mock_meeting_scheduling_service_cls.return_value,
         )
 
         mock_fast_app_factory_cls.assert_called_once_with(

@@ -16,3 +16,11 @@ py_test(
         "//backend/communication",
     ],
 )
+
+py_test(
+    name = "meeting_scheduling_service_test",
+    srcs = ["meeting_scheduling_service_test.py"],
+    deps = [
+        "//backend/communication",
+    ],
+)

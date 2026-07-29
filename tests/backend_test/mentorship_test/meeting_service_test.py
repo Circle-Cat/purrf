@@ -1,6 +1,6 @@
 import unittest
 from datetime import datetime, timezone
-from unittest.mock import MagicMock, AsyncMock, patch
+from unittest.mock import MagicMock, AsyncMock
 
 from backend.mentorship.meeting_service import MeetingService
 from backend.dto.user_context_dto import UserContextDto
@@ -28,19 +28,13 @@ class TestMeetingServiceV1(unittest.IsolatedAsyncioTestCase):
         self.mock_users_repo.get_user_by_user_id = AsyncMock()
         self.mock_session = AsyncMock()
 
-        self.mock_google_service = MagicMock()
-
-        self.mock_user_emails_repo = MagicMock()
-        self.mock_user_emails_repo.get_contact_emails_by_user_ids = AsyncMock(
-            return_value={}
-        )
+        self.mock_meeting_scheduling_service = AsyncMock()
         self.meeting_service = MeetingService(
             logger=self.mock_logger,
             mentorship_pairs_repository=self.mock_pairs_repo,
             mentorship_mapper=self.mock_mapper,
             users_repository=self.mock_users_repo,
-            google_service=self.mock_google_service,
-            user_emails_repository=self.mock_user_emails_repo,
+            meeting_scheduling_service=self.mock_meeting_scheduling_service,
         )
 
         self.user_id = 1
@@ -170,25 +164,43 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
         self.mock_logger = MagicMock()
         self.mock_users_repository = MagicMock()
         self.mock_users_repository.get_user_by_user_id = AsyncMock()
-        self.mock_google_service = MagicMock()
         self.mock_mentorship_pairs_repository = MagicMock()
         self.mock_mentorship_pairs_repository.get_pair_with_partner_by_round_and_users_and_status = AsyncMock()
         self.mock_mentorship_pairs_repository.append_google_meeting = AsyncMock()
 
         self.mock_session = AsyncMock()
 
-        self.mock_user_emails_repo = MagicMock()
-        # Attendee emails come from user_emails, not the legacy column.
-        self.mock_user_emails_repo.get_contact_emails_by_user_ids = AsyncMock(
-            return_value={1: "alice@example.com", 2: "bob@example.com"}
+        # Address resolution, the idempotent insert and opening the Meet
+        # space now live in the shared MeetingSchedulingService; that
+        # service's own behaviour is covered by
+        # tests/backend_test/communication_test/meeting_scheduling_service_test.py.
+        # This mock only needs to hand back its normalized result shape.
+        self.scheduled_meeting = {
+            "google_event_id": "google_event_123",
+            "meet_link": "https://meet.google.com/abc-def-ghi",
+            "entry_points": [
+                {
+                    "entryPointType": "video",
+                    "uri": "https://meet.google.com/abc-def-ghi",
+                }
+            ],
+            "conference_id": "abc-def-ghi",
+            "created": "",
+        }
+        self.mock_meeting_scheduling_service = AsyncMock()
+        self.mock_meeting_scheduling_service.schedule = AsyncMock(
+            return_value=self.scheduled_meeting
         )
+        self.mock_meeting_scheduling_service.cancel = AsyncMock(
+            return_value=([], [])
+        )
+
         self.service = MeetingService(
             logger=self.mock_logger,
             mentorship_pairs_repository=self.mock_mentorship_pairs_repository,
             mentorship_mapper=MagicMock(),
             users_repository=self.mock_users_repository,
-            google_service=self.mock_google_service,
-            user_emails_repository=self.mock_user_emails_repo,
+            meeting_scheduling_service=self.mock_meeting_scheduling_service,
         )
 
         self.mock_current_user = MagicMock()
@@ -206,25 +218,6 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
         self.mock_users_repository.get_user_by_user_id.return_value = (
             self.mock_current_user
         )
-
-        self.google_result = {
-            "id": "google_event_123",
-            "hangoutLink": "https://meet.google.com/abc-def-ghi",
-            "conferenceData": {
-                "entryPoints": [
-                    {
-                        "entryPointType": "video",
-                        "uri": "https://meet.google.com/abc-def-ghi",
-                    }
-                ],
-                "conferenceId": "abc-def-ghi",
-            },
-        }
-        self.mock_google_service.insert_google_meeting.return_value = self.google_result
-        self.mock_google_service.get_meet_space_name = AsyncMock(
-            return_value="spaces/INTERNALID123"
-        )
-        self.mock_google_service.update_meet_space_type_to_open = AsyncMock()
 
         self.mock_pair = MagicMock()
         self.mock_pair.meeting_log = None
@@ -251,8 +244,7 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
             mentorship_pairs_repository=self.mock_pairs_repo,
             mentorship_mapper=self.mock_mapper,
             users_repository=self.mock_users_repository,
-            google_service=self.mock_google_service,
-            user_emails_repository=self.mock_user_emails_repo,
+            meeting_scheduling_service=self.mock_meeting_scheduling_service,
         )
 
         self.user_id = 1
@@ -291,14 +283,8 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
         cm.__aexit__ = AsyncMock(return_value=None)
         self.mock_session_factory = MagicMock(return_value=cm)
 
-    @patch("backend.mentorship.meeting_service.uuid")
-    async def test_create_google_meeting_success(self, mock_uuid):
+    async def test_create_google_meeting_success(self):
         """Test successful meeting creation with correct response fields."""
-        mock_uuid.uuid4.return_value = MagicMock(
-            hex="abcdef1234567890abcdef1234567890",
-            __str__=lambda _: "abcdef12-3456-7890-abcd-ef1234567890",
-        )
-
         result = await self.service.create_google_meeting(
             session=self.mock_session,
             user_context=self.user_context,
@@ -317,16 +303,15 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result.is_completed)
         self.assertEqual(len(result.entry_points), 1)
 
-    @patch("backend.mentorship.meeting_service.uuid")
-    async def test_create_google_meeting_calls_google_api_with_correct_args(
-        self, mock_uuid
+    async def test_create_google_meeting_calls_scheduling_service_with_correct_args(
+        self,
     ):
-        """Test that Google Calendar API is called with correct summary and attendees."""
-        mock_uuid.uuid4.return_value = MagicMock(
-            hex="abcdef1234567890abcdef1234567890",
-            __str__=lambda _: "request-id-123",
-        )
+        """Test that the shared scheduling service is called with correct summary/times/attendees.
 
+        Address resolution, the idempotent insert and opening the Meet space
+        are MeetingSchedulingService's job now (see
+        meeting_scheduling_service_test.py); this only checks the hand-off.
+        """
         await self.service.create_google_meeting(
             session=self.mock_session,
             user_context=self.user_context,
@@ -336,23 +321,15 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
             end_datetime=self.end_dt,
         )
 
-        self.mock_google_service.insert_google_meeting.assert_called_once_with(
-            summary="Circlecat Mentorship - Alice / Bob",
-            start_time=self.start_dt,
-            end_time=self.end_dt,
-            attendees_emails=["alice@example.com", "bob@example.com"],
-            request_id="request-id-123",
-            event_id="abcdef1234567890abcdef1234567890",
-        )
+        call_args, call_kwargs = self.mock_meeting_scheduling_service.schedule.call_args
+        self.assertEqual(call_args[0], self.mock_session)
+        self.assertEqual(call_kwargs["summary"], "Circlecat Mentorship - Alice / Bob")
+        self.assertEqual(call_kwargs["start_utc"], self.start_dt)
+        self.assertEqual(call_kwargs["end_utc"], self.end_dt)
+        self.assertEqual(call_kwargs["attendee_user_ids"], [1, 2])
 
-    @patch("backend.mentorship.meeting_service.uuid")
-    async def test_create_google_meeting_persists_meeting_log(self, mock_uuid):
+    async def test_create_google_meeting_persists_meeting_log(self):
         """Test that meeting result is persisted to meeting_log."""
-        mock_uuid.uuid4.return_value = MagicMock(
-            hex="abcdef1234567890abcdef1234567890",
-            __str__=lambda _: "request-id-123",
-        )
-
         await self.service.create_google_meeting(
             session=self.mock_session,
             user_context=self.user_context,
@@ -393,94 +370,10 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertIn("No mentorship pair found", str(ctx.exception))
-        self.mock_google_service.insert_google_meeting.assert_not_called()
+        self.mock_meeting_scheduling_service.schedule.assert_not_awaited()
 
-    @patch("backend.mentorship.meeting_service.uuid")
-    async def test_create_google_meeting_sets_meet_space_to_open(self, mock_uuid):
-        """Test that get_meet_space_name and update_meet_space_type_to_open are called with conferenceId."""
-        mock_uuid.uuid4.return_value = MagicMock(
-            hex="abcdef1234567890abcdef1234567890",
-            __str__=lambda _: "request-id-123",
-        )
-
-        await self.service.create_google_meeting(
-            session=self.mock_session,
-            user_context=self.user_context,
-            partner_id=2,
-            round_id=1,
-            start_datetime=self.start_dt,
-            end_datetime=self.end_dt,
-        )
-
-        self.mock_google_service.get_meet_space_name.assert_awaited_once_with(
-            "abc-def-ghi"
-        )
-        self.mock_google_service.update_meet_space_type_to_open.assert_awaited_once_with(
-            "spaces/INTERNALID123"
-        )
-
-    @patch("backend.mentorship.meeting_service.uuid")
-    async def test_create_google_meeting_meet_update_failure_is_non_fatal(
-        self, mock_uuid
-    ):
-        """Test that a failure in update_meet_space_type_to_open does not block the response."""
-        mock_uuid.uuid4.return_value = MagicMock(
-            hex="abcdef1234567890abcdef1234567890",
-            __str__=lambda _: "request-id-123",
-        )
-        self.mock_google_service.get_meet_space_name.side_effect = RuntimeError(
-            "Meet API down"
-        )
-
-        result = await self.service.create_google_meeting(
-            session=self.mock_session,
-            user_context=self.user_context,
-            partner_id=2,
-            round_id=1,
-            start_datetime=self.start_dt,
-            end_datetime=self.end_dt,
-        )
-
-        self.assertIsInstance(result, GoogleMeetingResponseDetailDto)
-        self.mock_logger.warning.assert_called_once()
-        self.mock_google_service.update_meet_space_type_to_open.assert_not_awaited()
-
-    @patch("backend.mentorship.meeting_service.uuid")
-    async def test_create_google_meeting_skips_meet_update_when_no_conference_id(
-        self, mock_uuid
-    ):
-        """Test that Meet space update is skipped when conferenceId is missing from response."""
-        mock_uuid.uuid4.return_value = MagicMock(
-            hex="abcdef1234567890abcdef1234567890",
-            __str__=lambda _: "request-id-123",
-        )
-        self.mock_google_service.insert_google_meeting.return_value = {
-            "id": "google_event_123",
-            "hangoutLink": "https://meet.google.com/abc-def-ghi",
-            "conferenceData": {},
-        }
-
-        await self.service.create_google_meeting(
-            session=self.mock_session,
-            user_context=self.user_context,
-            partner_id=2,
-            round_id=1,
-            start_datetime=self.start_dt,
-            end_datetime=self.end_dt,
-        )
-
-        self.mock_google_service.get_meet_space_name.assert_not_awaited()
-        self.mock_google_service.update_meet_space_type_to_open.assert_not_awaited()
-
-    @patch("backend.mentorship.meeting_service.uuid")
-    async def test_create_google_meeting_uses_full_name_when_no_preferred_name(
-        self, mock_uuid
-    ):
+    async def test_create_google_meeting_uses_full_name_when_no_preferred_name(self):
         """Test fallback to the full 'first last' name when preferred_name is None."""
-        mock_uuid.uuid4.return_value = MagicMock(
-            hex="abcdef1234567890abcdef1234567890",
-            __str__=lambda _: "request-id-123",
-        )
         self.mock_current_user.preferred_name = None
         self.mock_current_user.first_name = "AliceFirst"
         self.mock_current_user.last_name = "AliceLast"
@@ -497,7 +390,7 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
             end_datetime=self.end_dt,
         )
 
-        call_kwargs = self.mock_google_service.insert_google_meeting.call_args.kwargs
+        call_kwargs = self.mock_meeting_scheduling_service.schedule.call_args.kwargs
         self.assertEqual(
             call_kwargs["summary"],
             "Circlecat Mentorship - AliceFirst AliceLast / BobFirst BobLast",
@@ -587,7 +480,7 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
         self.mock_mentorship_pairs_repository.remove_meetings_from_log = AsyncMock(
             return_value=[1]
         )
-        self.mock_google_service.batch_delete_google_meetings.return_value = (
+        self.mock_meeting_scheduling_service.cancel.return_value = (
             ["abc"],
             [],
         )
@@ -605,9 +498,7 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
         )
 
         self.mock_mentorship_pairs_repository.do_google_meetings_exist_in_log.assert_awaited_once()
-        self.mock_google_service.batch_delete_google_meetings.assert_called_once_with(
-            event_ids=["abc"]
-        )
+        self.mock_meeting_scheduling_service.cancel.assert_awaited_once_with(["abc"])
         self.mock_mentorship_pairs_repository.remove_meetings_from_log.assert_awaited_once_with(
             session=self.mock_session,
             user_id=self.user_id,
@@ -665,19 +556,19 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(result.created), 1)
         self.assertEqual(len(result.failed), 0)
         # 10:00 EDT (UTC-4 in July) -> 14:00Z
-        call = self.mock_google_service.insert_google_meeting.call_args
+        call = self.mock_meeting_scheduling_service.schedule.call_args
         self.assertEqual(
-            call.kwargs["start_time"].isoformat(), "2026-07-30T14:00:00+00:00"
+            call.kwargs["start_utc"].isoformat(), "2026-07-30T14:00:00+00:00"
         )
         self.assertEqual(
-            call.kwargs["end_time"].isoformat(), "2026-07-30T14:30:00+00:00"
+            call.kwargs["end_utc"].isoformat(), "2026-07-30T14:30:00+00:00"
         )
 
     async def test_create_google_meetings_batch_best_effort_failure(self):
         """A per-occurrence Google failure is captured in `failed`, not raised."""
         from datetime import date
 
-        self.mock_google_service.insert_google_meeting.side_effect = RuntimeError(
+        self.mock_meeting_scheduling_service.schedule.side_effect = RuntimeError(
             "boom"
         )
 
@@ -777,10 +668,10 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(len(result.created), 3)
         self.assertEqual(len(result.failed), 0)
-        self.assertEqual(self.mock_google_service.insert_google_meeting.call_count, 3)
+        self.assertEqual(self.mock_meeting_scheduling_service.schedule.call_count, 3)
         actual_starts = [
-            c.kwargs["start_time"].isoformat()
-            for c in self.mock_google_service.insert_google_meeting.call_args_list
+            c.kwargs["start_utc"].isoformat()
+            for c in self.mock_meeting_scheduling_service.schedule.call_args_list
         ]
         self.assertEqual(
             actual_starts,
