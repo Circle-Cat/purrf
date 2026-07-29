@@ -82,3 +82,16 @@ class EmailTemplateDto(BaseDto):
     label: str
     subject: str
     body_html: str
+
+
+class EmailTemplateCatalogDto(BaseDto):
+    """The rendered templates plus the signature block on its own.
+
+    The signature is shipped separately as well as inside each template body:
+    the composer prefills it into an empty body, so a message written from
+    scratch — or any reply, which never applies a template — still goes out
+    signed.
+    """
+
+    templates: list[EmailTemplateDto]
+    signature_html: str

@@ -237,6 +237,50 @@ EMAIL_TEMPLATES = (
 _BY_KEY = {template.key: template for template in EMAIL_TEMPLATES}
 
 
+def _substitute(text: str, values: Mapping[str, str], what: str) -> str:
+    """Replace every ``{{placeholder}}`` in ``text``, HTML-escaping each value.
+
+    Args:
+        text (str): Restricted HTML carrying ``{{...}}`` placeholders.
+        values (Mapping[str, str]): Value per placeholder appearing in ``text``.
+        what (str): Name of what is being rendered, for the error message.
+
+    Returns:
+        str: ``text`` with placeholders substituted.
+
+    Raises:
+        ValueError: If a placeholder used by ``text`` has no entry in ``values``.
+    """
+
+    def substitute(match: re.Match) -> str:
+        name = match.group(1)
+        if name not in values:
+            raise ValueError(f"{what} needs a value for {{{{{name}}}}}")
+        return html.escape(values[name])
+
+    return _PLACEHOLDER_RE.sub(substitute, text)
+
+
+def render_signature(values: Mapping[str, str]) -> str:
+    """Render the signature block on its own.
+
+    Every template already ends with this block, but the composer also prefills
+    it into an otherwise empty body — a message written from scratch, or a
+    reply, would otherwise go out unsigned.
+
+    Args:
+        values (Mapping[str, str]): Must carry ``sender_name``. Other entries
+            are ignored; the signature uses no other placeholder.
+
+    Returns:
+        str: The signature as restricted HTML.
+
+    Raises:
+        ValueError: If ``sender_name`` is missing from ``values``.
+    """
+    return _substitute(_SIGNATURE, values, "Signature")
+
+
 def render_template(key: str, values: Mapping[str, str]) -> tuple[str, str]:
     """Render one template, substituting ``{{...}}`` placeholders.
 
@@ -259,14 +303,7 @@ def render_template(key: str, values: Mapping[str, str]) -> tuple[str, str]:
     template = _BY_KEY.get(key)
     if template is None:
         raise ValueError(f"Unknown email template: {key}")
-
-    def substitute(match: re.Match) -> str:
-        name = match.group(1)
-        if name not in values:
-            raise ValueError(f"Template {key} needs a value for {{{{{name}}}}}")
-        return html.escape(values[name])
-
-    return template.subject, _PLACEHOLDER_RE.sub(substitute, template.body_html)
+    return template.subject, _substitute(template.body_html, values, f"Template {key}")
 
 
 def render_all_templates(

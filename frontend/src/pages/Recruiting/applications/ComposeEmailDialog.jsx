@@ -135,6 +135,15 @@ const ComposeEmailDialog = ({
   // Count of unfilled `[UPPERCASE]` markers found at Send time; >0 opens the
   // soft-warning confirmation dialog below.
   const [unfilledCount, setUnfilledCount] = useState(0);
+  // Exactly the HTML we prefilled the body with, or "". An untouched prefill is
+  // not the sender's draft: picking a template over it must not ask to
+  // overwrite, and Send must not treat a lone signature as a written message.
+  const prefilledRef = useRef("");
+
+  /** Whether the body still holds nothing but the signature we put there. */
+  const isUntouchedPrefill = () =>
+    prefilledRef.current !== "" &&
+    editorRef.current?.innerHTML === prefilledRef.current;
 
   useEffect(() => {
     if (!open) return;
@@ -152,6 +161,7 @@ const ComposeEmailDialog = ({
     // imperatively (dialog open, and later a template) and read innerHTML
     // back on send.
     if (editorRef.current) editorRef.current.innerHTML = "";
+    prefilledRef.current = "";
     setHasText(false);
     setPendingTemplate(null);
     setAppliedTemplateLabel("");
@@ -161,7 +171,18 @@ const ComposeEmailDialog = ({
   useEffect(() => {
     if (!open) return;
     getApplicationEmailTemplates(applicationId).then(
-      (res) => setTemplates(res?.data ?? []),
+      (res) => {
+        setTemplates(res?.data?.templates ?? []);
+        // Prefill the signature so a message written from scratch — or any
+        // reply, which never applies a template — still goes out signed. The
+        // fetch is async, so only prefill a body the sender has not started
+        // writing in; otherwise a slow response would wipe their draft.
+        const signature = res?.data?.signatureHtml ?? "";
+        if (!signature || !editorRef.current) return;
+        if (editorRef.current.textContent?.trim()) return;
+        editorRef.current.innerHTML = signature;
+        prefilledRef.current = signature;
+      },
       () => setTemplates([]),
     );
   }, [open, applicationId]);
@@ -175,13 +196,15 @@ const ComposeEmailDialog = ({
       );
       setHasText(Boolean(editorRef.current.textContent?.trim()));
     }
+    // The template carries its own signature, so the prefill is gone.
+    prefilledRef.current = "";
     setAppliedTemplateLabel(template.label);
   };
 
   const handleTemplatePick = (key) => {
     const template = templates.find((t) => t.key === key);
     if (!template) return;
-    if (editorRef.current?.textContent?.trim()) {
+    if (editorRef.current?.textContent?.trim() && !isUntouchedPrefill()) {
       setPendingTemplate(template);
       return;
     }

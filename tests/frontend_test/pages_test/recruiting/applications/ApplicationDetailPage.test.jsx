@@ -33,6 +33,10 @@ vi.mock("@/context/auth/AuthContext", () => ({
 }));
 
 const OWNER_ID = 500;
+// The signature block the templates endpoint now ships on its own, so the
+// composer can prefill it into an empty body.
+const SIGNATURE_HTML =
+  "<p>Best,<br><strong>Jane Smith</strong><br>Director of People Operations<br>Circle Cat Inc</p>";
 const ASSIGNEE_ID = 10;
 
 /** The interview-evaluator pool offered by the owner-side pickers. */
@@ -194,7 +198,9 @@ beforeEach(() => {
   api.sendApplicationEmail.mockResolvedValue({
     data: { threads: [], defaultTo: null },
   });
-  api.getApplicationEmailTemplates.mockResolvedValue({ data: [] });
+  api.getApplicationEmailTemplates.mockResolvedValue({
+    data: { templates: [], signatureHtml: "" },
+  });
 });
 
 /** Render the page at the detail route for a given application id. */
@@ -3294,6 +3300,99 @@ describe("ApplicationDetailPage — Emails tab", () => {
     return editor;
   };
 
+  const editorEl = () => screen.getByRole("textbox", { name: "Message" });
+
+  it("prefills the signature into a new email", async () => {
+    // The signature only ever lived inside the eight templates, so anything
+    // written from scratch went out unsigned.
+    api.getApplicationEmails.mockResolvedValue({
+      data: { threads: [], defaultTo: "cand@x.com" },
+    });
+    api.getApplicationEmailTemplates.mockResolvedValue({
+      data: { templates: [], signatureHtml: SIGNATURE_HTML },
+    });
+    await renderComposeOpen();
+    await waitFor(() => expect(editorEl().innerHTML).toBe(SIGNATURE_HTML));
+  });
+
+  it("prefills the signature into a reply too", async () => {
+    // Replies never apply a template (they keep their `Re:` subject), so
+    // without this every single reply went out unsigned.
+    api.getApplicationEmails.mockResolvedValue({
+      data: {
+        defaultTo: "cand@x.com",
+        threads: [
+          {
+            threadId: 1,
+            subject: "Interview Availability",
+            messages: [
+              {
+                messageId: 11,
+                direction: "inbound",
+                fromAddress: "cand@x.com",
+                bodyHtml: "<p>Hello there</p>",
+                bodyText: "Hello there",
+                createdAt: "2026-07-23T00:00:00Z",
+              },
+            ],
+          },
+        ],
+      },
+    });
+    api.getApplicationEmailTemplates.mockResolvedValue({
+      data: { templates: [], signatureHtml: SIGNATURE_HTML },
+    });
+    await renderComposeOpen({ replyThread: true });
+    await waitFor(() => expect(editorEl().innerHTML).toBe(SIGNATURE_HTML));
+  });
+
+  it("does not ask to overwrite when the body is only the prefilled signature", async () => {
+    api.getApplicationEmails.mockResolvedValue({
+      data: { threads: [], defaultTo: "cand@x.com" },
+    });
+    api.getApplicationEmailTemplates.mockResolvedValue({
+      data: {
+        templates: [
+          {
+            key: "rejection",
+            label: "Rejection",
+            subject: "Your Application to Circle Cat",
+            bodyHtml: `<p>Dear Ana,</p>${SIGNATURE_HTML}`,
+          },
+        ],
+        signatureHtml: SIGNATURE_HTML,
+      },
+    });
+    const user = await renderComposeOpen();
+    await waitFor(() => expect(editorEl().innerHTML).toBe(SIGNATURE_HTML));
+    await user.click(screen.getByRole("combobox", { name: /template/i }));
+    await user.click(screen.getByRole("option", { name: "Rejection" }));
+    // Applied straight away: an untouched prefill is not the recruiter's draft.
+    expect(
+      screen.queryByRole("button", { name: "Replace" }),
+    ).not.toBeInTheDocument();
+    await waitFor(() => expect(editorEl().textContent).toContain("Dear Ana,"));
+  });
+
+  it("keeps text typed before the signature arrives", async () => {
+    api.getApplicationEmails.mockResolvedValue({
+      data: { threads: [], defaultTo: "cand@x.com" },
+    });
+    let resolveTemplates;
+    api.getApplicationEmailTemplates.mockReturnValue(
+      new Promise((resolve) => {
+        resolveTemplates = resolve;
+      }),
+    );
+    await renderComposeOpen();
+    setEditorHtml("<p>my own draft</p>");
+    resolveTemplates({
+      data: { templates: [], signatureHtml: SIGNATURE_HTML },
+    });
+    await waitFor(() => expect(editorEl().innerHTML).toContain("my own draft"));
+    expect(editorEl().innerHTML).not.toContain("Director of People Operations");
+  });
+
   it("sends the contenteditable HTML, not escaped text", async () => {
     api.getApplicationEmails.mockResolvedValue({
       data: { threads: [], defaultTo: "cand@x.com" },
@@ -3363,14 +3462,17 @@ describe("ApplicationDetailPage — Emails tab", () => {
       data: { threads: [], defaultTo: "cand@x.com" },
     });
     api.getApplicationEmailTemplates.mockResolvedValue({
-      data: [
-        {
-          key: "rejection",
-          label: "Rejection",
-          subject: "Your Application to Circle Cat",
-          bodyHtml: "<p>Dear Ana,</p>",
-        },
-      ],
+      data: {
+        templates: [
+          {
+            key: "rejection",
+            label: "Rejection",
+            subject: "Your Application to Circle Cat",
+            bodyHtml: "<p>Dear Ana,</p>",
+          },
+        ],
+        signatureHtml: SIGNATURE_HTML,
+      },
     });
     const user = await renderComposeOpen();
     await user.click(screen.getByRole("combobox", { name: /template/i }));
@@ -3409,14 +3511,17 @@ describe("ApplicationDetailPage — Emails tab", () => {
       },
     });
     api.getApplicationEmailTemplates.mockResolvedValue({
-      data: [
-        {
-          key: "offer_onboarding",
-          label: "Offer and onboarding",
-          subject: "Welcome to Circle Cat — Onboarding & Next Steps",
-          bodyHtml: "<p>Dear Ana,</p>",
-        },
-      ],
+      data: {
+        templates: [
+          {
+            key: "offer_onboarding",
+            label: "Offer and onboarding",
+            subject: "Welcome to Circle Cat — Onboarding & Next Steps",
+            bodyHtml: "<p>Dear Ana,</p>",
+          },
+        ],
+        signatureHtml: SIGNATURE_HTML,
+      },
     });
     const user = await renderComposeOpen({ replyThread: true });
     await user.click(screen.getByRole("combobox", { name: /template/i }));
@@ -3434,14 +3539,17 @@ describe("ApplicationDetailPage — Emails tab", () => {
       data: { threads: [], defaultTo: "cand@x.com" },
     });
     api.getApplicationEmailTemplates.mockResolvedValue({
-      data: [
-        {
-          key: "rejection",
-          label: "Rejection",
-          subject: "S",
-          bodyHtml: "<p>T</p>",
-        },
-      ],
+      data: {
+        templates: [
+          {
+            key: "rejection",
+            label: "Rejection",
+            subject: "S",
+            bodyHtml: "<p>T</p>",
+          },
+        ],
+        signatureHtml: SIGNATURE_HTML,
+      },
     });
     const user = await renderComposeOpen();
     const editor = setEditorHtml("<p>my own draft</p>");
@@ -3463,14 +3571,17 @@ describe("ApplicationDetailPage — Emails tab", () => {
       data: { threads: [], defaultTo: "cand@x.com" },
     });
     api.getApplicationEmailTemplates.mockResolvedValue({
-      data: [
-        {
-          key: "rejection",
-          label: "Rejection",
-          subject: "S",
-          bodyHtml: "<p>T</p>",
-        },
-      ],
+      data: {
+        templates: [
+          {
+            key: "rejection",
+            label: "Rejection",
+            subject: "S",
+            bodyHtml: "<p>T</p>",
+          },
+        ],
+        signatureHtml: SIGNATURE_HTML,
+      },
     });
     const user = await renderComposeOpen();
     setEditorHtml("<p>my own draft</p>");
@@ -3502,14 +3613,17 @@ describe("ApplicationDetailPage — Emails tab", () => {
       data: { threads: [], defaultTo: "cand@x.com" },
     });
     api.getApplicationEmailTemplates.mockResolvedValue({
-      data: [
-        {
-          key: "rejection",
-          label: "Rejection",
-          subject: "S",
-          bodyHtml: "<p>T</p>",
-        },
-      ],
+      data: {
+        templates: [
+          {
+            key: "rejection",
+            label: "Rejection",
+            subject: "S",
+            bodyHtml: "<p>T</p>",
+          },
+        ],
+        signatureHtml: SIGNATURE_HTML,
+      },
     });
     const user = await renderComposeOpen();
     setEditorHtml("<p>my own draft</p>");
@@ -3539,14 +3653,17 @@ describe("ApplicationDetailPage — Emails tab", () => {
       data: { threads: [], defaultTo: "cand@x.com" },
     });
     api.getApplicationEmailTemplates.mockResolvedValue({
-      data: [
-        {
-          key: "rejection",
-          label: "Rejection",
-          subject: "S",
-          bodyHtml: "<p>Template body</p>",
-        },
-      ],
+      data: {
+        templates: [
+          {
+            key: "rejection",
+            label: "Rejection",
+            subject: "S",
+            bodyHtml: "<p>Template body</p>",
+          },
+        ],
+        signatureHtml: SIGNATURE_HTML,
+      },
     });
     const user = await renderComposeOpen();
     await user.click(screen.getByRole("combobox", { name: /template/i }));
@@ -3581,14 +3698,17 @@ describe("ApplicationDetailPage — Emails tab", () => {
       data: { threads: [], defaultTo: "cand@x.com" },
     });
     api.getApplicationEmailTemplates.mockResolvedValue({
-      data: [
-        {
-          key: "interview_rescheduled",
-          label: "Interview rescheduled",
-          subject: "S",
-          bodyHtml: "<p>rescheduled to [INTERVIEW DATE/TIME].</p>",
-        },
-      ],
+      data: {
+        templates: [
+          {
+            key: "interview_rescheduled",
+            label: "Interview rescheduled",
+            subject: "S",
+            bodyHtml: "<p>rescheduled to [INTERVIEW DATE/TIME].</p>",
+          },
+        ],
+        signatureHtml: SIGNATURE_HTML,
+      },
     });
     const user = await renderComposeOpen();
     await user.click(screen.getByRole("combobox", { name: /template/i }));
@@ -3701,14 +3821,17 @@ describe("ApplicationDetailPage — Emails tab", () => {
       "[Re: interview]",
     ];
     api.getApplicationEmailTemplates.mockResolvedValue({
-      data: [
-        {
-          key: "mixed",
-          label: "Mixed brackets",
-          subject: "S",
-          bodyHtml: `<p>${[...MUST_MATCH, ...MUST_NOT_MATCH].join(" ")}</p>`,
-        },
-      ],
+      data: {
+        templates: [
+          {
+            key: "mixed",
+            label: "Mixed brackets",
+            subject: "S",
+            bodyHtml: `<p>${[...MUST_MATCH, ...MUST_NOT_MATCH].join(" ")}</p>`,
+          },
+        ],
+        signatureHtml: SIGNATURE_HTML,
+      },
     });
     const user = await renderComposeOpen();
     await user.click(screen.getByRole("combobox", { name: /template/i }));
