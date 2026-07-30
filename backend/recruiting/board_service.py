@@ -888,7 +888,10 @@ class BoardService:
             session, application_id, application.stage, application.current_round
         )
         interview_dto = await self._build_interview_dto(
-            session, application_id, application.stage, application.current_round,
+            session,
+            application_id,
+            application.stage,
+            application.current_round,
             assignment.assignee_id if assignment is not None else None,
         )
         # The embedded ApplicationDto's `editable` is deliberately left at

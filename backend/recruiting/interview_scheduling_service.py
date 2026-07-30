@@ -172,9 +172,7 @@ class InterviewSchedulingService:
             session, application_id, application.stage, application.current_round
         )
         if existing is not None:
-            raise ValueError(
-                "This round already has an interview meeting scheduled."
-            )
+            raise ValueError("This round already has an interview meeting scheduled.")
         await self.application_access.validate_interview_assignee(
             session, dto.assignee_id
         )
@@ -424,9 +422,9 @@ class InterviewSchedulingService:
         if interview is None:
             raise ValueError("No interview meeting is scheduled for this round.")
 
-        _succeeded, failed = await self.meeting_scheduling_service.cancel(
-            [interview.google_event_id]
-        )
+        _succeeded, failed = await self.meeting_scheduling_service.cancel([
+            interview.google_event_id
+        ])
         if failed:
             self.logger.warning(
                 "[InterviewSchedulingService] Failed to delete Calendar "

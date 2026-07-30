@@ -186,9 +186,7 @@ class ScheduleTest(_BaseTest):
         _session, _summary, passed_start, passed_end, _attendees = (
             self.meeting_svc.schedule.call_args.args
         )
-        self.assertEqual(
-            passed_start, datetime(2026, 8, 5, 21, 0, tzinfo=timezone.utc)
-        )
+        self.assertEqual(passed_start, datetime(2026, 8, 5, 21, 0, tzinfo=timezone.utc))
         self.assertEqual(passed_end, datetime(2026, 8, 5, 21, 45, tzinfo=timezone.utc))
 
     async def test_converts_wall_clock_across_the_dst_boundary(self):
@@ -202,9 +200,7 @@ class ScheduleTest(_BaseTest):
         self.assertEqual(
             passed_start, datetime(2026, 11, 5, 22, 0, tzinfo=timezone.utc)
         )
-        self.assertEqual(
-            passed_end, datetime(2026, 11, 5, 22, 45, tzinfo=timezone.utc)
-        )
+        self.assertEqual(passed_end, datetime(2026, 11, 5, 22, 45, tzinfo=timezone.utc))
 
     async def test_builds_the_meeting_title_from_first_name_and_stage(self):
         await self.service.schedule(
@@ -489,7 +485,9 @@ class CancelTest(_BaseTest):
         self.interview_repo.get = AsyncMock(return_value=self.existing)
 
     async def test_deletes_the_row_and_writes_an_activity_entry(self):
-        await self.service.cancel(self.session, self._ctx(user_id=OWNER_ID), APPLICATION_ID)
+        await self.service.cancel(
+            self.session, self._ctx(user_id=OWNER_ID), APPLICATION_ID
+        )
         self.interview_repo.delete.assert_awaited_once_with(self.session, self.existing)
         self.activity_repo.create.assert_awaited_once()
         args, _kwargs = self.activity_repo.create.call_args
