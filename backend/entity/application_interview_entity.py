@@ -26,6 +26,16 @@ class ApplicationInterviewEntity(Base):
     Attendees are not stored: the candidate is `application.user_id`, the
     interviewer is the round's `application_assignment.assignee_id`, and the
     recruiter is `scheduled_by`. A stored snapshot could only drift from those.
+
+    No timezone column either, deliberately. `start_at`/`end_at` are the
+    authoritative instants, and every surface renders them in the VIEWER's own
+    profile zone (falling back to their browser zone) — showing a recruiter's
+    booking zone to someone in another country helps nobody. A stored
+    booker-chosen zone would therefore be a column nothing is allowed to
+    render. The wall clock the booker actually typed is kept in
+    `application_activity` for audit, and Google Calendar holds the
+    authoritative event with its own `timeZone`, which is what protects a
+    future meeting if a jurisdiction changes its DST rules.
     """
 
     __tablename__ = "application_interview"
@@ -64,10 +74,6 @@ class ApplicationInterviewEntity(Base):
     meet_link: Mapped[str | None] = mapped_column(String)
     start_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     end_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    # The IANA zone the recruiter picked. Stored because neither the card's
-    # "14:00 - 14:45 America/Los_Angeles" nor the edit dialog's zone dropdown
-    # can be derived back out of a UTC instant.
-    timezone: Mapped[str] = mapped_column(String, nullable=False)
     # The recruiter who first booked this meeting, and therefore the recruiter
     # on the invite. Never changed by an edit — otherwise every reschedule by
     # a different owner would add another attendee.

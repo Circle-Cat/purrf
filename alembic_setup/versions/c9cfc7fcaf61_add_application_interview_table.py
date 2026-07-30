@@ -2,7 +2,7 @@
 
 Adds application_interview: one row per (application_id, stage, round)
 recording the Calendar meeting booked for that round (event id, Meet link,
-UTC start/end, the recruiter-picked IANA timezone, and who booked it).
+UTC start/end, and who booked it).
 Rescheduling updates the row in place; cancelling deletes it outright — the
 history lives in application_activity, the same tombstone-free approach
 reject/blacklist already use. `stage` reuses the existing
@@ -56,7 +56,6 @@ def upgrade() -> None:
         sa.Column("meet_link", sa.String(), nullable=True),
         sa.Column("start_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("end_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("timezone", sa.String(), nullable=False),
         sa.Column("scheduled_by", sa.Integer(), nullable=False),
         sa.Column(
             "created_at",
