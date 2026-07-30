@@ -657,5 +657,165 @@ class CancelTest(_BaseTest):
         )
 
 
+# -- cancel_for_round: the ghost-meeting cleanup BoardService drives --
+
+
+class CancelForRoundTest(_BaseTest):
+    """The variant an advance/round-advance/reject calls mid-transaction.
+
+    Differs from ``cancel`` on four points, each with its own test below: it
+    takes the stage+round explicitly (the caller has already moved on), never
+    checks ownership (the caller row-locked and gated first), never commits
+    (it runs inside the caller's transaction), and never touches sub_status
+    (the caller overwrites it straight after).
+    """
+
+    # Far from any real "now" in both directions, so these tests never turn
+    # into time bombs the way a fixture dated days from today would.
+    FUTURE = datetime(2099, 8, 5, 21, 0, tzinfo=timezone.utc)
+    PAST = datetime(2000, 8, 5, 21, 0, tzinfo=timezone.utc)
+
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        self.existing = self._interview_row(
+            start_at=self.FUTURE,
+            end_at=self.FUTURE.replace(minute=45),
+        )
+        self.interview_repo.get = AsyncMock(return_value=self.existing)
+
+    async def _cancel_for_round(self, via="stage_changed"):
+        return await self.service.cancel_for_round(
+            self.session,
+            APPLICATION_ID,
+            ApplicationStage.BEHAVIORAL,
+            1,
+            OWNER_ID,
+            via=via,
+        )
+
+    async def test_deletes_the_calendar_event_and_the_row(self):
+        cancelled = await self._cancel_for_round()
+
+        self.assertTrue(cancelled)
+        self.meeting_svc.cancel.assert_awaited_once_with(["evt-1"])
+        self.interview_repo.delete.assert_awaited_once_with(self.session, self.existing)
+
+    async def test_looks_up_the_round_it_was_handed_not_the_current_one(self):
+        # The caller has already moved the application on (behavioral round 2
+        # -> tech round 1 by the time this runs), so the row to clean up can
+        # only be found by the explicit stage+round argument.
+        self.application.stage = ApplicationStage.TECH
+        self.application.current_round = 1
+        await self.service.cancel_for_round(
+            self.session,
+            APPLICATION_ID,
+            ApplicationStage.BEHAVIORAL,
+            2,
+            OWNER_ID,
+            via="stage_changed",
+        )
+        self.interview_repo.get.assert_awaited_once_with(
+            self.session, APPLICATION_ID, ApplicationStage.BEHAVIORAL, 2
+        )
+
+    async def test_writes_an_interview_cancelled_activity_naming_its_source(self):
+        await self._cancel_for_round(via="round_advanced")
+
+        args, kwargs = self.activity_repo.create.call_args
+        self.assertEqual(args[3], "interview_cancelled")
+        self.assertEqual(
+            kwargs["details"],
+            {
+                "stage": "behavioral",
+                "round": 1,
+                "assigneeId": ASSIGNEE_ID,
+                "startAt": "2099-08-05T21:00:00+00:00",
+                "endAt": "2099-08-05T21:45:00+00:00",
+                "googleEventId": "evt-1",
+                # No zone: a cancel types no wall clock, and the timeline
+                # renders these instants in the reader's own zone.
+                "via": "round_advanced",
+            },
+        )
+
+    async def test_the_actor_is_the_caller_not_the_scheduler(self):
+        await self.service.cancel_for_round(
+            self.session,
+            APPLICATION_ID,
+            ApplicationStage.BEHAVIORAL,
+            1,
+            77,
+            via="rejected",
+        )
+        args, _kwargs = self.activity_repo.create.call_args
+        self.assertEqual(args[2], 77)
+
+    async def test_a_past_meeting_is_left_alone(self):
+        # A finished interview is history, not a ghost: deleting its event
+        # mails every attendee a cancellation for something that already
+        # happened. Mutation check: drop the start_at > now guard and this
+        # goes red.
+        self.interview_repo.get = AsyncMock(
+            return_value=self._interview_row(start_at=self.PAST, end_at=self.PAST)
+        )
+
+        cancelled = await self._cancel_for_round()
+
+        self.assertFalse(cancelled)
+        self.meeting_svc.cancel.assert_not_awaited()
+        self.interview_repo.delete.assert_not_awaited()
+        self.activity_repo.create.assert_not_awaited()
+
+    async def test_no_meeting_booked_is_a_silent_no_op(self):
+        self.interview_repo.get = AsyncMock(return_value=None)
+
+        cancelled = await self._cancel_for_round()
+
+        self.assertFalse(cancelled)
+        self.meeting_svc.cancel.assert_not_awaited()
+        self.interview_repo.delete.assert_not_awaited()
+        self.activity_repo.create.assert_not_awaited()
+
+    async def test_never_commits(self):
+        # It runs inside change_stage/set_round's transaction; committing here
+        # would split one decision into two.
+        await self._cancel_for_round()
+        self.session.commit.assert_not_awaited()
+
+    async def test_never_touches_sub_status(self):
+        # Unlike cancel(), which reverts "scheduled" -> "scheduling": the
+        # caller overwrites sub_status ("pending", or None on a terminal
+        # target) immediately after, so writing it here would be a wasted
+        # write that could also contradict the caller.
+        self.application.sub_status = "scheduled"
+        await self._cancel_for_round()
+        self.assertEqual(self.application.sub_status, "scheduled")
+        self.application_repo.update.assert_not_awaited()
+
+    async def test_does_no_ownership_check(self):
+        # The caller row-locked the application and checked ownership before
+        # calling; a second load here would be a redundant query and would
+        # need a UserContextDto this method deliberately does not take.
+        await self._cancel_for_round()
+        self.application_access.load_owned_application.assert_not_awaited()
+
+    async def test_a_failed_calendar_delete_still_removes_the_row(self):
+        # Same end-state-wins policy as cancel(): Google refusing the delete
+        # must not block the stage change that asked for it.
+        self.meeting_svc.cancel = AsyncMock(return_value=([], ["evt-1"]))
+
+        cancelled = await self._cancel_for_round()
+
+        self.assertTrue(cancelled)
+        self.interview_repo.delete.assert_awaited_once_with(self.session, self.existing)
+        self.logger.warning.assert_called_once()
+
+    async def test_the_assignee_comes_from_the_rounds_assignment_row(self):
+        self.assignment_repo.get = AsyncMock(return_value=None)
+        await self._cancel_for_round()
+        _args, kwargs = self.activity_repo.create.call_args
+        self.assertIsNone(kwargs["details"]["assigneeId"])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -11,6 +11,7 @@ import { toast } from "sonner";
 import { Check, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import DOMPurify from "dompurify";
 import {
@@ -376,6 +377,52 @@ const formatInterviewWhen = (startAt, tz) =>
   startAt && tz
     ? `${formatInTz(startAt, tz, "yyyy-MM-dd")} ${formatInTz(startAt, tz, "HH:mm")} ${tz}`
     : null;
+
+/**
+ * The "cancel the meeting this decision would strand" opt-in.
+ *
+ * Rendered inside the advance / round-advance / reject dialogs whenever the
+ * round being left still has an upcoming meeting. It matters because the page
+ * only ever shows the CURRENT stage+round's meeting: once the application
+ * moves on, a meeting left booked behind it stays live on every attendee's
+ * calendar while becoming unreachable here. Ticked by default — deciding to
+ * move on is normally deciding the meeting isn't needed — but unticking it
+ * keeps the meeting, which is the right call when e.g. the interview has been
+ * handed to someone else out of band.
+ *
+ * The sentence is both the visible text and the checkbox's `aria-label`: a
+ * Radix checkbox renders as a button, which a wrapping <label> would not name.
+ *
+ * The time is stated in the reader's own zone, like every other interview time
+ * on the page, and always names that zone -- a recruiter is about to delete
+ * someone's calendar invite off the back of this sentence, so it must not be
+ * ambiguous about which meeting it means.
+ *
+ * @param {{interview: object, timezone: string, checked: boolean,
+ *          onChange: (v: boolean) => void}} props
+ */
+const CancelUpcomingMeetingField = ({
+  interview,
+  timezone,
+  checked,
+  onChange,
+}) => {
+  const label = `Cancel the ${humanize(interview.stage)} interview meeting scheduled for ${formatInterviewWhen(
+    interview.startAt,
+    timezone,
+  )}. All attendees will be notified.`;
+  return (
+    <div className="flex items-start gap-2 text-sm text-slate-700">
+      <Checkbox
+        className="mt-0.5"
+        checked={checked}
+        onCheckedChange={(on) => onChange(!!on)}
+        aria-label={label}
+      />
+      <span>{label}</span>
+    </div>
+  );
+};
 
 /**
  * Human-readable one-line description of a single activity entry, built
@@ -982,6 +1029,11 @@ const ApplicationDetailPage = () => {
   // Which advance the no-evaluation reminder is intercepting: null (closed),
   // "stage", or "round". Confirming resumes the intercepted flow.
   const [evalReminderFor, setEvalReminderFor] = useState(null);
+  // The advance/round-advance/reject dialogs' shared "also cancel the meeting
+  // being left behind" tick. Reset to true every time one of those flows
+  // opens (see `openWithCancelDefault`): it's a per-decision choice, not a
+  // sticky preference.
+  const [cancelUpcomingMeeting, setCancelUpcomingMeeting] = useState(true);
 
   const [rejectFormOpen, setRejectFormOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
@@ -1196,6 +1248,26 @@ const ApplicationDetailPage = () => {
   // booker zone to prefer, and showing one would only mislead whoever is not
   // in it.
   const viewerTimezone = resolveViewerTimezone(detail?.viewerTimezone);
+  // The current stage+round's meeting, but only while it is still ahead of us.
+  // A meeting that has already started is history rather than a ghost:
+  // cancelling it would mail every attendee a cancellation for something that
+  // already happened, so no decision below offers to.
+  const upcomingInterview =
+    loaded &&
+    detail?.interview != null &&
+    new Date(detail.interview.startAt) > new Date()
+      ? detail.interview
+      : null;
+  // What a stage/round decision sends about that meeting. Both are omitted
+  // (undefined / no key at all) unless the recruiter was actually offered the
+  // choice, so a decision with nothing booked behind it says nothing about
+  // meetings and the backend's own `False` default applies.
+  const cancelUpcomingMeetingFlag = upcomingInterview
+    ? cancelUpcomingMeeting
+    : undefined;
+  const cancelUpcomingMeetingBody = upcomingInterview
+    ? { cancelInterview: cancelUpcomingMeeting }
+    : {};
   // The interview dialog's starting interviewer pick in "schedule" mode: the
   // round's current assignee if one is already set (e.g. carried over from a
   // previous round in the same stage), else the stage's configured default
@@ -1296,10 +1368,15 @@ const ApplicationDetailPage = () => {
    * advances the round unassigned, to be picked up later via Reassign;
    * any other stage would advance immediately via `handleAdvanceRoundDirect`
    * instead (currently unreachable, since every configurable stage today
-   * is an interview stage).
+   * is an interview stage) — unless the round being left has an upcoming
+   * meeting, which always needs asking about first.
    */
   const handleOpenRoundAdvance = () => {
-    if (INTERVIEW_STAGES.has(detail.application.stage)) {
+    // An upcoming meeting forces the dialog open even on a stage that would
+    // otherwise advance straight through: it's the only place to ask about
+    // the meeting the round advance is about to strand.
+    if (INTERVIEW_STAGES.has(detail.application.stage) || upcomingInterview) {
+      setCancelUpcomingMeeting(true);
       setRoundAdvanceOpen(true);
       return;
     }
@@ -1319,6 +1396,7 @@ const ApplicationDetailPage = () => {
       applicationId,
       nextRound,
       roundAdvanceAssigneeId ? Number(roundAdvanceAssigneeId) : undefined,
+      cancelUpcomingMeetingFlag,
     )
       .then(() => {
         setDetail((prev) =>
@@ -1342,6 +1420,7 @@ const ApplicationDetailPage = () => {
     changeApplicationStage(applicationId, {
       toStage: target,
       assigneeId: assigneeId ? Number(assigneeId) : undefined,
+      ...cancelUpcomingMeetingBody,
     })
       .then(() => {
         toast.success(`Advanced to ${humanize(target)}.`);
@@ -1359,8 +1438,10 @@ const ApplicationDetailPage = () => {
    * anyway".
    */
   const proceedStageAdvance = () => {
-    if (needsAssignee) setAdvanceOpen(true);
-    else handleAdvance(next);
+    if (needsAssignee || upcomingInterview) {
+      setCancelUpcomingMeeting(true);
+      setAdvanceOpen(true);
+    } else handleAdvance(next);
   };
 
   /**
@@ -1421,6 +1502,7 @@ const ApplicationDetailPage = () => {
       toStage: "rejected",
       reason: rejectReason,
       note: rejectNote.trim() || undefined,
+      ...cancelUpcomingMeetingBody,
     })
       .then(() => {
         toast.success("Application rejected.");
@@ -1709,7 +1791,10 @@ const ApplicationDetailPage = () => {
                   {isPipelineStage && (
                     <Button
                       variant="outline"
-                      onClick={() => setRejectFormOpen(true)}
+                      onClick={() => {
+                        setCancelUpcomingMeeting(true);
+                        setRejectFormOpen(true);
+                      }}
                     >
                       Reject
                     </Button>
@@ -2009,6 +2094,14 @@ const ApplicationDetailPage = () => {
             value={rejectNote}
             onChange={(e) => setRejectNote(e.target.value)}
           />
+          {upcomingInterview && (
+            <CancelUpcomingMeetingField
+              interview={upcomingInterview}
+              timezone={viewerTimezone}
+              checked={cancelUpcomingMeeting}
+              onChange={setCancelUpcomingMeeting}
+            />
+          )}
           <DialogFooter>
             <Button
               variant="outline"
@@ -2049,6 +2142,14 @@ const ApplicationDetailPage = () => {
               onChange={(v) => setRoundAdvanceAssigneeId(v ? String(v) : "")}
             />
           )}
+          {upcomingInterview && (
+            <CancelUpcomingMeetingField
+              interview={upcomingInterview}
+              timezone={viewerTimezone}
+              checked={cancelUpcomingMeeting}
+              onChange={setCancelUpcomingMeeting}
+            />
+          )}
           <DialogFooter>
             <Button
               variant="outline"
@@ -2081,14 +2182,27 @@ const ApplicationDetailPage = () => {
                 : "Advance"}
             </DialogTitle>
           </DialogHeader>
-          <PeoplePicker
-            label="Assignee"
-            variant="list"
-            noneLabel="Decide later"
-            pool={interviewPool}
-            value={advanceAssigneeId || undefined}
-            onChange={(v) => setAdvanceAssigneeId(v ? String(v) : "")}
-          />
+          {/* Behavioral/tech targets pick their interviewer on the meeting
+              card instead, so this dialog can open for the meeting question
+              alone -- with no picker at all. */}
+          {needsAssignee && (
+            <PeoplePicker
+              label="Assignee"
+              variant="list"
+              noneLabel="Decide later"
+              pool={interviewPool}
+              value={advanceAssigneeId || undefined}
+              onChange={(v) => setAdvanceAssigneeId(v ? String(v) : "")}
+            />
+          )}
+          {upcomingInterview && (
+            <CancelUpcomingMeetingField
+              interview={upcomingInterview}
+              timezone={viewerTimezone}
+              checked={cancelUpcomingMeeting}
+              onChange={setCancelUpcomingMeeting}
+            />
+          )}
           <DialogFooter>
             <Button
               variant="outline"
