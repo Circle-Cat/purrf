@@ -127,6 +127,39 @@ class TestRecruitingNotificationService(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(result.unread_count, 0)
 
+    async def test_list_for_user_carries_job_kind_for_application_scoped_rows(self):
+        row = self._notification()
+        self.notification_repo.list_by_user = AsyncMock(return_value=[row])
+        self.notification_repo.count_by_user = AsyncMock(return_value=1)
+        job = JobEntity(
+            kind=JobKind.ACTIVITY, title="Mentorship", status=JobStatus.PUBLISHED
+        )
+        job.job_id = 3
+        application = ApplicationEntity(
+            job_id=3, user_id=4, stage=ApplicationStage.TECH
+        )
+        application.application_id = 10
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.users_repo.get_user_by_user_id = AsyncMock(
+            return_value=UsersEntity(first_name="Ada", last_name="Lovelace")
+        )
+
+        result = await self.service.list_for_user(self.session, 2)
+
+        self.assertEqual(result.notifications[0].job_kind, JobKind.ACTIVITY)
+
+    async def test_list_for_user_leaves_job_kind_none_when_the_job_is_missing(self):
+        row = self._notification(application_id=None, job_id=7)
+        self.notification_repo.list_by_user = AsyncMock(return_value=[row])
+        self.notification_repo.count_by_user = AsyncMock(return_value=1)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=None)
+        self.users_repo.get_user_by_user_id = AsyncMock(return_value=None)
+
+        result = await self.service.list_for_user(self.session, 2)
+
+        self.assertIsNone(result.notifications[0].job_kind)
+
 
 if __name__ == "__main__":
     unittest.main()

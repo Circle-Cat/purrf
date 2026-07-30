@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from backend.common.recruiting_enums import NotificationType
+from backend.common.recruiting_enums import JobKind, NotificationType
 from backend.dto.base_dto import BaseDto
 
 
@@ -14,6 +14,9 @@ class NotificationDto(BaseDto):
     resolved display strings, "" (or None for actor_name) when the
     referenced row is missing -- same fallback convention as
     MyEvaluationDto/CommentDto.
+    job_kind is the resolved posting's kind (None when the posting is
+    missing), so consumers outside React can honour the display-only rule
+    that an activity posting's `hired` stage reads as "Admitted".
     """
 
     id: int
@@ -22,6 +25,7 @@ class NotificationDto(BaseDto):
     job_id: int | None = None
     round: int | None = None
     job_title: str = ""
+    job_kind: JobKind | None = None
     applicant_name: str = ""
     actor_name: str | None = None
     created_at: datetime
