@@ -191,10 +191,11 @@ class TestGoogleCalendarSyncService(TestCase):
             "items": []
         }
 
-        with patch.object(
-            self.service, "_cache_calendar_events", return_value={}
-        ) as mock_cache_events, patch.object(
-            self.service, "_cache_events_attendees"
+        with (
+            patch.object(
+                self.service, "_cache_calendar_events", return_value={}
+            ) as mock_cache_events,
+            patch.object(self.service, "_cache_events_attendees"),
         ):
             self.service.pull_calendar_history(self.time_min_str, self.time_max_str)
 
