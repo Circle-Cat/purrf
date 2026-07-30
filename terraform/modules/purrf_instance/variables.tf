@@ -175,3 +175,13 @@ variable "gmail_sender_address" {
   type        = string
 }
 
+
+variable "mentorship_calendar_id" {
+  description = "Secondary calendar under user_email that mentorship meetings are created on and deleted from. MUST differ between prod and non-prod: Calendar event ids are scoped per calendar, so sharing one calendar let a delete driven by restored prod data remove the real prod event. The calendar must be OWNED by user_email -- the DWD grant is calendar.events.owned, so a calendar merely shared in will 403 at runtime. No default on purpose: a wrong or missing value costs real meetings, so it must fail at apply time."
+  type        = string
+}
+
+variable "interview_calendar_id" {
+  description = "Secondary calendar under user_email that recruiting interview meetings are created on, patched on and deleted from. Same per-environment and ownership requirements as mentorship_calendar_id. Cancellation here is automation-driven (advance / reject / blacklist, and the blacklist sweep covers every application), so a shared calendar lets one environment delete another's real interviews in bulk."
+  type        = string
+}
