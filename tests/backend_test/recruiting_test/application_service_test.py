@@ -1359,6 +1359,39 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             self._owner_types(), [(5, NotificationType.APPLICATION_SUBMITTED)]
         )
 
+    async def test_submit_notifies_default_assignee_owner_twice_and_other_owner_once(
+        self,
+    ):
+        """The default assignee and the owner list are different facts about
+        the same person when they overlap: user 5 is both the stage's
+        defaultAssigneeId and one of two owners, so they must get both an
+        ASSIGNED_TO_EVALUATE row and their own APPLICATION_SUBMITTED owner
+        row, while user 8 (owner only) gets just the latter. The applicant
+        (user 2, from the default _ctx()) is neither owner, so nothing here
+        is suppressed by the applicant-skip logic either."""
+        self.job_repo.get_by_job_id = AsyncMock(
+            return_value=self._job(
+                pipeline_config={
+                    "ownerIds": [5, 8],
+                    "stages": [
+                        {"stage": "recruiter_screening", "defaultAssigneeId": 5}
+                    ],
+                }
+            )
+        )
+        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+
+        await self.service.submit(self.session, self._ctx(), dto)
+
+        self.assertEqual(
+            self._owner_types(),
+            [
+                (5, NotificationType.ASSIGNED_TO_EVALUATE),
+                (5, NotificationType.APPLICATION_SUBMITTED),
+                (8, NotificationType.APPLICATION_SUBMITTED),
+            ],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
