@@ -480,7 +480,10 @@ class InterviewSchedulingService:
                 "assigneeId": cancelled_assignee_id,
                 "startAt": interview.start_at.isoformat(),
                 "endAt": interview.end_at.isoformat(),
-                "timezone": interview.timezone,
+                # No zone key, unlike the scheduled/updated entries above:
+                # those record the wall clock the recruiter typed, and a cancel
+                # types nothing. The timeline renders these instants in the
+                # reader's own zone anyway.
                 "googleEventId": interview.google_event_id,
             },
         )

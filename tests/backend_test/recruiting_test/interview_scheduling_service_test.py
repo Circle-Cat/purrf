@@ -587,12 +587,15 @@ class CancelTest(_BaseTest):
 
     async def test_interview_cancelled_activity_carries_the_full_detail_set(self):
         # Unlike schedule/update, this used to write only {stage, round}: the
-        # timeline needs what was cancelled (who, when, which zone) to say
-        # "Cancelled the Behavioral interview meeting that was set for
-        # 2026-08-05 14:00 America/Los_Angeles" -- read from the interview
-        # row (start/end/timezone/event id) and the assignment row (assignee,
-        # since the interview entity itself stores no attendee snapshot),
-        # both BEFORE the row is deleted.
+        # timeline needs what was cancelled (who, when) to say "Cancelled the
+        # Behavioral interview meeting that was set for ..." -- read from the
+        # interview row (start/end/event id) and the assignment row (assignee,
+        # since the interview entity itself stores no attendee snapshot), both
+        # BEFORE the row is deleted.
+        #
+        # No zone key, unlike schedule/update: those record the wall clock the
+        # recruiter typed, and a cancel types nothing. The timeline renders
+        # these instants in the reader's own zone.
         await self.service.cancel(
             self.session, self._ctx(user_id=OWNER_ID), APPLICATION_ID
         )
@@ -605,7 +608,6 @@ class CancelTest(_BaseTest):
                 "assigneeId": ASSIGNEE_ID,
                 "startAt": "2026-08-05T21:00:00+00:00",
                 "endAt": "2026-08-05T21:45:00+00:00",
-                "timezone": "America/Los_Angeles",
                 "googleEventId": "evt-1",
             },
         )

@@ -10,12 +10,14 @@ import { formatInTz } from "@/utils/dateTime";
  * past the first, and a warning when the application reached a terminal
  * stage with the meeting still on the calendar.
  *
- * The booked time is always rendered in the zone the meeting was booked in
- * (`interview.timezone`), printed verbatim as its IANA name -- e.g.
- * "2026-08-05 · 14:00 - 14:45 America/Los_Angeles". No `PDT`/`PST`
- * abbreviation is derived: the IANA name is unambiguous on its own, and a
- * derived abbreviation risks silently disagreeing with it around a DST
- * transition.
+ * The booked time is rendered in `timezone` -- the VIEWER's own zone, not the
+ * zone whoever booked it happened to be in (nothing stores that) -- printed
+ * verbatim as its IANA name, e.g. "2026-08-05 · 14:00 - 14:45
+ * America/Los_Angeles". The zone name is never omitted: two people in
+ * different zones read this same card, and a bare "14:00" would look right to
+ * both of them while meaning different moments. No `PDT`/`PST` abbreviation is
+ * derived either -- the IANA name is unambiguous on its own, and a derived
+ * abbreviation risks silently disagreeing with it around a DST transition.
  *
  * A `read.all` viewer who isn't the owner (`isOwner={false}`) sees the exact
  * same state -- the booked time/link/labels, or "Not scheduled" -- but none
@@ -24,13 +26,14 @@ import { formatInTz } from "@/utils/dateTime";
  * `canReassign`/`detail.isOwner` on `ApplicationDetailPage`): the same
  * information, none of the controls.
  *
- * @param {{interview: object|null, round: number,
+ * @param {{interview: object|null, round: number, timezone: string,
  *          isTerminal?: boolean, isOwner?: boolean, busy?: boolean,
  *          onSchedule?: function, onEdit?: function, onCancel?: function}} props
  */
 const InterviewMeetingCard = ({
   interview,
   round,
+  timezone,
   isTerminal = false,
   isOwner = true,
   busy = false,
@@ -65,11 +68,11 @@ const InterviewMeetingCard = ({
   const meetLinkDisplay = interview.meetLink
     ? interview.meetLink.replace(/^https?:\/\//, "")
     : null;
-  const timeRange = `${formatInTz(interview.startAt, interview.timezone, "yyyy-MM-dd")} · ${formatInTz(
+  const timeRange = `${formatInTz(interview.startAt, timezone, "yyyy-MM-dd")} · ${formatInTz(
     interview.startAt,
-    interview.timezone,
+    timezone,
     "HH:mm",
-  )} - ${formatInTz(interview.endAt, interview.timezone, "HH:mm")} ${interview.timezone}`;
+  )} - ${formatInTz(interview.endAt, timezone, "HH:mm")} ${timezone}`;
 
   return (
     <Card>

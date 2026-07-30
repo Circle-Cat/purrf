@@ -20,6 +20,7 @@ vi.mock("@/components/common/TimezoneSelector", () => ({
         Pacific Time (US &amp; Canada)
       </option>
       <option value="America/New_York">Eastern Time (US &amp; Canada)</option>
+      <option value="Asia/Taipei">Taipei</option>
     </select>
   ),
 }));
@@ -29,13 +30,14 @@ const POOL = [
   { userId: 11, name: "Ivan Interviewer", email: "ivan@example.com" },
 ];
 
+const VIEWER_TZ = "America/Los_Angeles";
+
 const INTERVIEW = {
   interviewId: 7,
   stage: "behavioral",
   round: 1,
   startAt: "2026-08-05T21:00:00Z",
   endAt: "2026-08-05T21:45:00Z",
-  timezone: "America/Los_Angeles",
   meetLink: "https://meet.google.com/abc-defg-hij",
   assigneeId: 10,
   assigneeName: "Eve Evaluator",
@@ -65,6 +67,7 @@ const renderDialog = (props = {}) => {
       interview={null}
       defaultAssigneeId={null}
       interviewPool={POOL}
+      viewerTimezone={VIEWER_TZ}
       onSubmit={onSubmit}
       submitting={false}
       {...props}
@@ -74,7 +77,7 @@ const renderDialog = (props = {}) => {
 };
 
 describe("InterviewMeetingDialog", () => {
-  it("defaults to 45 minutes and America/Los_Angeles", () => {
+  it("defaults to 45 minutes and the viewer's own zone", () => {
     renderDialog();
     expect(
       screen.getByRole("combobox", { name: "Duration" }),
@@ -153,8 +156,23 @@ describe("InterviewMeetingDialog", () => {
       date: "2026-08-05",
       startTime: "14:00",
       durationMinutes: 45,
-      timezone: "America/Los_Angeles",
+      timezone: VIEWER_TZ,
     });
+  });
+
+  it("prefills the slot in the viewer's zone when they are elsewhere", () => {
+    // 21:00Z is 05:00 the next day in Taipei. Nothing stores the zone the
+    // meeting was booked in, so an editor sees it in their own terms -- the
+    // same ones the card just showed them.
+    renderDialog({
+      mode: "edit",
+      interview: INTERVIEW,
+      defaultAssigneeId: null,
+      viewerTimezone: "Asia/Taipei",
+    });
+    expect(screen.getByLabelText("Date")).toHaveValue("2026-08-06");
+    expect(screen.getByLabelText("Start time")).toHaveValue("05:00");
+    expect(screen.getByTestId("timezone-selector")).toHaveValue("Asia/Taipei");
   });
 
   it("prefills every field from the existing booking in edit mode", () => {

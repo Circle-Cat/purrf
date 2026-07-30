@@ -81,7 +81,7 @@ import {
 } from "@/pages/Recruiting/board/stageFormat";
 import { useAuth } from "@/context/auth/AuthContext";
 import { PERMISSIONS } from "@/constants/Permissions";
-import { formatInTz } from "@/utils/dateTime";
+import { formatInTz, resolveViewerTimezone } from "@/utils/dateTime";
 import HowItWorksDialog from "@/pages/Recruiting/components/HowItWorksDialog";
 import {
   APPLICATION_OWNER_GUIDE,
@@ -399,7 +399,7 @@ const formatInterviewWhen = (startAt, tz) =>
  *   the narration match the rest of the page (activity: hired -> Admitted).
  * @returns {string}
  */
-const describeActivity = ({ eventType, details }, jobKind) => {
+const describeActivity = ({ eventType, details }, jobKind, timezone) => {
   switch (eventType) {
     case "application_submitted": {
       if (details.screenAutoHireRuleId) {
@@ -452,23 +452,15 @@ const describeActivity = ({ eventType, details }, jobKind) => {
     case "auto_assigned":
       return `Automatically assigned to ${details.assigneeName} on ${humanize(details.stage)}`;
     case "interview_scheduled": {
-      const when = formatInterviewWhen(details.startAt, details.timezone);
+      const when = formatInterviewWhen(details.startAt, timezone);
       return `Scheduled the ${humanize(details.stage)} interview meeting${
         when ? ` for ${when}` : ""
       }${details.assigneeName ? ` with ${details.assigneeName}` : ""}`;
     }
     case "interview_updated": {
       const stageText = humanize(details.stage);
-      const newWhen = formatInterviewWhen(details.startAt, details.timezone);
-      // No `fromTimezone` is stored -- only one `timezone` field exists on
-      // this event (the post-edit zone) -- so the pre-edit instant is
-      // rendered in that same zone. Usually correct (the zone rarely
-      // changes independently of the slot); flagged here rather than
-      // silently assumed.
-      const oldWhen = formatInterviewWhen(
-        details.fromStartAt,
-        details.timezone,
-      );
+      const newWhen = formatInterviewWhen(details.startAt, timezone);
+      const oldWhen = formatInterviewWhen(details.fromStartAt, timezone);
       const timeChanged =
         details.fromStartAt !== details.startAt ||
         details.fromEndAt !== details.endAt;
@@ -490,7 +482,7 @@ const describeActivity = ({ eventType, details }, jobKind) => {
       return `Updated the ${stageText} interview meeting${newWhen ? ` for ${newWhen}` : ""}`;
     }
     case "interview_cancelled": {
-      const when = formatInterviewWhen(details.startAt, details.timezone);
+      const when = formatInterviewWhen(details.startAt, timezone);
       return `Cancelled the ${humanize(details.stage)} interview meeting${
         when ? ` that was set for ${when}` : ""
       }`;
@@ -516,7 +508,7 @@ const describeActivity = ({ eventType, details }, jobKind) => {
  *          actorName: string, createdAt: string}[],
  *          jobKind?: string|null}} props
  */
-const ActivityTimeline = ({ activity, jobKind }) => (
+const ActivityTimeline = ({ activity, jobKind, timezone }) => (
   <div className="space-y-2">
     {activity.length === 0 ? (
       <p className="text-sm text-slate-400">No activity yet.</p>
@@ -527,7 +519,7 @@ const ActivityTimeline = ({ activity, jobKind }) => (
             <span className="text-slate-500">
               {new Date(entry.createdAt).toLocaleString()}
             </span>{" "}
-            — {describeActivity(entry, jobKind)}, by {entry.actorName}
+            — {describeActivity(entry, jobKind, timezone)}, by {entry.actorName}
           </li>
         ))}
       </ul>
@@ -816,6 +808,7 @@ const OtherApplicationsSection = ({
   onToggle,
   labelFor,
   showHistoryTabs = true,
+  timezone,
 }) => {
   if (otherApplications.length === 0) return null;
   return (
@@ -882,6 +875,7 @@ const OtherApplicationsSection = ({
                         <ActivityTimeline
                           activity={other.activity ?? []}
                           jobKind={other.jobKind}
+                          timezone={timezone}
                         />
                       </TabsContent>
                       <TabsContent value="comments">
@@ -1196,6 +1190,12 @@ const ApplicationDetailPage = () => {
       detail.interview != null);
   const isTerminalStage =
     loaded && detail != null && TERMINAL_STAGES.has(detail.application.stage);
+  // Every interview time on this page is rendered in the reader's own zone --
+  // their profile zone when set, else their browser's. No meeting stores the
+  // zone it was booked in (see ApplicationInterviewEntity), so there is no
+  // booker zone to prefer, and showing one would only mislead whoever is not
+  // in it.
+  const viewerTimezone = resolveViewerTimezone(detail?.viewerTimezone);
   // The interview dialog's starting interviewer pick in "schedule" mode: the
   // round's current assignee if one is already set (e.g. carried over from a
   // previous round in the same stage), else the stage's configured default
@@ -1678,6 +1678,7 @@ const ApplicationDetailPage = () => {
                 <InterviewMeetingCard
                   interview={detail.interview}
                   round={detail.application.currentRound ?? 1}
+                  timezone={viewerTimezone}
                   isTerminal={isTerminalStage}
                   isOwner={detail.isOwner}
                   busy={interviewBusy}
@@ -1748,7 +1749,11 @@ const ApplicationDetailPage = () => {
                   />
                 </TabsContent>
                 <TabsContent value="timeline">
-                  <ActivityTimeline activity={activity} jobKind={job?.kind} />
+                  <ActivityTimeline
+                    activity={activity}
+                    jobKind={job?.kind}
+                    timezone={viewerTimezone}
+                  />
                 </TabsContent>
                 <TabsContent value="comments">
                   <CommentsPanel
@@ -1781,6 +1786,7 @@ const ApplicationDetailPage = () => {
               </Tabs>
 
               <OtherApplicationsSection
+                timezone={viewerTimezone}
                 title="Previous applications for this posting"
                 otherApplications={previousApplications}
                 interviewPool={interviewPool}
@@ -1800,6 +1806,7 @@ const ApplicationDetailPage = () => {
               />
 
               <OtherApplicationsSection
+                timezone={viewerTimezone}
                 title="Other applications"
                 otherApplications={otherApplications}
                 interviewPool={interviewPool}
@@ -1850,6 +1857,8 @@ const ApplicationDetailPage = () => {
                 </Tabs>
 
                 <OtherApplicationsSection
+                  timezone={viewerTimezone}
+                  timezone={viewerTimezone}
                   title="Previous applications for this posting"
                   otherApplications={previousApplications}
                   interviewPool={interviewPool}
@@ -1870,6 +1879,8 @@ const ApplicationDetailPage = () => {
                 />
 
                 <OtherApplicationsSection
+                  timezone={viewerTimezone}
+                  timezone={viewerTimezone}
                   title="Other applications"
                   otherApplications={otherApplications}
                   interviewPool={interviewPool}
@@ -2140,6 +2151,7 @@ const ApplicationDetailPage = () => {
         defaultAssigneeId={interviewDefaultAssigneeId}
         interviewPool={interviewPool}
         candidateName={detail.applicantName}
+        viewerTimezone={viewerTimezone}
         onSubmit={handleInterviewSubmit}
         submitting={interviewBusy}
       />

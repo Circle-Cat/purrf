@@ -26,7 +26,6 @@ import { formatInTz } from "@/utils/dateTime";
  * browser's local zone, so the initial state is deterministic regardless of
  * the machine running the app (or the test).
  */
-const DEFAULT_TIMEZONE = "America/Los_Angeles";
 const DEFAULT_DURATION_MINUTES = 45;
 
 const DURATION_OPTIONS = [
@@ -57,7 +56,7 @@ const DURATION_OPTIONS = [
  *          mode: "schedule"|"edit", interview: object|null,
  *          defaultAssigneeId: number|null,
  *          interviewPool: {userId: number, name: string, email: string}[],
- *          candidateName?: string|null,
+ *          candidateName?: string|null, viewerTimezone: string,
  *          onSubmit: (body: {assigneeId: number, date: string,
  *            startTime: string, durationMinutes: number,
  *            timezone: string}) => void,
@@ -71,6 +70,7 @@ const InterviewMeetingDialog = ({
   defaultAssigneeId,
   interviewPool,
   candidateName,
+  viewerTimezone,
   onSubmit,
   submitting = false,
 }) => {
@@ -80,7 +80,7 @@ const InterviewMeetingDialog = ({
   const [durationMinutes, setDurationMinutes] = useState(
     DEFAULT_DURATION_MINUTES,
   );
-  const [timezone, setTimezone] = useState(DEFAULT_TIMEZONE);
+  const [timezone, setTimezone] = useState(viewerTimezone);
 
   // Re-derive every field whenever the dialog opens (Radix unmounts
   // DialogContent while closed, but this component itself stays mounted, so
@@ -89,11 +89,14 @@ const InterviewMeetingDialog = ({
     if (!open) return;
     if (mode === "edit" && interview) {
       setAssigneeId(interview.assigneeId ?? undefined);
+      // Converted into the VIEWER's zone, not the booker's: nothing stores
+      // the zone it was booked in, and an editor should see the slot in the
+      // same terms the card just showed them.
       setDate(
-        formatInTz(interview.startAt, interview.timezone, "yyyy-MM-dd") ?? "",
+        formatInTz(interview.startAt, viewerTimezone, "yyyy-MM-dd") ?? "",
       );
       setStartTime(
-        formatInTz(interview.startAt, interview.timezone, "HH:mm") ?? "",
+        formatInTz(interview.startAt, viewerTimezone, "HH:mm") ?? "",
       );
       setDurationMinutes(
         Math.round(
@@ -102,19 +105,19 @@ const InterviewMeetingDialog = ({
             60000,
         ),
       );
-      setTimezone(interview.timezone ?? DEFAULT_TIMEZONE);
+      setTimezone(viewerTimezone);
     } else {
       setAssigneeId(defaultAssigneeId ?? undefined);
       setDate("");
       setStartTime("");
       setDurationMinutes(DEFAULT_DURATION_MINUTES);
-      setTimezone(DEFAULT_TIMEZONE);
+      setTimezone(viewerTimezone);
     }
-  }, [open, mode, interview, defaultAssigneeId]);
+  }, [open, mode, interview, defaultAssigneeId, viewerTimezone]);
 
   const handleTimezoneChange = (option) => {
     setTimezone(
-      typeof option === "string" ? option : (option?.value ?? DEFAULT_TIMEZONE),
+      typeof option === "string" ? option : (option?.value ?? viewerTimezone),
     );
   };
 

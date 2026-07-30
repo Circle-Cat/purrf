@@ -138,6 +138,7 @@ const makeDetail = ({
   resumeAvailable = true,
   currentRound,
   interview = null,
+  viewerTimezone = "America/Los_Angeles",
 } = {}) => ({
   application: {
     id: 101,
@@ -160,6 +161,7 @@ const makeDetail = ({
   canView,
   assigneeId,
   interview,
+  viewerTimezone,
 });
 
 /** An InterviewDto-shaped fixture, as the detail endpoint's `interview` field. */
@@ -169,7 +171,6 @@ const INTERVIEW_FIXTURE = {
   round: 1,
   startAt: "2026-08-05T21:00:00Z",
   endAt: "2026-08-05T21:45:00Z",
-  timezone: "America/Los_Angeles",
   meetLink: "https://meet.google.com/abc-defg-hij",
   assigneeId: ASSIGNEE_ID,
   assigneeName: "Eve Evaluator",
@@ -245,6 +246,60 @@ const waitLoaded = () =>
   waitFor(() =>
     expect(screen.getByText("alice@example.com")).toBeInTheDocument(),
   );
+
+describe("ApplicationDetailPage — interview times follow the viewer", () => {
+  it("renders the meeting in the zone the payload says the viewer is in", async () => {
+    // Same instant as every other fixture; a reader in Taipei sees 21:00Z as
+    // 05:00 the NEXT day. Mutation check -- render a fixed zone and this fails.
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({
+        isOwner: true,
+        stage: "behavioral",
+        interview: INTERVIEW_FIXTURE,
+        viewerTimezone: "Asia/Taipei",
+      }),
+    });
+    renderPage();
+    await waitLoaded();
+
+    expect(await screen.findByText(/2026-08-06/)).toBeInTheDocument();
+    expect(screen.getByText(/05:00 - 05:45/)).toBeInTheDocument();
+    expect(screen.getByText(/Asia\/Taipei/)).toBeInTheDocument();
+  });
+
+  it("falls back to the browser zone when the viewer has set none", async () => {
+    // A profile with no timezone must still read as local time, not as
+    // somebody else's zone and not as UTC-by-accident.
+    const resolved = Intl.DateTimeFormat().resolvedOptions();
+    const spy = vi
+      .spyOn(Intl, "DateTimeFormat")
+      .mockImplementation((locale, options) =>
+        options
+          ? new Intl.DateTimeFormat.prototype.constructor(locale, options)
+          : {
+              resolvedOptions: () => ({ ...resolved, timeZone: "Asia/Taipei" }),
+            },
+      );
+    try {
+      authState.userId = OWNER_ID;
+      api.getApplicationDetail.mockResolvedValue({
+        data: makeDetail({
+          isOwner: true,
+          stage: "behavioral",
+          interview: INTERVIEW_FIXTURE,
+          viewerTimezone: null,
+        }),
+      });
+      renderPage();
+      await waitLoaded();
+
+      expect(await screen.findByText(/Asia\/Taipei/)).toBeInTheDocument();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
 
 describe("ApplicationDetailPage — loading & snapshot", () => {
   it("shows a loading state before the detail resolves", () => {
