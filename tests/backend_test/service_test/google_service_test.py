@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 from googleapiclient.errors import HttpError
 
+from backend.common.exceptions import MeetingGoneError
 from backend.service.google_service import GoogleService
 from backend.utils.retry_utils import RetryUtils
 
@@ -741,6 +742,83 @@ class TestGoogleService(TestCase):
             self._insert_meeting()
 
         self._calendar_events().get.assert_not_called()
+
+
+class UpdateGoogleMeetingTest(TestCase):
+    def setUp(self):
+        self.mock_logger = MagicMock()
+        self.mock_google_calendar_client = MagicMock()
+        self.mock_retry_utils = MagicMock()
+        self.mock_retry_utils.get_retry_on_transient.side_effect = lambda fn: fn()
+
+        self.service = GoogleService(
+            logger=self.mock_logger,
+            google_chat_client=MagicMock(),
+            google_people_client=MagicMock(),
+            google_workspaceevents_client=MagicMock(),
+            google_calendar_client=self.mock_google_calendar_client,
+            retry_utils=self.mock_retry_utils,
+            meet_spaces_client=MagicMock(),
+            meet_conference_records_client=MagicMock(),
+        )
+
+    def test_patches_only_start_end_and_attendees(self):
+        patch_call = self.mock_google_calendar_client.events.return_value.patch
+        patch_call.return_value.execute.return_value = {
+            "id": "evt-1",
+            "hangoutLink": "https://meet.google.com/abc-defg-hij",
+            "created": "2026-08-01T00:00:00Z",
+            "conferenceData": {"conferenceId": "abc-defg-hij", "entryPoints": []},
+        }
+        start = datetime(2026, 8, 7, 21, 0, tzinfo=timezone.utc)
+        end = datetime(2026, 8, 7, 21, 45, tzinfo=timezone.utc)
+
+        self.service.update_google_meeting("evt-1", start, end, ["ana@example.com"])
+
+        _, kwargs = patch_call.call_args
+        self.assertEqual(kwargs["calendarId"], "primary")
+        self.assertEqual(kwargs["eventId"], "evt-1")
+        self.assertEqual(kwargs["sendUpdates"], "all")
+        # conferenceData must be absent — touching it would replace the Meet
+        # link, invalidating the one already mailed to the candidate.
+        self.assertNotIn("conferenceData", kwargs["body"])
+        self.assertEqual(set(kwargs["body"]), {"start", "end", "attendees"})
+        self.assertEqual(kwargs["body"]["attendees"], [{"email": "ana@example.com"}])
+
+    def test_a_missing_event_raises_meeting_gone(self):
+        patch_call = self.mock_google_calendar_client.events.return_value.patch
+        patch_call.return_value.execute.side_effect = make_http_error(
+            HTTPStatus.NOT_FOUND
+        )
+        with self.assertRaises(MeetingGoneError):
+            self.service.update_google_meeting(
+                "evt-1",
+                datetime(2026, 8, 7, tzinfo=timezone.utc),
+                datetime(2026, 8, 7, tzinfo=timezone.utc),
+                [],
+            )
+
+    def test_a_deleted_event_raises_meeting_gone(self):
+        patch_call = self.mock_google_calendar_client.events.return_value.patch
+        patch_call.return_value.execute.side_effect = make_http_error(HTTPStatus.GONE)
+        with self.assertRaises(MeetingGoneError):
+            self.service.update_google_meeting(
+                "evt-1",
+                datetime(2026, 8, 7, tzinfo=timezone.utc),
+                datetime(2026, 8, 7, tzinfo=timezone.utc),
+                [],
+            )
+
+    def test_any_other_failure_raises_runtime_error(self):
+        patch_call = self.mock_google_calendar_client.events.return_value.patch
+        patch_call.return_value.execute.side_effect = RuntimeError("boom")
+        with self.assertRaises(RuntimeError):
+            self.service.update_google_meeting(
+                "evt-1",
+                datetime(2026, 8, 7, tzinfo=timezone.utc),
+                datetime(2026, 8, 7, tzinfo=timezone.utc),
+                [],
+            )
 
 
 class TestGoogleServiceMeet(unittest.IsolatedAsyncioTestCase):

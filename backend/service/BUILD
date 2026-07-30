@@ -26,6 +26,7 @@ py_library(
     name = "google_service",
     srcs = ["google_service.py"],
     deps = [
+        "//backend/common:exceptions",
         "//backend/utils:retry_utils",
         "@pypi//google_api_python_client",
         "@pypi//google_apps_meet",
