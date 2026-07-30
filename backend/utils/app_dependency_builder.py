@@ -70,6 +70,7 @@ from backend.internal_activity_service.google_chat_analytics_service import (
 from backend.internal_activity_service.summary_service import SummaryService
 from backend.common.environment_constants import (
     GMAIL_SENDER_RECRUITING,
+    GMAIL_SENDER_NOTIFICATION,
     JIRA_SERVER,
     JIRA_USER,
     MENTORSHIP_CALENDAR_ID,
@@ -651,10 +652,15 @@ class AppDependencyBuilder:
         recruiting_sender = os.getenv(GMAIL_SENDER_RECRUITING)
         if not recruiting_sender:
             raise ValueError(f"Missing environment variable: {GMAIL_SENDER_RECRUITING}")
+        self.notification_sender_address = os.getenv(GMAIL_SENDER_NOTIFICATION)
+        if not self.notification_sender_address:
+            raise ValueError(
+                f"Missing environment variable: {GMAIL_SENDER_NOTIFICATION}"
+            )
         self.gmail_client = GmailClient(
             logger=self.logger,
             retry_utils=self.retry_utils,
-            sender_addresses=[recruiting_sender],
+            sender_addresses=[recruiting_sender, self.notification_sender_address],
         )
         self.email_thread_repository = EmailThreadRepository()
         self.email_message_repository = EmailMessageRepository()
