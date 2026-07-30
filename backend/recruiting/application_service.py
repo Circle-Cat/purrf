@@ -321,6 +321,10 @@ class ApplicationService:
             session, application, job, current_user
         )
 
+        await self._notify_owners_of_submission(
+            session, application, job, blocked, screen_action
+        )
+
         if blocked:
             await self.application_activity_repository.create(
                 session,
@@ -430,6 +434,55 @@ class ApplicationService:
                 actor_user_id=None,
             ),
         )
+
+    async def _notify_owners_of_submission(
+        self, session, application, job, blocked, screen_action
+    ):
+        """Tell every owner of the posting that an application landed.
+
+        Owners (``pipeline_config.ownerIds``) are the posting's accountable
+        humans, and before this nothing told them a candidate had applied:
+        the only submit-time notification went to a stage's configured
+        default assignee, and none was written at all when the blacklist or
+        a screen rule disposed of the application without human review.
+
+        The outcome is read from ``blocked``/``screen_action`` rather than
+        from the landed stage, because a stage can be reached by more than
+        one path and the caller already knows exactly which one this was.
+        The three types carry different copy: an auto-rejected or auto-hired
+        application is already decided (informational, overturn it if you
+        disagree), while a plain submission is work waiting on the board.
+
+        Skips the applicant themselves -- an internal member applying to an
+        activity posting they own must not be notified about their own
+        application. Writes nothing when the posting has no owner, mirroring
+        ``_assign_default_if_configured``'s no-owner no-op.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            application (ApplicationEntity): The just-landed application.
+            job (JobEntity): Its posting, for the owner list.
+            blocked (bool): Whether the applicant is blacklisted.
+            screen_action (str | None): The matched screen rule's action, if any.
+        """
+        if blocked or screen_action == "reject":
+            notification_type = NotificationType.APPLICATION_AUTO_REJECTED
+        elif screen_action == "auto_hire":
+            notification_type = NotificationType.APPLICATION_AUTO_HIRED
+        else:
+            notification_type = NotificationType.APPLICATION_SUBMITTED
+        for owner_id in normalized_owner_ids(job.pipeline_config):
+            if owner_id == application.user_id:
+                continue
+            await self.notification_repository.create(
+                session,
+                NotificationEntity(
+                    user_id=owner_id,
+                    type=notification_type,
+                    application_id=application.application_id,
+                    actor_user_id=application.user_id,
+                ),
+            )
 
     async def edit(
         self,

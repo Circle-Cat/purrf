@@ -1183,6 +1183,182 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(entity_arg.application_id, 10)
         self.assertIsNone(entity_arg.actor_user_id)
 
+    def _owner_types(self):
+        """The (user_id, type) pairs of every notification submit wrote."""
+        return [
+            (call.args[1].user_id, call.args[1].type)
+            for call in self.notification_repo.create.await_args_list
+        ]
+
+    async def test_submit_notifies_every_owner_of_a_new_application(self):
+        self.job_repo.get_by_job_id = AsyncMock(
+            return_value=self._job(
+                pipeline_config={
+                    "ownerIds": [5, 6],
+                    "stages": [{"stage": "recruiter_screening"}],
+                }
+            )
+        )
+        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+
+        await self.service.submit(self.session, self._ctx(), dto)
+
+        self.assertEqual(
+            self._owner_types(),
+            [
+                (5, NotificationType.APPLICATION_SUBMITTED),
+                (6, NotificationType.APPLICATION_SUBMITTED),
+            ],
+        )
+        entity = self.notification_repo.create.await_args_list[0].args[1]
+        self.assertEqual(entity.application_id, 100)
+        self.assertEqual(entity.actor_user_id, 2)
+
+    async def test_submit_skips_an_owner_who_is_the_applicant(self):
+        self.job_repo.get_by_job_id = AsyncMock(
+            return_value=self._job(
+                pipeline_config={
+                    "ownerIds": [2, 5],
+                    "stages": [{"stage": "recruiter_screening"}],
+                }
+            )
+        )
+        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+
+        await self.service.submit(self.session, self._ctx(user_id=2), dto)
+
+        self.assertEqual(
+            self._owner_types(), [(5, NotificationType.APPLICATION_SUBMITTED)]
+        )
+
+    async def test_submit_writes_no_owner_notification_without_an_owner(self):
+        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+
+        await self.service.submit(self.session, self._ctx(), dto)
+
+        self.notification_repo.create.assert_not_awaited()
+
+    async def test_submit_tells_owners_a_blocked_application_was_auto_rejected(self):
+        self.users_repo.get_user_by_user_id = AsyncMock(
+            return_value=self._user(is_blocked=True)
+        )
+        self.job_repo.get_by_job_id = AsyncMock(
+            return_value=self._job(
+                pipeline_config={
+                    "ownerIds": [5],
+                    "stages": [{"stage": "recruiter_screening"}],
+                }
+            )
+        )
+        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+
+        await self.service.submit(self.session, self._ctx(), dto)
+
+        self.assertEqual(
+            self._owner_types(), [(5, NotificationType.APPLICATION_AUTO_REJECTED)]
+        )
+
+    async def test_submit_tells_owners_a_screen_rejected_application_was_auto_rejected(
+        self,
+    ):
+        self.job_repo.get_by_job_id = AsyncMock(
+            return_value=self._job(
+                pipeline_config={
+                    "ownerIds": [5],
+                    "stages": [{"stage": "recruiter_screening"}],
+                },
+                screen_rules={
+                    "rules": [
+                        {
+                            "id": "r1",
+                            "condition": {
+                                "source": "email_domain",
+                                "operator": "equals",
+                                "value": "spam.com",
+                            },
+                            "action": "reject",
+                        }
+                    ]
+                },
+            )
+        )
+        self.user_emails_repo.list_by_user_id.return_value = [
+            self._email_row("a@spam.com")
+        ]
+        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+
+        await self.service.submit(self.session, self._ctx(), dto)
+
+        self.assertEqual(
+            self._owner_types(), [(5, NotificationType.APPLICATION_AUTO_REJECTED)]
+        )
+
+    async def test_submit_tells_owners_an_auto_hired_application_was_auto_hired(self):
+        self.job_repo.get_by_job_id = AsyncMock(
+            return_value=self._job(
+                pipeline_config={
+                    "ownerIds": [5],
+                    "stages": [{"stage": "recruiter_screening"}],
+                },
+                screen_rules={
+                    "rules": [
+                        {
+                            "id": "r1",
+                            "condition": {
+                                "source": "email_domain",
+                                "operator": "equals",
+                                "value": "circlecat.org",
+                            },
+                            "action": "auto_hire",
+                        }
+                    ]
+                },
+            )
+        )
+        self.user_emails_repo.list_by_user_id.return_value = [
+            self._email_row("a@circlecat.org")
+        ]
+        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+
+        await self.service.submit(self.session, self._ctx(), dto)
+
+        self.assertEqual(
+            self._owner_types(), [(5, NotificationType.APPLICATION_AUTO_HIRED)]
+        )
+
+    async def test_submit_treats_a_qualify_match_as_an_ordinary_submission(self):
+        self.job_repo.get_by_job_id = AsyncMock(
+            return_value=self._job(
+                pipeline_config={
+                    "ownerIds": [5],
+                    "stages": [{"stage": "recruiter_screening"}],
+                },
+                screen_rules={
+                    "rules": [
+                        {
+                            "id": "r1",
+                            "condition": {
+                                "source": "email_domain",
+                                "operator": "equals",
+                                "value": "circlecat.org",
+                            },
+                            "action": "qualify",
+                        }
+                    ]
+                },
+            )
+        )
+        self.user_emails_repo.list_by_user_id.return_value = [
+            self._email_row("a@circlecat.org")
+        ]
+        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+
+        await self.service.submit(self.session, self._ctx(), dto)
+
+        self.assertEqual(
+            self._owner_types(), [(5, NotificationType.APPLICATION_SUBMITTED)]
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
