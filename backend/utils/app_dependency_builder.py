@@ -69,6 +69,7 @@ from backend.internal_activity_service.google_chat_analytics_service import (
 )
 from backend.internal_activity_service.summary_service import SummaryService
 from backend.common.environment_constants import (
+    GMAIL_SENDER_RECRUITING,
     JIRA_SERVER,
     JIRA_USER,
     MENTORSHIP_CALENDAR_ID,
@@ -638,12 +639,22 @@ class AppDependencyBuilder:
             self.database,
         )
         # Person-anchored email (recruiting Emails tab). Constructed eagerly to
-        # match the other clients; GmailClient reads GMAIL_* from the env (use
-        # placeholder values locally — real secrets are only needed to actually
-        # send/read mail).
+        # match the other clients; GmailClient reads the GMAIL_* credentials from
+        # the env itself (use placeholder values locally — real secrets are only
+        # needed to actually send/read mail).
+        #
+        # The From addresses are read here instead: one per sending service, so
+        # the transport stays unaware of which services exist. Today recruiting
+        # is the only one. Missing is fatal at startup rather than defaulted —
+        # an unowned From is silently rewritten by Gmail, so a wrong or absent
+        # value would surface as mail from the wrong identity, not as an error.
+        recruiting_sender = os.getenv(GMAIL_SENDER_RECRUITING)
+        if not recruiting_sender:
+            raise ValueError(f"Missing environment variable: {GMAIL_SENDER_RECRUITING}")
         self.gmail_client = GmailClient(
             logger=self.logger,
             retry_utils=self.retry_utils,
+            sender_addresses=[recruiting_sender],
         )
         self.email_thread_repository = EmailThreadRepository()
         self.email_message_repository = EmailMessageRepository()
@@ -651,7 +662,7 @@ class AppDependencyBuilder:
             gmail_client=self.gmail_client,
             thread_repository=self.email_thread_repository,
             message_repository=self.email_message_repository,
-            sender_address=self.gmail_client.sender_address,
+            sender_address=recruiting_sender,
         )
         self.email_sync_service = EmailSyncService(
             gmail_client=self.gmail_client,

@@ -19,10 +19,18 @@ in-app OAuth flow):
 - ``get_message`` — pull back and parse one message (headers, HTML/plain
   bodies, snippet, timestamps).
 
+One mailbox, one credential, but possibly several ``From`` addresses: Gmail
+Send-As lets the account send as any address verified on it, so
+``sender_addresses`` lists the ones this deployment may use, every
+``send_message`` names which one it is sending as, and ``owns_address`` answers
+"is this ``From`` one of ours?". An address outside the list is refused here,
+because Gmail does not reject an unowned ``From`` — it silently rewrites it to
+the mailbox owner, which would look like a clean send.
+
 This class is deliberately **domain-agnostic**: it knows nothing about our DB,
 permissions, templates, contexts, or the OUTBOUND/INBOUND enum. ``get_message``
-returns each message's raw ``from_address``; deciding direction (by comparing it
-to the sender) belongs to the domain layer, not here.
+returns each message's raw ``from_address``; turning that into a direction
+belongs to the domain layer, which asks ``owns_address`` and maps the answer.
 
 An ``access_token`` is obtained and refreshed automatically by ``google-auth``
 from the stored refresh token; the built Gmail service is cached on the
@@ -36,7 +44,7 @@ import os
 import re
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from email.utils import make_msgid
+from email.utils import make_msgid, parseaddr
 from html import unescape
 from http import HTTPStatus
 
@@ -49,13 +57,13 @@ from backend.common.environment_constants import (
     GMAIL_CLIENT_ID,
     GMAIL_CLIENT_SECRET,
     GMAIL_REFRESH_TOKEN,
-    GMAIL_SENDER_ADDRESS,
 )
 from backend.common.exceptions import RateLimitedError
 
 # OAuth2 token endpoint the refresh token is redeemed against.
 _TOKEN_URI = "https://oauth2.googleapis.com/token"
-# "me" resolves to the authenticated account (our sender).
+# "me" resolves to the authenticated account — the mailbox the refresh token
+# belongs to, which is not necessarily the address a message is sent as.
 _GMAIL_USER = "me"
 # An anchor carrying an href, captured as (href, label). A link's URL lives in
 # the tag, not between the tags, so the plain-text fallback has to pull it out
@@ -69,7 +77,7 @@ _TAG_RE = re.compile(r"<[^>]+>")
 class GmailClient:
     """Domain-agnostic Gmail send/read transport (see module docstring)."""
 
-    def __init__(self, logger, retry_utils):
+    def __init__(self, logger, retry_utils, sender_addresses):
         """
         Read the Gmail credentials from the environment.
 
@@ -79,15 +87,25 @@ class GmailClient:
         Args:
             logger: Application logger.
             retry_utils: Provides ``get_retry_on_transient(fn)`` to wrap calls.
+            sender_addresses (list[str]): Every address this mailbox may send
+                as — one per sending service. Passed in rather than read from
+                the environment: which services exist is a wiring question, and
+                this class stays unaware of them. Each must be verified as a
+                Send-As on the mailbox.
 
         Raises:
-            ValueError: If any required environment variable is missing, or if
-                ``logger`` / ``retry_utils`` is not provided.
+            ValueError: If any required environment variable is missing, if
+                ``sender_addresses`` is empty, or if ``logger`` /
+                ``retry_utils`` is not provided.
         """
         self._client_id = os.getenv(GMAIL_CLIENT_ID)
         self._client_secret = os.getenv(GMAIL_CLIENT_SECRET)
         self._refresh_token = os.getenv(GMAIL_REFRESH_TOKEN)
-        self._sender = os.getenv(GMAIL_SENDER_ADDRESS)
+        self._sender_addresses = {
+            parseaddr(address)[1].lower()
+            for address in (sender_addresses or [])
+            if parseaddr(address or "")[1]
+        }
         self._logger = logger
         self._retry_utils = retry_utils
         self._service = None
@@ -98,21 +116,27 @@ class GmailClient:
             raise ValueError("Missing environment variable: GMAIL_CLIENT_SECRET")
         if not self._refresh_token:
             raise ValueError("Missing environment variable: GMAIL_REFRESH_TOKEN")
-        if not self._sender:
-            raise ValueError("Missing environment variable: GMAIL_SENDER_ADDRESS")
+        if not self._sender_addresses:
+            raise ValueError("sender_addresses must hold at least one address")
         if not self._logger:
             raise ValueError("logger must be provided")
         if not self._retry_utils:
             raise ValueError("retry_utils must be provided")
 
-    @property
-    def sender_address(self) -> str:
-        """The company account every message is sent from.
+    def owns_address(self, address) -> bool:
+        """Whether ``address`` is one of the addresses this mailbox sends as.
 
-        Exposed so the domain layer can classify a synced message's direction
-        (OUTBOUND when its ``From`` is us, INBOUND otherwise).
+        Answers "is this us?" for a synced message's ``From`` (OUTBOUND when
+        True, INBOUND otherwise). A raw header is fine: a display name is
+        stripped and case is ignored. Blank or unparseable input is not ours.
+
+        Args:
+            address (str | None): An address or a full ``From`` header value.
+
+        Returns:
+            bool: True when the address is configured on this client.
         """
-        return self._sender
+        return parseaddr(address or "")[1].lower() in self._sender_addresses
 
     def send_message(
         self,
@@ -120,12 +144,13 @@ class GmailClient:
         cc,
         subject,
         body,
+        sender,
         thread_id=None,
         in_reply_to=None,
         references=None,
     ):
         """
-        Send an HTML email as the company account, optionally as a thread reply.
+        Send an HTML email as one of our addresses, optionally as a thread reply.
 
         The message is sent as ``multipart/alternative`` — the HTML ``body`` plus
         a plain-text fallback derived from it. A fresh ``Message-ID`` is minted
@@ -137,6 +162,10 @@ class GmailClient:
             cc (list[str]): Cc addresses (may be empty).
             subject (str): Subject line.
             body (str): HTML body.
+            sender (str): The address to send as — an address this client owns,
+                optionally with a display name (``Name <addr>``). Required: the
+                transport holds no default sender, so a caller that omits it
+                fails here instead of silently going out as the mailbox owner.
             thread_id (str | None): Gmail thread id to reply into (``None`` for a
                 new thread).
             in_reply_to (str | None): ``Message-ID`` of the message being replied
@@ -147,12 +176,18 @@ class GmailClient:
             dict: ``{"gmail_message_id", "gmail_thread_id", "rfc822_message_id"}``.
 
         Raises:
+            ValueError: If ``sender`` is not an address this mailbox sends as.
             RateLimitedError: If Gmail throttles the request (HTTP 429).
             RuntimeError: For any other Gmail API failure.
         """
-        rfc822_message_id = make_msgid(domain=self._sender.split("@")[-1])
+        if not self.owns_address(sender):
+            raise ValueError(
+                f"Not a configured sender address for this mailbox: {sender!r}"
+            )
+        sender_domain = parseaddr(sender)[1].split("@")[-1]
+        rfc822_message_id = make_msgid(domain=sender_domain)
         mime = self._build_mime(
-            to, cc, subject, body, rfc822_message_id, in_reply_to, references
+            to, cc, subject, body, sender, rfc822_message_id, in_reply_to, references
         )
         request_body = {
             "raw": base64.urlsafe_b64encode(mime.as_bytes()).decode("ascii")
@@ -290,8 +325,15 @@ class GmailClient:
             # send them as the `scope` param, and Google rejects any value that
             # is not a subset of what the token was actually granted
             # (invalid_scope). Omitting it yields an access token carrying the
-            # token's full granted scopes (gmail send + read), which is what we
-            # authorized once out-of-band.
+            # token's full granted scopes, which is what we authorized once
+            # out-of-band.
+            #
+            # Since the scopes appear nowhere in code, this is their only
+            # record: a replacement token must be minted with
+            # https://www.googleapis.com/auth/gmail.send plus
+            # https://www.googleapis.com/auth/gmail.readonly — send, plus
+            # messages.get / messages.list / threads.get. Nothing here modifies
+            # the mailbox, so gmail.modify is not needed.
             credentials = Credentials(
                 token=None,
                 refresh_token=self._refresh_token,
@@ -333,11 +375,11 @@ class GmailClient:
             raise RuntimeError(f"Gmail API error during {operation}") from error
 
     def _build_mime(
-        self, to, cc, subject, body, rfc822_message_id, in_reply_to, references
+        self, to, cc, subject, body, sender, rfc822_message_id, in_reply_to, references
     ):
         """Assemble a multipart/alternative message (plain fallback + HTML)."""
         message = MIMEMultipart("alternative")
-        message["From"] = self._sender
+        message["From"] = sender
         message["To"] = ", ".join(to)
         if cc:
             message["Cc"] = ", ".join(cc)

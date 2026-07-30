@@ -7,7 +7,7 @@ from backend.common.environment_constants import (
     GMAIL_CLIENT_ID,
     GMAIL_CLIENT_SECRET,
     GMAIL_REFRESH_TOKEN,
-    GMAIL_SENDER_ADDRESS,
+    GMAIL_SENDER_RECRUITING,
     MENTORSHIP_CALENDAR_ID,
     INTERVIEW_CALENDAR_ID,
     USER_EMAIL,
@@ -250,7 +250,7 @@ class TestAppDependencyBuilder(TestCase):
             GMAIL_CLIENT_ID: "gmail-client-id",
             GMAIL_CLIENT_SECRET: "gmail-client-secret",
             GMAIL_REFRESH_TOKEN: "gmail-refresh-token",
-            GMAIL_SENDER_ADDRESS: "recruiting@circlecat.org",
+            GMAIL_SENDER_RECRUITING: "recruiting@circlecat.org",
             # Both scenario calendars must be configured for the app to build:
             # the builder raises on a missing one rather than letting a service
             # fall back to the impersonated account's primary calendar.
@@ -812,6 +812,16 @@ class TestAppDependencyBuilder(TestCase):
         )
         self.assertEqual(
             builder.mentorship_controller, mock_mentorship_controller_cls.return_value
+        )
+        # Neither GmailClient nor EmailConversationService is patched here, so
+        # forgetting to pass the recruiting sender is a TypeError at build time.
+        # These two assert it is the *right* variable: the client must own the
+        # address it is asked to send as, and the conversation service must send
+        # as that same address.
+        self.assertTrue(builder.gmail_client.owns_address("recruiting@circlecat.org"))
+        self.assertEqual(
+            builder.email_conversation_service.sender_address,
+            "recruiting@circlecat.org",
         )
 
 

@@ -24,9 +24,3 @@ variable "gmail_refresh_token" {
   type        = string
   sensitive   = true
 }
-
-variable "gmail_sender_address" {
-  description = "Mailbox the app sends candidate emails from (the real recruiting sender in prod)."
-  type        = string
-}
-
