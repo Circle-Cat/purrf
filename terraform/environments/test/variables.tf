@@ -31,14 +31,7 @@ variable "gmail_client_secret" {
 }
 
 variable "gmail_refresh_token" {
-  description = "OAuth refresh token for the sender mailbox. Minted once via interactive consent; supply via TF_VAR."
+  description = "OAuth refresh token for purrf@circlecat.org, the mailbox non-prod sends and reads as. Minted once via interactive consent (gmail.send + gmail.readonly); supply via TF_VAR."
   type        = string
   sensitive   = true
 }
-
-variable "gmail_sender_address" {
-  description = "Mailbox the app sends candidate emails from (a test mailbox in this environment)."
-  type        = string
-}
-
-

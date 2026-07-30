@@ -77,8 +77,17 @@ AUTH0_M2M_AUDIENCE = "AUTH0_M2M_AUDIENCE"
 EMAIL_OTP_STATE_JWT_SECRET = "EMAIL_OTP_STATE_JWT_SECRET"
 
 # Company-wide Gmail account used to send and read candidate email, authorized
-# once via OAuth2 refresh token (no in-app OAuth flow). The sender address must
-# be a real, receivable mailbox (e.g. recruiting@circlecat.org) — never noreply@.
+# once via OAuth2 refresh token (no in-app OAuth flow). The refresh token must
+# carry the gmail.send and gmail.readonly scopes.
+#
+# The From address is per sending service, not per mailbox: one mailbox can send
+# as several verified Send-As addresses, so each service gets its own variable
+# (GMAIL_SENDER_RECRUITING today; a notification one when that feature sends
+# mail). Each must be a real, receivable address (e.g. recruiting@circlecat.org)
+# — never noreply@ — and must be registered and verified as a Send-As on the
+# mailbox the refresh token belongs to, or Gmail silently rewrites the From to
+# the mailbox owner. Every environment sets its own value so a test mail is
+# recognisable as one; the code never knows which environment it is in.
 #
 # GmailClient is built eagerly at startup, so these must be set for the app to
 # boot — but for LOCAL development you can use any placeholder values (e.g.
@@ -88,4 +97,4 @@ EMAIL_OTP_STATE_JWT_SECRET = "EMAIL_OTP_STATE_JWT_SECRET"
 GMAIL_CLIENT_ID = "GMAIL_CLIENT_ID"
 GMAIL_CLIENT_SECRET = "GMAIL_CLIENT_SECRET"
 GMAIL_REFRESH_TOKEN = "GMAIL_REFRESH_TOKEN"
-GMAIL_SENDER_ADDRESS = "GMAIL_SENDER_ADDRESS"
+GMAIL_SENDER_RECRUITING = "GMAIL_SENDER_RECRUITING"
