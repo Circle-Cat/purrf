@@ -3959,7 +3959,9 @@ describe("ApplicationDetailPage — interview meeting card & scheduling", () => 
 
     expect(screen.getByText(/still on the calendar/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Edit" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Edit" }),
+    ).not.toBeInTheDocument();
   });
 
   it("shows a read.all non-owner viewer the card's state with no controls", async () => {
@@ -3984,7 +3986,9 @@ describe("ApplicationDetailPage — interview meeting card & scheduling", () => 
       screen.getByText("meet.google.com/abc-defg-hij"),
     ).toBeInTheDocument();
     // ...none of the owner's controls.
-    expect(screen.queryByRole("button", { name: "Edit" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Edit" }),
+    ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Cancel" }),
     ).not.toBeInTheDocument();
@@ -4153,7 +4157,11 @@ describe("ApplicationDetailPage — interview meeting card & scheduling", () => 
     authState.userId = OWNER_ID;
     api.getApplicationDetail
       .mockResolvedValueOnce({
-        data: makeDetail({ isOwner: true, assigneeId: null, stage: "behavioral" }),
+        data: makeDetail({
+          isOwner: true,
+          assigneeId: null,
+          stage: "behavioral",
+        }),
       })
       .mockResolvedValue({
         data: makeDetail({
@@ -4169,7 +4177,9 @@ describe("ApplicationDetailPage — interview meeting card & scheduling", () => 
     await user.click(screen.getByRole("button", { name: "Schedule meeting" }));
     await user.click(screen.getByRole("combobox", { name: "Interviewer" }));
     const listbox = await screen.findByRole("listbox");
-    await user.click(within(listbox).getByText("Eve Evaluator (eve@example.com)"));
+    await user.click(
+      within(listbox).getByText("Eve Evaluator (eve@example.com)"),
+    );
     fireEvent.change(screen.getByLabelText("Date"), {
       target: { value: "2026-08-05" },
     });

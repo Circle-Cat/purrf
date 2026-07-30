@@ -16,7 +16,9 @@ vi.mock("@/components/common/TimezoneSelector", () => ({
       value={value}
       onChange={(e) => onChange({ value: e.target.value })}
     >
-      <option value="America/Los_Angeles">Pacific Time (US &amp; Canada)</option>
+      <option value="America/Los_Angeles">
+        Pacific Time (US &amp; Canada)
+      </option>
       <option value="America/New_York">Eastern Time (US &amp; Canada)</option>
     </select>
   ),
@@ -156,7 +158,11 @@ describe("InterviewMeetingDialog", () => {
   });
 
   it("prefills every field from the existing booking in edit mode", () => {
-    renderDialog({ mode: "edit", interview: INTERVIEW, defaultAssigneeId: null });
+    renderDialog({
+      mode: "edit",
+      interview: INTERVIEW,
+      defaultAssigneeId: null,
+    });
     expect(screen.getByLabelText("Date")).toHaveValue("2026-08-05");
     expect(screen.getByLabelText("Start time")).toHaveValue("14:00");
     expect(
@@ -172,9 +178,7 @@ describe("InterviewMeetingDialog", () => {
 
   it("warns that attendees will be notified in edit mode", () => {
     renderDialog({ mode: "edit", interview: INTERVIEW });
-    expect(
-      screen.getByText(/attendees will be notified/i),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/attendees will be notified/i)).toBeInTheDocument();
   });
 
   it("lists the invitees and names the organizer", () => {

@@ -513,7 +513,9 @@ class UpdateTest(_BaseTest):
             OWNER_ID: SimpleNamespace(first_name="Rae", last_name="Recruiter"),
             new_assignee: SimpleNamespace(first_name="Sam", last_name="Sub"),
         })
-        dto = self._dto(assignee_id=new_assignee, day=date(2026, 8, 6), start_time="15:00")
+        dto = self._dto(
+            assignee_id=new_assignee, day=date(2026, 8, 6), start_time="15:00"
+        )
         await self.service.update(
             self.session, self._ctx(user_id=OWNER_ID), APPLICATION_ID, dto
         )

@@ -18,9 +18,7 @@ const INTERVIEW = {
 
 describe("InterviewMeetingCard", () => {
   it("offers scheduling when nothing is booked", () => {
-    render(
-      <InterviewMeetingCard interview={null} round={1} />,
-    );
+    render(<InterviewMeetingCard interview={null} round={1} />);
     expect(screen.getByText("Interview Meeting")).toBeInTheDocument();
     expect(screen.getByText("Not scheduled")).toBeInTheDocument();
     expect(
@@ -32,11 +30,7 @@ describe("InterviewMeetingCard", () => {
     // The interviewer is picked inside the dialog, so an unassigned round
     // must not block the entry point.
     render(
-      <InterviewMeetingCard
-        interview={null}
-        round={1}
-        assigneeId={null}
-      />,
+      <InterviewMeetingCard interview={null} round={1} assigneeId={null} />,
     );
     expect(
       screen.getByRole("button", { name: "Schedule meeting" }),
@@ -44,9 +38,7 @@ describe("InterviewMeetingCard", () => {
   });
 
   it("renders the booked time in the stored zone, naming the zone in IANA form", () => {
-    render(
-      <InterviewMeetingCard interview={INTERVIEW} round={1} />,
-    );
+    render(<InterviewMeetingCard interview={INTERVIEW} round={1} />);
     // 21:00Z on 2026-08-05 is 14:00 in America/Los_Angeles.
     expect(screen.getByText(/2026-08-05/)).toBeInTheDocument();
     expect(screen.getByText(/14:00 - 14:45/)).toBeInTheDocument();
@@ -56,9 +48,7 @@ describe("InterviewMeetingCard", () => {
   });
 
   it("shows the meet link and both actions once booked", () => {
-    render(
-      <InterviewMeetingCard interview={INTERVIEW} round={1} />,
-    );
+    render(<InterviewMeetingCard interview={INTERVIEW} round={1} />);
     expect(
       screen.getByText("meet.google.com/abc-defg-hij"),
     ).toBeInTheDocument();
@@ -69,7 +59,11 @@ describe("InterviewMeetingCard", () => {
   it("marks a meeting whose time has passed as Past", () => {
     render(
       <InterviewMeetingCard
-        interview={{ ...INTERVIEW, startAt: "2020-01-01T00:00:00Z", endAt: "2020-01-01T00:45:00Z" }}
+        interview={{
+          ...INTERVIEW,
+          startAt: "2020-01-01T00:00:00Z",
+          endAt: "2020-01-01T00:45:00Z",
+        }}
         round={1}
       />,
     );
@@ -85,16 +79,8 @@ describe("InterviewMeetingCard", () => {
   });
 
   it("warns and drops Edit when the application is terminal", () => {
-    render(
-      <InterviewMeetingCard
-        interview={INTERVIEW}
-        round={1}
-        isTerminal
-      />,
-    );
-    expect(
-      screen.getByText(/still on the calendar/i),
-    ).toBeInTheDocument();
+    render(<InterviewMeetingCard interview={INTERVIEW} round={1} isTerminal />);
+    expect(screen.getByText(/still on the calendar/i)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
     expect(screen.getByRole("button", { name: "Cancel" })).toBeEnabled();
   });
@@ -110,7 +96,9 @@ describe("InterviewMeetingCard", () => {
         onSchedule={onSchedule}
       />,
     );
-    await userEvent.click(screen.getByRole("button", { name: "Schedule meeting" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Schedule meeting" }),
+    );
     expect(onSchedule).toHaveBeenCalledTimes(1);
 
     rerender(
@@ -129,11 +117,7 @@ describe("InterviewMeetingCard", () => {
 
   it("shows a read.all viewer the booked state with no controls", () => {
     render(
-      <InterviewMeetingCard
-        interview={INTERVIEW}
-        round={1}
-        isOwner={false}
-      />,
+      <InterviewMeetingCard interview={INTERVIEW} round={1} isOwner={false} />,
     );
     // Same state a read.all viewer is entitled to see...
     expect(screen.getByText(/2026-08-05/)).toBeInTheDocument();
@@ -148,13 +132,7 @@ describe("InterviewMeetingCard", () => {
   });
 
   it("shows a read.all viewer the not-scheduled state with no Schedule button", () => {
-    render(
-      <InterviewMeetingCard
-        interview={null}
-        round={1}
-        isOwner={false}
-      />,
-    );
+    render(<InterviewMeetingCard interview={null} round={1} isOwner={false} />);
     expect(screen.getByText("Not scheduled")).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Schedule meeting" }),

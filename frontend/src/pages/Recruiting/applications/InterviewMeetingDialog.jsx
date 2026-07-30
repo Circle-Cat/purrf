@@ -199,7 +199,10 @@ const InterviewMeetingDialog = ({
             </div>
             <div className="min-w-0 space-y-1.5">
               <Label>Timezone</Label>
-              <TimezoneSelector value={timezone} onChange={handleTimezoneChange} />
+              <TimezoneSelector
+                value={timezone}
+                onChange={handleTimezoneChange}
+              />
             </div>
           </div>
 

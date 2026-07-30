@@ -465,12 +465,16 @@ const describeActivity = ({ eventType, details }, jobKind) => {
       // rendered in that same zone. Usually correct (the zone rarely
       // changes independently of the slot); flagged here rather than
       // silently assumed.
-      const oldWhen = formatInterviewWhen(details.fromStartAt, details.timezone);
+      const oldWhen = formatInterviewWhen(
+        details.fromStartAt,
+        details.timezone,
+      );
       const timeChanged =
         details.fromStartAt !== details.startAt ||
         details.fromEndAt !== details.endAt;
       const assigneeChanged = details.fromAssigneeId !== details.assigneeId;
-      const timeRange = oldWhen && newWhen ? ` from ${oldWhen} to ${newWhen}` : "";
+      const timeRange =
+        oldWhen && newWhen ? ` from ${oldWhen} to ${newWhen}` : "";
       const fromAssignee = details.fromAssigneeName ?? "unassigned";
       const toAssignee = details.assigneeName ?? "unassigned";
 
@@ -1462,7 +1466,8 @@ const ApplicationDetailPage = () => {
   const handleInterviewSubmit = (body) => {
     if (interviewBusy) return;
     setInterviewBusy(true);
-    const call = interviewDialogMode === "edit" ? updateInterview : scheduleInterview;
+    const call =
+      interviewDialogMode === "edit" ? updateInterview : scheduleInterview;
     call(applicationId, body)
       .then(() => {
         toast.success(
@@ -1956,8 +1961,7 @@ const ApplicationDetailPage = () => {
           </DialogHeader>
           <p className="text-sm text-slate-700">
             Schedule this interview's meeting first — booking one (see the
-            Interview Meeting card above) assigns the interviewer
-            automatically.
+            Interview Meeting card above) assigns the interviewer automatically.
           </p>
           <DialogFooter>
             <Button onClick={() => setScheduleAssigneeWarningOpen(false)}>
