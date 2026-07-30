@@ -71,6 +71,8 @@ from backend.internal_activity_service.summary_service import SummaryService
 from backend.common.environment_constants import (
     JIRA_SERVER,
     JIRA_USER,
+    MENTORSHIP_CALENDAR_ID,
+    INTERVIEW_CALENDAR_ID,
 )
 from backend.historical_data.google_chat_history_sync_service import (
     GoogleChatHistorySyncService,
@@ -187,6 +189,17 @@ class AppDependencyBuilder:
     def __init__(self):
         jira_server = os.getenv(JIRA_SERVER)
         jira_user = os.getenv(JIRA_USER)
+
+        # Each scenario writes to its own per-environment Calendar container.
+        # Missing values fail here, at startup: a service falling back to the
+        # impersonated account's primary calendar is exactly what lets one
+        # environment's delete or reschedule reach another environment's event.
+        mentorship_calendar_id = os.getenv(MENTORSHIP_CALENDAR_ID)
+        if not mentorship_calendar_id:
+            raise ValueError(f"Missing environment variable: {MENTORSHIP_CALENDAR_ID}")
+        interview_calendar_id = os.getenv(INTERVIEW_CALENDAR_ID)
+        if not interview_calendar_id:
+            raise ValueError(f"Missing environment variable: {INTERVIEW_CALENDAR_ID}")
 
         self.logger = get_logger()
         self.retry_utils = RetryUtils()
@@ -506,6 +519,7 @@ class AppDependencyBuilder:
             mentorship_mapper=self.mentorship_mapper,
             users_repository=self.users_repository,
             meeting_scheduling_service=self.meeting_scheduling_service,
+            mentorship_calendar_id=mentorship_calendar_id,
         )
         self.meet_attendance_service = MeetAttendanceService(
             logger=self.logger,
@@ -669,6 +683,7 @@ class AppDependencyBuilder:
             self.user_emails_repository,
             self.meeting_scheduling_service,
             self.recruiting_mapper,
+            interview_calendar_id,
         )
         self.board_service = BoardService(
             self.job_repository,

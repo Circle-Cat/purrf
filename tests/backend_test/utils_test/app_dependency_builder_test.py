@@ -8,6 +8,8 @@ from backend.common.environment_constants import (
     GMAIL_CLIENT_SECRET,
     GMAIL_REFRESH_TOKEN,
     GMAIL_SENDER_ADDRESS,
+    MENTORSHIP_CALENDAR_ID,
+    INTERVIEW_CALENDAR_ID,
 )
 
 
@@ -248,6 +250,15 @@ class TestAppDependencyBuilder(TestCase):
             GMAIL_CLIENT_SECRET: "gmail-client-secret",
             GMAIL_REFRESH_TOKEN: "gmail-refresh-token",
             GMAIL_SENDER_ADDRESS: "recruiting@circlecat.org",
+            # Both scenario calendars must be configured for the app to build:
+            # the builder raises on a missing one rather than letting a service
+            # fall back to the impersonated account's primary calendar.
+            #
+            # There is no InterviewSchedulingService assertion further down on
+            # purpose -- that class is not patched in this test, so the builder
+            # forgetting to pass the id is a TypeError right here.
+            MENTORSHIP_CALENDAR_ID: "cal-mentorship",
+            INTERVIEW_CALENDAR_ID: "cal-interview",
         }.get(key)
 
         mock_gerrit_client = mock_gerrit_client_cls.return_value
@@ -554,6 +565,7 @@ class TestAppDependencyBuilder(TestCase):
             mentorship_mapper=mock_mentorship_mapper_cls.return_value,
             users_repository=mock_users_repo_cls.return_value,
             meeting_scheduling_service=mock_meeting_scheduling_service_cls.return_value,
+            mentorship_calendar_id="cal-mentorship",
         )
 
         mock_fast_app_factory_cls.assert_called_once_with(

@@ -94,6 +94,7 @@ class _BaseTest(unittest.IsolatedAsyncioTestCase):
             self.user_emails_repo,
             self.meeting_svc,
             self.mapper,
+            "cal-interview",
         )
 
         # Candidate/interviewer/recruiter are ALL fetched through
@@ -241,6 +242,20 @@ class ScheduleTest(_BaseTest):
         )
         passed_summary = self.meeting_svc.schedule.call_args.args[1]
         self.assertEqual(passed_summary, "Ana/Circle Cat, Technical")
+
+    async def test_books_on_the_configured_interview_calendar(self):
+        """The injected container must reach the shared scheduling service.
+
+        That service is an AsyncMock here, so nothing else in this file would
+        go red if the argument stopped being passed -- this assertion is the
+        only guard against interviews silently landing on the shared primary
+        calendar, where a non-prod delete can reach a real prod event.
+        """
+        await self.service.schedule(
+            self.session, self._ctx(), APPLICATION_ID, self._dto()
+        )
+        call_kwargs = self.meeting_svc.schedule.call_args.kwargs
+        self.assertEqual(call_kwargs["calendar_id"], "cal-interview")
 
     async def test_invites_candidate_interviewer_and_the_acting_recruiter(self):
         await self.service.schedule(
@@ -436,6 +451,22 @@ class UpdateTest(_BaseTest):
         self.assertEqual(self.existing.scheduled_by, OWNER_ID)
         self.assertEqual(result.scheduled_by_name, "Rae Recruiter")
 
+    async def test_patches_on_the_configured_interview_calendar(self):
+        """A reschedule must name the same container the booking went to.
+
+        A patch aimed at the wrong calendar does not fail the way a delete
+        does: if the id exists there, it moves that event and mails everyone
+        the change.
+        """
+        await self.service.update(
+            self.session,
+            self._ctx(user_id=OWNER_ID),
+            APPLICATION_ID,
+            self._dto(day=date(2026, 8, 6), start_time="15:00"),
+        )
+        call_kwargs = self.meeting_svc.update.call_args.kwargs
+        self.assertEqual(call_kwargs["calendar_id"], "cal-interview")
+
     async def test_swaps_the_interviewer_and_overwrites_the_assignment(self):
         new_assignee = 55
         self._users_by_id({
@@ -582,7 +613,9 @@ class CancelTest(_BaseTest):
         self.activity_repo.create.assert_awaited_once()
         args, _kwargs = self.activity_repo.create.call_args
         self.assertEqual(args[3], "interview_cancelled")
-        self.meeting_svc.cancel.assert_awaited_once_with(["evt-1"])
+        self.meeting_svc.cancel.assert_awaited_once_with(
+            ["evt-1"], calendar_id="cal-interview"
+        )
         self.session.commit.assert_awaited_once()
 
     async def test_interview_cancelled_activity_carries_the_full_detail_set(self):
@@ -697,7 +730,9 @@ class CancelForRoundTest(_BaseTest):
         cancelled = await self._cancel_for_round()
 
         self.assertTrue(cancelled)
-        self.meeting_svc.cancel.assert_awaited_once_with(["evt-1"])
+        self.meeting_svc.cancel.assert_awaited_once_with(
+            ["evt-1"], calendar_id="cal-interview"
+        )
         self.interview_repo.delete.assert_awaited_once_with(self.session, self.existing)
 
     async def test_looks_up_the_round_it_was_handed_not_the_current_one(self):

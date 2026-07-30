@@ -35,6 +35,7 @@ class TestMeetingServiceV1(unittest.IsolatedAsyncioTestCase):
             mentorship_mapper=self.mock_mapper,
             users_repository=self.mock_users_repo,
             meeting_scheduling_service=self.mock_meeting_scheduling_service,
+            mentorship_calendar_id="cal-mentorship",
         )
 
         self.user_id = 1
@@ -199,6 +200,7 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
             mentorship_mapper=MagicMock(),
             users_repository=self.mock_users_repository,
             meeting_scheduling_service=self.mock_meeting_scheduling_service,
+            mentorship_calendar_id="cal-mentorship",
         )
 
         self.mock_current_user = MagicMock()
@@ -243,6 +245,7 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
             mentorship_mapper=self.mock_mapper,
             users_repository=self.mock_users_repository,
             meeting_scheduling_service=self.mock_meeting_scheduling_service,
+            mentorship_calendar_id="cal-mentorship",
         )
 
         self.user_id = 1
@@ -325,6 +328,11 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(call_kwargs["start_utc"], self.start_dt)
         self.assertEqual(call_kwargs["end_utc"], self.end_dt)
         self.assertEqual(call_kwargs["attendee_user_ids"], [1, 2])
+        # The injected container must reach the shared service. Note that
+        # service is an AsyncMock here, so nothing else in this file would go
+        # red if MeetingService stopped passing it -- this assertion is the
+        # only guard against silently falling back to the shared calendar.
+        self.assertEqual(call_kwargs["calendar_id"], "cal-mentorship")
 
     async def test_create_google_meeting_persists_meeting_log(self):
         """Test that meeting result is persisted to meeting_log."""
@@ -496,7 +504,9 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
         )
 
         self.mock_mentorship_pairs_repository.do_google_meetings_exist_in_log.assert_awaited_once()
-        self.mock_meeting_scheduling_service.cancel.assert_awaited_once_with(["abc"])
+        self.mock_meeting_scheduling_service.cancel.assert_awaited_once_with(
+            ["abc"], calendar_id="cal-mentorship"
+        )
         self.mock_mentorship_pairs_repository.remove_meetings_from_log.assert_awaited_once_with(
             session=self.mock_session,
             user_id=self.user_id,

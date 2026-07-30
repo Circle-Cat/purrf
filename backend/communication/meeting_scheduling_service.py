@@ -66,7 +66,9 @@ class MeetingSchedulingService:
                 emails.append(email)
         return emails
 
-    async def schedule(self, session, summary, start_utc, end_utc, attendee_user_ids):
+    async def schedule(
+        self, session, summary, start_utc, end_utc, attendee_user_ids, calendar_id
+    ):
         """Create a Calendar event with a Meet link and invite the attendees.
 
         Google mails the invitations itself (``sendUpdates="all"`` inside
@@ -88,6 +90,10 @@ class MeetingSchedulingService:
             end_utc (datetime): End, tz-aware UTC.
             attendee_user_ids (list[int]): Users to invite; ones without a
                 contact address are skipped (see ``resolve_attendee_emails``).
+            calendar_id (str): The calendar to act on. Passed straight
+                through to GoogleService: this service is domain-agnostic and
+                must not know which scenario owns which container, so it
+                neither stores a calendar id nor has a default.
 
         Returns:
             dict: ``google_event_id`` / ``meet_link`` / ``entry_points`` /
@@ -106,6 +112,7 @@ class MeetingSchedulingService:
             end_time=end_utc,
             attendees_emails=attendees_emails,
             request_id=str(uuid.uuid4()),
+            calendar_id=calendar_id,
             event_id=uuid.uuid4().hex,
         )
         conference = event.get("conferenceData") or {}
@@ -129,7 +136,9 @@ class MeetingSchedulingService:
             "created": event.get("created", ""),
         }
 
-    async def update(self, session, event_id, start_utc, end_utc, attendee_user_ids):
+    async def update(
+        self, session, event_id, start_utc, end_utc, attendee_user_ids, calendar_id
+    ):
         """Move an existing meeting and/or replace who is invited.
 
         Does **not** re-open the Meet space: the conference already exists and
@@ -143,6 +152,10 @@ class MeetingSchedulingService:
             end_utc (datetime): New end, tz-aware UTC.
             attendee_user_ids (list[int]): The complete attendee list after the
                 change (not a delta).
+            calendar_id (str): The calendar to act on. Passed straight
+                through to GoogleService: this service is domain-agnostic and
+                must not know which scenario owns which container, so it
+                neither stores a calendar id nor has a default.
 
         Returns:
             dict: Same shape as ``schedule``.
@@ -160,6 +173,7 @@ class MeetingSchedulingService:
             start_time=start_utc,
             end_time=end_utc,
             attendees_emails=attendees_emails,
+            calendar_id=calendar_id,
         )
         conference = event.get("conferenceData") or {}
         return {
@@ -170,7 +184,7 @@ class MeetingSchedulingService:
             "created": event.get("created", ""),
         }
 
-    async def cancel(self, event_ids):
+    async def cancel(self, event_ids, calendar_id):
         """Delete Calendar events; Google mails the cancellations.
 
         An event already absent from Calendar counts as succeeded — deletion
@@ -178,6 +192,10 @@ class MeetingSchedulingService:
 
         Args:
             event_ids (list[str]): Calendar event ids to delete.
+            calendar_id (str): The calendar to act on. Passed straight
+                through to GoogleService: this service is domain-agnostic and
+                must not know which scenario owns which container, so it
+                neither stores a calendar id nor has a default.
 
         Returns:
             tuple[list[str], list[str]]: Succeeded ids, failed ids.
@@ -185,4 +203,5 @@ class MeetingSchedulingService:
         return await asyncio.to_thread(
             self.google_service.batch_delete_google_meetings,
             event_ids=event_ids,
+            calendar_id=calendar_id,
         )

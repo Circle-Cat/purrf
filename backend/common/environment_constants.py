@@ -50,6 +50,18 @@ MENTORSHIP_MENTEE_ONBOARDING_LINK = "MENTORSHIP_MENTEE_ONBOARDING_LINK"
 
 RESUME_BUCKET = "RESUME_BUCKET"
 
+# Google Calendar containers that app-created meetings live on, one per
+# scenario. Each environment points at its own secondary calendar under
+# USER_EMAIL, so a delete or a reschedule driven by one environment's data
+# cannot reach another environment's events -- Calendar event ids are scoped
+# per calendar, not globally.
+#
+# There is deliberately NO default and NO fallback to "primary": a missing
+# value must fail at startup, because silently writing to the account's primary
+# calendar is exactly the behaviour these variables exist to eliminate.
+MENTORSHIP_CALENDAR_ID = "MENTORSHIP_CALENDAR_ID"
+INTERVIEW_CALENDAR_ID = "INTERVIEW_CALENDAR_ID"
+
 # Auth0 multi-IdP email OTP / account-link flow.
 # Passwordless app drives the OTP send + verify; the M2M app holds Management
 # API credentials for identity linking and app_metadata writes.

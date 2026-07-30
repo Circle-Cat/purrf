@@ -548,7 +548,9 @@ class TestGoogleService(TestCase):
             mock_batch
         )
 
-        result = self.service.batch_delete_google_meetings(["event-1", "event-2"])
+        result = self.service.batch_delete_google_meetings(
+            ["event-1", "event-2"], calendar_id="cal-mentorship"
+        )
 
         self.mock_retry_utils.get_retry_on_transient.assert_called_once_with(
             mock_batch.execute
@@ -563,7 +565,9 @@ class TestGoogleService(TestCase):
         )
         self.mock_retry_utils.get_retry_on_transient.side_effect = Exception("fail")
 
-        result = self.service.batch_delete_google_meetings(["event-1"])
+        result = self.service.batch_delete_google_meetings(
+            ["event-1"], calendar_id="cal-mentorship"
+        )
 
         self.assertEqual(result, ([], ["event-1"]))
 
@@ -583,7 +587,9 @@ class TestGoogleService(TestCase):
         )
         mock_batch.add.side_effect = add
 
-        result = self.service.batch_delete_google_meetings(["event-1", "event-2"])
+        result = self.service.batch_delete_google_meetings(
+            ["event-1", "event-2"], calendar_id="cal-mentorship"
+        )
 
         self.mock_retry_utils.get_retry_on_transient.assert_called_once_with(
             mock_batch.execute
@@ -624,10 +630,9 @@ class TestGoogleService(TestCase):
             with self.subTest(status=status):
                 self._batch_with_callback({"event-2": make_http_error(status)})
 
-                result = self.service.batch_delete_google_meetings([
-                    "event-1",
-                    "event-2",
-                ])
+                result = self.service.batch_delete_google_meetings(
+                    ["event-1", "event-2"], calendar_id="cal-mentorship"
+                )
 
                 self.assertEqual(result, (["event-1", "event-2"], []))
 
@@ -637,7 +642,9 @@ class TestGoogleService(TestCase):
             "event-2": make_http_error(HTTPStatus.FORBIDDEN, "forbidden")
         })
 
-        result = self.service.batch_delete_google_meetings(["event-1", "event-2"])
+        result = self.service.batch_delete_google_meetings(
+            ["event-1", "event-2"], calendar_id="cal-mentorship"
+        )
 
         self.assertEqual(result, (["event-1"], ["event-2"]))
 
@@ -652,15 +659,43 @@ class TestGoogleService(TestCase):
         self._batch_with_callback({"event-1": None})
         self.mock_retry_utils.get_retry_on_transient.side_effect = Exception("network")
 
-        result = self.service.batch_delete_google_meetings(["event-1", "event-2"])
+        result = self.service.batch_delete_google_meetings(
+            ["event-1", "event-2"], calendar_id="cal-mentorship"
+        )
 
         self.assertEqual(result, (["event-1"], ["event-2"]))
+
+    def test_batch_delete_google_meetings_uses_the_given_calendar(self):
+        """Deletes must target the caller's calendar, never "primary".
+
+        The ids come from this environment's own database; aiming them at the
+        shared primary calendar is what let a non-prod delete remove a prod
+        event. A wrong calendar answers 404, which this method (correctly)
+        counts as deleted — so the mistake leaves no trace in the logs.
+        """
+        mock_batch = MagicMock()
+        self.mock_google_calendar_client.new_batch_http_request.return_value = (
+            mock_batch
+        )
+
+        self.service.batch_delete_google_meetings(
+            ["event-1"], calendar_id="cal-mentorship"
+        )
+
+        kwargs = self._calendar_events().delete.call_args.kwargs
+        self.assertEqual(kwargs["calendarId"], "cal-mentorship")
+        self.assertEqual(kwargs["eventId"], "event-1")
+
+    def test_batch_delete_google_meetings_requires_a_calendar_id(self):
+        """Same no-default rule as insert, on the path automation drives."""
+        with self.assertRaises(TypeError):
+            self.service.batch_delete_google_meetings(["event-1"])
 
     def _calendar_events(self):
         """The mocked Calendar ``events()`` resource."""
         return self.mock_google_calendar_client.events.return_value
 
-    def _insert_meeting(self, event_id="evt-1"):
+    def _insert_meeting(self, event_id="evt-1", calendar_id="cal-mentorship"):
         """Call insert_google_meeting with fixed, uninteresting meeting details."""
         return self.service.insert_google_meeting(
             summary="Mentorship: A / B",
@@ -668,8 +703,26 @@ class TestGoogleService(TestCase):
             end_time=datetime(2026, 8, 1, 1, 45, tzinfo=timezone.utc),
             attendees_emails=["a@example.com", "b@example.com"],
             request_id="req-1",
+            calendar_id=calendar_id,
             event_id=event_id,
         )
+
+    def test_insert_google_meeting_requires_a_calendar_id(self):
+        """calendar_id has no default: omitting it must fail loudly.
+
+        A default of "primary" would silently write to the impersonated
+        account's own calendar, which is the cross-environment leak this
+        parameter exists to close. A TypeError at the call site is the desired
+        outcome.
+        """
+        with self.assertRaises(TypeError):
+            self.service.insert_google_meeting(
+                summary="Mentorship: A / B",
+                start_time=datetime(2026, 8, 1, 1, 0, tzinfo=timezone.utc),
+                end_time=datetime(2026, 8, 1, 1, 45, tzinfo=timezone.utc),
+                attendees_emails=["a@example.com"],
+                request_id="req-1",
+            )
 
     def test_insert_google_meeting_success(self):
         """Test a created event is returned as-is and requests a Meet conference."""
@@ -680,7 +733,7 @@ class TestGoogleService(TestCase):
 
         self.assertEqual(result, expected)
         kwargs = self._calendar_events().insert.call_args.kwargs
-        self.assertEqual(kwargs["calendarId"], "primary")
+        self.assertEqual(kwargs["calendarId"], "cal-mentorship")
         self.assertEqual(kwargs["conferenceDataVersion"], 1)
         self.assertEqual(kwargs["sendUpdates"], "all")
         self.assertEqual(kwargs["body"]["id"], "evt-1")
@@ -705,7 +758,7 @@ class TestGoogleService(TestCase):
 
         self.assertEqual(result, existing)
         self._calendar_events().get.assert_called_once_with(
-            calendarId="primary", eventId="evt-1"
+            calendarId="cal-mentorship", eventId="evt-1"
         )
 
     def test_insert_google_meeting_raises_when_recovered_event_is_cancelled(self):
@@ -773,10 +826,12 @@ class UpdateGoogleMeetingTest(TestCase):
         start = datetime(2026, 8, 7, 21, 0, tzinfo=timezone.utc)
         end = datetime(2026, 8, 7, 21, 45, tzinfo=timezone.utc)
 
-        self.service.update_google_meeting("evt-1", start, end, ["ana@example.com"])
+        self.service.update_google_meeting(
+            "evt-1", start, end, ["ana@example.com"], calendar_id="cal-interview"
+        )
 
         _, kwargs = patch_call.call_args
-        self.assertEqual(kwargs["calendarId"], "primary")
+        self.assertEqual(kwargs["calendarId"], "cal-interview")
         self.assertEqual(kwargs["eventId"], "evt-1")
         self.assertEqual(kwargs["sendUpdates"], "all")
         # conferenceData must be absent — touching it would replace the Meet
@@ -784,6 +839,21 @@ class UpdateGoogleMeetingTest(TestCase):
         self.assertNotIn("conferenceData", kwargs["body"])
         self.assertEqual(set(kwargs["body"]), {"start", "end", "attendees"})
         self.assertEqual(kwargs["body"]["attendees"], [{"email": "ana@example.com"}])
+
+    def test_requires_a_calendar_id(self):
+        """No default here either, and this path is the dangerous one.
+
+        Unlike a delete, a patch aimed at the wrong calendar does not quietly
+        404: if the id exists there it moves that event and mails everyone the
+        change. Silent corruption, not a silent no-op.
+        """
+        with self.assertRaises(TypeError):
+            self.service.update_google_meeting(
+                "evt-1",
+                datetime(2026, 8, 7, tzinfo=timezone.utc),
+                datetime(2026, 8, 7, tzinfo=timezone.utc),
+                [],
+            )
 
     def test_a_missing_event_raises_meeting_gone(self):
         patch_call = self.mock_google_calendar_client.events.return_value.patch
@@ -796,6 +866,7 @@ class UpdateGoogleMeetingTest(TestCase):
                 datetime(2026, 8, 7, tzinfo=timezone.utc),
                 datetime(2026, 8, 7, tzinfo=timezone.utc),
                 [],
+                calendar_id="cal-interview",
             )
 
     def test_a_deleted_event_raises_meeting_gone(self):
@@ -807,6 +878,7 @@ class UpdateGoogleMeetingTest(TestCase):
                 datetime(2026, 8, 7, tzinfo=timezone.utc),
                 datetime(2026, 8, 7, tzinfo=timezone.utc),
                 [],
+                calendar_id="cal-interview",
             )
 
     def test_any_other_failure_raises_runtime_error(self):
@@ -818,6 +890,7 @@ class UpdateGoogleMeetingTest(TestCase):
                 datetime(2026, 8, 7, tzinfo=timezone.utc),
                 datetime(2026, 8, 7, tzinfo=timezone.utc),
                 [],
+                calendar_id="cal-interview",
             )
 
 

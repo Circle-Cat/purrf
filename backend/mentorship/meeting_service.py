@@ -32,12 +32,25 @@ class MeetingService:
         mentorship_mapper,
         users_repository,
         meeting_scheduling_service,
+        mentorship_calendar_id,
     ):
+        """
+        Args:
+            logger: Shared app logger.
+            mentorship_pairs_repository: Mentorship pair data access.
+            mentorship_mapper: Entity/DTO mapper.
+            users_repository: User data access.
+            meeting_scheduling_service: Domain-agnostic Calendar/Meet transport.
+            mentorship_calendar_id: The Google Calendar mentorship meetings are
+                created on and deleted from. Per-environment, so this
+                environment's deletes cannot reach another environment's events.
+        """
         self.logger = logger
         self.mentorship_pairs_repository = mentorship_pairs_repository
         self.mentorship_mapper = mentorship_mapper
         self.users_repository = users_repository
         self.meeting_scheduling_service = meeting_scheduling_service
+        self.mentorship_calendar_id = mentorship_calendar_id
 
     async def get_meetings_by_user_and_round(
         self, session: AsyncSession, user_context: UserContextDto, round_id: int
@@ -264,6 +277,7 @@ class MeetingService:
             start_utc=start_datetime,
             end_utc=end_datetime,
             attendee_user_ids=[current_user.user_id, partner.user_id],
+            calendar_id=self.mentorship_calendar_id,
         )
 
         meeting_detail = GoogleMeetingDetailDto(
@@ -452,7 +466,9 @@ class MeetingService:
         (
             succeeded_event_ids,
             failed_event_ids,
-        ) = await self.meeting_scheduling_service.cancel(all_meeting_ids)
+        ) = await self.meeting_scheduling_service.cancel(
+            all_meeting_ids, calendar_id=self.mentorship_calendar_id
+        )
 
         if succeeded_event_ids:
             await self.mentorship_pairs_repository.remove_meetings_from_log(
