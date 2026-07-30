@@ -346,6 +346,7 @@ class MentorshipRoundParticipantsRepository:
                 ),
             )
             .where(self._build_mentorship_eligibility_gate())
+            .where(UsersEntity.is_active.is_(True))
         )
 
         if filters.user_id is not None:
