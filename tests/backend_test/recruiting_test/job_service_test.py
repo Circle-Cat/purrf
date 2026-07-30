@@ -1,6 +1,6 @@
 import unittest
 from datetime import datetime
-from unittest.mock import AsyncMock, MagicMock, create_autospec
+from unittest.mock import AsyncMock, MagicMock
 
 from backend.recruiting.job_service import JobService
 from backend.recruiting.recruiting_mapper import RecruitingMapper
@@ -8,7 +8,6 @@ from backend.dto.job_dto import JobCreateDto
 from backend.entity.job_entity import JobEntity
 from backend.entity.job_review_entity import JobReviewEntity
 from backend.entity.users_entity import UsersEntity
-from backend.repository.notification_repository import NotificationRepository
 from backend.common.permissions import Permission
 from backend.common.recruiting_enums import (
     JobKind,
@@ -42,7 +41,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         self.review_repo.get_latest_reviews = AsyncMock(return_value={})
         self.review_repo.delete_by_job = AsyncMock()
         self.session = AsyncMock()
-        self.notification_repo = create_autospec(NotificationRepository, instance=True)
+        self.dispatcher = self._dispatcher_double()
         self.users_repo = MagicMock()
         self.users_repo.get_all_by_ids = AsyncMock(return_value=[])
         self.job_activity_repo = MagicMock()
@@ -57,11 +56,30 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
             RecruitingMapper(),
             self.perms,
             self.review_repo,
-            self.notification_repo,
+            self.dispatcher,
             self.users_repo,
             self.job_activity_repo,
             self.user_emails_repo,
         )
+
+    def _dispatcher_double(self):
+        """A dispatcher whose record/flush are observable, plus an ordering log.
+
+        `self.call_order` records commit and flush so a test can assert the
+        email flush happens *after* the transaction commits -- the whole
+        point of the two-phase design. Asserting only "both were awaited"
+        would pass even if they ran in the wrong order.
+        """
+        self.call_order = []
+        dispatcher = MagicMock()
+        dispatcher.record = AsyncMock(side_effect=lambda session, entity: entity)
+        dispatcher.flush = AsyncMock(
+            side_effect=lambda session: self.call_order.append("flush")
+        )
+        self.session.commit = AsyncMock(
+            side_effect=lambda: self.call_order.append("commit")
+        )
+        return dispatcher
 
     def _job(self, **kw):
         defaults = {"kind": JobKind.ACTIVITY, "title": "T", "status": JobStatus.DRAFT}
@@ -607,12 +625,33 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
 
         await self.service.submit_for_review(self.session, 1, 6, 9, "please review")
 
-        self.notification_repo.create.assert_awaited_once()
-        (_session_arg, entity_arg), _ = self.notification_repo.create.call_args
+        self.dispatcher.record.assert_awaited_once()
+        (_session_arg, entity_arg), _ = self.dispatcher.record.call_args
         self.assertEqual(entity_arg.user_id, 6)
         self.assertEqual(entity_arg.type, NotificationType.JOB_REVIEW_REQUESTED)
         self.assertEqual(entity_arg.job_id, 1)
         self.assertEqual(entity_arg.actor_user_id, 9)
+
+    async def test_submit_for_review_flushes_notification_emails_after_commit(self):
+        # Same setup as test_submit_for_review_notifies_the_reviewer.
+        job = JobEntity(kind=JobKind.ACTIVITY, title="T", status=JobStatus.DRAFT)
+        job.job_id = 1
+        job.pipeline_config = self._valid_pipeline(owner_id=6)
+        self.repo.get_by_job_id = AsyncMock(return_value=job)
+        self.review_repo.get_open_for_job = AsyncMock(return_value=None)
+        approver1 = UsersEntity(first_name="A", last_name="B")
+        approver1.user_id = 6
+        approver2 = UsersEntity(first_name="C", last_name="D")
+        approver2.user_id = 7
+        self.perms.get_active_users_with_permission = AsyncMock(
+            return_value=[approver1, approver2]
+        )
+
+        await self.service.submit_for_review(self.session, 1, 6, 9, "please review")
+
+        self.dispatcher.record.assert_awaited_once()
+        self.dispatcher.flush.assert_awaited_once_with(self.session)
+        self.assertEqual(self.call_order, ["commit", "flush"])
 
     async def test_submit_for_review_logs_review_opened_activity(self):
         """submit_for_review logs a review_opened activity entry."""
@@ -1694,13 +1733,34 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
 
         await self.service.approve(self.session, 100, acting_user_id=6)
 
-        self.notification_repo.create.assert_awaited_once()
-        (_session_arg, entity_arg), _ = self.notification_repo.create.call_args
+        self.dispatcher.record.assert_awaited_once()
+        (_session_arg, entity_arg), _ = self.dispatcher.record.call_args
         self.assertEqual(entity_arg.user_id, 9)
         self.assertEqual(entity_arg.type, NotificationType.JOB_REVIEW_APPROVED)
         self.assertEqual(entity_arg.job_id, 1)
         self.assertEqual(entity_arg.job_review_id, 100)
         self.assertEqual(entity_arg.actor_user_id, 6)
+
+    async def test_approve_flushes_notification_emails_after_commit(self):
+        # Same setup as test_approve_notifies_the_submitter.
+        job = JobEntity(kind=JobKind.ACTIVITY, title="T", status=JobStatus.DRAFT)
+        job.job_id = 1
+        review = JobReviewEntity(
+            job_id=1,
+            submitted_by=9,
+            reviewer_id=6,
+            status=JobReviewStatus.PENDING,
+            kind=JobReviewKind.INITIAL,
+        )
+        review.review_id = 100
+        self.review_repo.get = AsyncMock(return_value=review)
+        self.repo.get_by_job_id = AsyncMock(return_value=job)
+
+        await self.service.approve(self.session, review_id=100, acting_user_id=6)
+
+        self.dispatcher.record.assert_awaited_once()
+        self.dispatcher.flush.assert_awaited_once_with(self.session)
+        self.assertEqual(self.call_order, ["commit", "flush"])
 
     async def test_reject_notifies_the_submitter(self):
         job = JobEntity(kind=JobKind.ACTIVITY, title="T", status=JobStatus.DRAFT)
@@ -1720,13 +1780,36 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
             self.session, 100, "needs more detail", acting_user_id=6
         )
 
-        self.notification_repo.create.assert_awaited_once()
-        (_session_arg, entity_arg), _ = self.notification_repo.create.call_args
+        self.dispatcher.record.assert_awaited_once()
+        (_session_arg, entity_arg), _ = self.dispatcher.record.call_args
         self.assertEqual(entity_arg.user_id, 9)
         self.assertEqual(entity_arg.type, NotificationType.JOB_REVIEW_REJECTED)
         self.assertEqual(entity_arg.job_id, 1)
         self.assertEqual(entity_arg.job_review_id, 100)
         self.assertEqual(entity_arg.actor_user_id, 6)
+
+    async def test_reject_flushes_notification_emails_after_commit(self):
+        # Same setup as test_reject_notifies_the_submitter.
+        job = JobEntity(kind=JobKind.ACTIVITY, title="T", status=JobStatus.DRAFT)
+        job.job_id = 1
+        review = JobReviewEntity(
+            job_id=1,
+            submitted_by=9,
+            reviewer_id=6,
+            status=JobReviewStatus.PENDING,
+            kind=JobReviewKind.INITIAL,
+        )
+        review.review_id = 100
+        self.review_repo.get = AsyncMock(return_value=review)
+        self.repo.get_by_job_id = AsyncMock(return_value=job)
+
+        await self.service.reject(
+            self.session, 100, "needs more detail", acting_user_id=6
+        )
+
+        self.dispatcher.record.assert_awaited_once()
+        self.dispatcher.flush.assert_awaited_once_with(self.session)
+        self.assertEqual(self.call_order, ["commit", "flush"])
 
     async def test_get_job_activity_resolves_actor_names(self):
         """get_job_activity returns rows newest-first with actor names resolved."""
