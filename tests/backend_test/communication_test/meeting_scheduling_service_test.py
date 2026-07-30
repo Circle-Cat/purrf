@@ -102,9 +102,9 @@ class ScheduleTest(unittest.IsolatedAsyncioTestCase):
         kwargs["google_service"].get_meet_space_name.assert_awaited_once_with(
             "abc-defg-hij"
         )
-        kwargs["google_service"].update_meet_space_type_to_open.assert_awaited_once_with(
-            "spaces/xyz"
-        )
+        kwargs[
+            "google_service"
+        ].update_meet_space_type_to_open.assert_awaited_once_with("spaces/xyz")
 
     async def test_a_failure_to_open_the_meet_space_is_not_fatal(self):
         service, kwargs = _service()

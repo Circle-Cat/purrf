@@ -449,9 +449,10 @@ class MeetingService:
 
             all_meeting_ids.extend(deletion["meeting_ids"])
 
-        succeeded_event_ids, failed_event_ids = (
-            await self.meeting_scheduling_service.cancel(all_meeting_ids)
-        )
+        (
+            succeeded_event_ids,
+            failed_event_ids,
+        ) = await self.meeting_scheduling_service.cancel(all_meeting_ids)
 
         if succeeded_event_ids:
             await self.mentorship_pairs_repository.remove_meetings_from_log(

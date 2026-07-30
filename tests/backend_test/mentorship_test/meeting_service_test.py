@@ -191,9 +191,7 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
         self.mock_meeting_scheduling_service.schedule = AsyncMock(
             return_value=self.scheduled_meeting
         )
-        self.mock_meeting_scheduling_service.cancel = AsyncMock(
-            return_value=([], [])
-        )
+        self.mock_meeting_scheduling_service.cancel = AsyncMock(return_value=([], []))
 
         self.service = MeetingService(
             logger=self.mock_logger,
@@ -568,9 +566,7 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
         """A per-occurrence Google failure is captured in `failed`, not raised."""
         from datetime import date
 
-        self.mock_meeting_scheduling_service.schedule.side_effect = RuntimeError(
-            "boom"
-        )
+        self.mock_meeting_scheduling_service.schedule.side_effect = RuntimeError("boom")
 
         result = await self.service.create_google_meetings_batch(
             session_factory=self.mock_session_factory,
