@@ -12,11 +12,13 @@ from backend.dto.board_dto import (
     StageChangeDto,
     SubStatusChangeDto,
 )
+from backend.dto.interview_dto import InterviewScheduleRequestDto
 from backend.dto.user_context_dto import UserContextDto
 from backend.dto.email_dto import EmailSendRequestDto
 from backend.common.api_endpoints import (
     RECRUITING_APPLICATION_EMAILS_ENDPOINT,
     RECRUITING_APPLICATION_EMAIL_TEMPLATES_ENDPOINT,
+    RECRUITING_APPLICATION_INTERVIEW_ENDPOINT,
     RECRUITING_BOARD_JOBS_ENDPOINT,
     RECRUITING_JOB_BOARD_ENDPOINT,
     RECRUITING_JOB_BOARD_STAGE_ENDPOINT,
@@ -55,15 +57,18 @@ class BoardController:
     view the application may also discuss it.
     """
 
-    def __init__(self, board_service, database):
+    def __init__(self, board_service, database, interview_scheduling_service):
         """
         Args:
             board_service (BoardService): Board read logic (job switcher,
                 pipeline, applicant detail).
             database: Async session provider.
+            interview_scheduling_service (InterviewSchedulingService):
+                Interview-meeting booking/reschedule/cancel logic.
         """
         self.board_service = board_service
         self.database = database
+        self.interview_scheduling_service = interview_scheduling_service
         self.router = APIRouter(tags=["recruiting-board"])
 
         self.router.add_api_route(
@@ -192,6 +197,22 @@ class BoardController:
             methods=["POST"],
             response_model=None,
         )
+        # Interview scheduling reuses the advance permission: booking a
+        # meeting is a pipeline action, and the service additionally enforces
+        # job ownership.
+        for method, handler in (
+            ("POST", self.schedule_interview),
+            ("PATCH", self.update_interview),
+            ("DELETE", self.cancel_interview),
+        ):
+            self.router.add_api_route(
+                RECRUITING_APPLICATION_INTERVIEW_ENDPOINT,
+                endpoint=authenticate(
+                    permissions=[Permission.RECRUITING_APPLICATION_ADVANCE]
+                )(handler),
+                methods=[method],
+                response_model=None,
+            )
 
     async def list_my_jobs(self, current_user: UserContextDto):
         """List jobs the caller owns, for the board's job switcher."""
@@ -403,3 +424,41 @@ class BoardController:
                 session, current_user, blacklist_data
             )
         return api_response(message="User blacklisted.", data=result)
+
+    async def schedule_interview(
+        self,
+        current_user: UserContextDto,
+        application_id: int,
+        interview_data: InterviewScheduleRequestDto,
+    ):
+        """Book a Calendar meeting for an application's current stage+round."""
+        async with self.database.session() as session:
+            result = await self.interview_scheduling_service.schedule(
+                session, current_user, application_id, interview_data
+            )
+        return api_response(message="Interview scheduled.", data=result)
+
+    async def update_interview(
+        self,
+        current_user: UserContextDto,
+        application_id: int,
+        interview_data: InterviewScheduleRequestDto,
+    ):
+        """Move an already-booked meeting's time and/or swap its interviewer."""
+        async with self.database.session() as session:
+            result = await self.interview_scheduling_service.update(
+                session, current_user, application_id, interview_data
+            )
+        return api_response(message="Interview updated.", data=result)
+
+    async def cancel_interview(
+        self,
+        current_user: UserContextDto,
+        application_id: int,
+    ):
+        """Cancel an application's current stage+round's booked meeting."""
+        async with self.database.session() as session:
+            await self.interview_scheduling_service.cancel(
+                session, current_user, application_id
+            )
+        return api_response(message="Interview cancelled.", data=None)

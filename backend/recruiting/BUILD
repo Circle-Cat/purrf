@@ -8,6 +8,7 @@ py_library(
     deps = [
         "//backend/common:api_endpoints",
         "//backend/common:communication_enums",
+        "//backend/common:exceptions",
         "//backend/common:fast_api_response_wrapper",
         "//backend/common:mentorship_enums",
         "//backend/common:permissions",

@@ -1,8 +1,10 @@
 from backend.entity.application_entity import ApplicationEntity
+from backend.entity.application_interview_entity import ApplicationInterviewEntity
 from backend.entity.job_entity import JobEntity
 from backend.entity.job_review_entity import JobReviewEntity
 from backend.entity.users_entity import UsersEntity
 from backend.dto.board_dto import BoardCardDto
+from backend.dto.interview_dto import InterviewDto
 from backend.dto.job_dto import JobDto, PublicJobDto, PublicJobSummaryDto
 from backend.dto.job_review_dto import ApproverDto, JobReviewDto
 
@@ -204,6 +206,44 @@ class RecruitingMapper:
             current=current,
             editable=editable,
             current_round=application.current_round,
+        )
+
+    def to_interview_dto(
+        self,
+        interview: ApplicationInterviewEntity,
+        assignee_id: int | None = None,
+        assignee_name: str | None = None,
+        scheduled_by_name: str | None = None,
+    ) -> InterviewDto:
+        """Map a scheduled meeting row to an ``InterviewDto``.
+
+        Assignee/scheduler names are resolved by the caller (the entity
+        itself stores no attendee snapshot — see
+        ``ApplicationInterviewEntity``'s docstring) and passed in already
+        resolved, so this stays a pure structural mapping.
+
+        Args:
+            interview (ApplicationInterviewEntity): The scheduled-meeting row.
+            assignee_id (int | None): The round's current interviewer, from
+                ``application_assignment`` — None if unassigned.
+            assignee_name (str | None): The interviewer's resolved display
+                name, or None.
+            scheduled_by_name (str | None): The recruiter who booked the
+                meeting, resolved display name, or None.
+
+        Returns:
+            InterviewDto: The response projection.
+        """
+        return InterviewDto(
+            interview_id=interview.interview_id,
+            stage=interview.stage.value,
+            round=interview.round,
+            start_at=interview.start_at,
+            end_at=interview.end_at,
+            meet_link=interview.meet_link,
+            assignee_id=assignee_id,
+            assignee_name=assignee_name,
+            scheduled_by_name=scheduled_by_name,
         )
 
     def to_my_application_summary_dto(self, application, job):
