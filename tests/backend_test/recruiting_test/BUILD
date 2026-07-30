@@ -230,6 +230,17 @@ py_test(
 )
 
 py_test(
+    name = "notification_dispatcher_test",
+    srcs = ["notification_dispatcher_test.py"],
+    deps = [
+        "//backend/common:recruiting_enums",
+        "//backend/dto",
+        "//backend/entity:entities",
+        "//backend/recruiting",
+    ],
+)
+
+py_test(
     name = "notification_email_copy_test",
     srcs = ["notification_email_copy_test.py"],
     deps = [

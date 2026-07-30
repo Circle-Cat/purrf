@@ -160,6 +160,40 @@ class TestRecruitingNotificationService(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsNone(result.notifications[0].job_kind)
 
+    async def test_resolve_returns_the_dto_and_the_application_stage(self):
+        row = self._notification()
+        job = JobEntity(
+            kind=JobKind.ACTIVITY, title="Mentorship", status=JobStatus.PUBLISHED
+        )
+        job.job_id = 3
+        application = ApplicationEntity(
+            job_id=3, user_id=4, stage=ApplicationStage.TECH
+        )
+        application.application_id = 10
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.users_repo.get_user_by_user_id = AsyncMock(
+            return_value=UsersEntity(first_name="Ada", last_name="Lovelace")
+        )
+
+        dto, stage = await self.service.resolve(self.session, row)
+
+        self.assertEqual(dto.job_title, "Mentorship")
+        self.assertEqual(stage, ApplicationStage.TECH)
+
+    async def test_resolve_returns_no_stage_for_a_job_scoped_notification(self):
+        row = self._notification(
+            application_id=None,
+            job_id=7,
+            type=NotificationType.JOB_REVIEW_REQUESTED,
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=None)
+        self.users_repo.get_user_by_user_id = AsyncMock(return_value=None)
+
+        _, stage = await self.service.resolve(self.session, row)
+
+        self.assertIsNone(stage)
+
 
 if __name__ == "__main__":
     unittest.main()
