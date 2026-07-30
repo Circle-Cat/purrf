@@ -834,6 +834,22 @@ class TestAppDependencyBuilder(TestCase):
         self.assertEqual(
             builder.notification_sender_address, "notifications@circlecat.org"
         )
+        # The three services must receive the dispatcher, not the repository:
+        # their own tests inject a dispatcher double, so a builder that passes
+        # the repository instead fails nowhere until the first real
+        # notification write.
+        self.assertIs(
+            builder.job_service.notification_dispatcher,
+            builder.notification_dispatcher,
+        )
+        self.assertIs(
+            builder.application_service.notification_dispatcher,
+            builder.notification_dispatcher,
+        )
+        self.assertIs(
+            builder.board_service.notification_dispatcher,
+            builder.notification_dispatcher,
+        )
 
 
 if __name__ == "__main__":

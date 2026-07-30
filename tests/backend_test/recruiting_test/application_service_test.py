@@ -3,6 +3,7 @@ from datetime import date, datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, create_autospec
 from backend.recruiting.application_service import ApplicationService
+from backend.recruiting.notification_dispatcher import NotificationDispatcher
 from backend.recruiting.recruiting_mapper import RecruitingMapper
 from backend.dto.application_dto import ApplicationSubmitDto, ApplicationEditDto
 from backend.dto.user_context_dto import UserContextDto
@@ -80,7 +81,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         would pass even if they ran in the wrong order.
         """
         self.call_order = []
-        dispatcher = MagicMock()
+        dispatcher = create_autospec(NotificationDispatcher, instance=True)
         dispatcher.record = AsyncMock(side_effect=lambda session, entity: entity)
         dispatcher.flush = AsyncMock(
             side_effect=lambda session: self.call_order.append("flush")

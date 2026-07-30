@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, call, create_autospec
 from backend.recruiting.application_access import ApplicationAccess
 from backend.recruiting.board_service import TERMINAL_STAGES, BoardService
 from backend.recruiting.interview_scheduling_service import InterviewSchedulingService
+from backend.recruiting.notification_dispatcher import NotificationDispatcher
 from backend.recruiting.recruiting_mapper import RecruitingMapper
 from backend.dto.board_dto import (
     REJECT_REASONS,
@@ -174,7 +175,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         would pass even if they ran in the wrong order.
         """
         self.call_order = []
-        dispatcher = MagicMock()
+        dispatcher = create_autospec(NotificationDispatcher, instance=True)
         dispatcher.record = AsyncMock(side_effect=lambda session, entity: entity)
         dispatcher.flush = AsyncMock(
             side_effect=lambda session: self.call_order.append("flush")

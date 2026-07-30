@@ -1,8 +1,9 @@
 import unittest
 from datetime import datetime
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, create_autospec
 
 from backend.recruiting.job_service import JobService
+from backend.recruiting.notification_dispatcher import NotificationDispatcher
 from backend.recruiting.recruiting_mapper import RecruitingMapper
 from backend.dto.job_dto import JobCreateDto
 from backend.entity.job_entity import JobEntity
@@ -71,7 +72,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         would pass even if they ran in the wrong order.
         """
         self.call_order = []
-        dispatcher = MagicMock()
+        dispatcher = create_autospec(NotificationDispatcher, instance=True)
         dispatcher.record = AsyncMock(side_effect=lambda session, entity: entity)
         dispatcher.flush = AsyncMock(
             side_effect=lambda session: self.call_order.append("flush")
