@@ -13,12 +13,21 @@ vi.mock("@/api/recruitingApi");
 vi.spyOn(toast, "success").mockImplementation(() => {});
 vi.spyOn(toast, "error").mockImplementation(() => {});
 
+// Set by the test that spies on Element.prototype.scrollIntoView, so the
+// shared afterEach below can restore it even if that test fails before
+// reaching its own cleanup — vi.clearAllMocks() only clears call history, not
+// installed mock implementations, so a leaked spy would otherwise silence
+// scrollIntoView for every test that runs after it in this file.
+let scrollIntoViewSpy;
+
 beforeEach(() => {
   vi.clearAllMocks();
 });
 
 afterEach(() => {
   vi.useRealTimers();
+  scrollIntoViewSpy?.mockRestore();
+  scrollIntoViewSpy = undefined;
 });
 
 /** Render BoardPage inside a memory router with a stub detail route.
@@ -849,7 +858,7 @@ describe("BoardPage", () => {
     // and vitest 1.6.1's mock objects expose no `contexts` array to read it
     // from afterwards.
     const scrolled = [];
-    const scrollSpy = vi
+    scrollIntoViewSpy = vi
       .spyOn(Element.prototype, "scrollIntoView")
       .mockImplementation(function captureTarget() {
         scrolled.push(this);
@@ -890,8 +899,6 @@ describe("BoardPage", () => {
     await waitFor(() =>
       expect(router.state.location.search).toBe("?jobId=1"),
     );
-
-    scrollSpy.mockRestore();
   });
 
   it("pages a terminal lane to find a focused card that isn't on the first page", async () => {
@@ -936,6 +943,44 @@ describe("BoardPage", () => {
       name: /Rejected Person 21/,
     });
     await waitFor(() => expect(card.className).toContain("ring-2"));
+  });
+
+  it("gives up quietly and doesn't retry when a focus-hunt page request fails", async () => {
+    const makeCard = (id) => ({
+      id,
+      applicantName: `Rejected Person ${id}`,
+      applicantEmail: `rejected${id}@example.com`,
+      stage: "rejected",
+      subStatus: null,
+      tags: null,
+      appliedAt: "2026-06-01T00:00:00Z",
+    });
+
+    api.listBoardJobs.mockResolvedValue({ data: [jobA] });
+    api.getJobBoard.mockResolvedValue({
+      data: {
+        stages: {
+          rejected: {
+            items: Array.from({ length: 20 }, (_, i) => makeCard(i + 1)),
+            total: 25,
+            has_more: true,
+          },
+        },
+      },
+    });
+    api.getJobBoardStagePage.mockRejectedValue(new Error("page boom"));
+
+    const { router } = renderPage("?jobId=1&focus=21");
+
+    await waitFor(() =>
+      expect(api.getJobBoardStagePage).toHaveBeenCalledTimes(1),
+    );
+    await waitFor(() => expect(router.state.location.search).toBe("?jobId=1"));
+    // Give it a chance to have retried before asserting it didn't.
+    expect(api.getJobBoardStagePage).toHaveBeenCalledTimes(1);
+    // A background hunt failing is not something the owner asked for, so it
+    // must not toast — contrast the "Load more" click cases, which do.
+    expect(toast.error).not.toHaveBeenCalled();
   });
 
   it("gives up quietly after the paging cap when the focused card never turns up", async () => {

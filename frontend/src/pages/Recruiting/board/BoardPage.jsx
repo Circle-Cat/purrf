@@ -65,6 +65,10 @@ const BoardPage = () => {
   const [highlightedId, setHighlightedId] = useState(null);
   /** Rounds of paging already spent on the current board's focus hunt. */
   const focusRounds = useRef(0);
+  /** Terminal lanes whose paging failed during a focus hunt. A failed page
+   * leaves `has_more` true and the offset unchanged, so without this the hunt
+   * would re-issue the identical request every remaining round. */
+  const focusPageFailures = useRef(new Set());
 
   /** Fetch (or re-fetch, via Retry) the caller's owned jobs. */
   const loadJobs = useCallback(async () => {
@@ -121,6 +125,7 @@ const BoardPage = () => {
     setBoardError(false);
     setBoard(null);
     focusRounds.current = 0;
+    focusPageFailures.current.clear();
     try {
       const { data } = await getJobBoard(jobId);
       setBoard(data?.stages ?? {});
@@ -148,7 +153,7 @@ const BoardPage = () => {
   /** Fetch the next page of a terminal lane (hired/rejected) and append it,
    * deduping by card id so a slow double-click can't render duplicates. */
   const loadMore = useCallback(
-    async (stage) => {
+    async (stage, { silent = false } = {}) => {
       if (loadingMore.has(stage)) return;
       setLoadingMore((prev) => new Set(prev).add(stage));
       const lane = board[stage];
@@ -158,6 +163,7 @@ const BoardPage = () => {
           limit: 20,
           offset: lane.items.length,
         });
+        if (silent) focusPageFailures.current.delete(stage);
         setBoard((prev) => {
           const seen = new Set(prev[stage].items.map((c) => c.id));
           const merged = [
@@ -170,7 +176,14 @@ const BoardPage = () => {
           };
         });
       } catch (e) {
-        toast.error(e.message);
+        // A background focus hunt stays quiet on failure: relocating a card
+        // is a convenience the owner didn't ask for, so its failure is as
+        // silent as not finding the card at all.
+        if (silent) {
+          focusPageFailures.current.add(stage);
+        } else {
+          toast.error(e.message);
+        }
       } finally {
         setLoadingMore((prev) => {
           const next = new Set(prev);
@@ -210,14 +223,14 @@ const BoardPage = () => {
     if (TERMINAL_STAGES.some((stage) => loadingMore.has(stage))) return;
 
     const pageable = TERMINAL_STAGES.filter(
-      (stage) => board[stage]?.has_more,
+      (stage) => board[stage]?.has_more && !focusPageFailures.current.has(stage),
     );
     if (pageable.length === 0 || focusRounds.current >= FOCUS_PAGE_LIMIT) {
       clearFocusParam();
       return;
     }
     focusRounds.current += 1;
-    pageable.forEach((stage) => loadMore(stage));
+    pageable.forEach((stage) => loadMore(stage, { silent: true }));
   }, [focusId, board, loadingMore, loadMore, clearFocusParam]);
 
   /** Retire the ring on its own timer, decoupled from the URL param (which
