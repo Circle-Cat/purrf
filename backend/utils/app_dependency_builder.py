@@ -93,6 +93,9 @@ from backend.repository.application_repository import ApplicationRepository
 from backend.repository.application_assignment_repository import (
     ApplicationAssignmentRepository,
 )
+from backend.repository.application_interview_repository import (
+    ApplicationInterviewRepository,
+)
 from backend.repository.application_activity_repository import (
     ApplicationActivityRepository,
 )
@@ -112,9 +115,11 @@ from backend.recruiting.recruiting_controller import RecruitingController
 from backend.recruiting.resume_storage import ResumeStorage
 from backend.recruiting.application_service import ApplicationService
 from backend.recruiting.application_controller import ApplicationController
+from backend.recruiting.application_access import ApplicationAccess
 from backend.recruiting.board_service import BoardService
 from backend.recruiting.email_sync_service import EmailSyncService
 from backend.recruiting.board_controller import BoardController
+from backend.recruiting.interview_scheduling_service import InterviewSchedulingService
 from backend.recruiting.blacklist_service import BlacklistService
 from backend.recruiting.blacklist_controller import BlacklistController
 from backend.recruiting.evaluation_service import EvaluationService
@@ -586,6 +591,7 @@ class AppDependencyBuilder:
             self.user_emails_repository,
         )
         self.application_assignment_repository = ApplicationAssignmentRepository()
+        self.application_interview_repository = ApplicationInterviewRepository()
         self.application_activity_repository = ApplicationActivityRepository()
         self.application_comment_repository = ApplicationCommentRepository()
         self.application_comment_mention_repository = (
@@ -640,6 +646,15 @@ class AppDependencyBuilder:
             database=self.database,
         )
 
+        # Shared owner/assignee gating + interview-evaluator validation, used
+        # by both BoardService (via its thin delegating methods) and
+        # InterviewSchedulingService.
+        self.application_access = ApplicationAccess(
+            self.application_repository,
+            self.job_repository,
+            self.application_assignment_repository,
+            self.user_permissions_repository,
+        )
         self.board_service = BoardService(
             self.job_repository,
             self.application_repository,
@@ -657,10 +672,25 @@ class AppDependencyBuilder:
             self.user_emails_repository,
             self.email_conversation_service,
             self.email_sync_service,
+            self.application_interview_repository,
+            self.application_access,
+        )
+        self.interview_scheduling_service = InterviewSchedulingService(
+            self.logger,
+            self.application_access,
+            self.application_repository,
+            self.application_assignment_repository,
+            self.application_interview_repository,
+            self.application_activity_repository,
+            self.users_repository,
+            self.user_emails_repository,
+            self.meeting_scheduling_service,
+            self.recruiting_mapper,
         )
         self.board_controller = BoardController(
             self.board_service,
             self.database,
+            self.interview_scheduling_service,
         )
         self.blacklist_service = BlacklistService(
             self.users_repository, self.user_emails_repository

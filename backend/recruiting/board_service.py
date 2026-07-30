@@ -32,6 +32,7 @@ from backend.dto.email_dto import (
     EmailTemplateDto,
 )
 from backend.dto.evaluation_dto import EvaluationDto
+from backend.dto.interview_dto import InterviewDto
 from backend.dto.user_context_dto import UserContextDto
 from backend.common.communication_enums import ContextType
 from backend.common.permissions import Permission
@@ -165,6 +166,8 @@ class BoardService:
         user_emails_repository,
         email_conversation_service,
         email_sync_service,
+        application_interview_repository,
+        application_access,
     ):
         """
         Args:
@@ -208,6 +211,15 @@ class BoardService:
                 email transport/DB layer; the Emails-tab endpoints resolve an
                 application to its (user_id, APPLICATION:application_id) context
                 and delegate send/sync/read here.
+            application_interview_repository (ApplicationInterviewRepository):
+                Read-only lookup used by ``get_application_detail`` to embed
+                the current stage+round's scheduled meeting, if any.
+                Writes are owned entirely by ``InterviewSchedulingService``.
+            application_access (ApplicationAccess): Shared owner/assignee
+                gating, also injected into ``InterviewSchedulingService``.
+                ``_load_owned_application``/``_validate_interview_assignee``
+                below are thin delegations to it, kept so this class's many
+                existing call sites are untouched.
         """
         self.job_repository = job_repository
         self.application_repository = application_repository
@@ -227,6 +239,8 @@ class BoardService:
         self.user_emails_repository = user_emails_repository
         self.email_conversation_service = email_conversation_service
         self.email_sync_service = email_sync_service
+        self.application_interview_repository = application_interview_repository
+        self.application_access = application_access
 
     async def list_my_jobs(
         self, session: AsyncSession, current_user: UserContextDto
@@ -801,34 +815,15 @@ class BoardService:
                 don't leak which application ids exist to unauthorized
                 callers.
         """
-        application = await self.application_repository.get_by_id(
-            session, application_id, for_update=for_update
+        return await self.application_access.load_owned_application(
+            session,
+            current_user,
+            application_id,
+            for_update=for_update,
+            allow_assignee=allow_assignee,
+            allow_self=allow_self,
+            allow_read_all=allow_read_all,
         )
-        # Missing and not-owned/not-assignee must be indistinguishable: a
-        # distinct message would let any authenticated caller probe which
-        # application ids exist.
-        if application is None:
-            raise ValueError(f"application {application_id} not found")
-        job = await self.job_repository.get_by_job_id(session, application.job_id)
-        is_owner = job is not None and current_user.user_id in normalized_owner_ids(
-            job.pipeline_config
-        )
-        is_assignee = False
-        if not is_owner and allow_assignee:
-            assignment = await self.application_assignment_repository.get(
-                session, application_id, application.stage, application.current_round
-            )
-            is_assignee = (
-                assignment is not None
-                and assignment.assignee_id == current_user.user_id
-            )
-        is_self = allow_self and application.user_id == current_user.user_id
-        is_read_all = allow_read_all and current_user.has_permission(
-            Permission.RECRUITING_APPLICATION_READ_ALL
-        )
-        if job is None or not (is_owner or is_assignee or is_self or is_read_all):
-            raise ValueError(f"application {application_id} not found")
-        return application, job
 
     async def get_application_detail(
         self,
@@ -855,6 +850,9 @@ class BoardService:
                 signals — ``is_owner``, ``can_view``, and ``assignee_id`` —
                 so the frontend can decide which of the owner-decision area /
                 evaluator rubric area to render without a second round-trip.
+                ``interview`` carries the current stage+round's scheduled
+                meeting (``InterviewDto``), or ``None`` if nothing is booked
+                for it.
 
         Raises:
             ValueError: If the application is missing, or the caller is
@@ -889,6 +887,23 @@ class BoardService:
         assignment = await self.application_assignment_repository.get(
             session, application_id, application.stage, application.current_round
         )
+        interview_dto = await self._build_interview_dto(
+            session,
+            application_id,
+            application.stage,
+            application.current_round,
+            assignment.assignee_id if assignment is not None else None,
+        )
+        # The CALLER's own zone, not the candidate's and not the zone whoever
+        # booked the meeting happened to be in: interview times are rendered
+        # wherever the person reading them lives. Nothing is stored per meeting
+        # (see ApplicationInterviewEntity) -- this is resolved per request. None
+        # when the viewer has not set one, which the frontend answers with their
+        # browser zone.
+        viewer = await self.users_repository.get_user_by_user_id(
+            session, current_user.user_id
+        )
+        viewer_timezone = viewer.timezone if viewer is not None else None
         # The embedded ApplicationDto's `editable` is deliberately left at
         # its default (False) here: it encodes the CANDIDATE's edit window
         # (first stage / pending / unfrozen), which the owner-facing detail
@@ -912,6 +927,59 @@ class BoardService:
             is_owner=is_owner,
             can_view=can_view,
             assignee_id=assignment.assignee_id if assignment is not None else None,
+            interview=interview_dto,
+            viewer_timezone=viewer_timezone,
+        )
+
+    async def _build_interview_dto(
+        self,
+        session: AsyncSession,
+        application_id: int,
+        stage: ApplicationStage,
+        round: int,
+        assignee_id: int | None,
+    ) -> InterviewDto | None:
+        """The scheduled meeting for one application's current stage+round,
+        as an ``InterviewDto``, or ``None`` when nothing is booked.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            application_id (int): The application.
+            stage (ApplicationStage): The application's current stage.
+            round (int): The application's current round.
+            assignee_id (int | None): The current stage+round's assignment,
+                already resolved by the caller (``get_application_detail``
+                fetches it once and reuses it here to avoid a second query).
+
+        Returns:
+            InterviewDto | None: The mapped meeting, or None.
+        """
+        interview = await self.application_interview_repository.get(
+            session, application_id, stage, round
+        )
+        if interview is None:
+            return None
+        assignee = (
+            await self.users_repository.get_user_by_user_id(session, assignee_id)
+            if assignee_id is not None
+            else None
+        )
+        scheduler = await self.users_repository.get_user_by_user_id(
+            session, interview.scheduled_by
+        )
+        return self.recruiting_mapper.to_interview_dto(
+            interview,
+            assignee_id=assignee_id,
+            assignee_name=(
+                f"{assignee.first_name} {assignee.last_name}".strip()
+                if assignee is not None
+                else None
+            ),
+            scheduled_by_name=(
+                f"{scheduler.first_name} {scheduler.last_name}".strip()
+                if scheduler is not None
+                else None
+            ),
         )
 
     async def get_resume(
@@ -1278,13 +1346,7 @@ class BoardService:
             ValueError: If ``assignee_id`` is not an active holder of
                 ``Permission.RECRUITING_INTERVIEW_EVALUATE``.
         """
-        pool = await self.user_permissions_repository.get_active_users_with_permission(
-            session, Permission.RECRUITING_INTERVIEW_EVALUATE.value
-        )
-        if assignee_id not in {u.user_id for u in pool}:
-            raise ValueError(
-                f"assignee {assignee_id} is not an active interview evaluator"
-            )
+        await self.application_access.validate_interview_assignee(session, assignee_id)
 
     async def change_stage(
         self,

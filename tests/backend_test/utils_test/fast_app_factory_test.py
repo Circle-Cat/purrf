@@ -329,7 +329,7 @@ class TestFastAppFactory(unittest.TestCase):
         application_controller = ApplicationController(
             MagicMock(), MagicMock(), MagicMock(), MagicMock()
         )
-        board_controller = BoardController(MagicMock(), MagicMock())
+        board_controller = BoardController(MagicMock(), MagicMock(), MagicMock())
         factory = FastAppFactory(
             authentication_controller=self.mock_controller,
             authentication_service=self.mock_service,

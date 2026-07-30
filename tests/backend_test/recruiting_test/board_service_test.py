@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, call, create_autospec
 
+from backend.recruiting.application_access import ApplicationAccess
 from backend.recruiting.board_service import TERMINAL_STAGES, BoardService
 from backend.recruiting.recruiting_mapper import RecruitingMapper
 from backend.dto.board_dto import (
@@ -37,6 +38,9 @@ from backend.common.recruiting_enums import (
 )
 from backend.repository.application_assignment_repository import (
     ApplicationAssignmentRepository,
+)
+from backend.repository.application_interview_repository import (
+    ApplicationInterviewRepository,
 )
 from backend.repository.application_activity_repository import (
     ApplicationActivityRepository,
@@ -86,6 +90,12 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.evaluation_repo = create_autospec(EvaluationRepository, instance=True)
         self.evaluation_repo.list_by_application.return_value = []
         self.notification_repo = create_autospec(NotificationRepository, instance=True)
+        self.interview_repo = create_autospec(
+            ApplicationInterviewRepository, instance=True
+        )
+        # Default: no meeting booked, so get_application_detail's `interview`
+        # field defaults to None unless a test seeds a row.
+        self.interview_repo.get.return_value = None
         self.session = AsyncMock()
         # Applicant emails come from user_emails, not the legacy column.
         self.user_emails_repo = MagicMock()
@@ -102,6 +112,17 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         # EmailSyncService, which owns the timeline-writing rule.
         self.email_sync_svc = AsyncMock()
         self.email_sync_svc.sync_application = AsyncMock(return_value=[])
+        # Real ApplicationAccess wired to the SAME test doubles BoardService
+        # itself uses, so delegated `_load_owned_application`/
+        # `_validate_interview_assignee` calls are indistinguishable from the
+        # old inline bodies -- every existing assertion against
+        # app_repo/job_repo/assignment_repo/user_permissions_repo keeps working.
+        self.application_access = ApplicationAccess(
+            self.app_repo,
+            self.job_repo,
+            self.assignment_repo,
+            self.user_permissions_repo,
+        )
         self.service = BoardService(
             self.job_repo,
             self.app_repo,
@@ -119,6 +140,8 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             self.user_emails_repo,
             self.email_svc,
             self.email_sync_svc,
+            self.interview_repo,
+            self.application_access,
         )
         # Default persistence mocks: echo the entity back, like SQLAlchemy's
         # merge-and-flush does when nothing else stubs them out.
@@ -1154,6 +1177,118 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(result.is_owner)
         self.assertIsNone(result.assignee_id)
+
+    async def test_get_application_detail_embeds_the_scheduled_interview(self):
+        job = self._job(job_id=1, owner_ids=(2,), stages=("behavioral",))
+        application = self._application(
+            application_id=10, job_id=1, user_id=3, stage=ApplicationStage.BEHAVIORAL
+        )
+        applicant = self._user(user_id=3, first="C", last="D")
+        assignee = self._user(user_id=42, first="Ivy", last="Interviewer")
+        scheduler = self._user(user_id=2, first="Rae", last="Recruiter")
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        assignment = MagicMock()
+        assignment.assignee_id = 42
+        self.assignment_repo.get.return_value = assignment
+        self.users_repo.get_user_by_user_id = AsyncMock(
+            side_effect=lambda _session, uid: {
+                3: applicant,
+                42: assignee,
+                2: scheduler,
+            }.get(uid)
+        )
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+        interview = SimpleNamespace(
+            interview_id=77,
+            stage=ApplicationStage.BEHAVIORAL,
+            round=1,
+            start_at=datetime(2026, 8, 5, 21, 0, tzinfo=timezone.utc),
+            end_at=datetime(2026, 8, 5, 21, 45, tzinfo=timezone.utc),
+            meet_link="https://meet.example/abc",
+            scheduled_by=2,
+        )
+        self.interview_repo.get.return_value = interview
+
+        result = await self.service.get_application_detail(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertIsNotNone(result.interview)
+        self.assertEqual(result.interview.interview_id, 77)
+        self.assertEqual(result.interview.meet_link, "https://meet.example/abc")
+        self.assertEqual(result.interview.assignee_id, 42)
+        self.assertEqual(result.interview.assignee_name, "Ivy Interviewer")
+        self.assertEqual(result.interview.scheduled_by_name, "Rae Recruiter")
+
+    async def test_get_application_detail_ships_the_viewers_own_timezone(self):
+        """The CALLER's zone, not the candidate's: interview instants are
+        rendered wherever the person reading them lives. Mutation check --
+        resolve the applicant instead of current_user and this goes red."""
+        job = self._job(job_id=1, owner_ids=(2,), stages=("behavioral",))
+        application = self._application(
+            application_id=10, job_id=1, user_id=3, stage=ApplicationStage.BEHAVIORAL
+        )
+        applicant = self._user(user_id=3)
+        applicant.timezone = "America/New_York"
+        viewer = self._user(user_id=2)
+        viewer.timezone = "Asia/Taipei"
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.users_repo.get_user_by_user_id = AsyncMock(
+            side_effect=lambda _session, uid: {3: applicant, 2: viewer}.get(uid)
+        )
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+
+        result = await self.service.get_application_detail(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertEqual(result.viewer_timezone, "Asia/Taipei")
+
+    async def test_get_application_detail_viewer_timezone_is_none_when_unset(self):
+        """The frontend answers None with the viewer's browser zone, so an
+        unset profile must not fall back to anyone else's zone here."""
+        job = self._job(job_id=1, owner_ids=(2,), stages=("behavioral",))
+        application = self._application(
+            application_id=10, job_id=1, user_id=3, stage=ApplicationStage.BEHAVIORAL
+        )
+        applicant = self._user(user_id=3)
+        applicant.timezone = "America/New_York"
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.users_repo.get_user_by_user_id = AsyncMock(
+            side_effect=lambda _session, uid: {
+                3: applicant,
+                2: self._user(user_id=2),
+            }.get(uid)
+        )
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+
+        result = await self.service.get_application_detail(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertIsNone(result.viewer_timezone)
+
+    async def test_get_application_detail_interview_is_none_when_nothing_booked(self):
+        job = self._job(job_id=1, owner_ids=(2,), stages=("behavioral",))
+        application = self._application(
+            application_id=10, job_id=1, user_id=3, stage=ApplicationStage.BEHAVIORAL
+        )
+        applicant = self._user(user_id=3)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.assignment_repo.get.return_value = None
+        self.users_repo.get_user_by_user_id = AsyncMock(return_value=applicant)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+        self.interview_repo.get.return_value = None
+
+        result = await self.service.get_application_detail(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertIsNone(result.interview)
 
     async def test_get_application_detail_succeeds_for_read_all_non_owner(self):
         job = self._job(job_id=1, owner_ids=(9,))
