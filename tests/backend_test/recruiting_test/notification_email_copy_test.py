@@ -61,30 +61,23 @@ class TestStageLabel(unittest.TestCase):
 class TestRender(unittest.TestCase):
     def test_every_notification_type_has_a_template(self):
         """A type with no template would render a blank email."""
-        self.assertEqual(
-            set(notification_email_copy.TEMPLATES), set(NotificationType)
-        )
+        self.assertEqual(set(notification_email_copy.TEMPLATES), set(NotificationType))
 
     def test_assigned_to_evaluate_names_the_actor_stage_and_destination(self):
-        subject, body = notification_email_copy.render(
-            _dto(), ApplicationStage.TECH
-        )
+        subject, body = notification_email_copy.render(_dto(), ApplicationStage.TECH)
 
         self.assertEqual(
             subject, "Evaluation assigned: Ada Lovelace (Backend Engineer)"
         )
         self.assertIn(
-            "Grace Hopper assigned you to evaluate Ada Lovelace for "
-            "Backend Engineer.",
+            "Grace Hopper assigned you to evaluate Ada Lovelace for Backend Engineer.",
             body,
         )
         self.assertIn("Stage: Tech.", body)
         self.assertIn("Recruiting &rarr; My Evaluations", body)
 
     def test_assigned_to_evaluate_appends_the_round_only_past_the_first(self):
-        _, body = notification_email_copy.render(
-            _dto(round=2), ApplicationStage.TECH
-        )
+        _, body = notification_email_copy.render(_dto(round=2), ApplicationStage.TECH)
 
         self.assertIn("Stage: Tech, round 2.", body)
 

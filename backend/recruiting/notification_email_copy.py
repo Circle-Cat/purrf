@@ -65,7 +65,7 @@ def stage_label(stage: ApplicationStage | None, kind: JobKind | None) -> str:
 
 
 def _round_suffix(round_number: int | None) -> str:
-    """", round N" past the first round, "" otherwise (round 1 is noise)."""
+    """ ", round N" past the first round, "" otherwise (round 1 is noise)."""
     if round_number is None or round_number <= 1:
         return ""
     return f", round {round_number}"
@@ -86,9 +86,7 @@ def _assigned_to_evaluate(dto, stage):
         # user row resolves to ""). "Someone" is truer than claiming the
         # assignment was automatic.
         actor = dto.actor_name or _MISSING_ACTOR
-        opening = (
-            f"{actor} assigned you to evaluate {applicant} for {dto.job_title}."
-        )
+        opening = f"{actor} assigned you to evaluate {applicant} for {dto.job_title}."
     return (
         f"Evaluation assigned: {applicant} ({dto.job_title})",
         f"<p>{opening}</p>"
@@ -193,9 +191,7 @@ TEMPLATES = {
 }
 
 
-def render(
-    dto: NotificationDto, stage: ApplicationStage | None
-) -> tuple[str, str]:
+def render(dto: NotificationDto, stage: ApplicationStage | None) -> tuple[str, str]:
     """Render one notification as (subject, HTML body).
 
     Args:

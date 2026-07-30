@@ -123,9 +123,7 @@ class TestNotificationDispatcher(unittest.IsolatedAsyncioTestCase):
         await self.dispatcher.flush(self.session)  # must not raise
 
     async def test_flush_survives_one_send_raising_and_still_sends_the_rest(self):
-        self.email_service.send = AsyncMock(
-            side_effect=[RuntimeError("boom"), True]
-        )
+        self.email_service.send = AsyncMock(side_effect=[RuntimeError("boom"), True])
         await self.dispatcher.record(self.session, self._entity(user_id=5))
         await self.dispatcher.record(self.session, self._entity(user_id=6))
 
