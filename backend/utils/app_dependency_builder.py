@@ -132,6 +132,7 @@ from backend.repository.email_thread_repository import EmailThreadRepository
 from backend.repository.email_message_repository import EmailMessageRepository
 from backend.common.gmail_client import GmailClient
 from backend.communication.email_conversation_service import EmailConversationService
+from backend.communication.meeting_scheduling_service import MeetingSchedulingService
 from backend.repository.user_permissions_repository import UserPermissionsRepository
 from backend.repository.experience_repository import ExperienceRepository
 from backend.repository.training_repository import TrainingRepository
@@ -489,13 +490,17 @@ class AppDependencyBuilder:
             training_repository=self.training_repository,
             application_repository=self.application_repository,
         )
+        self.meeting_scheduling_service = MeetingSchedulingService(
+            logger=self.logger,
+            google_service=self.google_service,
+            user_emails_repository=self.user_emails_repository,
+        )
         self.meeting_service = MeetingService(
             logger=self.logger,
             mentorship_pairs_repository=self.mentorship_pairs_repository,
             mentorship_mapper=self.mentorship_mapper,
             users_repository=self.users_repository,
-            google_service=self.google_service,
-            user_emails_repository=self.user_emails_repository,
+            meeting_scheduling_service=self.meeting_scheduling_service,
         )
         self.meet_attendance_service = MeetAttendanceService(
             logger=self.logger,
