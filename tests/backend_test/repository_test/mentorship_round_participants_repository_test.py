@@ -77,7 +77,13 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
         await self.insert_entities(self.rounds)
 
     def _make_user(
-        self, *, first_name="Test", last_name="User", email, preferred_name=None
+        self,
+        *,
+        first_name="Test",
+        last_name="User",
+        email,
+        preferred_name=None,
+        is_active=True,
     ):
         return UsersEntity(
             first_name=first_name,
@@ -86,7 +92,7 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
             timezone="Asia/Shanghai",
             timezone_updated_at=datetime.now(timezone.utc),
             communication_channel=CommunicationMethod.EMAIL,
-            is_active=True,
+            is_active=is_active,
             updated_timestamp=datetime.now(timezone.utc),
         )
 
@@ -620,6 +626,24 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
         self.assertNotIn(applied_user.user_id, user_ids)
         self.assertNotIn(employment_hired_user.user_id, user_ids)
         self.assertNotIn(no_application_user.user_id, user_ids)
+
+    async def test_search_excludes_deactivated_users(self):
+        """Verify deactivated users are excluded even if they meet the mentorship gate."""
+        inactive_user = self._make_user(
+            first_name="Ina",
+            last_name="Inactive",
+            email="ina@example.com",
+            is_active=False,
+        )
+        await self.insert_entities([inactive_user])
+        await self._hire_for_activity(inactive_user)
+
+        rows, _ = await self.repo.search_participants_for_admin(
+            self.session, ParticipantSearchFilterDto(), limit=20, offset=0
+        )
+
+        user_ids = {r.user_id for r in rows}
+        self.assertNotIn(inactive_user.user_id, user_ids)
 
     async def test_search_filter_by_user_id(self):
         user2 = self._make_user(
