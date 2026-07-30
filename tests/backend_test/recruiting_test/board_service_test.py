@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, call, create_autospec
 
 from backend.recruiting.application_access import ApplicationAccess
 from backend.recruiting.board_service import TERMINAL_STAGES, BoardService
+from backend.recruiting.interview_scheduling_service import InterviewSchedulingService
 from backend.recruiting.recruiting_mapper import RecruitingMapper
 from backend.dto.board_dto import (
     REJECT_REASONS,
@@ -123,6 +124,13 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             self.assignment_repo,
             self.user_permissions_repo,
         )
+        # The interview collaborator board_service delegates the "cancel the
+        # meeting on the round being left" action to. autospec so a signature
+        # drift on cancel_for_round fails the test instead of silently
+        # accepting any arity. Default True = "there was a future meeting and
+        # it was cancelled"; the flag-off tests assert it is never awaited.
+        self.interview_svc = create_autospec(InterviewSchedulingService, instance=True)
+        self.interview_svc.cancel_for_round.return_value = True
         self.service = BoardService(
             self.job_repo,
             self.app_repo,
@@ -142,6 +150,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             self.email_sync_svc,
             self.interview_repo,
             self.application_access,
+            self.interview_svc,
         )
         # Default persistence mocks: echo the entity back, like SQLAlchemy's
         # merge-and-flush does when nothing else stubs them out.
@@ -2948,6 +2957,170 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.assignment_repo.upsert.assert_not_awaited()
         self.app_repo.update.assert_not_awaited()
         self.session.commit.assert_not_awaited()
+
+    # -- ghost meetings: cancelling the meeting on the round being left --
+
+    def _setup_behavioral_application(self, current_round=1):
+        """An owned two-round behavioral application, mid-pipeline.
+
+        Behavioral is a schedulable stage, so this is the shape where a
+        stage/round advance can strand a booked meeting.
+        """
+        job = self._job(
+            job_id=1,
+            owner_ids=(2,),
+            stages=("behavioral", "tech"),
+            rounds={"behavioral": 2},
+        )
+        application = self._application(
+            application_id=10, job_id=1, stage=ApplicationStage.BEHAVIORAL
+        )
+        application.current_round = current_round
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+        return application
+
+    async def test_change_stage_cancels_the_left_rounds_meeting_when_asked(self):
+        self._setup_behavioral_application(current_round=2)
+
+        dto = StageChangeDto(to_stage=ApplicationStage.TECH, cancel_interview=True)
+        await self.service.change_stage(self.session, self._ctx(user_id=2), 10, dto)
+
+        # The stage+round being LEFT, not the target: the meeting that just
+        # became unreachable in the UI is behavioral round 2's, and the
+        # application is about to read tech round 1.
+        self.interview_svc.cancel_for_round.assert_awaited_once_with(
+            self.session,
+            10,
+            ApplicationStage.BEHAVIORAL,
+            2,
+            2,
+            via="stage_changed",
+        )
+
+    async def test_change_stage_leaves_the_meeting_alone_when_not_asked(self):
+        """The flag defaults to False, so a request that says nothing about the
+        meeting never cancels one -- only an explicit opt-in does."""
+        self._setup_behavioral_application()
+
+        dto = StageChangeDto(to_stage=ApplicationStage.TECH)
+        self.assertFalse(dto.cancel_interview)
+        await self.service.change_stage(self.session, self._ctx(user_id=2), 10, dto)
+
+        self.interview_svc.cancel_for_round.assert_not_awaited()
+
+    async def test_change_stage_reject_cancels_with_the_reject_source(self):
+        self._setup_behavioral_application()
+
+        dto = StageChangeDto(
+            to_stage=ApplicationStage.REJECTED,
+            reason=REJECT_REASONS[0],
+            cancel_interview=True,
+        )
+        await self.service.change_stage(self.session, self._ctx(user_id=2), 10, dto)
+
+        self.interview_svc.cancel_for_round.assert_awaited_once_with(
+            self.session,
+            10,
+            ApplicationStage.BEHAVIORAL,
+            1,
+            2,
+            via="rejected",
+        )
+
+    async def test_change_stage_cancels_inside_the_same_transaction(self):
+        """Mutation check: move the cancel below `session.commit()` in
+        change_stage and this must go red. A cancel committed separately
+        could delete the row while the stage change rolls back."""
+        commits_seen_at_cancel = []
+
+        async def record(*_args, **_kwargs):
+            commits_seen_at_cancel.append(self.session.commit.await_count)
+            return True
+
+        self.interview_svc.cancel_for_round = AsyncMock(side_effect=record)
+        self._setup_behavioral_application()
+
+        dto = StageChangeDto(to_stage=ApplicationStage.TECH, cancel_interview=True)
+        await self.service.change_stage(self.session, self._ctx(user_id=2), 10, dto)
+
+        self.assertEqual(commits_seen_at_cancel, [0])
+        self.session.commit.assert_awaited_once()
+
+    async def test_change_stage_never_cancels_when_the_transition_is_illegal(self):
+        """The advance is validated first, so a rejected transition must not
+        have already deleted the candidate's meeting."""
+        self._setup_behavioral_application()
+
+        dto = StageChangeDto(
+            to_stage=ApplicationStage.RECRUITER_SCREENING, cancel_interview=True
+        )
+        with self.assertRaises(ValueError):
+            await self.service.change_stage(self.session, self._ctx(user_id=2), 10, dto)
+
+        self.interview_svc.cancel_for_round.assert_not_awaited()
+
+    async def test_set_round_cancels_the_left_rounds_meeting_when_asked(self):
+        self._setup_behavioral_application(current_round=1)
+
+        dto = RoundChangeDto(round=2, cancel_interview=True)
+        await self.service.set_round(self.session, self._ctx(user_id=2), 10, dto)
+
+        self.interview_svc.cancel_for_round.assert_awaited_once_with(
+            self.session,
+            10,
+            ApplicationStage.BEHAVIORAL,
+            1,
+            2,
+            via="round_advanced",
+        )
+
+    async def test_set_round_leaves_the_meeting_alone_when_not_asked(self):
+        self._setup_behavioral_application(current_round=1)
+
+        dto = RoundChangeDto(round=2)
+        self.assertFalse(dto.cancel_interview)
+        await self.service.set_round(self.session, self._ctx(user_id=2), 10, dto)
+
+        self.interview_svc.cancel_for_round.assert_not_awaited()
+
+    async def test_set_round_to_the_same_round_never_cancels(self):
+        """Re-setting the current round leaves no round behind, so there is no
+        stranded meeting to clean up -- the one still booked is the one the
+        application continues to show."""
+        self._setup_behavioral_application(current_round=2)
+
+        dto = RoundChangeDto(round=2, cancel_interview=True)
+        await self.service.set_round(self.session, self._ctx(user_id=2), 10, dto)
+
+        self.interview_svc.cancel_for_round.assert_not_awaited()
+
+    async def test_set_round_moving_backward_cancels_the_round_it_leaves(self):
+        """Rescue lanes move an application back a round; the round being left
+        is still `from_round`, whichever direction the move goes."""
+        self._setup_behavioral_application(current_round=2)
+
+        dto = RoundChangeDto(round=1, cancel_interview=True)
+        await self.service.set_round(self.session, self._ctx(user_id=2), 10, dto)
+
+        self.interview_svc.cancel_for_round.assert_awaited_once_with(
+            self.session,
+            10,
+            ApplicationStage.BEHAVIORAL,
+            2,
+            2,
+            via="round_advanced",
+        )
+
+    async def test_set_round_never_cancels_when_the_round_is_out_of_range(self):
+        self._setup_behavioral_application(current_round=1)
+
+        dto = RoundChangeDto(round=9, cancel_interview=True)
+        with self.assertRaises(ValueError):
+            await self.service.set_round(self.session, self._ctx(user_id=2), 10, dto)
+
+        self.interview_svc.cancel_for_round.assert_not_awaited()
 
     # -- activity timeline logging --
 
