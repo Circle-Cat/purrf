@@ -41,8 +41,8 @@ module "purrf_instance" {
   mentorship_calendar_id = "c_6bbe09d44422476be341543a5b8dc6bd486d9240f3e16c3041a164c02feb0374@group.calendar.google.com"
   interview_calendar_id  = "c_dd6d2e0b4944352349fd0170493c38ffb437036c1a0dc756b6743db9f88e5502@group.calendar.google.com"
 
-  gmail_client_id      = var.gmail_client_id
-  gmail_client_secret  = var.gmail_client_secret
-  gmail_refresh_token  = var.gmail_refresh_token
-  gmail_sender_address = var.gmail_sender_address
+  gmail_client_id         = var.gmail_client_id
+  gmail_client_secret     = var.gmail_client_secret
+  gmail_refresh_token     = var.gmail_refresh_token
+  gmail_sender_recruiting = var.gmail_sender_recruiting
 }

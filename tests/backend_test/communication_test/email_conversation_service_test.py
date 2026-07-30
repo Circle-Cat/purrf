@@ -11,7 +11,13 @@ SENDER = "recruiting@circlecat.org"
 class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.gmail = Mock()
-        self.gmail.sender_address = SENDER
+        # Stand-in for the real GmailClient.owns_address: "is this From one of
+        # the addresses this mailbox sends as?". Address normalisation (case,
+        # display names) is the client's job and is tested there; this fake only
+        # has to be faithful enough to drive the direction branch.
+        self.gmail.owns_address.side_effect = (
+            lambda address: SENDER in (address or "").lower()
+        )
         self.thread_repo = AsyncMock()
         self.message_repo = AsyncMock()
         self.session = Mock()
@@ -55,6 +61,9 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
         self.gmail.send_message.assert_called_once()
         _, kwargs = self.gmail.send_message.call_args
         self.assertIsNone(kwargs.get("thread_id"))
+        # This service says which address it sends as; the transport holds no
+        # default, so a missing sender would go out as the mailbox owner.
+        self.assertEqual(kwargs["sender"], SENDER)
 
         self.thread_repo.create.assert_awaited_once()
         _, tkw = self.thread_repo.create.call_args
@@ -453,6 +462,25 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
         _, mkw = self.message_repo.create.call_args
         self.assertEqual(mkw["direction"], EmailDirection.OUTBOUND)
         self.assertEqual(mkw["gmail_internal_date"].year, 2023)
+
+    async def test_sync_thread_asks_the_transport_which_addresses_are_ours(self):
+        # Direction must not be a string compare against our own one address:
+        # a second send-as alias on the same mailbox is still us. The transport
+        # owns that question, and this service must take its answer.
+        self.gmail.list_thread_message_ids.return_value = ["g9"]
+        self.message_repo.list_gmail_message_ids_by_thread.return_value = set()
+        self.gmail.get_message.return_value = self._fetched(
+            "g9", "notification@circlecat.org"
+        )
+        self.gmail.owns_address.side_effect = None
+        self.gmail.owns_address.return_value = True
+        self.message_repo.create.return_value = SimpleNamespace(message_id=4)
+
+        await self.service.sync_thread(self.session, self._thread())
+
+        self.gmail.owns_address.assert_called_with("notification@circlecat.org")
+        _, mkw = self.message_repo.create.call_args
+        self.assertEqual(mkw["direction"], EmailDirection.OUTBOUND)
 
     async def test_sync_thread_propagates_a_failed_body_fetch(self):
         # A message deleted between listing and fetching yields a 404 ->

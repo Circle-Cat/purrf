@@ -22,7 +22,6 @@ Two responsibilities:
 
 import asyncio
 from datetime import datetime, timezone
-from email.utils import parseaddr
 
 from backend.common.communication_enums import EmailDirection
 from backend.dto.email_dto import EmailMessageDto, EmailThreadDto
@@ -62,8 +61,9 @@ class EmailConversationService:
             gmail_client (GmailClient): Transport (send / read).
             thread_repository (EmailThreadRepository): Thread data access.
             message_repository (EmailMessageRepository): Message data access.
-            sender_address (str): The company sender address, used to classify
-                a synced message's direction.
+            sender_address (str): The address this service sends as. One of
+                the addresses the client owns; "which addresses count as ours"
+                is a separate question, answered by ``owns_address``.
         """
         self._gmail = gmail_client
         self._thread_repo = thread_repository
@@ -72,8 +72,8 @@ class EmailConversationService:
 
     @property
     def sender_address(self):
-        """The company sender address (for the domain layer's callers to
-        exclude our own address when assembling Cc / classifying direction)."""
+        """The address this service sends as (so callers can keep it out of a
+        default Cc list — never Cc ourselves)."""
         return self._sender_address
 
     async def send(
@@ -140,6 +140,7 @@ class EmailConversationService:
             cc,
             subject,
             body,
+            sender=self._sender_address,
             thread_id=gmail_thread_id,
             in_reply_to=in_reply_to,
             references=references,
@@ -291,9 +292,13 @@ class EmailConversationService:
         return created
 
     def _direction_of(self, from_address):
-        """OUTBOUND when the message is from our sender, INBOUND otherwise."""
-        address = parseaddr(from_address or "")[1].lower()
-        if address and address == (self._sender_address or "").lower():
+        """OUTBOUND when the message is from one of our addresses, else INBOUND.
+
+        Deliberately not a compare against ``self._sender_address``: the mailbox
+        may send as several addresses (one per service), and a message from any
+        of them is still ours. The transport owns that list.
+        """
+        if self._gmail.owns_address(from_address):
             return EmailDirection.OUTBOUND
         return EmailDirection.INBOUND
 

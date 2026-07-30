@@ -170,8 +170,8 @@ variable "gmail_refresh_token" {
   sensitive   = true
 }
 
-variable "gmail_sender_address" {
-  description = "Mailbox the app sends candidate emails from. Real sender in prod; a test mailbox in test/staging."
+variable "gmail_sender_recruiting" {
+  description = "From address for recruiting email. Must be registered and verified as a Send-As on the mailbox gmail_refresh_token belongs to, or Gmail silently rewrites the From to that mailbox. Per service (a second sending feature gets its own variable) and per environment (so a non-prod mail is recognisable as one)."
   type        = string
 }
 

@@ -14,12 +14,12 @@ TEST_CLIENT_ID = "test-client-id"
 TEST_CLIENT_SECRET = "test-client-secret"
 TEST_REFRESH_TOKEN = "test-refresh-token"
 TEST_SENDER = "recruiting@circlecat.org"
+OTHER_SENDER = "notification@circlecat.org"
 
 _ENV = {
     "GMAIL_CLIENT_ID": TEST_CLIENT_ID,
     "GMAIL_CLIENT_SECRET": TEST_CLIENT_SECRET,
     "GMAIL_REFRESH_TOKEN": TEST_REFRESH_TOKEN,
-    "GMAIL_SENDER_ADDRESS": TEST_SENDER,
 }
 
 
@@ -59,14 +59,34 @@ class TestGmailClient(TestCase):
         self.mock_credentials = self.creds_patcher.start()
         self.addCleanup(self.creds_patcher.stop)
 
-        self.client = GmailClient(logger=self.logger, retry_utils=self.retry_utils)
+        self.client = GmailClient(
+            logger=self.logger,
+            retry_utils=self.retry_utils,
+            sender_addresses=[TEST_SENDER],
+        )
 
     # ---- construction / env validation --------------------------------
 
     def test_missing_env_var_raises_value_error(self):
         with patch.dict(os.environ, {"GMAIL_REFRESH_TOKEN": ""}, clear=False):
             with self.assertRaises(ValueError):
-                GmailClient(logger=self.logger, retry_utils=self.retry_utils)
+                GmailClient(
+                    logger=self.logger,
+                    retry_utils=self.retry_utils,
+                    sender_addresses=[TEST_SENDER],
+                )
+
+    def test_no_sender_address_raises_value_error(self):
+        # A mailbox with no configured From is unusable: every send would have
+        # to invent one.
+        for empty in ([], None, [""]):
+            with self.subTest(sender_addresses=empty):
+                with self.assertRaises(ValueError):
+                    GmailClient(
+                        logger=self.logger,
+                        retry_utils=self.retry_utils,
+                        sender_addresses=empty,
+                    )
 
     def test_constructor_makes_no_network_call(self):
         # Building the client alone must not build the Gmail service.
@@ -96,7 +116,11 @@ class TestGmailClient(TestCase):
     def test_send_message_builds_multipart_alternative(self):
         self._stub_send_result()
         self.client.send_message(
-            to=["alice@example.com"], cc=[], subject="Hi", body="<p>Hello</p>"
+            to=["alice@example.com"],
+            cc=[],
+            subject="Hi",
+            body="<p>Hello</p>",
+            sender=TEST_SENDER,
         )
         mime = self._sent_mime()
         self.assertEqual(mime["From"], TEST_SENDER)
@@ -116,7 +140,7 @@ class TestGmailClient(TestCase):
     def _send_body(self, body):
         self._stub_send_result()
         self.client.send_message(
-            to=["alice@example.com"], cc=[], subject="Hi", body=body
+            to=["alice@example.com"], cc=[], subject="Hi", body=body, sender=TEST_SENDER
         )
 
     def test_plain_part_keeps_the_url_of_a_link(self):
@@ -144,6 +168,70 @@ class TestGmailClient(TestCase):
         self._send_body('<a name="top">Back to top</a>')
         self.assertEqual(self._plain_part().strip(), "Back to top")
 
+    def test_send_message_without_a_sender_is_a_type_error(self):
+        # ``sender`` has no default on purpose. Gmail does not reject an
+        # unowned From, it silently rewrites it to the mailbox owner, so a
+        # caller that forgets to say who it is must fail here instead.
+        self._stub_send_result()
+        with self.assertRaises(TypeError):
+            self.client.send_message(
+                to=["a@example.com"], cc=[], subject="Hi", body="<p>x</p>"
+            )
+
+    def test_send_message_uses_the_given_sender_as_from(self):
+        client = GmailClient(
+            logger=self.logger,
+            retry_utils=self.retry_utils,
+            sender_addresses=[TEST_SENDER, OTHER_SENDER],
+        )
+        self._stub_send_result()
+        client.send_message(
+            to=["a@example.com"],
+            cc=[],
+            subject="Hi",
+            body="<p>x</p>",
+            sender=OTHER_SENDER,
+        )
+        self.assertEqual(self._sent_mime()["From"], OTHER_SENDER)
+
+    def test_send_message_keeps_a_display_name_in_from(self):
+        self._stub_send_result()
+        self.client.send_message(
+            to=["a@example.com"],
+            cc=[],
+            subject="Hi",
+            body="<p>x</p>",
+            sender=f"Circle Cat Recruiting <{TEST_SENDER}>",
+        )
+        mime = self._sent_mime()
+        self.assertEqual(mime["From"], f"Circle Cat Recruiting <{TEST_SENDER}>")
+        # The Message-ID domain comes from the address, not the display name.
+        self.assertTrue(mime["Message-ID"].endswith("@circlecat.org>"))
+
+    def test_send_message_rejects_a_sender_the_mailbox_does_not_own(self):
+        with self.assertRaises(ValueError):
+            self.client.send_message(
+                to=["a@example.com"],
+                cc=[],
+                subject="Hi",
+                body="<p>x</p>",
+                sender="someone-else@example.com",
+            )
+        # Rejected before any Gmail service is built, so nothing went out.
+        self.mock_build.assert_not_called()
+
+    def test_owns_address_ignores_case_and_reads_a_display_name_header(self):
+        self.assertTrue(self.client.owns_address(TEST_SENDER))
+        self.assertTrue(self.client.owns_address(TEST_SENDER.upper()))
+        self.assertTrue(
+            self.client.owns_address(f"Circle Cat Recruiting <{TEST_SENDER}>")
+        )
+
+    def test_owns_address_rejects_other_addresses_and_blanks(self):
+        for value in ("cand@example.com", "recruiting@example.com", "", None):
+            with self.subTest(value=value):
+                self.assertFalse(self.client.owns_address(value))
+
     def test_send_message_sets_cc(self):
         self._stub_send_result()
         self.client.send_message(
@@ -151,6 +239,7 @@ class TestGmailClient(TestCase):
             cc=["b@example.com", "c@example.com"],
             subject="Hi",
             body="<p>x</p>",
+            sender=TEST_SENDER,
         )
         mime = self._sent_mime()
         self.assertEqual(mime["Cc"], "b@example.com, c@example.com")
@@ -158,18 +247,28 @@ class TestGmailClient(TestCase):
     def test_send_message_returns_ids(self):
         self._stub_send_result(message_id="MID", thread_id="TID")
         result = self.client.send_message(
-            to=["a@example.com"], cc=[], subject="Hi", body="<p>x</p>"
+            to=["a@example.com"],
+            cc=[],
+            subject="Hi",
+            body="<p>x</p>",
+            sender=TEST_SENDER,
         )
         self.assertEqual(result["gmail_message_id"], "MID")
         self.assertEqual(result["gmail_thread_id"], "TID")
         self.assertTrue(result["rfc822_message_id"])
+        # Minted under the sender's domain, not the mailbox owner's.
+        self.assertTrue(result["rfc822_message_id"].endswith("@circlecat.org>"))
         # The returned rfc822 id is the one we put on the wire.
         self.assertEqual(result["rfc822_message_id"], self._sent_mime()["Message-ID"])
 
     def test_new_message_omits_thread_id(self):
         self._stub_send_result()
         self.client.send_message(
-            to=["a@example.com"], cc=[], subject="Hi", body="<p>x</p>"
+            to=["a@example.com"],
+            cc=[],
+            subject="Hi",
+            body="<p>x</p>",
+            sender=TEST_SENDER,
         )
         body = self.mock_service.users().messages().send.call_args.kwargs["body"]
         self.assertNotIn("threadId", body)
@@ -181,6 +280,7 @@ class TestGmailClient(TestCase):
             cc=[],
             subject="Re: Hi",
             body="<p>reply</p>",
+            sender=TEST_SENDER,
             thread_id="THREAD",
             in_reply_to="<m0@mail>",
             references="<m0@mail>",
@@ -197,7 +297,11 @@ class TestGmailClient(TestCase):
         )
         with self.assertRaises(RateLimitedError):
             self.client.send_message(
-                to=["a@example.com"], cc=[], subject="Hi", body="<p>x</p>"
+                to=["a@example.com"],
+                cc=[],
+                subject="Hi",
+                body="<p>x</p>",
+                sender=TEST_SENDER,
             )
 
     def test_send_message_server_error(self):
@@ -206,7 +310,11 @@ class TestGmailClient(TestCase):
         )
         with self.assertRaises(RuntimeError):
             self.client.send_message(
-                to=["a@example.com"], cc=[], subject="Hi", body="<p>x</p>"
+                to=["a@example.com"],
+                cc=[],
+                subject="Hi",
+                body="<p>x</p>",
+                sender=TEST_SENDER,
             )
 
     def test_send_message_refresh_error_translated(self):
@@ -218,23 +326,39 @@ class TestGmailClient(TestCase):
         )
         with self.assertRaises(RuntimeError):
             self.client.send_message(
-                to=["a@example.com"], cc=[], subject="Hi", body="<p>x</p>"
+                to=["a@example.com"],
+                cc=[],
+                subject="Hi",
+                body="<p>x</p>",
+                sender=TEST_SENDER,
             )
 
     def test_service_built_once_across_calls(self):
         self._stub_send_result()
         self.client.send_message(
-            to=["a@example.com"], cc=[], subject="Hi", body="<p>x</p>"
+            to=["a@example.com"],
+            cc=[],
+            subject="Hi",
+            body="<p>x</p>",
+            sender=TEST_SENDER,
         )
         self.client.send_message(
-            to=["a@example.com"], cc=[], subject="Hi again", body="<p>y</p>"
+            to=["a@example.com"],
+            cc=[],
+            subject="Hi again",
+            body="<p>y</p>",
+            sender=TEST_SENDER,
         )
         self.assertEqual(self.mock_build.call_count, 1)
 
     def test_credentials_built_from_refresh_token(self):
         self._stub_send_result()
         self.client.send_message(
-            to=["a@example.com"], cc=[], subject="Hi", body="<p>x</p>"
+            to=["a@example.com"],
+            cc=[],
+            subject="Hi",
+            body="<p>x</p>",
+            sender=TEST_SENDER,
         )
         kwargs = self.mock_credentials.call_args.kwargs
         self.assertEqual(kwargs["refresh_token"], TEST_REFRESH_TOKEN)
