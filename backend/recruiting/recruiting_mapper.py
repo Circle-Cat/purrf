@@ -240,7 +240,6 @@ class RecruitingMapper:
             round=interview.round,
             start_at=interview.start_at,
             end_at=interview.end_at,
-            timezone=interview.timezone,
             meet_link=interview.meet_link,
             assignee_id=assignee_id,
             assignee_name=assignee_name,

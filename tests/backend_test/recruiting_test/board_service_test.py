@@ -1205,7 +1205,6 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             round=1,
             start_at=datetime(2026, 8, 5, 21, 0, tzinfo=timezone.utc),
             end_at=datetime(2026, 8, 5, 21, 45, tzinfo=timezone.utc),
-            timezone="America/Los_Angeles",
             meet_link="https://meet.example/abc",
             scheduled_by=2,
         )
@@ -1221,6 +1220,56 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.interview.assignee_id, 42)
         self.assertEqual(result.interview.assignee_name, "Ivy Interviewer")
         self.assertEqual(result.interview.scheduled_by_name, "Rae Recruiter")
+
+    async def test_get_application_detail_ships_the_viewers_own_timezone(self):
+        """The CALLER's zone, not the candidate's: interview instants are
+        rendered wherever the person reading them lives. Mutation check --
+        resolve the applicant instead of current_user and this goes red."""
+        job = self._job(job_id=1, owner_ids=(2,), stages=("behavioral",))
+        application = self._application(
+            application_id=10, job_id=1, user_id=3, stage=ApplicationStage.BEHAVIORAL
+        )
+        applicant = self._user(user_id=3)
+        applicant.timezone = "America/New_York"
+        viewer = self._user(user_id=2)
+        viewer.timezone = "Asia/Taipei"
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.users_repo.get_user_by_user_id = AsyncMock(
+            side_effect=lambda _session, uid: {3: applicant, 2: viewer}.get(uid)
+        )
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+
+        result = await self.service.get_application_detail(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertEqual(result.viewer_timezone, "Asia/Taipei")
+
+    async def test_get_application_detail_viewer_timezone_is_none_when_unset(self):
+        """The frontend answers None with the viewer's browser zone, so an
+        unset profile must not fall back to anyone else's zone here."""
+        job = self._job(job_id=1, owner_ids=(2,), stages=("behavioral",))
+        application = self._application(
+            application_id=10, job_id=1, user_id=3, stage=ApplicationStage.BEHAVIORAL
+        )
+        applicant = self._user(user_id=3)
+        applicant.timezone = "America/New_York"
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.users_repo.get_user_by_user_id = AsyncMock(
+            side_effect=lambda _session, uid: {
+                3: applicant,
+                2: self._user(user_id=2),
+            }.get(uid)
+        )
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+
+        result = await self.service.get_application_detail(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertIsNone(result.viewer_timezone)
 
     async def test_get_application_detail_interview_is_none_when_nothing_booked(self):
         job = self._job(job_id=1, owner_ids=(2,), stages=("behavioral",))

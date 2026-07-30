@@ -159,7 +159,6 @@ class _BaseTest(unittest.IsolatedAsyncioTestCase):
             meet_link="https://meet.example/abc",
             start_at=datetime(2026, 8, 5, 21, 0, tzinfo=timezone.utc),
             end_at=datetime(2026, 8, 5, 21, 45, tzinfo=timezone.utc),
-            timezone="America/Los_Angeles",
             scheduled_by=OWNER_ID,
         )
         base.update(overrides)
@@ -243,7 +242,10 @@ class ScheduleTest(_BaseTest):
         self.assertEqual(kwargs["round"], 1)
         self.assertEqual(kwargs["google_event_id"], "evt-1")
         self.assertEqual(kwargs["meet_link"], "https://meet.example/abc")
-        self.assertEqual(kwargs["timezone"], "America/Los_Angeles")
+        # The recruiter's picked zone is an INPUT only -- it converts the wall
+        # clock to UTC and is never persisted, because every surface renders
+        # these instants in the viewer's own zone instead.
+        self.assertNotIn("timezone", kwargs)
         self.assertEqual(kwargs["scheduled_by"], OWNER_ID)
         self.assertEqual(self.application.sub_status, "scheduled")
         self.application_repo.update.assert_awaited_once_with(

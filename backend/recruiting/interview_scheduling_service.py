@@ -233,7 +233,6 @@ class InterviewSchedulingService:
             meet_link=meeting.get("meet_link") or None,
             start_at=start_utc,
             end_at=end_utc,
-            timezone=dto.timezone,
             scheduled_by=current_user.user_id,
         )
         # Unconditional -- unlike cancel()'s `if sub_status == "scheduled"`
@@ -346,7 +345,6 @@ class InterviewSchedulingService:
             interview,
             start_at=start_utc,
             end_at=end_utc,
-            timezone=dto.timezone,
             meet_link=meeting.get("meet_link") or None,
         )
         await self.application_assignment_repository.upsert(

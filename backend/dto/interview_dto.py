@@ -52,14 +52,19 @@ class InterviewScheduleRequestDto(BaseDto):
 
 
 class InterviewDto(BaseDto):
-    """One scheduled interview meeting, as the detail page renders it."""
+    """One scheduled interview meeting, as the detail page renders it.
+
+    Carries no timezone: ``start_at``/``end_at`` are UTC instants and the page
+    renders them in the VIEWER's own zone (``ApplicationDetailDto`` ships
+    ``viewer_timezone`` for exactly that), so a zone here would only invite
+    rendering the wrong one.
+    """
 
     interview_id: int
     stage: str
     round: int
     start_at: datetime
     end_at: datetime
-    timezone: str
     meet_link: str | None = None
     assignee_id: int | None = None
     assignee_name: str | None = None

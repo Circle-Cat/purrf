@@ -894,6 +894,16 @@ class BoardService:
             application.current_round,
             assignment.assignee_id if assignment is not None else None,
         )
+        # The CALLER's own zone, not the candidate's and not the zone whoever
+        # booked the meeting happened to be in: interview times are rendered
+        # wherever the person reading them lives. Nothing is stored per meeting
+        # (see ApplicationInterviewEntity) -- this is resolved per request. None
+        # when the viewer has not set one, which the frontend answers with their
+        # browser zone.
+        viewer = await self.users_repository.get_user_by_user_id(
+            session, current_user.user_id
+        )
+        viewer_timezone = viewer.timezone if viewer is not None else None
         # The embedded ApplicationDto's `editable` is deliberately left at
         # its default (False) here: it encodes the CANDIDATE's edit window
         # (first stage / pending / unfrozen), which the owner-facing detail
@@ -918,6 +928,7 @@ class BoardService:
             can_view=can_view,
             assignee_id=assignment.assignee_id if assignment is not None else None,
             interview=interview_dto,
+            viewer_timezone=viewer_timezone,
         )
 
     async def _build_interview_dto(

@@ -88,6 +88,12 @@ class ApplicationDetailDto(BaseDto):
     can_view: bool = False
     assignee_id: int | None = None
     interview: InterviewDto | None = None
+    # The CALLER's IANA zone from their profile, for rendering the interview's
+    # UTC instants as local wall clock. Per-request, not per-meeting: no zone is
+    # stored alongside a meeting (see ApplicationInterviewEntity). None when the
+    # viewer has set none, in which case the frontend falls back to their
+    # browser zone.
+    viewer_timezone: str | None = None
 
 
 class ApplicationActivityDto(BaseDto):
