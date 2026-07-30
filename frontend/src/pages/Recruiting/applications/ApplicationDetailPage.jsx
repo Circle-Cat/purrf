@@ -91,6 +91,7 @@ import {
 } from "@/pages/Recruiting/components/guideContent";
 import InterviewMeetingCard from "@/pages/Recruiting/applications/InterviewMeetingCard";
 import InterviewMeetingDialog from "@/pages/Recruiting/applications/InterviewMeetingDialog";
+import BackToBoardLink from "@/pages/Recruiting/applications/BackToBoardLink";
 
 /**
  * Advance targets whose assignee picker may be pre-filled from the job's
@@ -1709,17 +1710,25 @@ const ApplicationDetailPage = () => {
 
   return (
     <div className="flex flex-col gap-6 p-6">
-      <div className="space-y-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <h1 className="text-xl font-semibold text-slate-900">
-            {detail.applicantName}
-          </h1>
-          <Badge variant="secondary">
-            {stageLabel(detail.application.stage, job?.kind)}
-          </Badge>
-          {guide && <HowItWorksDialog {...guide} />}
+      <div className="space-y-2">
+        <BackToBoardLink
+          jobId={detail.application.jobId}
+          applicationId={applicationId}
+          evaluatorMode={evaluatorMode}
+          canView={detail.canView}
+        />
+        <div className="space-y-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-xl font-semibold text-slate-900">
+              {detail.applicantName}
+            </h1>
+            <Badge variant="secondary">
+              {stageLabel(detail.application.stage, job?.kind)}
+            </Badge>
+            {guide && <HowItWorksDialog {...guide} />}
+          </div>
+          <p className="text-sm text-slate-600">{detail.applicantEmail}</p>
         </div>
-        <p className="text-sm text-slate-600">{detail.applicantEmail}</p>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
