@@ -65,6 +65,7 @@ import {
   setApplicationRound,
   changeApplicationStage,
   blacklistUser,
+  listBlacklistUpcomingInterviews,
   reassignApplication,
   submitEvaluation,
   postComment,
@@ -1047,6 +1048,12 @@ const ApplicationDetailPage = () => {
   const [blacklistConfirmOpen, setBlacklistConfirmOpen] = useState(false);
   const [blacklistReason, setBlacklistReason] = useState("");
   const [blacklisting, setBlacklisting] = useState(false);
+  // The interviews a block would cancel, read when the dialog opens (never on
+  // page load -- every owner would pay for a query only this button needs).
+  // `null` means "not loaded / couldn't be loaded"; the block itself goes
+  // ahead either way, since the backend cancels them regardless.
+  const [blacklistUpcoming, setBlacklistUpcoming] = useState([]);
+  const [blacklistUpcomingFailed, setBlacklistUpcomingFailed] = useState(false);
 
   const [interviewDialogOpen, setInterviewDialogOpen] = useState(false);
   const [interviewDialogMode, setInterviewDialogMode] = useState("schedule");
@@ -1513,6 +1520,22 @@ const ApplicationDetailPage = () => {
       .finally(() => setRejecting(false));
   };
 
+  /**
+   * Open the blacklist confirm dialog and read what the block would cancel.
+   *
+   * Best-effort: a failed read shows a caveat instead of the list and still
+   * lets the block proceed — the backend cancels those meetings either way,
+   * so blocking an org-level sanction on a preview query would be backwards.
+   */
+  const handleOpenBlacklist = () => {
+    setBlacklistUpcoming([]);
+    setBlacklistUpcomingFailed(false);
+    setBlacklistConfirmOpen(true);
+    listBlacklistUpcomingInterviews(detail.application.userId)
+      .then(({ data }) => setBlacklistUpcoming(data ?? []))
+      .catch(() => setBlacklistUpcomingFailed(true));
+  };
+
   const handleCancelBlacklist = () => {
     setBlacklistConfirmOpen(false);
     setBlacklistReason("");
@@ -1784,7 +1807,7 @@ const ApplicationDetailPage = () => {
                         ? undefined
                         : "Requires the blacklist permission"
                     }
-                    onClick={() => setBlacklistConfirmOpen(true)}
+                    onClick={handleOpenBlacklist}
                   >
                     Blacklist
                   </Button>
@@ -1999,6 +2022,31 @@ const ApplicationDetailPage = () => {
           <DialogHeader>
             <DialogTitle>Blacklist this applicant?</DialogTitle>
           </DialogHeader>
+          {blacklistUpcoming.length > 0 && (
+            <div className="text-sm text-slate-700">
+              <p>
+                This also cancels the scheduled interviews below, on every
+                posting. All attendees will be notified.
+              </p>
+              <ul className="mt-2 list-disc pl-5">
+                {blacklistUpcoming.map((entry) => (
+                  <li
+                    key={`${entry.applicationId}-${entry.stage}-${entry.round}`}
+                  >
+                    {`${entry.jobTitle} — ${humanize(entry.stage)} round ${
+                      entry.round
+                    } — ${formatInterviewWhen(entry.startAt, viewerTimezone)}`}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {blacklistUpcomingFailed && (
+            <p className="text-sm text-slate-500">
+              Couldn&apos;t check for scheduled interviews. Any still to come
+              will be cancelled anyway.
+            </p>
+          )}
           <Textarea
             placeholder="Reason (required)"
             value={blacklistReason}

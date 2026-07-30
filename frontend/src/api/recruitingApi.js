@@ -196,6 +196,14 @@ export const cancelInterview = (id) =>
 export const listBlacklist = (search) =>
   request.get(API_ENDPOINTS.RECRUITING_BLACKLIST, { params: { search } });
 
+/**
+ * List the interview meetings a blacklist of this user would cancel — every
+ * still-upcoming one across all of their applications. Read by the blacklist
+ * confirm dialog so the sanction never silently deletes a calendar invite.
+ */
+export const listBlacklistUpcomingInterviews = (userId) =>
+  request.get(API_ENDPOINTS.RECRUITING_BLACKLIST_UPCOMING_INTERVIEWS(userId));
+
 /** Clear a user's block state. */
 export const unblockUser = (userId) =>
   request.delete(API_ENDPOINTS.RECRUITING_BLACKLIST_UNBLOCK(userId));

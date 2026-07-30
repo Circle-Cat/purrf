@@ -184,6 +184,26 @@ class RoundChangeDto(BaseRequestDto):
         return v
 
 
+class UpcomingInterviewDto(BaseDto):
+    """One still-to-happen interview meeting a blacklist is about to cancel.
+
+    Read-only pre-flight for the confirm dialog (see
+    ``BoardService.list_upcoming_interviews_for_user``), so it carries only
+    what identifies the meeting to a human: which posting, which step, and
+    when. No zone: the dialog renders ``start_at`` in the READER's own zone,
+    like every other interview time (see ``ApplicationDetailDto``'s
+    ``viewer_timezone``). The interviewer's name is deliberately left out too —
+    resolving it would cost another user lookup for a warning list nobody acts
+    on per-row.
+    """
+
+    application_id: int
+    job_title: str
+    stage: ApplicationStage
+    round: int
+    start_at: datetime
+
+
 class BlacklistDto(BaseRequestDto):
     """Block a user org-wide and close out the triggering application."""
 

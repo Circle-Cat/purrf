@@ -95,8 +95,10 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             ApplicationInterviewRepository, instance=True
         )
         # Default: no meeting booked, so get_application_detail's `interview`
-        # field defaults to None unless a test seeds a row.
+        # field defaults to None unless a test seeds a row, and blacklist's
+        # cancel sweep finds nothing to cancel.
         self.interview_repo.get.return_value = None
+        self.interview_repo.list_by_application_ids.return_value = []
         self.session = AsyncMock()
         # Applicant emails come from user_emails, not the legacy column.
         self.user_emails_repo = MagicMock()
@@ -3121,6 +3123,238 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             await self.service.set_round(self.session, self._ctx(user_id=2), 10, dto)
 
         self.interview_svc.cancel_for_round.assert_not_awaited()
+
+    # -- blacklist: the upcoming meetings it sweeps away --
+
+    # Far from any real "now" in both directions, so these never turn into
+    # time bombs.
+    UPCOMING = datetime(2099, 8, 5, 21, 0, tzinfo=timezone.utc)
+    STARTED = datetime(2000, 8, 5, 21, 0, tzinfo=timezone.utc)
+
+    def _interview_row(
+        self,
+        application_id=10,
+        stage=ApplicationStage.BEHAVIORAL,
+        round=1,
+        start_at=None,
+    ):
+        return SimpleNamespace(
+            interview_id=900 + application_id,
+            application_id=application_id,
+            stage=stage,
+            round=round,
+            google_event_id=f"evt-{application_id}",
+            meet_link=None,
+            start_at=start_at or self.UPCOMING,
+            end_at=(start_at or self.UPCOMING),
+            timezone="America/Los_Angeles",
+            scheduled_by=2,
+        )
+
+    def _setup_blacklist_target(self, others=()):
+        """The blacklisted candidate's triggering application, plus siblings.
+
+        `others` is an iterable of (application_id, stage, tags) triples.
+        """
+        application = self._application(
+            application_id=10, job_id=1, user_id=5, stage=ApplicationStage.BEHAVIORAL
+        )
+        sibling_rows = []
+        siblings = {}
+        for other_id, other_stage, other_tags in others:
+            sibling = self._application(
+                application_id=other_id, job_id=2, user_id=5, stage=other_stage
+            )
+            sibling.tags = other_tags
+            siblings[other_id] = sibling
+            sibling_rows.append((sibling, self._job(job_id=2, owner_ids=(2,))))
+        by_id = {10: application, **siblings}
+
+        async def get_by_id(_session, application_id, for_update=False):
+            return by_id.get(application_id)
+
+        self.app_repo.get_by_id = AsyncMock(side_effect=get_by_id)
+        self.app_repo.list_by_user = AsyncMock(return_value=sibling_rows)
+        self.users_repo.get_user_by_user_id = AsyncMock(
+            return_value=self._user(user_id=5)
+        )
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+        return application, siblings
+
+    async def test_blacklist_cancels_every_upcoming_meeting_it_sweeps(self):
+        self._setup_blacklist_target(
+            others=[(11, ApplicationStage.TECH, None)],
+        )
+        self.interview_repo.list_by_application_ids = AsyncMock(
+            return_value=[
+                self._interview_row(application_id=10),
+                self._interview_row(
+                    application_id=11, stage=ApplicationStage.TECH, round=2
+                ),
+            ]
+        )
+
+        await self.service.blacklist(
+            self.session,
+            self._ctx(user_id=2),
+            BlacklistDto(user_id=5, application_id=10, reason="spam"),
+        )
+
+        self.assertEqual(
+            [c.args[1:] for c in self.interview_svc.cancel_for_round.await_args_list],
+            [
+                (10, ApplicationStage.BEHAVIORAL, 1, 2),
+                (11, ApplicationStage.TECH, 2, 2),
+            ],
+        )
+        for call_args in self.interview_svc.cancel_for_round.await_args_list:
+            self.assertEqual(call_args.kwargs, {"via": "blacklisted"})
+
+    async def test_blacklist_never_asks_before_cancelling(self):
+        """Unlike an advance or a reject, a blacklist carries no opt-out: the
+        candidate is banned org-wide, so the meeting will not happen."""
+        self._setup_blacklist_target()
+        self.interview_repo.list_by_application_ids = AsyncMock(
+            return_value=[self._interview_row(application_id=10)]
+        )
+
+        # BlacklistDto has no cancel flag to set -- the sweep is unconditional.
+        await self.service.blacklist(
+            self.session,
+            self._ctx(user_id=2),
+            BlacklistDto(user_id=5, application_id=10, reason="spam"),
+        )
+
+        self.interview_svc.cancel_for_round.assert_awaited_once()
+
+    async def test_blacklist_skips_an_already_blacklisted_applications_meeting(self):
+        """A sibling already tagged blacklisted is left untouched by the sweep
+        (no duplicate activity), so its meeting isn't re-cancelled either."""
+        self._setup_blacklist_target(
+            others=[(11, ApplicationStage.TECH, {"blacklisted": True})],
+        )
+        self.interview_repo.list_by_application_ids = AsyncMock(return_value=[])
+
+        await self.service.blacklist(
+            self.session,
+            self._ctx(user_id=2),
+            BlacklistDto(user_id=5, application_id=10, reason="spam"),
+        )
+
+        self.interview_repo.list_by_application_ids.assert_awaited_once_with(
+            self.session, [10]
+        )
+
+    async def test_blacklist_cancels_inside_the_same_transaction(self):
+        commits_seen_at_cancel = []
+
+        async def record(*_args, **_kwargs):
+            commits_seen_at_cancel.append(self.session.commit.await_count)
+            return True
+
+        self.interview_svc.cancel_for_round = AsyncMock(side_effect=record)
+        self._setup_blacklist_target()
+        self.interview_repo.list_by_application_ids = AsyncMock(
+            return_value=[self._interview_row(application_id=10)]
+        )
+
+        await self.service.blacklist(
+            self.session,
+            self._ctx(user_id=2),
+            BlacklistDto(user_id=5, application_id=10, reason="spam"),
+        )
+
+        self.assertEqual(commits_seen_at_cancel, [0])
+        self.session.commit.assert_awaited_once()
+
+    # -- blacklist: the pre-flight preview the confirm dialog shows --
+
+    async def test_list_upcoming_interviews_names_the_posting_and_the_slot(self):
+        application = self._application(
+            application_id=10, job_id=1, user_id=5, stage=ApplicationStage.BEHAVIORAL
+        )
+        application.current_round = 1
+        job = self._job(job_id=1, owner_ids=(2,))
+        self.app_repo.list_by_user = AsyncMock(return_value=[(application, job)])
+        self.interview_repo.list_by_application_ids = AsyncMock(
+            return_value=[self._interview_row(application_id=10)]
+        )
+
+        result = await self.service.list_upcoming_interviews_for_user(self.session, 5)
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].application_id, 10)
+        self.assertEqual(result[0].job_title, "Job 1")
+        self.assertEqual(result[0].stage, ApplicationStage.BEHAVIORAL)
+        self.assertEqual(result[0].round, 1)
+        self.assertEqual(result[0].start_at, self.UPCOMING)
+        # No zone on the projection: the dialog renders this instant in the
+        # reader's own zone, like every other interview time.
+        self.assertFalse(hasattr(result[0], "timezone"))
+
+    async def test_list_upcoming_interviews_omits_meetings_already_underway(self):
+        application = self._application(application_id=10, job_id=1, user_id=5)
+        self.app_repo.list_by_user = AsyncMock(
+            return_value=[(application, self._job(job_id=1))]
+        )
+        self.interview_repo.list_by_application_ids = AsyncMock(
+            return_value=[self._interview_row(application_id=10, start_at=self.STARTED)]
+        )
+
+        result = await self.service.list_upcoming_interviews_for_user(self.session, 5)
+
+        self.assertEqual(result, [])
+
+    async def test_list_upcoming_interviews_omits_already_blacklisted_applications(
+        self,
+    ):
+        """Their meetings were already cancelled by the earlier blacklist, and
+        the sweep skips those rows -- promising to cancel them again would be a
+        lie."""
+        blocked = self._application(application_id=11, job_id=2, user_id=5)
+        blocked.tags = {"blacklisted": True}
+        live = self._application(application_id=10, job_id=1, user_id=5)
+        self.app_repo.list_by_user = AsyncMock(
+            return_value=[
+                (live, self._job(job_id=1)),
+                (blocked, self._job(job_id=2)),
+            ]
+        )
+        self.interview_repo.list_by_application_ids = AsyncMock(return_value=[])
+
+        await self.service.list_upcoming_interviews_for_user(self.session, 5)
+
+        self.interview_repo.list_by_application_ids.assert_awaited_once_with(
+            self.session, [10]
+        )
+
+    async def test_list_upcoming_interviews_orders_by_start_time(self):
+        first = self._application(application_id=10, job_id=1, user_id=5)
+        second = self._application(application_id=11, job_id=2, user_id=5)
+        self.app_repo.list_by_user = AsyncMock(
+            return_value=[
+                (first, self._job(job_id=1)),
+                (second, self._job(job_id=2)),
+            ]
+        )
+        later = self.UPCOMING.replace(year=2100)
+        self.interview_repo.list_by_application_ids = AsyncMock(
+            return_value=[
+                self._interview_row(application_id=11, start_at=later),
+                self._interview_row(application_id=10),
+            ]
+        )
+
+        result = await self.service.list_upcoming_interviews_for_user(self.session, 5)
+
+        self.assertEqual([row.application_id for row in result], [10, 11])
+
+    async def test_list_upcoming_interviews_for_a_candidate_with_nothing_booked(self):
+        self.app_repo.list_by_user = AsyncMock(return_value=[])
+
+        result = await self.service.list_upcoming_interviews_for_user(self.session, 5)
+
+        self.assertEqual(result, [])
 
     # -- activity timeline logging --
 
