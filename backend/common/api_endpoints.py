@@ -119,6 +119,11 @@ RECRUITING_APPLICATION_INTERVIEW_ENDPOINT = (
 )
 RECRUITING_BLACKLIST_ENDPOINT = "/recruiting/blacklist"
 RECRUITING_BLACKLIST_UNBLOCK_ENDPOINT = "/recruiting/blacklist/{user_id}"
+# Pre-flight read for the blacklist confirm dialog: the interviews the block
+# is about to cancel. Same permission as the block itself.
+RECRUITING_BLACKLIST_UPCOMING_INTERVIEWS_ENDPOINT = (
+    "/recruiting/blacklist/{user_id}/upcoming-interviews"
+)
 RECRUITING_APPLICATION_RESUME_ENDPOINT = (
     "/recruiting/applications/{application_id}/resume"
 )

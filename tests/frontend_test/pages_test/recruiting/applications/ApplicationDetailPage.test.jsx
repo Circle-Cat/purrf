@@ -4748,3 +4748,107 @@ describe("ApplicationDetailPage — ghost meeting cleanup", () => {
     expect(screen.getByRole("checkbox", { name: CANCEL_BOX })).toBeChecked();
   });
 });
+
+describe("ApplicationDetailPage — blacklist cancels the upcoming interviews", () => {
+  const UPCOMING = [
+    {
+      applicationId: 101,
+      jobTitle: "Mentor",
+      stage: "behavioral",
+      round: 1,
+      startAt: "2099-08-05T21:00:00Z",
+    },
+    {
+      applicationId: 202,
+      jobTitle: "Backend Engineer",
+      stage: "tech",
+      round: 2,
+      startAt: "2099-08-06T22:00:00Z",
+    },
+  ];
+
+  beforeEach(() => {
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
+    });
+    api.blacklistUser.mockResolvedValue({ data: {} });
+  });
+
+  it("lists every interview the block is about to cancel", async () => {
+    const user = userEvent.setup();
+    api.listBlacklistUpcomingInterviews.mockResolvedValue({ data: UPCOMING });
+    renderPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole("button", { name: "Blacklist" }));
+
+    expect(
+      await screen.findByText(
+        /Mentor — Behavioral round 1 — 2099-08-05 14:00 America\/Los_Angeles/,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      // Rendered in the READER's zone (pinned to Los Angeles by makeDetail),
+      // not in whatever zone each meeting was booked in: 22:00Z is 15:00 there.
+      screen.getByText(
+        /Backend Engineer — Tech round 2 — 2099-08-06 15:00 America\/Los_Angeles/,
+      ),
+    ).toBeInTheDocument();
+    // Scoped to the candidate, not the application being viewed: a block is
+    // org-wide, so it sweeps their other postings too.
+    expect(api.listBlacklistUpcomingInterviews).toHaveBeenCalledWith(5);
+  });
+
+  it("says nothing about interviews when the candidate has none booked", async () => {
+    const user = userEvent.setup();
+    api.listBlacklistUpcomingInterviews.mockResolvedValue({ data: [] });
+    renderPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole("button", { name: "Blacklist" }));
+
+    expect(
+      screen.getByRole("button", { name: "Confirm blacklist" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/scheduled interview/i)).not.toBeInTheDocument();
+  });
+
+  it("still lets the block through when the preview cannot be loaded", async () => {
+    // The backend cancels the meetings either way -- a failed pre-flight read
+    // must not stand between a recruiter and an org-level sanction.
+    const user = userEvent.setup();
+    api.listBlacklistUpcomingInterviews.mockRejectedValue(new Error("boom"));
+    renderPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole("button", { name: "Blacklist" }));
+    expect(
+      await screen.findByText(/Couldn't check for scheduled interviews/i),
+    ).toBeInTheDocument();
+
+    await user.type(
+      screen.getByPlaceholderText("Reason (required)"),
+      "spamming",
+    );
+    await user.click(screen.getByRole("button", { name: "Confirm blacklist" }));
+
+    await waitFor(() =>
+      expect(api.blacklistUser).toHaveBeenCalledWith({
+        userId: 5,
+        applicationId: "101",
+        reason: "spamming",
+      }),
+    );
+  });
+
+  it("only reads the preview once the dialog is opened", async () => {
+    // Every owner loads this page; nobody should pay for a blacklist-only
+    // query unless they actually reach for the button.
+    api.listBlacklistUpcomingInterviews.mockResolvedValue({ data: [] });
+    renderPage();
+    await waitLoaded();
+
+    expect(api.listBlacklistUpcomingInterviews).not.toHaveBeenCalled();
+  });
+});

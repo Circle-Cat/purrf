@@ -422,6 +422,19 @@ class TestBoardController(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(resp["data"], {"interviewId": 1})
 
+    async def test_list_blacklist_upcoming_interviews_delegates(self):
+        rows = [{"applicationId": 10}]
+        self.board_service.list_upcoming_interviews_for_user = AsyncMock(
+            return_value=rows
+        )
+
+        resp = await self.controller.list_blacklist_upcoming_interviews(self.ctx, 5)
+
+        self.board_service.list_upcoming_interviews_for_user.assert_awaited_once_with(
+            self.session, 5
+        )
+        self.assertEqual(resp["data"], rows)
+
     async def test_cancel_interview_delegates(self):
         resp = await self.controller.cancel_interview(self.ctx, 10)
         self.interview_scheduling_service.cancel.assert_awaited_once_with(
@@ -449,6 +462,19 @@ class TestBoardController(unittest.IsolatedAsyncioTestCase):
                 [Permission.RECRUITING_APPLICATION_ADVANCE],
                 f"{method} interview route should require the advance permission",
             )
+
+    def test_blacklist_upcoming_interviews_route_is_get_and_blacklist_gated(self):
+        # Same permission as the block action it precedes: whoever may
+        # blacklist may see what blacklisting is about to cancel.
+        routes_by_path = {route.path: route for route in self.controller.router.routes}
+
+        route = routes_by_path["/recruiting/blacklist/{user_id}/upcoming-interviews"]
+
+        self.assertIn("GET", route.methods)
+        self.assertEqual(
+            self._endpoint_permissions(route.endpoint),
+            [Permission.RECRUITING_BLACKLIST_WRITE],
+        )
 
     def test_board_stage_page_route_is_get_and_plain_authenticated(self):
         routes_by_path = {route.path: route for route in self.controller.router.routes}

@@ -21,6 +21,7 @@ from backend.dto.board_dto import (
     RoundChangeDto,
     StageChangeDto,
     SubStatusChangeDto,
+    UpcomingInterviewDto,
 )
 from backend.communication.email_templates import (
     render_all_templates,
@@ -1888,6 +1889,12 @@ class BoardService:
         a ``"blacklisted"`` activity entry (not ``"stage_changed"`` — this
         doesn't go through ``change_stage`` and carries its own reason).
 
+        Also cancels every still-upcoming interview meeting on the
+        applications it sweeps — unconditionally, unlike ``change_stage``'s
+        opt-in flag. See the call to ``cancel_for_round`` below, and
+        ``list_upcoming_interviews_for_user`` for the pre-flight the confirm
+        dialog shows so this is never a surprise.
+
         Args:
             session (AsyncSession): Active database async session.
             current_user (UserContextDto): The authenticated caller,
@@ -1942,6 +1949,7 @@ class BoardService:
         # tag backfilled. Rows already tagged blacklisted are left untouched so
         # a re-run logs no duplicate activity. Each row is re-fetched FOR UPDATE
         # so a concurrent stage decision on it can't interleave.
+        swept_application_ids = [dto.application_id]
         rows = await self.application_repository.list_by_user(session, dto.user_id)
         for other, _job in rows:
             if other.application_id == dto.application_id:
@@ -1970,11 +1978,90 @@ class BoardService:
                 "blacklisted",
                 details={"fromStage": other_from_stage.value, "reason": dto.reason},
             )
+            swept_application_ids.append(locked.application_id)
+
+        # Every meeting still ahead of us on the applications just swept is
+        # cancelled outright, with no opt-out anywhere in the UI: the candidate
+        # is banned org-wide, so none of those interviews is going to happen,
+        # and each one left booked would sit live on the interviewer's and the
+        # candidate's calendars while being unreachable in Purrf. Rows whose
+        # meeting has already started are filtered out by `cancel_for_round`
+        # itself, and rows on applications the sweep skipped (already tagged by
+        # an earlier blacklist, so already handled then) never make the list.
+        interviews = (
+            await self.application_interview_repository.list_by_application_ids(
+                session, swept_application_ids
+            )
+        )
+        for interview in interviews:
+            await self.interview_scheduling_service.cancel_for_round(
+                session,
+                interview.application_id,
+                interview.stage,
+                interview.round,
+                current_user.user_id,
+                via="blacklisted",
+            )
 
         await session.commit()
         return self.recruiting_mapper.to_application_dto(
             application, current_sub, editable=False
         )
+
+    async def list_upcoming_interviews_for_user(
+        self, session: AsyncSession, user_id: int
+    ) -> list[UpcomingInterviewDto]:
+        """Every still-to-happen interview meeting a blacklist would cancel.
+
+        The pre-flight the blacklist confirm dialog shows, so the sanction
+        never silently deletes a meeting the recruiter didn't know about. It
+        mirrors ``blacklist``'s own sweep exactly: applications already tagged
+        ``blacklisted`` are excluded (that earlier block already cancelled
+        their meetings, and the sweep skips them), and meetings that have
+        already started are excluded (``cancel_for_round`` leaves those alone).
+        Promising anything else here would make the dialog lie.
+
+        Not owner-gated, like ``blacklist`` itself: the route's
+        ``RECRUITING_BLACKLIST_WRITE`` is the whole gate, and this returns no
+        more than the block it precedes is about to act on.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            user_id (int): The candidate about to be blocked.
+
+        Returns:
+            list[UpcomingInterviewDto]: Soonest first; empty when the
+                candidate has nothing booked.
+        """
+        rows = await self.application_repository.list_by_user(session, user_id)
+        live = [
+            (application, job)
+            for application, job in rows
+            if not (application.tags or {}).get("blacklisted")
+        ]
+        job_titles = {
+            application.application_id: job.title for application, job in live
+        }
+        interviews = (
+            await self.application_interview_repository.list_by_application_ids(
+                session, [application.application_id for application, _job in live]
+            )
+        )
+        now = datetime.now(timezone.utc)
+        upcoming = sorted(
+            (interview for interview in interviews if interview.start_at > now),
+            key=lambda interview: interview.start_at,
+        )
+        return [
+            UpcomingInterviewDto(
+                application_id=interview.application_id,
+                job_title=job_titles.get(interview.application_id, ""),
+                stage=interview.stage,
+                round=interview.round,
+                start_at=interview.start_at,
+            )
+            for interview in upcoming
+        ]
 
     async def _mentionable_user_ids(
         self, session: AsyncSession, application: ApplicationEntity, job: JobEntity

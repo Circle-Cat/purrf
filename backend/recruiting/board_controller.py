@@ -33,6 +33,7 @@ from backend.common.api_endpoints import (
     RECRUITING_APPLICATION_COMMENTS_ENDPOINT,
     RECRUITING_APPLICATION_MENTIONABLE_USERS_ENDPOINT,
     RECRUITING_BLACKLIST_ENDPOINT,
+    RECRUITING_BLACKLIST_UPCOMING_INTERVIEWS_ENDPOINT,
 )
 
 
@@ -195,6 +196,14 @@ class BoardController:
                 self.blacklist
             ),
             methods=["POST"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            RECRUITING_BLACKLIST_UPCOMING_INTERVIEWS_ENDPOINT,
+            endpoint=authenticate(permissions=[Permission.RECRUITING_BLACKLIST_WRITE])(
+                self.list_blacklist_upcoming_interviews
+            ),
+            methods=["GET"],
             response_model=None,
         )
         # Interview scheduling reuses the advance permission: booking a
@@ -424,6 +433,18 @@ class BoardController:
                 session, current_user, blacklist_data
             )
         return api_response(message="User blacklisted.", data=result)
+
+    async def list_blacklist_upcoming_interviews(
+        self,
+        current_user: UserContextDto,
+        user_id: int,
+    ):
+        """List the interview meetings a blacklist of this user would cancel."""
+        async with self.database.session() as session:
+            result = await self.board_service.list_upcoming_interviews_for_user(
+                session, user_id
+            )
+        return api_response(message="Upcoming interviews fetched.", data=result)
 
     async def schedule_interview(
         self,
