@@ -784,6 +784,29 @@ describe("BoardPage", () => {
     // The focus id belonged to the job we couldn't honour, so it goes too.
     expect(router.state.location.search).not.toContain("focus");
     expect(api.getJobBoard).not.toHaveBeenCalledWith(999);
+    // Mutation check: switch the correction to a push and this still reads
+    // "?jobId=1" above, but browser-back would land back on the board
+    // instead of leaving it — nothing links to the board with ?jobId=, so
+    // every param-less arrival would stack a history entry.
+    expect(router.state.historyAction).toBe("REPLACE");
+    // The fallback must be quiet: no error toast for a stale or foreign id.
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the first job when ?jobId= isn't a number", async () => {
+    api.listBoardJobs.mockResolvedValue({ data: [jobA, jobB] });
+    api.getJobBoard.mockResolvedValue({
+      data: {
+        stages: {
+          recruiter_screening: { items: [], total: 0, has_more: false },
+        },
+      },
+    });
+
+    const { router } = renderPage("?jobId=abc");
+
+    await waitFor(() => expect(api.getJobBoard).toHaveBeenCalledWith(1));
+    expect(router.state.location.search).toBe("?jobId=1");
   });
 
   it("writes the chosen job into the URL when the switcher changes, without stacking history entries", async () => {
