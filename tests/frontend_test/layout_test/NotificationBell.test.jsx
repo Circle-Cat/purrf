@@ -170,31 +170,36 @@ describe("NotificationBell", () => {
       "employment",
       "Ada Lovelace applied to Backend Engineer and was hired automatically",
     ],
-  ])("describes a %s notification (%s posting)", async (type, jobKind, text) => {
-    const user = userEvent.setup();
-    api.listNotifications.mockResolvedValue({
-      data: {
-        unreadCount: 1,
-        notifications: [
-          {
-            id: 1,
-            type,
-            applicationId: 7,
-            jobId: 1,
-            jobTitle: "Backend Engineer",
-            jobKind,
-            applicantName: "Ada Lovelace",
-            actorName: "Ada Lovelace",
-            createdAt: "2026-07-30T00:00:00Z",
-          },
-        ],
-      },
-    });
-    render(<NotificationBell />);
+  ])(
+    "describes a %s notification (%s posting)",
+    async (type, jobKind, text) => {
+      const user = userEvent.setup();
+      api.listNotifications.mockResolvedValue({
+        data: {
+          unreadCount: 1,
+          notifications: [
+            {
+              id: 1,
+              type,
+              applicationId: 7,
+              jobId: 1,
+              jobTitle: "Backend Engineer",
+              jobKind,
+              applicantName: "Ada Lovelace",
+              actorName: "Ada Lovelace",
+              createdAt: "2026-07-30T00:00:00Z",
+            },
+          ],
+        },
+      });
+      render(<NotificationBell />);
 
-    await waitFor(() => expect(api.listNotifications).toHaveBeenCalledTimes(1));
-    await user.click(screen.getByRole("button", { name: "Notifications" }));
+      await waitFor(() =>
+        expect(api.listNotifications).toHaveBeenCalledTimes(1),
+      );
+      await user.click(screen.getByRole("button", { name: "Notifications" }));
 
-    expect(screen.getByText(text)).toBeInTheDocument();
-  });
+      expect(screen.getByText(text)).toBeInTheDocument();
+    },
+  );
 });
