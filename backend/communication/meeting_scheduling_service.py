@@ -129,6 +129,47 @@ class MeetingSchedulingService:
             "created": event.get("created", ""),
         }
 
+    async def update(self, session, event_id, start_utc, end_utc, attendee_user_ids):
+        """Move an existing meeting and/or replace who is invited.
+
+        Does **not** re-open the Meet space: the conference already exists and
+        was opened when the meeting was created, so re-doing it every edit
+        would be two wasted API calls.
+
+        Args:
+            session (AsyncSession): The active DB session (attendee lookup only).
+            event_id (str): The Calendar event to patch.
+            start_utc (datetime): New start, tz-aware UTC.
+            end_utc (datetime): New end, tz-aware UTC.
+            attendee_user_ids (list[int]): The complete attendee list after the
+                change (not a delta).
+
+        Returns:
+            dict: Same shape as ``schedule``.
+
+        Raises:
+            MeetingGoneError: The event no longer exists on the calendar.
+            RuntimeError: Any other Calendar failure.
+        """
+        attendees_emails = await self.resolve_attendee_emails(
+            session, attendee_user_ids
+        )
+        event = await asyncio.to_thread(
+            self.google_service.update_google_meeting,
+            event_id=event_id,
+            start_time=start_utc,
+            end_time=end_utc,
+            attendees_emails=attendees_emails,
+        )
+        conference = event.get("conferenceData") or {}
+        return {
+            "google_event_id": event.get("id", ""),
+            "meet_link": event.get("hangoutLink", ""),
+            "entry_points": conference.get("entryPoints", []),
+            "conference_id": conference.get("conferenceId"),
+            "created": event.get("created", ""),
+        }
+
     async def cancel(self, event_ids):
         """Delete Calendar events; Google mails the cancellations.
 

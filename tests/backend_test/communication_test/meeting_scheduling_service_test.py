@@ -4,6 +4,7 @@ import unittest
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
+from backend.common.exceptions import MeetingGoneError
 from backend.communication.meeting_scheduling_service import MeetingSchedulingService
 
 
@@ -23,6 +24,9 @@ def _service(**overrides):
     google.get_meet_space_name = AsyncMock(return_value="spaces/xyz")
     google.update_meet_space_type_to_open = AsyncMock()
     google.batch_delete_google_meetings.return_value = (["evt-1"], [])
+    google.update_google_meeting.return_value = (
+        google.insert_google_meeting.return_value
+    )
     emails = MagicMock()
     emails.get_contact_emails_by_user_ids = AsyncMock(
         return_value={1: "ana@example.com", 2: "bob@example.com"}
@@ -169,6 +173,49 @@ class ScheduleTest(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(result["conference_id"])
         kwargs["google_service"].get_meet_space_name.assert_not_awaited()
         kwargs["google_service"].update_meet_space_type_to_open.assert_not_awaited()
+
+
+class UpdateTest(unittest.IsolatedAsyncioTestCase):
+    async def test_passes_resolved_emails_and_returns_normalized_fields(self):
+        service, kwargs = _service()
+        start = datetime(2026, 8, 7, 21, 0, tzinfo=timezone.utc)
+        end = datetime(2026, 8, 7, 21, 45, tzinfo=timezone.utc)
+        result = await service.update(MagicMock(), "evt-1", start, end, [1, 2])
+        _, call_kwargs = kwargs["google_service"].update_google_meeting.call_args
+        self.assertEqual(call_kwargs["event_id"], "evt-1")
+        self.assertEqual(call_kwargs["start_time"], start)
+        self.assertEqual(call_kwargs["end_time"], end)
+        self.assertEqual(
+            call_kwargs["attendees_emails"], ["ana@example.com", "bob@example.com"]
+        )
+        self.assertEqual(result["google_event_id"], "evt-1")
+
+    async def test_does_not_touch_the_meet_space(self):
+        # The conference already exists and is already OPEN; re-opening it on
+        # every edit would be a wasted pair of API calls.
+        service, kwargs = _service()
+        await service.update(
+            MagicMock(),
+            "evt-1",
+            datetime(2026, 8, 7, tzinfo=timezone.utc),
+            datetime(2026, 8, 7, tzinfo=timezone.utc),
+            [1],
+        )
+        kwargs["google_service"].get_meet_space_name.assert_not_awaited()
+
+    async def test_a_gone_event_propagates(self):
+        service, kwargs = _service()
+        kwargs["google_service"].update_google_meeting.side_effect = MeetingGoneError(
+            "gone"
+        )
+        with self.assertRaises(MeetingGoneError):
+            await service.update(
+                MagicMock(),
+                "evt-1",
+                datetime(2026, 8, 7, tzinfo=timezone.utc),
+                datetime(2026, 8, 7, tzinfo=timezone.utc),
+                [1],
+            )
 
 
 class CancelTest(unittest.IsolatedAsyncioTestCase):
