@@ -13,12 +13,15 @@ class NotificationEntity(Base):
     Notifications are light reminders: rows are written synchronously, in
     the same transaction as the triggering event, by BoardService
     (assignment/mention), ApplicationService (default-assignee
-    materialization), and JobService (review request/decision) -- never
-    updated, and deleted outright when the recipient dismisses them.
+    materialization, and notifying a posting's owners when an application
+    lands), and JobService (review request/decision) -- never updated, and
+    deleted outright when the recipient dismisses them.
 
     Exactly one of application_id or (job_id, job_review_id) is set,
-    never both: application_id/round/comment_id serve
-    ASSIGNED_TO_EVALUATE and MENTIONED; job_id/job_review_id serve
+    never both: application_id/round/comment_id serve ASSIGNED_TO_EVALUATE
+    and MENTIONED; application_id alone (round left None) serves
+    APPLICATION_SUBMITTED/APPLICATION_AUTO_REJECTED/APPLICATION_AUTO_HIRED;
+    job_id/job_review_id serve
     JOB_REVIEW_REQUESTED/JOB_REVIEW_APPROVED/JOB_REVIEW_REJECTED.
     """
 

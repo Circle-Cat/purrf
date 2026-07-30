@@ -1392,6 +1392,104 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             ],
         )
 
+    async def test_submit_notifies_owners_before_committing(self):
+        """An AsyncMock session doesn't pin write order: if the
+        `_notify_owners_of_submission` call in `submit` were moved below
+        `await session.commit()`, every other test here would still pass,
+        even though writing the notification rows after the commit would
+        no longer be atomic with the application row. Record the real
+        interleaving of events instead of asserting on call arity."""
+        self.job_repo.get_by_job_id = AsyncMock(
+            return_value=self._job(
+                pipeline_config={
+                    "ownerIds": [5, 6],
+                    "stages": [{"stage": "recruiter_screening"}],
+                }
+            )
+        )
+        events = []
+        self.session.commit = AsyncMock(side_effect=lambda: events.append("commit"))
+        self.notification_repo.create = AsyncMock(
+            side_effect=lambda *args, **kwargs: events.append("notify")
+        )
+        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+
+        await self.service.submit(self.session, self._ctx(), dto)
+
+        self.assertIn("commit", events)
+        notify_indices = [i for i, e in enumerate(events) if e == "notify"]
+        commit_index = events.index("commit")
+        self.assertTrue(notify_indices, "expected at least one notify event")
+        self.assertTrue(
+            all(i < commit_index for i in notify_indices),
+            f"expected every notify event before commit, got {events}",
+        )
+
+    async def test_submit_notifies_owner_from_legacy_scalar_owner_id(self):
+        """normalized_owner_ids tolerates configs saved before multi-owner
+        support, which carry a scalar `{"ownerId": 5}` instead of
+        `{"ownerIds": [5]}` -- the owner fan-out in submit must resolve
+        that legacy shape too, not just the current one."""
+        self.job_repo.get_by_job_id = AsyncMock(
+            return_value=self._job(
+                pipeline_config={
+                    "ownerId": 5,
+                    "stages": [{"stage": "recruiter_screening"}],
+                }
+            )
+        )
+        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+
+        await self.service.submit(self.session, self._ctx(), dto)
+
+        self.assertEqual(
+            self._owner_types(), [(5, NotificationType.APPLICATION_SUBMITTED)]
+        )
+
+    async def test_reapply_inside_cooldown_notifies_owners(self):
+        """The re-apply-after-rejection path -- a brand-new application row,
+        plus a cold_freeze tag inside the posting's cooldown window -- is
+        the path with the most moving parts; owner notifications must still
+        fire through it exactly as they do for a fresh submission."""
+        job = self._job(
+            cooldown_days=90,
+            status=JobStatus.PUBLISHED,
+            pipeline_config={
+                "ownerIds": [5, 6],
+                "stages": [{"stage": "recruiter_screening"}],
+            },
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        rejected_application = ApplicationEntity(
+            job_id=1, user_id=2, stage=ApplicationStage.REJECTED, current_round=1
+        )
+        rejected_application.application_id = 55
+        rejected_application.created_datetime = datetime(
+            2026, 1, 10, tzinfo=timezone.utc
+        )
+        self.app_repo.get_latest_by_job_and_user = AsyncMock(
+            return_value=rejected_application
+        )
+        self.service._today = lambda: date(2026, 2, 1)  # inside the 90-day window
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": {"firstName": "New"},
+        })
+
+        result = await self.service.submit(self.session, self._ctx(), dto)
+
+        self.assertIn("cold_freeze", result.tags or {})
+        self.assertEqual(
+            self._owner_types(),
+            [
+                (5, NotificationType.APPLICATION_SUBMITTED),
+                (6, NotificationType.APPLICATION_SUBMITTED),
+            ],
+        )
+        entity = self.notification_repo.create.await_args_list[0].args[1]
+        self.assertEqual(entity.application_id, result.id)
+        self.assertEqual(entity.actor_user_id, 2)
+
 
 if __name__ == "__main__":
     unittest.main()

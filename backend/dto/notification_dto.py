@@ -9,8 +9,10 @@ class NotificationDto(BaseDto):
 
     Notifications are light reminders with no navigation target: dismissing
     one deletes it, so every listed row is pending/unread. application_id/
-    round/comment_id are set for ASSIGNED_TO_EVALUATE and MENTIONED; job_id
-    for the JOB_REVIEW_* types. job_title/applicant_name/actor_name are
+    round/comment_id are set for ASSIGNED_TO_EVALUATE and MENTIONED;
+    application_id alone (round left None) is set for
+    APPLICATION_SUBMITTED/APPLICATION_AUTO_REJECTED/APPLICATION_AUTO_HIRED;
+    job_id for the JOB_REVIEW_* types. job_title/applicant_name/actor_name are
     resolved display strings, "" (or None for actor_name) when the
     referenced row is missing -- same fallback convention as
     MyEvaluationDto/CommentDto.
