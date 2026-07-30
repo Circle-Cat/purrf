@@ -44,5 +44,5 @@ module "purrf_instance" {
   gmail_client_id         = var.gmail_client_id
   gmail_client_secret     = var.gmail_client_secret
   gmail_refresh_token     = var.gmail_refresh_token
-  gmail_sender_recruiting = var.gmail_sender_recruiting
+  gmail_sender_recruiting = "recruiting@circlecat.org"
 }

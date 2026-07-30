@@ -31,14 +31,7 @@ variable "gmail_client_secret" {
 }
 
 variable "gmail_refresh_token" {
-  description = "OAuth refresh token for purrf@circlecat.org, the machine mailbox non-prod sends and reads as (never a personal account: the token sits in a cluster secret in plaintext). Minted once via interactive consent with the gmail.send and gmail.readonly scopes; supply via TF_VAR."
+  description = "OAuth refresh token for purrf@circlecat.org, the mailbox non-prod sends and reads as. Minted once via interactive consent (gmail.send + gmail.readonly); supply via TF_VAR."
   type        = string
   sensitive   = true
 }
-
-variable "gmail_sender_recruiting" {
-  description = "From address for recruiting email — a Send-As alias of purrf@circlecat.org (recruiting-test@circlecat.org), so a mail from this environment is recognisable as one and can never claim the real recruiting identity."
-  type        = string
-}
-
-

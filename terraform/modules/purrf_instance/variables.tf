@@ -171,7 +171,7 @@ variable "gmail_refresh_token" {
 }
 
 variable "gmail_sender_recruiting" {
-  description = "From address for recruiting email. Must be registered and verified as a Send-As on the mailbox gmail_refresh_token belongs to, or Gmail silently rewrites the From to that mailbox. Per service (a second sending feature gets its own variable) and per environment (so a non-prod mail is recognisable as one)."
+  description = "From address for recruiting email. Must be a verified Send-As on the mailbox gmail_refresh_token belongs to."
   type        = string
 }
 

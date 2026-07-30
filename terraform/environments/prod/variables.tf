@@ -24,9 +24,3 @@ variable "gmail_refresh_token" {
   type        = string
   sensitive   = true
 }
-
-variable "gmail_sender_recruiting" {
-  description = "From address for recruiting email (the real recruiting sender in prod). Must be a verified Send-As on the mailbox gmail_refresh_token belongs to."
-  type        = string
-}
-
