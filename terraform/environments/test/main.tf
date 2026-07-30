@@ -31,13 +31,16 @@ module "purrf_instance" {
   gerrit_producer_entry_point = "gerrit_event_webhook"
   jira_password               = var.jira_password
   gerrit_http_pass            = var.gerrit_http_pass
-  cf_aud_tag      = "8187a0acb20eed9fe7b5d2290977c85490f6c7f3844595f521dc6f3328ca37d0"
-  azure_client_id = "8f3f85f2-be71-4ed5-95e8-3c777f4c6e13"
-  azure_tenant_id = "08502fd6-503a-4dfd-85b7-f13b141dc0c4"
-  ld_sdk_key      = data.terraform_remote_state.ld.outputs.api_keys["test"]
+  cf_aud_tag                  = "8187a0acb20eed9fe7b5d2290977c85490f6c7f3844595f521dc6f3328ca37d0"
+  azure_client_id             = "8f3f85f2-be71-4ed5-95e8-3c777f4c6e13"
+  azure_tenant_id             = "08502fd6-503a-4dfd-85b7-f13b141dc0c4"
+  ld_sdk_key                  = data.terraform_remote_state.ld.outputs.api_keys["test"]
 
   auth0_google_client_id     = var.auth0_google_client_id
   auth0_google_client_secret = var.auth0_google_client_secret
+
+  mentorship_calendar_id = "c_d22a80da785e3232991f3823ba799ed91fa6f1bcc388552686a72583b23b6cd2@group.calendar.google.com"
+  interview_calendar_id  = "c_ebe9f94084ac6049f47805f47b4278a4a14b6fea8d40e9cd401eda0625b449da@group.calendar.google.com"
 
   gmail_client_id      = var.gmail_client_id
   gmail_client_secret  = var.gmail_client_secret

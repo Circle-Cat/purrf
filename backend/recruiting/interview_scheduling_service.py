@@ -91,6 +91,7 @@ class InterviewSchedulingService:
         user_emails_repository,
         meeting_scheduling_service,
         recruiting_mapper,
+        interview_calendar_id,
     ):
         """
         Args:
@@ -115,6 +116,12 @@ class InterviewSchedulingService:
             meeting_scheduling_service (MeetingSchedulingService): The
                 domain-agnostic Google Calendar/Meet transport.
             recruiting_mapper (RecruitingMapper): Entity->DTO conversion.
+            interview_calendar_id (str): The Google Calendar interview meetings
+                are created on, patched on and deleted from. Per-environment:
+                cancellation here is automation-driven (advance / reject /
+                blacklist, and the blacklist sweep covers every application),
+                so a shared calendar would let one environment delete another
+                environment's real interviews in bulk.
         """
         self.logger = logger
         self.application_access = application_access
@@ -126,6 +133,7 @@ class InterviewSchedulingService:
         self.user_emails_repository = user_emails_repository
         self.meeting_scheduling_service = meeting_scheduling_service
         self.recruiting_mapper = recruiting_mapper
+        self.interview_calendar_id = interview_calendar_id
 
     async def schedule(
         self,
@@ -213,7 +221,12 @@ class InterviewSchedulingService:
         attendee_ids = [application.user_id, dto.assignee_id, current_user.user_id]
         try:
             meeting = await self.meeting_scheduling_service.schedule(
-                session, summary, start_utc, end_utc, attendee_ids
+                session,
+                summary,
+                start_utc,
+                end_utc,
+                attendee_ids,
+                calendar_id=self.interview_calendar_id,
             )
         except Exception as e:
             self.logger.error(
@@ -345,6 +358,7 @@ class InterviewSchedulingService:
                 start_utc,
                 end_utc,
                 attendee_ids,
+                calendar_id=self.interview_calendar_id,
             )
         except MeetingGoneError as e:
             self.logger.error(
@@ -558,9 +572,10 @@ class InterviewSchedulingService:
         )
         cancelled_assignee_id = assignment.assignee_id if assignment else None
 
-        _succeeded, failed = await self.meeting_scheduling_service.cancel([
-            interview.google_event_id
-        ])
+        _succeeded, failed = await self.meeting_scheduling_service.cancel(
+            [interview.google_event_id],
+            calendar_id=self.interview_calendar_id,
+        )
         if failed:
             self.logger.warning(
                 "[InterviewSchedulingService] Failed to delete Calendar "

@@ -41,6 +41,13 @@ resource "kubernetes_secret" "purrf_app" {
     MENTORSHIP_MENTEE_ONBOARDING_LINK = "https://learn.circlecat.cn/course/view.php?id=16"
     RESUME_BUCKET                     = google_storage_bucket.resumes.name
 
+    # Per-environment Google Calendar isolation. Event ids are scoped per
+    # calendar, so pointing each environment at its own secondary calendars is
+    # what stops a delete or a reschedule driven by restored prod data from
+    # touching a real prod event.
+    MENTORSHIP_CALENDAR_ID = var.mentorship_calendar_id
+    INTERVIEW_CALENDAR_ID  = var.interview_calendar_id
+
     # Auth0 multi-IdP email OTP / account-link flow, sourced straight from the
     # Auth0 resources in auth0.tf -- no manual values to supply.
     AUTH0_TENANT_DOMAIN              = data.auth0_tenant.current.domain
