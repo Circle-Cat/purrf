@@ -194,6 +194,15 @@ class TestRecruitingNotificationService(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsNone(stage)
 
+    async def test_resolve_returns_no_stage_when_the_application_is_gone(self):
+        row = self._notification()
+        self.app_repo.get_by_id = AsyncMock(return_value=None)
+        self.users_repo.get_user_by_user_id = AsyncMock(return_value=None)
+
+        _, stage = await self.service.resolve(self.session, row)
+
+        self.assertIsNone(stage)
+
 
 if __name__ == "__main__":
     unittest.main()

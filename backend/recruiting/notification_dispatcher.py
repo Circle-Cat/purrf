@@ -74,9 +74,23 @@ class NotificationDispatcher:
         rows = session.info.pop(_BUFFER_KEY, [])
         if not rows:
             return
-        addresses = await self._user_emails_repository.get_contact_emails_by_user_ids(
-            session, [row.user_id for row in rows]
-        )
+        try:
+            addresses = (
+                await self._user_emails_repository.get_contact_emails_by_user_ids(
+                    session, [row.user_id for row in rows]
+                )
+            )
+        except Exception:
+            # The buffer is already drained and the rows are committed, so the
+            # notifications exist in-app; only the email push is lost. Raising
+            # here would fail a request whose business work already succeeded.
+            self._logger.error(
+                "Could not look up notification email recipients; %d "
+                "notification(s) delivered in-app only",
+                len(rows),
+                exc_info=True,
+            )
+            return
         sends = []
         for row in rows:
             address = addresses.get(row.user_id)

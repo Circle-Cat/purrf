@@ -122,6 +122,28 @@ class TestNotificationDispatcher(unittest.IsolatedAsyncioTestCase):
 
         await self.dispatcher.flush(self.session)  # must not raise
 
+    async def test_flush_survives_one_send_raising_and_still_sends_the_rest(self):
+        self.email_service.send = AsyncMock(
+            side_effect=[RuntimeError("boom"), True]
+        )
+        await self.dispatcher.record(self.session, self._entity(user_id=5))
+        await self.dispatcher.record(self.session, self._entity(user_id=6))
+
+        await self.dispatcher.flush(self.session)  # must not raise
+
+        self.assertEqual(self.email_service.send.await_count, 2)
+
+    async def test_flush_never_raises_when_recipient_lookup_fails(self):
+        self.user_emails_repo.get_contact_emails_by_user_ids = AsyncMock(
+            side_effect=RuntimeError("db down")
+        )
+        await self.dispatcher.record(self.session, self._entity())
+
+        await self.dispatcher.flush(self.session)  # must not raise
+
+        self.email_service.send.assert_not_awaited()
+        self.logger.error.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()
