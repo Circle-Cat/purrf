@@ -333,6 +333,43 @@ class TestGmailClient(TestCase):
                 sender=TEST_SENDER,
             )
 
+    def test_bad_client_credentials_are_not_reported_as_a_bad_token(self):
+        # Both causes arrive as RefreshError. Reporting them the same way sent a
+        # real incident looking for a revoked token when the client secret was
+        # the problem, so the message must name the failing half.
+        self.mock_service.users().messages().send().execute.side_effect = RefreshError(
+            "invalid_client: The provided client secret is invalid.",
+            {"error": "invalid_client"},
+        )
+        with self.assertRaises(RuntimeError) as caught:
+            self.client.send_message(
+                to=["a@example.com"],
+                cc=[],
+                subject="Hi",
+                body="<p>x</p>",
+                sender=TEST_SENDER,
+            )
+        message = str(caught.exception)
+        self.assertIn("invalid_client", message)
+        self.assertIn("client id/secret", message)
+        self.assertNotIn("revoked", message)
+
+    def test_revoked_token_says_so(self):
+        self.mock_service.users().messages().send().execute.side_effect = RefreshError(
+            "invalid_grant: Token has been expired or revoked.",
+            {"error": "invalid_grant"},
+        )
+        with self.assertRaises(RuntimeError) as caught:
+            self.client.send_message(
+                to=["a@example.com"],
+                cc=[],
+                subject="Hi",
+                body="<p>x</p>",
+                sender=TEST_SENDER,
+            )
+        self.assertIn("invalid_grant", str(caught.exception))
+        self.assertIn("re-authorize", str(caught.exception))
+
     def test_service_built_once_across_calls(self):
         self._stub_send_result()
         self.client.send_message(

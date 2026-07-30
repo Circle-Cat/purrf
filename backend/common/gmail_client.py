@@ -74,6 +74,38 @@ _ANCHOR_RE = re.compile(
 _TAG_RE = re.compile(r"<[^>]+>")
 
 
+def _refresh_failure_cause(error) -> str:
+    """Describe why google-auth could not redeem the refresh token.
+
+    ``RefreshError`` carries Google's token-endpoint payload as one of its args;
+    the ``error`` code in there is the only thing that separates a bad app
+    credential from a bad token, and the two need opposite fixes.
+
+    Args:
+        error (RefreshError): The exception raised during the refresh.
+
+    Returns:
+        str: A one-line cause, naming the failing half where Google identified it.
+    """
+    code = ""
+    for arg in error.args:
+        if isinstance(arg, dict) and arg.get("error"):
+            code = arg["error"]
+            break
+    if code == "invalid_client":
+        return (
+            "the OAuth client id/secret pair was rejected (invalid_client) — the "
+            "refresh token was not examined; check the client credentials, not "
+            "the token"
+        )
+    if code == "invalid_grant":
+        return (
+            "the refresh token was rejected (invalid_grant) — revoked, expired, "
+            "or minted by a different OAuth client; re-authorize the mailbox"
+        )
+    return f"the token refresh was rejected ({code or error})"
+
+
 class GmailClient:
     """Domain-agnostic Gmail send/read transport (see module docstring)."""
 
@@ -352,18 +384,17 @@ class GmailClient:
             return self._retry_utils.get_retry_on_transient(request.execute)
         except RefreshError as error:
             # google-auth could not exchange the refresh token for an access
-            # token — almost always because the token was revoked or expired
-            # (e.g. the sender account's password changed, or the OAuth app
-            # slipped out of Internal/published status). Re-authorize the
-            # account per the runbook (RFC appendix A) and update the secret.
-            self._logger.error(
-                "[GmailClient] %s failed: refresh token rejected — "
-                "re-authorization of the sender account is required.",
-                operation,
-            )
+            # token. Two unrelated causes land here and used to be reported
+            # identically as "refresh token rejected", which sends whoever reads
+            # the log after the wrong one: `invalid_client` means the OAuth
+            # client id/secret pair was rejected and the token was never even
+            # examined, while `invalid_grant` means the token itself is gone
+            # (revoked, expired, or minted by a different OAuth client). Google
+            # puts the distinction in the error payload, so pass it through.
+            cause = _refresh_failure_cause(error)
+            self._logger.error("[GmailClient] %s failed: %s.", operation, cause)
             raise RuntimeError(
-                f"Gmail authentication failed during {operation}: "
-                "refresh token rejected (re-authorization required)"
+                f"Gmail authentication failed during {operation}: {cause}"
             ) from error
         except HttpError as error:
             status = getattr(error.resp, "status", None)
