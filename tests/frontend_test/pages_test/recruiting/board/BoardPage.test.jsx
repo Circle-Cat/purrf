@@ -768,13 +768,20 @@ describe("BoardPage", () => {
 
   it("falls back to the first job and rewrites the URL when ?jobId= names a job the caller doesn't own", async () => {
     api.listBoardJobs.mockResolvedValue({ data: [jobA, jobB] });
-    api.getJobBoard.mockResolvedValue({
-      data: {
-        stages: {
-          recruiter_screening: { items: [], total: 0, has_more: false },
-        },
-      },
-    });
+    // Mirrors the backend: paging a board you don't own raises. The gate is
+    // what keeps this rejection unreachable — without it, getJobBoard(999)
+    // fires, rejects, and loadBoard surfaces it as an error toast.
+    api.getJobBoard.mockImplementation((jobId) =>
+      jobId === 1
+        ? Promise.resolve({
+            data: {
+              stages: {
+                recruiter_screening: { items: [], total: 0, has_more: false },
+              },
+            },
+          })
+        : Promise.reject(new Error("you are not an owner of this job")),
+    );
 
     // 999 is a stale link, or a posting this caller was removed from.
     const { router } = renderPage("?jobId=999&focus=101");
