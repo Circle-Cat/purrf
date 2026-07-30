@@ -315,6 +315,7 @@ class GoogleService:
         end_time: datetime,
         attendees_emails: list[str],
         request_id: str,
+        calendar_id: str,
         event_id: str = None,
     ) -> dict:
         """
@@ -326,6 +327,11 @@ class GoogleService:
             end_time (datetime): Event end.
             attendees_emails (list[str]): Addresses to invite.
             request_id (str): Idempotency key for the Meet conference creation.
+            calendar_id (str): The calendar to create the event on. Required and
+                without a default on purpose -- Calendar event ids are scoped per
+                calendar, so pointing every environment at the account's primary
+                calendar is what allowed one environment's delete to remove
+                another's event.
             event_id (str | None): Calendar event id to create the event under.
                 Supplying one makes the insert idempotent — see
                 ``_recover_duplicate_event``.
@@ -356,7 +362,7 @@ class GoogleService:
             event_body["id"] = event_id
 
         req = self.google_calendar_client.events().insert(
-            calendarId="primary",
+            calendarId=calendar_id,
             body=event_body,
             conferenceDataVersion=1,
             sendUpdates="all",
@@ -369,7 +375,7 @@ class GoogleService:
             )
             return response
         except Exception as e:
-            recovered = self._recover_duplicate_event(e, event_id)
+            recovered = self._recover_duplicate_event(e, event_id, calendar_id)
             if recovered is not None:
                 self.logger.warning(
                     "[GoogleService] Insert of event_id=%s conflicted but the event "
@@ -390,7 +396,7 @@ class GoogleService:
             ) from e
 
     def _recover_duplicate_event(
-        self, error: Exception, event_id: str | None
+        self, error: Exception, event_id: str | None, calendar_id: str
     ) -> dict | None:
         """Fetch back the event a duplicate-id conflict refers to, if there is one.
 
@@ -410,6 +416,9 @@ class GoogleService:
         Args:
             error (Exception): The failure raised by the insert.
             event_id (str | None): The id we asked Calendar to use, if any.
+            calendar_id (str): The calendar the conflicting insert targeted. The
+                fetch has to read the same calendar the collision happened on --
+                the id it collided with only exists there.
 
         Returns:
             dict | None: The existing event, or None when there is nothing to
@@ -426,7 +435,7 @@ class GoogleService:
         try:
             event = self.retry_utils.get_retry_on_transient(
                 self.google_calendar_client.events()
-                .get(calendarId="primary", eventId=event_id)
+                .get(calendarId=calendar_id, eventId=event_id)
                 .execute
             )
         except Exception as e:
@@ -454,6 +463,7 @@ class GoogleService:
         start_time: datetime,
         end_time: datetime,
         attendees_emails: list[str],
+        calendar_id: str,
     ) -> dict:
         """Move an existing event and/or replace its attendee list.
 
@@ -475,6 +485,10 @@ class GoogleService:
             end_time (datetime): New end, tz-aware.
             attendees_emails (list[str]): The complete attendee list after the
                 change (not a delta).
+            calendar_id (str): The calendar holding the event. Required and
+                without a default: unlike a delete, a patch aimed at the wrong
+                calendar does not quietly 404 -- if the id exists there it moves
+                that event and mails everyone the change.
 
         Returns:
             dict: The patched event.
@@ -484,7 +498,7 @@ class GoogleService:
             RuntimeError: Any other failure.
         """
         req = self.google_calendar_client.events().patch(
-            calendarId="primary",
+            calendarId=calendar_id,
             eventId=event_id,
             body={
                 "start": {"dateTime": start_time.isoformat(), "timeZone": "Etc/UTC"},
@@ -710,6 +724,7 @@ class GoogleService:
     def batch_delete_google_meetings(
         self,
         event_ids: list[str],
+        calendar_id: str,
     ) -> tuple[list[str], list[str]]:
         """
         Delete one or more Google Calendar events in a single batch HTTP request.
@@ -722,6 +737,10 @@ class GoogleService:
 
         Args:
             event_ids (list[str]): Google Calendar event IDs to delete.
+            calendar_id (str): The calendar to delete from. Required and without
+                a default: an id that does not exist on this calendar answers 404,
+                which this method (correctly) counts as deleted -- so a wrong
+                calendar here fails silently and is exactly the bug to avoid.
 
         Returns:
             tuple[list[str], list[str]]: Succeeded event IDs and failed event IDs.
@@ -773,7 +792,7 @@ class GoogleService:
             for event_id in chunk:
                 batch.add(
                     self.google_calendar_client.events().delete(
-                        calendarId="primary",
+                        calendarId=calendar_id,
                         eventId=event_id,
                         sendUpdates="all",
                     ),
