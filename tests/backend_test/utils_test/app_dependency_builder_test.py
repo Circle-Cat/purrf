@@ -10,6 +10,7 @@ from backend.common.environment_constants import (
     GMAIL_SENDER_ADDRESS,
     MENTORSHIP_CALENDAR_ID,
     INTERVIEW_CALENDAR_ID,
+    USER_EMAIL,
 )
 
 
@@ -259,6 +260,7 @@ class TestAppDependencyBuilder(TestCase):
             # forgetting to pass the id is a TypeError right here.
             MENTORSHIP_CALENDAR_ID: "cal-mentorship",
             INTERVIEW_CALENDAR_ID: "cal-interview",
+            USER_EMAIL: "purrf@circlecat.org",
         }.get(key)
 
         mock_gerrit_client = mock_gerrit_client_cls.return_value
@@ -376,6 +378,7 @@ class TestAppDependencyBuilder(TestCase):
             google_reports_client=mock_google_reports_client,
             retry_utils=mock_retry_utils_instance,
             google_service=mock_google_service.return_value,
+            bot_account_email="purrf@circlecat.org",
         )
         mock_gerrit_sync_service_cls.assert_called_once_with(
             logger=mock_logger,

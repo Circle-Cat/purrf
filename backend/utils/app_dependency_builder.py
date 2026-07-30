@@ -73,6 +73,7 @@ from backend.common.environment_constants import (
     JIRA_USER,
     MENTORSHIP_CALENDAR_ID,
     INTERVIEW_CALENDAR_ID,
+    USER_EMAIL,
 )
 from backend.historical_data.google_chat_history_sync_service import (
     GoogleChatHistorySyncService,
@@ -200,6 +201,10 @@ class AppDependencyBuilder:
         interview_calendar_id = os.getenv(INTERVIEW_CALENDAR_ID)
         if not interview_calendar_id:
             raise ValueError(f"Missing environment variable: {INTERVIEW_CALENDAR_ID}")
+
+        # No presence check here: GoogleClient already validates USER_EMAIL and
+        # raises before this point, so repeating it would just be noise.
+        user_email = os.getenv(USER_EMAIL)
 
         self.logger = get_logger()
         self.retry_utils = RetryUtils()
@@ -368,6 +373,7 @@ class AppDependencyBuilder:
             google_reports_client=self.google_reports_client,
             retry_utils=self.retry_utils,
             google_service=self.google_service,
+            bot_account_email=user_email,
         )
         self.google_chat_history_sync_service = GoogleChatHistorySyncService(
             logger=self.logger,

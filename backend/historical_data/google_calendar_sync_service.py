@@ -86,6 +86,7 @@ class GoogleCalendarSyncService:
         google_reports_client,
         retry_utils,
         google_service,
+        bot_account_email=None,
     ):
         """
         Initializes the GoogleCalendarSyncService with necessary clients and logger.
@@ -96,6 +97,12 @@ class GoogleCalendarSyncService:
             google_calendar_client: The GoogleClient factory instance.
             retry_utils: A RetryUtils for handling retries on transient errors.
             google_service: The Google Service instance.
+            bot_account_email: The account Purrf impersonates. It appears in the
+                domain directory like a person, so it has to be excluded from
+                the per-person calendar sweep -- otherwise the calendars Purrf
+                creates meetings on are counted as an employee's own calendar,
+                and every environment's analytics picks up every other
+                environment's meetings.
         """
         self.logger = logger
         self.redis_client = redis_client
@@ -103,6 +110,7 @@ class GoogleCalendarSyncService:
         self.google_reports_client = google_reports_client
         self.retry_utils = retry_utils
         self.google_service = google_service
+        self.bot_account_email = bot_account_email
 
     def _is_circlecat_email(self, email: str) -> bool:
         """
@@ -243,7 +251,9 @@ class GoogleCalendarSyncService:
                 for item in items:
                     calendars.append(
                         CalendarDTO(
-                            calendar_id=item.get("id"), summary=item.get("summary", "")
+                            calendar_id=item.get("id"),
+                            summary=item.get("summary", ""),
+                            access_role=item.get("accessRole", ""),
                         )
                     )
                 page_token = response.get("nextPageToken")
@@ -502,7 +512,8 @@ class GoogleCalendarSyncService:
 
         This method:
         - Retrieves all accessible calendars via the Calendar API.
-        - Filters out personal user calendars and system-generated calendars.
+        - Filters out personal user calendars, system-generated calendars, and
+                calendars owned by this bot account.
         - Caches valid calendar metadata into Redis as:
                 calendar_id -> calendar summary
         - Inserts a static alias entry:
@@ -523,6 +534,26 @@ class GoogleCalendarSyncService:
             if self._is_circlecat_email(cid) or cid.endswith(
                 "@group.v.calendar.google.com"
             ):
+                continue
+            # Skip calendars this bot account owns. They are Purrf's own
+            # operational containers -- the per-scenario, per-environment
+            # calendars app-created meetings live on -- not organizational
+            # calendars. Real team calendars are created by people and shared
+            # in as reader/writer. All three environments impersonate the same
+            # account and therefore see all of these, so without this filter
+            # every environment's analytics would ingest every other
+            # environment's meetings.
+            #
+            # Nothing is lost: those meetings are also on the attendees' own
+            # calendars, which the per-person sweep covers, and events are
+            # deduplicated by event id.
+            if cal.access_role == "owner":
+                self.logger.info(
+                    "[GoogleCalendarSyncService] skipping calendar owned by this "
+                    "bot account: id=%s summary=%s",
+                    cid,
+                    cal.summary,
+                )
                 continue
             pipeline.hset(GOOGLE_CALENDAR_LIST_INDEX_KEY, cid, cal.summary)
             filtered_ids.append(cid)
@@ -660,7 +691,14 @@ class GoogleCalendarSyncService:
         calendar_ids = self._cache_calendars()
 
         ldaps = self.google_service.list_directory_all_people_ldap().values()
-        personal_calendar_ids = [f"{ldap}@circlecat.org" for ldap in ldaps]
+        # The bot account is in the domain directory like a person; its primary
+        # calendar is Purrf's own workspace, not an employee's.
+        bot_calendar = (self.bot_account_email or "").lower()
+        personal_calendar_ids = [
+            f"{ldap}@circlecat.org"
+            for ldap in ldaps
+            if f"{ldap}@circlecat.org".lower() != bot_calendar
+        ]
         all_calendar_ids = calendar_ids + personal_calendar_ids
 
         events_dict = self._cache_calendar_events(all_calendar_ids, time_min, time_max)

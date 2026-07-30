@@ -1,6 +1,6 @@
 import json
 from unittest import TestCase, main
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 from datetime import datetime, timezone
 
 from backend.historical_data.google_calendar_sync_service import (
@@ -31,6 +31,7 @@ class TestGoogleCalendarSyncService(TestCase):
             google_reports_client=self.mock_google_reports_client,
             retry_utils=self.mock_retry_utils,
             google_service=self.mock_google_service,
+            bot_account_email="purrf@circlecat.org",
         )
 
         # Predefined test time range strings
@@ -98,8 +99,8 @@ class TestGoogleCalendarSyncService(TestCase):
         """Verify calendar list retrieval and conversion to CalendarDTO objects."""
         mock_response = {
             "items": [
-                {"id": "cal_1", "summary": "Team Alpha"},
-                {"id": "cal_2", "summary": "Team Beta"},
+                {"id": "cal_1", "summary": "Team Alpha", "accessRole": "reader"},
+                {"id": "cal_2", "summary": "Team Beta", "accessRole": "writer"},
             ]
         }
         self.mock_google_calendar_client.calendarList.return_value.list.return_value.execute.return_value = mock_response
@@ -109,6 +110,97 @@ class TestGoogleCalendarSyncService(TestCase):
         self.assertEqual(len(calendars), 2)
         self.assertIsInstance(calendars[0], CalendarDTO)
         self.assertEqual(calendars[0].calendar_id, "cal_1")
+        self.assertEqual(calendars[0].access_role, "reader")
+
+    def test_cache_calendars_skips_bot_owned_calendars(self):
+        """Calendars this bot account owns are its own operational containers.
+
+        All three environments impersonate the same account, so every
+        purrf-created calendar is visible to every environment. Without this
+        filter each environment's analytics would ingest every other
+        environment's meetings. Real team calendars are made by people and
+        shared in as reader/writer, so accessRole is the honest discriminator.
+
+        Nothing is lost by skipping them: the meetings are also on the
+        attendees' own calendars, which the per-person sweep already covers,
+        and events are deduplicated by event id.
+        """
+        self.mock_google_calendar_client.calendarList.return_value.list.return_value.execute.return_value = {
+            "items": [
+                {
+                    "id": "c_own@group.calendar.google.com",
+                    "summary": "Purrf Mentorship (prod)",
+                    "accessRole": "owner",
+                },
+                {
+                    "id": "c_shared@group.calendar.google.com",
+                    "summary": "Circle Cat Volunteer",
+                    "accessRole": "reader",
+                },
+            ]
+        }
+
+        result = self.service._cache_calendars()
+
+        self.assertEqual(result, ["c_shared@group.calendar.google.com"])
+        hset_calendar_ids = [
+            call.args[1]
+            for call in self.mock_redis_client.pipeline.return_value.hset.call_args_list
+        ]
+        # The skip must happen before the hset: this hash is the calendar
+        # dimension analytics reads, so a bot calendar cached here would show
+        # up in the UI as an option with no data behind it.
+        self.assertNotIn("c_own@group.calendar.google.com", hset_calendar_ids)
+
+    def test_cache_calendars_logs_each_skipped_bot_calendar(self):
+        """The skip must be visible.
+
+        This rule silently drops a calendar, so if someone ever shares a real
+        team calendar in at owner level it would vanish from analytics with no
+        signal. The log line is that signal.
+        """
+        self.mock_google_calendar_client.calendarList.return_value.list.return_value.execute.return_value = {
+            "items": [
+                {
+                    "id": "c_own@group.calendar.google.com",
+                    "summary": "Purrf Mentorship (prod)",
+                    "accessRole": "owner",
+                }
+            ]
+        }
+
+        self.service._cache_calendars()
+
+        logged = " ".join(str(c) for c in self.mock_logger.info.call_args_list)
+        self.assertIn("c_own@group.calendar.google.com", logged)
+
+    def test_pull_calendar_history_excludes_the_bot_account_calendar(self):
+        """The bot account is listed in the domain directory like a person.
+
+        pull_calendar_history turns every directory ldap into
+        "<ldap>@circlecat.org", so without this filter the bot's own primary
+        calendar -- where all three environments used to create meetings --
+        gets synced as if it belonged to an employee, and every environment's
+        analytics ends up holding every other environment's meetings.
+        """
+        self.mock_google_service.list_directory_all_people_ldap.return_value = {
+            "id-1": "alice",
+            "id-2": "purrf",
+        }
+        self.mock_google_calendar_client.calendarList.return_value.list.return_value.execute.return_value = {
+            "items": []
+        }
+
+        with patch.object(
+            self.service, "_cache_calendar_events", return_value={}
+        ) as mock_cache_events, patch.object(
+            self.service, "_cache_events_attendees"
+        ):
+            self.service.pull_calendar_history(self.time_min_str, self.time_max_str)
+
+        synced_ids = mock_cache_events.call_args.args[0]
+        self.assertIn("alice@circlecat.org", synced_ids)
+        self.assertNotIn("purrf@circlecat.org", synced_ids)
 
     def test_get_calendar_list_api_error_handling(self):
         """Verify that an empty list is returned and no crash occurs when the Calendar List API fails."""
