@@ -17,8 +17,9 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-/** Render BoardPage inside a memory router with a stub detail route. */
-const renderPage = () => {
+/** Render BoardPage inside a memory router with a stub detail route.
+ * Returns the router too, so tests can assert on the resulting URL. */
+const renderPage = (search = "") => {
   const router = createMemoryRouter(
     [
       { path: "/recruiting/board", element: <BoardPage /> },
@@ -27,9 +28,9 @@ const renderPage = () => {
         element: <p>DETAIL PAGE</p>,
       },
     ],
-    { initialEntries: ["/recruiting/board"] },
+    { initialEntries: [`/recruiting/board${search}`] },
   );
-  return render(<RouterProvider router={router} />);
+  return { ...render(<RouterProvider router={router} />), router };
 };
 
 const jobA = {
@@ -746,5 +747,64 @@ describe("BoardPage", () => {
     // Existing items are left unchanged and the button is still shown.
     expect(within(rejectedLane).getAllByRole("button").length).toBe(21);
     expect(within(rejectedLane).getByText("Load more")).toBeInTheDocument();
+  });
+
+  it("opens the job named by ?jobId= instead of the first one", async () => {
+    api.listBoardJobs.mockResolvedValue({ data: [jobA, jobB] });
+    api.getJobBoard.mockResolvedValue({
+      data: {
+        stages: { board_review: { items: [], total: 0, has_more: false } },
+      },
+    });
+
+    renderPage("?jobId=2");
+
+    await waitFor(() => expect(api.getJobBoard).toHaveBeenCalledWith(2));
+    // Mutation check: jobA is first in the list, so a board that ignored the
+    // param would have fetched 1 and rendered jobA's lanes.
+    expect(api.getJobBoard).not.toHaveBeenCalledWith(1);
+    expect(screen.getByText("Board review")).toBeInTheDocument();
+  });
+
+  it("falls back to the first job and rewrites the URL when ?jobId= names a job the caller doesn't own", async () => {
+    api.listBoardJobs.mockResolvedValue({ data: [jobA, jobB] });
+    api.getJobBoard.mockResolvedValue({
+      data: {
+        stages: {
+          recruiter_screening: { items: [], total: 0, has_more: false },
+        },
+      },
+    });
+
+    // 999 is a stale link, or a posting this caller was removed from.
+    const { router } = renderPage("?jobId=999&focus=101");
+
+    await waitFor(() => expect(api.getJobBoard).toHaveBeenCalledWith(1));
+    expect(router.state.location.search).toBe("?jobId=1");
+    // The focus id belonged to the job we couldn't honour, so it goes too.
+    expect(router.state.location.search).not.toContain("focus");
+    expect(api.getJobBoard).not.toHaveBeenCalledWith(999);
+  });
+
+  it("writes the chosen job into the URL when the switcher changes, without stacking history entries", async () => {
+    const user = userEvent.setup();
+    api.listBoardJobs.mockResolvedValue({ data: [jobA, jobB] });
+    api.getJobBoard.mockResolvedValue({ data: { stages: {} } });
+
+    // Start already reconciled, so the only history action under test is the
+    // switcher's own write.
+    const { router } = renderPage("?jobId=1");
+
+    await waitFor(() => expect(api.getJobBoard).toHaveBeenCalledWith(1));
+    expect(router.state.historyAction).toBe("POP");
+
+    await user.click(screen.getByRole("combobox"));
+    await user.click(await screen.findByText("Mentor"));
+
+    await waitFor(() => expect(router.state.location.search).toBe("?jobId=2"));
+    // `replace: true` reuses the history entry rather than pushing a new one,
+    // so browser-back leaves the board instead of walking job selections.
+    // Mutation check: drop `replace` and this reads "PUSH".
+    expect(router.state.historyAction).toBe("REPLACE");
   });
 });

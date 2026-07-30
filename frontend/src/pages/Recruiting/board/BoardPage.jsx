@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import LoadGate from "@/pages/Recruiting/components/LoadGate";
 import ApplicantCard from "@/pages/Recruiting/board/ApplicantCard";
@@ -37,9 +37,14 @@ const TERMINAL_STAGES = ["hired", "rejected"];
  */
 const BoardPage = () => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  // The selected job lives in the URL, not in state: the board is navigated
+  // away from and back to constantly (open an applicant, act, return), and
+  // component state resets to the first job every time that happens. One
+  // source of truth also makes the board's URL shareable.
+  const selectedJobId = Number(searchParams.get("jobId")) || null;
   const [jobs, setJobs] = useState(null);
   const [loadError, setLoadError] = useState(false);
-  const [selectedJobId, setSelectedJobId] = useState(null);
   const [board, setBoard] = useState(null);
   const [boardError, setBoardError] = useState(false);
   /** Stages with an in-flight "Load more" fetch, so a fast double-click on
@@ -53,9 +58,6 @@ const BoardPage = () => {
     try {
       const { data } = await listBoardJobs();
       setJobs(data ?? []);
-      if (data?.length > 0) {
-        setSelectedJobId(data[0].id);
-      }
     } catch (e) {
       setLoadError(true);
       toast.error(e.message);
@@ -65,6 +67,39 @@ const BoardPage = () => {
   useEffect(() => {
     loadJobs();
   }, [loadJobs]);
+
+  /** Keep `?jobId=` pointing at a job the caller actually owns. An absent,
+   * unparseable, or no-longer-owned id falls back to the first job — the
+   * behaviour before the param existed — rewritten in place so the URL never
+   * disagrees with what's on screen. `replace` keeps the correction out of
+   * the history stack. */
+  useEffect(() => {
+    if (!jobs?.length) return;
+    if (jobs.some((job) => job.id === selectedJobId)) return;
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.set("jobId", String(jobs[0].id));
+        // A focus id is only meaningful against the job it was minted for.
+        next.delete("focus");
+        return next;
+      },
+      { replace: true },
+    );
+  }, [jobs, selectedJobId, setSearchParams]);
+
+  /** Drop `?focus=` in place, so neither a refresh nor an unrelated re-render
+   * repeats a relocation that has already happened (or already failed). */
+  const clearFocusParam = useCallback(() => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete("focus");
+        return next;
+      },
+      { replace: true },
+    );
+  }, [setSearchParams]);
 
   /** Fetch (or re-fetch, via Retry) the selected job's board, grouped by stage. */
   const loadBoard = useCallback(async (jobId) => {
@@ -79,11 +114,20 @@ const BoardPage = () => {
     }
   }, []);
 
+  // Wait for the owned-jobs list before fetching a board. `selectedJobId` is
+  // readable from the URL on the first render, when `jobs` is still null, so
+  // an unguarded fetch would fire against a job the caller may not own — and
+  // `loadBoard` surfaces that rejection as an error toast. Gating here also
+  // restores the pre-URL ordering, where selection could only happen after
+  // the list had loaded.
   useEffect(() => {
-    if (selectedJobId != null) {
+    if (
+      selectedJobId != null &&
+      jobs?.some((job) => job.id === selectedJobId)
+    ) {
       loadBoard(selectedJobId);
     }
-  }, [selectedJobId, loadBoard]);
+  }, [selectedJobId, jobs, loadBoard]);
 
   /** Fetch the next page of a terminal lane (hired/rejected) and append it,
    * deduping by card id so a slow double-click can't render duplicates. */
@@ -202,8 +246,21 @@ const BoardPage = () => {
             Applications Board
           </h1>
           <Select
-            value={String(selectedJobId)}
-            onValueChange={(value) => setSelectedJobId(Number(value))}
+            value={selectedJobId == null ? undefined : String(selectedJobId)}
+            onValueChange={(value) =>
+              setSearchParams(
+                (prev) => {
+                  const next = new URLSearchParams(prev);
+                  next.set("jobId", value);
+                  // Switching jobs by hand abandons any pending relocation.
+                  next.delete("focus");
+                  return next;
+                },
+                // Switching jobs inside the board isn't a navigation step:
+                // browser-back should leave the board, not replay selections.
+                { replace: true },
+              )
+            }
           >
             <SelectTrigger aria-label="Job" className="w-64">
               <SelectValue placeholder="Select a job…" />
