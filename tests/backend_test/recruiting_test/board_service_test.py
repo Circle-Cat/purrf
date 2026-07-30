@@ -3358,6 +3358,163 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result[0].details["fromAssigneeName"], "Eve Evaluator")
         self.assertEqual(result[0].details["toAssigneeName"], "Ivan Interviewer")
 
+    async def test_get_application_activity_resolves_assignee_name_for_interview_scheduled(
+        self,
+    ):
+        job = self._job(job_id=1, owner_ids=(2,))
+        application = self._application(application_id=10, job_id=1)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        row = SimpleNamespace(
+            activity_id=1,
+            application_id=10,
+            actor_id=2,
+            event_type="interview_scheduled",
+            details={
+                "stage": "behavioral",
+                "round": 1,
+                "assigneeId": 42,
+                "startAt": "2026-08-05T21:00:00+00:00",
+                "endAt": "2026-08-05T21:45:00+00:00",
+                "timezone": "America/Los_Angeles",
+                "googleEventId": "evt-1",
+            },
+            created_at=datetime(2026, 8, 5, 20, 0, 0),
+        )
+        self.activity_repo.list_by_application = AsyncMock(return_value=[row])
+        self.users_repo.get_all_by_ids = AsyncMock(
+            return_value=[
+                self._user(user_id=2, first="Owen", last="Owner"),
+                self._user(user_id=42, first="Ivan", last="Interviewer"),
+            ]
+        )
+
+        result = await self.service.get_application_activity(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertEqual(result[0].details["assigneeName"], "Ivan Interviewer")
+
+    async def test_get_application_activity_resolves_assignee_name_for_interview_cancelled(
+        self,
+    ):
+        job = self._job(job_id=1, owner_ids=(2,))
+        application = self._application(application_id=10, job_id=1)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        row = SimpleNamespace(
+            activity_id=1,
+            application_id=10,
+            actor_id=2,
+            event_type="interview_cancelled",
+            details={
+                "stage": "behavioral",
+                "round": 1,
+                "assigneeId": 42,
+                "startAt": "2026-08-05T21:00:00+00:00",
+                "endAt": "2026-08-05T21:45:00+00:00",
+                "timezone": "America/Los_Angeles",
+                "googleEventId": "evt-1",
+            },
+            created_at=datetime(2026, 8, 5, 20, 0, 0),
+        )
+        self.activity_repo.list_by_application = AsyncMock(return_value=[row])
+        self.users_repo.get_all_by_ids = AsyncMock(
+            return_value=[
+                self._user(user_id=2, first="Owen", last="Owner"),
+                self._user(user_id=42, first="Ivan", last="Interviewer"),
+            ]
+        )
+
+        result = await self.service.get_application_activity(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertEqual(result[0].details["assigneeName"], "Ivan Interviewer")
+
+    async def test_get_application_activity_resolves_both_names_for_interview_updated(
+        self,
+    ):
+        job = self._job(job_id=1, owner_ids=(2,))
+        application = self._application(application_id=10, job_id=1)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        row = SimpleNamespace(
+            activity_id=1,
+            application_id=10,
+            actor_id=2,
+            event_type="interview_updated",
+            details={
+                "stage": "behavioral",
+                "round": 1,
+                "assigneeId": 42,
+                "startAt": "2026-08-06T22:00:00+00:00",
+                "endAt": "2026-08-06T22:45:00+00:00",
+                "timezone": "America/Los_Angeles",
+                "googleEventId": "evt-1",
+                "fromStartAt": "2026-08-05T21:00:00+00:00",
+                "fromEndAt": "2026-08-05T21:45:00+00:00",
+                "fromAssigneeId": 7,
+            },
+            created_at=datetime(2026, 8, 6, 21, 0, 0),
+        )
+        self.activity_repo.list_by_application = AsyncMock(return_value=[row])
+        self.users_repo.get_all_by_ids = AsyncMock(
+            return_value=[
+                self._user(user_id=2, first="Owen", last="Owner"),
+                self._user(user_id=7, first="Eve", last="Evaluator"),
+                self._user(user_id=42, first="Ivan", last="Interviewer"),
+            ]
+        )
+
+        result = await self.service.get_application_activity(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertEqual(result[0].details["assigneeName"], "Ivan Interviewer")
+        self.assertEqual(result[0].details["fromAssigneeName"], "Eve Evaluator")
+
+    async def test_get_application_activity_interview_updated_null_from_assignee_omits_from_name(
+        self,
+    ):
+        job = self._job(job_id=1, owner_ids=(2,))
+        application = self._application(application_id=10, job_id=1)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        row = SimpleNamespace(
+            activity_id=1,
+            application_id=10,
+            actor_id=2,
+            event_type="interview_updated",
+            details={
+                "stage": "behavioral",
+                "round": 1,
+                "assigneeId": 42,
+                "startAt": "2026-08-06T22:00:00+00:00",
+                "endAt": "2026-08-06T22:45:00+00:00",
+                "timezone": "America/Los_Angeles",
+                "googleEventId": "evt-1",
+                "fromStartAt": "2026-08-05T21:00:00+00:00",
+                "fromEndAt": "2026-08-05T21:45:00+00:00",
+                "fromAssigneeId": None,
+            },
+            created_at=datetime(2026, 8, 6, 21, 0, 0),
+        )
+        self.activity_repo.list_by_application = AsyncMock(return_value=[row])
+        self.users_repo.get_all_by_ids = AsyncMock(
+            return_value=[
+                self._user(user_id=2, first="Owen", last="Owner"),
+                self._user(user_id=42, first="Ivan", last="Interviewer"),
+            ]
+        )
+
+        result = await self.service.get_application_activity(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertNotIn("fromAssigneeName", result[0].details)
+        self.assertEqual(result[0].details["assigneeName"], "Ivan Interviewer")
+
     async def test_get_application_activity_reassigned_null_from_assignee_omits_from_name(
         self,
     ):
