@@ -503,8 +503,7 @@ class GoogleService:
             status = getattr(e.resp, "status", None)
             if status in (HTTPStatus.NOT_FOUND, HTTPStatus.GONE):
                 self.logger.error(
-                    "[GoogleService] Cannot patch event_id=%s: it is gone "
-                    "(status=%s)",
+                    "[GoogleService] Cannot patch event_id=%s: it is gone (status=%s)",
                     event_id,
                     status,
                 )
@@ -517,7 +516,9 @@ class GoogleService:
                 e,
                 exc_info=True,
             )
-            raise RuntimeError("Unable to update Google Meeting via Calendar API") from e
+            raise RuntimeError(
+                "Unable to update Google Meeting via Calendar API"
+            ) from e
         except Exception as e:
             self.logger.error(
                 "[GoogleService] Failed to patch event_id=%s: %s",
@@ -525,7 +526,9 @@ class GoogleService:
                 e,
                 exc_info=True,
             )
-            raise RuntimeError("Unable to update Google Meeting via Calendar API") from e
+            raise RuntimeError(
+                "Unable to update Google Meeting via Calendar API"
+            ) from e
 
     async def get_meet_space_name(self, meeting_code: str) -> str:
         """

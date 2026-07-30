@@ -24,7 +24,9 @@ def _service(**overrides):
     google.get_meet_space_name = AsyncMock(return_value="spaces/xyz")
     google.update_meet_space_type_to_open = AsyncMock()
     google.batch_delete_google_meetings.return_value = (["evt-1"], [])
-    google.update_google_meeting.return_value = google.insert_google_meeting.return_value
+    google.update_google_meeting.return_value = (
+        google.insert_google_meeting.return_value
+    )
     emails = MagicMock()
     emails.get_contact_emails_by_user_ids = AsyncMock(
         return_value={1: "ana@example.com", 2: "bob@example.com"}

@@ -783,9 +783,7 @@ class UpdateGoogleMeetingTest(TestCase):
         # link, invalidating the one already mailed to the candidate.
         self.assertNotIn("conferenceData", kwargs["body"])
         self.assertEqual(set(kwargs["body"]), {"start", "end", "attendees"})
-        self.assertEqual(
-            kwargs["body"]["attendees"], [{"email": "ana@example.com"}]
-        )
+        self.assertEqual(kwargs["body"]["attendees"], [{"email": "ana@example.com"}])
 
     def test_a_missing_event_raises_meeting_gone(self):
         patch_call = self.mock_google_calendar_client.events.return_value.patch
@@ -802,9 +800,7 @@ class UpdateGoogleMeetingTest(TestCase):
 
     def test_a_deleted_event_raises_meeting_gone(self):
         patch_call = self.mock_google_calendar_client.events.return_value.patch
-        patch_call.return_value.execute.side_effect = make_http_error(
-            HTTPStatus.GONE
-        )
+        patch_call.return_value.execute.side_effect = make_http_error(HTTPStatus.GONE)
         with self.assertRaises(MeetingGoneError):
             self.service.update_google_meeting(
                 "evt-1",
