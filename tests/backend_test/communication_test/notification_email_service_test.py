@@ -28,7 +28,10 @@ class TestNotificationEmailService(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(sent)
         _, kwargs = self.gmail.send_message.call_args
-        self.assertEqual(kwargs["sender"], "notifications-test@circlecat.org")
+        self.assertEqual(
+            kwargs["sender"],
+            "Purrf Notifications <notifications-test@circlecat.org>",
+        )
         self.assertEqual(kwargs["to"], ["a@b.com"])
         self.assertEqual(kwargs["cc"], [])
         self.assertEqual(kwargs["subject"], "Subject")

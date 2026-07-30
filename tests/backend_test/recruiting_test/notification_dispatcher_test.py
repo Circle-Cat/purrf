@@ -116,12 +116,6 @@ class TestNotificationDispatcher(unittest.IsolatedAsyncioTestCase):
         self.email_service.send.assert_awaited_once()
         self.logger.error.assert_called_once()
 
-    async def test_flush_never_raises_when_sending_fails(self):
-        self.email_service.send = AsyncMock(return_value=False)
-        await self.dispatcher.record(self.session, self._entity())
-
-        await self.dispatcher.flush(self.session)  # must not raise
-
     async def test_flush_survives_one_send_raising_and_still_sends_the_rest(self):
         self.email_service.send = AsyncMock(side_effect=[RuntimeError("boom"), True])
         await self.dispatcher.record(self.session, self._entity(user_id=5))

@@ -34,6 +34,14 @@ class NotificationEmailService:
         self._logger = logger
         self._sender_address = sender_address
 
+    @property
+    def sender_address(self):
+        """The address this service sends notifications as (so callers/tests
+        can verify which Send-As identity was wired in, independent of
+        ``GmailClient.owns_address`` -- which cannot distinguish this address
+        from any other address the same client owns)."""
+        return self._sender_address
+
     async def send(self, to: str, subject: str, body_html: str) -> bool:
         """Send one notification email, swallowing any failure.
 
@@ -55,7 +63,7 @@ class NotificationEmailService:
                 cc=[],
                 subject=subject,
                 body=body_html,
-                sender=self._sender_address,
+                sender=f"Purrf Notifications <{self._sender_address}>",
             )
             return True
         except Exception:

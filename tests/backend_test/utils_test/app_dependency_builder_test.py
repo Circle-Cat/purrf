@@ -834,6 +834,17 @@ class TestAppDependencyBuilder(TestCase):
         self.assertEqual(
             builder.notification_sender_address, "notifications@circlecat.org"
         )
+        # The notification email service must be constructed with the
+        # notification address, not the recruiting one -- GmailClient.owns_address
+        # cannot catch a mixup since the recruiting address is owned too.
+        self.assertEqual(
+            builder.notification_email_service.sender_address,
+            "notifications@circlecat.org",
+        )
+        self.assertNotEqual(
+            builder.notification_email_service.sender_address,
+            "recruiting@circlecat.org",
+        )
         # The three services must receive the dispatcher, not the repository:
         # their own tests inject a dispatcher double, so a builder that passes
         # the repository instead fails nowhere until the first real
