@@ -57,7 +57,6 @@ class TestApplicationInterviewRepository(BaseRepositoryTestLib):
             meet_link="https://meet.google.com/abc-defg-hij",
             start_at=datetime(2026, 8, 1, 14, 0, tzinfo=timezone.utc),
             end_at=datetime(2026, 8, 1, 14, 45, tzinfo=timezone.utc),
-            timezone="America/Los_Angeles",
             scheduled_by=recruiter.user_id,
         )
         kwargs.update(overrides)
@@ -97,7 +96,6 @@ class TestApplicationInterviewRepository(BaseRepositoryTestLib):
         self.assertEqual(
             fetched.end_at, datetime(2026, 8, 1, 14, 45, tzinfo=timezone.utc)
         )
-        self.assertEqual(fetched.timezone, "America/Los_Angeles")
         self.assertEqual(fetched.scheduled_by, recruiter.user_id)
         self.assertIsNotNone(fetched.created_at)
         self.assertIsNotNone(fetched.updated_at)
@@ -143,13 +141,11 @@ class TestApplicationInterviewRepository(BaseRepositoryTestLib):
             entity,
             start_at=new_start,
             end_at=new_end,
-            timezone="America/New_York",
             meet_link="https://meet.google.com/xyz-wxyz-xyz",
         )
 
         self.assertEqual(updated.start_at, new_start)
         self.assertEqual(updated.end_at, new_end)
-        self.assertEqual(updated.timezone, "America/New_York")
         self.assertEqual(updated.meet_link, "https://meet.google.com/xyz-wxyz-xyz")
         self.assertEqual(updated.scheduled_by, recruiter.user_id)
         self.assertEqual(updated.google_event_id, "event-1")

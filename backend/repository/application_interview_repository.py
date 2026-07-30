@@ -47,7 +47,6 @@ class ApplicationInterviewRepository:
         meet_link: str | None,
         start_at,
         end_at,
-        timezone: str,
         scheduled_by: int,
     ) -> ApplicationInterviewEntity:
         """Record a meeting Google has already created.
@@ -64,7 +63,6 @@ class ApplicationInterviewRepository:
             meet_link (str | None): The Meet URL, when Google returned one.
             start_at (datetime): Start, tz-aware UTC.
             end_at (datetime): End, tz-aware UTC.
-            timezone (str): The IANA zone the recruiter picked.
             scheduled_by (int): The recruiter who booked it.
 
         Returns:
@@ -78,7 +76,6 @@ class ApplicationInterviewRepository:
             meet_link=meet_link,
             start_at=start_at,
             end_at=end_at,
-            timezone=timezone,
             scheduled_by=scheduled_by,
         )
         session.add(entity)
@@ -92,7 +89,6 @@ class ApplicationInterviewRepository:
         *,
         start_at,
         end_at,
-        timezone: str,
         meet_link: str | None,
     ) -> ApplicationInterviewEntity:
         """Apply a reschedule to an existing row.
@@ -106,7 +102,6 @@ class ApplicationInterviewRepository:
             entity (ApplicationInterviewEntity): The row to update.
             start_at (datetime): New start, tz-aware UTC.
             end_at (datetime): New end, tz-aware UTC.
-            timezone (str): The IANA zone as re-picked by the recruiter.
             meet_link (str | None): The Meet URL from the patched event.
 
         Returns:
@@ -114,7 +109,6 @@ class ApplicationInterviewRepository:
         """
         entity.start_at = start_at
         entity.end_at = end_at
-        entity.timezone = timezone
         entity.meet_link = meet_link
         session.add(entity)
         await session.flush()
