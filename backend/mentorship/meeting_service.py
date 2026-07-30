@@ -1,4 +1,3 @@
-import asyncio
 import uuid
 from datetime import datetime, timedelta, timezone as dt_timezone, date
 from zoneinfo import ZoneInfo
@@ -32,15 +31,13 @@ class MeetingService:
         mentorship_pairs_repository,
         mentorship_mapper,
         users_repository,
-        google_service,
-        user_emails_repository,
+        meeting_scheduling_service,
     ):
         self.logger = logger
         self.mentorship_pairs_repository = mentorship_pairs_repository
         self.mentorship_mapper = mentorship_mapper
         self.users_repository = users_repository
-        self.google_service = google_service
-        self.user_emails_repository = user_emails_repository
+        self.meeting_scheduling_service = meeting_scheduling_service
 
     async def get_meetings_by_user_and_round(
         self, session: AsyncSession, user_context: UserContextDto, round_id: int
@@ -257,63 +254,27 @@ class MeetingService:
             partner_name=partner_name,
         )
 
-        # Generate unique IDs for idempotency
-        event_id = uuid.uuid4().hex
-        request_id = str(uuid.uuid4())
-
-        # Call Google Calendar API. Both attendees' contact addresses come
-        # from user_emails (their primary, or the claim seeded from their
-        # login while they are still in front of the verify wall).
-        contact_by_user_id = (
-            await self.user_emails_repository.get_contact_emails_by_user_ids(
-                session, [current_user.user_id, partner.user_id]
-            )
-        )
-        attendees_emails = []
-        for attendee in (current_user, partner):
-            attendee_email = contact_by_user_id.get(attendee.user_id)
-            if attendee_email:
-                attendees_emails.append(attendee_email)
-            else:
-                self.logger.warning(
-                    "[MeetingService] user_id=%s has no contact email; "
-                    "creating the calendar invite without them",
-                    attendee.user_id,
-                )
-        google_result = await asyncio.to_thread(
-            self.google_service.insert_google_meeting,
+        # Both attendees' contact addresses come from user_emails (their
+        # primary, or the claim seeded from their login while they are still
+        # in front of the verify wall). Address resolution, the idempotent
+        # insert and opening the Meet space now live in the shared service.
+        meeting = await self.meeting_scheduling_service.schedule(
+            session,
             summary=summary,
-            start_time=start_datetime,
-            end_time=end_datetime,
-            attendees_emails=attendees_emails,
-            request_id=request_id,
-            event_id=event_id,
+            start_utc=start_datetime,
+            end_utc=end_datetime,
+            attendee_user_ids=[current_user.user_id, partner.user_id],
         )
 
-        # Update Meet space access type to OPEN
-        meeting_code = (google_result.get("conferenceData") or {}).get("conferenceId")
-        if meeting_code:
-            try:
-                space_name = await self.google_service.get_meet_space_name(meeting_code)
-                await self.google_service.update_meet_space_type_to_open(space_name)
-            except Exception as e:
-                self.logger.warning(
-                    "[MeetingService] Non-fatal: failed to set Meet space %s to OPEN: %s",
-                    meeting_code,
-                    e,
-                )
-
-        # Build internal meeting detail DTO
-        conference_data = google_result.get("conferenceData", {})
         meeting_detail = GoogleMeetingDetailDto(
-            meeting_id=google_result.get("id", ""),
-            meet_link=google_result.get("hangoutLink", ""),
+            meeting_id=meeting["google_event_id"],
+            meet_link=meeting["meet_link"],
             start_datetime=start_datetime.isoformat(),
             end_datetime=end_datetime.isoformat(),
             is_completed=False,
-            entry_points=conference_data.get("entryPoints", []),
-            conference_id=conference_data.get("conferenceId"),
-            created_datetime=google_result.get("created", ""),
+            entry_points=meeting["entry_points"],
+            conference_id=meeting["conference_id"],
+            created_datetime=meeting["created"],
         )
 
         # Persist meeting log
@@ -328,7 +289,7 @@ class MeetingService:
             self.logger.error(
                 "[MeetingService] DB write failed after Google meeting creation, "
                 "event_id=%s may be orphaned: %s",
-                event_id,
+                meeting["google_event_id"],
                 e,
                 exc_info=True,
             )
@@ -488,10 +449,10 @@ class MeetingService:
 
             all_meeting_ids.extend(deletion["meeting_ids"])
 
-        succeeded_event_ids, failed_event_ids = await asyncio.to_thread(
-            self.google_service.batch_delete_google_meetings,
-            event_ids=all_meeting_ids,
-        )
+        (
+            succeeded_event_ids,
+            failed_event_ids,
+        ) = await self.meeting_scheduling_service.cancel(all_meeting_ids)
 
         if succeeded_event_ids:
             await self.mentorship_pairs_repository.remove_meetings_from_log(
