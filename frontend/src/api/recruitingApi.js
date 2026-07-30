@@ -164,6 +164,25 @@ export const reassignApplication = (id, assigneeId) =>
   });
 
 /**
+ * Book a Calendar meeting for an application's current stage+round.
+ * body: { assigneeId, date, startTime, durationMinutes, timezone }
+ * (wall-clock terms -- see InterviewScheduleRequestDto on the backend).
+ */
+export const scheduleInterview = (id, body) =>
+  request.post(API_ENDPOINTS.RECRUITING_APPLICATION_INTERVIEW(id), body);
+
+/**
+ * Move an already-booked meeting's time and/or swap its interviewer.
+ * Same body shape as scheduleInterview.
+ */
+export const updateInterview = (id, body) =>
+  request.patch(API_ENDPOINTS.RECRUITING_APPLICATION_INTERVIEW(id), body);
+
+/** Cancel an application's current stage+round's booked meeting. */
+export const cancelInterview = (id) =>
+  request.delete(API_ENDPOINTS.RECRUITING_APPLICATION_INTERVIEW(id));
+
+/**
  * List every currently-blocked user, optionally filtered by a name/email/
  * reason substring.
  */

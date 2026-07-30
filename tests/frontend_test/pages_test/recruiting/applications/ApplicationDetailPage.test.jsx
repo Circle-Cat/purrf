@@ -137,6 +137,8 @@ const makeDetail = ({
   stage = "recruiter_screening",
   resumeAvailable = true,
   currentRound,
+  interview = null,
+  viewerTimezone = "America/Los_Angeles",
 } = {}) => ({
   application: {
     id: 101,
@@ -158,7 +160,22 @@ const makeDetail = ({
   isOwner,
   canView,
   assigneeId,
+  interview,
+  viewerTimezone,
 });
+
+/** An InterviewDto-shaped fixture, as the detail endpoint's `interview` field. */
+const INTERVIEW_FIXTURE = {
+  interviewId: 7,
+  stage: "behavioral",
+  round: 1,
+  startAt: "2026-08-05T21:00:00Z",
+  endAt: "2026-08-05T21:45:00Z",
+  meetLink: "https://meet.google.com/abc-defg-hij",
+  assigneeId: ASSIGNEE_ID,
+  assigneeName: "Eve Evaluator",
+  scheduledByName: "Jane Smith",
+};
 
 /**
  * Build a confirmed evaluation row for a stage+round, as returned by
@@ -201,6 +218,9 @@ beforeEach(() => {
   api.getApplicationEmailTemplates.mockResolvedValue({
     data: { templates: [], signatureHtml: "" },
   });
+  api.scheduleInterview.mockResolvedValue({ data: {} });
+  api.updateInterview.mockResolvedValue({ data: {} });
+  api.cancelInterview.mockResolvedValue({ data: null });
 });
 
 /** Render the page at the detail route for a given application id. */
@@ -226,6 +246,60 @@ const waitLoaded = () =>
   waitFor(() =>
     expect(screen.getByText("alice@example.com")).toBeInTheDocument(),
   );
+
+describe("ApplicationDetailPage — interview times follow the viewer", () => {
+  it("renders the meeting in the zone the payload says the viewer is in", async () => {
+    // Same instant as every other fixture; a reader in Taipei sees 21:00Z as
+    // 05:00 the NEXT day. Mutation check -- render a fixed zone and this fails.
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({
+        isOwner: true,
+        stage: "behavioral",
+        interview: INTERVIEW_FIXTURE,
+        viewerTimezone: "Asia/Taipei",
+      }),
+    });
+    renderPage();
+    await waitLoaded();
+
+    expect(await screen.findByText(/2026-08-06/)).toBeInTheDocument();
+    expect(screen.getByText(/05:00 - 05:45/)).toBeInTheDocument();
+    expect(screen.getByText(/Asia\/Taipei/)).toBeInTheDocument();
+  });
+
+  it("falls back to the browser zone when the viewer has set none", async () => {
+    // A profile with no timezone must still read as local time, not as
+    // somebody else's zone and not as UTC-by-accident.
+    const resolved = Intl.DateTimeFormat().resolvedOptions();
+    const spy = vi
+      .spyOn(Intl, "DateTimeFormat")
+      .mockImplementation((locale, options) =>
+        options
+          ? new Intl.DateTimeFormat.prototype.constructor(locale, options)
+          : {
+              resolvedOptions: () => ({ ...resolved, timeZone: "Asia/Taipei" }),
+            },
+      );
+    try {
+      authState.userId = OWNER_ID;
+      api.getApplicationDetail.mockResolvedValue({
+        data: makeDetail({
+          isOwner: true,
+          stage: "behavioral",
+          interview: INTERVIEW_FIXTURE,
+          viewerTimezone: null,
+        }),
+      });
+      renderPage();
+      await waitLoaded();
+
+      expect(await screen.findByText(/Asia\/Taipei/)).toBeInTheDocument();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
 
 describe("ApplicationDetailPage — loading & snapshot", () => {
   it("shows a loading state before the detail resolves", () => {
@@ -709,68 +783,54 @@ describe("ApplicationDetailPage — role-adaptive right column", () => {
 });
 
 describe("ApplicationDetailPage — advance-time assignee dialog", () => {
+  // Behavioral/tech are now excluded from this dialog entirely (their
+  // interviewer is set via the interview meeting card's own dialog
+  // instead -- see ASSIGNEE_VIA_CARD_STAGES), so these tests exercise it
+  // via "board_review", the one remaining INTERVIEW_STAGES member whose
+  // assignee is still picked here. board_review isn't a PREFILL_TARGET_STAGES
+  // member either, so it always starts on "Decide later".
+  const jobWithBoardReview = {
+    ...JOB,
+    pipelineConfig: {
+      ...JOB.pipelineConfig,
+      stages: [
+        ...JOB.pipelineConfig.stages,
+        { stage: "board_review", rounds: 1 },
+      ],
+    },
+  };
+
   beforeEach(() => {
-    // These tests exercise the assignee dialog itself; seed confirmed
-    // evaluations for the stages advanced from so the no-evaluation
-    // reminder (covered by its own describe) stays out of the way.
+    api.getJob.mockResolvedValue({ data: jobWithBoardReview });
+    // Exercise the assignee dialog itself; seed a confirmed evaluation for
+    // the stage advanced from so the no-evaluation reminder (covered by its
+    // own describe) stays out of the way.
     api.getEvaluationsForApplication.mockResolvedValue({
-      data: [confirmedEval("recruiter_screening"), confirmedEval("behavioral")],
+      data: [confirmedEval("tech")],
     });
   });
 
-  it("clicking Advance to Behavioral opens a dialog pre-filled with the configured default", async () => {
+  it("clicking Advance to Board review opens a dialog defaulting to Decide later", async () => {
     const user = userEvent.setup();
     authState.userId = OWNER_ID;
     api.getApplicationDetail.mockResolvedValue({
       data: makeDetail({
         isOwner: true,
         assigneeId: ASSIGNEE_ID,
-        stage: "recruiter_screening",
+        stage: "tech",
       }),
     });
     renderPage();
     await waitLoaded();
 
     await user.click(
-      screen.getByRole("button", { name: "Advance to Behavioral" }),
+      screen.getByRole("button", { name: "Advance to Board review" }),
     );
 
-    // Advance target is "behavioral" (an interview stage): the dialog's
-    // radio list is pre-filled with behavioral's configured default
-    // assignee (Ivan, id 11), but a pick isn't required so Confirm is
-    // enabled either way.
-    expect(
-      screen.getByRole("radio", { name: /ivan interviewer/i }),
-    ).toBeChecked();
+    expect(screen.getByRole("radio", { name: /decide later/i })).toBeChecked();
     expect(
       screen.getByRole("button", { name: "Confirm advance" }),
     ).not.toBeDisabled();
-  });
-
-  it("advances with the pre-filled default assignee id", async () => {
-    const user = userEvent.setup();
-    authState.userId = OWNER_ID;
-    api.getApplicationDetail.mockResolvedValue({
-      data: makeDetail({
-        isOwner: true,
-        assigneeId: ASSIGNEE_ID,
-        stage: "recruiter_screening",
-      }),
-    });
-    api.changeApplicationStage.mockResolvedValue({ data: {} });
-    renderPage();
-    await waitLoaded();
-
-    await user.click(
-      screen.getByRole("button", { name: "Advance to Behavioral" }),
-    );
-    await user.click(screen.getByRole("button", { name: "Confirm advance" }));
-    await waitFor(() =>
-      expect(api.changeApplicationStage).toHaveBeenCalledWith("101", {
-        toStage: "behavioral",
-        assigneeId: 11,
-      }),
-    );
   });
 
   it("advances with no assignee when the picker is left blank, instead of blocking the confirm", async () => {
@@ -780,28 +840,48 @@ describe("ApplicationDetailPage — advance-time assignee dialog", () => {
       data: makeDetail({
         isOwner: true,
         assigneeId: ASSIGNEE_ID,
-        stage: "behavioral",
+        stage: "tech",
       }),
     });
     api.changeApplicationStage.mockResolvedValue({ data: {} });
     renderPage();
     await waitLoaded();
 
-    // Advance target is "tech" (interview stage, no configured default): the
-    // radio list starts on "Decide later", and Confirm advance is not
-    // blocked on it — leaving it there just advances the stage unassigned,
-    // to be picked up later via Reassign.
-    await user.click(screen.getByRole("button", { name: "Advance to Tech" }));
-    expect(screen.getByRole("radio", { name: /decide later/i })).toBeChecked();
-    expect(
-      screen.getByRole("button", { name: "Confirm advance" }),
-    ).not.toBeDisabled();
-
+    await user.click(
+      screen.getByRole("button", { name: "Advance to Board review" }),
+    );
     await user.click(screen.getByRole("button", { name: "Confirm advance" }));
     await waitFor(() =>
       expect(api.changeApplicationStage).toHaveBeenCalledWith("101", {
-        toStage: "tech",
+        toStage: "board_review",
         assigneeId: undefined,
+      }),
+    );
+  });
+
+  it("advances with a manually picked assignee", async () => {
+    const user = userEvent.setup();
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({
+        isOwner: true,
+        assigneeId: ASSIGNEE_ID,
+        stage: "tech",
+      }),
+    });
+    api.changeApplicationStage.mockResolvedValue({ data: {} });
+    renderPage();
+    await waitLoaded();
+
+    await user.click(
+      screen.getByRole("button", { name: "Advance to Board review" }),
+    );
+    await user.click(screen.getByRole("radio", { name: /ivan interviewer/i }));
+    await user.click(screen.getByRole("button", { name: "Confirm advance" }));
+    await waitFor(() =>
+      expect(api.changeApplicationStage).toHaveBeenCalledWith("101", {
+        toStage: "board_review",
+        assigneeId: 11,
       }),
     );
   });
@@ -813,14 +893,14 @@ describe("ApplicationDetailPage — advance-time assignee dialog", () => {
       data: makeDetail({
         isOwner: true,
         assigneeId: ASSIGNEE_ID,
-        stage: "recruiter_screening",
+        stage: "tech",
       }),
     });
     renderPage();
     await waitLoaded();
 
     await user.click(
-      screen.getByRole("button", { name: "Advance to Behavioral" }),
+      screen.getByRole("button", { name: "Advance to Board review" }),
     );
     await user.click(screen.getByRole("button", { name: "Cancel" }));
 
@@ -828,59 +908,6 @@ describe("ApplicationDetailPage — advance-time assignee dialog", () => {
       screen.queryByRole("button", { name: "Confirm advance" }),
     ).not.toBeInTheDocument();
     expect(api.changeApplicationStage).not.toHaveBeenCalled();
-  });
-
-  it("clears a stale prefilled assignee after an in-page advance into a non-prefill stage", async () => {
-    const user = userEvent.setup();
-    authState.userId = OWNER_ID;
-    // First load lands on recruiter_screening (prefill target); after the
-    // in-page advance, the SAME component instance reloads onto behavioral,
-    // whose own next target is "tech" (not a prefill target).
-    api.getApplicationDetail
-      .mockResolvedValueOnce({
-        data: makeDetail({
-          isOwner: true,
-          assigneeId: ASSIGNEE_ID,
-          stage: "recruiter_screening",
-        }),
-      })
-      .mockResolvedValue({
-        data: makeDetail({
-          isOwner: true,
-          assigneeId: ASSIGNEE_ID,
-          stage: "behavioral",
-        }),
-      });
-    api.changeApplicationStage.mockResolvedValue({ data: {} });
-    renderPage();
-    await waitLoaded();
-
-    // Advancing out of recruiter_screening pre-fills behavioral's default
-    // (Ivan, id 11).
-    await user.click(
-      screen.getByRole("button", { name: "Advance to Behavioral" }),
-    );
-    await waitFor(() =>
-      expect(
-        screen.getByRole("radio", { name: /ivan interviewer/i }),
-      ).toBeChecked(),
-    );
-    await user.click(screen.getByRole("button", { name: "Confirm advance" }));
-
-    // The page reloads in place onto "behavioral"; its next target is "tech",
-    // which carries no configured default. Reopening the dialog must NOT
-    // still show behavioral's stale "Ivan Interviewer" pick.
-    await waitFor(() =>
-      expect(
-        screen.getByRole("button", { name: "Advance to Tech" }),
-      ).toBeInTheDocument(),
-    );
-    // The stage badge confirms the advance actually landed on "behavioral".
-    expect(screen.getByText("Behavioral")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Advance to Tech" }));
-    expect(
-      screen.getByRole("radio", { name: /ivan interviewer/i }),
-    ).not.toBeChecked();
   });
 });
 
@@ -1106,16 +1133,17 @@ describe("ApplicationDetailPage — advance round", () => {
     });
   });
 
-  /** The base JOB fixture with the tech stage's `rounds` overridden. */
-  const jobWithTechRounds = (rounds) => ({
+  /** The base JOB fixture with one stage's `rounds` overridden. */
+  const jobWithStageRounds = (stage, rounds) => ({
     ...JOB,
     pipelineConfig: {
       ...JOB.pipelineConfig,
       stages: JOB.pipelineConfig.stages.map((s) =>
-        s.stage === "tech" ? { ...s, rounds } : s,
+        s.stage === stage ? { ...s, rounds } : s,
       ),
     },
   });
+  const jobWithTechRounds = (rounds) => jobWithStageRounds("tech", rounds);
 
   it("shows the Advance Round button when the stage supports multiple rounds and the applicant hasn't reached the last one", async () => {
     authState.userId = OWNER_ID;
@@ -1173,6 +1201,43 @@ describe("ApplicationDetailPage — advance round", () => {
       screen.getByRole("button", { name: "Advance to Round 2" }),
     );
 
+    // Tech is card-managed (ASSIGNEE_VIA_CARD_STAGES): the round-advance
+    // dialog still opens, but without a generic assignee picker.
+    expect(
+      screen.queryByRole("radio", { name: /decide later/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Confirm advance round" }),
+    ).not.toBeDisabled();
+    expect(api.setApplicationRound).not.toHaveBeenCalled();
+  });
+
+  it("keeps the generic assignee picker for a round-advance on a non-card stage", async () => {
+    // Recruiter screening isn't in ASSIGNEE_VIA_CARD_STAGES, so its
+    // round-advance dialog keeps the generic PeoplePicker, defaulting to
+    // "Decide later".
+    const user = userEvent.setup();
+    authState.userId = OWNER_ID;
+    api.getJob.mockResolvedValue({
+      data: jobWithStageRounds("recruiter_screening", 3),
+    });
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({
+        isOwner: true,
+        stage: "recruiter_screening",
+        currentRound: 1,
+      }),
+    });
+    api.getEvaluationsForApplication.mockResolvedValue({
+      data: [confirmedEval("recruiter_screening", 1)],
+    });
+    renderPage();
+    await waitLoaded();
+
+    await user.click(
+      screen.getByRole("button", { name: "Advance to Round 2" }),
+    );
+
     expect(screen.getByRole("radio", { name: /decide later/i })).toBeChecked();
     expect(
       screen.getByRole("button", { name: "Confirm advance round" }),
@@ -1204,11 +1269,22 @@ describe("ApplicationDetailPage — advance round", () => {
   });
 
   it("picking an assignee and confirming calls setApplicationRound with the assignee and updates the displayed round", async () => {
+    // Uses recruiter_screening (not card-managed) so the round-advance
+    // dialog's generic PeoplePicker is present to pick from.
     const user = userEvent.setup();
     authState.userId = OWNER_ID;
-    api.getJob.mockResolvedValue({ data: jobWithTechRounds(3) });
+    api.getJob.mockResolvedValue({
+      data: jobWithStageRounds("recruiter_screening", 3),
+    });
     api.getApplicationDetail.mockResolvedValue({
-      data: makeDetail({ isOwner: true, stage: "tech", currentRound: 1 }),
+      data: makeDetail({
+        isOwner: true,
+        stage: "recruiter_screening",
+        currentRound: 1,
+      }),
+    });
+    api.getEvaluationsForApplication.mockResolvedValue({
+      data: [confirmedEval("recruiter_screening", 1)],
     });
     api.setApplicationRound.mockResolvedValue({ data: {} });
     renderPage();
@@ -1258,11 +1334,22 @@ describe("ApplicationDetailPage — advance round", () => {
   });
 
   it("surfaces a toast error when advancing the round fails", async () => {
+    // Uses recruiter_screening so the assignee picker is present to pick
+    // from, mirroring the "picking an assignee" test above.
     const user = userEvent.setup();
     authState.userId = OWNER_ID;
-    api.getJob.mockResolvedValue({ data: jobWithTechRounds(3) });
+    api.getJob.mockResolvedValue({
+      data: jobWithStageRounds("recruiter_screening", 3),
+    });
     api.getApplicationDetail.mockResolvedValue({
-      data: makeDetail({ isOwner: true, stage: "tech", currentRound: 1 }),
+      data: makeDetail({
+        isOwner: true,
+        stage: "recruiter_screening",
+        currentRound: 1,
+      }),
+    });
+    api.getEvaluationsForApplication.mockResolvedValue({
+      data: [confirmedEval("recruiter_screening", 1)],
     });
     api.setApplicationRound.mockRejectedValue(new Error("Round update failed"));
     renderPage();
@@ -1867,7 +1954,7 @@ describe("ApplicationDetailPage — Scheduled requires an assignee", () => {
 
     expect(
       screen.getByText(
-        "Please assign a reviewer before marking this as Scheduled.",
+        "Schedule this interview's meeting first — booking one (see the Interview Meeting card above) assigns the interviewer automatically.",
       ),
     ).toBeInTheDocument();
     expect(api.setApplicationSubStatus).not.toHaveBeenCalled();
@@ -1891,7 +1978,7 @@ describe("ApplicationDetailPage — Scheduled requires an assignee", () => {
 
     expect(
       screen.queryByText(
-        "Please assign a reviewer before marking this as Scheduled.",
+        "Schedule this interview's meeting first — booking one (see the Interview Meeting card above) assigns the interviewer automatically.",
       ),
     ).not.toBeInTheDocument();
   });
@@ -1920,7 +2007,7 @@ describe("ApplicationDetailPage — Scheduled requires an assignee", () => {
     );
     expect(
       screen.queryByText(
-        "Please assign a reviewer before marking this as Scheduled.",
+        "Schedule this interview's meeting first — booking one (see the Interview Meeting card above) assigns the interviewer automatically.",
       ),
     ).not.toBeInTheDocument();
   });
@@ -1949,96 +2036,9 @@ describe("ApplicationDetailPage — Scheduled requires an assignee", () => {
     );
     expect(
       screen.queryByText(
-        "Please assign a reviewer before marking this as Scheduled.",
+        "Schedule this interview's meeting first — booking one (see the Interview Meeting card above) assigns the interviewer automatically.",
       ),
     ).not.toBeInTheDocument();
-  });
-});
-
-describe("ApplicationDetailPage — advance dialog Scheduled hint", () => {
-  beforeEach(() => {
-    // The Scheduled hint lives inside the advance dialog; seed confirmed
-    // evaluations so the no-evaluation reminder doesn't intercept the click.
-    api.getEvaluationsForApplication.mockResolvedValue({
-      data: [
-        confirmedEval("recruiter_screening"),
-        confirmedEval("behavioral"),
-        confirmedEval("tech"),
-      ],
-    });
-  });
-
-  const HINT_TEXT =
-    "You can leave this unassigned for now — an assignee will be required before marking this stage as Scheduled.";
-
-  it("shows the hint when advancing into Behavioral", async () => {
-    const user = userEvent.setup();
-    authState.userId = OWNER_ID;
-    api.getApplicationDetail.mockResolvedValue({
-      data: makeDetail({
-        isOwner: true,
-        assigneeId: ASSIGNEE_ID,
-        stage: "recruiter_screening",
-      }),
-    });
-    renderPage();
-    await waitLoaded();
-
-    await user.click(
-      screen.getByRole("button", { name: "Advance to Behavioral" }),
-    );
-
-    expect(screen.getByText(HINT_TEXT)).toBeInTheDocument();
-  });
-
-  it("shows the hint when advancing into Tech", async () => {
-    const user = userEvent.setup();
-    authState.userId = OWNER_ID;
-    api.getApplicationDetail.mockResolvedValue({
-      data: makeDetail({
-        isOwner: true,
-        assigneeId: ASSIGNEE_ID,
-        stage: "behavioral",
-      }),
-    });
-    renderPage();
-    await waitLoaded();
-
-    await user.click(screen.getByRole("button", { name: "Advance to Tech" }));
-
-    expect(screen.getByText(HINT_TEXT)).toBeInTheDocument();
-  });
-
-  it("does not show the hint when advancing into Board Review", async () => {
-    const user = userEvent.setup();
-    authState.userId = OWNER_ID;
-    api.getJob.mockResolvedValue({
-      data: {
-        ...JOB,
-        pipelineConfig: {
-          ...JOB.pipelineConfig,
-          stages: [
-            ...JOB.pipelineConfig.stages,
-            { stage: "board_review", rounds: 1 },
-          ],
-        },
-      },
-    });
-    api.getApplicationDetail.mockResolvedValue({
-      data: makeDetail({
-        isOwner: true,
-        assigneeId: ASSIGNEE_ID,
-        stage: "tech",
-      }),
-    });
-    renderPage();
-    await waitLoaded();
-
-    await user.click(
-      screen.getByRole("button", { name: "Advance to Board review" }),
-    );
-
-    expect(screen.queryByText(HINT_TEXT)).not.toBeInTheDocument();
   });
 });
 
@@ -2730,8 +2730,13 @@ describe("ApplicationDetailPage — advance-without-evaluation soft reminder", (
     expect(api.changeApplicationStage).not.toHaveBeenCalled();
   });
 
-  it("Advance anyway continues into the assignee dialog", async () => {
+  it("Advance anyway on a behavioral target (no assignee dialog) calls the API straight away", async () => {
+    // Behavioral is now excluded from the assignee-picker dialog (its
+    // interviewer is set via the interview meeting card instead), so
+    // "Advance anyway" goes straight to the API, mirroring how a
+    // non-interview target (e.g. Offer) already worked.
     const user = userEvent.setup();
+    api.changeApplicationStage.mockResolvedValue({ data: {} });
     renderOwner({ stage: "recruiter_screening" });
     await waitLoaded();
 
@@ -2740,14 +2745,12 @@ describe("ApplicationDetailPage — advance-without-evaluation soft reminder", (
     );
     await user.click(screen.getByRole("button", { name: "Advance anyway" }));
 
-    expect(
-      screen.getByRole("button", { name: "Confirm advance" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByText(
-        "This round has no confirmed evaluation yet. Advance anyway?",
-      ),
-    ).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(api.changeApplicationStage).toHaveBeenCalledWith("101", {
+        toStage: "behavioral",
+        assigneeId: undefined,
+      }),
+    );
   });
 
   it("Cancel closes the reminder without advancing", async () => {
@@ -2776,6 +2779,7 @@ describe("ApplicationDetailPage — advance-without-evaluation soft reminder", (
     api.getEvaluationsForApplication.mockResolvedValue({
       data: [confirmedEval("recruiter_screening")],
     });
+    api.changeApplicationStage.mockResolvedValue({ data: {} });
     renderOwner({ stage: "recruiter_screening" });
     await waitLoaded();
 
@@ -2788,9 +2792,14 @@ describe("ApplicationDetailPage — advance-without-evaluation soft reminder", (
         "This round has no confirmed evaluation yet. Advance anyway?",
       ),
     ).not.toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "Confirm advance" }),
-    ).toBeInTheDocument();
+    // No reminder AND no assignee dialog for a behavioral target -- the
+    // advance goes straight through.
+    await waitFor(() =>
+      expect(api.changeApplicationStage).toHaveBeenCalledWith("101", {
+        toStage: "behavioral",
+        assigneeId: undefined,
+      }),
+    );
   });
 
   it("a draft-only evaluation still triggers the reminder", async () => {
@@ -3962,5 +3971,498 @@ describe("ApplicationDetailPage — Emails tab", () => {
     expect(
       screen.queryByRole("button", { name: "Send email" }),
     ).not.toBeInTheDocument();
+  });
+});
+
+describe("ApplicationDetailPage — interview meeting card & scheduling", () => {
+  beforeEach(() => {
+    // Interview-card tests exercise the card/dialog themselves, not the
+    // no-evaluation reminder, which only intercepts a STAGE/round advance.
+    api.getEvaluationsForApplication.mockResolvedValue({
+      data: [confirmedEval("recruiter_screening"), confirmedEval("tech")],
+    });
+  });
+
+  it("renders the interview meeting card on a behavioral application", async () => {
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, stage: "behavioral" }),
+    });
+    renderPage();
+    await waitLoaded();
+
+    expect(screen.getByText("Interview Meeting")).toBeInTheDocument();
+    expect(screen.getByText("Not scheduled")).toBeInTheDocument();
+  });
+
+  it("still renders the card with its terminal warning when the application was rejected with a meeting still on the calendar", async () => {
+    // Defensive mount branch: the application moved off behavioral/tech
+    // (rejected), but the interview row was never cancelled -- the card
+    // must still mount (`showInterviewCard`'s `|| detail.interview != null`)
+    // so the recruiter can see and cancel it, and it must show the
+    // terminal warning with Edit dropped but Cancel kept.
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({
+        isOwner: true,
+        stage: "rejected",
+        interview: INTERVIEW_FIXTURE,
+      }),
+    });
+    renderPage();
+    await waitLoaded();
+
+    expect(screen.getByText(/still on the calendar/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Edit" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows a read.all non-owner viewer the card's state with no controls", async () => {
+    // Default authState.userId (999) is neither OWNER_ID nor the assignee --
+    // a plain read.all (canView) viewer, same signal (`detail.isOwner`) the
+    // rest of the page already uses to distinguish an owner from a read.all
+    // holder (see canReassign, the Operate row, etc.).
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({
+        isOwner: false,
+        canView: true,
+        stage: "behavioral",
+        interview: INTERVIEW_FIXTURE,
+      }),
+    });
+    renderPage();
+    await waitLoaded();
+
+    // Same state an owner sees...
+    expect(screen.getByText(/2026-08-05/)).toBeInTheDocument();
+    expect(
+      screen.getByText("meet.google.com/abc-defg-hij"),
+    ).toBeInTheDocument();
+    // ...none of the owner's controls.
+    expect(
+      screen.queryByRole("button", { name: "Edit" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Cancel" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Schedule meeting" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps the owner's controls on the same booked card", async () => {
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({
+        isOwner: true,
+        stage: "behavioral",
+        interview: INTERVIEW_FIXTURE,
+      }),
+    });
+    renderPage();
+    await waitLoaded();
+
+    expect(screen.getByRole("button", { name: "Edit" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
+  });
+
+  it("does not render the card on recruiter screening", async () => {
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, stage: "recruiter_screening" }),
+    });
+    renderPage();
+    await waitLoaded();
+
+    expect(screen.queryByText("Interview Meeting")).not.toBeInTheDocument();
+  });
+
+  it("does not render the card on board review", async () => {
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, stage: "board_review" }),
+    });
+    renderPage();
+    await waitLoaded();
+
+    expect(screen.queryByText("Interview Meeting")).not.toBeInTheDocument();
+  });
+
+  it("does not render the card in the assignee's evaluate-mode view", async () => {
+    // An explicit scope boundary: evaluate mode (the "My Evaluations" link)
+    // is a reduced, rubric-only view for the current-stage assignee -- it
+    // never renders the owner/read.all info panel the card lives in, even
+    // when the assignee's own stage is behavioral/tech.
+    authState.userId = ASSIGNEE_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({
+        isOwner: false,
+        canView: false,
+        assigneeId: ASSIGNEE_ID,
+        stage: "behavioral",
+      }),
+    });
+    renderEvaluatorPage();
+    await waitLoaded();
+
+    expect(screen.queryByText("Interview Meeting")).not.toBeInTheDocument();
+  });
+
+  it("hides Reassign on behavioral and tech", async () => {
+    authState.userId = OWNER_ID;
+    for (const stage of ["behavioral", "tech"]) {
+      api.getApplicationDetail.mockResolvedValue({
+        data: makeDetail({ isOwner: true, stage }),
+      });
+      const { unmount } = renderPage();
+      await waitLoaded();
+      expect(
+        screen.queryByRole("button", { name: "Reassign" }),
+      ).not.toBeInTheDocument();
+      unmount();
+    }
+  });
+
+  it("still shows Reassign on recruiter screening and board review", async () => {
+    authState.userId = OWNER_ID;
+    for (const stage of ["recruiter_screening", "board_review"]) {
+      api.getApplicationDetail.mockResolvedValue({
+        data: makeDetail({ isOwner: true, stage }),
+      });
+      const { unmount } = renderPage();
+      await waitLoaded();
+      expect(
+        screen.getByRole("button", { name: "Reassign" }),
+      ).toBeInTheDocument();
+      unmount();
+    }
+  });
+
+  it("omits the assignee picker when advancing into behavioral", async () => {
+    const user = userEvent.setup();
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({
+        isOwner: true,
+        assigneeId: ASSIGNEE_ID,
+        stage: "recruiter_screening",
+      }),
+    });
+    api.changeApplicationStage.mockResolvedValue({ data: {} });
+    renderPage();
+    await waitLoaded();
+
+    // Target "behavioral" no longer opens the assignee-picker dialog at
+    // all: the interviewer is now decided exclusively through the
+    // interview card's own dialog, so the advance goes straight through,
+    // mirroring how advancing into a non-interview stage already worked.
+    await user.click(
+      screen.getByRole("button", { name: "Advance to Behavioral" }),
+    );
+
+    expect(
+      screen.queryByRole("radio", { name: /ivan interviewer/i }),
+    ).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(api.changeApplicationStage).toHaveBeenCalledWith("101", {
+        toStage: "behavioral",
+        assigneeId: undefined,
+      }),
+    );
+  });
+
+  it("keeps the assignee picker when advancing into board review", async () => {
+    const user = userEvent.setup();
+    authState.userId = OWNER_ID;
+    const jobWithBoardReview = {
+      ...JOB,
+      pipelineConfig: {
+        ...JOB.pipelineConfig,
+        stages: [
+          ...JOB.pipelineConfig.stages,
+          { stage: "board_review", rounds: 1 },
+        ],
+      },
+    };
+    api.getJob.mockResolvedValue({ data: jobWithBoardReview });
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({
+        isOwner: true,
+        assigneeId: ASSIGNEE_ID,
+        stage: "tech",
+      }),
+    });
+    renderPage();
+    await waitLoaded();
+
+    await user.click(
+      screen.getByRole("button", { name: "Advance to Board review" }),
+    );
+
+    expect(screen.getByRole("radio", { name: /decide later/i })).toBeChecked();
+    expect(
+      screen.getByRole("radio", { name: /ivan interviewer/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("schedules a meeting and refreshes the detail", async () => {
+    const user = userEvent.setup();
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail
+      .mockResolvedValueOnce({
+        data: makeDetail({
+          isOwner: true,
+          assigneeId: null,
+          stage: "behavioral",
+        }),
+      })
+      .mockResolvedValue({
+        data: makeDetail({
+          isOwner: true,
+          assigneeId: ASSIGNEE_ID,
+          stage: "behavioral",
+          interview: INTERVIEW_FIXTURE,
+        }),
+      });
+    renderPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole("button", { name: "Schedule meeting" }));
+    await user.click(screen.getByRole("combobox", { name: "Interviewer" }));
+    const listbox = await screen.findByRole("listbox");
+    await user.click(
+      within(listbox).getByText("Eve Evaluator (eve@example.com)"),
+    );
+    fireEvent.change(screen.getByLabelText("Date"), {
+      target: { value: "2026-08-05" },
+    });
+    fireEvent.change(screen.getByLabelText("Start time"), {
+      target: { value: "14:00" },
+    });
+    await user.click(screen.getByRole("button", { name: "Schedule" }));
+
+    await waitFor(() =>
+      expect(api.scheduleInterview).toHaveBeenCalledWith("101", {
+        assigneeId: ASSIGNEE_ID,
+        date: "2026-08-05",
+        startTime: "14:00",
+        durationMinutes: 45,
+        timezone: "America/Los_Angeles",
+      }),
+    );
+    expect(toast.success).toHaveBeenCalled();
+    // The refreshed detail carries the booked meeting.
+    await waitFor(() =>
+      expect(screen.getByText(/2026-08-05/)).toBeInTheDocument(),
+    );
+  });
+
+  it("confirms before cancelling and calls the API", async () => {
+    const user = userEvent.setup();
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({
+        isOwner: true,
+        assigneeId: ASSIGNEE_ID,
+        stage: "behavioral",
+        interview: INTERVIEW_FIXTURE,
+      }),
+    });
+    renderPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(
+      screen.getByText("Cancel this interview meeting?"),
+    ).toBeInTheDocument();
+    expect(api.cancelInterview).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "Cancel meeting" }));
+    await waitFor(() =>
+      expect(api.cancelInterview).toHaveBeenCalledWith("101"),
+    );
+  });
+
+  it("surfaces the backend message when the calendar event is gone", async () => {
+    const user = userEvent.setup();
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({
+        isOwner: true,
+        assigneeId: ASSIGNEE_ID,
+        stage: "behavioral",
+        interview: INTERVIEW_FIXTURE,
+      }),
+    });
+    api.updateInterview.mockRejectedValue(
+      new Error(
+        "This meeting no longer exists on the calendar. Cancel it here and schedule a new one.",
+      ),
+    );
+    renderPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "This meeting no longer exists on the calendar. Cancel it here and schedule a new one.",
+      ),
+    );
+  });
+
+  /** Render the Timeline tab with one activity row and return the user. */
+  const renderTimelineWith = async (row) => {
+    const user = userEvent.setup();
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, stage: "behavioral" }),
+    });
+    api.getApplicationActivity.mockResolvedValue({ data: [row] });
+    renderPage();
+    await waitLoaded();
+    await user.click(screen.getByRole("tab", { name: "Timeline" }));
+    return user;
+  };
+
+  it("describes interview_scheduled with the resolved zone, time and interviewer", async () => {
+    await renderTimelineWith({
+      id: 1,
+      eventType: "interview_scheduled",
+      details: {
+        stage: "behavioral",
+        round: 1,
+        assigneeId: 10,
+        assigneeName: "Bob Lee",
+        startAt: "2026-08-05T21:00:00Z",
+        endAt: "2026-08-05T21:45:00Z",
+        timezone: "America/Los_Angeles",
+        googleEventId: "evt-1",
+      },
+      actorName: "Jane Smith",
+      createdAt: "2026-07-20T00:00:00Z",
+    });
+
+    // 21:00Z is 14:00 in America/Los_Angeles; IANA name verbatim, no PDT/PST.
+    expect(
+      screen.getByText(
+        /Scheduled the Behavioral interview meeting for 2026-08-05 14:00 America\/Los_Angeles with Bob Lee, by Jane Smith/,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/PDT|PST/)).toBeNull();
+  });
+
+  it("describes interview_cancelled with what was cancelled and when", async () => {
+    await renderTimelineWith({
+      id: 3,
+      eventType: "interview_cancelled",
+      details: {
+        stage: "behavioral",
+        round: 1,
+        assigneeId: 10,
+        assigneeName: "Bob Lee",
+        startAt: "2026-08-05T21:00:00Z",
+        endAt: "2026-08-05T21:45:00Z",
+        timezone: "America/Los_Angeles",
+        googleEventId: "evt-1",
+      },
+      actorName: "Jane Smith",
+      createdAt: "2026-07-22T00:00:00Z",
+    });
+
+    expect(
+      screen.getByText(
+        /Cancelled the Behavioral interview meeting that was set for 2026-08-05 14:00 America\/Los_Angeles, by Jane Smith/,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("describes interview_updated as a reschedule when only the time moved", async () => {
+    await renderTimelineWith({
+      id: 2,
+      eventType: "interview_updated",
+      details: {
+        stage: "behavioral",
+        round: 1,
+        assigneeId: 10,
+        assigneeName: "Bob Lee",
+        startAt: "2026-08-06T22:00:00Z",
+        endAt: "2026-08-06T22:45:00Z",
+        timezone: "America/Los_Angeles",
+        googleEventId: "evt-1",
+        fromStartAt: "2026-08-05T21:00:00Z",
+        fromEndAt: "2026-08-05T21:45:00Z",
+        fromAssigneeId: 10,
+      },
+      actorName: "Jane Smith",
+      createdAt: "2026-07-21T00:00:00Z",
+    });
+
+    expect(
+      screen.getByText(
+        /Rescheduled the Behavioral interview meeting from 2026-08-05 14:00 America\/Los_Angeles to 2026-08-06 15:00 America\/Los_Angeles, by Jane Smith/,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("describes interview_updated as a reassignment when only the interviewer swapped", async () => {
+    await renderTimelineWith({
+      id: 2,
+      eventType: "interview_updated",
+      details: {
+        stage: "behavioral",
+        round: 1,
+        assigneeId: 11,
+        assigneeName: "Ivan Interviewer",
+        startAt: "2026-08-05T21:00:00Z",
+        endAt: "2026-08-05T21:45:00Z",
+        timezone: "America/Los_Angeles",
+        googleEventId: "evt-1",
+        fromStartAt: "2026-08-05T21:00:00Z",
+        fromEndAt: "2026-08-05T21:45:00Z",
+        fromAssigneeId: 10,
+        fromAssigneeName: "Bob Lee",
+      },
+      actorName: "Jane Smith",
+      createdAt: "2026-07-21T00:00:00Z",
+    });
+
+    expect(
+      screen.getByText(
+        /Reassigned the Behavioral interview meeting from Bob Lee to Ivan Interviewer, by Jane Smith/,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("describes interview_updated as both when the time and the interviewer both changed", async () => {
+    await renderTimelineWith({
+      id: 2,
+      eventType: "interview_updated",
+      details: {
+        stage: "behavioral",
+        round: 1,
+        assigneeId: 11,
+        assigneeName: "Ivan Interviewer",
+        startAt: "2026-08-06T22:00:00Z",
+        endAt: "2026-08-06T22:45:00Z",
+        timezone: "America/Los_Angeles",
+        googleEventId: "evt-1",
+        fromStartAt: "2026-08-05T21:00:00Z",
+        fromEndAt: "2026-08-05T21:45:00Z",
+        fromAssigneeId: 10,
+        fromAssigneeName: "Bob Lee",
+      },
+      actorName: "Jane Smith",
+      createdAt: "2026-07-21T00:00:00Z",
+    });
+
+    expect(
+      screen.getByText(
+        /Rescheduled the Behavioral interview meeting from 2026-08-05 14:00 America\/Los_Angeles to 2026-08-06 15:00 America\/Los_Angeles, and reassigned it from Bob Lee to Ivan Interviewer, by Jane Smith/,
+      ),
+    ).toBeInTheDocument();
   });
 });
