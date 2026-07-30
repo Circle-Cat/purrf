@@ -645,10 +645,11 @@ class AppDependencyBuilder:
         # needed to actually send/read mail).
         #
         # The From addresses are read here instead: one per sending service, so
-        # the transport stays unaware of which services exist. Today recruiting
-        # is the only one. Missing is fatal at startup rather than defaulted —
-        # an unowned From is silently rewritten by Gmail, so a wrong or absent
-        # value would surface as mail from the wrong identity, not as an error.
+        # the transport stays unaware of which services exist. Recruiting and
+        # notifications each get their own. Missing is fatal at startup rather
+        # than defaulted — an unowned From is silently rewritten by Gmail, so a
+        # wrong or absent value would surface as mail from the wrong identity,
+        # not as an error.
         recruiting_sender = os.getenv(GMAIL_SENDER_RECRUITING)
         if not recruiting_sender:
             raise ValueError(f"Missing environment variable: {GMAIL_SENDER_RECRUITING}")

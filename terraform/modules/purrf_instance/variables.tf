@@ -180,7 +180,6 @@ variable "gmail_sender_notification" {
   type        = string
 }
 
-
 variable "mentorship_calendar_id" {
   description = "Secondary calendar under user_email that mentorship meetings are created on and deleted from. MUST differ between prod and non-prod: Calendar event ids are scoped per calendar, so sharing one calendar let a delete driven by restored prod data remove the real prod event. The calendar must be OWNED by user_email -- the DWD grant is calendar.events.owned, so a calendar merely shared in will 403 at runtime. No default on purpose: a wrong or missing value costs real meetings, so it must fail at apply time."
   type        = string
