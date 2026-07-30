@@ -29,6 +29,14 @@ const describe = (n) => {
       return `${n.actorName ?? "Someone"} approved "${n.jobTitle}"`;
     case "job_review_rejected":
       return `${n.actorName ?? "Someone"} rejected "${n.jobTitle}"`;
+    case "application_submitted":
+      return `${n.applicantName} applied to ${n.jobTitle}`;
+    case "application_auto_rejected":
+      return `${n.applicantName} applied to ${n.jobTitle} and was rejected automatically`;
+    case "application_auto_hired":
+      return `${n.applicantName} applied to ${n.jobTitle} and was ${
+        n.jobKind === "activity" ? "admitted" : "hired"
+      } automatically`;
     default:
       return "";
   }
