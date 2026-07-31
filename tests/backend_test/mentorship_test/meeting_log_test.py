@@ -44,6 +44,13 @@ class TestCompletedCount(unittest.TestCase):
         log = {"some_future_key": [{"is_completed": True}]}
         self.assertEqual(completed_count(log), 0)
 
+    def test_non_dict_entries_are_skipped(self):
+        log = {
+            "meeting_time_list": [None, "junk", 42, {"is_completed": True}],
+            "google_meetings": [["nested"], {"is_completed": True}],
+        }
+        self.assertEqual(completed_count(log), 2)
+
 
 if __name__ == "__main__":
     unittest.main()
