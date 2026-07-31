@@ -35,7 +35,6 @@ class ApplicationService:
         application_activity_repository,
         notification_dispatcher,
         user_emails_repository,
-        profile_writeback=None,
     ):
         """
         Args:
@@ -62,9 +61,6 @@ class ApplicationService:
                 notifies the materialized default assignee here, and
                 ``_notify_owners_of_submission`` notifies the posting's
                 owners.
-            profile_writeback (callable | None): ``async (session, user_id, dto)``
-                invoked best-effort when save_to_profile is set. Defaults to a
-                no-op.
         """
         self.application_repository = application_repository
         self.application_submission_repository = application_submission_repository
@@ -75,7 +71,6 @@ class ApplicationService:
         self.application_activity_repository = application_activity_repository
         self.notification_dispatcher = notification_dispatcher
         self.user_emails_repository = user_emails_repository
-        self._profile_writeback = profile_writeback
 
     @staticmethod
     def _today():
@@ -359,9 +354,6 @@ class ApplicationService:
                 details=details,
             )
 
-        if not blocked and self._profile_writeback and dto.save_to_profile:
-            await self._safe_writeback(session, current_user.user_id, dto)
-
         await session.commit()
         await self.notification_dispatcher.flush(session)
         editable = self._is_editable(application, job, current_sub)
@@ -534,8 +526,6 @@ class ApplicationService:
         current_sub = await self._write_version(
             session, application_id, version, current_sub, dto
         )
-        if self._profile_writeback and dto.save_to_profile:
-            await self._safe_writeback(session, current_user.user_id, dto)
         await session.commit()
         editable = self._is_editable(application, job, current_sub)
         return self.recruiting_mapper.to_application_dto(
@@ -666,16 +656,3 @@ class ApplicationService:
         current_sub.resume_object_key = dto.resume_object_key
         current_sub.resume_sha256 = dto.resume_sha256
         return await self.application_submission_repository.update(session, current_sub)
-
-    async def _safe_writeback(self, session, user_id, dto):
-        """Best-effort Profile write-back; swallow failures.
-
-        Args:
-            session (AsyncSession): Active database async session.
-            user_id (int): The applicant whose profile may be updated.
-            dto (ApplicationSubmitDto | ApplicationEditDto): The payload.
-        """
-        try:
-            await self._profile_writeback(session, user_id, dto)
-        except Exception:  # noqa: BLE001 - application is source of truth; never fail submit
-            pass
