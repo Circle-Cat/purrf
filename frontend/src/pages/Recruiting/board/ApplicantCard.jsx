@@ -19,11 +19,16 @@ import {
  * "Blacklisted", so the board doesn't look like it's flagging someone who
  * is no longer blocked.
  *
+ * `highlighted` rings the card in blue; the board sets it on the applicant
+ * an owner has just come back from, so it can be spotted without reading
+ * every name in the lane.
+ *
  * @param {{
  *   card: {id: number, applicantName: string, applicantEmail: string,
  *     stage: string, subStatus: string|null, tags: object|null,
  *     appliedAt: string|null, isBlocked: boolean, reviewerName: string|null},
  *   showStatus: boolean,
+ *   highlighted?: boolean,
  *   onOpen: (id: number) => void,
  * }} props
  */
@@ -44,15 +49,20 @@ const daysUntil = (isoDate) => {
   return Math.round((thaw - today) / 86400000);
 };
 
-const ApplicantCard = ({ card, showStatus, onOpen }) => {
+const ApplicantCard = ({ card, showStatus, highlighted = false, onOpen }) => {
   const daysLeft = daysUntil(card.tags?.cold_freeze?.thaw_date);
   const showColdFreeze = daysLeft > 0;
 
   return (
     <button
       type="button"
+      data-application-id={String(card.id)}
       onClick={() => onOpen(card.id)}
-      className="w-full space-y-2 rounded-lg border border-slate-200 bg-white p-3 text-left shadow-sm transition-colors hover:bg-slate-50"
+      className={`w-full space-y-2 rounded-lg border bg-white p-3 text-left shadow-sm transition-colors hover:bg-slate-50 ${
+        highlighted
+          ? "border-blue-500 ring-2 ring-blue-400"
+          : "border-slate-200"
+      }`}
     >
       <div className="flex items-center justify-between gap-2">
         <p className="font-medium text-slate-900">{card.applicantName}</p>

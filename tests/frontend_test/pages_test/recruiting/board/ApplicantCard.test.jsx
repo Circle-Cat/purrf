@@ -161,3 +161,35 @@ describe("ApplicantCard cold-freeze countdown", () => {
     expect(screen.getByText("Blacklisted")).toBeInTheDocument();
   });
 });
+
+describe("ApplicantCard identity and highlight", () => {
+  it("tags its root button with the application id so the board can locate it", () => {
+    render(<ApplicantCard card={baseCard} showStatus onOpen={vi.fn()} />);
+    expect(
+      screen.getByRole("button", { name: new RegExp(baseCard.applicantName) }),
+    ).toHaveAttribute("data-application-id", String(baseCard.id));
+  });
+
+  it("rings the card only when highlighted, leaving the default border otherwise", () => {
+    const { unmount } = render(
+      <ApplicantCard card={baseCard} showStatus onOpen={vi.fn()} />,
+    );
+    const plain = screen.getByRole("button", {
+      name: new RegExp(baseCard.applicantName),
+    });
+    expect(plain.className).toContain("border-slate-200");
+    expect(plain.className).not.toContain("ring-2");
+    unmount();
+
+    render(
+      <ApplicantCard card={baseCard} showStatus onOpen={vi.fn()} highlighted />,
+    );
+    const ringed = screen.getByRole("button", {
+      name: new RegExp(baseCard.applicantName),
+    });
+    expect(ringed.className).toContain("ring-2");
+    // Mutation check: a highlight that also kept the grey border would mean
+    // the ring is decoration rather than a state change.
+    expect(ringed.className).not.toContain("border-slate-200");
+  });
+});
