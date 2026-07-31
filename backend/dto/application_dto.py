@@ -15,11 +15,6 @@ class ApplicationSubmitDto(BaseRequestDto):
     answers: dict = {}
     resume_sha256: str | None = None
     resume_object_key: str | None = None
-    # Accepted but not consumed here: the profile write-back is performed by
-    # the frontend (see frontend/src/pages/Recruiting/profileWriteBack.js),
-    # which owns the row-level dedup and per-field merge semantics. Kept on
-    # the DTO because the form always sends it and BaseRequestDto forbids
-    # extra fields.
     save_to_profile: bool = False
 
 
