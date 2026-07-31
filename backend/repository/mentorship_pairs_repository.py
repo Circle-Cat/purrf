@@ -185,7 +185,7 @@ class MentorshipPairsRepository:
         return result.scalars().all()
 
     async def get_pair_by_id(
-        self, session: AsyncSession, pair_id: int
+        self, session: AsyncSession, pair_id: int, *, with_lock: bool = False
     ) -> MentorshipPairsEntity | None:
         """
         Fetch a mentorship pair by its pair ID.
@@ -193,15 +193,18 @@ class MentorshipPairsRepository:
         Args:
             session (AsyncSession): Active database async session.
             pair_id (int): ID of the mentorship pair.
+            with_lock (bool): If True, acquires a FOR UPDATE row lock to
+                serialize concurrent admin writes to this pair.
 
         Returns:
             MentorshipPairsEntity | None: The matching pair, or None if not found.
         """
-        result = await session.execute(
-            select(MentorshipPairsEntity).where(
-                MentorshipPairsEntity.pair_id == pair_id
-            )
+        stmt = select(MentorshipPairsEntity).where(
+            MentorshipPairsEntity.pair_id == pair_id
         )
+        if with_lock:
+            stmt = stmt.with_for_update(of=MentorshipPairsEntity)
+        result = await session.execute(stmt)
         return result.scalars().one_or_none()
 
     async def get_pair_by_mentee_and_round(

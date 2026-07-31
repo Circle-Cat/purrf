@@ -7,6 +7,8 @@ from backend.dto.participant_search_dto import ParticipantRowDto, ParticipantSea
 from backend.dto.participant_search_row_dto import ParticipantSearchRow
 from backend.dto.partner_dto import PartnerDto
 from backend.dto.admin_meeting_log_dto import AdminMeetingDto, AdminMeetingLogDto
+from backend.dto.v2_meeting_batch_update_dto import V2MeetingBatchUpdateDto
+from backend.common.exceptions import ConflictError
 from backend.common.mentorship_enums import (
     MENTORSHIP_ONBOARDING_CATEGORIES,
     MeetingNoteTag,
@@ -74,6 +76,13 @@ _EXPORT_MEETING_DETAIL_COLUMNS = [
 
 class MentorshipAdminService:
     """Service for admin-facing mentorship participant search."""
+
+    _ABSENT_TAGS = {
+        MeetingNoteTag.UNKNOWN_ABSENT,
+        MeetingNoteTag.MENTOR_ABSENT,
+        MeetingNoteTag.MENTEE_ABSENT,
+    }
+    _SPECIFIC_LATE_TAGS = {MeetingNoteTag.MENTOR_LATE, MeetingNoteTag.MENTEE_LATE}
 
     def __init__(
         self,
@@ -469,9 +478,6 @@ class MentorshipAdminService:
         """
         Fetch the meeting log for a mentorship pair.
 
-        google_meetings and meeting_time_list are mutually exclusive; a pair with
-        neither populated defaults to round_version "v2" with an empty meetings list.
-
         Args:
             session (AsyncSession): Active database async session.
             pair_id (int): ID of the mentorship pair.
@@ -483,7 +489,16 @@ class MentorshipAdminService:
         pair = await self.pairs_repository.get_pair_by_id(session, pair_id)
         if pair is None:
             return None
+        return self._build_meeting_log_dto(pair)
 
+    def _build_meeting_log_dto(self, pair) -> AdminMeetingLogDto:
+        """
+        Maps an already-loaded pair's meeting_log into an AdminMeetingLogDto.
+
+        google_meetings and meeting_time_list are mutually exclusive; a pair
+        with neither populated defaults to round_version "v2" with an empty
+        meetings list.
+        """
         meeting_log = pair.meeting_log or {}
         google_meetings = meeting_log.get("google_meetings") or []
         meeting_time_list = meeting_log.get("meeting_time_list") or []
@@ -513,6 +528,133 @@ class MentorshipAdminService:
             meetings = []
 
         return AdminMeetingLogDto(round_version=round_version, meetings=meetings)
+
+    def _validate_note_tags(self, note: list[MeetingNoteTag] | None) -> None:
+        """
+        Raises ValueError if note combines mutually exclusive tags.
+
+        At most one absent tag; unknown_late cannot combine with a specific
+        late tag; mentor_late and mentee_late may coexist.
+        """
+        if note is None:
+            return
+        tags = set(note)
+        if len(tags & self._ABSENT_TAGS) > 1:
+            raise ValueError(f"note cannot combine more than one absent tag: {note}")
+        if MeetingNoteTag.UNKNOWN_LATE in tags and tags & self._SPECIFIC_LATE_TAGS:
+            raise ValueError(
+                f"note cannot combine unknown_late with a specific late tag: {note}"
+            )
+
+    def _apply_note_tags(
+        self,
+        meeting: dict,
+        note: list[MeetingNoteTag],
+        mentor_id: int,
+        mentee_id: int,
+    ) -> None:
+        """Writes note's tags into meeting's persisted fields, in place."""
+        meeting["has_insufficient_duration"] = (
+            MeetingNoteTag.INSUFFICIENT_DURATION in note
+        )
+        meeting["has_unknown_absent"] = MeetingNoteTag.UNKNOWN_ABSENT in note
+        if MeetingNoteTag.MENTOR_ABSENT in note:
+            meeting["absent_user_id"] = mentor_id
+        elif MeetingNoteTag.MENTEE_ABSENT in note:
+            meeting["absent_user_id"] = mentee_id
+        else:
+            meeting["absent_user_id"] = None
+        meeting["has_unknown_late"] = MeetingNoteTag.UNKNOWN_LATE in note
+        late_user_id = []
+        if MeetingNoteTag.MENTOR_LATE in note:
+            late_user_id.append(mentor_id)
+        if MeetingNoteTag.MENTEE_LATE in note:
+            late_user_id.append(mentee_id)
+        meeting["late_user_id"] = late_user_id
+
+    async def apply_v2_meeting_batch(
+        self,
+        session: AsyncSession,
+        pair_id: int,
+        batch: V2MeetingBatchUpdateDto,
+    ) -> AdminMeetingLogDto:
+        """
+        Apply incremental updates/deletes to a pair's v2 meeting log.
+
+        Locks the pair row for the duration of the transaction, applies all
+        deletes then all updates against the current DB state (not the
+        client's snapshot), recalculates completed_count, and returns the
+        pair's latest meeting log.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            pair_id (int): The mentorship pair ID.
+            batch (V2MeetingBatchUpdateDto): Meeting updates and deletions.
+
+        Returns:
+            AdminMeetingLogDto: The pair's meeting log after applying batch.
+
+        Raises:
+            ValueError: updates and deletes are both empty; the same
+                meeting_id appears in both; a meeting_id doesn't exist in
+                this pair's log; or the pair itself doesn't exist.
+            ConflictError: The pair's meeting log is v1 (read-only history).
+        """
+        if not batch.updates and not batch.deletes:
+            raise ValueError("updates and deletes must not both be empty.")
+
+        update_ids = {item.meeting_id for item in batch.updates}
+        delete_ids = set(batch.deletes)
+        overlap = update_ids & delete_ids
+        if overlap:
+            raise ValueError(
+                f"meeting_id(s) cannot appear in both updates and deletes: {sorted(overlap)}"
+            )
+        for item in batch.updates:
+            self._validate_note_tags(item.note)
+
+        pair = await self.pairs_repository.get_pair_by_id(
+            session, pair_id, with_lock=True
+        )
+        if pair is None:
+            raise ValueError(f"Mentorship pair {pair_id} not found.")
+
+        meeting_log = pair.meeting_log or {}
+        if meeting_log.get("meeting_time_list"):
+            raise ConflictError("Cannot edit a v1 (read-only) meeting log.")
+
+        meetings = list(meeting_log.get("google_meetings") or [])
+        by_id = {m["meeting_id"]: m for m in meetings}
+        missing = (update_ids | delete_ids) - by_id.keys()
+        if missing:
+            raise ValueError(
+                f"meeting_id(s) not found for this pair: {sorted(missing)}"
+            )
+
+        meetings = [m for m in meetings if m["meeting_id"] not in delete_ids]
+        for item in batch.updates:
+            meeting = by_id[item.meeting_id]
+            if item.is_completed is not None:
+                meeting["is_completed"] = item.is_completed
+            if item.note is not None:
+                self._apply_note_tags(
+                    meeting, item.note, pair.mentor_id, pair.mentee_id
+                )
+
+        pair.meeting_log = {**meeting_log, "google_meetings": meetings}
+        pair.completed_count = sum(1 for m in meetings if m.get("is_completed"))
+
+        await self.pairs_repository.upsert_pairs(session, pair)
+        await session.commit()
+
+        self.logger.info(
+            "[MentorshipAdminService] meeting log batch applied for pair_id=%s: updated=%d, deleted=%d",
+            pair_id,
+            len(batch.updates),
+            len(delete_ids),
+        )
+
+        return self._build_meeting_log_dto(pair)
 
     async def stream_export_csv(
         self,
