@@ -504,7 +504,7 @@ class MeetAttendanceService:
 
                 # Tier 2: Fuzzy match via Display Name (Fallback for non-signed-in users)
                 elif clean_name in mentor_names:
-                    self.logger.info(
+                    self.logger.debug(
                         "[MeetAttendanceService] Matched mentor by name fingerprint: %s",
                         clean_name,
                     )
@@ -516,7 +516,7 @@ class MeetAttendanceService:
                     )
                     role_trees["mentor"].add(Interval(start, end))
                 elif clean_name in mentee_names:
-                    self.logger.info(
+                    self.logger.debug(
                         "[MeetAttendanceService] Matched mentee by name fingerprint: %s",
                         clean_name,
                     )

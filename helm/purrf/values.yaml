@@ -141,3 +141,7 @@ cronjobs:
     # A busy run makes one serial Meet API call per space plus one per
     # conference and can exceed the interval; overlapping runs would both read
     # the same completed_count and each increment it.
+    activeDeadlineSeconds: 5400   # 90 min: comfortably longer than any plausible
+    # real run, comfortably shorter than the 2-hour schedule interval, so a
+    # wedged run under concurrencyPolicy: Forbid is killed before the next
+    # trigger instead of skipping every future run forever.

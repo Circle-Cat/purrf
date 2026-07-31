@@ -13,6 +13,7 @@ from backend.dto.meeting_batch_create_dto import MeetingBatchCreateDto
 from backend.dto.feedback_create_dto import FeedbackCreateDto
 from backend.dto.feedback_dto import FeedbackDto
 from backend.common.permissions import Permission
+from backend.common.api_endpoints import MEET_ATTENDANCE_SYNC_ENDPOINT
 from backend.mentorship.mentorship_controller import MentorshipController
 
 
@@ -687,6 +688,24 @@ class TestMentorshipController(unittest.IsolatedAsyncioTestCase):
         await self.controller.sync_meet_attendance(lookback_hours=2)
 
         self.mock_launchdarkly_service.is_create_google_meeting_enabled.assert_not_called()
+
+    def _endpoint_permissions(self, endpoint):
+        """Pull the `permissions` list out of an authenticate()-wrapped endpoint."""
+        idx = endpoint.__code__.co_freevars.index("permissions")
+        return endpoint.__closure__[idx].cell_contents
+
+    def test_sync_meet_attendance_route_is_system_sync_gated(self):
+        """The feature-flag gate was removed from the method body, so the
+        authenticate() decorator on the route is now the sole guard on an
+        endpoint that writes to mentorship_pairs and consumes Meet API quota."""
+        routes_by_path = {route.path: route for route in self.controller.router.routes}
+        sync_route = routes_by_path[MEET_ATTENDANCE_SYNC_ENDPOINT]
+
+        self.assertIn("POST", sync_route.methods)
+        self.assertEqual(
+            self._endpoint_permissions(sync_route.endpoint),
+            [Permission.SYSTEM_SYNC],
+        )
 
 
 if __name__ == "__main__":
