@@ -313,6 +313,11 @@ class MentorshipAdminService:
         google_meetings = meeting_log.get("google_meetings") or []
         meeting_time_list = meeting_log.get("meeting_time_list") or []
 
+        # A pair should hold only one generation's entries: which one a user is
+        # on is decided by feature flag, and the two flags are never enabled for
+        # the same person. That is an operational guarantee with no enforcement
+        # in code -- if it is ever broken, this priority order silently hides the
+        # manual entries rather than showing both.
         if google_meetings:
             return [
                 self.mentorship_mapper.map_to_admin_meeting_dto(
@@ -503,6 +508,11 @@ class MentorshipAdminService:
         google_meetings = meeting_log.get("google_meetings") or []
         meeting_time_list = meeting_log.get("meeting_time_list") or []
 
+        # A pair should hold only one generation's entries: which one a user is
+        # on is decided by feature flag, and the two flags are never enabled for
+        # the same person. That is an operational guarantee with no enforcement
+        # in code -- if it is ever broken, this priority order silently hides the
+        # manual entries rather than showing both.
         if google_meetings:
             round_version = "v2"
             mentor_id = pair.mentor_id
