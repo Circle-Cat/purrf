@@ -5,12 +5,17 @@ The column holds two generations of meeting records under separate keys:
 for Purrf-created Google Meet meetings (v2). Which generation a user is on is
 decided by feature flag, and a pair is not meant to hold both -- but that is an
 operational guarantee, not one the code enforces. The counting logic in this
-module (and `mentorship_mapper._build_meeting_time_list`) reads both keys
-rather than assuming which one is populated. The admin display paths are a
-deliberate exception to that: `mentorship_admin_service._extract_meetings_for_row`
-and `_build_meeting_log_dto` pick `google_meetings` over `meeting_time_list`
-when both are present, and `mentorship_mapper.map_to_meeting_dto` reads only
-`meeting_time_list`.
+module reads both keys rather than assuming which one is populated. The admin
+display paths are a deliberate exception to that:
+`mentorship_admin_service._extract_meetings_for_row` and `_build_meeting_log_dto`
+pick `google_meetings` over `meeting_time_list` when both are present, and
+`mentorship_mapper.map_to_meeting_dto` reads only `meeting_time_list`.
+
+`mentorship_mapper._build_meeting_time_list` (the v2 builder) no longer reads
+this column at all -- as of PUR-525 it reads `mentorship_meeting` rows via
+`MentorshipMeetingRepository` instead. This module and its two JSONB keys stay
+relevant only to v1's counting logic and the admin display paths above until a
+later task retires them.
 """
 
 # The two keys under `meeting_log` that hold meeting entries.

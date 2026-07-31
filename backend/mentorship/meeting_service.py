@@ -254,7 +254,7 @@ class MeetingService:
         Create a Google Calendar meeting for a mentorship pair and persist the details.
 
         Resolves both participants, creates a Google Calendar event with Meet link,
-        appends the meeting record to the pair's meeting_log, and returns the
+        persists the meeting as a `mentorship_meeting` row, and returns the
         created meeting details.
 
         Args:
@@ -328,21 +328,40 @@ class MeetingService:
             calendar_id=self.mentorship_calendar_id,
         )
 
-        new_meeting = MentorshipMeetingEntity(
-            meeting_id=meeting["google_event_id"],
-            pair_id=pair.pair_id,
-            source=MeetingSource.GOOGLE,
-            start_datetime=start_datetime,
-            end_datetime=end_datetime,
-            is_completed=False,
-            meet_link=meeting["meet_link"],
+        new_meeting_kwargs = {
+            "meeting_id": meeting["google_event_id"],
+            "pair_id": pair.pair_id,
+            "source": MeetingSource.GOOGLE,
+            "start_datetime": start_datetime,
+            "end_datetime": end_datetime,
+            "is_completed": False,
+            "meet_link": meeting["meet_link"],
             # `conference_id` is the scheduling service's key name for the
             # Meet code; the column is named `google_meeting_code` instead
             # because a Meet API "conference record" is a different,
             # per-occurrence concept. The rename is deliberate.
-            google_meeting_code=meeting["conference_id"],
-            entry_points=meeting["entry_points"],
-        )
+            "google_meeting_code": meeting["conference_id"],
+            "entry_points": meeting["entry_points"],
+        }
+        # Google's own event-creation timestamp is this row's real creation
+        # time -- it is exposed via the API and is the _MEETING_ORDER_BY
+        # tiebreaker when two meetings share a start_datetime, so it must
+        # carry Google's value, not the moment this code happened to run
+        # (which would be wrong specifically on a retry: Calendar insert is
+        # idempotent on the client-minted event id, so a retry after a DB
+        # write failure must still record the meeting's original creation
+        # time, not the retry's). Only fall back to the column's
+        # `server_default` (DB now()) when Calendar genuinely omitted the
+        # field. The key must be left OUT of the kwargs entirely in that
+        # case -- `created_datetime` is NOT NULL with a server_default, and
+        # SQLAlchemy only omits a column from the INSERT when the attribute
+        # was never set; explicitly assigning None here would insert NULL
+        # and raise NotNullViolation.
+        if meeting.get("created"):
+            new_meeting_kwargs["created_datetime"] = datetime.fromisoformat(
+                meeting["created"]
+            )
+        new_meeting = MentorshipMeetingEntity(**new_meeting_kwargs)
 
         # Persist the meeting row -- writes only mentorship_meeting, never
         # pair.meeting_log.
