@@ -15,6 +15,7 @@ from backend.dto.job_dto import JobCreateDto, JobDto, PublicJobDto, PublicJobSum
 from backend.dto.job_review_dto import ApproverDto, JobReviewDto
 from backend.common.permissions import Permission
 from backend.common.recruiting_enums import (
+    PUBLICLY_VISIBLE_JOB_STATUSES,
     JobReviewKind,
     JobReviewStatus,
     JobStatus,
@@ -939,19 +940,23 @@ class JobService:
         await self.job_repository.delete_job(session, job)
         await session.commit()
 
-    async def list_published(self, session: AsyncSession) -> list[PublicJobSummaryDto]:
-        """List all PUBLISHED postings as candidate-safe card summaries.
+    async def list_publicly_visible(
+        self, session: AsyncSession
+    ) -> list[PublicJobSummaryDto]:
+        """List every candidate-visible posting as a candidate-safe card summary.
 
         Serves the logged-in jobs-browse page; the projection deliberately
-        carries no form/config/internal fields.
+        carries no form/config/internal fields. A posting mid revision-review
+        or close-review is still live (see ``PUBLICLY_VISIBLE_JOB_STATUSES``)
+        and so still listed.
 
         Args:
             session (AsyncSession): Active database async session.
 
         Returns:
-            list[PublicJobSummaryDto]: One summary per published posting.
+            list[PublicJobSummaryDto]: One summary per candidate-visible posting.
         """
-        jobs = await self.job_repository.list_published(session)
+        jobs = await self.job_repository.list_publicly_visible(session)
         return [self.recruiting_mapper.to_public_job_summary_dto(j) for j in jobs]
 
     @staticmethod
@@ -1123,44 +1128,48 @@ class JobService:
         return job
 
     async def get_published_job(self, session: AsyncSession, job_id: int) -> JobDto:
-        """Return a posting only when it is PUBLISHED (candidate-facing view).
+        """Return a posting only when it is live to candidates.
 
         Args:
             session (AsyncSession): Active database async session.
             job_id (int): The posting id.
 
         Returns:
-            JobDto: The published posting.
+            JobDto: The live posting.
 
         Raises:
-            ValueError: If the posting is missing or not PUBLISHED.
+            ValueError: If the posting is missing or its status is outside
+                ``PUBLICLY_VISIBLE_JOB_STATUSES``.
         """
         job = await self.job_repository.get_by_job_id(session, job_id)
-        if job is None or job.status != JobStatus.PUBLISHED:
+        if job is None or job.status not in PUBLICLY_VISIBLE_JOB_STATUSES:
             raise ValueError(f"Published job {job_id} not found")
         return self.recruiting_mapper.to_job_dto(job)
 
     async def get_published_job_public(
         self, session: AsyncSession, job_id: int
     ) -> PublicJobDto:
-        """Return a PUBLISHED posting's candidate-safe projection.
+        """Return a candidate-visible posting's candidate-safe projection.
 
         Same lookup/validation as ``get_published_job``, but maps through
         ``to_public_job_dto`` so internal config (screen_rules,
         pipeline_config, pending_*, last_reject_comment) never reaches the
-        candidate-facing application form.
+        candidate-facing application form. Because the projection reads the
+        live columns and drops ``pending_payload``, a posting mid
+        revision-review serves the approved version, not the staged edit.
 
         Args:
             session (AsyncSession): Active database async session.
             job_id (int): The posting id.
 
         Returns:
-            PublicJobDto: The published posting's candidate-safe projection.
+            PublicJobDto: The posting's candidate-safe projection.
 
         Raises:
-            ValueError: If the posting is missing or not PUBLISHED.
+            ValueError: If the posting is missing or its status is outside
+                ``PUBLICLY_VISIBLE_JOB_STATUSES``.
         """
         job = await self.job_repository.get_by_job_id(session, job_id)
-        if job is None or job.status != JobStatus.PUBLISHED:
+        if job is None or job.status not in PUBLICLY_VISIBLE_JOB_STATUSES:
             raise ValueError(f"Published job {job_id} not found")
         return self.recruiting_mapper.to_public_job_dto(job)

@@ -1718,6 +1718,61 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             await self.service.get_published_job_public(self.session, 1)
 
+    async def test_get_published_job_public_serves_posting_pending_revision(self):
+        """A pending revision must not take the posting off the candidate side."""
+        self.repo.get_by_job_id = AsyncMock(
+            return_value=self._job(status=JobStatus.PUBLISHED_PENDING_REVISION)
+        )
+
+        dto = await self.service.get_published_job_public(self.session, 1)
+
+        self.assertEqual(dto.id, 1)
+
+    async def test_get_published_job_public_serves_posting_pending_close(self):
+        """A posting stays open to candidates until the close is approved."""
+        self.repo.get_by_job_id = AsyncMock(
+            return_value=self._job(status=JobStatus.PENDING_CLOSE)
+        )
+
+        dto = await self.service.get_published_job_public(self.session, 1)
+
+        self.assertEqual(dto.id, 1)
+
+    async def test_get_published_job_public_rejects_pending_reopen(self):
+        """A closed posting stays hidden while its reopen is under review."""
+        self.repo.get_by_job_id = AsyncMock(
+            return_value=self._job(status=JobStatus.PENDING_REOPEN)
+        )
+        with self.assertRaises(ValueError):
+            await self.service.get_published_job_public(self.session, 1)
+
+    async def test_get_published_job_public_serves_live_version_not_staged_edit(self):
+        """Mid-revision, candidates get the approved version, not the staged one."""
+        job = self._job(
+            status=JobStatus.PUBLISHED_PENDING_REVISION,
+            title="Live title",
+            form_schema={"questions": [{"id": "live"}]},
+        )
+        job.pending_payload = {
+            "title": "Staged title",
+            "formSchema": {"questions": [{"id": "staged"}]},
+        }
+        self.repo.get_by_job_id = AsyncMock(return_value=job)
+
+        dto = await self.service.get_published_job_public(self.session, 1)
+
+        self.assertEqual(dto.title, "Live title")
+        self.assertEqual(dto.form_schema, {"questions": [{"id": "live"}]})
+
+    async def test_get_published_job_serves_posting_pending_close(self):
+        self.repo.get_by_job_id = AsyncMock(
+            return_value=self._job(status=JobStatus.PENDING_CLOSE)
+        )
+
+        result = await self.service.get_published_job(self.session, 1)
+
+        self.assertEqual(result.status, JobStatus.PENDING_CLOSE)
+
     async def test_approve_notifies_the_submitter(self):
         job = JobEntity(kind=JobKind.ACTIVITY, title="T", status=JobStatus.DRAFT)
         job.job_id = 1
@@ -1851,13 +1906,13 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result[0].actor_name, "User 7")
 
-    async def test_list_published_returns_public_summaries(self):
+    async def test_list_publicly_visible_returns_public_summaries(self):
         job1 = self._job(status=JobStatus.PUBLISHED)
-        job2 = self._job(status=JobStatus.PUBLISHED)
+        job2 = self._job(status=JobStatus.PENDING_CLOSE)
         job2.job_id = 2
-        self.repo.list_published = AsyncMock(return_value=[job1, job2])
+        self.repo.list_publicly_visible = AsyncMock(return_value=[job1, job2])
 
-        result = await self.service.list_published(self.session)
+        result = await self.service.list_publicly_visible(self.session)
 
         self.assertEqual([d.id for d in result], [1, 2])
         for d in result:

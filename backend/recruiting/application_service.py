@@ -3,8 +3,8 @@ from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.recruiting_enums import (
+    PUBLICLY_VISIBLE_JOB_STATUSES,
     ApplicationStage,
-    JobStatus,
     NotificationType,
 )
 from backend.dto.application_dto import (
@@ -241,13 +241,15 @@ class ApplicationService:
             ApplicationDto: The persisted application with its current version.
 
         Raises:
-            ValueError: If the posting is missing or not PUBLISHED, a required
+            ValueError: If the posting is missing or not live to candidates
+                (see ``PUBLICLY_VISIBLE_JOB_STATUSES`` -- a pending revision or
+                close review does not stop submissions), a required
                 résumé/answer is missing, or the latest existing application
                 for this job is not REJECTED (an active application must be
                 edited instead of resubmitted).
         """
         job = await self.job_repository.get_by_job_id(session, dto.job_id)
-        if job is None or job.status != JobStatus.PUBLISHED:
+        if job is None or job.status not in PUBLICLY_VISIBLE_JOB_STATUSES:
             raise ValueError(f"Published job {dto.job_id} not found")
         self._validate_submission(job, dto)
         self._strip_uncollected_resume(job, dto)
