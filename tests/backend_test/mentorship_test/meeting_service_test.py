@@ -159,6 +159,48 @@ class TestMeetingServiceV1(unittest.IsolatedAsyncioTestCase):
         self.mock_pairs_repo.upsert_pairs.assert_not_awaited()
         self.mock_session.commit.assert_not_awaited()
 
+    async def test_upsert_meetings_preserves_other_keys(self):
+        """The write must merge into meeting_log, not replace it wholesale."""
+        self.mock_pair_entity.meeting_log = {
+            "meeting_time_list": [],
+            "google_meetings": [
+                {
+                    "meeting_id": "evt-1",
+                    "start_datetime": "2025-09-01T10:00:00Z",
+                    "end_datetime": "2025-09-01T11:00:00Z",
+                    "is_completed": True,
+                    "created_datetime": "2025-08-01T00:00:00Z",
+                }
+            ],
+        }
+        self.mock_pairs_repo.get_pair_by_mentee_and_round.return_value = (
+            self.mock_pair_entity
+        )
+        self.mock_pairs_repo.upsert_pairs.return_value = self.mock_pair_entity
+
+        payload = MeetingCreateDto(
+            round_id=self.round_id,
+            start_datetime=datetime(2025, 10, 2, 14, 0, tzinfo=timezone.utc),
+            end_datetime=datetime(2025, 10, 2, 15, 0, tzinfo=timezone.utc),
+            is_completed=True,
+        )
+
+        await self.meeting_service.upsert_meetings(
+            self.mock_session, self.user_context, payload
+        )
+
+        self.assertEqual(
+            len(self.mock_pair_entity.meeting_log["google_meetings"]),
+            1,
+            "manual submit must not drop the other generation's entries",
+        )
+        self.assertEqual(len(self.mock_pair_entity.meeting_log["meeting_time_list"]), 1)
+        self.assertEqual(
+            self.mock_pair_entity.completed_count,
+            2,
+            "completed_count must sum both generations",
+        )
+
 
 class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):

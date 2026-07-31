@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.common.constants import DATETIME_UTC_FORMAT
 from backend.common.mentorship_enums import MEETING_SUMMARY_TEMPLATE, PairStatus
 from backend.common.name_utils import partner_display_name
+from backend.mentorship.meeting_log import completed_count
 from backend.dto.meeting_dto import MeetingDto
 from backend.dto.meeting_create_dto import MeetingCreateDto
 from backend.dto.google_meeting_detail_dto import GoogleMeetingDetailDto
@@ -163,7 +164,12 @@ class MeetingService:
             )
             raise ValueError("This time slot already exists.")
 
+        # Merge rather than replace. A pair is not meant to hold both
+        # generations, but that is an operational guarantee rather than one the
+        # code enforces, and the cost of being wrong here is deleting the other
+        # generation's meetings with no way to restore them.
         pair_entity.meeting_log = {
+            **current_log,
             "meeting_time_list": existing_slots
             + [
                 {
@@ -173,13 +179,9 @@ class MeetingService:
                     "is_completed": data.is_completed,
                     "created_datetime": datetime.utcnow().strftime(DATETIME_UTC_FORMAT),
                 }
-            ]
+            ],
         }
-        pair_entity.completed_count = sum(
-            1
-            for m in pair_entity.meeting_log["meeting_time_list"]
-            if m.get("is_completed")
-        )
+        pair_entity.completed_count = completed_count(pair_entity.meeting_log)
 
         saved_pair = await self.mentorship_pairs_repository.upsert_pairs(
             session=session, entity=pair_entity
