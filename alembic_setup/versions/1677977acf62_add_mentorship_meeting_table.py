@@ -43,7 +43,12 @@ def upgrade() -> None:
         sa.Column("start_datetime", sa.DateTime(timezone=True), nullable=True),
         sa.Column("end_datetime", sa.DateTime(timezone=True), nullable=True),
         sa.Column("is_completed", sa.Boolean(), server_default="false", nullable=False),
-        sa.Column("created_datetime", sa.DateTime(timezone=True), nullable=False),
+        sa.Column(
+            "created_datetime",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
         sa.Column("meet_link", sa.String(), nullable=True),
         sa.Column("google_meeting_code", sa.String(), nullable=True),
         sa.Column(
@@ -137,7 +142,18 @@ def upgrade() -> None:
             (e->>'start_datetime')::timestamptz,
             (e->>'end_datetime')::timestamptz,
             COALESCE((e->>'is_completed')::boolean, FALSE),
-            (e->>'created_datetime')::timestamptz,
+            -- Google Calendar does not always return `created`, and
+            -- MeetingSchedulingService.schedule/update both default that
+            -- field to "" (event.get("created", "")), which persists into
+            -- google_meetings as a code-produced, benign empty string --
+            -- not corruption. ''::timestamptz raises, aborting this whole
+            -- migration (env.py wraps it in one transaction), so fall back
+            -- to the pair's own created_datetime: it is non-NULL and cannot
+            -- postdate a meeting recorded under that pair.
+            COALESCE(
+                NULLIF(e->>'created_datetime', '')::timestamptz,
+                p.created_datetime
+            ),
             NULLIF(e->>'meet_link', ''),
             NULLIF(e->>'conference_id', ''),
             CASE WHEN jsonb_typeof(e->'entry_points') = 'array'

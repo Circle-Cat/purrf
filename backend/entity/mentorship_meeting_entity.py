@@ -9,6 +9,7 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
+    func,
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -76,7 +77,7 @@ class MentorshipMeetingEntity(Base):
         Boolean, nullable=False, default=False, server_default="false"
     )
     created_datetime: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False
+        DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
     # --- GOOGLE only, guarded by the CHECK constraint below ---

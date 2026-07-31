@@ -58,7 +58,14 @@ class MentorshipMeetingRepository:
             select(MentorshipMeetingEntity).where(
                 MentorshipMeetingEntity.pair_id.in_(pair_ids),
                 MentorshipMeetingEntity.source == MeetingSource.GOOGLE,
-                MentorshipMeetingEntity.is_completed.is_(False),
+                # ix_mentorship_meeting_pending has predicate
+                # `is_completed = false`; Postgres cannot prove `IS false`
+                # implies `= false`, so the `.is_(False)` form (which compiles
+                # to `IS false`) makes the planner skip this index entirely.
+                # The `== False` form is required to match the predicate.
+                # A later PR copies this pattern into the attendance sweep --
+                # do not "correct" it back to `.is_(False)`.
+                MentorshipMeetingEntity.is_completed == False,  # noqa: E712
                 MentorshipMeetingEntity.google_meeting_code.is_not(None),
             )
         )
