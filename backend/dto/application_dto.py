@@ -27,6 +27,7 @@ class ApplicationEditDto(BaseRequestDto):
     answers: dict = {}
     resume_sha256: str | None = None
     resume_object_key: str | None = None
+    # Frontend-owned, same as on ApplicationSubmitDto above.
     save_to_profile: bool = False
 
 
