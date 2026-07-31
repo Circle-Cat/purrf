@@ -113,6 +113,7 @@ py_test(
         "//backend/common:recruiting_enums",
         "//backend/dto",
         "//backend/entity:entities",
+        "//backend/mentorship",
         "//backend/recruiting",
     ],
 )
