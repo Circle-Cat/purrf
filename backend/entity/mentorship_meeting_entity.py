@@ -49,9 +49,11 @@ class MentorshipMeetingEntity(Base):
     __tablename__ = "mentorship_meeting"
 
     # For a MANUAL row this is a uuid4 Purrf generated. For a GOOGLE row it is
-    # the Google Calendar event id -- two different provenances behind one
-    # column, kept as-is because `batch_delete_google_meetings` passes this
-    # value straight to the Calendar API. Preserved verbatim by the migration.
+    # the Google Calendar event id -- kept as-is because
+    # `batch_delete_google_meetings` passes this value straight to the
+    # Calendar API. For a LEGACY row it is a synthesized `legacy-<pair_id>-<n>`
+    # string, since there was never a real id to preserve. Three different
+    # provenances behind one column, all preserved verbatim by the migration.
     meeting_id: Mapped[str] = mapped_column(String, primary_key=True)
     pair_id: Mapped[int] = mapped_column(
         ForeignKey("mentorship_pairs.pair_id", ondelete="CASCADE"),
@@ -106,7 +108,7 @@ class MentorshipMeetingEntity(Base):
             "source = 'legacy' OR ("
             "start_datetime IS NOT NULL AND end_datetime IS NOT NULL "
             "AND end_datetime > start_datetime)",
-            name="ck_mentorship_meeting_times",
+            name="times",
         ),
         # This is what makes a wide table with a discriminator honest rather
         # than a flattened blob: the nine columns above are meaningless for a
@@ -115,7 +117,7 @@ class MentorshipMeetingEntity(Base):
             "source = 'google' OR ("
             + " AND ".join(f"{c} IS NULL" for c in _GOOGLE_ONLY_COLUMNS)
             + ")",
-            name="ck_mentorship_meeting_google_fields",
+            name="google_fields",
         ),
         Index("ix_mentorship_meeting_pair_start", "pair_id", "start_datetime"),
         Index(
