@@ -463,6 +463,47 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         result = await self.service.get_mine(self.session, self._ctx(), 1)
         self.assertFalse(result.editable)
 
+    async def test_submit_accepted_while_revision_under_review(self):
+        """A staged revision must not stop applications to the live posting."""
+        self.job_repo.get_by_job_id = AsyncMock(
+            return_value=self._job(status=JobStatus.PUBLISHED_PENDING_REVISION)
+        )
+        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+
+        result = await self.service.submit(self.session, self._ctx(), dto)
+
+        self.assertEqual(result.stage, ApplicationStage.RECRUITER_SCREENING)
+
+    async def test_submit_accepted_while_close_under_review(self):
+        """The posting keeps accepting applications until the close is approved."""
+        self.job_repo.get_by_job_id = AsyncMock(
+            return_value=self._job(status=JobStatus.PENDING_CLOSE)
+        )
+        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+
+        result = await self.service.submit(self.session, self._ctx(), dto)
+
+        self.assertEqual(result.stage, ApplicationStage.RECRUITER_SCREENING)
+
+    async def test_submit_rejected_when_posting_not_live(self):
+        """A closed posting takes no applications, reopen pending or not."""
+        for status in (
+            JobStatus.DRAFT,
+            JobStatus.PENDING_REVIEW,
+            JobStatus.CLOSED,
+            JobStatus.PENDING_REOPEN,
+        ):
+            with self.subTest(status=status):
+                self.job_repo.get_by_job_id = AsyncMock(
+                    return_value=self._job(status=status)
+                )
+                with self.assertRaises(ValueError):
+                    await self.service.submit(
+                        self.session,
+                        self._ctx(),
+                        ApplicationSubmitDto.model_validate({"jobId": 1}),
+                    )
+
     async def test_submit_requires_resume_when_config_requires(self):
         job = self._job(status=JobStatus.PUBLISHED)
         job.profile_config = {"resume": "required"}
