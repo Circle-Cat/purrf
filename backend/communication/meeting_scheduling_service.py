@@ -7,9 +7,9 @@ lives here is the part every caller would otherwise re-implement against the
 Calendar API — resolving attendee addresses, minting the idempotency keys,
 opening up the Meet space, and normalizing Google's response shape.
 
-Storage deliberately stays with the callers: mentorship keeps its
-``mentorship_pairs.meeting_log`` JSONB (read by ten other files and tangled
-with mentorship-only credit tracking), recruiting gets its own table.
+Storage deliberately stays with the callers: mentorship persists its meetings
+as ``mentorship_meeting`` rows (one per meeting, read through
+``MentorshipMeetingRepository``), recruiting gets its own table.
 """
 
 import asyncio

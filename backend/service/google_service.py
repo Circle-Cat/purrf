@@ -409,9 +409,9 @@ class GoogleService:
         That 409 is therefore proof the event exists, not a reason to fail: the
         whole point of passing our own ``event_id`` is that the insert is
         idempotent. Failing anyway would leave an event on the calendar that
-        never reaches ``meeting_log``, so Purrf can neither show nor delete it,
-        while the user is told to retry — producing a second event at the same
-        time.
+        never reaches ``mentorship_meeting``, so Purrf can neither show nor
+        delete it, while the user is told to retry — producing a second event
+        at the same time.
 
         Args:
             error (Exception): The failure raised by the insert.
@@ -732,8 +732,8 @@ class GoogleService:
         An event that is already absent from Calendar (404 / 410) counts as
         succeeded: deletion is about the end state, and the caller clears only
         the ids it is told succeeded. Reporting "already gone" as a failure
-        would pin the row in ``meeting_log`` permanently — a meeting the UI
-        lists but can never remove, since every retry gets the same 404.
+        would pin the row in ``mentorship_meeting`` permanently — a meeting
+        the UI lists but can never remove, since every retry gets the same 404.
 
         Args:
             event_ids (list[str]): Google Calendar event IDs to delete.
