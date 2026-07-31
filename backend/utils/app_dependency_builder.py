@@ -572,6 +572,7 @@ class AppDependencyBuilder:
             date_time_util=self.date_time_util,
             database=self.database,
             logger=self.logger,
+            mentorship_meeting_repository=self.mentorship_meeting_repository,
         )
         self.mentorship_admin_controller = MentorshipAdminController(
             mentorship_admin_service=self.mentorship_admin_service,
