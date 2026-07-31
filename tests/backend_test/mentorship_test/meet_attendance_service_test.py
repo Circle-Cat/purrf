@@ -204,6 +204,14 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, {})
         self.mock_google_service.list_ended_conferences.assert_not_called()
 
+    async def test_logs_one_info_line_when_not_in_a_meeting_window(self):
+        """An idle run must be visible at INFO, not only at DEBUG."""
+        self.mock_round_repo.get_running_round_id.return_value = None
+
+        await self.service.sync_attendance(session=self.mock_session, lookback_hours=2)
+
+        self.assertEqual(self.service.logger.info.call_count, 1)
+
     async def test_no_conferences_returns_empty(self):
         self.mock_round_repo.get_running_round_id.return_value = self.round_id
         self.mock_google_service.list_ended_conferences.return_value = []
@@ -213,6 +221,15 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, {})
         self.mock_google_service.list_ended_conferences.assert_called_once()
         self.mock_pairs_repo.get_active_pairs_by_round.assert_not_called()
+
+    async def test_logs_one_info_line_when_no_conferences_ended(self):
+        """A run that found nothing must still say so at INFO."""
+        self.mock_round_repo.get_running_round_id.return_value = self.round_id
+        self.mock_google_service.list_ended_conferences.return_value = []
+
+        await self.service.sync_attendance(session=self.mock_session, lookback_hours=2)
+
+        self.assertEqual(self.service.logger.info.call_count, 1)
 
     async def test_no_pairs_returns_zero_summary(self):
         self.mock_round_repo.get_running_round_id.return_value = self.round_id
@@ -225,6 +242,21 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(result["pairs_updated"], 0)
         self.mock_pairs_repo.upsert_pairs_batch.assert_not_called()
+
+    async def test_logs_one_info_line_when_nothing_is_pending_sync(self):
+        """Conferences existed but no pair had an unsynced Google meeting."""
+        self.mock_round_repo.get_running_round_id.return_value = self.round_id
+        self.mock_google_service.list_ended_conferences.return_value = [
+            self._make_conference()
+        ]
+        self.mock_pairs_repo.get_active_pairs_by_round.return_value = []
+
+        result = await self.service.sync_attendance(
+            session=self.mock_session, lookback_hours=2
+        )
+
+        self.assertEqual(self.service.logger.info.call_count, 1)
+        self.assertEqual(result["meetings_completed"], 0)
 
     async def test_unknown_meeting_code_is_skipped(self):
         self.mock_round_repo.get_running_round_id.return_value = self.round_id
