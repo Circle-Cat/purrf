@@ -896,9 +896,7 @@ describe("BoardPage", () => {
     await waitFor(() => expect(card.className).toContain("ring-2"));
     // Stripped so a refresh doesn't repeat the hunt, and via `replace` so it
     // doesn't add a history entry.
-    await waitFor(() =>
-      expect(router.state.location.search).toBe("?jobId=1"),
-    );
+    await waitFor(() => expect(router.state.location.search).toBe("?jobId=1"));
   });
 
   it("pages a terminal lane to find a focused card that isn't on the first page", async () => {

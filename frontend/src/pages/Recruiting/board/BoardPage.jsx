@@ -223,7 +223,8 @@ const BoardPage = () => {
     if (TERMINAL_STAGES.some((stage) => loadingMore.has(stage))) return;
 
     const pageable = TERMINAL_STAGES.filter(
-      (stage) => board[stage]?.has_more && !focusPageFailures.current.has(stage),
+      (stage) =>
+        board[stage]?.has_more && !focusPageFailures.current.has(stage),
     );
     if (pageable.length === 0 || focusRounds.current >= FOCUS_PAGE_LIMIT) {
       clearFocusParam();

@@ -181,7 +181,9 @@ describe("ApplicantCard identity and highlight", () => {
     expect(plain.className).not.toContain("ring-2");
     unmount();
 
-    render(<ApplicantCard card={baseCard} showStatus onOpen={vi.fn()} highlighted />);
+    render(
+      <ApplicantCard card={baseCard} showStatus onOpen={vi.fn()} highlighted />,
+    );
     const ringed = screen.getByRole("button", {
       name: new RegExp(baseCard.applicantName),
     });
