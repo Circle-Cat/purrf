@@ -500,9 +500,11 @@ class MentorshipAdminService:
         """
         Maps an already-loaded pair's meeting_log into an AdminMeetingLogDto.
 
-        google_meetings and meeting_time_list are mutually exclusive; a pair
-        with neither populated defaults to round_version "v2" with an empty
-        meetings list.
+        google_meetings and meeting_time_list are meant to be mutually
+        exclusive as an operational guarantee, not a property this code
+        enforces (see the comment below on what happens when that guarantee
+        is broken); a pair with neither populated defaults to round_version
+        "v2" with an empty meetings list.
         """
         meeting_log = pair.meeting_log or {}
         google_meetings = meeting_log.get("google_meetings") or []
@@ -512,7 +514,13 @@ class MentorshipAdminService:
         # on is decided by feature flag, and the two flags are never enabled for
         # the same person. That is an operational guarantee with no enforcement
         # in code -- if it is ever broken, this priority order silently hides the
-        # manual entries rather than showing both.
+        # manual entries rather than showing both. Worse, it also disagrees with
+        # apply_v2_meeting_batch, which classifies a pair as v1 by checking
+        # meeting_time_list directly and raises ConflictError("Cannot edit a v1
+        # (read-only) meeting log.") for it. So a pair holding both would be
+        # reported here as an editable v2 log, while every edit attempt against
+        # it fails in apply_v2_meeting_batch with a message claiming it's v1
+        # read-only history.
         if google_meetings:
             round_version = "v2"
             mentor_id = pair.mentor_id
