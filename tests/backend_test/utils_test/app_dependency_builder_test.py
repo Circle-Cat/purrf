@@ -252,7 +252,7 @@ class TestAppDependencyBuilder(TestCase):
             GMAIL_CLIENT_SECRET: "gmail-client-secret",
             GMAIL_REFRESH_TOKEN: "gmail-refresh-token",
             GMAIL_SENDER_RECRUITING: "recruiting@circlecat.org",
-            GMAIL_SENDER_NOTIFICATION: "notifications@circlecat.org",
+            GMAIL_SENDER_NOTIFICATION: "notification@circlecat.org",
             # Both scenario calendars must be configured for the app to build:
             # the builder raises on a missing one rather than letting a service
             # fall back to the impersonated account's primary calendar.
@@ -828,18 +828,16 @@ class TestAppDependencyBuilder(TestCase):
         # One mailbox, two Send-As identities: the client must own both, or a
         # send from the notification address is silently rewritten by Gmail to
         # the mailbox owner and reported as success.
-        self.assertTrue(
-            builder.gmail_client.owns_address("notifications@circlecat.org")
-        )
+        self.assertTrue(builder.gmail_client.owns_address("notification@circlecat.org"))
         self.assertEqual(
-            builder.notification_sender_address, "notifications@circlecat.org"
+            builder.notification_sender_address, "notification@circlecat.org"
         )
         # The notification email service must be constructed with the
         # notification address, not the recruiting one -- GmailClient.owns_address
         # cannot catch a mixup since the recruiting address is owned too.
         self.assertEqual(
             builder.notification_email_service.sender_address,
-            "notifications@circlecat.org",
+            "notification@circlecat.org",
         )
         self.assertNotEqual(
             builder.notification_email_service.sender_address,
