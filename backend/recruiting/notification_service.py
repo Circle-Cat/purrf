@@ -52,6 +52,7 @@ class RecruitingNotificationService:
     async def _to_dto(self, session: AsyncSession, row) -> NotificationDto:
         """Resolve one NotificationEntity's display fields into a NotificationDto."""
         job_title = ""
+        job_kind = None
         applicant_name = ""
         job_id = row.job_id
         if row.application_id is not None:
@@ -64,10 +65,12 @@ class RecruitingNotificationService:
                     session, application.job_id
                 )
                 job_title = job.title if job is not None else ""
+                job_kind = job.kind if job is not None else None
                 applicant_name = await self._display_name(session, application.user_id)
         elif row.job_id is not None:
             job = await self.job_repository.get_by_job_id(session, row.job_id)
             job_title = job.title if job is not None else ""
+            job_kind = job.kind if job is not None else None
 
         actor_name = (
             await self._display_name(session, row.actor_user_id)
@@ -82,6 +85,7 @@ class RecruitingNotificationService:
             job_id=job_id,
             round=row.round,
             job_title=job_title,
+            job_kind=job_kind,
             applicant_name=applicant_name,
             actor_name=actor_name,
             created_at=row.created_at,

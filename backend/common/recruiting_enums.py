@@ -83,3 +83,6 @@ class NotificationType(StrEnum):
     JOB_REVIEW_REQUESTED = "job_review_requested"
     JOB_REVIEW_APPROVED = "job_review_approved"
     JOB_REVIEW_REJECTED = "job_review_rejected"
+    APPLICATION_SUBMITTED = "application_submitted"
+    APPLICATION_AUTO_REJECTED = "application_auto_rejected"
+    APPLICATION_AUTO_HIRED = "application_auto_hired"
