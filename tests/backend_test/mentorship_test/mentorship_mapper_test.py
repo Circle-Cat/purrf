@@ -273,6 +273,12 @@ class TestMentorshipMapper(unittest.TestCase):
     def test_map_to_meeting_dto_success(self):
         """Test mapping pair entities with meeting rows to meeting dto correctly."""
         pair_entity = self.pair_entities[0]
+        # Deliberately blanked: the fixture's own `meeting_log` holds entries
+        # with these exact same times (see setUp), so leaving it in place
+        # would let a mapper that still reads `meeting_log` -- and ignores
+        # `meetings_by_pair` entirely -- pass this test by coincidence.
+        # Clearing it makes the test source-discriminating.
+        pair_entity.meeting_log = None
         partner_id = pair_entity.mentor_id
         meeting_rows = [
             MentorshipMeetingEntity(
@@ -330,6 +336,7 @@ class TestMentorshipMapper(unittest.TestCase):
             round_id=2,
             user_timezone="Asia/Shanghai",
             grouped_pairs=[(pair_entity, partner_id)],
+            meetings_by_pair={},
         )
 
         self.assertIsInstance(dto, MeetingDto)
@@ -376,6 +383,57 @@ class TestMentorshipMapper(unittest.TestCase):
         self.assertEqual(len(info.meeting_time_list), 1)
         self.assertEqual(info.meeting_time_list[0].meeting_id, manual_row.meeting_id)
         self.assertEqual(info.completed_meetings_count, 5)
+
+    def test_map_to_meeting_dto_preserves_repository_order(self):
+        """The v1 list order moved from JSONB insertion order to whatever
+        order the repository hands back (start_datetime ascending, per
+        MentorshipMeetingRepository). This mapper does not re-sort -- it must
+        trust and pass through the given order exactly. Rows here are built
+        with `created_datetime` deliberately in the OPPOSITE order from
+        `start_datetime`, so a mapper that (accidentally or otherwise) sorted
+        by creation time instead of trusting input order would produce a
+        different, and therefore caught, result."""
+        pair_entity = self.pair_entities[0]
+        pair_entity.meeting_log = None
+        partner_id = pair_entity.mentor_id
+
+        earliest_start_but_created_last = MentorshipMeetingEntity(
+            meeting_id="row-a",
+            pair_id=pair_entity.pair_id,
+            source=MeetingSource.MANUAL,
+            start_datetime=datetime.fromisoformat("2025-09-01T10:00:00+00:00"),
+            end_datetime=datetime.fromisoformat("2025-09-01T11:00:00+00:00"),
+            is_completed=True,
+            created_datetime=datetime.fromisoformat("2025-09-05T00:00:00+00:00"),
+        )
+        latest_start_but_created_first = MentorshipMeetingEntity(
+            meeting_id="row-b",
+            pair_id=pair_entity.pair_id,
+            source=MeetingSource.MANUAL,
+            start_datetime=datetime.fromisoformat("2025-09-10T10:00:00+00:00"),
+            end_datetime=datetime.fromisoformat("2025-09-10T11:00:00+00:00"),
+            is_completed=True,
+            created_datetime=datetime.fromisoformat("2025-09-01T00:00:00+00:00"),
+        )
+        # Given in start_datetime-ascending order, as the repository contract
+        # promises -- NOT in created_datetime order.
+        repository_ordered_rows = [
+            earliest_start_but_created_last,
+            latest_start_but_created_first,
+        ]
+
+        dto = self.mapper.map_to_meeting_dto(
+            round_id=1,
+            user_timezone="Asia/Shanghai",
+            grouped_pairs=[(pair_entity, partner_id)],
+            meetings_by_pair={pair_entity.pair_id: repository_ordered_rows},
+        )
+        info = dto.meeting_info[0]
+
+        self.assertEqual(
+            [m.meeting_id for m in info.meeting_time_list],
+            ["row-a", "row-b"],
+        )
 
     def test_map_to_meeting_v2_dto_success(self):
         """Test mapping manual and google meetings into MeetingDto correctly."""

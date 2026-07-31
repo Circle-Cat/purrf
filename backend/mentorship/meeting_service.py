@@ -98,17 +98,32 @@ class MeetingService:
             )
 
         grouped_pairs = []
-        meetings_by_pair = {}
+        pair_ids = []
         for p in pair_entity:
             partner_id = (
                 p.mentor_id if p.mentee_id == current_user.user_id else p.mentee_id
             )
             grouped_pairs.append((p, partner_id))
-            meetings_by_pair[p.pair_id] = (
-                await self.mentorship_meeting_repository.get_meetings_by_pair(
-                    session=session, pair_id=p.pair_id
-                )
+            pair_ids.append(p.pair_id)
+
+        # A user can have more than a couple of pairs here -- mentor_id/mentee_id
+        # matching in get_pairs_by_user_and_round has no status filter, so N
+        # includes cancelled pairs too. One batched query avoids an N+1.
+        meetings_by_pair_id = (
+            await self.mentorship_meeting_repository.get_meetings_by_pairs(
+                session=session, pair_ids=pair_ids
             )
+        )
+        # v1's contract is MANUAL-only -- it never showed google_meetings even
+        # after PR A migrated those rows into this same table. GOOGLE (and
+        # LEGACY) rows must stay invisible here; map_to_meeting_v2_dto is the
+        # path that merges both generations.
+        meetings_by_pair = {
+            pair_id: [
+                m for m in meetings if m.source == MeetingSource.MANUAL
+            ]
+            for pair_id, meetings in meetings_by_pair_id.items()
+        }
 
         return self.mentorship_mapper.map_to_meeting_dto(
             round_id=round_id,
@@ -193,6 +208,17 @@ class MeetingService:
             session=session, meeting=new_meeting
         )
 
+        # Assigned directly rather than left for the ORM to refresh: the
+        # UPDATE above sets `completed_count` from a scalar subquery, which
+        # `synchronize_session="auto"` cannot handle via the cheap "evaluate"
+        # strategy, so it falls back to "fetch" -- which EXPIRES
+        # `completed_count` on this loaded pair rather than repopulating it.
+        # The mapper reads `pair.completed_count` after `session.commit()`
+        # below; an expired attribute read there would trigger an implicit
+        # lazy load and raise MissingGreenlet under async. Assigning the
+        # value we already have sidesteps that. (Known, accepted cost: this
+        # also marks the attribute dirty, so the flush at commit re-issues an
+        # UPDATE with the same value on an already-locked row.)
         pair_entity.completed_count = (
             await self.mentorship_meeting_repository.recalculate_completed_count(
                 session=session, pair_id=pair_entity.pair_id
@@ -202,6 +228,10 @@ class MeetingService:
         updated_meetings = await self.mentorship_meeting_repository.get_meetings_by_pair(
             session=session, pair_id=pair_entity.pair_id
         )
+        # Same v1 MANUAL-only contract as the read path above.
+        updated_manual_meetings = [
+            m for m in updated_meetings if m.source == MeetingSource.MANUAL
+        ]
 
         await session.commit()
 
@@ -209,7 +239,7 @@ class MeetingService:
             round_id=data.round_id,
             user_timezone=current_user.timezone,
             grouped_pairs=[(pair_entity, pair_entity.mentor_id)],
-            meetings_by_pair={pair_entity.pair_id: updated_meetings},
+            meetings_by_pair={pair_entity.pair_id: updated_manual_meetings},
         )
 
     async def create_google_meeting(

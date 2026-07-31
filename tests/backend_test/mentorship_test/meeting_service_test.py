@@ -1,3 +1,4 @@
+import copy
 import unittest
 import uuid
 from datetime import datetime, timezone
@@ -32,6 +33,7 @@ class TestMeetingServiceV1(unittest.IsolatedAsyncioTestCase):
 
         self.mock_meeting_repo = MagicMock()
         self.mock_meeting_repo.get_meetings_by_pair = AsyncMock()
+        self.mock_meeting_repo.get_meetings_by_pairs = AsyncMock()
         self.mock_meeting_repo.insert_meeting = AsyncMock()
         self.mock_meeting_repo.recalculate_completed_count = AsyncMock()
 
@@ -80,7 +82,12 @@ class TestMeetingServiceV1(unittest.IsolatedAsyncioTestCase):
             mentor_id=self.partner_id,
             mentee_id=self.user_id,
             completed_count=3,
-            meeting_log=dict(self.original_meeting_log),
+            # Deep copy is deliberate, not defensive boilerplate: a shallow
+            # `dict(...)` here would leave `meeting_time_list` as the SAME
+            # list object as `self.original_meeting_log`'s, so an in-place
+            # `.append()` regression on the inner list would go undetected by
+            # any `assertEqual` snapshot comparison below.
+            meeting_log=copy.deepcopy(self.original_meeting_log),
         )
 
         self.existing_manual_meeting = MagicMock(
@@ -93,15 +100,25 @@ class TestMeetingServiceV1(unittest.IsolatedAsyncioTestCase):
             is_completed=True,
             created_datetime=datetime(2025, 9, 30, 9, 0, tzinfo=timezone.utc),
         )
+        self.existing_google_meeting = MagicMock(
+            spec=MentorshipMeetingEntity,
+            meeting_id="evt-1",
+            pair_id=self.pair_id,
+            source=MeetingSource.GOOGLE,
+            start_datetime=datetime(2025, 10, 3, 10, 0, tzinfo=timezone.utc),
+            end_datetime=datetime(2025, 10, 3, 11, 0, tzinfo=timezone.utc),
+            is_completed=False,
+            created_datetime=datetime(2025, 10, 1, 9, 0, tzinfo=timezone.utc),
+        )
 
     async def test_get_meetings_by_user_and_round_success(self):
         """Test retrieved and mapped meeting logs for a matched user correctly."""
         self.mock_pairs_repo.get_pairs_by_user_and_round.return_value = [
             self.mock_pair_entity
         ]
-        self.mock_meeting_repo.get_meetings_by_pair.return_value = [
-            self.existing_manual_meeting
-        ]
+        self.mock_meeting_repo.get_meetings_by_pairs.return_value = {
+            self.pair_id: [self.existing_manual_meeting]
+        }
         stub_dto = MagicMock(spec=MeetingDto)
         self.mock_mapper.map_to_meeting_dto.return_value = stub_dto
 
@@ -113,14 +130,43 @@ class TestMeetingServiceV1(unittest.IsolatedAsyncioTestCase):
         self.mock_pairs_repo.get_pairs_by_user_and_round.assert_awaited_once_with(
             session=self.mock_session, user_id=self.user_id, round_id=self.round_id
         )
-        self.mock_meeting_repo.get_meetings_by_pair.assert_awaited_once_with(
-            session=self.mock_session, pair_id=self.pair_id
+        self.mock_meeting_repo.get_meetings_by_pairs.assert_awaited_once_with(
+            session=self.mock_session, pair_ids=[self.pair_id]
         )
         self.mock_mapper.map_to_meeting_dto.assert_called_once_with(
             round_id=self.round_id,
             user_timezone=self.mock_current_user.timezone,
             grouped_pairs=[(self.mock_pair_entity, self.partner_id)],
             meetings_by_pair={self.pair_id: [self.existing_manual_meeting]},
+        )
+
+    async def test_get_meetings_by_user_and_round_v1_read_is_manual_only(self):
+        """IMPORTANT 2 pin: the v1 read must keep its old MANUAL-only contract.
+
+        `get_meetings_by_pairs` returns both MANUAL and GOOGLE rows for a pair
+        (only LEGACY is excluded by the repository itself); this method must
+        filter GOOGLE back out before handing anything to the mapper, or a
+        pair whose round switched from v1 to v2 would suddenly show its
+        Google meetings on a dashboard that never displayed them before.
+        """
+        self.mock_pairs_repo.get_pairs_by_user_and_round.return_value = [
+            self.mock_pair_entity
+        ]
+        self.mock_meeting_repo.get_meetings_by_pairs.return_value = {
+            self.pair_id: [self.existing_manual_meeting, self.existing_google_meeting]
+        }
+        stub_dto = MagicMock(spec=MeetingDto)
+        self.mock_mapper.map_to_meeting_dto.return_value = stub_dto
+
+        await self.meeting_service.get_meetings_by_user_and_round(
+            self.mock_session, self.user_context, self.round_id
+        )
+
+        passed_meetings_by_pair = self.mock_mapper.map_to_meeting_dto.call_args.kwargs[
+            "meetings_by_pair"
+        ]
+        self.assertEqual(
+            passed_meetings_by_pair, {self.pair_id: [self.existing_manual_meeting]}
         )
 
     async def test_get_meetings_by_user_and_round_no_pair_found(self):
@@ -173,7 +219,10 @@ class TestMeetingServiceV1(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(inserted_meeting.start_datetime, payload.start_datetime)
         self.assertEqual(inserted_meeting.end_datetime, payload.end_datetime)
         self.assertTrue(inserted_meeting.is_completed)
-        self.assertTrue(uuid.UUID(inserted_meeting.meeting_id))
+        # assertEqual(...version, 4) rather than assertTrue(uuid.UUID(x)):
+        # the latter only proves the string parses as *some* UUID (it would
+        # pass for a uuid1 too), not specifically the uuid4 the code asks for.
+        self.assertEqual(uuid.UUID(inserted_meeting.meeting_id).version, 4)
 
         self.mock_meeting_repo.recalculate_completed_count.assert_awaited_once_with(
             session=self.mock_session, pair_id=self.pair_id
@@ -263,7 +312,10 @@ class TestMeetingServiceV1(unittest.IsolatedAsyncioTestCase):
                 }
             ],
         }
-        untouched_snapshot = dict(self.mock_pair_entity.meeting_log)
+        # Deep copy for the same reason as the setUp fixture above -- a
+        # shallow copy would share the inner lists with the live entity and
+        # miss an in-place `.append()` regression.
+        untouched_snapshot = copy.deepcopy(self.mock_pair_entity.meeting_log)
         self.mock_pairs_repo.get_pair_by_mentee_and_round.return_value = (
             self.mock_pair_entity
         )

@@ -138,7 +138,7 @@ class MentorshipMapper:
         round_id: int,
         user_timezone: str,
         grouped_pairs: list[tuple[MentorshipPairsEntity, int]],
-        meetings_by_pair: dict[int, list[MentorshipMeetingEntity]] | None = None,
+        meetings_by_pair: dict[int, list[MentorshipMeetingEntity]],
     ) -> MeetingDto:
         """Map (MentorshipPairsEntity, partner_id) tuples to MeetingDto.
 
@@ -147,15 +147,20 @@ class MentorshipMapper:
             user_timezone (str): The current user's timezone.
             grouped_pairs (list[tuple[MentorshipPairsEntity, int]]): Each pair
                 paired with the partner's user id.
-            meetings_by_pair (dict[int, list[MentorshipMeetingEntity]] | None):
+            meetings_by_pair (dict[int, list[MentorshipMeetingEntity]]):
                 Meeting rows keyed by ``pair_id``, e.g. from
-                ``MentorshipMeetingRepository.get_meetings_by_pair``. A pair
-                absent from this dict is treated as having no meetings.
-                LEGACY rows are filtered out here regardless of whether the
-                caller already excluded them -- they carry no times and have
-                nothing to show in this list.
+                ``MentorshipMeetingRepository.get_meetings_by_pair`` /
+                ``get_meetings_by_pairs``. Required rather than defaulted to
+                ``None`` -- there are only two call sites, and a caller that
+                forgot this argument would otherwise get a silently empty
+                meeting list rather than an error. A pair absent from this
+                dict is treated as having no meetings. LEGACY rows are
+                filtered out here regardless of whether the caller already
+                excluded them -- they carry no times and have nothing to show
+                in this list. Order is passed through unchanged -- this
+                method does not sort; it trusts whatever order the caller's
+                meetings came back in.
         """
-        meetings_by_pair = meetings_by_pair or {}
         return MeetingDto(
             round_id=round_id,
             user_timezone=user_timezone,
