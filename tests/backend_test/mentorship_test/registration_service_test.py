@@ -281,15 +281,13 @@ class TestRegistrationService(unittest.IsolatedAsyncioTestCase):
         participant_entity = MentorshipRoundParticipantsEntity(
             user_id=self.user_id, round_id=self.mock_round_id
         )
-        self.mock_onboarding_training_service.ensure_onboarding_training.return_value = (
-            TrainingEntity(
-                user_id=self.user_id,
-                category=TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING,
-                status=TrainingStatus.TO_DO,
-                completed_timestamp=None,
-                deadline=datetime(2026, 4, 29, 23, 59, 59, tzinfo=timezone.utc),
-                link="https://mentor",
-            )
+        self.mock_onboarding_training_service.ensure_onboarding_training.return_value = TrainingEntity(
+            user_id=self.user_id,
+            category=TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING,
+            status=TrainingStatus.TO_DO,
+            completed_timestamp=None,
+            deadline=datetime(2026, 4, 29, 23, 59, 59, tzinfo=timezone.utc),
+            link="https://mentor",
         )
 
         with patch.object(
@@ -349,9 +347,7 @@ class TestRegistrationService(unittest.IsolatedAsyncioTestCase):
             category=TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING,
             status=TrainingStatus.DONE,
         )
-        self.mock_onboarding_training_service.ensure_onboarding_training.return_value = (
-            completed_training
-        )
+        self.mock_onboarding_training_service.ensure_onboarding_training.return_value = completed_training
 
         global_entity = PreferenceEntity(user_id=self.user_id)
         participant_entity = MentorshipRoundParticipantsEntity(
@@ -659,15 +655,13 @@ class TestRegistrationService(unittest.IsolatedAsyncioTestCase):
         }
         mock_round.name = "test round"
         self.mock_round_repo.get_by_round_id.return_value = mock_round
-        self.mock_onboarding_training_service.ensure_onboarding_training.return_value = (
-            TrainingEntity(
-                user_id=self.user_id,
-                category=TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING,
-                status=TrainingStatus.TO_DO,
-                completed_timestamp=None,
-                deadline=datetime(2026, 4, 29, 23, 59, 59, tzinfo=timezone.utc),
-                link="https://mentor",
-            )
+        self.mock_onboarding_training_service.ensure_onboarding_training.return_value = TrainingEntity(
+            user_id=self.user_id,
+            category=TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING,
+            status=TrainingStatus.TO_DO,
+            completed_timestamp=None,
+            deadline=datetime(2026, 4, 29, 23, 59, 59, tzinfo=timezone.utc),
+            link="https://mentor",
         )
 
         await self._register()
@@ -676,7 +670,9 @@ class TestRegistrationService(unittest.IsolatedAsyncioTestCase):
             session=self.mock_session,
             user_id=self.user_id,
             category=TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING,
-            deadline=datetime(2026, 4, 29, 23, 59, 59, tzinfo=timezone.utc),  # app deadline + 2 days
+            deadline=datetime(
+                2026, 4, 29, 23, 59, 59, tzinfo=timezone.utc
+            ),  # app deadline + 2 days
         )
 
     async def test_registration_uses_the_mentee_category_for_a_mentee(self):
@@ -691,22 +687,18 @@ class TestRegistrationService(unittest.IsolatedAsyncioTestCase):
         }
         mock_round.name = "test round"
         self.mock_round_repo.get_by_round_id.return_value = mock_round
-        self.mock_onboarding_training_service.ensure_onboarding_training.return_value = (
-            TrainingEntity(
-                user_id=self.user_id,
-                category=TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING,
-                status=TrainingStatus.TO_DO,
-                completed_timestamp=None,
-                deadline=None,
-                link="https://mentee",
-            )
+        self.mock_onboarding_training_service.ensure_onboarding_training.return_value = TrainingEntity(
+            user_id=self.user_id,
+            category=TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING,
+            status=TrainingStatus.TO_DO,
+            completed_timestamp=None,
+            deadline=None,
+            link="https://mentee",
         )
 
         await self._register()
 
-        kwargs = (
-            self.mock_onboarding_training_service.ensure_onboarding_training.await_args.kwargs
-        )
+        kwargs = self.mock_onboarding_training_service.ensure_onboarding_training.await_args.kwargs
         self.assertEqual(
             kwargs["category"], TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING
         )
@@ -720,15 +712,13 @@ class TestRegistrationService(unittest.IsolatedAsyncioTestCase):
         }
         mock_round.name = "test round"
         self.mock_round_repo.get_by_round_id.return_value = mock_round
-        self.mock_onboarding_training_service.ensure_onboarding_training.return_value = (
-            TrainingEntity(
-                user_id=self.user_id,
-                category=TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING,
-                status=TrainingStatus.DONE,
-                completed_timestamp=datetime(2026, 4, 20, tzinfo=timezone.utc),
-                deadline=datetime(2026, 4, 29, 23, 59, 59, tzinfo=timezone.utc),
-                link="https://mentor",
-            )
+        self.mock_onboarding_training_service.ensure_onboarding_training.return_value = TrainingEntity(
+            user_id=self.user_id,
+            category=TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING,
+            status=TrainingStatus.DONE,
+            completed_timestamp=datetime(2026, 4, 20, tzinfo=timezone.utc),
+            deadline=datetime(2026, 4, 29, 23, 59, 59, tzinfo=timezone.utc),
+            link="https://mentor",
         )
 
         result = await self._register()
@@ -744,15 +734,13 @@ class TestRegistrationService(unittest.IsolatedAsyncioTestCase):
         }
         mock_round.name = "test round"
         self.mock_round_repo.get_by_round_id.return_value = mock_round
-        self.mock_onboarding_training_service.ensure_onboarding_training.return_value = (
-            TrainingEntity(
-                user_id=self.user_id,
-                category=TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING,
-                status=TrainingStatus.TO_DO,
-                completed_timestamp=None,
-                deadline=datetime(2026, 4, 29, 23, 59, 59, tzinfo=timezone.utc),
-                link="https://mentor",
-            )
+        self.mock_onboarding_training_service.ensure_onboarding_training.return_value = TrainingEntity(
+            user_id=self.user_id,
+            category=TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING,
+            status=TrainingStatus.TO_DO,
+            completed_timestamp=None,
+            deadline=datetime(2026, 4, 29, 23, 59, 59, tzinfo=timezone.utc),
+            link="https://mentor",
         )
 
         result = await self._register()

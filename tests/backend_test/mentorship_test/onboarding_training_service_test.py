@@ -45,9 +45,7 @@ class TestOnboardingTrainingService(unittest.IsolatedAsyncioTestCase):
         entity = self.mock_training_repo.upsert_training.await_args.kwargs["entity"]
         self.assertIsInstance(entity, TrainingEntity)
         self.assertEqual(entity.user_id, 7)
-        self.assertEqual(
-            entity.category, TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING
-        )
+        self.assertEqual(entity.category, TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING)
         self.assertEqual(entity.status, TrainingStatus.TO_DO)
         self.assertIsNone(entity.deadline)
         self.assertIsNone(entity.completed_timestamp)
@@ -64,9 +62,7 @@ class TestOnboardingTrainingService(unittest.IsolatedAsyncioTestCase):
             )
 
         entity = self.mock_training_repo.upsert_training.await_args.kwargs["entity"]
-        self.assertEqual(
-            entity.category, TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING
-        )
+        self.assertEqual(entity.category, TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING)
         self.assertEqual(entity.link, "https://mentor")
 
     async def test_skips_employment_jobs(self):
