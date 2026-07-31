@@ -20,7 +20,7 @@ class TestNotificationEmailService(unittest.IsolatedAsyncioTestCase):
         self.service = NotificationEmailService(
             gmail_client=self.gmail,
             logger=self.logger,
-            sender_address="notifications-test@circlecat.org",
+            sender_address="notification-test@circlecat.org",
         )
 
     async def test_send_uses_the_notification_sender_and_no_cc(self):
@@ -30,7 +30,7 @@ class TestNotificationEmailService(unittest.IsolatedAsyncioTestCase):
         _, kwargs = self.gmail.send_message.call_args
         self.assertEqual(
             kwargs["sender"],
-            "Purrf Notifications <notifications-test@circlecat.org>",
+            "Purrf Notifications <notification-test@circlecat.org>",
         )
         self.assertEqual(kwargs["to"], ["a@b.com"])
         self.assertEqual(kwargs["cc"], [])
