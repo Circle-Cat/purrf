@@ -683,6 +683,7 @@ class AppDependencyBuilder:
             self.application_activity_repository,
             self.notification_dispatcher,
             self.user_emails_repository,
+            self.onboarding_training_service,
         )
         self.application_controller = ApplicationController(
             self.application_service,
