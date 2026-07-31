@@ -1975,7 +1975,6 @@ const ApplicationDetailPage = () => {
 
                 <OtherApplicationsSection
                   timezone={viewerTimezone}
-                  timezone={viewerTimezone}
                   title="Previous applications for this posting"
                   otherApplications={previousApplications}
                   interviewPool={interviewPool}
@@ -1996,7 +1995,6 @@ const ApplicationDetailPage = () => {
                 />
 
                 <OtherApplicationsSection
-                  timezone={viewerTimezone}
                   timezone={viewerTimezone}
                   title="Other applications"
                   otherApplications={otherApplications}
