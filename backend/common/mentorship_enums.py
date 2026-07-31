@@ -84,3 +84,24 @@ class MeetingNoteTag(str, Enum):
     UNKNOWN_LATE = "unknown_late"
     MENTOR_LATE = "mentor_late"
     MENTEE_LATE = "mentee_late"
+
+
+class MeetingSource(str, Enum):
+    """Where a mentorship meeting record came from.
+
+    MANUAL entries are self-reported by the mentee. GOOGLE entries are Calendar
+    events Purrf created, whose completion is decided by the attendance sweep
+    rather than by a participant.
+
+    LEGACY entries stand in for historical rounds that recorded only a
+    completed-meeting count and no meetings at all. They carry no times,
+    because none were ever recorded -- inventing one would surface in the admin
+    log as a precise time and would pollute any statistic over meeting times.
+    They exist so that `completed_count` equals the number of completed rows
+    for every pair without exception, which is what makes recomputing that
+    column safe everywhere instead of a rule someone has to remember.
+    """
+
+    MANUAL = "manual"
+    GOOGLE = "google"
+    LEGACY = "legacy"
