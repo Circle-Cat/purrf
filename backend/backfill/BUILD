@@ -98,6 +98,22 @@ py_binary(
 )
 
 py_library(
+    name = "export_mentorship_records_lib",
+    srcs = ["export_mentorship_records.py"],
+    deps = [
+        "//backend/common:database",
+        "//backend/common:logger",
+        "//backend/common:mentorship_enums",
+        "//backend/entity:entities",
+        "//backend/repository:repositories",
+        "@pypi//asyncpg",
+        "@pypi//openpyxl",
+        "@pypi//pandas",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
     name = "backfill_activity_application_gate_lib",
     srcs = ["backfill_activity_application_gate.py"],
     deps = [
