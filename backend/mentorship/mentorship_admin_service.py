@@ -298,45 +298,47 @@ class MentorshipAdminService:
         ]
 
     def _extract_meetings_for_row(
-        self, row: ParticipantSearchRow
+        self,
+        row: ParticipantSearchRow,
+        meetings: list[MentorshipMeetingEntity],
     ) -> list[AdminMeetingDto]:
         """
-        Extract a row's meetings from its preloaded meeting log.
+        Build a row's meetings from its pair's pre-fetched `mentorship_meeting`
+        rows.
 
-        Operates on the meeting_log already loaded with the search result
-        instead of querying the pair again (this path still reads the JSONB
-        column -- switching it to `mentorship_meeting` rows is a later task's
-        batched-CSV-export change, not this one).
+        `meetings` is expected to already be this row's pair's slice of a
+        batched `MentorshipMeetingRepository.get_meetings_by_pairs` result
+        (the caller looks it up per row, keyed by pair_id, from one page-wide
+        call) -- this method itself issues no query and does not re-sort:
+        it trusts the repository's own order (`start_datetime` ascending,
+        then `created_datetime`, then `meeting_id`), the same order
+        `_build_meeting_log_dto` now trusts. That is a deliberate change from
+        this method's old JSONB-era created_datetime sort, made so the two
+        read paths agree.
 
-        Both generations are combined into a single created_datetime-ordered
-        read instead of picking google_meetings over meeting_time_list: a pair
-        holding both no longer has its manual entries silently hidden.
-        is_completed is read from each entry rather than hardcoded True for
-        manual ones -- the manual-submission flow has always recorded a real
-        value here, the old code just never looked at it.
+        MANUAL and GOOGLE rows are shown together in whatever order they
+        arrive in -- there is no priority branch that hides one generation
+        in favor of the other. LEGACY rows (NULL times) are expected to
+        already be excluded by the caller's `get_meetings_by_pairs` call.
 
         Args:
-            row (ParticipantSearchRow): A row fetched with need_meeting_log=True.
+            row (ParticipantSearchRow): The row meetings are being extracted
+                for (used only for mentor_id/mentee_id to resolve note tags).
+            meetings (list[MentorshipMeetingEntity]): This row's pair's
+                meeting rows, already ordered.
 
         Returns:
-            list[AdminMeetingDto]: This row's meetings, oldest first by
-                created_datetime.
+            list[AdminMeetingDto]: This row's meetings, in the given order.
         """
-        meeting_log = row.meeting_log or {}
-        google_meetings = meeting_log.get("google_meetings") or []
-        meeting_time_list = meeting_log.get("meeting_time_list") or []
-
-        all_meetings = sorted(
-            google_meetings + meeting_time_list,
-            key=lambda m: m["created_datetime"],
-        )
         return [
             self.mentorship_mapper.map_to_admin_meeting_dto(
-                m,
-                is_completed=m["is_completed"],
-                note_tags=self._resolve_meeting_notes(m, row.mentor_id, row.mentee_id),
+                self._meeting_row_to_admin_dict(m),
+                is_completed=m.is_completed,
+                note_tags=self._resolve_meeting_notes_from_row(
+                    m, row.mentor_id, row.mentee_id
+                ),
             )
-            for m in all_meetings
+            for m in meetings
         ]
 
     def _get_required_meetings(
@@ -797,6 +799,12 @@ class MentorshipAdminService:
         are built before writing to avoid partially exporting a participant
         when one meeting fails.
 
+        When expand_meetings needs meeting data, it is fetched with exactly
+        one `mentorship_meeting_repository.get_meetings_by_pairs` call per
+        page (grouped by pair_id, up to _EXPORT_BATCH_SIZE pairs), not one
+        query per row -- the same batching this method already applies to
+        users/emails/trainings via `_fetch_batch_relations`.
+
         Args:
             filters (ParticipantSearchFilterDto): Same filters as the search
                 endpoint. filters.participation_status must be set, since it
@@ -816,7 +824,7 @@ class MentorshipAdminService:
         if filters.participation_status is None:
             raise ValueError("filters.participation_status is required for CSV export.")
         is_participant = filters.participation_status == "participant"
-        need_meeting_log = is_participant and expand_meetings
+        need_meetings = is_participant and expand_meetings
         buffer = io.StringIO()
         writer = csv.writer(buffer)
 
@@ -849,7 +857,6 @@ class MentorshipAdminService:
                 rows = await self.participants_repository.iter_search_participants_for_admin(
                     session,
                     filters,
-                    need_meeting_log=need_meeting_log,
                     limit=_EXPORT_BATCH_SIZE,
                     offset=offset,
                 )
@@ -861,6 +868,19 @@ class MentorshipAdminService:
                     emails_map,
                     trainings_map,
                 ) = await self._fetch_batch_relations(session, rows)
+
+                # One batched call for the whole page instead of a per-row
+                # query -- get_meetings_by_pairs excludes LEGACY rows (NULL
+                # times) by default, which must never reach a meeting column
+                # that expects a real datetime.
+                meetings_by_pair: dict[int, list[MentorshipMeetingEntity]] = {}
+                if need_meetings:
+                    pair_ids = [row.pair_id for row in rows if row.pair_id is not None]
+                    meetings_by_pair = (
+                        await self.mentorship_meeting_repository.get_meetings_by_pairs(
+                            session=session, pair_ids=pair_ids
+                        )
+                    )
 
                 for row in rows:
                     try:
@@ -881,7 +901,9 @@ class MentorshipAdminService:
                                     ]
                                 ]
                             else:
-                                meetings = self._extract_meetings_for_row(row)
+                                meetings = self._extract_meetings_for_row(
+                                    row, meetings_by_pair.get(row.pair_id, [])
+                                )
                                 if meetings:
                                     csv_rows = [
                                         common

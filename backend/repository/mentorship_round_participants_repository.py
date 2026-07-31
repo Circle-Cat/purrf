@@ -295,7 +295,7 @@ class MentorshipRoundParticipantsRepository:
 
         return completed if is_completed else not_(completed)
 
-    def _build_admin_search_stmt(self, filters, *, need_meeting_log: bool = False):
+    def _build_admin_search_stmt(self, filters):
         """
         Build the base SELECT statement for the admin participant search.
 
@@ -306,8 +306,6 @@ class MentorshipRoundParticipantsRepository:
 
         Args:
             filters (ParticipantSearchFilterDto): Filter parameters to apply.
-            need_meeting_log (bool): If True, also select the pair's raw
-                meeting_log JSONB (used by the CSV export's detailed mode).
 
         Returns:
             Select: A SQLAlchemy SELECT statement with all filter conditions applied.
@@ -324,8 +322,6 @@ class MentorshipRoundParticipantsRepository:
             MentorshipPairsEntity.mentor_id.label("mentor_id"),
             MentorshipPairsEntity.mentee_id.label("mentee_id"),
         ]
-        if need_meeting_log:
-            columns.append(MentorshipPairsEntity.meeting_log.label("meeting_log"))
 
         stmt = (
             select(*columns)
@@ -516,7 +512,6 @@ class MentorshipRoundParticipantsRepository:
         session: AsyncSession,
         filters: ParticipantSearchFilterDto,
         *,
-        need_meeting_log: bool = False,
         limit: int = 500,
         offset: int = 0,
     ) -> list[ParticipantSearchRow]:
@@ -530,17 +525,13 @@ class MentorshipRoundParticipantsRepository:
         Args:
             session (AsyncSession): Active database session.
             filters (ParticipantSearchFilterDto): Filter parameters.
-            need_meeting_log (bool): If True, populate meeting_log on each
-                row (needed for the detailed CSV mode; skipped for summary).
             limit (int): Maximum number of rows to return. Defaults to 500.
             offset (int): Number of rows to skip. Defaults to 0.
 
         Returns:
             list[ParticipantSearchRow]: Matching rows for this page.
         """
-        base_stmt = self._build_admin_search_stmt(
-            filters, need_meeting_log=need_meeting_log
-        )
+        base_stmt = self._build_admin_search_stmt(filters)
         order_clauses = self._build_default_order()
         data_stmt = base_stmt.order_by(*order_clauses).limit(limit).offset(offset)
         result = await session.execute(data_stmt)
@@ -554,7 +545,6 @@ class MentorshipRoundParticipantsRepository:
                 completed_count=row.completed_count,
                 mentor_id=row.mentor_id,
                 mentee_id=row.mentee_id,
-                meeting_log=row.meeting_log if need_meeting_log else None,
             )
             for row in result.all()
         ]

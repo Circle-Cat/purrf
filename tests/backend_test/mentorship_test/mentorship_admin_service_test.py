@@ -2,7 +2,6 @@ import copy
 import unittest
 from unittest.mock import MagicMock, AsyncMock
 from dateutil.parser import isoparse
-from pydantic import ValidationError
 from backend.mentorship.mentorship_admin_service import MentorshipAdminService
 from backend.dto.participant_search_filter_dto import ParticipantSearchFilterDto
 from backend.dto.participant_search_row_dto import ParticipantSearchRow
@@ -33,7 +32,6 @@ def _make_row(**kwargs):
         completed_count=None,
         mentor_id=None,
         mentee_id=None,
-        meeting_log=None,
     )
     row_fields.update(kwargs)
     return ParticipantSearchRow(**row_fields)
@@ -111,6 +109,7 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
 
         self.mock_meeting_repo = MagicMock()
         self.mock_meeting_repo.get_meetings_by_pair = AsyncMock(return_value=[])
+        self.mock_meeting_repo.get_meetings_by_pairs = AsyncMock(return_value={})
         self.mock_meeting_repo.delete_meetings = AsyncMock(return_value=0)
         self.mock_meeting_repo.recalculate_completed_count = AsyncMock(
             return_value=0
@@ -698,94 +697,86 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(non_participant, ["", ""])
 
-    def test_extract_meetings_for_row_empty_meeting_log_returns_empty_list(self):
-        """A row with no meeting_log (e.g. non-participant) yields no meetings."""
-        row = _make_row(user_id=1, meeting_log=None)
-        self.assertEqual(self.service._extract_meetings_for_row(row), [])
+    def test_extract_meetings_for_row_no_meetings_returns_empty_list(self):
+        """A row whose pair has no meeting rows (or no pair at all) yields
+        no meetings."""
+        row = _make_row(user_id=1)
+        self.assertEqual(self.service._extract_meetings_for_row(row, []), [])
 
-    def test_extract_meetings_for_row_v2_resolves_notes(self):
-        """Resolves v2 meeting notes using the same note logic as get_meeting_log."""
-        row = _make_row(
-            user_id=1,
-            mentor_id=10,
-            mentee_id=20,
-            meeting_log={
-                "google_meetings": [
-                    {
-                        "meeting_id": "m1",
-                        "start_datetime": "2024-07-15T22:00:00Z",
-                        "end_datetime": "2024-07-15T23:00:00Z",
-                        "created_datetime": "2024-07-01T00:00:00Z",
-                        "is_completed": False,
-                        "absent_user_id": 10,
-                    }
-                ]
-            },
+    def test_extract_meetings_for_row_resolves_notes_from_rows(self):
+        """Resolves notes using the row-based note logic
+        (_resolve_meeting_notes_from_row), not the old dict-based one, and
+        reads is_completed from the row rather than hardcoding it."""
+        row = _make_row(user_id=1, mentor_id=10, mentee_id=20)
+        meeting = _make_meeting(
+            meeting_id="m1",
+            start_datetime="2024-07-15T22:00:00+00:00",
+            end_datetime="2024-07-15T23:00:00+00:00",
+            created_datetime="2024-07-01T00:00:00+00:00",
+            is_completed=False,
+            absent_user_id=10,
         )
 
-        meetings = self.service._extract_meetings_for_row(row)
+        meetings = self.service._extract_meetings_for_row(row, [meeting])
 
         self.assertEqual(len(meetings), 1)
         self.assertEqual(meetings[0].meeting_id, "m1")
         self.assertEqual(meetings[0].note, [MeetingNoteTag.MENTOR_ABSENT])
+        self.assertFalse(meetings[0].is_completed)
 
-    def test_extract_meetings_for_row_mixed_generations_merged_and_ordered(self):
-        """Combines google_meetings and meeting_time_list into one
-        created_datetime-ordered list instead of picking one over the other,
-        and reads each entry's real is_completed value instead of hardcoding
-        True for the manual one."""
-        row = _make_row(
-            user_id=1,
-            mentor_id=10,
-            mentee_id=20,
-            meeting_log={
-                "google_meetings": [
-                    {
-                        "meeting_id": "g1",
-                        "start_datetime": "2024-02-01T10:00:00Z",
-                        "end_datetime": "2024-02-01T11:00:00Z",
-                        "created_datetime": "2024-02-01T09:00:00Z",
-                        "is_completed": True,
-                    },
-                ],
-                "meeting_time_list": [
-                    {
-                        "meeting_id": "v1-1",
-                        "start_datetime": "2024-01-01T10:00:00Z",
-                        "end_datetime": "2024-01-01T11:00:00Z",
-                        "created_datetime": "2024-01-01T09:00:00Z",
-                        "is_completed": False,
-                    },
-                ],
-            },
+    def test_extract_meetings_for_row_combines_manual_and_google_without_hiding_either(
+        self,
+    ):
+        """A pair holding both MANUAL and GOOGLE rows shows both -- no
+        priority branch hides one generation in favor of the other."""
+        row = _make_row(user_id=1, mentor_id=10, mentee_id=20)
+        manual = _make_meeting(
+            meeting_id="v1-1",
+            source=MeetingSource.MANUAL,
+            start_datetime="2024-01-01T10:00:00+00:00",
+            is_completed=False,
+        )
+        google = _make_meeting(
+            meeting_id="g1",
+            source=MeetingSource.GOOGLE,
+            start_datetime="2024-02-01T10:00:00+00:00",
+            is_completed=True,
         )
 
-        meetings = self.service._extract_meetings_for_row(row)
+        meetings = self.service._extract_meetings_for_row(row, [manual, google])
 
         self.assertEqual([m.meeting_id for m in meetings], ["v1-1", "g1"])
         self.assertFalse(meetings[0].is_completed)  # real value, not forced True
         self.assertTrue(meetings[1].is_completed)
 
-    def test_extract_meetings_for_row_v2_malformed_datetime_raises(self):
-        """Raises a validation error for a meeting with start_datetime=None."""
-        row = _make_row(
-            user_id=1,
-            mentor_id=10,
-            mentee_id=20,
-            meeting_log={
-                "google_meetings": [
-                    {
-                        "meeting_id": "m1",
-                        "start_datetime": None,
-                        "end_datetime": "2024-07-15T23:00:00Z",
-                        "created_datetime": "2024-07-01T00:00:00Z",
-                        "is_completed": True,
-                    }
-                ]
-            },
+    def test_extract_meetings_for_row_preserves_repository_order_not_created_datetime(
+        self,
+    ):
+        """Ordering unification, pinned: trusts whatever order `meetings` is
+        handed in (the repository's start_datetime-then-created_datetime-
+        then-meeting_id order) instead of re-sorting by created_datetime the
+        way the JSONB-era version did. A row created later but scheduled
+        earlier still comes first, matching get_meeting_log's ordering."""
+        row = _make_row(user_id=1, mentor_id=10, mentee_id=20)
+        later_start_earlier_created = _make_meeting(
+            meeting_id="m-later-start",
+            start_datetime="2024-02-01T10:00:00+00:00",
+            created_datetime="2024-01-01T00:00:00+00:00",
         )
-        with self.assertRaises(ValidationError):
-            self.service._extract_meetings_for_row(row)
+        earlier_start_later_created = _make_meeting(
+            meeting_id="m-earlier-start",
+            start_datetime="2024-01-01T10:00:00+00:00",
+            created_datetime="2024-02-01T00:00:00+00:00",
+        )
+        # This is the order the real repository would return them in
+        # (start_datetime ascending); a created_datetime sort would reverse it.
+        meetings = [earlier_start_later_created, later_start_earlier_created]
+
+        result = self.service._extract_meetings_for_row(row, meetings)
+
+        self.assertEqual(
+            [m.meeting_id for m in result], ["m-earlier-start", "m-later-start"]
+        )
 
     async def test_missing_participation_status_raises_value_error(self):
         """Requires participation_status — an unfiltered "both" export isn't supported."""
@@ -840,11 +831,8 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(lines), 2)
         self.assertTrue(lines[1].startswith("1,Alice,Doe,,,,"))
 
-        # need_meeting_log must be False for summary mode.
-        first_call = self.mock_participants_repo.iter_search_participants_for_admin.call_args_list[
-            0
-        ]
-        self.assertFalse(first_call.kwargs["need_meeting_log"])
+        # Summary mode never needs meeting rows at all.
+        self.mock_meeting_repo.get_meetings_by_pairs.assert_not_awaited()
 
     async def test_summary_mode_first_chunk_starts_with_utf8_bom(self):
         """The raw byte stream is prefixed with a UTF-8 BOM so Excel on
@@ -865,22 +853,16 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
 
     async def test_detailed_mode_emits_one_row_per_meeting_and_pt_formats_time(self):
         """Detailed mode: one CSV row per meeting, using the PT formatter."""
-        row = _make_row(
-            user_id=1,
-            mentor_id=1,
-            mentee_id=2,
-            meeting_log={
-                "google_meetings": [
-                    {
-                        "meeting_id": "m1",
-                        "start_datetime": "2024-07-15T22:00:00Z",
-                        "end_datetime": "2024-07-15T23:00:00Z",
-                        "created_datetime": "2024-07-01T00:00:00Z",
-                        "is_completed": True,
-                    }
-                ]
-            },
+        row = _make_row(user_id=1, pair_id=1, mentor_id=1, mentee_id=2)
+        meeting = _make_meeting(
+            meeting_id="m1",
+            pair_id=1,
+            start_datetime="2024-07-15T22:00:00+00:00",
+            end_datetime="2024-07-15T23:00:00+00:00",
+            created_datetime="2024-07-01T00:00:00+00:00",
+            is_completed=True,
         )
+        self.mock_meeting_repo.get_meetings_by_pairs.return_value = {1: [meeting]}
         self.mock_participants_repo.iter_search_participants_for_admin.side_effect = [
             [row],
             [],
@@ -911,13 +893,59 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
                 "Note",
             ],
         )
-        self.assertIn("PT(2024-07-15T22:00:00Z)", lines[1])
+        self.assertIn("PT(2024-07-15T22:00:00+00:00)", lines[1])
         self.assertIn("Completed", lines[1])
 
-        second_call = self.mock_participants_repo.iter_search_participants_for_admin.call_args_list[
-            0
+        # Batched exactly once per page, with this page's pair_ids.
+        self.mock_meeting_repo.get_meetings_by_pairs.assert_awaited_once_with(
+            session=self.mock_session, pair_ids=[1]
+        )
+
+    async def test_detailed_mode_batches_meetings_once_for_a_multi_row_page(self):
+        """Acceptance criterion: a page with several participant rows fetches
+        meetings with exactly one get_meetings_by_pairs call, not one per row."""
+        rows = [
+            _make_row(user_id=uid, pair_id=pid, mentor_id=uid, mentee_id=uid + 100)
+            for uid, pid in [(1, 10), (2, 20), (3, 30)]
         ]
-        self.assertTrue(second_call.kwargs["need_meeting_log"])
+        meetings_by_pair = {
+            10: [_make_meeting(meeting_id="m10", pair_id=10)],
+            20: [_make_meeting(meeting_id="m20", pair_id=20)],
+            # pair 30 deliberately absent: get_meetings_by_pairs omits pairs
+            # with no rows rather than mapping them to an empty list.
+        }
+        self.mock_meeting_repo.get_meetings_by_pairs.return_value = meetings_by_pair
+        self.mock_participants_repo.iter_search_participants_for_admin.side_effect = [
+            rows,
+            [],
+        ]
+        self.mock_users_repo.get_users_and_emails_by_ids.return_value = (
+            {
+                uid: MagicMock(
+                    user_id=uid, first_name=f"User{uid}", last_name="X", preferred_name=None
+                )
+                for uid in (1, 2, 3)
+            },
+            {1: [], 2: [], 3: []},
+        )
+
+        csv_text = await _collect_csv(
+            self.service.stream_export_csv(
+                ParticipantSearchFilterDto(participation_status="participant"),
+                expand_meetings=True,
+            )
+        )
+
+        # Exactly one batched call for the whole page, regardless of row count.
+        self.mock_meeting_repo.get_meetings_by_pairs.assert_awaited_once_with(
+            session=self.mock_session, pair_ids=[10, 20, 30]
+        )
+        lines = csv_text.strip("\r\n").split("\r\n")
+        self.assertEqual(len(lines), 4)  # header + 3 rows (1 meeting row each)
+        # Row for pair 30 (absent from the batch dict) gets blank meeting columns
+        # via .get(pair_id, []), not a KeyError.
+        row_for_pair_30 = next(line for line in lines[1:] if line.startswith("3,"))
+        self.assertEqual(row_for_pair_30.split(",")[-4:], ["", "", "", ""])
 
     async def test_detailed_mode_skips_row_on_processing_failure_and_logs(self):
         """Logs and skips a row whose meeting data fails to process."""
@@ -927,17 +955,6 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
             pair_id=100,
             mentor_id=1,
             mentee_id=2,
-            meeting_log={
-                "google_meetings": [
-                    {
-                        "meeting_id": "m-bad",
-                        "start_datetime": None,
-                        "end_datetime": "2024-07-15T23:00:00Z",
-                        "created_datetime": "2024-07-01T00:00:00Z",
-                        "is_completed": True,
-                    }
-                ]
-            },
         )
         good_row = _make_row(
             user_id=2,
@@ -945,18 +962,27 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
             pair_id=200,
             mentor_id=2,
             mentee_id=3,
-            meeting_log={
-                "google_meetings": [
-                    {
-                        "meeting_id": "m-good",
-                        "start_datetime": "2024-07-15T22:00:00Z",
-                        "end_datetime": "2024-07-15T23:00:00Z",
-                        "created_datetime": "2024-07-01T00:00:00Z",
-                        "is_completed": True,
-                    }
-                ]
-            },
         )
+        bad_meeting = _make_meeting(
+            meeting_id="m-bad",
+            pair_id=100,
+            start_datetime=None,  # never happens for real MANUAL/GOOGLE rows
+            end_datetime="2024-07-15T23:00:00+00:00",
+            created_datetime="2024-07-01T00:00:00+00:00",
+            is_completed=True,
+        )
+        good_meeting = _make_meeting(
+            meeting_id="m-good",
+            pair_id=200,
+            start_datetime="2024-07-15T22:00:00+00:00",
+            end_datetime="2024-07-15T23:00:00+00:00",
+            created_datetime="2024-07-01T00:00:00+00:00",
+            is_completed=True,
+        )
+        self.mock_meeting_repo.get_meetings_by_pairs.return_value = {
+            100: [bad_meeting],
+            200: [good_meeting],
+        }
         self.mock_participants_repo.iter_search_participants_for_admin.side_effect = [
             [bad_row, good_row],
             [],
@@ -994,37 +1020,32 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
         """Skips the whole row when one meeting fails, avoiding partial meeting output."""
 
         def _format_or_raise(iso, fmt="%Y-%m-%d %H:%M %Z"):
-            if iso == "bad-datetime":
+            if iso == "2024-07-16T22:00:00+00:00":
                 raise ValueError(f"Invalid ISO datetime string: {iso}")
             return f"PT({iso})"
 
         self.mock_date_time_util.format_iso_utc_to_pt.side_effect = _format_or_raise
 
-        row = _make_row(
-            user_id=1,
-            round_id=10,
+        row = _make_row(user_id=1, round_id=10, pair_id=100, mentor_id=1, mentee_id=2)
+        good_meeting = _make_meeting(
+            meeting_id="m-good",
             pair_id=100,
-            mentor_id=1,
-            mentee_id=2,
-            meeting_log={
-                "google_meetings": [
-                    {
-                        "meeting_id": "m-good",
-                        "start_datetime": "2024-07-15T22:00:00Z",
-                        "end_datetime": "2024-07-15T23:00:00Z",
-                        "created_datetime": "2024-07-01T00:00:00Z",
-                        "is_completed": True,
-                    },
-                    {
-                        "meeting_id": "m-bad",
-                        "start_datetime": "2024-07-16T22:00:00Z",
-                        "end_datetime": "bad-datetime",
-                        "created_datetime": "2024-07-02T00:00:00Z",
-                        "is_completed": True,
-                    },
-                ]
-            },
+            start_datetime="2024-07-15T22:00:00+00:00",
+            end_datetime="2024-07-15T23:00:00+00:00",
+            created_datetime="2024-07-01T00:00:00+00:00",
+            is_completed=True,
         )
+        bad_meeting = _make_meeting(
+            meeting_id="m-bad",
+            pair_id=100,
+            start_datetime="2024-07-16T22:00:00+00:00",
+            end_datetime="2024-07-16T23:00:00+00:00",
+            created_datetime="2024-07-02T00:00:00+00:00",
+            is_completed=True,
+        )
+        self.mock_meeting_repo.get_meetings_by_pairs.return_value = {
+            100: [good_meeting, bad_meeting]
+        }
         self.mock_participants_repo.iter_search_participants_for_admin.side_effect = [
             [row],
             [],
@@ -1051,7 +1072,8 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
 
     async def test_detailed_mode_keeps_row_with_no_meetings_blank(self):
         """Keeps a row with no meetings instead of dropping it, with blank meeting columns."""
-        row = _make_row(user_id=1, pair_id=5, meeting_log={})
+        row = _make_row(user_id=1, pair_id=5)
+        self.mock_meeting_repo.get_meetings_by_pairs.return_value = {}
         self.mock_participants_repo.iter_search_participants_for_admin.side_effect = [
             [row],
             [],
@@ -1122,12 +1144,9 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(lines[1], "1,Alice,Doe,,,,done,")
 
-        # need_meeting_log must stay False for a non-participant export even
-        # when expand_meetings=True, since non-participants have no meetings.
-        first_call = self.mock_participants_repo.iter_search_participants_for_admin.call_args_list[
-            0
-        ]
-        self.assertFalse(first_call.kwargs["need_meeting_log"])
+        # A non-participant export never needs meeting rows, even with
+        # expand_meetings=True, since non-participants have no pair/meetings.
+        self.mock_meeting_repo.get_meetings_by_pairs.assert_not_awaited()
 
     async def test_stops_paginating_on_empty_page(self):
         """The batch loop stops as soon as a page comes back empty."""
