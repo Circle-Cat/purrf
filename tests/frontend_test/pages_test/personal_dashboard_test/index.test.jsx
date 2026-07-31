@@ -10,6 +10,9 @@ import { PERMISSIONS } from "@/constants/Permissions";
 import { MentorshipRoundStatus } from "@/constants/MentorshipRoundStatus";
 import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
 import { useFeatureFlags } from "@/hooks/useFeatureFlags";
+import * as profileApi from "@/api/profileApi";
+
+vi.mock("@/api/profileApi");
 
 vi.mock("@/pages/PersonalDashboard/components/MentorshipInfoBanner", () => ({
   default: vi.fn(({ registration, isRegistrationOpen }) => (
@@ -96,6 +99,9 @@ describe("PersonalDashboard", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    profileApi.getMyProfile.mockResolvedValue({
+      data: { profile: { training: [] } },
+    });
     useMentorshipData.mockReturnValue(mockHookData);
     useWorkActivityData.mockReturnValue(defaultWorkActivityMock);
     useMyApplications.mockReturnValue({

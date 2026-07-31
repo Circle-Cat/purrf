@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, call, create_autospec
 from backend.recruiting.application_access import ApplicationAccess
 from backend.recruiting.board_service import TERMINAL_STAGES, BoardService
 from backend.recruiting.interview_scheduling_service import InterviewSchedulingService
+from backend.mentorship.onboarding_training_service import OnboardingTrainingService
 from backend.recruiting.notification_dispatcher import NotificationDispatcher
 from backend.recruiting.recruiting_mapper import RecruitingMapper
 from backend.dto.board_dto import (
@@ -132,6 +133,11 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         # it was cancelled"; the flag-off tests assert it is never awaited.
         self.interview_svc = create_autospec(InterviewSchedulingService, instance=True)
         self.interview_svc.cancel_for_round.return_value = True
+        # autospec so a signature drift on ensure_for_admitted fails the test
+        # instead of silently accepting any arity.
+        self.onboarding_training_svc = create_autospec(
+            OnboardingTrainingService, instance=True
+        )
         self.dispatcher = self._dispatcher_double()
         self.service = BoardService(
             self.job_repo,
@@ -153,6 +159,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             self.interview_repo,
             self.application_access,
             self.interview_svc,
+            self.onboarding_training_svc,
         )
         # Default persistence mocks: echo the entity back, like SQLAlchemy's
         # merge-and-flush does when nothing else stubs them out.
@@ -2110,6 +2117,45 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         saved = self.app_repo.update.call_args.args[1]
         self.assertIsNotNone(saved.stage_entered_at)
         self.assertGreaterEqual(saved.stage_entered_at, before)
+
+    async def test_change_stage_to_hired_assigns_onboarding_training(self):
+        """Admitting to HIRED is what assigns the onboarding training task;
+        OnboardingTrainingService itself decides whether the job's kind/role
+        actually owes one (Task 2) -- change_stage just always calls it."""
+        job = self._job(job_id=1, owner_ids=(2,), stages=("tech",))
+        application = self._application(
+            application_id=10, job_id=1, user_id=5, stage=ApplicationStage.TECH
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+        self.evaluation_repo.has_confirmed.return_value = True
+
+        dto = StageChangeDto(to_stage=ApplicationStage.HIRED)
+        await self.service.change_stage(self.session, self._ctx(user_id=2), 10, dto)
+
+        self.onboarding_training_svc.ensure_for_admitted.assert_awaited_once_with(
+            session=self.session,
+            user_id=5,
+            job=job,
+        )
+
+    async def test_change_stage_to_rejected_does_not_assign_onboarding_training(self):
+        job = self._job(job_id=1, owner_ids=(2,), stages=("tech",))
+        application = self._application(
+            application_id=10, job_id=1, stage=ApplicationStage.TECH
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+        self.evaluation_repo.has_confirmed.return_value = True
+
+        dto = StageChangeDto(
+            to_stage=ApplicationStage.REJECTED, reason=REJECT_REASONS[0]
+        )
+        await self.service.change_stage(self.session, self._ctx(user_id=2), 10, dto)
+
+        self.onboarding_training_svc.ensure_for_admitted.assert_not_awaited()
 
     # -- reassign --
 

@@ -1,11 +1,9 @@
 import React from "react";
 
 import { Badge } from "@/components/ui/badge";
-import {
-  isIncompleteOnboarding,
-  TrainingCategoryLabel,
-} from "@/pages/Profile/utils";
+import { TrainingCategoryLabel } from "@/pages/Profile/utils";
 import { formatInTz } from "@/utils/dateTime";
+import { isIncompleteOnboarding } from "@/utils/training";
 import { safeHttpUrl } from "@/utils/url";
 
 /**

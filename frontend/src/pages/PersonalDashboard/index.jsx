@@ -5,6 +5,7 @@ import { useMentorshipData } from "@/pages/PersonalDashboard/hooks/useMentorship
 import { useWorkActivityData } from "@/pages/PersonalDashboard/hooks/useWorkActivityData";
 import MyApplicationsCard from "@/pages/PersonalDashboard/components/MyApplicationsCard";
 import { useMyApplications } from "@/pages/PersonalDashboard/hooks/useMyApplications";
+import { useOnboardingTrainingReminder } from "@/pages/PersonalDashboard/hooks/useOnboardingTrainingReminder";
 import { useAuth } from "@/context/auth";
 import { PERMISSIONS } from "@/constants/Permissions";
 import { MentorshipRoundStatus } from "@/constants/MentorshipRoundStatus";
@@ -44,6 +45,8 @@ const PersonalDashboard = () => {
     !isApplicationsLoading &&
     !applicationsLoadError &&
     hiredMentorshipRole !== null;
+
+  useOnboardingTrainingReminder({ enabled: showMentorshipSection });
 
   const {
     registration, // Registration data for the current or most recent round

@@ -2,6 +2,8 @@ import unittest
 from datetime import date, datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, create_autospec
+from backend.common.mentorship_enums import ParticipantRole
+from backend.mentorship.onboarding_training_service import OnboardingTrainingService
 from backend.recruiting.application_service import ApplicationService
 from backend.recruiting.notification_dispatcher import NotificationDispatcher
 from backend.recruiting.recruiting_mapper import RecruitingMapper
@@ -60,6 +62,11 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         # matches against every confirmed claim, not one contact address.
         self.user_emails_repo = MagicMock()
         self.user_emails_repo.list_by_user_id = AsyncMock(return_value=[])
+        # autospec so a signature drift on ensure_for_admitted fails the test
+        # instead of silently accepting any arity.
+        self.onboarding_training_svc = create_autospec(
+            OnboardingTrainingService, instance=True
+        )
         self.service = ApplicationService(
             self.app_repo,
             self.sub_repo,
@@ -70,6 +77,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             self.activity_repo,
             self.dispatcher,
             self.user_emails_repo,
+            self.onboarding_training_svc,
         )
 
     def _dispatcher_double(self):
@@ -860,6 +868,49 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             "application_submitted",
             details={"stage": "hired", "screenAutoHireRuleId": "r1"},
         )
+
+    async def test_submit_auto_hire_assigns_onboarding_training(self):
+        """An `auto_hire` screen rule admits the candidate without any board
+        action, so this is a second, independent path into HIRED --
+        OnboardingTrainingService itself decides whether the job's kind/role
+        actually owes one (Task 2); submit just always calls it once HIRED."""
+        job = self._job(
+            screen_rules={
+                "rules": [
+                    {
+                        "id": "r1",
+                        "condition": {
+                            "source": "email_domain",
+                            "operator": "equals",
+                            "value": "circlecat.org",
+                        },
+                        "action": "auto_hire",
+                    }
+                ]
+            }
+        )
+        job.mentorship_role = ParticipantRole.MENTEE
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.user_emails_repo.list_by_user_id.return_value = [
+            self._email_row("a@circlecat.org")
+        ]
+        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+
+        await self.service.submit(self.session, self._ctx(), dto)
+
+        self.onboarding_training_svc.ensure_for_admitted.assert_awaited_once_with(
+            session=self.session,
+            user_id=2,
+            job=job,
+        )
+
+    async def test_submit_without_auto_hire_does_not_assign_onboarding_training(self):
+        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+
+        result = await self.service.submit(self.session, self._ctx(), dto)
+
+        self.assertEqual(result.stage, ApplicationStage.RECRUITER_SCREENING)
+        self.onboarding_training_svc.ensure_for_admitted.assert_not_awaited()
 
     async def test_submit_email_domain_include_and_exclude_rules_together(self):
         """A posting configured with both an include+auto_hire rule and an

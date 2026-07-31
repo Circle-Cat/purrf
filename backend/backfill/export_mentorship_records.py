@@ -153,6 +153,33 @@ MENTEE_COLUMNS = [
 ]
 
 
+def completed_on_time(training) -> bool:
+    """Whether a mentee finished onboarding training by its deadline.
+
+    One grace day is allowed on top of `training.deadline`, which is itself
+    set to the round's application deadline + 2 days, giving the "+3 days"
+    rule the export is specified in terms of.
+
+    A row created at admission has no deadline until the mentee first
+    registers for a round, so a completed row with `deadline is None` has no
+    date to miss and counts as on time.
+
+    Args:
+        training (TrainingEntity | None): The mentee's onboarding row, or
+            None when they have none.
+
+    Returns:
+        bool: True when the training is DONE and was completed in time.
+    """
+    if training is None or training.status != TrainingStatus.DONE:
+        return False
+    if training.completed_timestamp is None:
+        return False
+    if training.deadline is None:
+        return True
+    return training.completed_timestamp <= training.deadline + timedelta(days=1)
+
+
 async def compute_ineligible_mentee_ids(
     session,
     round_id: int,
@@ -208,13 +235,7 @@ async def compute_ineligible_mentee_ids(
     ineligible: list[int] = []
     for user_id, training, prev_pair in (await session.execute(stmt)).all():
         # Rule 1: training must be completed by application deadline + 3 days.
-        # (training.deadline is set to application_deadline + 2, so allow +1 grace day.)
-        is_trained = (
-            training is not None
-            and training.status == TrainingStatus.DONE
-            and training.completed_timestamp is not None
-            and training.completed_timestamp <= training.deadline + timedelta(days=1)
-        )
+        is_trained = completed_on_time(training)
         if not is_trained:
             logger.info(
                 "Ineligible mentee user_id=%s: incomplete or late training", user_id
