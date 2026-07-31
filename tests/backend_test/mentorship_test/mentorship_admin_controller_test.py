@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, AsyncMock, patch
 from http import HTTPStatus
 from backend.mentorship.mentorship_admin_controller import MentorshipAdminController
 from backend.dto.participant_search_filter_dto import ParticipantSearchFilterDto
+from backend.dto.v2_meeting_batch_update_dto import V2MeetingBatchUpdateDto
 
 
 class TestMentorshipAdminController(unittest.IsolatedAsyncioTestCase):
@@ -10,6 +11,7 @@ class TestMentorshipAdminController(unittest.IsolatedAsyncioTestCase):
         self.mock_admin_service = MagicMock()
         self.mock_admin_service.search_participants = AsyncMock()
         self.mock_admin_service.get_meeting_log = AsyncMock()
+        self.mock_admin_service.apply_v2_meeting_batch = AsyncMock()
         self.mock_admin_service.stream_export_csv = MagicMock()
 
         self.mock_database = MagicMock()
@@ -100,6 +102,22 @@ class TestMentorshipAdminController(unittest.IsolatedAsyncioTestCase):
         )
         self.mock_api_response.assert_called_once_with(
             message="Successfully retrieved meeting log.",
+            data=mock_result,
+        )
+
+    async def test_update_meeting_log_delegates_to_service(self):
+        """Delegates to service and wraps the result in api_response."""
+        batch = V2MeetingBatchUpdateDto(deletes=["m1"])
+        mock_result = MagicMock()
+        self.mock_admin_service.apply_v2_meeting_batch.return_value = mock_result
+
+        await self.controller.update_meeting_log(pair_id=1, batch=batch)
+
+        self.mock_admin_service.apply_v2_meeting_batch.assert_awaited_once_with(
+            self.mock_session, 1, batch
+        )
+        self.mock_api_response.assert_called_once_with(
+            message="Successfully updated meeting log.",
             data=mock_result,
         )
 

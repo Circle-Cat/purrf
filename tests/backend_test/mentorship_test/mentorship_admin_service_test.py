@@ -5,6 +5,11 @@ from backend.mentorship.mentorship_admin_service import MentorshipAdminService
 from backend.dto.participant_search_filter_dto import ParticipantSearchFilterDto
 from backend.dto.participant_search_row_dto import ParticipantSearchRow
 from backend.dto.admin_meeting_log_dto import AdminMeetingDto
+from backend.dto.v2_meeting_batch_update_dto import (
+    V2MeetingBatchUpdateDto,
+    V2MeetingUpdateItemDto,
+)
+from backend.common.exceptions import ConflictError
 from backend.common.mentorship_enums import (
     ApprovalStatus,
     MeetingNoteTag,
@@ -34,6 +39,20 @@ async def _collect_csv(agen) -> str:
     """Decodes with utf-8-sig to strip the leading UTF-8 BOM the export writes."""
     chunks = [chunk async for chunk in agen]
     return b"".join(chunks).decode("utf-8-sig")
+
+
+def _make_pair(mentor_id=1, mentee_id=2, google_meetings=None):
+    pair = MagicMock()
+    pair.pair_id = 1
+    pair.mentor_id = mentor_id
+    pair.mentee_id = mentee_id
+    meetings = google_meetings or []
+    for m in meetings:
+        m.setdefault("start_datetime", "2024-01-01T10:00:00")
+        m.setdefault("end_datetime", "2024-01-01T11:00:00")
+        m.setdefault("created_datetime", "2024-01-01T09:00:00")
+    pair.meeting_log = {"google_meetings": meetings}
+    return pair
 
 
 class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
@@ -1081,6 +1100,172 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(lines), 3)  # header + one row per batch
         self.assertTrue(lines[1].startswith("1,Alice,Doe"))
         self.assertTrue(lines[2].startswith("2,Bob,Lee"))
+
+    def test_validate_note_tags_allows_valid_combinations(self):
+        """Test that valid note tag combinations do not raise."""
+        self.service._validate_note_tags(None)
+        self.service._validate_note_tags([])
+        self.service._validate_note_tags([
+            MeetingNoteTag.MENTOR_LATE,
+            MeetingNoteTag.MENTEE_LATE,
+        ])
+
+    def test_validate_note_tags_rejects_two_absent_tags(self):
+        """Two absent tags in the same note list is invalid."""
+        with self.assertRaises(ValueError):
+            self.service._validate_note_tags([
+                MeetingNoteTag.MENTOR_ABSENT,
+                MeetingNoteTag.MENTEE_ABSENT,
+            ])
+
+    def test_validate_note_tags_rejects_unknown_late_with_specific_late(self):
+        """Unknown and specific late tags are mutually exclusive."""
+        with self.assertRaises(ValueError):
+            self.service._validate_note_tags([
+                MeetingNoteTag.UNKNOWN_LATE,
+                MeetingNoteTag.MENTOR_LATE,
+            ])
+
+    def test_apply_note_tags_maps_every_tag_and_clears(self):
+        """Every MeetingNoteTag maps correctly and clears unrelated fields."""
+        mentor_id, mentee_id = 1, 2
+        cleared = {
+            "has_insufficient_duration": False,
+            "has_unknown_absent": False,
+            "absent_user_id": None,
+            "has_unknown_late": False,
+            "late_user_id": [],
+        }
+        cases = [
+            (
+                [MeetingNoteTag.INSUFFICIENT_DURATION],
+                {**cleared, "has_insufficient_duration": True},
+            ),
+            ([MeetingNoteTag.UNKNOWN_ABSENT], {**cleared, "has_unknown_absent": True}),
+            ([MeetingNoteTag.MENTOR_ABSENT], {**cleared, "absent_user_id": mentor_id}),
+            ([MeetingNoteTag.MENTEE_ABSENT], {**cleared, "absent_user_id": mentee_id}),
+            ([MeetingNoteTag.UNKNOWN_LATE], {**cleared, "has_unknown_late": True}),
+            (
+                [MeetingNoteTag.MENTOR_LATE, MeetingNoteTag.MENTEE_LATE],
+                {**cleared, "late_user_id": [mentor_id, mentee_id]},
+            ),
+            ([], cleared),
+        ]
+        for note, expected in cases:
+            meeting = {
+                "has_insufficient_duration": True,
+                "has_unknown_absent": True,
+                "absent_user_id": 999,
+                "has_unknown_late": True,
+                "late_user_id": [999],
+            }
+            self.service._apply_note_tags(meeting, note, mentor_id, mentee_id)
+            for field, value in expected.items():
+                self.assertEqual(meeting[field], value, f"note={note}, field={field}")
+
+    async def test_apply_batch_rejects_malformed_requests_before_touching_db(self):
+        """Empty request, overlapping IDs, and invalid note combos are rejected before touching the DB."""
+        cases = [
+            V2MeetingBatchUpdateDto(),
+            V2MeetingBatchUpdateDto(
+                updates=[V2MeetingUpdateItemDto(meeting_id="m1", is_completed=True)],
+                deletes=["m1"],
+            ),
+            V2MeetingBatchUpdateDto(
+                updates=[
+                    V2MeetingUpdateItemDto(
+                        meeting_id="m1",
+                        note=[
+                            MeetingNoteTag.MENTOR_ABSENT,
+                            MeetingNoteTag.MENTEE_ABSENT,
+                        ],
+                    )
+                ]
+            ),
+        ]
+        for batch in cases:
+            with self.assertRaises(ValueError):
+                await self.service.apply_v2_meeting_batch(self.mock_session, 1, batch)
+        self.mock_pairs_repo.get_pair_by_id.assert_not_awaited()
+
+    async def test_apply_batch_rejects_v1_pair(self):
+        """A pair whose log is v1 (meeting_time_list) cannot be edited."""
+        pair = MagicMock()
+        pair.pair_id = 1
+        pair.meeting_log = {"meeting_time_list": [{"meeting_id": "v1-1"}]}
+        self.mock_pairs_repo.get_pair_by_id.return_value = pair
+
+        with self.assertRaises(ConflictError):
+            await self.service.apply_v2_meeting_batch(
+                self.mock_session,
+                1,
+                V2MeetingBatchUpdateDto(deletes=["v1-1"]),
+            )
+
+    async def test_apply_batch_rejects_unknown_meeting_id(self):
+        """A meeting_id not present in this pair's log is a client error."""
+        pair = _make_pair(google_meetings=[{"meeting_id": "m1", "is_completed": False}])
+        self.mock_pairs_repo.get_pair_by_id.return_value = pair
+
+        with self.assertRaises(ValueError):
+            await self.service.apply_v2_meeting_batch(
+                self.mock_session, 1, V2MeetingBatchUpdateDto(deletes=["missing"])
+            )
+
+    async def test_apply_batch_mixed_update_and_delete(self):
+        """Mixed updates, deletes, and no-op updates correctly recalculate completed_count."""
+        pair = _make_pair(
+            google_meetings=[
+                {"meeting_id": "m1", "is_completed": False},
+                {"meeting_id": "m2", "is_completed": True},
+                {"meeting_id": "m3", "is_completed": True, "has_unknown_absent": True},
+            ]
+        )
+        self.mock_pairs_repo.get_pair_by_id.return_value = pair
+        self.mock_pairs_repo.upsert_pairs = AsyncMock()
+
+        await self.service.apply_v2_meeting_batch(
+            self.mock_session,
+            1,
+            V2MeetingBatchUpdateDto(
+                updates=[
+                    V2MeetingUpdateItemDto(
+                        meeting_id="m1",
+                        is_completed=True,
+                        note=[MeetingNoteTag.MENTOR_ABSENT],
+                    ),
+                    V2MeetingUpdateItemDto(meeting_id="m3"),  # null fields: no-op
+                ],
+                deletes=["m2"],
+            ),
+        )
+
+        saved = {m["meeting_id"]: m for m in pair.meeting_log["google_meetings"]}
+        self.assertEqual(set(saved), {"m1", "m3"})
+        self.assertTrue(saved["m1"]["is_completed"])
+        self.assertEqual(saved["m1"]["absent_user_id"], pair.mentor_id)
+        self.assertTrue(saved["m3"]["is_completed"])
+        self.assertTrue(saved["m3"]["has_unknown_absent"])
+        self.assertEqual(pair.completed_count, 2)
+        self.mock_pairs_repo.upsert_pairs.assert_awaited_once_with(
+            self.mock_session, pair
+        )
+        self.mock_session.commit.assert_awaited_once()
+
+    async def test_apply_batch_uses_row_lock_and_returns_meeting_log(self):
+        """Loads the pair with with_lock=True and returns the pair's current meeting log."""
+        pair = _make_pair(google_meetings=[{"meeting_id": "m1", "is_completed": True}])
+        self.mock_pairs_repo.get_pair_by_id.return_value = pair
+        self.mock_pairs_repo.upsert_pairs = AsyncMock()
+
+        result = await self.service.apply_v2_meeting_batch(
+            self.mock_session, 1, V2MeetingBatchUpdateDto(deletes=["m1"])
+        )
+
+        self.mock_pairs_repo.get_pair_by_id.assert_awaited_once_with(
+            self.mock_session, 1, with_lock=True
+        )
+        self.assertEqual(result.round_version, "v2")
 
 
 if __name__ == "__main__":

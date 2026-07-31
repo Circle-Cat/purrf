@@ -919,6 +919,16 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
 
         self.assertIsNone(result)
 
+    async def test_get_pair_by_id_with_lock_returns_same_row(self):
+        """Test that with_lock=True returns the same pair."""
+        pair = self.pairs[0]
+        result = await self.repo.get_pair_by_id(
+            self.session, pair.pair_id, with_lock=True
+        )
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result.pair_id, pair.pair_id)
+
 
 if __name__ == "__main__":
     unittest.main()

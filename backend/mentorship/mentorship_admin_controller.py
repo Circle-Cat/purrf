@@ -3,6 +3,7 @@ from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from backend.dto.participant_search_filter_dto import ParticipantSearchFilterDto
+from backend.dto.v2_meeting_batch_update_dto import V2MeetingBatchUpdateDto
 from backend.common.fast_api_response_wrapper import api_response
 from backend.common.api_endpoints import (
     MENTORSHIP_ADMIN_PARTICIPANTS,
@@ -34,6 +35,15 @@ class MentorshipAdminController:
                 self.get_meeting_log
             ),
             methods=["GET"],
+            response_model=None,
+        )
+
+        self.router.add_api_route(
+            MENTORSHIP_ADMIN_PAIRS_MEETINGS,
+            endpoint=authenticate(permissions=[Permission.MENTORSHIP_ADMIN_WRITE])(
+                self.update_meeting_log
+            ),
+            methods=["PATCH"],
             response_model=None,
         )
 
@@ -122,5 +132,25 @@ class MentorshipAdminController:
             )
         return api_response(
             message="Successfully retrieved meeting log.",
+            data=result,
+        )
+
+    async def update_meeting_log(self, pair_id: int, batch: V2MeetingBatchUpdateDto):
+        """
+        Apply incremental updates/deletes to a mentorship pair's v2 meeting log.
+
+        Args:
+            pair_id (int): The mentorship pair ID.
+            batch (V2MeetingBatchUpdateDto): Meeting updates and deletions to apply.
+
+        Returns:
+            API response containing the pair's updated meeting log.
+        """
+        async with self.database.session() as session:
+            result = await self.mentorship_admin_service.apply_v2_meeting_batch(
+                session, pair_id, batch
+            )
+        return api_response(
+            message="Successfully updated meeting log.",
             data=result,
         )

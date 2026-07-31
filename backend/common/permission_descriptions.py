@@ -38,7 +38,7 @@ PERMISSION_DESCRIPTIONS: dict[Permission, str] = _validate_complete({
     Permission.DIRECTORY_MICROSOFT_LDAP_READ: "Read user directory data from Microsoft/LDAP.",
     Permission.DASHBOARD_ACTIVITY_SUMMARY_READ: "View the activity summary dashboard.",
     Permission.MENTORSHIP_ADMIN_READ: "Mentorship admin read access: the management page, per-round participant and completed-meeting counts, participant records with pair meeting logs, and cross-participant detail in meeting-log views (the basic round list needs no permission).",
-    Permission.MENTORSHIP_ADMIN_WRITE: "Mentorship admin write access: create or edit mentorship rounds.",
+    Permission.MENTORSHIP_ADMIN_WRITE: "Mentorship admin write access: create or edit mentorship rounds and edit mentorship meeting logs.",
     Permission.RECRUITING_JOB_READ: "View recruiting job postings, and access job-authoring helper lists (approvers, interview pool, owners).",
     Permission.RECRUITING_JOB_WRITE: "Create, edit, submit, close/reopen, or delete a job posting, and access job-authoring helper lists (approvers, interview pool, owners).",
     Permission.RECRUITING_JOB_APPROVE: "Approve or reject a submitted job posting, view your own review queue, and access job-authoring helper lists (approvers, interview pool, owners) — also, as an eligibility marker, appear in the 'approvers' helper list itself.",
