@@ -13,7 +13,6 @@ from backend.common.name_utils import partner_display_name
 from backend.entity.mentorship_meeting_entity import MentorshipMeetingEntity
 from backend.dto.meeting_dto import MeetingDto
 from backend.dto.meeting_create_dto import MeetingCreateDto
-from backend.dto.google_meeting_detail_dto import GoogleMeetingDetailDto
 from backend.dto.google_meeting_response_detail_dto import (
     GoogleMeetingResponseDetailDto,
 )
@@ -329,23 +328,27 @@ class MeetingService:
             calendar_id=self.mentorship_calendar_id,
         )
 
-        meeting_detail = GoogleMeetingDetailDto(
+        new_meeting = MentorshipMeetingEntity(
             meeting_id=meeting["google_event_id"],
-            meet_link=meeting["meet_link"],
-            start_datetime=start_datetime.isoformat(),
-            end_datetime=end_datetime.isoformat(),
+            pair_id=pair.pair_id,
+            source=MeetingSource.GOOGLE,
+            start_datetime=start_datetime,
+            end_datetime=end_datetime,
             is_completed=False,
+            meet_link=meeting["meet_link"],
+            # `conference_id` is the scheduling service's key name for the
+            # Meet code; the column is named `google_meeting_code` instead
+            # because a Meet API "conference record" is a different,
+            # per-occurrence concept. The rename is deliberate.
+            google_meeting_code=meeting["conference_id"],
             entry_points=meeting["entry_points"],
-            conference_id=meeting["conference_id"],
-            created_datetime=meeting["created"],
         )
 
-        # Persist meeting log
+        # Persist the meeting row -- writes only mentorship_meeting, never
+        # pair.meeting_log.
         try:
-            await self.mentorship_pairs_repository.append_google_meeting(
-                session=session,
-                pair_id=pair.pair_id,
-                meeting_entry=meeting_detail.model_dump(),
+            await self.mentorship_meeting_repository.insert_meeting(
+                session=session, meeting=new_meeting
             )
             await session.commit()
         except Exception as e:
@@ -367,13 +370,13 @@ class MeetingService:
 
         # Convert to response DTO
         response_detail = GoogleMeetingResponseDetailDto(
-            meeting_id=meeting_detail.meeting_id,
-            meet_link=meeting_detail.meet_link,
+            meeting_id=new_meeting.meeting_id,
+            meet_link=new_meeting.meet_link,
             attendees=[current_user.user_id, partner.user_id],
-            start_datetime=meeting_detail.start_datetime,
-            end_datetime=meeting_detail.end_datetime,
-            is_completed=meeting_detail.is_completed,
-            entry_points=meeting_detail.entry_points,
+            start_datetime=start_datetime.isoformat(),
+            end_datetime=end_datetime.isoformat(),
+            is_completed=new_meeting.is_completed,
+            entry_points=new_meeting.entry_points,
         )
 
         return response_detail
@@ -480,28 +483,66 @@ class MeetingService:
         """
         Delete Google Calendar meetings across one or more mentorship pairs.
 
+        The Calendar-side deletion is unchanged from before this table
+        switch: it is still handed the bare `meeting_id`, which for a GOOGLE
+        row equals the Calendar event id (see MentorshipMeetingEntity). Only
+        the database side -- the existence check beforehand and the removal
+        afterward -- now goes through `mentorship_meeting_repository` instead
+        of the JSONB `meeting_log` column.
+
         Returns:
             GoogleMeetingDeleteResponseDto: IDs that were successfully deleted and failed.
 
         Raises:
             ValueError:
                 - If deletions is empty.
-                - If any meeting_ids do not exist in the mentorship pair log.
+                - If no mentorship pair matches a deletion's round_id/partner_id.
+                - If any meeting_ids do not exist as GOOGLE rows for that pair.
         """
         if not deletions:
             raise ValueError("deletions must not be empty.")
 
         all_meeting_ids: list[str] = []
+        # Which pair each requested meeting id belongs to, resolved here
+        # while validating existence. Needed afterward because
+        # `delete_meetings`/`recalculate_completed_count` operate per
+        # pair_id, while Calendar's `cancel` call below is batched across
+        # every pair in this request.
+        pair_id_by_meeting_id: dict[str, int] = {}
 
         for deletion in deletions:
-            all_exist = (
-                await self.mentorship_pairs_repository.do_google_meetings_exist_in_log(
-                    session=session,
-                    user_id=user_context.user_id,
-                    round_id=deletion["round_id"],
-                    partner_id=deletion["partner_id"],
-                    meeting_ids=deletion["meeting_ids"],
+            pairs = await self.mentorship_pairs_repository.get_pairs_by_user_and_round(
+                session=session,
+                user_id=user_context.user_id,
+                round_id=deletion["round_id"],
+            )
+            pair = next(
+                (
+                    p
+                    for p in pairs
+                    if deletion["partner_id"] in (p.mentor_id, p.mentee_id)
+                ),
+                None,
+            )
+            if pair is None:
+                raise ValueError(
+                    f"Some meetings were not found for round_id={deletion['round_id']}, "
+                    f"partner_id={deletion['partner_id']}."
                 )
+
+            existing_meetings = (
+                await self.mentorship_meeting_repository.get_meetings_by_pair(
+                    session=session, pair_id=pair.pair_id
+                )
+            )
+            existing_google_ids = {
+                m.meeting_id
+                for m in existing_meetings
+                if m.source == MeetingSource.GOOGLE
+            }
+            requested_ids = deletion["meeting_ids"]
+            all_exist = bool(requested_ids) and all(
+                mid in existing_google_ids for mid in requested_ids
             )
 
             if not all_exist:
@@ -510,7 +551,9 @@ class MeetingService:
                     f"partner_id={deletion['partner_id']}."
                 )
 
-            all_meeting_ids.extend(deletion["meeting_ids"])
+            for mid in requested_ids:
+                pair_id_by_meeting_id[mid] = pair.pair_id
+            all_meeting_ids.extend(requested_ids)
 
         (
             succeeded_event_ids,
@@ -520,11 +563,27 @@ class MeetingService:
         )
 
         if succeeded_event_ids:
-            await self.mentorship_pairs_repository.remove_meetings_from_log(
-                session=session,
-                user_id=user_context.user_id,
-                meeting_ids=list(dict.fromkeys(succeeded_event_ids)),
-            )
+            deduped_succeeded_ids = list(dict.fromkeys(succeeded_event_ids))
+            affected_pair_ids = {
+                pair_id_by_meeting_id[mid] for mid in deduped_succeeded_ids
+            }
+
+            for pair_id in affected_pair_ids:
+                ids_for_pair = [
+                    mid
+                    for mid in deduped_succeeded_ids
+                    if pair_id_by_meeting_id[mid] == pair_id
+                ]
+                await self.mentorship_meeting_repository.delete_meetings(
+                    session=session, pair_id=pair_id, meeting_ids=ids_for_pair
+                )
+                # Same rationale as upsert_meetings: assign the returned
+                # value directly rather than relying on the caller to
+                # refresh anything, since nothing here holds a loaded pair
+                # entity to refresh in the first place.
+                await self.mentorship_meeting_repository.recalculate_completed_count(
+                    session=session, pair_id=pair_id
+                )
 
             await session.commit()
 
@@ -607,15 +666,27 @@ class MeetingService:
             )
 
         grouped_pairs = []
+        pair_ids = []
         for p in pair_entity:
             partner_id = (
                 p.mentor_id if p.mentee_id == current_user.user_id else p.mentee_id
             )
             grouped_pairs.append((p, partner_id))
+            pair_ids.append(p.pair_id)
+
+        # Unlike v1, v2's contract merges both generations -- MANUAL and
+        # GOOGLE rows both flow through unfiltered; only LEGACY (excluded by
+        # the repository's own default) has nothing to show here.
+        meetings_by_pair = (
+            await self.mentorship_meeting_repository.get_meetings_by_pairs(
+                session=session, pair_ids=pair_ids
+            )
+        )
 
         return self.mentorship_mapper.map_to_meeting_v2_dto(
             round_id=round_id,
             user_timezone=current_user.timezone,
             grouped_pairs=grouped_pairs,
+            meetings_by_pair=meetings_by_pair,
             include_details=is_detail_allowed,
         )

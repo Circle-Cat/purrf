@@ -372,6 +372,11 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
         self.mock_meeting_scheduling_service.cancel = AsyncMock(return_value=([], []))
 
         self.mock_meeting_repo = MagicMock()
+        self.mock_meeting_repo.insert_meeting = AsyncMock()
+        self.mock_meeting_repo.get_meetings_by_pair = AsyncMock(return_value=[])
+        self.mock_meeting_repo.get_meetings_by_pairs = AsyncMock(return_value={})
+        self.mock_meeting_repo.delete_meetings = AsyncMock()
+        self.mock_meeting_repo.recalculate_completed_count = AsyncMock()
 
         self.service = MeetingService(
             logger=self.mock_logger,
@@ -515,8 +520,9 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
         # only guard against silently falling back to the shared calendar.
         self.assertEqual(call_kwargs["calendar_id"], "cal-mentorship")
 
-    async def test_create_google_meeting_persists_meeting_log(self):
-        """Test that meeting result is persisted to meeting_log."""
+    async def test_create_google_meeting_persists_meeting_row(self):
+        """Test that meeting result is persisted as a mentorship_meeting row,
+        not appended to meeting_log."""
         await self.service.create_google_meeting(
             session=self.mock_session,
             user_context=self.user_context,
@@ -534,13 +540,61 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
             status=PairStatus.ACTIVE,
             with_lock=True,
         )
-        call_kwargs = (
-            self.mock_mentorship_pairs_repository.append_google_meeting.call_args.kwargs
-        )
-        self.assertEqual(call_kwargs["pair_id"], self.mock_pair.pair_id)
-        self.assertEqual(call_kwargs["meeting_entry"]["meeting_id"], "google_event_123")
-        self.assertFalse(call_kwargs["meeting_entry"]["is_completed"])
+        self.mock_meeting_repo.insert_meeting.assert_awaited_once()
+        inserted_meeting = self.mock_meeting_repo.insert_meeting.await_args.kwargs[
+            "meeting"
+        ]
+        self.assertIsInstance(inserted_meeting, MentorshipMeetingEntity)
+        self.assertEqual(inserted_meeting.pair_id, self.mock_pair.pair_id)
+        self.assertEqual(inserted_meeting.source, MeetingSource.GOOGLE)
+        self.assertEqual(inserted_meeting.meeting_id, "google_event_123")
+        self.assertEqual(inserted_meeting.meet_link, "https://meet.google.com/abc-def-ghi")
+        # `conference_id` is the scheduling service's key name for what this
+        # column calls `google_meeting_code` -- a deliberate rename, not a
+        # bug, at the boundary between the two.
+        self.assertEqual(inserted_meeting.google_meeting_code, "abc-def-ghi")
+        self.assertEqual(inserted_meeting.entry_points, self.scheduled_meeting["entry_points"])
+        self.assertFalse(inserted_meeting.is_completed)
+        self.assertEqual(inserted_meeting.start_datetime, self.start_dt)
+        self.assertEqual(inserted_meeting.end_datetime, self.end_dt)
+
+        self.mock_mentorship_pairs_repository.append_google_meeting.assert_not_called()
         self.mock_session.commit.assert_awaited_once()
+
+    async def test_create_google_meeting_does_not_modify_meeting_log(self):
+        """Pin: creating a Google meeting must write ONLY the table -- the
+        pair's `meeting_log` JSONB column must stay byte-for-byte the same.
+
+        `copy.deepcopy` is deliberate, not defensive boilerplate: a shallow
+        copy here would leave the inner lists as the SAME objects as the
+        live entity's, so an in-place mutation regression would go
+        undetected by `assertEqual` below.
+        """
+        self.mock_pair.meeting_log = {
+            "meeting_time_list": [
+                {
+                    "meeting_id": "m-1",
+                    "start_datetime": "2025-10-01T10:00:00Z",
+                    "end_datetime": "2025-10-01T11:00:00Z",
+                    "is_completed": True,
+                    "created_datetime": "2025-09-30T09:00:00Z",
+                }
+            ],
+            "google_meetings": [],
+        }
+        original_meeting_log = copy.deepcopy(self.mock_pair.meeting_log)
+
+        await self.service.create_google_meeting(
+            session=self.mock_session,
+            user_context=self.user_context,
+            partner_id=2,
+            round_id=1,
+            start_datetime=self.start_dt,
+            end_datetime=self.end_dt,
+        )
+
+        self.assertEqual(self.mock_pair.meeting_log, original_meeting_log)
+        self.mock_mentorship_pairs_repository.append_google_meeting.assert_not_called()
 
     async def test_create_google_meeting_partner_not_found(self):
         """Test that ValueError is raised when pair does not exist."""
@@ -558,6 +612,7 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
 
         self.assertIn("No mentorship pair found", str(ctx.exception))
         self.mock_meeting_scheduling_service.schedule.assert_not_awaited()
+        self.mock_meeting_repo.insert_meeting.assert_not_awaited()
 
     async def test_create_google_meeting_uses_full_name_when_no_preferred_name(self):
         """Test fallback to the full 'first last' name when preferred_name is None."""
@@ -584,10 +639,23 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_get_meetings_by_user_and_round_v2_success(self):
-        """Test retrieved and mapped meeting logs for a matched user correctly in v2."""
+        """Test retrieved and mapped meeting logs for a matched user correctly in v2.
+
+        Unlike v1, the v2 read must NOT filter the fetched rows down to
+        MANUAL -- both MANUAL and GOOGLE rows from
+        `get_meetings_by_pairs` are handed to the mapper as-is; merging both
+        generations is `map_to_meeting_v2_dto`'s job.
+        """
         self.mock_pairs_repo.get_pairs_by_user_and_round.return_value = [
             self.mock_pair_entity
         ]
+        meetings_by_pair = {
+            self.mock_pair_entity.pair_id: [
+                MagicMock(spec=MentorshipMeetingEntity, source=MeetingSource.MANUAL),
+                MagicMock(spec=MentorshipMeetingEntity, source=MeetingSource.GOOGLE),
+            ]
+        }
+        self.mock_meeting_repo.get_meetings_by_pairs.return_value = meetings_by_pair
 
         self.user_context.has_permission.return_value = True
         stub_dto = MagicMock(spec=MeetingDto)
@@ -606,10 +674,14 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
             user_id=self.user_id,
             round_id=self.round_id,
         )
+        self.mock_meeting_repo.get_meetings_by_pairs.assert_awaited_once_with(
+            session=self.mock_session, pair_ids=[self.mock_pair_entity.pair_id]
+        )
         self.mock_mapper.map_to_meeting_v2_dto.assert_called_once_with(
             round_id=self.round_id,
             user_timezone=self.mock_current_user.timezone,
             grouped_pairs=[(self.mock_pair_entity, self.partner_id)],
+            meetings_by_pair=meetings_by_pair,
             include_details=True,
         )
         self.user_context.has_permission.assert_called_once_with(
@@ -656,17 +728,25 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
             round_id=self.round_id,
             user_timezone=self.mock_current_user.timezone,
             grouped_pairs=[(self.mock_pair_entity, self.partner_id)],
+            meetings_by_pair={},
             include_details=False,
         )
 
     async def test_delete_google_meetings_success(self):
-        """Verify successful deletion removes Google-deleted meetings from DB and commits."""
-        self.mock_mentorship_pairs_repository.do_google_meetings_exist_in_log = (
-            AsyncMock(return_value=True)
+        """Verify successful deletion removes rows from the table, recomputes
+        the completed count, and commits. The Calendar-side call is
+        untouched -- it is still handed the bare meeting_id (the Calendar
+        event id for a GOOGLE row)."""
+        pair = MagicMock(spec=MentorshipPairsEntity, pair_id=77, mentor_id=2, mentee_id=1)
+        self.mock_pairs_repo.get_pairs_by_user_and_round.return_value = [pair]
+        existing_google_row = MagicMock(
+            spec=MentorshipMeetingEntity,
+            meeting_id="abc",
+            source=MeetingSource.GOOGLE,
         )
-        self.mock_mentorship_pairs_repository.remove_meetings_from_log = AsyncMock(
-            return_value=[1]
-        )
+        self.mock_meeting_repo.get_meetings_by_pair.return_value = [existing_google_row]
+        self.mock_meeting_repo.delete_meetings.return_value = 1
+        self.mock_meeting_repo.recalculate_completed_count.return_value = 5
         self.mock_meeting_scheduling_service.cancel.return_value = (
             ["abc"],
             [],
@@ -684,14 +764,20 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
             ],
         )
 
-        self.mock_mentorship_pairs_repository.do_google_meetings_exist_in_log.assert_awaited_once()
+        self.mock_pairs_repo.get_pairs_by_user_and_round.assert_awaited_once_with(
+            session=self.mock_session, user_id=self.user_id, round_id=1
+        )
+        self.mock_meeting_repo.get_meetings_by_pair.assert_awaited_once_with(
+            session=self.mock_session, pair_id=77
+        )
         self.mock_meeting_scheduling_service.cancel.assert_awaited_once_with(
             ["abc"], calendar_id="cal-mentorship"
         )
-        self.mock_mentorship_pairs_repository.remove_meetings_from_log.assert_awaited_once_with(
-            session=self.mock_session,
-            user_id=self.user_id,
-            meeting_ids=["abc"],
+        self.mock_meeting_repo.delete_meetings.assert_awaited_once_with(
+            session=self.mock_session, pair_id=77, meeting_ids=["abc"]
+        )
+        self.mock_meeting_repo.recalculate_completed_count.assert_awaited_once_with(
+            session=self.mock_session, pair_id=77
         )
         self.mock_session.commit.assert_awaited_once()
 
@@ -708,11 +794,12 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
             )
 
     async def test_delete_google_meetings_not_found(self):
-        """Raises ValueError when meetings do not exist in log."""
-
-        self.mock_mentorship_pairs_repository.do_google_meetings_exist_in_log = (
-            AsyncMock(return_value=False)
-        )
+        """Raises ValueError when the requested meeting id is not among this
+        pair's GOOGLE rows -- the existence check now queries the table
+        instead of the JSONB log."""
+        pair = MagicMock(spec=MentorshipPairsEntity, pair_id=77, mentor_id=2, mentee_id=1)
+        self.mock_pairs_repo.get_pairs_by_user_and_round.return_value = [pair]
+        self.mock_meeting_repo.get_meetings_by_pair.return_value = []
 
         with self.assertRaises(ValueError):
             await self.service.delete_google_meetings(
@@ -726,6 +813,29 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
                     }
                 ],
             )
+
+        self.mock_meeting_scheduling_service.cancel.assert_not_awaited()
+        self.mock_meeting_repo.delete_meetings.assert_not_awaited()
+
+    async def test_delete_google_meetings_pair_not_found(self):
+        """Raises ValueError when no pair matches round_id/partner_id at all."""
+        self.mock_pairs_repo.get_pairs_by_user_and_round.return_value = []
+
+        with self.assertRaises(ValueError):
+            await self.service.delete_google_meetings(
+                session=self.mock_session,
+                user_context=self.user_context,
+                deletions=[
+                    {
+                        "round_id": 1,
+                        "partner_id": 2,
+                        "meeting_ids": ["abc"],
+                    }
+                ],
+            )
+
+        self.mock_meeting_repo.get_meetings_by_pair.assert_not_awaited()
+        self.mock_meeting_scheduling_service.cancel.assert_not_awaited()
 
     async def test_create_google_meetings_batch_single_success(self):
         """count=1: converts wall-clock to UTC and returns one created entry."""
