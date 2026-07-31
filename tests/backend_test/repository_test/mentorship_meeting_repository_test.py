@@ -306,9 +306,10 @@ class TestMentorshipMeetingRepository(BaseRepositoryTestLib):
         """One query for the whole batch, not one per pair id."""
         pair_a = await self._seed_pair()
         pair_b = await self._seed_pair()
-        await self.insert_entities(
-            [self._manual_meeting(pair_a.pair_id), self._manual_meeting(pair_b.pair_id)]
-        )
+        await self.insert_entities([
+            self._manual_meeting(pair_a.pair_id),
+            self._manual_meeting(pair_b.pair_id),
+        ])
         repo = MentorshipMeetingRepository()
         statements = []
         original_execute = self.session.execute
