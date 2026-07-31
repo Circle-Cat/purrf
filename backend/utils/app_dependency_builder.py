@@ -163,6 +163,7 @@ from backend.mentorship.participation_service import ParticipationService
 from backend.mentorship.registration_service import RegistrationService
 from backend.mentorship.meeting_service import MeetingService
 from backend.mentorship.meet_attendance_service import MeetAttendanceService
+from backend.mentorship.onboarding_training_service import OnboardingTrainingService
 from backend.profile.profile_query_service import ProfileQueryService
 from backend.profile.profile_command_service import ProfileCommandService
 from backend.profile.profile_mapper import ProfileMapper
@@ -463,6 +464,12 @@ class AppDependencyBuilder:
         self.user_emails_repository = UserEmailsRepository()
         self.user_permissions_repository = UserPermissionsRepository()
         self.training_repository = TrainingRepository()
+        # Built here, next to its repository, because both ApplicationService
+        # and BoardService take it and are constructed further down.
+        self.onboarding_training_service = OnboardingTrainingService(
+            logger=self.logger,
+            training_repository=self.training_repository,
+        )
         self.database = Database(echo=False)
         self.user_identity_service = UserIdentityService(
             logger=self.logger,
@@ -515,7 +522,7 @@ class AppDependencyBuilder:
             mentorship_round_participants_repository=self.mentorship_round_participants_repo,
             participation_service=self.participation_service,
             mentorship_mapper=self.mentorship_mapper,
-            training_repository=self.training_repository,
+            onboarding_training_service=self.onboarding_training_service,
             application_repository=self.application_repository,
         )
         self.meeting_scheduling_service = MeetingSchedulingService(
@@ -676,6 +683,7 @@ class AppDependencyBuilder:
             self.application_activity_repository,
             self.notification_dispatcher,
             self.user_emails_repository,
+            self.onboarding_training_service,
         )
         self.application_controller = ApplicationController(
             self.application_service,
@@ -753,6 +761,7 @@ class AppDependencyBuilder:
             self.application_interview_repository,
             self.application_access,
             self.interview_scheduling_service,
+            self.onboarding_training_service,
         )
         self.board_controller = BoardController(
             self.board_service,

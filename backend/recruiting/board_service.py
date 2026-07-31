@@ -176,6 +176,7 @@ class BoardService:
         application_interview_repository,
         application_access,
         interview_scheduling_service,
+        onboarding_training_service,
     ):
         """
         Args:
@@ -236,6 +237,10 @@ class BoardService:
                 ``set_round`` delegate the opt-in "cancel the meeting on the
                 round being left" cleanup to its ``cancel_for_round``, rather
                 than reaching for the Calendar themselves.
+            onboarding_training_service (OnboardingTrainingService): Assigns
+                the mentorship onboarding training task when an application
+                is admitted to a mentor/mentee activity posting. A no-op for
+                every other kind of posting.
         """
         self.job_repository = job_repository
         self.application_repository = application_repository
@@ -258,6 +263,7 @@ class BoardService:
         self.application_interview_repository = application_interview_repository
         self.application_access = application_access
         self.interview_scheduling_service = interview_scheduling_service
+        self.onboarding_training_service = onboarding_training_service
 
     async def list_my_jobs(
         self, session: AsyncSession, current_user: UserContextDto
@@ -1527,6 +1533,15 @@ class BoardService:
                 ),
             },
         )
+        if dto.to_stage == ApplicationStage.HIRED:
+            # Admission is what assigns the onboarding training, not round
+            # registration — inside this transaction, so an admission that
+            # rolls back does not leave an orphaned task behind.
+            await self.onboarding_training_service.ensure_for_admitted(
+                session=session,
+                user_id=application.user_id,
+                job=job,
+            )
         if (
             new_interview_assignee is not None
             and new_interview_assignee != current_user.user_id

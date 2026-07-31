@@ -35,6 +35,7 @@ class ApplicationService:
         application_activity_repository,
         notification_dispatcher,
         user_emails_repository,
+        onboarding_training_service,
     ):
         """
         Args:
@@ -61,6 +62,9 @@ class ApplicationService:
                 notifies the materialized default assignee here, and
                 ``_notify_owners_of_submission`` notifies the posting's
                 owners.
+            onboarding_training_service (OnboardingTrainingService): Assigns
+                the mentorship onboarding training task when an `auto_hire`
+                screen rule lands the submission directly on HIRED.
         """
         self.application_repository = application_repository
         self.application_submission_repository = application_submission_repository
@@ -71,6 +75,7 @@ class ApplicationService:
         self.application_activity_repository = application_activity_repository
         self.notification_dispatcher = notification_dispatcher
         self.user_emails_repository = user_emails_repository
+        self.onboarding_training_service = onboarding_training_service
 
     @staticmethod
     def _today():
@@ -323,6 +328,13 @@ class ApplicationService:
         await self._notify_owners_of_submission(
             session, application, job, blocked, screen_action
         )
+
+        if stage == ApplicationStage.HIRED:
+            await self.onboarding_training_service.ensure_for_admitted(
+                session=session,
+                user_id=current_user.user_id,
+                job=job,
+            )
 
         if blocked:
             await self.application_activity_repository.create(
