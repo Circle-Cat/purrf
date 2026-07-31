@@ -9,7 +9,7 @@ const SESSION_KEY = "onboarding-training-toast-shown";
 const TOAST_ID = "onboarding-training-toast";
 const TOAST_TITLE = "Complete onboarding training";
 const TOAST_MESSAGE =
-  "You have been admitted to the mentorship program. Complete the onboarding training in your Profile page to get started — you can do it any time before you register for a round.";
+  "You have been admitted to the mentorship program. Complete the onboarding training in your Profile page to get started.";
 
 /**
  * Reminds a mentorship participant, once per session, that their
@@ -39,7 +39,8 @@ export const useOnboardingTrainingReminder = ({ enabled }) => {
     getMyProfile({ fields: [ProfileFields.TRAINING] })
       .then(({ data }) => {
         if (cancelled) return;
-        const training = data?.training || [];
+        const training = data?.profile?.training || [];
+        sessionStorage.setItem(SESSION_KEY, "1");
         if (!training.some(isIncompleteOnboarding)) return;
 
         showReminderToast({
@@ -47,7 +48,6 @@ export const useOnboardingTrainingReminder = ({ enabled }) => {
           title: TOAST_TITLE,
           message: TOAST_MESSAGE,
         });
-        sessionStorage.setItem(SESSION_KEY, "1");
       })
       .catch((err) => {
         console.error("Failed to check onboarding training status", err);

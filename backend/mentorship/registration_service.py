@@ -22,8 +22,11 @@ class RegistrationService:
     Service to handle user preferences related to skills and industry.
 
     This service is responsible for fetching, updating, and creating user preferences
-    for skills, specific industries, and related information. It also automatically
-    assigns onboarding training records when a user registers for a round.
+    for skills, specific industries, and related information. It also stamps the
+    onboarding training deadline on first round registration; the training record
+    itself is normally already assigned at admission, and this service only
+    creates one as a legacy fallback for users admitted before that assignment
+    existed.
     """
 
     def __init__(

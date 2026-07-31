@@ -99,7 +99,9 @@ describe("PersonalDashboard", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    profileApi.getMyProfile.mockResolvedValue({ data: { training: [] } });
+    profileApi.getMyProfile.mockResolvedValue({
+      data: { profile: { training: [] } },
+    });
     useMentorshipData.mockReturnValue(mockHookData);
     useWorkActivityData.mockReturnValue(defaultWorkActivityMock);
     useMyApplications.mockReturnValue({

@@ -7,7 +7,7 @@ import * as reminderToast from "@/components/common/showReminderToast";
 
 vi.mock("@/api/profileApi");
 
-const withTraining = (training) => ({ data: { training } });
+const withTraining = (training) => ({ data: { profile: { training } } });
 
 describe("useOnboardingTrainingReminder", () => {
   beforeEach(() => {
@@ -116,11 +116,38 @@ describe("useOnboardingTrainingReminder", () => {
   });
 
   it("stays silent when the fetch fails", async () => {
+    const consoleErrorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
     profileApi.getMyProfile.mockRejectedValue(new Error("network error"));
 
     renderHook(() => useOnboardingTrainingReminder({ enabled: true }));
 
     await waitFor(() => expect(profileApi.getMyProfile).toHaveBeenCalled());
+    expect(reminderToast.showReminderToast).not.toHaveBeenCalled();
+    expect(consoleErrorSpy).toHaveBeenCalled();
+
+    consoleErrorSpy.mockRestore();
+  });
+
+  it("does not re-fetch on a later mount once training is already complete", async () => {
+    profileApi.getMyProfile.mockResolvedValue(
+      withTraining([
+        { id: 1, category: "mentorship_mentee_onboarding", status: "done" },
+      ]),
+    );
+
+    const first = renderHook(() =>
+      useOnboardingTrainingReminder({ enabled: true }),
+    );
+    await waitFor(() =>
+      expect(profileApi.getMyProfile).toHaveBeenCalledTimes(1),
+    );
+    first.unmount();
+
+    renderHook(() => useOnboardingTrainingReminder({ enabled: true }));
+
+    expect(profileApi.getMyProfile).toHaveBeenCalledTimes(1);
     expect(reminderToast.showReminderToast).not.toHaveBeenCalled();
   });
 });
