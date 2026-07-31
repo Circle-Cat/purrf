@@ -1,4 +1,3 @@
-import os
 from datetime import datetime, timezone, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,7 +6,6 @@ from backend.dto.registration_create_dto import RegistrationCreateDto
 from backend.dto.preference_dto import SpecificIndustryDto, SkillsetsDto
 from backend.dto.registration_dto import GlobalPreferencesDto, RegistrationDto
 from backend.entity.preference_entity import PreferenceEntity
-from backend.entity.training_entity import TrainingEntity
 from backend.entity.mentorship_round_participants_entity import (
     MentorshipRoundParticipantsEntity,
 )
@@ -16,10 +14,6 @@ from backend.common.mentorship_enums import (
     ParticipantRole,
     TrainingCategory,
     TrainingStatus,
-)
-from backend.common.environment_constants import (
-    MENTORSHIP_MENTOR_ONBOARDING_LINK,
-    MENTORSHIP_MENTEE_ONBOARDING_LINK,
 )
 
 
@@ -40,7 +34,7 @@ class RegistrationService:
         mentorship_round_participants_repository,
         participation_service,
         mentorship_mapper,
-        training_repository,
+        onboarding_training_service,
         application_repository,
     ):
         """
@@ -55,7 +49,10 @@ class RegistrationService:
             participation_service: Service responsible for retrieving participation data.
             mentorship_mapper (MentorshipMapper):
                 The mapper for converting mentorship rounds and entities to DTOs.
-            training_repository: The repository responsible for handling training data.
+            onboarding_training_service (OnboardingTrainingService): Owns the
+                create-or-stamp rule for onboarding training. Registration is
+                the moment a deadline first becomes known, so it passes one;
+                admission passes none.
             application_repository: The repository responsible for looking up recruiting
                                     activity applications. Round registration derives the
                                     participant role from the user's approved (HIRED)
@@ -67,7 +64,7 @@ class RegistrationService:
         self.participants_repo = mentorship_round_participants_repository
         self.participation_service = participation_service
         self.mentorship_mapper = mentorship_mapper
-        self.training_repo = training_repository
+        self.onboarding_training_service = onboarding_training_service
         self.application_repo = application_repository
 
     async def update_registration_info(
@@ -86,7 +83,9 @@ class RegistrationService:
             activity application, blocking registration when none exists.
         3. Checks if the application deadline has passed. If the round is still open, updates both
             global and round-specific preferences for user.
-        4. Commits the changes to the database.
+        4. Stamps the onboarding training deadline on first registration, via
+            `OnboardingTrainingService.ensure_onboarding_training`.
+        5. Commits the changes to the database.
 
         Args:
             session (AsyncSession): Active SQLAlchemy async session.
@@ -157,28 +156,20 @@ class RegistrationService:
             if participant_role == ParticipantRole.MENTOR
             else TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING
         )
+        # The row normally already exists, assigned when the user was admitted
+        # to their mentor/mentee posting, and carries no deadline until now.
+        # Passing one here stamps it on first registration; a row that already
+        # has a deadline keeps it, so later rounds never recompute it. Users
+        # admitted before training was assigned at admission have no row at
+        # all and get one created here, deadline included.
         onboarding_training = (
-            await self.training_repo.get_training_by_user_id_and_category(
-                session=session, user_id=user_context.user_id, category=category
+            await self.onboarding_training_service.ensure_onboarding_training(
+                session=session,
+                user_id=user_context.user_id,
+                category=category,
+                deadline=application_deadline + timedelta(days=2),
             )
         )
-        if not onboarding_training:
-            link = (
-                os.getenv(MENTORSHIP_MENTOR_ONBOARDING_LINK)
-                if category == TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING
-                else os.getenv(MENTORSHIP_MENTEE_ONBOARDING_LINK)
-            )
-            onboarding_training = await self.training_repo.upsert_training(
-                session=session,
-                entity=TrainingEntity(
-                    user_id=user_context.user_id,
-                    category=category,
-                    status=TrainingStatus.TO_DO,
-                    completed_timestamp=None,
-                    deadline=application_deadline + timedelta(days=2),
-                    link=link,
-                ),
-            )
 
         await session.commit()
 

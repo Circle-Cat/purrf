@@ -522,7 +522,7 @@ class AppDependencyBuilder:
             mentorship_round_participants_repository=self.mentorship_round_participants_repo,
             participation_service=self.participation_service,
             mentorship_mapper=self.mentorship_mapper,
-            training_repository=self.training_repository,
+            onboarding_training_service=self.onboarding_training_service,
             application_repository=self.application_repository,
         )
         self.meeting_scheduling_service = MeetingSchedulingService(
