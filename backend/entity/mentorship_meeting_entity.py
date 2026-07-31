@@ -88,7 +88,7 @@ class MentorshipMeetingEntity(Base):
     # time; this is per space and stable. It is the only join key between a row
     # here and Google's attendance data.
     google_meeting_code: Mapped[str | None] = mapped_column(String)
-    entry_points: Mapped[dict | None] = mapped_column(JSONB)
+    entry_points: Mapped[list | None] = mapped_column(JSONB)
 
     # --- attendance results, written only by the attendance sweep ---
 

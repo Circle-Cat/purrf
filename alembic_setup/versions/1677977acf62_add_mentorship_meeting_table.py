@@ -70,8 +70,10 @@ def upgrade() -> None:
             COALESCE((e->>'is_completed')::boolean, FALSE),
             (e->>'created_datetime')::timestamptz
         FROM mentorship_pairs p
-        CROSS JOIN jsonb_array_elements(p.meeting_log->'meeting_time_list') AS e
-        WHERE jsonb_typeof(p.meeting_log->'meeting_time_list') = 'array'
+        CROSS JOIN LATERAL jsonb_array_elements(
+            CASE WHEN jsonb_typeof(p.meeting_log->'meeting_time_list') = 'array'
+                 THEN p.meeting_log->'meeting_time_list' ELSE '[]'::jsonb END
+        ) AS e
     """)
 
     # google meetings: meeting_log->'google_meetings'
@@ -106,17 +108,31 @@ def upgrade() -> None:
             (e->>'has_insufficient_duration')::boolean,
             (e->>'last_sync_at')::timestamptz
         FROM mentorship_pairs p
-        CROSS JOIN jsonb_array_elements(p.meeting_log->'google_meetings') AS e
-        WHERE jsonb_typeof(p.meeting_log->'google_meetings') = 'array'
+        CROSS JOIN LATERAL jsonb_array_elements(
+            CASE WHEN jsonb_typeof(p.meeting_log->'google_meetings') = 'array'
+                 THEN p.meeting_log->'google_meetings' ELSE '[]'::jsonb END
+        ) AS e
     """)
 
-    # legacy rows: fabricate exactly completed_count rows (no times) for pairs
-    # that have a completed count but no meeting_log arrays at all -- covers
-    # both meeting_log IS NULL and meeting_log = '{}'.
+    # legacy rows: fabricate exactly enough rows (no times) to make each
+    # pair's is_completed row count catch up to completed_count.
     #
-    # IS DISTINCT FROM 'array', not <> 'array': when meeting_log is NULL,
-    # jsonb_typeof(...) returns NULL, and NULL <> 'array' evaluates to NULL
-    # (not true), so with <> these pairs would silently get zero legacy rows.
+    # The criterion is the SHORTFALL (completed_count minus the completed
+    # rows the two INSERTs above just created for this pair), not "this pair
+    # has no meeting_log arrays". Those are not the same thing:
+    #   - meeting_log = {"google_meetings": []} with completed_count > 0:
+    #     jsonb_typeof is 'array', so a "no arrays present" criterion skips
+    #     the pair entirely, while the google INSERT expands the empty array
+    #     to zero rows -- positive count, zero rows, invariant broken.
+    #   - an array is present but its completed-entry count differs from
+    #     completed_count (known counter drift from the old four-writers
+    #     problem) -- also not "no arrays present", also needs a top-up.
+    # Counting actual rows already inserted for this pair, rather than
+    # inspecting meeting_log's shape, makes
+    #   completed_count = COUNT(*) WHERE pair_id = p.pair_id AND is_completed
+    # hold by construction regardless of empty arrays or counter drift.
+    # generate_series(1, n) with n <= 0 yields zero rows (verified empirically
+    # -- see task-2-report.md), so no separate WHERE guard is needed here.
     op.execute("""
         INSERT INTO mentorship_meeting (
             meeting_id, pair_id, source, is_completed, created_datetime
@@ -128,12 +144,13 @@ def upgrade() -> None:
             TRUE,
             now()
         FROM mentorship_pairs p
-        CROSS JOIN generate_series(1, p.completed_count) AS n
-        WHERE p.completed_count > 0
-          AND jsonb_typeof(p.meeting_log->'meeting_time_list')
-                IS DISTINCT FROM 'array'
-          AND jsonb_typeof(p.meeting_log->'google_meetings')
-                IS DISTINCT FROM 'array'
+        CROSS JOIN LATERAL generate_series(
+            1,
+            p.completed_count - (
+                SELECT count(*) FROM mentorship_meeting m
+                WHERE m.pair_id = p.pair_id AND m.is_completed
+            )
+        ) AS n
     """)
 
 
