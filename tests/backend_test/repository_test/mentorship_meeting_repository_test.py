@@ -1,7 +1,7 @@
 import unittest
 import uuid
 from datetime import datetime, timedelta, timezone
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, NoResultFound
 from backend.common.mentorship_enums import (
     CommunicationMethod,
     MeetingSource,
@@ -132,6 +132,37 @@ class TestMentorshipMeetingRepository(BaseRepositoryTestLib):
             [m.meeting_id for m in result], [m_early.meeting_id, m_late.meeting_id]
         )
 
+    async def test_get_meetings_by_pair_breaks_tied_start_by_created_datetime(self):
+        """Two rows sharing a start_datetime must come back in
+        created_datetime order, not arbitrary order -- proving the tiebreaker
+        is load-bearing rather than accidental."""
+        pair = await self._seed_pair()
+        shared_start = datetime(2026, 1, 5, 10, 0, tzinfo=timezone.utc)
+        shared_end = shared_start + timedelta(minutes=30)
+        m_created_later = self._manual_meeting(
+            pair.pair_id,
+            start_datetime=shared_start,
+            end_datetime=shared_end,
+            created_datetime=datetime(2026, 1, 1, 0, 0, 2, tzinfo=timezone.utc),
+        )
+        m_created_earlier = self._manual_meeting(
+            pair.pair_id,
+            start_datetime=shared_start,
+            end_datetime=shared_end,
+            created_datetime=datetime(2026, 1, 1, 0, 0, 1, tzinfo=timezone.utc),
+        )
+        # Inserted in the "wrong" order on purpose: only the created_datetime
+        # tiebreaker in the query, not insertion order, should decide.
+        await self.insert_entities([m_created_later, m_created_earlier])
+        repo = MentorshipMeetingRepository()
+
+        result = await repo.get_meetings_by_pair(self.session, pair.pair_id)
+
+        self.assertEqual(
+            [m.meeting_id for m in result],
+            [m_created_earlier.meeting_id, m_created_later.meeting_id],
+        )
+
     async def test_get_meetings_by_pair_excludes_legacy_by_default(self):
         pair = await self._seed_pair()
         manual = self._manual_meeting(pair.pair_id)
@@ -155,8 +186,132 @@ class TestMentorshipMeetingRepository(BaseRepositoryTestLib):
         )
 
         self.assertEqual(
-            {m.meeting_id for m in result}, {manual.meeting_id, legacy.meeting_id}
+            [m.meeting_id for m in result], [manual.meeting_id, legacy.meeting_id]
         )
+
+    async def test_get_meetings_by_pair_null_starts_sort_last_with_legacy(self):
+        """With include_legacy=True, NULL-start LEGACY rows must sort after
+        every timed row, not arbitrarily."""
+        pair = await self._seed_pair()
+        m_early = self._manual_meeting(
+            pair.pair_id,
+            start_datetime=datetime(2026, 1, 1, 10, 0, tzinfo=timezone.utc),
+            end_datetime=datetime(2026, 1, 1, 10, 30, tzinfo=timezone.utc),
+        )
+        m_late = self._manual_meeting(
+            pair.pair_id,
+            start_datetime=datetime(2026, 1, 3, 10, 0, tzinfo=timezone.utc),
+            end_datetime=datetime(2026, 1, 3, 10, 30, tzinfo=timezone.utc),
+        )
+        legacy_a = self._legacy_meeting(
+            pair.pair_id,
+            created_datetime=datetime(2026, 1, 1, 0, 0, 1, tzinfo=timezone.utc),
+        )
+        legacy_b = self._legacy_meeting(
+            pair.pair_id,
+            created_datetime=datetime(2026, 1, 1, 0, 0, 2, tzinfo=timezone.utc),
+        )
+        # Inserted out of expected order on purpose.
+        await self.insert_entities([legacy_b, m_late, legacy_a, m_early])
+        repo = MentorshipMeetingRepository()
+
+        result = await repo.get_meetings_by_pair(
+            self.session, pair.pair_id, include_legacy=True
+        )
+
+        self.assertEqual(
+            [m.meeting_id for m in result],
+            [
+                m_early.meeting_id,
+                m_late.meeting_id,
+                legacy_a.meeting_id,
+                legacy_b.meeting_id,
+            ],
+        )
+
+    # --- get_meetings_by_pairs ---
+
+    async def test_get_meetings_by_pairs_empty_input_returns_empty_dict_no_query(self):
+        repo = MentorshipMeetingRepository()
+
+        result = await repo.get_meetings_by_pairs(self.session, [])
+
+        self.assertEqual(result, {})
+
+    async def test_get_meetings_by_pairs_groups_orders_and_omits_pairs_with_no_rows(
+        self,
+    ):
+        pair_a = await self._seed_pair()
+        pair_b = await self._seed_pair()
+        pair_c_no_meetings = await self._seed_pair()
+        a_late = self._manual_meeting(
+            pair_a.pair_id,
+            start_datetime=datetime(2026, 1, 3, 10, 0, tzinfo=timezone.utc),
+            end_datetime=datetime(2026, 1, 3, 10, 30, tzinfo=timezone.utc),
+        )
+        a_early = self._manual_meeting(
+            pair_a.pair_id,
+            start_datetime=datetime(2026, 1, 1, 10, 0, tzinfo=timezone.utc),
+            end_datetime=datetime(2026, 1, 1, 10, 30, tzinfo=timezone.utc),
+        )
+        b_only = self._manual_meeting(pair_b.pair_id)
+        a_legacy = self._legacy_meeting(pair_a.pair_id)
+        await self.insert_entities([a_late, a_early, b_only, a_legacy])
+        repo = MentorshipMeetingRepository()
+
+        result = await repo.get_meetings_by_pairs(
+            self.session, [pair_a.pair_id, pair_b.pair_id, pair_c_no_meetings.pair_id]
+        )
+
+        self.assertEqual(
+            [m.meeting_id for m in result[pair_a.pair_id]],
+            [a_early.meeting_id, a_late.meeting_id],
+        )
+        self.assertEqual(
+            [m.meeting_id for m in result[pair_b.pair_id]], [b_only.meeting_id]
+        )
+        self.assertNotIn(pair_c_no_meetings.pair_id, result)
+
+    async def test_get_meetings_by_pairs_includes_legacy_when_opted_in(self):
+        pair = await self._seed_pair()
+        manual = self._manual_meeting(pair.pair_id)
+        legacy = self._legacy_meeting(pair.pair_id)
+        await self.insert_entities([manual, legacy])
+        repo = MentorshipMeetingRepository()
+
+        result = await repo.get_meetings_by_pairs(
+            self.session, [pair.pair_id], include_legacy=True
+        )
+
+        self.assertEqual(
+            [m.meeting_id for m in result[pair.pair_id]],
+            [manual.meeting_id, legacy.meeting_id],
+        )
+
+    async def test_get_meetings_by_pairs_does_not_query_per_pair(self):
+        """One query for the whole batch, not one per pair id."""
+        pair_a = await self._seed_pair()
+        pair_b = await self._seed_pair()
+        await self.insert_entities(
+            [self._manual_meeting(pair_a.pair_id), self._manual_meeting(pair_b.pair_id)]
+        )
+        repo = MentorshipMeetingRepository()
+        statements = []
+        original_execute = self.session.execute
+
+        async def _counting_execute(stmt, *args, **kwargs):
+            statements.append(stmt)
+            return await original_execute(stmt, *args, **kwargs)
+
+        self.session.execute = _counting_execute
+        try:
+            await repo.get_meetings_by_pairs(
+                self.session, [pair_a.pair_id, pair_b.pair_id]
+            )
+        finally:
+            self.session.execute = original_execute
+
+        self.assertEqual(len(statements), 1)
 
     # --- get_pending_google_meetings_by_pairs ---
 
@@ -183,6 +338,15 @@ class TestMentorshipMeetingRepository(BaseRepositoryTestLib):
         )
 
         self.assertEqual([m.meeting_id for m in result], [pending_google.meeting_id])
+
+    async def test_get_pending_google_meetings_by_pairs_empty_input_returns_empty_list(
+        self,
+    ):
+        repo = MentorshipMeetingRepository()
+
+        result = await repo.get_pending_google_meetings_by_pairs(self.session, [])
+
+        self.assertEqual(result, [])
 
     # --- get_meeting_by_google_meeting_code ---
 
@@ -284,6 +448,14 @@ class TestMentorshipMeetingRepository(BaseRepositoryTestLib):
             [m.meeting_id for m in other_remaining], [m3_other_pair.meeting_id]
         )
 
+    async def test_delete_meetings_empty_ids_returns_zero(self):
+        pair = await self._seed_pair()
+        repo = MentorshipMeetingRepository()
+
+        deleted_count = await repo.delete_meetings(self.session, pair.pair_id, [])
+
+        self.assertEqual(deleted_count, 0)
+
     # --- recalculate_completed_count ---
 
     async def test_recalculate_completed_count_mixed_sources_and_statuses(self):
@@ -315,6 +487,15 @@ class TestMentorshipMeetingRepository(BaseRepositoryTestLib):
         refreshed = await self.session.get(MentorshipPairsEntity, pair.pair_id)
         await self.session.refresh(refreshed, ["completed_count"])
         self.assertEqual(refreshed.completed_count, 3)
+
+    async def test_recalculate_completed_count_nonexistent_pair_raises(self):
+        """Pins the documented (surprising) behavior: there is no existence
+        check, so an unknown pair_id raises NoResultFound rather than
+        returning None or 0."""
+        repo = MentorshipMeetingRepository()
+
+        with self.assertRaises(NoResultFound):
+            await repo.recalculate_completed_count(self.session, -1)
 
 
 if __name__ == "__main__":
