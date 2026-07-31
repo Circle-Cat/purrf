@@ -167,28 +167,28 @@ class MentorshipController:
             response_model=None,
         )
 
-    async def sync_meet_attendance(
-        self, current_user: UserContextDto, lookback_hours: int = 2
-    ):
+    async def sync_meet_attendance(self, lookback_hours: int = 2):
         """
         CronJob endpoint to sync Google Meet attendance for completed meetings.
+
+        Deliberately not gated on the Google-meeting feature flag. That flag is
+        per user, and this is a system-wide sweep invoked by a service account,
+        so no single user context can answer whether it should run. The data
+        gates it instead -- a round with no unsynced Google meetings is a no-op
+        -- and the operational switch is the CronJob's own `suspend` field.
 
         Args:
             lookback_hours: Number of hours to look back when querying the
                 Meet API for ended conferences. Defaults to 2.
         """
-        if self.launchdarkly_service.is_create_google_meeting_enabled(current_user):
-            async with self.database.session() as session:
-                result = await self.meet_attendance_sync_service.sync_attendance(
-                    session=session, lookback_hours=lookback_hours
-                )
-            return api_response(
-                success=True,
-                message="Attendance sync completed",
-                data=result,
+        async with self.database.session() as session:
+            result = await self.meet_attendance_sync_service.sync_attendance(
+                session=session, lookback_hours=lookback_hours
             )
-        raise PermissionError(
-            "Creating Google meetings is not yet supported. No need to sync attendance."
+        return api_response(
+            success=True,
+            message="Attendance sync completed",
+            data=result,
         )
 
     async def get_my_match_result(self, current_user: UserContextDto, round_id: int):

@@ -6,8 +6,17 @@ metadata:
   name: {{ include "purrf.fullname" $ }}-{{ .name }}
 spec:
   schedule: {{ .schedule | quote }}
+  {{- if .concurrencyPolicy }}
+  concurrencyPolicy: {{ .concurrencyPolicy }}
+  {{- end }}
+  {{- if .suspend }}
+  suspend: {{ .suspend }}
+  {{- end }}
   jobTemplate:
     spec:
+      {{- if .activeDeadlineSeconds }}
+      activeDeadlineSeconds: {{ .activeDeadlineSeconds }}
+      {{- end }}
       template:
         spec:
           securityContext:

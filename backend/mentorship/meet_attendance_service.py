@@ -104,6 +104,12 @@ class MeetAttendanceService:
             end_time_before=now.isoformat(),
         )
         if not conferences:
+            self.logger.info(
+                "[MeetAttendanceService] sync_attendance: round_id=%s, no conferences "
+                "ended in the last %sh, nothing to reconcile",
+                round_id,
+                lookback_hours,
+            )
             return {}
         self.logger.debug(
             "[MeetAttendanceService] Fetched %d conferences", len(conferences)
@@ -127,6 +133,12 @@ class MeetAttendanceService:
             "[MeetAttendanceService] Pair lookup built: %d entries", len(pair_lookup)
         )
         if not pair_lookup:
+            self.logger.info(
+                "[MeetAttendanceService] sync_attendance: round_id=%s, %d conference(s) "
+                "found but no pair has an unsynced Google meeting, nothing to reconcile",
+                round_id,
+                len(conferences),
+            )
             return summary
 
         # Pre-load user entities to reduce database queries
@@ -316,7 +328,7 @@ class MeetAttendanceService:
             await session.commit()
             summary["pairs_updated"] = len(changed_pairs)
 
-        self.logger.debug("[MeetAttendanceService] Sync complete: %s", summary)
+        self.logger.info("[MeetAttendanceService] Sync complete: %s", summary)
         return summary
 
     async def _resolve_identities(
@@ -492,7 +504,7 @@ class MeetAttendanceService:
 
                 # Tier 2: Fuzzy match via Display Name (Fallback for non-signed-in users)
                 elif clean_name in mentor_names:
-                    self.logger.info(
+                    self.logger.debug(
                         "[MeetAttendanceService] Matched mentor by name fingerprint: %s",
                         clean_name,
                     )
@@ -504,7 +516,7 @@ class MeetAttendanceService:
                     )
                     role_trees["mentor"].add(Interval(start, end))
                 elif clean_name in mentee_names:
-                    self.logger.info(
+                    self.logger.debug(
                         "[MeetAttendanceService] Matched mentee by name fingerprint: %s",
                         clean_name,
                     )
