@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { render, screen, waitFor, within, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { toast } from "sonner";
@@ -776,7 +776,10 @@ describe("BoardPage", () => {
     // Mutation check: jobA is first in the list, so a board that ignored the
     // param would have fetched 1 and rendered jobA's lanes.
     expect(api.getJobBoard).not.toHaveBeenCalledWith(1);
-    expect(screen.getByText("Board review")).toBeInTheDocument();
+    // `findBy`, not `getBy`: the waitFor above only proves the fetch was
+    // *called*. Its resolution, the state update and the re-render land a tick
+    // later, so a synchronous query here races the render and fails under load.
+    expect(await screen.findByText("Board review")).toBeInTheDocument();
   });
 
   it("falls back to the first job and rewrites the URL when ?jobId= names a job the caller doesn't own", async () => {
@@ -1058,7 +1061,12 @@ describe("BoardPage", () => {
     const card = await screen.findByRole("button", { name: /Just Rejected/ });
     await waitFor(() => expect(card.className).toContain("ring-2"));
 
-    await vi.advanceTimersByTimeAsync(3100);
+    // Wrapped in act: the highlight is dropped by a setTimeout, so advancing
+    // the clock is what triggers the state update. Without act React logs
+    // "An update to BoardPage inside a test was not wrapped in act(...)".
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3100);
+    });
 
     await waitFor(() => expect(card.className).not.toContain("ring-2"));
   });
