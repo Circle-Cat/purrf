@@ -14,6 +14,7 @@ from backend.dto.admin_meeting_log_dto import AdminMeetingDto
 from backend.entity.users_entity import UsersEntity
 from backend.entity.preference_entity import PreferenceEntity
 from backend.entity.mentorship_pairs_entity import MentorshipPairsEntity
+from backend.entity.mentorship_meeting_entity import MentorshipMeetingEntity
 from backend.entity.mentorship_round_participants_entity import (
     MentorshipRoundParticipantsEntity,
 )
@@ -26,6 +27,7 @@ from backend.common.mentorship_enums import (
     MenteeActionStatus,
     MentorActionStatus,
     MeetingNoteTag,
+    MeetingSource,
 )
 
 
@@ -269,14 +271,35 @@ class TestMentorshipMapper(unittest.TestCase):
         self.assertEqual(dto.goal, "")
 
     def test_map_to_meeting_dto_success(self):
-        """Test mapping pair entities with valid meeting log to meetting dto correctly."""
+        """Test mapping pair entities with meeting rows to meeting dto correctly."""
         pair_entity = self.pair_entities[0]
         partner_id = pair_entity.mentor_id
+        meeting_rows = [
+            MentorshipMeetingEntity(
+                meeting_id=str(uuid.uuid4()),
+                pair_id=pair_entity.pair_id,
+                source=MeetingSource.MANUAL,
+                start_datetime=datetime.fromisoformat("2025-09-01T22:30:00+00:00"),
+                end_datetime=datetime.fromisoformat("2025-09-01T23:00:00+00:00"),
+                is_completed=True,
+                created_datetime=datetime.fromisoformat("2025-08-30T07:42:00+00:00"),
+            ),
+            MentorshipMeetingEntity(
+                meeting_id=str(uuid.uuid4()),
+                pair_id=pair_entity.pair_id,
+                source=MeetingSource.MANUAL,
+                start_datetime=datetime.fromisoformat("2025-09-02T17:00:00+00:00"),
+                end_datetime=datetime.fromisoformat("2025-09-02T18:00:00+00:00"),
+                is_completed=True,
+                created_datetime=datetime.fromisoformat("2025-08-29T07:42:00+00:00"),
+            ),
+        ]
 
         dto = self.mapper.map_to_meeting_dto(
             round_id=1,
             user_timezone="Asia/Shanghai",
             grouped_pairs=[(pair_entity, partner_id)],
+            meetings_by_pair={pair_entity.pair_id: meeting_rows},
         )
         info = dto.meeting_info[0]
 
@@ -292,10 +315,14 @@ class TestMentorshipMapper(unittest.TestCase):
             info.meeting_time_list[0].start_datetime.strftime("%Y-%m-%dT%H:%M:%SZ"),
             "2025-09-01T22:30:00Z",
         )
+        # completed_meetings_count still comes from the denormalized column
+        # on the pair, not from counting the rows handed in here -- that
+        # column's count includes LEGACY rows, which never appear as
+        # meeting rows at all.
         self.assertEqual(info.completed_meetings_count, 1)
 
     def test_meeting_dto_no_meeting_log(self):
-        """Test mapping pair entities with None meeting log returns empty meeting list."""
+        """Test mapping pair entities absent from meetings_by_pair returns an empty meeting list."""
         pair_entity = self.pair_entities[1]
         partner_id = pair_entity.mentor_id
 
@@ -310,6 +337,45 @@ class TestMentorshipMapper(unittest.TestCase):
 
         info = dto.meeting_info[0]
         self.assertEqual(info.meeting_time_list, [])
+
+    def test_map_to_meeting_dto_excludes_legacy_rows(self):
+        """LEGACY rows carry no times and must never appear in the list, even
+        if a caller passes them in (e.g. via include_legacy=True); the
+        completed count they represent still comes through via
+        pair.completed_count, unaffected by this filtering."""
+        pair_entity = self.pair_entities[0]
+        pair_entity.completed_count = 5
+        partner_id = pair_entity.mentor_id
+        manual_row = MentorshipMeetingEntity(
+            meeting_id=str(uuid.uuid4()),
+            pair_id=pair_entity.pair_id,
+            source=MeetingSource.MANUAL,
+            start_datetime=datetime.fromisoformat("2025-09-01T22:30:00+00:00"),
+            end_datetime=datetime.fromisoformat("2025-09-01T23:00:00+00:00"),
+            is_completed=True,
+            created_datetime=datetime.fromisoformat("2025-08-30T07:42:00+00:00"),
+        )
+        legacy_row = MentorshipMeetingEntity(
+            meeting_id="legacy-12-1",
+            pair_id=pair_entity.pair_id,
+            source=MeetingSource.LEGACY,
+            start_datetime=None,
+            end_datetime=None,
+            is_completed=True,
+            created_datetime=datetime.fromisoformat("2020-01-01T00:00:00+00:00"),
+        )
+
+        dto = self.mapper.map_to_meeting_dto(
+            round_id=1,
+            user_timezone="Asia/Shanghai",
+            grouped_pairs=[(pair_entity, partner_id)],
+            meetings_by_pair={pair_entity.pair_id: [legacy_row, manual_row]},
+        )
+        info = dto.meeting_info[0]
+
+        self.assertEqual(len(info.meeting_time_list), 1)
+        self.assertEqual(info.meeting_time_list[0].meeting_id, manual_row.meeting_id)
+        self.assertEqual(info.completed_meetings_count, 5)
 
     def test_map_to_meeting_v2_dto_success(self):
         """Test mapping manual and google meetings into MeetingDto correctly."""

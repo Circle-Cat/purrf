@@ -9,12 +9,17 @@ from backend.dto.meeting_dto import MeetingDto, MeetingInfoDto, MeetingTimeDto
 from backend.dto.admin_meeting_log_dto import AdminMeetingDto
 
 from backend.entity.mentorship_pairs_entity import MentorshipPairsEntity
+from backend.entity.mentorship_meeting_entity import MentorshipMeetingEntity
 from backend.entity.preference_entity import PreferenceEntity
 from backend.entity.mentorship_round_participants_entity import (
     MentorshipRoundParticipantsEntity,
 )
 from backend.entity.mentorship_round_entity import MentorshipRoundEntity
-from backend.common.mentorship_enums import ParticipantRole, MeetingNoteTag
+from backend.common.mentorship_enums import (
+    MeetingNoteTag,
+    MeetingSource,
+    ParticipantRole,
+)
 
 
 class MentorshipMapper:
@@ -133,8 +138,24 @@ class MentorshipMapper:
         round_id: int,
         user_timezone: str,
         grouped_pairs: list[tuple[MentorshipPairsEntity, int]],
+        meetings_by_pair: dict[int, list[MentorshipMeetingEntity]] | None = None,
     ) -> MeetingDto:
-        """Map (MentorshipPairsEntity, partner_id) tuples to MeetingDto."""
+        """Map (MentorshipPairsEntity, partner_id) tuples to MeetingDto.
+
+        Args:
+            round_id (int): The mentorship round ID.
+            user_timezone (str): The current user's timezone.
+            grouped_pairs (list[tuple[MentorshipPairsEntity, int]]): Each pair
+                paired with the partner's user id.
+            meetings_by_pair (dict[int, list[MentorshipMeetingEntity]] | None):
+                Meeting rows keyed by ``pair_id``, e.g. from
+                ``MentorshipMeetingRepository.get_meetings_by_pair``. A pair
+                absent from this dict is treated as having no meetings.
+                LEGACY rows are filtered out here regardless of whether the
+                caller already excluded them -- they carry no times and have
+                nothing to show in this list.
+        """
+        meetings_by_pair = meetings_by_pair or {}
         return MeetingDto(
             round_id=round_id,
             user_timezone=user_timezone,
@@ -145,8 +166,15 @@ class MentorshipMapper:
                     if partner_id == pair.mentor_id
                     else ParticipantRole.MENTOR,
                     meeting_time_list=[
-                        MeetingTimeDto(**m)
-                        for m in (pair.meeting_log or {}).get("meeting_time_list") or []
+                        MeetingTimeDto(
+                            meeting_id=m.meeting_id,
+                            start_datetime=m.start_datetime,
+                            end_datetime=m.end_datetime,
+                            is_completed=m.is_completed,
+                            created_datetime=m.created_datetime,
+                        )
+                        for m in meetings_by_pair.get(pair.pair_id, [])
+                        if m.source != MeetingSource.LEGACY
                     ],
                     completed_meetings_count=pair.completed_count or 0,
                 )

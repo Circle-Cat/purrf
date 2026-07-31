@@ -4,10 +4,13 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.common.constants import DATETIME_UTC_FORMAT
-from backend.common.mentorship_enums import MEETING_SUMMARY_TEMPLATE, PairStatus
+from backend.common.mentorship_enums import (
+    MEETING_SUMMARY_TEMPLATE,
+    MeetingSource,
+    PairStatus,
+)
 from backend.common.name_utils import partner_display_name
-from backend.mentorship.meeting_log import completed_count
+from backend.entity.mentorship_meeting_entity import MentorshipMeetingEntity
 from backend.dto.meeting_dto import MeetingDto
 from backend.dto.meeting_create_dto import MeetingCreateDto
 from backend.dto.google_meeting_detail_dto import GoogleMeetingDetailDto
@@ -34,6 +37,7 @@ class MeetingService:
         users_repository,
         meeting_scheduling_service,
         mentorship_calendar_id,
+        mentorship_meeting_repository,
     ):
         """
         Args:
@@ -45,6 +49,9 @@ class MeetingService:
             mentorship_calendar_id: The Google Calendar mentorship meetings are
                 created on and deleted from. Per-environment, so this
                 environment's deletes cannot reach another environment's events.
+            mentorship_meeting_repository: Data access for individual
+                mentorship meeting rows (``mentorship_meeting`` table), the
+                replacement for ``mentorship_pairs.meeting_log``.
         """
         self.logger = logger
         self.mentorship_pairs_repository = mentorship_pairs_repository
@@ -52,6 +59,7 @@ class MeetingService:
         self.users_repository = users_repository
         self.meeting_scheduling_service = meeting_scheduling_service
         self.mentorship_calendar_id = mentorship_calendar_id
+        self.mentorship_meeting_repository = mentorship_meeting_repository
 
     async def get_meetings_by_user_and_round(
         self, session: AsyncSession, user_context: UserContextDto, round_id: int
@@ -90,16 +98,23 @@ class MeetingService:
             )
 
         grouped_pairs = []
+        meetings_by_pair = {}
         for p in pair_entity:
             partner_id = (
                 p.mentor_id if p.mentee_id == current_user.user_id else p.mentee_id
             )
             grouped_pairs.append((p, partner_id))
+            meetings_by_pair[p.pair_id] = (
+                await self.mentorship_meeting_repository.get_meetings_by_pair(
+                    session=session, pair_id=p.pair_id
+                )
+            )
 
         return self.mentorship_mapper.map_to_meeting_dto(
             round_id=round_id,
             user_timezone=current_user.timezone,
             grouped_pairs=grouped_pairs,
+            meetings_by_pair=meetings_by_pair,
         )
 
     async def upsert_meetings(
@@ -142,49 +157,50 @@ class MeetingService:
                 "The current user is not matched as a mentee in this round."
             )
 
-        current_log = (
-            pair_entity.meeting_log if isinstance(pair_entity.meeting_log, dict) else {}
+        # Conflict-check against this pair's existing MANUAL meetings only --
+        # matching the old behavior, which compared only against
+        # `meeting_time_list` and never against `google_meetings`. GOOGLE rows
+        # are excluded here on purpose, not merely because
+        # `get_meetings_by_pair` defaults to excluding LEGACY.
+        existing_meetings = await self.mentorship_meeting_repository.get_meetings_by_pair(
+            session=session, pair_id=pair_entity.pair_id
         )
-        existing_slots = (
-            current_log.get("meeting_time_list")
-            if isinstance(current_log.get("meeting_time_list"), list)
-            else []
-        )
+        existing_manual_meetings = [
+            m for m in existing_meetings if m.source == MeetingSource.MANUAL
+        ]
 
-        new_start = data.start_datetime.strftime(DATETIME_UTC_FORMAT)
-        new_end = data.end_datetime.strftime(DATETIME_UTC_FORMAT)
-
-        if self._has_time_conflict(existing_slots, new_start, new_end):
+        if self._has_time_conflict(
+            existing_manual_meetings, data.start_datetime, data.end_datetime
+        ):
             self.logger.warning(
                 "[MeetingService] upsert failed for mentee_id=%s, round_id=%s. Duplicate slot: %s - %s",
                 current_user.user_id,
                 data.round_id,
-                new_start,
-                new_end,
+                data.start_datetime,
+                data.end_datetime,
             )
             raise ValueError("This time slot already exists.")
 
-        # Merge rather than replace. A pair is not meant to hold both
-        # generations, but that is an operational guarantee rather than one the
-        # code enforces, and the cost of being wrong here is deleting the other
-        # generation's meetings with no way to restore them.
-        pair_entity.meeting_log = {
-            **current_log,
-            "meeting_time_list": existing_slots
-            + [
-                {
-                    "meeting_id": str(uuid.uuid4()),
-                    "start_datetime": new_start,
-                    "end_datetime": new_end,
-                    "is_completed": data.is_completed,
-                    "created_datetime": datetime.utcnow().strftime(DATETIME_UTC_FORMAT),
-                }
-            ],
-        }
-        pair_entity.completed_count = completed_count(pair_entity.meeting_log)
+        new_meeting = MentorshipMeetingEntity(
+            meeting_id=str(uuid.uuid4()),
+            pair_id=pair_entity.pair_id,
+            source=MeetingSource.MANUAL,
+            start_datetime=data.start_datetime,
+            end_datetime=data.end_datetime,
+            is_completed=data.is_completed,
+        )
+        await self.mentorship_meeting_repository.insert_meeting(
+            session=session, meeting=new_meeting
+        )
 
-        saved_pair = await self.mentorship_pairs_repository.upsert_pairs(
-            session=session, entity=pair_entity
+        pair_entity.completed_count = (
+            await self.mentorship_meeting_repository.recalculate_completed_count(
+                session=session, pair_id=pair_entity.pair_id
+            )
+        )
+
+        updated_meetings = await self.mentorship_meeting_repository.get_meetings_by_pair(
+            session=session, pair_id=pair_entity.pair_id
         )
 
         await session.commit()
@@ -192,7 +208,8 @@ class MeetingService:
         return self.mentorship_mapper.map_to_meeting_dto(
             round_id=data.round_id,
             user_timezone=current_user.timezone,
-            grouped_pairs=[(saved_pair, saved_pair.mentor_id)],
+            grouped_pairs=[(pair_entity, pair_entity.mentor_id)],
+            meetings_by_pair={pair_entity.pair_id: updated_meetings},
         )
 
     async def create_google_meeting(
@@ -494,22 +511,28 @@ class MeetingService:
         )
 
     def _has_time_conflict(
-        self, existing_slots: list, new_start: str, new_end: str
+        self,
+        existing_meetings: list[MentorshipMeetingEntity],
+        new_start: datetime,
+        new_end: datetime,
     ) -> bool:
         """
-        Returns True if the new time slot overlaps with any existing slot.
+        Returns True if the new time slot overlaps with any existing meeting row.
 
         Args:
-            existing_slots (list): List of existing meeting slot dicts with "start_datetime" and "end_datetime".
-            new_start (str): Start datetime of the new slot in UTC string format.
-            new_end (str): End datetime of the new slot in UTC string format.
+            existing_meetings (list[MentorshipMeetingEntity]): Meeting rows to
+                check against. Callers are expected to have already narrowed
+                this to whatever source(s) should participate in the check
+                (e.g. MANUAL only) -- this method does not filter by source.
+            new_start (datetime): Start datetime of the new slot, UTC.
+            new_end (datetime): End datetime of the new slot, UTC.
 
         Returns:
             bool: True if a conflict exists, False otherwise.
         """
         return any(
-            new_start < e["end_datetime"] and new_end > e["start_datetime"]
-            for e in existing_slots
+            new_start < e.end_datetime and new_end > e.start_datetime
+            for e in existing_meetings
         )
 
     async def get_meetings_by_user_and_round_v2(

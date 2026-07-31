@@ -150,6 +150,9 @@ from backend.repository.experience_repository import ExperienceRepository
 from backend.repository.training_repository import TrainingRepository
 from backend.repository.mentorship_round_repository import MentorshipRoundRepository
 from backend.repository.mentorship_pairs_repository import MentorshipPairsRepository
+from backend.repository.mentorship_meeting_repository import (
+    MentorshipMeetingRepository,
+)
 from backend.repository.mentorship_round_participants_repository import (
     MentorshipRoundParticipantsRepository,
 )
@@ -494,6 +497,7 @@ class AppDependencyBuilder:
         )
         self.mentorship_round_repository = MentorshipRoundRepository()
         self.mentorship_pairs_repository = MentorshipPairsRepository()
+        self.mentorship_meeting_repository = MentorshipMeetingRepository()
         self.mentorship_round_participants_repo = (
             MentorshipRoundParticipantsRepository()
         )
@@ -537,6 +541,7 @@ class AppDependencyBuilder:
             users_repository=self.users_repository,
             meeting_scheduling_service=self.meeting_scheduling_service,
             mentorship_calendar_id=mentorship_calendar_id,
+            mentorship_meeting_repository=self.mentorship_meeting_repository,
         )
         self.meet_attendance_service = MeetAttendanceService(
             logger=self.logger,
