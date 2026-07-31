@@ -1,5 +1,8 @@
 from backend.entity.job_entity import JobEntity
-from backend.common.recruiting_enums import JobStatus
+from backend.common.recruiting_enums import (
+    PUBLICLY_VISIBLE_JOB_STATUSES,
+    JobStatus,
+)
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -25,9 +28,25 @@ class JobRepository:
         return result.scalar_one_or_none()
 
     async def list_published(self, session: AsyncSession) -> list[JobEntity]:
-        """Return all PUBLISHED jobs."""
+        """Return jobs whose status is exactly PUBLISHED.
+
+        Kept strict for callers asking the literal-status question; the
+        candidate-facing browse list wants ``list_publicly_visible`` instead.
+        """
         result = await session.execute(
             select(JobEntity).where(JobEntity.status == JobStatus.PUBLISHED)
+        )
+        return list(result.scalars().all())
+
+    async def list_publicly_visible(self, session: AsyncSession) -> list[JobEntity]:
+        """Return every job that is live to candidates.
+
+        Covers ``PUBLICLY_VISIBLE_JOB_STATUSES``, so a posting whose revision
+        or close is still under review stays listed -- it is still serving its
+        last approved version.
+        """
+        result = await session.execute(
+            select(JobEntity).where(JobEntity.status.in_(PUBLICLY_VISIBLE_JOB_STATUSES))
         )
         return list(result.scalars().all())
 

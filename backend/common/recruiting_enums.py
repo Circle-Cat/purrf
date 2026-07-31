@@ -36,6 +36,18 @@ class JobStatus(StrEnum):
     PENDING_REOPEN = "pending_reopen"
 
 
+# Statuses at which a posting is live to candidates: it shows on the browse
+# list, its detail page resolves, and it accepts applications. A posting whose
+# revision or close is still under review keeps serving its last approved
+# version, so it stays live until the reviewer decides. PENDING_REVIEW and
+# PENDING_REOPEN are not live -- neither has an approved version on offer.
+PUBLICLY_VISIBLE_JOB_STATUSES: frozenset[JobStatus] = frozenset({
+    JobStatus.PUBLISHED,
+    JobStatus.PUBLISHED_PENDING_REVISION,
+    JobStatus.PENDING_CLOSE,
+})
+
+
 class JobReviewStatus(StrEnum):
     """State of a single job-review request."""
 

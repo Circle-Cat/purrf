@@ -81,9 +81,9 @@ class TestApplicationController(unittest.IsolatedAsyncioTestCase):
                 id=1, title="Mentee", kind=JobKind.ACTIVITY, description=None
             )
         ]
-        self.job_service.list_published = AsyncMock(return_value=summaries)
+        self.job_service.list_publicly_visible = AsyncMock(return_value=summaries)
         resp = await self.controller.list_public_jobs(self.ctx)
-        self.job_service.list_published.assert_awaited_once_with(self.session)
+        self.job_service.list_publicly_visible.assert_awaited_once_with(self.session)
         self.assertEqual(resp["data"][0].title, "Mentee")
 
     async def test_get_my_application_uses_job_id_query_param(self):

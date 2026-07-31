@@ -1,6 +1,7 @@
 """Unit tests for recruiting review enums and the job-approve permission."""
 
 from backend.common.recruiting_enums import (
+    PUBLICLY_VISIBLE_JOB_STATUSES,
     JobReviewKind,
     JobReviewStatus,
     JobStatus,
@@ -35,6 +36,21 @@ def test_job_review_kind_close_reopen():
     """JobReviewKind carries close and reopen gates."""
     assert JobReviewKind.CLOSE.value == "close"
     assert JobReviewKind.REOPEN.value == "reopen"
+
+
+def test_publicly_visible_job_statuses():
+    """A posting awaiting a revision or close decision is still live.
+
+    Both states keep serving the last approved version, so candidates must
+    keep seeing (and be able to apply to) the posting until the reviewer
+    decides. PENDING_REVIEW and PENDING_REOPEN are not live: neither has an
+    approved version on offer.
+    """
+    assert PUBLICLY_VISIBLE_JOB_STATUSES == frozenset({
+        JobStatus.PUBLISHED,
+        JobStatus.PUBLISHED_PENDING_REVISION,
+        JobStatus.PENDING_CLOSE,
+    })
 
 
 def test_job_approve_permission():

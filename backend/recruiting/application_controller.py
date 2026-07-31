@@ -21,7 +21,7 @@ class ApplicationController:
         """
         Args:
             application_service (ApplicationService): Submit/edit/get logic.
-            job_service (JobService): Provides get_published_job.
+            job_service (JobService): Provides the candidate-visible job lookups.
             resume_storage (ResumeStorage): Content-addressed résumé upload.
             database: Async session provider.
         """
@@ -81,9 +81,9 @@ class ApplicationController:
         return api_response(message="Job fetched.", data=result)
 
     async def list_public_jobs(self, current_user: UserContextDto):
-        """List published postings as candidate-safe summaries for the browse page."""
+        """List candidate-visible postings as candidate-safe browse-page summaries."""
         async with self.database.session() as session:
-            result = await self.job_service.list_published(session)
+            result = await self.job_service.list_publicly_visible(session)
         return api_response(message="Jobs fetched.", data=result)
 
     async def upload_resume(
