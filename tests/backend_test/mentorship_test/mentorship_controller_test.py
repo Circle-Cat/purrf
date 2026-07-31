@@ -670,6 +670,24 @@ class TestMentorshipController(unittest.IsolatedAsyncioTestCase):
                 payload=payload,
             )
 
+    async def test_sync_meet_attendance_runs_without_the_google_meeting_flag(self):
+        """The cron sweep must not depend on a per-user feature flag."""
+        self.mock_launchdarkly_service.is_create_google_meeting_enabled.return_value = (
+            False
+        )
+
+        await self.controller.sync_meet_attendance(lookback_hours=4)
+
+        self.mock_meet_attendance_sync_service.sync_attendance.assert_awaited_once()
+        _, kwargs = self.mock_meet_attendance_sync_service.sync_attendance.await_args
+        self.assertEqual(kwargs["lookback_hours"], 4)
+
+    async def test_sync_meet_attendance_never_consults_the_google_meeting_flag(self):
+        """Pin the removal: reintroducing the gate must fail this test."""
+        await self.controller.sync_meet_attendance(lookback_hours=2)
+
+        self.mock_launchdarkly_service.is_create_google_meeting_enabled.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()
