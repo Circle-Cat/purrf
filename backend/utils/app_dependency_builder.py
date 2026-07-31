@@ -70,6 +70,7 @@ from backend.internal_activity_service.google_chat_analytics_service import (
 from backend.internal_activity_service.summary_service import SummaryService
 from backend.common.environment_constants import (
     GMAIL_SENDER_RECRUITING,
+    GMAIL_SENDER_NOTIFICATION,
     JIRA_SERVER,
     JIRA_USER,
     MENTORSHIP_CALENDAR_ID,
@@ -132,6 +133,8 @@ from backend.recruiting.audit_service import AuditService
 from backend.recruiting.audit_controller import AuditController
 from backend.recruiting.notification_service import RecruitingNotificationService
 from backend.recruiting.notification_controller import RecruitingNotificationController
+from backend.recruiting.notification_dispatcher import NotificationDispatcher
+from backend.communication.notification_email_service import NotificationEmailService
 from backend.common.environment_constants import RESUME_BUCKET
 from backend.common.auth0_client import Auth0Client
 from backend.repository.users_repository import UsersRepository
@@ -601,12 +604,54 @@ class AppDependencyBuilder:
         self.job_review_repository = JobReviewRepository()
         self.job_activity_repository = JobActivityRepository()
         self.recruiting_mapper = RecruitingMapper()
+        # Person-anchored email transport, needed by the notification email
+        # channel below. GmailClient reads the GMAIL_* credentials from the
+        # env itself (use placeholder values locally -- real secrets are only
+        # needed to actually send/read mail).
+        #
+        # The From addresses are read here instead: one per sending service,
+        # so the transport stays unaware of which services exist. Recruiting
+        # and notifications each get their own. Missing is fatal at startup
+        # rather than defaulted -- an unowned From is silently rewritten by
+        # Gmail, so a wrong or absent value would surface as mail from the
+        # wrong identity, not as an error.
+        recruiting_sender = os.getenv(GMAIL_SENDER_RECRUITING)
+        if not recruiting_sender:
+            raise ValueError(f"Missing environment variable: {GMAIL_SENDER_RECRUITING}")
+        self.notification_sender_address = os.getenv(GMAIL_SENDER_NOTIFICATION)
+        if not self.notification_sender_address:
+            raise ValueError(
+                f"Missing environment variable: {GMAIL_SENDER_NOTIFICATION}"
+            )
+        self.gmail_client = GmailClient(
+            logger=self.logger,
+            retry_utils=self.retry_utils,
+            sender_addresses=[recruiting_sender, self.notification_sender_address],
+        )
+        self.recruiting_notification_service = RecruitingNotificationService(
+            self.notification_repository,
+            self.application_repository,
+            self.job_repository,
+            self.users_repository,
+        )
+        self.notification_email_service = NotificationEmailService(
+            gmail_client=self.gmail_client,
+            logger=self.logger,
+            sender_address=self.notification_sender_address,
+        )
+        self.notification_dispatcher = NotificationDispatcher(
+            notification_repository=self.notification_repository,
+            notification_service=self.recruiting_notification_service,
+            user_emails_repository=self.user_emails_repository,
+            email_service=self.notification_email_service,
+            logger=self.logger,
+        )
         self.job_service = JobService(
             self.job_repository,
             self.recruiting_mapper,
             self.user_permissions_repository,
             self.job_review_repository,
-            self.notification_repository,
+            self.notification_dispatcher,
             self.users_repository,
             self.job_activity_repository,
             self.user_emails_repository,
@@ -629,7 +674,7 @@ class AppDependencyBuilder:
             self.recruiting_mapper,
             self.application_assignment_repository,
             self.application_activity_repository,
-            self.notification_repository,
+            self.notification_dispatcher,
             self.user_emails_repository,
         )
         self.application_controller = ApplicationController(
@@ -638,24 +683,10 @@ class AppDependencyBuilder:
             self.resume_storage,
             self.database,
         )
-        # Person-anchored email (recruiting Emails tab). Constructed eagerly to
-        # match the other clients; GmailClient reads the GMAIL_* credentials from
-        # the env itself (use placeholder values locally — real secrets are only
-        # needed to actually send/read mail).
-        #
-        # The From addresses are read here instead: one per sending service, so
-        # the transport stays unaware of which services exist. Today recruiting
-        # is the only one. Missing is fatal at startup rather than defaulted —
-        # an unowned From is silently rewritten by Gmail, so a wrong or absent
-        # value would surface as mail from the wrong identity, not as an error.
-        recruiting_sender = os.getenv(GMAIL_SENDER_RECRUITING)
-        if not recruiting_sender:
-            raise ValueError(f"Missing environment variable: {GMAIL_SENDER_RECRUITING}")
-        self.gmail_client = GmailClient(
-            logger=self.logger,
-            retry_utils=self.retry_utils,
-            sender_addresses=[recruiting_sender],
-        )
+        # Person-anchored email (recruiting Emails tab). self.gmail_client and
+        # recruiting_sender were constructed earlier, alongside the
+        # notification email channel, since JobService/ApplicationService
+        # need self.notification_dispatcher before they are built above.
         self.email_thread_repository = EmailThreadRepository()
         self.email_message_repository = EmailMessageRepository()
         self.email_conversation_service = EmailConversationService(
@@ -715,7 +746,7 @@ class AppDependencyBuilder:
             self.application_comment_repository,
             self.application_comment_mention_repository,
             self.evaluation_repository,
-            self.notification_repository,
+            self.notification_dispatcher,
             self.user_emails_repository,
             self.email_conversation_service,
             self.email_sync_service,
@@ -754,12 +785,6 @@ class AppDependencyBuilder:
         self.audit_controller = AuditController(
             self.audit_service,
             self.database,
-        )
-        self.recruiting_notification_service = RecruitingNotificationService(
-            self.notification_repository,
-            self.application_repository,
-            self.job_repository,
-            self.users_repository,
         )
         self.recruiting_notification_controller = RecruitingNotificationController(
             self.recruiting_notification_service,

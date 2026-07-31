@@ -98,3 +98,9 @@ GMAIL_CLIENT_ID = "GMAIL_CLIENT_ID"
 GMAIL_CLIENT_SECRET = "GMAIL_CLIENT_SECRET"
 GMAIL_REFRESH_TOKEN = "GMAIL_REFRESH_TOKEN"
 GMAIL_SENDER_RECRUITING = "GMAIL_SENDER_RECRUITING"
+
+# Per-service, per-environment From addresses. One mailbox, several Send-As
+# aliases: recruiting correspondence and system notifications must be
+# distinguishable in a recipient's inbox, and each environment sends from its
+# own alias so a non-prod message can never look like a prod one.
+GMAIL_SENDER_NOTIFICATION = "GMAIL_SENDER_NOTIFICATION"

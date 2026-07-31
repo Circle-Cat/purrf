@@ -65,10 +65,11 @@ resource "kubernetes_secret" "purrf_app" {
     # come from the purrf-auth GCP project; the refresh token is minted once via
     # interactive consent (not Terraform-managed). test/staging authorize the
     # purrf@circlecat.org machine mailbox, prod the real recruiting sender.
-    GMAIL_CLIENT_ID         = var.gmail_client_id
-    GMAIL_CLIENT_SECRET     = var.gmail_client_secret
-    GMAIL_REFRESH_TOKEN     = var.gmail_refresh_token
-    GMAIL_SENDER_RECRUITING = var.gmail_sender_recruiting
+    GMAIL_CLIENT_ID           = var.gmail_client_id
+    GMAIL_CLIENT_SECRET       = var.gmail_client_secret
+    GMAIL_REFRESH_TOKEN       = var.gmail_refresh_token
+    GMAIL_SENDER_RECRUITING   = var.gmail_sender_recruiting
+    GMAIL_SENDER_NOTIFICATION = var.gmail_sender_notification
   }
 }
 

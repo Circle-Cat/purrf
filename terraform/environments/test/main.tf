@@ -42,9 +42,10 @@ module "purrf_instance" {
   mentorship_calendar_id = "c_d22a80da785e3232991f3823ba799ed91fa6f1bcc388552686a72583b23b6cd2@group.calendar.google.com"
   interview_calendar_id  = "c_ebe9f94084ac6049f47805f47b4278a4a14b6fea8d40e9cd401eda0625b449da@group.calendar.google.com"
 
-  gmail_client_id         = var.gmail_client_id
-  gmail_client_secret     = var.gmail_client_secret
-  gmail_refresh_token     = var.gmail_refresh_token
-  gmail_sender_recruiting = "recruiting-test@circlecat.org"
+  gmail_client_id           = var.gmail_client_id
+  gmail_client_secret       = var.gmail_client_secret
+  gmail_refresh_token       = var.gmail_refresh_token
+  gmail_sender_recruiting   = "recruiting-test@circlecat.org"
+  gmail_sender_notification = "notifications-test@circlecat.org"
 }
 

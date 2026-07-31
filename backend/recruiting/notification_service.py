@@ -91,6 +91,33 @@ class RecruitingNotificationService:
             created_at=row.created_at,
         )
 
+    async def resolve(self, session: AsyncSession, row):
+        """Resolve one notification row into its DTO plus the application's stage.
+
+        The stage is not part of NotificationDto on purpose: the bell renders
+        a row whenever the user opens the popover, possibly days after the
+        event, by which time the stage has moved and would be a lie. The
+        email renderer runs milliseconds after the event, so it can state it.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            row (NotificationEntity): The notification to resolve.
+
+        Returns:
+            tuple[NotificationDto, ApplicationStage | None]: The DTO, and the
+            referenced application's current stage (None when the
+            notification is not application-scoped or the application is
+            gone).
+        """
+        dto = await self._to_dto(session, row)
+        stage = None
+        if row.application_id is not None:
+            application = await self.application_repository.get_by_id(
+                session, row.application_id
+            )
+            stage = application.stage if application is not None else None
+        return dto, stage
+
     async def list_for_user(
         self, session: AsyncSession, user_id: int, limit: int = 20, offset: int = 0
     ) -> NotificationListDto:
