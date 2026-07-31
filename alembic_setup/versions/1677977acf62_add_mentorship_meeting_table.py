@@ -153,6 +153,32 @@ def upgrade() -> None:
         ) AS n
     """)
 
+    # The shortfall INSERT above can only ever ADD rows, so it cannot fix a
+    # pair whose completed_count is LOWER than its number of completed
+    # entries. That case would otherwise migrate "successfully" with the
+    # invariant broken and nothing logged. Assert it here instead: the whole
+    # revision is one transaction, so this rolls everything back.
+    op.execute("""
+        DO $$
+        DECLARE
+            mismatched int;
+        BEGIN
+            SELECT count(*) INTO mismatched
+            FROM mentorship_pairs p
+            WHERE p.completed_count <> (
+                SELECT count(*) FROM mentorship_meeting m
+                WHERE m.pair_id = p.pair_id AND m.is_completed
+            );
+            IF mismatched > 0 THEN
+                RAISE EXCEPTION
+                    'mentorship_meeting migration would leave % pair(s) whose '
+                    'completed_count does not match their completed meeting '
+                    'rows; reconcile mentorship_pairs.completed_count first',
+                    mismatched;
+            END IF;
+        END $$;
+    """)
+
 
 def downgrade() -> None:
     """Downgrade schema."""
