@@ -551,6 +551,7 @@ class AppDependencyBuilder:
             users_repository=self.users_repository,
             user_identities_repository=self.user_identities_repository,
             user_emails_repository=self.user_emails_repository,
+            mentorship_meeting_repository=self.mentorship_meeting_repository,
         )
         self.mentorship_controller = MentorshipController(
             rounds_service=self.rounds_service,
