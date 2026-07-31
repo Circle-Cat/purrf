@@ -139,14 +139,22 @@ class TestMentorshipMeetingRepository(BaseRepositoryTestLib):
         pair = await self._seed_pair()
         shared_start = datetime(2026, 1, 5, 10, 0, tzinfo=timezone.utc)
         shared_end = shared_start + timedelta(minutes=30)
+        # meeting_id values are chosen (not random) so that ascending
+        # meeting_id order is the REVERSE of the expected created_datetime
+        # order. That way, if the created_datetime tiebreaker were ever
+        # removed from the query, the fallback ordering by meeting_id would
+        # produce the wrong result deterministically, instead of coincidentally
+        # matching about half the time.
         m_created_later = self._manual_meeting(
             pair.pair_id,
+            meeting_id="a-tie-created-later",
             start_datetime=shared_start,
             end_datetime=shared_end,
             created_datetime=datetime(2026, 1, 1, 0, 0, 2, tzinfo=timezone.utc),
         )
         m_created_earlier = self._manual_meeting(
             pair.pair_id,
+            meeting_id="b-tie-created-earlier",
             start_datetime=shared_start,
             end_datetime=shared_end,
             created_datetime=datetime(2026, 1, 1, 0, 0, 1, tzinfo=timezone.utc),
@@ -203,12 +211,18 @@ class TestMentorshipMeetingRepository(BaseRepositoryTestLib):
             start_datetime=datetime(2026, 1, 3, 10, 0, tzinfo=timezone.utc),
             end_datetime=datetime(2026, 1, 3, 10, 30, tzinfo=timezone.utc),
         )
+        # meeting_id values are chosen (not random) so that ascending
+        # meeting_id order among the two NULL-start rows is the REVERSE of
+        # the expected created_datetime order -- see the analogous comment
+        # in test_get_meetings_by_pair_breaks_tied_start_by_created_datetime.
         legacy_a = self._legacy_meeting(
             pair.pair_id,
+            meeting_id="b-legacy-a-first-created",
             created_datetime=datetime(2026, 1, 1, 0, 0, 1, tzinfo=timezone.utc),
         )
         legacy_b = self._legacy_meeting(
             pair.pair_id,
+            meeting_id="a-legacy-b-second-created",
             created_datetime=datetime(2026, 1, 1, 0, 0, 2, tzinfo=timezone.utc),
         )
         # Inserted out of expected order on purpose.
