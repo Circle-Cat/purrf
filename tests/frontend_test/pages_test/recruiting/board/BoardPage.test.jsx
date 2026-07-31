@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { render, screen, waitFor, within, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { toast } from "sonner";
@@ -13,12 +13,26 @@ vi.mock("@/api/recruitingApi");
 vi.spyOn(toast, "success").mockImplementation(() => {});
 vi.spyOn(toast, "error").mockImplementation(() => {});
 
+// Set by the test that spies on Element.prototype.scrollIntoView, so the
+// shared afterEach below can restore it even if that test fails before
+// reaching its own cleanup — vi.clearAllMocks() only clears call history, not
+// installed mock implementations, so a leaked spy would otherwise silence
+// scrollIntoView for every test that runs after it in this file.
+let scrollIntoViewSpy;
+
 beforeEach(() => {
   vi.clearAllMocks();
 });
 
-/** Render BoardPage inside a memory router with a stub detail route. */
-const renderPage = () => {
+afterEach(() => {
+  vi.useRealTimers();
+  scrollIntoViewSpy?.mockRestore();
+  scrollIntoViewSpy = undefined;
+});
+
+/** Render BoardPage inside a memory router with a stub detail route.
+ * Returns the router too, so tests can assert on the resulting URL. */
+const renderPage = (search = "") => {
   const router = createMemoryRouter(
     [
       { path: "/recruiting/board", element: <BoardPage /> },
@@ -27,9 +41,9 @@ const renderPage = () => {
         element: <p>DETAIL PAGE</p>,
       },
     ],
-    { initialEntries: ["/recruiting/board"] },
+    { initialEntries: [`/recruiting/board${search}`] },
   );
-  return render(<RouterProvider router={router} />);
+  return { ...render(<RouterProvider router={router} />), router };
 };
 
 const jobA = {
@@ -746,5 +760,314 @@ describe("BoardPage", () => {
     // Existing items are left unchanged and the button is still shown.
     expect(within(rejectedLane).getAllByRole("button").length).toBe(21);
     expect(within(rejectedLane).getByText("Load more")).toBeInTheDocument();
+  });
+
+  it("opens the job named by ?jobId= instead of the first one", async () => {
+    api.listBoardJobs.mockResolvedValue({ data: [jobA, jobB] });
+    api.getJobBoard.mockResolvedValue({
+      data: {
+        stages: { board_review: { items: [], total: 0, has_more: false } },
+      },
+    });
+
+    renderPage("?jobId=2");
+
+    await waitFor(() => expect(api.getJobBoard).toHaveBeenCalledWith(2));
+    // Mutation check: jobA is first in the list, so a board that ignored the
+    // param would have fetched 1 and rendered jobA's lanes.
+    expect(api.getJobBoard).not.toHaveBeenCalledWith(1);
+    // `findBy`, not `getBy`: the waitFor above only proves the fetch was
+    // *called*. Its resolution, the state update and the re-render land a tick
+    // later, so a synchronous query here races the render and fails under load.
+    expect(await screen.findByText("Board review")).toBeInTheDocument();
+  });
+
+  it("falls back to the first job and rewrites the URL when ?jobId= names a job the caller doesn't own", async () => {
+    api.listBoardJobs.mockResolvedValue({ data: [jobA, jobB] });
+    // Mirrors the backend: paging a board you don't own raises. The gate is
+    // what keeps this rejection unreachable — without it, getJobBoard(999)
+    // fires, rejects, and loadBoard surfaces it as an error toast.
+    api.getJobBoard.mockImplementation((jobId) =>
+      jobId === 1
+        ? Promise.resolve({
+            data: {
+              stages: {
+                recruiter_screening: { items: [], total: 0, has_more: false },
+              },
+            },
+          })
+        : Promise.reject(new Error("you are not an owner of this job")),
+    );
+
+    // 999 is a stale link, or a posting this caller was removed from.
+    const { router } = renderPage("?jobId=999&focus=101");
+
+    await waitFor(() => expect(api.getJobBoard).toHaveBeenCalledWith(1));
+    expect(router.state.location.search).toBe("?jobId=1");
+    // The focus id belonged to the job we couldn't honour, so it goes too.
+    expect(router.state.location.search).not.toContain("focus");
+    expect(api.getJobBoard).not.toHaveBeenCalledWith(999);
+    // Mutation check: switch the correction to a push and this still reads
+    // "?jobId=1" above, but browser-back would land back on the board
+    // instead of leaving it — nothing links to the board with ?jobId=, so
+    // every param-less arrival would stack a history entry.
+    expect(router.state.historyAction).toBe("REPLACE");
+    // The fallback must be quiet: no error toast for a stale or foreign id.
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the first job when ?jobId= isn't a number", async () => {
+    api.listBoardJobs.mockResolvedValue({ data: [jobA, jobB] });
+    api.getJobBoard.mockResolvedValue({
+      data: {
+        stages: {
+          recruiter_screening: { items: [], total: 0, has_more: false },
+        },
+      },
+    });
+
+    const { router } = renderPage("?jobId=abc");
+
+    await waitFor(() => expect(api.getJobBoard).toHaveBeenCalledWith(1));
+    expect(router.state.location.search).toBe("?jobId=1");
+  });
+
+  it("writes the chosen job into the URL when the switcher changes, without stacking history entries", async () => {
+    const user = userEvent.setup();
+    api.listBoardJobs.mockResolvedValue({ data: [jobA, jobB] });
+    api.getJobBoard.mockResolvedValue({ data: { stages: {} } });
+
+    // Start already reconciled, so the only history action under test is the
+    // switcher's own write.
+    const { router } = renderPage("?jobId=1");
+
+    await waitFor(() => expect(api.getJobBoard).toHaveBeenCalledWith(1));
+    expect(router.state.historyAction).toBe("POP");
+
+    await user.click(screen.getByRole("combobox"));
+    await user.click(await screen.findByText("Mentor"));
+
+    await waitFor(() => expect(router.state.location.search).toBe("?jobId=2"));
+    // `replace: true` reuses the history entry rather than pushing a new one,
+    // so browser-back leaves the board instead of walking job selections.
+    // Mutation check: drop `replace` and this reads "PUSH".
+    expect(router.state.historyAction).toBe("REPLACE");
+  });
+
+  it("scrolls the focused card into view, rings it, and strips focus from the URL", async () => {
+    // jsdom's shim is a bare no-op (setupTests.js), so spy on the prototype to
+    // see WHICH element the board asked to scroll to. A plain `function` (not
+    // an arrow) is required: `this` is the element the method was called on,
+    // and vitest 1.6.1's mock objects expose no `contexts` array to read it
+    // from afterwards.
+    const scrolled = [];
+    scrollIntoViewSpy = vi
+      .spyOn(Element.prototype, "scrollIntoView")
+      .mockImplementation(function captureTarget() {
+        scrolled.push(this);
+      });
+
+    api.listBoardJobs.mockResolvedValue({ data: [jobA] });
+    api.getJobBoard.mockResolvedValue({
+      data: {
+        stages: {
+          rejected: {
+            items: [
+              {
+                id: 777,
+                applicantName: "Just Rejected",
+                applicantEmail: "jr@example.com",
+                stage: "rejected",
+                subStatus: null,
+                tags: null,
+                appliedAt: "2026-06-01T00:00:00Z",
+              },
+            ],
+            total: 1,
+            has_more: false,
+          },
+        },
+      },
+    });
+
+    const { router } = renderPage("?jobId=1&focus=777");
+
+    const card = await screen.findByRole("button", { name: /Just Rejected/ });
+    await waitFor(() => expect(scrolled).toHaveLength(1));
+    // The focused card itself, not merely "something scrolled".
+    expect(scrolled[0]).toBe(card);
+    await waitFor(() => expect(card.className).toContain("ring-2"));
+    // Stripped so a refresh doesn't repeat the hunt, and via `replace` so it
+    // doesn't add a history entry.
+    await waitFor(() => expect(router.state.location.search).toBe("?jobId=1"));
+  });
+
+  it("pages a terminal lane to find a focused card that isn't on the first page", async () => {
+    const makeCard = (id) => ({
+      id,
+      applicantName: `Rejected Person ${id}`,
+      applicantEmail: `rejected${id}@example.com`,
+      stage: "rejected",
+      subStatus: null,
+      tags: null,
+      appliedAt: "2026-06-01T00:00:00Z",
+    });
+
+    api.listBoardJobs.mockResolvedValue({ data: [jobA] });
+    api.getJobBoard.mockResolvedValue({
+      data: {
+        stages: {
+          rejected: {
+            items: Array.from({ length: 20 }, (_, i) => makeCard(i + 1)),
+            total: 25,
+            has_more: true,
+          },
+        },
+      },
+    });
+    // The focused applicant sits at position 21 — the un-backfilled
+    // stage_entered_at rows crowd the top of the lane.
+    api.getJobBoardStagePage.mockResolvedValue({
+      data: { items: [makeCard(21)], total: 25, has_more: false },
+    });
+
+    renderPage("?jobId=1&focus=21");
+
+    await waitFor(() =>
+      expect(api.getJobBoardStagePage).toHaveBeenCalledWith(1, {
+        stage: "rejected",
+        limit: 20,
+        offset: 20,
+      }),
+    );
+    const card = await screen.findByRole("button", {
+      name: /Rejected Person 21/,
+    });
+    await waitFor(() => expect(card.className).toContain("ring-2"));
+  });
+
+  it("gives up quietly and doesn't retry when a focus-hunt page request fails", async () => {
+    const makeCard = (id) => ({
+      id,
+      applicantName: `Rejected Person ${id}`,
+      applicantEmail: `rejected${id}@example.com`,
+      stage: "rejected",
+      subStatus: null,
+      tags: null,
+      appliedAt: "2026-06-01T00:00:00Z",
+    });
+
+    api.listBoardJobs.mockResolvedValue({ data: [jobA] });
+    api.getJobBoard.mockResolvedValue({
+      data: {
+        stages: {
+          rejected: {
+            items: Array.from({ length: 20 }, (_, i) => makeCard(i + 1)),
+            total: 25,
+            has_more: true,
+          },
+        },
+      },
+    });
+    api.getJobBoardStagePage.mockRejectedValue(new Error("page boom"));
+
+    const { router } = renderPage("?jobId=1&focus=21");
+
+    await waitFor(() =>
+      expect(api.getJobBoardStagePage).toHaveBeenCalledTimes(1),
+    );
+    await waitFor(() => expect(router.state.location.search).toBe("?jobId=1"));
+    // Give it a chance to have retried before asserting it didn't.
+    expect(api.getJobBoardStagePage).toHaveBeenCalledTimes(1);
+    // A background hunt failing is not something the owner asked for, so it
+    // must not toast — contrast the "Load more" click cases, which do.
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it("gives up quietly after the paging cap when the focused card never turns up", async () => {
+    const makeCard = (id) => ({
+      id,
+      applicantName: `Rejected Person ${id}`,
+      applicantEmail: `rejected${id}@example.com`,
+      stage: "rejected",
+      subStatus: null,
+      tags: null,
+      appliedAt: "2026-06-01T00:00:00Z",
+    });
+
+    api.listBoardJobs.mockResolvedValue({ data: [jobA] });
+    api.getJobBoard.mockResolvedValue({
+      data: {
+        stages: {
+          rejected: {
+            items: Array.from({ length: 20 }, (_, i) => makeCard(i + 1)),
+            total: 500,
+            has_more: true,
+          },
+        },
+      },
+    });
+    // Always another page, never the id we're looking for.
+    api.getJobBoardStagePage.mockImplementation((_jobId, { offset }) =>
+      Promise.resolve({
+        data: {
+          items: Array.from({ length: 20 }, (_, i) => makeCard(offset + i + 1)),
+          total: 500,
+          has_more: true,
+        },
+      }),
+    );
+
+    const { router } = renderPage("?jobId=1&focus=99999");
+
+    // Bounded: 5 rounds of paging, then it stops rather than walking a lane
+    // of unknown length.
+    await waitFor(() =>
+      expect(api.getJobBoardStagePage).toHaveBeenCalledTimes(5),
+    );
+    await waitFor(() => expect(router.state.location.search).toBe("?jobId=1"));
+    expect(api.getJobBoardStagePage).toHaveBeenCalledTimes(5);
+    // Giving up is silent — the job is selected, which was the main win.
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it("drops the highlight after its window closes", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    api.listBoardJobs.mockResolvedValue({ data: [jobA] });
+    api.getJobBoard.mockResolvedValue({
+      data: {
+        stages: {
+          rejected: {
+            items: [
+              {
+                id: 777,
+                applicantName: "Just Rejected",
+                applicantEmail: "jr@example.com",
+                stage: "rejected",
+                subStatus: null,
+                tags: null,
+                appliedAt: "2026-06-01T00:00:00Z",
+              },
+            ],
+            total: 1,
+            has_more: false,
+          },
+        },
+      },
+    });
+
+    renderPage("?jobId=1&focus=777");
+
+    const card = await screen.findByRole("button", { name: /Just Rejected/ });
+    await waitFor(() => expect(card.className).toContain("ring-2"));
+
+    // Wrapped in act: the highlight is dropped by a setTimeout, so advancing
+    // the clock is what triggers the state update. Without act React logs
+    // "An update to BoardPage inside a test was not wrapped in act(...)".
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3100);
+    });
+
+    await waitFor(() => expect(card.className).not.toContain("ring-2"));
   });
 });

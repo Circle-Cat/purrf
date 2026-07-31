@@ -4852,3 +4852,35 @@ describe("ApplicationDetailPage — blacklist cancels the upcoming interviews", 
     expect(api.listBlacklistUpcomingInterviews).not.toHaveBeenCalled();
   });
 });
+
+describe("ApplicationDetailPage — getting back to where you came from", () => {
+  it("offers an owner a link back to their board, pointed at this job and applicant", async () => {
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true }),
+    });
+    renderPage(101);
+    await waitLoaded();
+
+    // JOB.id is 1 and the fixture's application id is 101.
+    expect(
+      screen.getByRole("link", { name: "Applications Board" }),
+    ).toHaveAttribute("href", "/recruiting/board?jobId=1&focus=101");
+  });
+
+  it("offers an evaluator a link back to My Evaluations instead", async () => {
+    authState.userId = ASSIGNEE_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: false, assigneeId: ASSIGNEE_ID }),
+    });
+    renderEvaluatorPage(101);
+    await waitLoaded();
+
+    expect(
+      screen.getByRole("link", { name: "My Evaluations" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: "Applications Board" }),
+    ).not.toBeInTheDocument();
+  });
+});

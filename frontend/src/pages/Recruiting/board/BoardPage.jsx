@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import LoadGate from "@/pages/Recruiting/components/LoadGate";
 import ApplicantCard from "@/pages/Recruiting/board/ApplicantCard";
@@ -28,23 +28,47 @@ import { APPLICATIONS_BOARD_GUIDE } from "@/pages/Recruiting/components/guideCon
 const OFFER_STAGE = "offer";
 /** Terminal lanes always appended after a job's configured pipeline stages. */
 const TERMINAL_STAGES = ["hired", "rejected"];
+/** Rounds of terminal-lane paging spent hunting for a `?focus=` card before
+ * giving up. Bounded because a rejected lane can be arbitrarily long, and
+ * relocating a card is a convenience, not a guarantee. */
+const FOCUS_PAGE_LIMIT = 5;
+/** How long the relocated card keeps its ring. */
+const FOCUS_HIGHLIGHT_MS = 3000;
 
 /**
  * Owner-facing kanban board: pick a job you own from the switcher, see its
  * applicants laid out in lanes by pipeline stage, with the two terminal
  * lanes (Hired — labeled Admitted for activity jobs — and Rejected) always
  * shown at the end.
+ *
+ * Both the selected job and an optional post-decision relocation target ride
+ * in the URL (`?jobId=`, `?focus=`), so returning from an applicant's detail
+ * page restores the job and lands on that applicant's card.
  */
 const BoardPage = () => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  // The selected job lives in the URL, not in state: the board is navigated
+  // away from and back to constantly (open an applicant, act, return), and
+  // component state resets to the first job every time that happens. One
+  // source of truth also makes the board's URL shareable.
+  const selectedJobId = Number(searchParams.get("jobId")) || null;
+  const focusId = Number(searchParams.get("focus")) || null;
   const [jobs, setJobs] = useState(null);
   const [loadError, setLoadError] = useState(false);
-  const [selectedJobId, setSelectedJobId] = useState(null);
   const [board, setBoard] = useState(null);
   const [boardError, setBoardError] = useState(false);
   /** Stages with an in-flight "Load more" fetch, so a fast double-click on
    * the same lane can't fire a second request against a stale offset. */
   const [loadingMore, setLoadingMore] = useState(() => new Set());
+  /** The card wearing the relocation ring, if any. */
+  const [highlightedId, setHighlightedId] = useState(null);
+  /** Rounds of paging already spent on the current board's focus hunt. */
+  const focusRounds = useRef(0);
+  /** Terminal lanes whose paging failed during a focus hunt. A failed page
+   * leaves `has_more` true and the offset unchanged, so without this the hunt
+   * would re-issue the identical request every remaining round. */
+  const focusPageFailures = useRef(new Set());
 
   /** Fetch (or re-fetch, via Retry) the caller's owned jobs. */
   const loadJobs = useCallback(async () => {
@@ -53,9 +77,6 @@ const BoardPage = () => {
     try {
       const { data } = await listBoardJobs();
       setJobs(data ?? []);
-      if (data?.length > 0) {
-        setSelectedJobId(data[0].id);
-      }
     } catch (e) {
       setLoadError(true);
       toast.error(e.message);
@@ -66,10 +87,45 @@ const BoardPage = () => {
     loadJobs();
   }, [loadJobs]);
 
+  /** Keep `?jobId=` pointing at a job the caller actually owns. An absent,
+   * unparseable, or no-longer-owned id falls back to the first job — the
+   * behaviour before the param existed — rewritten in place so the URL never
+   * disagrees with what's on screen. `replace` keeps the correction out of
+   * the history stack. */
+  useEffect(() => {
+    if (!jobs?.length) return;
+    if (jobs.some((job) => job.id === selectedJobId)) return;
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.set("jobId", String(jobs[0].id));
+        // A focus id is only meaningful against the job it was minted for.
+        next.delete("focus");
+        return next;
+      },
+      { replace: true },
+    );
+  }, [jobs, selectedJobId, setSearchParams]);
+
+  /** Drop `?focus=` in place, so neither a refresh nor an unrelated re-render
+   * repeats a relocation that has already happened (or already failed). */
+  const clearFocusParam = useCallback(() => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete("focus");
+        return next;
+      },
+      { replace: true },
+    );
+  }, [setSearchParams]);
+
   /** Fetch (or re-fetch, via Retry) the selected job's board, grouped by stage. */
   const loadBoard = useCallback(async (jobId) => {
     setBoardError(false);
     setBoard(null);
+    focusRounds.current = 0;
+    focusPageFailures.current.clear();
     try {
       const { data } = await getJobBoard(jobId);
       setBoard(data?.stages ?? {});
@@ -79,16 +135,25 @@ const BoardPage = () => {
     }
   }, []);
 
+  // Wait for the owned-jobs list before fetching a board. `selectedJobId` is
+  // readable from the URL on the first render, when `jobs` is still null, so
+  // an unguarded fetch would fire against a job the caller may not own — and
+  // `loadBoard` surfaces that rejection as an error toast. Gating here also
+  // restores the pre-URL ordering, where selection could only happen after
+  // the list had loaded.
   useEffect(() => {
-    if (selectedJobId != null) {
+    if (
+      selectedJobId != null &&
+      jobs?.some((job) => job.id === selectedJobId)
+    ) {
       loadBoard(selectedJobId);
     }
-  }, [selectedJobId, loadBoard]);
+  }, [selectedJobId, jobs, loadBoard]);
 
   /** Fetch the next page of a terminal lane (hired/rejected) and append it,
    * deduping by card id so a slow double-click can't render duplicates. */
   const loadMore = useCallback(
-    async (stage) => {
+    async (stage, { silent = false } = {}) => {
       if (loadingMore.has(stage)) return;
       setLoadingMore((prev) => new Set(prev).add(stage));
       const lane = board[stage];
@@ -98,6 +163,7 @@ const BoardPage = () => {
           limit: 20,
           offset: lane.items.length,
         });
+        if (silent) focusPageFailures.current.delete(stage);
         setBoard((prev) => {
           const seen = new Set(prev[stage].items.map((c) => c.id));
           const merged = [
@@ -110,7 +176,14 @@ const BoardPage = () => {
           };
         });
       } catch (e) {
-        toast.error(e.message);
+        // A background focus hunt stays quiet on failure: relocating a card
+        // is a convenience the owner didn't ask for, so its failure is as
+        // silent as not finding the card at all.
+        if (silent) {
+          focusPageFailures.current.add(stage);
+        } else {
+          toast.error(e.message);
+        }
       } finally {
         setLoadingMore((prev) => {
           const next = new Set(prev);
@@ -121,6 +194,53 @@ const BoardPage = () => {
     },
     [board, selectedJobId, loadingMore],
   );
+
+  /** Bring the `?focus=` applicant to the owner: scroll their card into view
+   * and ring it, so returning from a decision lands on the person just dealt
+   * with instead of the far left of the board.
+   *
+   * The card is found by DOM attribute rather than by a ref, because cards
+   * are rendered by a `map` inside each lane and threading refs back out
+   * would couple the two components for nothing.
+   *
+   * A just-rejected applicant can sit past a terminal lane's first page (that
+   * lane orders by `stage_entered_at DESC` with no NULLS LAST, and the column
+   * was never backfilled, so un-timed rows crowd the top), hence the bounded
+   * paging hunt. Failure is silent: the job is already selected, which is the
+   * bulk of the value. */
+  useEffect(() => {
+    if (focusId == null || !board) return;
+
+    const el = document.querySelector(`[data-application-id="${focusId}"]`);
+    if (el) {
+      el.scrollIntoView({ block: "nearest", inline: "center" });
+      setHighlightedId(focusId);
+      clearFocusParam();
+      return;
+    }
+
+    // A page is on its way; re-run when it lands rather than deciding now.
+    if (TERMINAL_STAGES.some((stage) => loadingMore.has(stage))) return;
+
+    const pageable = TERMINAL_STAGES.filter(
+      (stage) =>
+        board[stage]?.has_more && !focusPageFailures.current.has(stage),
+    );
+    if (pageable.length === 0 || focusRounds.current >= FOCUS_PAGE_LIMIT) {
+      clearFocusParam();
+      return;
+    }
+    focusRounds.current += 1;
+    pageable.forEach((stage) => loadMore(stage, { silent: true }));
+  }, [focusId, board, loadingMore, loadMore, clearFocusParam]);
+
+  /** Retire the ring on its own timer, decoupled from the URL param (which
+   * is cleared as soon as the card is found, so a refresh can't replay it). */
+  useEffect(() => {
+    if (highlightedId == null) return;
+    const timer = setTimeout(() => setHighlightedId(null), FOCUS_HIGHLIGHT_MS);
+    return () => clearTimeout(timer);
+  }, [highlightedId]);
 
   const selectedJob = useMemo(
     () => jobs?.find((job) => job.id === selectedJobId) ?? null,
@@ -202,8 +322,21 @@ const BoardPage = () => {
             Applications Board
           </h1>
           <Select
-            value={String(selectedJobId)}
-            onValueChange={(value) => setSelectedJobId(Number(value))}
+            value={selectedJobId == null ? undefined : String(selectedJobId)}
+            onValueChange={(value) =>
+              setSearchParams(
+                (prev) => {
+                  const next = new URLSearchParams(prev);
+                  next.set("jobId", value);
+                  // Switching jobs by hand abandons any pending relocation.
+                  next.delete("focus");
+                  return next;
+                },
+                // Switching jobs inside the board isn't a navigation step:
+                // browser-back should leave the board, not replay selections.
+                { replace: true },
+              )
+            }
           >
             <SelectTrigger aria-label="Job" className="w-64">
               <SelectValue placeholder="Select a job…" />
@@ -273,6 +406,7 @@ const BoardPage = () => {
                         key={card.id}
                         card={card}
                         showStatus={!isTerminal}
+                        highlighted={card.id === highlightedId}
                         onOpen={handleOpen}
                       />
                     ))
