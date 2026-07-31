@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 
 import { showReminderToast } from "@/components/common/showReminderToast";
-import { isIncompleteOnboarding } from "@/pages/Profile/utils";
+import { isIncompleteOnboarding } from "@/utils/training";
 
 const PROFILE_SESSION_KEY = "profile-completeness-toast-shown";
 const TRAINING_SESSION_KEY = "training-completeness-toast-shown";
