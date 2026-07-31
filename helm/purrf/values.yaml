@@ -131,3 +131,13 @@ cronjobs:
   - name: sync-recruiting-emails-reconcile
     schedule: "35 11 * * 0"  # Sundays 11:35 UTC — backstop for the nightly delta
     url: "/api/recruiting/emails/sync"
+  - name: sync-meet-attendance
+    schedule: "15 */2 * * *"   # every 2 hours at :15, off the hour to avoid pubsub-sync-hourly
+    url: "/api/mentorship/v2/meetings/attendance/sync?lookback_hours=4"
+    # lookback is twice the interval on purpose: each conference is covered by
+    # two consecutive runs, so one missed run loses nothing. Changing the
+    # schedule without changing lookback silently removes that tolerance.
+    concurrencyPolicy: Forbid
+    # A busy run makes one serial Meet API call per space plus one per
+    # conference and can exceed the interval; overlapping runs would both read
+    # the same completed_count and each increment it.

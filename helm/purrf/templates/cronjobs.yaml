@@ -6,6 +6,9 @@ metadata:
   name: {{ include "purrf.fullname" $ }}-{{ .name }}
 spec:
   schedule: {{ .schedule | quote }}
+  {{- if .concurrencyPolicy }}
+  concurrencyPolicy: {{ .concurrencyPolicy }}
+  {{- end }}
   jobTemplate:
     spec:
       template:
