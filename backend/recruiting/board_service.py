@@ -169,7 +169,7 @@ class BoardService:
         application_comment_repository,
         application_comment_mention_repository,
         evaluation_repository,
-        notification_repository,
+        notification_dispatcher,
         user_emails_repository,
         email_conversation_service,
         email_sync_service,
@@ -210,11 +210,14 @@ class BoardService:
             evaluation_repository (EvaluationRepository): Used by
                 ``get_other_applications`` to include a candidate's other
                 applications' evaluations in the aggregation view.
-            notification_repository (NotificationRepository): Written by
-                ``change_stage``/``reassign`` (assignee notified) and
-                ``add_comment`` (mentioned users notified) -- independent,
-                explicit calls, not merged with the activity log (see the
-                notification-system design spec for why).
+            notification_dispatcher (NotificationDispatcher): Writes in-app
+                notification rows inside this transaction and emails them
+                once it commits (see its module docstring for why the two
+                phases cannot be merged). Used by ``change_stage``/
+                ``reassign`` (assignee notified) and ``add_comment``
+                (mentioned users notified) -- independent, explicit calls,
+                not merged with the activity log (see the notification-system
+                design spec for why).
             email_conversation_service (EmailConversationService): Person-anchored
                 email transport/DB layer; the Emails-tab endpoints resolve an
                 application to its (user_id, APPLICATION:application_id) context
@@ -248,7 +251,7 @@ class BoardService:
             application_comment_mention_repository
         )
         self.evaluation_repository = evaluation_repository
-        self.notification_repository = notification_repository
+        self.notification_dispatcher = notification_dispatcher
         self.user_emails_repository = user_emails_repository
         self.email_conversation_service = email_conversation_service
         self.email_sync_service = email_sync_service
@@ -1528,7 +1531,7 @@ class BoardService:
             new_interview_assignee is not None
             and new_interview_assignee != current_user.user_id
         ):
-            await self.notification_repository.create(
+            await self.notification_dispatcher.record(
                 session,
                 NotificationEntity(
                     user_id=new_interview_assignee,
@@ -1539,6 +1542,7 @@ class BoardService:
                 ),
             )
         await session.commit()
+        await self.notification_dispatcher.flush(session)
         # `editable` encodes the CANDIDATE's edit window (see
         # get_application_detail's note); a fresh stage/sub_status decision
         # is never in that window, so this is always False here.
@@ -1642,7 +1646,7 @@ class BoardService:
             dto.assignee_id != previous_assignee_id
             and dto.assignee_id != current_user.user_id
         ):
-            await self.notification_repository.create(
+            await self.notification_dispatcher.record(
                 session,
                 NotificationEntity(
                     user_id=dto.assignee_id,
@@ -1653,6 +1657,7 @@ class BoardService:
                 ),
             )
         await session.commit()
+        await self.notification_dispatcher.flush(session)
         current_sub = await self.application_submission_repository.get_current(
             session, application_id
         )
@@ -2320,7 +2325,7 @@ class BoardService:
             for mentioned_id in mentioned_ids:
                 if mentioned_id == current_user.user_id:
                     continue
-                await self.notification_repository.create(
+                await self.notification_dispatcher.record(
                     session,
                     NotificationEntity(
                         user_id=mentioned_id,
@@ -2331,6 +2336,7 @@ class BoardService:
                     ),
                 )
         await session.commit()
+        await self.notification_dispatcher.flush(session)
         author = await self.users_repository.get_user_by_user_id(
             session, current_user.user_id
         )

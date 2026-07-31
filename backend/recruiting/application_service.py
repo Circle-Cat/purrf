@@ -33,7 +33,7 @@ class ApplicationService:
         recruiting_mapper,
         application_assignment_repository,
         application_activity_repository,
-        notification_repository,
+        notification_dispatcher,
         user_emails_repository,
         profile_writeback=None,
     ):
@@ -55,9 +55,13 @@ class ApplicationService:
                 Append-only audit log; ``submit`` logs
                 ``"application_submitted"`` or ``"auto_rejected"`` here on
                 every call, attributed to the candidate themselves.
-            notification_repository (NotificationRepository): In-app
-                notification data access; ``_assign_default_if_configured``
-                notifies the materialized default assignee here.
+            notification_dispatcher (NotificationDispatcher): Writes in-app
+                notification rows inside this transaction and emails them
+                once it commits (see its module docstring for why the two
+                phases cannot be merged). ``_assign_default_if_configured``
+                notifies the materialized default assignee here, and
+                ``_notify_owners_of_submission`` notifies the posting's
+                owners.
             profile_writeback (callable | None): ``async (session, user_id, dto)``
                 invoked best-effort when save_to_profile is set. Defaults to a
                 no-op.
@@ -69,7 +73,7 @@ class ApplicationService:
         self.recruiting_mapper = recruiting_mapper
         self.application_assignment_repository = application_assignment_repository
         self.application_activity_repository = application_activity_repository
-        self.notification_repository = notification_repository
+        self.notification_dispatcher = notification_dispatcher
         self.user_emails_repository = user_emails_repository
         self._profile_writeback = profile_writeback
 
@@ -359,6 +363,7 @@ class ApplicationService:
             await self._safe_writeback(session, current_user.user_id, dto)
 
         await session.commit()
+        await self.notification_dispatcher.flush(session)
         editable = self._is_editable(application, job, current_sub)
         return self.recruiting_mapper.to_application_dto(
             application, current_sub, editable=editable
@@ -424,7 +429,7 @@ class ApplicationService:
             "auto_assigned",
             details={"stage": application.stage.value, "assigneeId": default_id},
         )
-        await self.notification_repository.create(
+        await self.notification_dispatcher.record(
             session,
             NotificationEntity(
                 user_id=default_id,
@@ -474,7 +479,7 @@ class ApplicationService:
         for owner_id in normalized_owner_ids(job.pipeline_config):
             if owner_id == application.user_id:
                 continue
-            await self.notification_repository.create(
+            await self.notification_dispatcher.record(
                 session,
                 NotificationEntity(
                     user_id=owner_id,
