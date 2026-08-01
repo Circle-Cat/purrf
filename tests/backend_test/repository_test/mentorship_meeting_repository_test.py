@@ -359,6 +359,10 @@ class TestMentorshipMeetingRepository(BaseRepositoryTestLib):
             pair_ids=[pair.pair_id],
             ends_after=base - timedelta(hours=7),
             starts_before=base + timedelta(hours=3),
+            # Round window deliberately wide -- this case is about the sweep
+            # bounds, not the round window.
+            round_window_start=datetime(2020, 1, 1, tzinfo=timezone.utc),
+            round_window_end=datetime(2030, 1, 1, tzinfo=timezone.utc),
         )
 
         self.assertEqual([r.google_meeting_code for r in rows], ["in-side-aaa"])
@@ -399,6 +403,10 @@ class TestMentorshipMeetingRepository(BaseRepositoryTestLib):
             pair_ids=[pair.pair_id],
             ends_after=base - timedelta(hours=7),
             starts_before=base + timedelta(hours=3),
+            # Round window deliberately wide -- this case is about which rows
+            # are pending/GOOGLE/coded, not the round window.
+            round_window_start=datetime(2020, 1, 1, tzinfo=timezone.utc),
+            round_window_end=datetime(2030, 1, 1, tzinfo=timezone.utc),
         )
 
         self.assertEqual([r.google_meeting_code for r in rows], ["keep-aaaa"])
@@ -429,6 +437,10 @@ class TestMentorshipMeetingRepository(BaseRepositoryTestLib):
             pair_ids=[pair.pair_id],
             ends_after=base,
             starts_before=base + timedelta(hours=5),
+            # Round window deliberately wide -- this case is about the sweep
+            # bounds, not the round window.
+            round_window_start=datetime(2020, 1, 1, tzinfo=timezone.utc),
+            round_window_end=datetime(2030, 1, 1, tzinfo=timezone.utc),
         )
 
         self.assertEqual(
@@ -444,6 +456,10 @@ class TestMentorshipMeetingRepository(BaseRepositoryTestLib):
             pair_ids=[],
             ends_after=datetime(2026, 4, 7, 0, 0, tzinfo=timezone.utc),
             starts_before=datetime(2026, 4, 8, 0, 0, tzinfo=timezone.utc),
+            # Round window deliberately wide -- this case is about the
+            # empty-pair_ids short-circuit, not the round window.
+            round_window_start=datetime(2020, 1, 1, tzinfo=timezone.utc),
+            round_window_end=datetime(2030, 1, 1, tzinfo=timezone.utc),
         )
 
         self.assertEqual(rows, [])
@@ -472,6 +488,10 @@ class TestMentorshipMeetingRepository(BaseRepositoryTestLib):
             pair_ids=[pair.pair_id],
             ends_after=base - timedelta(hours=7),
             starts_before=base + timedelta(hours=3),
+            # Round window deliberately wide -- this case is about pair_ids
+            # scoping, not the round window.
+            round_window_start=datetime(2020, 1, 1, tzinfo=timezone.utc),
+            round_window_end=datetime(2030, 1, 1, tzinfo=timezone.utc),
         )
 
         self.assertEqual([r.google_meeting_code for r in rows], ["mine-aaaa"])
@@ -509,12 +529,116 @@ class TestMentorshipMeetingRepository(BaseRepositoryTestLib):
             pair_ids=[pair.pair_id],
             ends_after=base - timedelta(hours=7),
             starts_before=base + timedelta(hours=3),
+            # Round window deliberately wide -- this case is about ordering,
+            # not the round window.
+            round_window_start=datetime(2020, 1, 1, tzinfo=timezone.utc),
+            round_window_end=datetime(2030, 1, 1, tzinfo=timezone.utc),
         )
 
         self.assertEqual(
             [r.google_meeting_code for r in rows],
             ["ear-aaaaa", "mid-aaaaa", "lat-aaaaa"],
         )
+
+    async def test_in_window_excludes_meetings_outside_the_round_window(self):
+        pair = await self._seed_pair()
+        base = datetime(2026, 4, 15, 10, 0, tzinfo=timezone.utc)
+        inside = self._google_meeting(
+            pair.pair_id,
+            start_datetime=base,
+            end_datetime=base + timedelta(hours=1),
+            google_meeting_code="in-round-a",
+        )
+        after_deadline = self._google_meeting(
+            pair.pair_id,
+            start_datetime=datetime(2026, 5, 2, 10, 0, tzinfo=timezone.utc),
+            end_datetime=datetime(2026, 5, 2, 11, 0, tzinfo=timezone.utc),
+            google_meeting_code="post-round",
+        )
+        before_start = self._google_meeting(
+            pair.pair_id,
+            start_datetime=datetime(2026, 3, 20, 10, 0, tzinfo=timezone.utc),
+            end_datetime=datetime(2026, 3, 20, 11, 0, tzinfo=timezone.utc),
+            google_meeting_code="pre-round-",
+        )
+        await self.insert_entities([inside, after_deadline, before_start])
+        repo = MentorshipMeetingRepository()
+
+        rows = await repo.get_pending_google_meetings_in_window(
+            session=self.session,
+            pair_ids=[pair.pair_id],
+            ends_after=datetime(2026, 3, 1, tzinfo=timezone.utc),
+            starts_before=datetime(2026, 6, 1, tzinfo=timezone.utc),
+            round_window_start=datetime(2026, 4, 1, tzinfo=timezone.utc),
+            round_window_end=datetime(2026, 4, 30, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual([r.google_meeting_code for r in rows], ["in-round-a"])
+
+    async def test_in_window_round_bounds_are_inclusive(self):
+        """A meeting starting exactly at the notification instant or exactly at
+        the deadline is inside the round, not on the wrong side of it."""
+        pair = await self._seed_pair()
+        start_edge = datetime(2026, 4, 1, tzinfo=timezone.utc)
+        end_edge = datetime(2026, 4, 30, tzinfo=timezone.utc)
+        at_start = self._google_meeting(
+            pair.pair_id,
+            start_datetime=start_edge,
+            end_datetime=start_edge + timedelta(hours=1),
+            google_meeting_code="at-start-a",
+        )
+        at_end = self._google_meeting(
+            pair.pair_id,
+            start_datetime=end_edge,
+            end_datetime=end_edge + timedelta(hours=1),
+            google_meeting_code="at-end-aa",
+        )
+        await self.insert_entities([at_start, at_end])
+        repo = MentorshipMeetingRepository()
+
+        rows = await repo.get_pending_google_meetings_in_window(
+            session=self.session,
+            pair_ids=[pair.pair_id],
+            ends_after=datetime(2026, 3, 1, tzinfo=timezone.utc),
+            starts_before=datetime(2026, 6, 1, tzinfo=timezone.utc),
+            round_window_start=start_edge,
+            round_window_end=end_edge,
+        )
+
+        self.assertEqual(
+            sorted(r.google_meeting_code for r in rows), ["at-end-aa", "at-start-a"]
+        )
+
+    async def test_in_window_round_bounds_and_sweep_bounds_are_independent(self):
+        """A meeting inside the round window but outside this run's sweep
+        window is still excluded, and vice versa -- the two filters are not
+        interchangeable."""
+        pair = await self._seed_pair()
+        in_round_out_of_sweep = self._google_meeting(
+            pair.pair_id,
+            start_datetime=datetime(2026, 4, 2, 10, 0, tzinfo=timezone.utc),
+            end_datetime=datetime(2026, 4, 2, 11, 0, tzinfo=timezone.utc),
+            google_meeting_code="round-only",
+        )
+        keeper = self._google_meeting(
+            pair.pair_id,
+            start_datetime=datetime(2026, 4, 20, 10, 0, tzinfo=timezone.utc),
+            end_datetime=datetime(2026, 4, 20, 11, 0, tzinfo=timezone.utc),
+            google_meeting_code="both-okay",
+        )
+        await self.insert_entities([in_round_out_of_sweep, keeper])
+        repo = MentorshipMeetingRepository()
+
+        rows = await repo.get_pending_google_meetings_in_window(
+            session=self.session,
+            pair_ids=[pair.pair_id],
+            ends_after=datetime(2026, 4, 19, tzinfo=timezone.utc),
+            starts_before=datetime(2026, 4, 21, tzinfo=timezone.utc),
+            round_window_start=datetime(2026, 4, 1, tzinfo=timezone.utc),
+            round_window_end=datetime(2026, 4, 30, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual([r.google_meeting_code for r in rows], ["both-okay"])
 
     # --- insert_meeting ---
 
