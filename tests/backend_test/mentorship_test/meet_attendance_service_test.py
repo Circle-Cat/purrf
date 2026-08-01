@@ -293,7 +293,10 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(kwargs["round_window_start"], window_start)
         self.assertEqual(kwargs["round_window_end"], window_end)
 
-    async def test_overlapping_rounds_pick_the_first_and_warn(self):
+    async def test_overlapping_rounds_are_all_synced_and_warned(self):
+        """More than one selectable round is still a WARNING -- rounds are not
+        supposed to overlap -- but nothing is skipped any more, so the line has
+        to say every one of them is being synced and name them all."""
         first = RunningRoundWindow(
             7,
             datetime(2026, 4, 1, tzinfo=timezone.utc),
@@ -312,18 +315,194 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
             session=self.mock_session, lookback_hours=4
         )
 
-        self.assertEqual(result["round_id"], 7)
+        self.assertEqual(result["round_ids"], [7, 9])
         self.service.logger.warning.assert_called_once()
         # Render the lazy-% message rather than inspecting call_args: the
         # rendered text is what an operator reads, and it is the entire
         # deliverable of the overlap half of this change. Asserting on the raw
-        # call_args string cannot tell "SKIPPING [9]" from "SKIPPING [7, 9]" --
-        # the latter sends someone hunting for an unsynced round that was in
-        # fact synced, while result["round_id"] stays correct and hides it.
+        # call_args string cannot tell "[7, 9]" from "[9]" -- and a line that
+        # named only one round would send someone hunting for an unsynced
+        # round that was in fact synced.
         fmt, *fmt_args = self.service.logger.warning.call_args.args
         rendered = fmt % tuple(fmt_args)
-        self.assertIn("round_id=7", rendered)
-        self.assertIn("SKIPPING [9]", rendered)
+        self.assertIn("syncing all of them: [7, 9]", rendered)
+        # Nothing is skipped now, and "open meeting window" is wrong for a
+        # round sitting out its post-deadline grace: selectable, not open.
+        self.assertNotIn("SKIPPING", rendered)
+        self.assertNotIn("open meeting window", rendered)
+
+    async def test_every_selectable_round_is_swept_against_its_own_window(self):
+        """All returned rounds are processed, each against its OWN un-widened
+        window, and the sweep still closes with one recompute pass and one
+        commit for the whole run.
+
+        Syncing only running_rounds[0] would strand the newer round at the
+        round-to-round seam: a round stays selectable for `grace` past its
+        deadline, so an ending round and a starting one are both returned for
+        hours, and a meeting at the very start of the newer window drops out
+        of the sweep's reach before that round would ever be picked."""
+        first = RunningRoundWindow(
+            7,
+            datetime(2026, 3, 1, tzinfo=timezone.utc),
+            datetime(2026, 4, 7, 12, 0, tzinfo=timezone.utc),
+        )
+        second = RunningRoundWindow(
+            9,
+            datetime(2026, 4, 7, 12, 0, tzinfo=timezone.utc),
+            datetime(2026, 5, 10, tzinfo=timezone.utc),
+        )
+        self.mock_round_repo.get_running_rounds.return_value = [first, second]
+        pair_a, meeting_a = self._make_active_pair_and_meeting(
+            pair_id=71, conf_id="aaa-aaaa-aaa"
+        )
+        pair_b, meeting_b = self._make_active_pair_and_meeting(
+            pair_id=91, conf_id="bbb-bbbb-bbb"
+        )
+        self.mock_pairs_repo.get_active_pairs_by_round.side_effect = [
+            [pair_a],
+            [pair_b],
+        ]
+        self.mock_meeting_repo.get_pending_google_meetings_in_window.side_effect = [
+            [meeting_a],
+            [meeting_b],
+        ]
+        self.mock_users_repo.get_all_by_ids.return_value = [self.mentor, self.mentee]
+        self.mock_meeting_repo.recalculate_completed_count.return_value = 1
+        self.mock_google_service.list_conferences_by_meeting_code.return_value = (
+            [self._make_conference()],
+            0,
+        )
+        self.mock_google_service.fetch_participants_for_record.return_value = [
+            {
+                "signedin_user_id": "uid-mentor",
+                "start_time": "2026-04-07T10:05:00+00:00",
+                "end_time": "2026-04-07T11:00:00+00:00",
+            },
+            {
+                "signedin_user_id": "uid-mentee",
+                "start_time": "2026-04-07T10:05:00+00:00",
+                "end_time": "2026-04-07T11:00:00+00:00",
+            },
+        ]
+        self.mock_google_service.get_email_by_google_user_id.side_effect = lambda uid: (
+            "mentor@example.com" if uid == "uid-mentor" else "mentee@example.com"
+        )
+
+        result = await self.service.sync_attendance(
+            session=self.mock_session, lookback_hours=4
+        )
+
+        self.assertEqual(result["round_ids"], [7, 9])
+        self.assertEqual(
+            [
+                c.args[1]
+                for c in self.mock_pairs_repo.get_active_pairs_by_round.call_args_list
+            ],
+            [7, 9],
+        )
+        # Each round's selection carries THAT round's own bounds -- not the
+        # first round's reused, and not either one widened by `grace`.
+        selection_calls = (
+            self.mock_meeting_repo.get_pending_google_meetings_in_window.call_args_list
+        )
+        self.assertEqual(
+            [
+                (c.kwargs["round_window_start"], c.kwargs["round_window_end"])
+                for c in selection_calls
+            ],
+            [
+                (first.window_start, first.window_end),
+                (second.window_start, second.window_end),
+            ],
+        )
+        # Every counter is a total across both rounds, not the last one's.
+        self.assertEqual(result["meetings_selected"], 2)
+        self.assertEqual(result["meetings_reconciled"], 2)
+        self.assertEqual(result["meetings_completed"], 2)
+        self.assertEqual(result["pairs_updated"], 2)
+        self.assertEqual(
+            result["meetings_selected"],
+            result["meetings_reconciled"]
+            + result["meetings_not_yet_due"]
+            + result["meetings_in_progress"]
+            + result["meetings_no_show"]
+            + result["meetings_failed"],
+        )
+        # completed_count recomputed once per touched pair for the whole
+        # sweep, then exactly ONE commit -- not one pass and one commit per
+        # round.
+        self.assertEqual(
+            self.mock_meeting_repo.recalculate_completed_count.await_count, 2
+        )
+        self.mock_session.commit.assert_awaited_once()
+
+    async def test_a_failing_round_does_not_abort_the_other_rounds(self):
+        """One bad round must not take the rest of the sweep down with it, the
+        same way one bad meeting does not abort its round.
+
+        The failure is staged AFTER the first round's selection query, so its
+        meeting is already counted in meetings_selected -- the only case where
+        the additive invariant is at risk. Those selected-but-unclassified
+        meetings are charged to meetings_failed, which is what keeps the
+        invariant true on the failure path too."""
+        first = RunningRoundWindow(
+            7,
+            datetime(2026, 3, 1, tzinfo=timezone.utc),
+            datetime(2026, 4, 7, 12, 0, tzinfo=timezone.utc),
+        )
+        second = RunningRoundWindow(
+            9,
+            datetime(2026, 4, 7, 12, 0, tzinfo=timezone.utc),
+            datetime(2026, 5, 10, tzinfo=timezone.utc),
+        )
+        self.mock_round_repo.get_running_rounds.return_value = [first, second]
+        pair_a, meeting_a = self._make_active_pair_and_meeting(
+            pair_id=71, conf_id="aaa-aaaa-aaa"
+        )
+        pair_b, meeting_b = self._make_active_pair_and_meeting(
+            pair_id=91, conf_id="bbb-bbbb-bbb"
+        )
+        self.mock_pairs_repo.get_active_pairs_by_round.side_effect = [
+            [pair_a],
+            [pair_b],
+        ]
+        self.mock_meeting_repo.get_pending_google_meetings_in_window.side_effect = [
+            [meeting_a],
+            [meeting_b],
+        ]
+        self.mock_users_repo.get_all_by_ids.side_effect = [
+            RuntimeError("user preload exploded"),
+            [self.mentor, self.mentee],
+        ]
+        self.mock_google_service.list_conferences_by_meeting_code.return_value = ([], 0)
+        # Well past the meetings' affinity end (11:00 + 3h = 14:00), so the
+        # surviving round's meeting classifies as no_show.
+        frozen_now = datetime(2026, 4, 8, 0, 0, tzinfo=timezone.utc)
+
+        with patch(
+            "backend.mentorship.meet_attendance_service.datetime"
+        ) as mock_datetime:
+            mock_datetime.now.return_value = frozen_now
+            result = await self.service.sync_attendance(
+                session=self.mock_session, lookback_hours=4
+            )
+
+        self.assertEqual(result["rounds_failed"], 1)
+        # The second round still ran: its meeting was queried and classified.
+        self.assertEqual(
+            self.mock_google_service.list_conferences_by_meeting_code.await_count, 1
+        )
+        self.assertEqual(result["meetings_no_show"], 1)
+        self.assertEqual(result["meetings_selected"], 2)
+        self.assertEqual(result["meetings_failed"], 1)
+        self.assertEqual(
+            result["meetings_selected"],
+            result["meetings_reconciled"]
+            + result["meetings_not_yet_due"]
+            + result["meetings_in_progress"]
+            + result["meetings_no_show"]
+            + result["meetings_failed"],
+        )
 
     async def test_no_running_round_returns_empty_dict(self):
         """Unchanged behaviour, re-pinned against the new repository method."""
@@ -381,9 +560,14 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
         # No pair means no selection set, and therefore no Meet call at all.
         self.mock_google_service.list_conferences_by_meeting_code.assert_not_called()
 
-    async def test_logs_one_info_line_when_nothing_is_pending_sync(self):
+    async def test_logs_the_idle_round_and_the_closing_summary_at_info(self):
         """The selection set came back empty -- no active pair had a pending
-        Google meeting whose slot overlaps this run's window."""
+        Google meeting whose slot overlaps this run's window.
+
+        Two INFO lines now, not one: the idle round is reported per round
+        (there can be several), and the run no longer returns early from it,
+        so the closing summary still fires. Asserted by content rather than by
+        count alone -- an operator needs to see WHICH round was idle."""
         self.mock_round_repo.get_running_rounds.return_value = [self.round_window]
         pair, _ = self._make_active_pair_and_meeting()
         self.mock_pairs_repo.get_active_pairs_by_round.return_value = [pair]
@@ -393,7 +577,19 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
             session=self.mock_session, lookback_hours=2
         )
 
-        self.assertEqual(self.service.logger.info.call_count, 1)
+        self.assertEqual(self.service.logger.info.call_count, 2)
+        rendered = [
+            call.args[0] % tuple(call.args[1:])
+            for call in self.service.logger.info.call_args_list
+        ]
+        self.assertTrue(
+            any(
+                f"round_id={self.round_id}" in msg and "nothing to do" in msg
+                for msg in rendered
+            ),
+            rendered,
+        )
+        self.assertTrue(any("Sync complete" in msg for msg in rendered), rendered)
         self.assertEqual(result["meetings_completed"], 0)
 
     async def test_not_yet_due_meeting_logs_only_the_closing_info_line(self):
