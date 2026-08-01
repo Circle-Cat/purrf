@@ -7,7 +7,12 @@ from dateutil.parser import isoparse
 
 from backend.common.mentorship_enums import MeetingSource
 from backend.entity.mentorship_meeting_entity import MentorshipMeetingEntity
-from backend.mentorship.meet_attendance_service import MeetAttendanceService
+from backend.mentorship.meet_attendance_service import (
+    ATTENDANCE_WINDOW_DELTA,
+    MAX_MEETING_DURATION,
+    MeetAttendanceService,
+)
+from backend.repository.mentorship_round_repository import RunningRoundWindow
 
 
 def _make_meeting(
@@ -108,7 +113,7 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
         self.mock_meeting_repo.recalculate_completed_count = AsyncMock(return_value=0)
 
         self.mock_round_repo = MagicMock()
-        self.mock_round_repo.get_running_round_id = AsyncMock()
+        self.mock_round_repo.get_running_rounds = AsyncMock(return_value=[])
 
         self.mock_users_repo = MagicMock()
         self.mock_users_repo.get_all_by_ids = AsyncMock()
@@ -147,6 +152,18 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
         )
 
         self.round_id = 1
+        # Every meeting these tests schedule sits in April 2026, so a
+        # year-wide round window contains all of them. The round window only
+        # decides which meetings BELONG to the round, and that filtering
+        # happens inside the (mocked) repository -- here the pair is merely
+        # passed through. Keeping it deliberately wide is what makes migrating
+        # the old bare-round-id mock a no-op for every test that was not about
+        # the window; the two tests that ARE about it set their own bounds.
+        self.round_window = RunningRoundWindow(
+            self.round_id,
+            datetime(2026, 1, 1, tzinfo=timezone.utc),
+            datetime(2026, 12, 31, tzinfo=timezone.utc),
+        )
         self.mentor = _make_user(user_id=10, primary_email="mentor@example.com")
         self.mentee = _make_user(user_id=20, primary_email="mentee@example.com")
 
@@ -246,8 +263,73 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result, {"uid-stranger": "looked-up@example.com"})
 
+    async def test_round_selection_grace_is_lookback_plus_delta_plus_max_duration(self):
+        """The grace has to cover the latest reconcilable meeting: one starting
+        at the deadline, running the longest allowed duration, whose conference
+        may begin ATTENDANCE_WINDOW_DELTA after that, and which this run can
+        still select for lookback longer."""
+        self.mock_round_repo.get_running_rounds.return_value = []
+
+        await self.service.sync_attendance(session=self.mock_session, lookback_hours=4)
+
+        grace = self.mock_round_repo.get_running_rounds.call_args.args[1]
+        self.assertEqual(
+            grace, timedelta(hours=4) + ATTENDANCE_WINDOW_DELTA + MAX_MEETING_DURATION
+        )
+
+    async def test_round_window_is_passed_through_to_the_selection_query(self):
+        window_start = datetime(2026, 4, 1, tzinfo=timezone.utc)
+        window_end = datetime(2026, 4, 30, tzinfo=timezone.utc)
+        self.mock_round_repo.get_running_rounds.return_value = [
+            RunningRoundWindow(self.round_id, window_start, window_end)
+        ]
+        pair, _ = self._make_active_pair_and_meeting()
+        self.mock_pairs_repo.get_active_pairs_by_round.return_value = [pair]
+        self.mock_meeting_repo.get_pending_google_meetings_in_window.return_value = []
+
+        await self.service.sync_attendance(session=self.mock_session, lookback_hours=4)
+
+        kwargs = self.mock_meeting_repo.get_pending_google_meetings_in_window.call_args.kwargs
+        self.assertEqual(kwargs["round_window_start"], window_start)
+        self.assertEqual(kwargs["round_window_end"], window_end)
+
+    async def test_overlapping_rounds_pick_the_first_and_warn(self):
+        first = RunningRoundWindow(
+            7,
+            datetime(2026, 4, 1, tzinfo=timezone.utc),
+            datetime(2026, 4, 30, tzinfo=timezone.utc),
+        )
+        second = RunningRoundWindow(
+            9,
+            datetime(2026, 4, 10, tzinfo=timezone.utc),
+            datetime(2026, 5, 10, tzinfo=timezone.utc),
+        )
+        self.mock_round_repo.get_running_rounds.return_value = [first, second]
+        self.mock_pairs_repo.get_active_pairs_by_round.return_value = []
+        self.mock_meeting_repo.get_pending_google_meetings_in_window.return_value = []
+
+        result = await self.service.sync_attendance(
+            session=self.mock_session, lookback_hours=4
+        )
+
+        self.assertEqual(result["round_id"], 7)
+        self.service.logger.warning.assert_called_once()
+        warned = str(self.service.logger.warning.call_args)
+        self.assertIn("9", warned)
+
+    async def test_no_running_round_returns_empty_dict(self):
+        """Unchanged behaviour, re-pinned against the new repository method."""
+        self.mock_round_repo.get_running_rounds.return_value = []
+
+        result = await self.service.sync_attendance(
+            session=self.mock_session, lookback_hours=4
+        )
+
+        self.assertEqual(result, {})
+        self.mock_meeting_repo.get_pending_google_meetings_in_window.assert_not_called()
+
     async def test_no_active_round_returns_empty(self):
-        self.mock_round_repo.get_running_round_id.return_value = None
+        self.mock_round_repo.get_running_rounds.return_value = []
         result = await self.service.sync_attendance(
             session=self.mock_session, lookback_hours=2
         )
@@ -256,7 +338,7 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
 
     async def test_logs_one_info_line_when_not_in_a_meeting_window(self):
         """An idle run must be visible at INFO, not only at DEBUG."""
-        self.mock_round_repo.get_running_round_id.return_value = None
+        self.mock_round_repo.get_running_rounds.return_value = []
 
         await self.service.sync_attendance(session=self.mock_session, lookback_hours=2)
 
@@ -265,7 +347,7 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
     async def test_no_pending_meeting_costs_no_meet_call(self):
         """The selection set is what drives the sweep now: an active round with
         nothing pending in the window must not issue a single Meet request."""
-        self.mock_round_repo.get_running_round_id.return_value = self.round_id
+        self.mock_round_repo.get_running_rounds.return_value = [self.round_window]
         pair, _ = self._make_active_pair_and_meeting()
         self.mock_pairs_repo.get_active_pairs_by_round.return_value = [pair]
         self.mock_meeting_repo.get_pending_google_meetings_in_window.return_value = []
@@ -279,7 +361,7 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
         self.mock_google_service.list_conferences_by_meeting_code.assert_not_called()
 
     async def test_no_pairs_returns_zero_summary(self):
-        self.mock_round_repo.get_running_round_id.return_value = self.round_id
+        self.mock_round_repo.get_running_rounds.return_value = [self.round_window]
         self.mock_pairs_repo.get_active_pairs_by_round.return_value = []
 
         result = await self.service.sync_attendance(
@@ -294,7 +376,7 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
     async def test_logs_one_info_line_when_nothing_is_pending_sync(self):
         """The selection set came back empty -- no active pair had a pending
         Google meeting whose slot overlaps this run's window."""
-        self.mock_round_repo.get_running_round_id.return_value = self.round_id
+        self.mock_round_repo.get_running_rounds.return_value = [self.round_window]
         pair, _ = self._make_active_pair_and_meeting()
         self.mock_pairs_repo.get_active_pairs_by_round.return_value = [pair]
         self.mock_meeting_repo.get_pending_google_meetings_in_window.return_value = []
@@ -316,7 +398,7 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
         its own INFO line per meeting, which would change this test's count
         and is pinned separately by
         test_meeting_with_no_show_is_counted_and_not_written."""
-        self.mock_round_repo.get_running_round_id.return_value = self.round_id
+        self.mock_round_repo.get_running_rounds.return_value = [self.round_window]
         pair, meeting = self._make_active_pair_and_meeting()
         self.mock_pairs_repo.get_active_pairs_by_round.return_value = [pair]
         self.mock_meeting_repo.get_pending_google_meetings_in_window.return_value = [
@@ -348,7 +430,7 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
         span range: this arithmetic decides which meetings the sweep is even
         capable of seeing, so a wrong delta (one hour a side, or the delta
         applied to only one end) has to fail here."""
-        self.mock_round_repo.get_running_round_id.return_value = self.round_id
+        self.mock_round_repo.get_running_rounds.return_value = [self.round_window]
         pair, _ = self._make_active_pair_and_meeting()
         self.mock_pairs_repo.get_active_pairs_by_round.return_value = [pair]
         self.mock_meeting_repo.get_pending_google_meetings_in_window.return_value = []
@@ -377,7 +459,7 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_meet_is_queried_with_each_meeting_own_affinity_window(self):
-        self.mock_round_repo.get_running_round_id.return_value = self.round_id
+        self.mock_round_repo.get_running_rounds.return_value = [self.round_window]
         pair, meeting = self._make_active_pair_and_meeting(
             start="2026-04-07T10:00:00+00:00",
             end="2026-04-07T11:00:00+00:00",
@@ -416,7 +498,7 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
         This is the only one of the three split counters an operator can act
         on, so it must also surface at INFO (with the meeting and pair id)
         instead of DEBUG."""
-        self.mock_round_repo.get_running_round_id.return_value = self.round_id
+        self.mock_round_repo.get_running_rounds.return_value = [self.round_window]
         pair, meeting = self._make_active_pair_and_meeting()
         self.mock_pairs_repo.get_active_pairs_by_round.return_value = [pair]
         self.mock_meeting_repo.get_pending_google_meetings_in_window.return_value = [
@@ -462,7 +544,7 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
         The raising meeting is deliberately FIRST: a failure must not abandon
         the meetings queued behind it, so the second one still has to be
         queried and counted."""
-        self.mock_round_repo.get_running_round_id.return_value = self.round_id
+        self.mock_round_repo.get_running_rounds.return_value = [self.round_window]
         pair_a, meeting_a = self._make_active_pair_and_meeting(conf_id="aaa-aaaa-aaa")
         pair_b, meeting_b = self._make_active_pair_and_meeting(
             pair_id=2, conf_id="bbb-bbbb-bbb"
@@ -512,7 +594,7 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
         appear on a later run, so this is pure noise, not the actionable
         signal. Fails if the `now < window_end` check were dropped or
         inverted, since it would then misfile this as a no-show."""
-        self.mock_round_repo.get_running_round_id.return_value = self.round_id
+        self.mock_round_repo.get_running_rounds.return_value = [self.round_window]
         pair, meeting = self._make_active_pair_and_meeting(
             start="2026-04-07T10:00:00+00:00",
             end="2026-04-07T11:00:00+00:00",
@@ -557,7 +639,7 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
         outcome. That ordering is pinned by the sibling test right below,
         which freezes `now` INSIDE the grace period so both conditions are
         true simultaneously."""
-        self.mock_round_repo.get_running_round_id.return_value = self.round_id
+        self.mock_round_repo.get_running_rounds.return_value = [self.round_window]
         pair, meeting = self._make_active_pair_and_meeting(
             start="2026-04-07T10:00:00+00:00",
             end="2026-04-07T11:00:00+00:00",
@@ -596,7 +678,7 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
         in_progress being checked before not_yet_due in the if/elif chain: if
         the two were swapped, `now < window_end` would fire first and this
         meeting would be misfiled as not_yet_due instead."""
-        self.mock_round_repo.get_running_round_id.return_value = self.round_id
+        self.mock_round_repo.get_running_rounds.return_value = [self.round_window]
         pair, meeting = self._make_active_pair_and_meeting(
             start="2026-04-07T10:00:00+00:00",
             end="2026-04-07T11:00:00+00:00",
@@ -630,7 +712,7 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
 
     async def test_two_signed_in_meeting_completed(self):
         """Both mentor and mentee signed in, meeting duration >= 80% → is_completed=True."""
-        self.mock_round_repo.get_running_round_id.return_value = self.round_id
+        self.mock_round_repo.get_running_rounds.return_value = [self.round_window]
         self.mock_google_service.list_conferences_by_meeting_code.return_value = (
             [
                 self._make_conference(
@@ -678,7 +760,7 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
 
     async def test_two_signed_in_meeting_not_completed(self):
         """Both attended but duration < 80% → is_completed=False, no absence flag."""
-        self.mock_round_repo.get_running_round_id.return_value = self.round_id
+        self.mock_round_repo.get_running_rounds.return_value = [self.round_window]
         self.mock_google_service.list_conferences_by_meeting_code.return_value = (
             [
                 self._make_conference(
@@ -724,7 +806,7 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
 
     async def test_one_signed_in_one_anonymous_completed_no_unknown_absent(self):
         """1 signed-in + 1 anon, meeting complete → anon assumed to be other party, no flag."""
-        self.mock_round_repo.get_running_round_id.return_value = self.round_id
+        self.mock_round_repo.get_running_rounds.return_value = [self.round_window]
         self.mock_google_service.list_conferences_by_meeting_code.return_value = (
             [
                 self._make_conference(
@@ -772,7 +854,7 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
     ):
         """1 signed-in + 1 anon, meeting NOT complete → can't confirm anon was other party,
         and duration flag is set."""
-        self.mock_round_repo.get_running_round_id.return_value = self.round_id
+        self.mock_round_repo.get_running_rounds.return_value = [self.round_window]
         self.mock_google_service.list_conferences_by_meeting_code.return_value = (
             [
                 self._make_conference(
@@ -817,7 +899,7 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
 
     async def test_fewer_than_two_participants_marks_absent(self):
         """Only 1 participant → absent path, mentor flagged absent."""
-        self.mock_round_repo.get_running_round_id.return_value = self.round_id
+        self.mock_round_repo.get_running_rounds.return_value = [self.round_window]
         self.mock_google_service.list_conferences_by_meeting_code.return_value = (
             [
                 self._make_conference(
@@ -857,7 +939,7 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
 
     async def test_stale_meeting_fields_are_reset_on_each_run(self):
         """Fields from a prior run (e.g. absent_user_id) must not persist when no longer applicable."""
-        self.mock_round_repo.get_running_round_id.return_value = self.round_id
+        self.mock_round_repo.get_running_rounds.return_value = [self.round_window]
         self.mock_google_service.list_conferences_by_meeting_code.return_value = (
             [
                 self._make_conference(
@@ -904,7 +986,7 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
 
     async def test_mentee_arrives_late_sets_late_user_id(self):
         """Mentee joins >5 min after mentor → late_user_ids = [mentee]."""
-        self.mock_round_repo.get_running_round_id.return_value = self.round_id
+        self.mock_round_repo.get_running_rounds.return_value = [self.round_window]
         self.mock_google_service.list_conferences_by_meeting_code.return_value = (
             [
                 self._make_conference(
@@ -946,7 +1028,7 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
 
     async def test_both_arrive_late_sets_both_late_user_ids(self):
         """Both mentor and mentee join >5 min after scheduled start → late_user_ids contains both."""
-        self.mock_round_repo.get_running_round_id.return_value = self.round_id
+        self.mock_round_repo.get_running_rounds.return_value = [self.round_window]
         self.mock_google_service.list_conferences_by_meeting_code.return_value = (
             [
                 self._make_conference(
@@ -992,7 +1074,7 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
     async def test_multiple_conference_records_accumulates_reconnect_sessions(self):
         """Two conference records for the same space (disconnect + rejoin) are merged.
         Each session alone is < 80%; combined they exceed the threshold → is_completed=True."""
-        self.mock_round_repo.get_running_round_id.return_value = self.round_id
+        self.mock_round_repo.get_running_rounds.return_value = [self.round_window]
         # Two separate call records for the same Meet room
         self.mock_google_service.list_conferences_by_meeting_code.return_value = (
             [
@@ -1062,7 +1144,7 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
 
     async def test_only_anonymous_participant_sets_unknown_absent(self):
         """Single anonymous attendee with no sign-in → neither party identified → has_unknown_absent=True."""
-        self.mock_round_repo.get_running_round_id.return_value = self.round_id
+        self.mock_round_repo.get_running_rounds.return_value = [self.round_window]
         self.mock_google_service.list_conferences_by_meeting_code.return_value = (
             [
                 self._make_conference(
@@ -1092,7 +1174,7 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
 
     async def test_both_anonymous_sets_unknown_absent_and_unknown_late(self):
         """Two anonymous attendees arrive late → neither identified → has_unknown_absent=True, has_unknown_late=True."""
-        self.mock_round_repo.get_running_round_id.return_value = self.round_id
+        self.mock_round_repo.get_running_rounds.return_value = [self.round_window]
         # Conference runs 10:10–10:40 (30 min); both guests join at 10:10 (> legal_wait_end 10:05)
         self.mock_google_service.list_conferences_by_meeting_code.return_value = (
             [
@@ -1134,7 +1216,7 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
 
     async def test_alternative_email_matching(self):
         """Mentor signs into Meet with an alternative email → still matched to the correct user."""
-        self.mock_round_repo.get_running_round_id.return_value = self.round_id
+        self.mock_round_repo.get_running_rounds.return_value = [self.round_window]
         self.mock_google_service.list_conferences_by_meeting_code.return_value = (
             [
                 self._make_conference(
@@ -1192,7 +1274,7 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
 
     async def test_identity_overlap_same_user_two_devices(self):
         """Same signedin_user_id from two devices → both intervals merged into one tree → other party absent."""
-        self.mock_round_repo.get_running_round_id.return_value = self.round_id
+        self.mock_round_repo.get_running_rounds.return_value = [self.round_window]
         self.mock_google_service.list_conferences_by_meeting_code.return_value = (
             [
                 self._make_conference(
@@ -1242,7 +1324,7 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
         Meet. Under the old direction this was a post-hoc reject of a
         conference we had already paid to list; now it is simply never asked
         for."""
-        self.mock_round_repo.get_running_round_id.return_value = self.round_id
+        self.mock_round_repo.get_running_rounds.return_value = [self.round_window]
         active_pair, active_meeting = self._make_active_pair_and_meeting(
             conf_id="current-meet-code"
         )
@@ -1282,7 +1364,7 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
 
     async def test_zero_second_session_filtered_as_noise(self):
         """Participant whose start_time == end_time is filtered by MIN_VALID_SESSION_STRICT."""
-        self.mock_round_repo.get_running_round_id.return_value = self.round_id
+        self.mock_round_repo.get_running_rounds.return_value = [self.round_window]
         self.mock_google_service.list_conferences_by_meeting_code.return_value = (
             [
                 self._make_conference(
@@ -1329,7 +1411,7 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
 
     async def test_ten_hour_meeting_completes_successfully(self):
         """Actual meeting runs 10 h against 1 h scheduled → is_completed=True, no crash."""
-        self.mock_round_repo.get_running_round_id.return_value = self.round_id
+        self.mock_round_repo.get_running_rounds.return_value = [self.round_window]
         self.mock_google_service.list_conferences_by_meeting_code.return_value = (
             [
                 self._make_conference(
@@ -1376,7 +1458,7 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
     async def test_api_exception_increments_failed_and_continues(self):
         """fetch_participants_for_record raising an exception fails that one
         meeting without crashing the sweep."""
-        self.mock_round_repo.get_running_round_id.return_value = self.round_id
+        self.mock_round_repo.get_running_rounds.return_value = [self.round_window]
         self.mock_google_service.list_conferences_by_meeting_code.return_value = (
             [self._make_conference()],
             0,
@@ -1406,7 +1488,7 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
         pair, and Meet is queried exactly once per selected meeting -- the whole
         point of the reversal being that the call count now scales with OUR
         meetings and nothing else."""
-        self.mock_round_repo.get_running_round_id.return_value = self.round_id
+        self.mock_round_repo.get_running_rounds.return_value = [self.round_window]
 
         num_pairs = 100
         conf_ids = [f"conf-{i:03d}" for i in range(num_pairs)]
@@ -1489,7 +1571,7 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
 
     async def test_non_utc_timestamps_correctly_detected_as_late(self):
         """Participant timestamp in UTC+8 is correctly compared against UTC scheduled_start."""
-        self.mock_round_repo.get_running_round_id.return_value = self.round_id
+        self.mock_round_repo.get_running_rounds.return_value = [self.round_window]
         self.mock_google_service.list_conferences_by_meeting_code.return_value = (
             [
                 self._make_conference(
@@ -1540,7 +1622,7 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
         not (old_count + 1) -- a reinstated `+= 1` would fail this assertion since
         the mocked recalculation result (42) has no arithmetic relationship to the
         stale in-memory completed_count (3)."""
-        self.mock_round_repo.get_running_round_id.return_value = self.round_id
+        self.mock_round_repo.get_running_rounds.return_value = [self.round_window]
         self.mock_google_service.list_conferences_by_meeting_code.return_value = (
             [
                 self._make_conference(
@@ -1588,7 +1670,7 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
         legacy JSONB blob, including its nested list) must be left byte-for-byte
         alone -- hence a deepcopy snapshot rather than a shallow one, which would
         let an in-place mutation of the nested list slip through undetected."""
-        self.mock_round_repo.get_running_round_id.return_value = self.round_id
+        self.mock_round_repo.get_running_rounds.return_value = [self.round_window]
         self.mock_google_service.list_conferences_by_meeting_code.return_value = (
             [
                 self._make_conference(
@@ -1634,7 +1716,7 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
         `(meeting.late_user_ids or []).append(x)` but never reassigns silently
         discards the write (field also stays None). Only a real
         `meeting.late_user_ids = [...]` assignment makes this pass."""
-        self.mock_round_repo.get_running_round_id.return_value = self.round_id
+        self.mock_round_repo.get_running_rounds.return_value = [self.round_window]
         self.mock_google_service.list_conferences_by_meeting_code.return_value = (
             [
                 self._make_conference(

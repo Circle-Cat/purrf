@@ -5,6 +5,7 @@ from intervaltree import Interval, IntervalTree
 from itertools import combinations
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.dto.google_meeting_detail_dto import GoogleMeetingDetailDto
+from backend.dto.meeting_batch_create_dto import ALLOWED_DURATION_MINUTES
 from backend.entity.users_entity import UsersEntity
 
 # Configuration Constants
@@ -16,6 +17,11 @@ EXCLUDED_GOOGLE_USER_IDS = {"100580340666352382634"}
 # Required overlapping duration ratio for a "successful" meeting
 MIN_INTERACTION_RATIO = 0.8
 ATTENDANCE_WINDOW_DELTA = timedelta(hours=3)
+# The longest meeting anyone can create: ALLOWED_DURATION_MINUTES is enforced
+# by the batch-create DTO, which is the only path that makes a Google meeting,
+# so this is a real ceiling rather than a guess. Derived from that set instead
+# of restated, so the two cannot drift.
+MAX_MEETING_DURATION = timedelta(minutes=max(ALLOWED_DURATION_MINUTES))
 # Top N anonymous participants ranked by total time spent
 TOP_ANONYMOUS_USERS = 3
 
@@ -85,6 +91,15 @@ class MeetAttendanceService:
         the 3-hour affinity window travels to Google as a filter instead of
         being applied to a wider result set here.
 
+        Only meetings starting inside the round's own meeting window -- match
+        notification through the meetings-completion deadline -- are synced.
+        Pairs may schedule as many meetings as they like; anything starting
+        after the deadline is a private arrangement Purrf does not track.
+
+        Rounds are not supposed to overlap. If several windows are open at
+        once, the lowest round_id is synced and the rest are named in a
+        WARNING; one round per run is deliberate.
+
         Args:
             session: SQLAlchemy database session for transactional operations.
             lookback_hours: How far back from now this run reaches. A meeting is
@@ -121,12 +136,41 @@ class MeetAttendanceService:
                   being processed.
             Returns an empty dict if not currently in a meeting window.
         """
-        round_id = await self.mentorship_round_repository.get_running_round_id(session)
-        if not round_id:
+        # The grace only widens which ROUNDS stay selectable, never which
+        # meetings do -- it has to cover the latest still-reconcilable meeting:
+        # one starting right at the deadline, running the longest allowed
+        # duration, whose conference may begin up to ATTENDANCE_WINDOW_DELTA
+        # after that, and which a run reaching `lookback_hours` back can still
+        # pick up. Do not pass it to the meeting selection below: that would
+        # re-admit exactly the post-deadline meetings the round window exists
+        # to exclude.
+        grace = (
+            timedelta(hours=lookback_hours)
+            + ATTENDANCE_WINDOW_DELTA
+            + MAX_MEETING_DURATION
+        )
+        running_rounds = await self.mentorship_round_repository.get_running_rounds(
+            session, grace
+        )
+        if not running_rounds:
             self.logger.info(
                 "[MeetAttendanceService] sync_attendance: not in meeting window, skipping"
             )
             return {}
+        current_round = running_rounds[0]
+        if len(running_rounds) > 1:
+            # Rounds are not supposed to overlap. When they do, the old code
+            # picked one arbitrarily (no ORDER BY) and the others went unsynced
+            # silently. Deterministic now, and loud, but still one round per
+            # run -- handling genuinely concurrent rounds is a redesign.
+            self.logger.warning(
+                "[MeetAttendanceService] %d rounds have an open meeting window; "
+                "syncing round_id=%s and SKIPPING %s",
+                len(running_rounds),
+                current_round.round_id,
+                [r.round_id for r in running_rounds[1:]],
+            )
+        round_id = current_round.round_id
         self.logger.debug(
             "[MeetAttendanceService] sync_attendance: round_id=%s, lookback_hours=%s",
             round_id,
@@ -171,6 +215,11 @@ class MeetAttendanceService:
             pair_ids=[p.pair_id for p in pairs],
             ends_after=now - lookback - ATTENDANCE_WINDOW_DELTA,
             starts_before=now + ATTENDANCE_WINDOW_DELTA,
+            # The round's OWN window, un-widened by `grace`. These two say
+            # whether a meeting belongs to the round at all; the two above say
+            # whether this run is the one to look at it.
+            round_window_start=current_round.window_start,
+            round_window_end=current_round.window_end,
         )
         summary["meetings_selected"] = len(pending_meetings)
         if not pending_meetings:
