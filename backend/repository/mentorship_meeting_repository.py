@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from sqlalchemy import delete, func, nullslast, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -148,6 +150,71 @@ class MentorshipMeetingRepository:
                 MentorshipMeetingEntity.google_meeting_code.is_not(None),
             )
         )
+        return list(result.scalars().all())
+
+    async def get_pending_google_meetings_in_window(
+        self,
+        session: AsyncSession,
+        pair_ids: list[int],
+        ends_after: datetime,
+        starts_before: datetime,
+    ) -> list[MentorshipMeetingEntity]:
+        """GOOGLE meetings awaiting attendance whose slot is worth checking now.
+
+        The time-bounded sibling of ``get_pending_google_meetings_by_pairs``.
+        That one returns every pending row for a pair, which is right when the
+        caller already holds the set of conferences to match against. This one
+        is for the reverse direction, where each returned row costs one Meet
+        API call -- so the set has to be bounded at BOTH ends:
+
+        - Bounded below, because a meeting nobody joined produces no conference
+          record and therefore never completes. Without a lower bound those
+          dead rows accumulate for the whole round and are re-queried forever.
+        - Bounded above, because a meeting that has not happened yet has
+          nothing to reconcile.
+
+        The two bounds land on different columns on purpose, which is what the
+        parameter names say: a meeting is in scope when its own attendance
+        affinity window overlaps the caller's lookback interval, and two
+        intervals overlap when each one's start is no later than the other's
+        end. The caller derives both values -- see
+        ``MeetAttendanceService.sync_attendance``.
+
+        Args:
+            session (AsyncSession): The active DB session.
+            pair_ids (list[int]): The pairs to search across.
+            ends_after (datetime): Keep rows whose ``end_datetime`` is at or
+                after this. Inclusive.
+            starts_before (datetime): Keep rows whose ``start_datetime`` is at
+                or before this. Inclusive.
+
+        Returns:
+            list[MentorshipMeetingEntity]: Rows with ``source='google'``,
+                ``is_completed=False``, a non-null ``google_meeting_code``, and
+                a slot inside the bounds, ordered like every other read here
+                (``start_datetime`` ascending, then ``created_datetime``, then
+                ``meeting_id``). Empty for empty input, without touching the
+                database.
+        """
+        if not pair_ids:
+            return []
+        stmt = (
+            select(MentorshipMeetingEntity)
+            .where(
+                MentorshipMeetingEntity.pair_id.in_(pair_ids),
+                MentorshipMeetingEntity.source == MeetingSource.GOOGLE,
+                # `== False` rather than `.is_(False)` so the planner can match
+                # ix_mentorship_meeting_pending's `is_completed = false`
+                # predicate -- same reason as
+                # get_pending_google_meetings_by_pairs. Do not "correct" it.
+                MentorshipMeetingEntity.is_completed == False,  # noqa: E712
+                MentorshipMeetingEntity.google_meeting_code.is_not(None),
+                MentorshipMeetingEntity.end_datetime >= ends_after,
+                MentorshipMeetingEntity.start_datetime <= starts_before,
+            )
+            .order_by(*_MEETING_ORDER_BY)
+        )
+        result = await session.execute(stmt)
         return list(result.scalars().all())
 
     async def get_meeting_by_google_meeting_code(

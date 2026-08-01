@@ -363,6 +363,154 @@ class TestMentorshipMeetingRepository(BaseRepositoryTestLib):
 
         self.assertEqual(result, [])
 
+    # --- get_pending_google_meetings_in_window ---
+
+    async def test_in_window_selects_only_overlapping_pending_google_rows(self):
+        pair = await self._seed_pair()
+        base = datetime(2026, 4, 7, 10, 0, tzinfo=timezone.utc)
+        inside = self._google_meeting(
+            pair.pair_id,
+            start_datetime=base,
+            end_datetime=base + timedelta(hours=1),
+            google_meeting_code="in-side-aaa",
+        )
+        too_old = self._google_meeting(
+            pair.pair_id,
+            start_datetime=base - timedelta(days=2),
+            end_datetime=base - timedelta(days=2) + timedelta(hours=1),
+            google_meeting_code="too-old-aaa",
+        )
+        too_new = self._google_meeting(
+            pair.pair_id,
+            start_datetime=base + timedelta(days=2),
+            end_datetime=base + timedelta(days=2) + timedelta(hours=1),
+            google_meeting_code="too-new-aaa",
+        )
+        await self.insert_entities([inside, too_old, too_new])
+        repo = MentorshipMeetingRepository()
+
+        rows = await repo.get_pending_google_meetings_in_window(
+            session=self.session,
+            pair_ids=[pair.pair_id],
+            ends_after=base - timedelta(hours=7),
+            starts_before=base + timedelta(hours=3),
+        )
+
+        self.assertEqual([r.google_meeting_code for r in rows], ["in-side-aaa"])
+
+    async def test_in_window_excludes_completed_manual_legacy_and_codeless(self):
+        pair = await self._seed_pair()
+        base = datetime(2026, 4, 7, 10, 0, tzinfo=timezone.utc)
+        completed = self._google_meeting(
+            pair.pair_id,
+            start_datetime=base,
+            end_datetime=base + timedelta(hours=1),
+            is_completed=True,
+            google_meeting_code="done-aaaa",
+        )
+        codeless = self._google_meeting(
+            pair.pair_id,
+            start_datetime=base,
+            end_datetime=base + timedelta(hours=1),
+            google_meeting_code=None,
+        )
+        manual = self._manual_meeting(
+            pair.pair_id,
+            start_datetime=base,
+            end_datetime=base + timedelta(hours=1),
+        )
+        legacy = self._legacy_meeting(pair.pair_id)
+        keeper = self._google_meeting(
+            pair.pair_id,
+            start_datetime=base,
+            end_datetime=base + timedelta(hours=1),
+            google_meeting_code="keep-aaaa",
+        )
+        await self.insert_entities([completed, codeless, manual, legacy, keeper])
+        repo = MentorshipMeetingRepository()
+
+        rows = await repo.get_pending_google_meetings_in_window(
+            session=self.session,
+            pair_ids=[pair.pair_id],
+            ends_after=base - timedelta(hours=7),
+            starts_before=base + timedelta(hours=3),
+        )
+
+        self.assertEqual([r.google_meeting_code for r in rows], ["keep-aaaa"])
+
+    async def test_in_window_boundaries_are_inclusive(self):
+        """A meeting whose end lands exactly on ends_after, and one whose start
+        lands exactly on starts_before, both stay in -- the window is closed on
+        both sides so a meeting cannot fall through between two runs."""
+        pair = await self._seed_pair()
+        base = datetime(2026, 4, 7, 10, 0, tzinfo=timezone.utc)
+        ends_exactly = self._google_meeting(
+            pair.pair_id,
+            start_datetime=base - timedelta(hours=1),
+            end_datetime=base,
+            google_meeting_code="ends-onnn",
+        )
+        starts_exactly = self._google_meeting(
+            pair.pair_id,
+            start_datetime=base + timedelta(hours=5),
+            end_datetime=base + timedelta(hours=6),
+            google_meeting_code="starts-onn",
+        )
+        await self.insert_entities([ends_exactly, starts_exactly])
+        repo = MentorshipMeetingRepository()
+
+        rows = await repo.get_pending_google_meetings_in_window(
+            session=self.session,
+            pair_ids=[pair.pair_id],
+            ends_after=base,
+            starts_before=base + timedelta(hours=5),
+        )
+
+        self.assertEqual(
+            sorted(r.google_meeting_code for r in rows),
+            ["ends-onnn", "starts-onn"],
+        )
+
+    async def test_in_window_empty_pair_ids_skips_the_database(self):
+        repo = MentorshipMeetingRepository()
+
+        rows = await repo.get_pending_google_meetings_in_window(
+            session=self.session,
+            pair_ids=[],
+            ends_after=datetime(2026, 4, 7, 0, 0, tzinfo=timezone.utc),
+            starts_before=datetime(2026, 4, 8, 0, 0, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(rows, [])
+
+    async def test_in_window_ignores_other_pairs(self):
+        pair = await self._seed_pair()
+        other = await self._seed_pair()
+        base = datetime(2026, 4, 7, 10, 0, tzinfo=timezone.utc)
+        mine = self._google_meeting(
+            pair.pair_id,
+            start_datetime=base,
+            end_datetime=base + timedelta(hours=1),
+            google_meeting_code="mine-aaaa",
+        )
+        theirs = self._google_meeting(
+            other.pair_id,
+            start_datetime=base,
+            end_datetime=base + timedelta(hours=1),
+            google_meeting_code="thrs-aaaa",
+        )
+        await self.insert_entities([mine, theirs])
+        repo = MentorshipMeetingRepository()
+
+        rows = await repo.get_pending_google_meetings_in_window(
+            session=self.session,
+            pair_ids=[pair.pair_id],
+            ends_after=base - timedelta(hours=7),
+            starts_before=base + timedelta(hours=3),
+        )
+
+        self.assertEqual([r.google_meeting_code for r in rows], ["mine-aaaa"])
+
     # --- get_meeting_by_google_meeting_code ---
 
     async def test_get_meeting_by_google_meeting_code_hit(self):
