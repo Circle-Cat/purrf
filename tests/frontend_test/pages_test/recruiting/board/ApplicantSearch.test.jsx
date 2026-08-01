@@ -238,6 +238,28 @@ describe("ApplicantSearch", () => {
     expect(await screen.findByText("No matches")).toBeInTheDocument();
   });
 
+  it("keeps aria-controls resolvable to a real listbox when a search has zero hits", async () => {
+    const user = userEvent.setup();
+    api.searchBoardApplicants.mockResolvedValue({
+      data: { hits: [], truncated: false },
+    });
+    renderSearch();
+
+    await typeTerm(user, "zhang");
+    await user.click(screen.getByRole("button", { name: "Search" }));
+
+    const input = screen.getByPlaceholderText("Search by name or email");
+    expect(input).toHaveAttribute("aria-expanded", "true");
+    expect(await screen.findByText("No matches")).toBeInTheDocument();
+
+    // The point of this test: resolve the id aria-controls actually names,
+    // rather than assuming a listbox is present.
+    const controlledId = input.getAttribute("aria-controls");
+    const controlled = document.getElementById(controlledId);
+    expect(controlled).not.toBeNull();
+    expect(controlled).toHaveAttribute("role", "listbox");
+  });
+
   it("shows the truncation notice derived from the actual number of hits rendered", async () => {
     const user = userEvent.setup();
     // 7 hits, not 1: proves the count tracks result.hits.length rather than

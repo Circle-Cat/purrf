@@ -164,47 +164,61 @@ const ApplicantSearch = ({ selectedJobId, onSelect }) => {
 
       {result && (
         <div className="absolute left-0 top-11 z-20 w-96 rounded-lg border border-border bg-white shadow-lg">
-          {result.hits.length === 0 ? (
-            <p className="px-3 py-2 text-sm text-muted-foreground">
+          {/* Rendered whenever the panel is open, hits or not, so
+              aria-controls on the input always names an element that
+              actually exists in the DOM. "No matches" is a sibling, never a
+              child: role="listbox" children must be options, and arbitrary
+              text in there would trade one ARIA problem for another. An
+              empty listbox with no padding/border renders nothing visible. */}
+          {/* No <ul>/<li> wrappers: an element with role="option" must be a
+              direct child of the role="listbox", and a <li> in between
+              breaks that relationship. */}
+          {/* Rendered whenever the panel is open, hits or not, so
+              aria-controls on the input always names an element that
+              actually exists in the DOM. "No matches" is a sibling, never a
+              child: role="listbox" children must be options, and arbitrary
+              text in there would trade one ARIA problem for another. An
+              empty listbox with no padding/border renders nothing visible. */}
+          {/* No <ul>/<li> wrappers: an element with role="option" must be a
+              direct child of the role="listbox", and a <li> in between
+              breaks that relationship. */}
+          <div
+            role="listbox"
+            id={listboxId}
+            className="max-h-80 overflow-y-auto py-1"
+          >
+            {result.hits.map((h, index) => (
+              <button
+                key={h.applicationId}
+                id={optionId(h.applicationId)}
+                type="button"
+                role="option"
+                aria-selected={index === activeIndex}
+                data-application-id={String(h.applicationId)}
+                onClick={() => onSelect(h.applicationId)}
+                className={`w-full px-3 py-2 text-left hover:bg-slate-50 ${
+                  index === activeIndex ? "bg-slate-100" : ""
+                }`}
+              >
+                <p className="text-sm font-medium text-slate-900">
+                  {h.applicantName}
+                </p>
+                <p className="text-xs text-slate-500">
+                  {[
+                    h.applicantEmail,
+                    allPostings ? h.jobTitle : null,
+                    stageLabel(h.stage, h.jobKind),
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </p>
+              </button>
+            ))}
+          </div>
+          {result.hits.length === 0 && (
+            <p role="status" className="px-3 py-2 text-sm text-muted-foreground">
               No matches
             </p>
-          ) : (
-            // No <ul>/<li> wrappers: an element with role="option" must be a
-            // direct child of the role="listbox", and a <li> in between
-            // breaks that relationship.
-            <div
-              role="listbox"
-              id={listboxId}
-              className="max-h-80 overflow-y-auto py-1"
-            >
-              {result.hits.map((h, index) => (
-                <button
-                  key={h.applicationId}
-                  id={optionId(h.applicationId)}
-                  type="button"
-                  role="option"
-                  aria-selected={index === activeIndex}
-                  data-application-id={String(h.applicationId)}
-                  onClick={() => onSelect(h.applicationId)}
-                  className={`w-full px-3 py-2 text-left hover:bg-slate-50 ${
-                    index === activeIndex ? "bg-slate-100" : ""
-                  }`}
-                >
-                  <p className="text-sm font-medium text-slate-900">
-                    {h.applicantName}
-                  </p>
-                  <p className="text-xs text-slate-500">
-                    {[
-                      h.applicantEmail,
-                      allPostings ? h.jobTitle : null,
-                      stageLabel(h.stage, h.jobKind),
-                    ]
-                      .filter(Boolean)
-                      .join(" · ")}
-                  </p>
-                </button>
-              ))}
-            </div>
           )}
           {result.truncated && (
             <p className="border-t border-border px-3 py-2 text-xs text-muted-foreground">
