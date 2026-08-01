@@ -102,6 +102,27 @@ export const listBoardJobs = () =>
   request.get(API_ENDPOINTS.RECRUITING_BOARD_JOBS);
 
 /**
+ * Search applicants by name or email across the caller's boards.
+ *
+ * @param {string} q Search term; matched as a case-insensitive substring
+ *   against the applicant's full name and every one of their email
+ *   addresses.
+ * @param {{jobId?: number|null, currentJobId?: number|null}} options
+ *   `jobId` narrows the search to one posting; null/undefined searches every
+ *   posting the caller can open. `currentJobId` only floats the open
+ *   posting's hits to the front of the list.
+ * @returns {Promise<object>} `{data: {hits, truncated}}`.
+ */
+export const searchBoardApplicants = (q, { jobId, currentJobId } = {}) =>
+  request.get(API_ENDPOINTS.RECRUITING_BOARD_APPLICANTS, {
+    params: {
+      q,
+      ...(jobId == null ? {} : { job_id: jobId }),
+      ...(currentJobId == null ? {} : { current_job_id: currentJobId }),
+    },
+  });
+
+/**
  * Fetch a job's board with all applications grouped by stage/sub-status.
  */
 export const getJobBoard = (jobId) =>
