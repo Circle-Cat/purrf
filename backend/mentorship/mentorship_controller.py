@@ -184,7 +184,11 @@ class MentorshipController:
                 attendance affinity window (``ATTENDANCE_WINDOW_DELTA``)
                 overlaps the lookback interval, so the effective selection
                 window is 3 hours wider than the raw lookback on each side.
-                Defaults to 2.
+                Defaults to 2. This default is not the operational value --
+                the deployed CronJob (``helm/purrf/values.yaml``,
+                ``sync-meet-attendance``) always passes 4, giving a latest
+                possible reconciliation of ``lookback + 3h`` = 7h after a
+                meeting's scheduled end, versus 5h at this default of 2.
         """
         async with self.database.session() as session:
             result = await self.meet_attendance_sync_service.sync_attendance(
