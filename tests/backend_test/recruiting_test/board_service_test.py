@@ -747,7 +747,9 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         return (application, user)
 
     async def test_search_applicants_rejects_a_job_outside_the_visible_set(self):
-        self.job_repo.list_all = AsyncMock(return_value=[self._job(job_id=1, owner_ids=(9,))])
+        self.job_repo.list_all = AsyncMock(
+            return_value=[self._job(job_id=1, owner_ids=(9,))]
+        )
 
         with self.assertRaises(ValueError):
             await self.service.search_applicants(
@@ -766,9 +768,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             self.session, self._ctx(user_id=2), "zhang", job_id=1
         )
 
-        self.assertEqual(
-            self.app_repo.search_latest_by_jobs.await_args.args[1], [1]
-        )
+        self.assertEqual(self.app_repo.search_latest_by_jobs.await_args.args[1], [1])
 
     async def test_search_applicants_spans_the_whole_visible_set_without_a_job_id(self):
         job_a = self._job(job_id=1, owner_ids=(2,))
@@ -781,12 +781,12 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             self.session, self._ctx(user_id=2), "zhang", job_id=None
         )
 
-        self.assertEqual(
-            self.app_repo.search_latest_by_jobs.await_args.args[1], [1, 2]
-        )
+        self.assertEqual(self.app_repo.search_latest_by_jobs.await_args.args[1], [1, 2])
 
     async def test_search_applicants_returns_nothing_when_no_jobs_are_visible(self):
-        self.job_repo.list_all = AsyncMock(return_value=[self._job(job_id=1, owner_ids=(9,))])
+        self.job_repo.list_all = AsyncMock(
+            return_value=[self._job(job_id=1, owner_ids=(9,))]
+        )
         self.app_repo.search_latest_by_jobs = AsyncMock(return_value=[])
 
         result = await self.service.search_applicants(
@@ -797,7 +797,9 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.app_repo.search_latest_by_jobs.assert_not_called()
 
     async def test_search_applicants_returns_nothing_for_a_blank_term(self):
-        self.job_repo.list_all = AsyncMock(return_value=[self._job(job_id=1, owner_ids=(2,))])
+        self.job_repo.list_all = AsyncMock(
+            return_value=[self._job(job_id=1, owner_ids=(2,))]
+        )
         self.app_repo.search_latest_by_jobs = AsyncMock(return_value=[])
 
         result = await self.service.search_applicants(
@@ -830,12 +832,18 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(hit.job_kind, JobKind.ACTIVITY)
         self.assertFalse(result["truncated"])
 
-    async def test_search_applicants_leaves_email_blank_when_the_applicant_has_none(self):
-        self.job_repo.list_all = AsyncMock(return_value=[self._job(job_id=1, owner_ids=(2,))])
+    async def test_search_applicants_leaves_email_blank_when_the_applicant_has_none(
+        self,
+    ):
+        self.job_repo.list_all = AsyncMock(
+            return_value=[self._job(job_id=1, owner_ids=(2,))]
+        )
         self.app_repo.search_latest_by_jobs = AsyncMock(
             return_value=[self._hit_row(application_id=10, job_id=1, user_id=5)]
         )
-        self.user_emails_repo.get_contact_emails_by_user_ids = AsyncMock(return_value={})
+        self.user_emails_repo.get_contact_emails_by_user_ids = AsyncMock(
+            return_value={}
+        )
 
         result = await self.service.search_applicants(
             self.session, self._ctx(user_id=2), "zhang", job_id=1
@@ -843,8 +851,12 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result["hits"][0].applicant_email, "")
 
-    async def test_search_applicants_asks_for_one_row_past_the_cap_and_flags_truncation(self):
-        self.job_repo.list_all = AsyncMock(return_value=[self._job(job_id=1, owner_ids=(2,))])
+    async def test_search_applicants_asks_for_one_row_past_the_cap_and_flags_truncation(
+        self,
+    ):
+        self.job_repo.list_all = AsyncMock(
+            return_value=[self._job(job_id=1, owner_ids=(2,))]
+        )
         rows = [
             self._hit_row(application_id=i, job_id=1, user_id=i)
             for i in range(SEARCH_RESULT_LIMIT + 1)

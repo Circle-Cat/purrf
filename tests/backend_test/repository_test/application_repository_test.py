@@ -1169,13 +1169,17 @@ class TestApplicationRepository(BaseRepositoryTestLib):
         app_a = await self.repo.create(
             self.session,
             ApplicationEntity(
-                job_id=job_a.job_id, user_id=user.user_id, stage=ApplicationStage.APPLIED
+                job_id=job_a.job_id,
+                user_id=user.user_id,
+                stage=ApplicationStage.APPLIED,
             ),
         )
         app_b = await self.repo.create(
             self.session,
             ApplicationEntity(
-                job_id=job_b.job_id, user_id=user.user_id, stage=ApplicationStage.APPLIED
+                job_id=job_b.job_id,
+                user_id=user.user_id,
+                stage=ApplicationStage.APPLIED,
             ),
         )
 
@@ -1189,7 +1193,9 @@ class TestApplicationRepository(BaseRepositoryTestLib):
         )
 
     async def test_search_returns_nothing_for_empty_job_ids(self):
-        rows = await self.repo.search_latest_by_jobs(self.session, [], "zhang", limit=20)
+        rows = await self.repo.search_latest_by_jobs(
+            self.session, [], "zhang", limit=20
+        )
 
         self.assertEqual(rows, [])
 
