@@ -1,12 +1,16 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi } from "vitest";
+import { toast } from "sonner";
 import MeetingLogDialog from "@/pages/MentorshipManagement/components/MeetingLogDialog";
+
+vi.spyOn(toast, "error").mockImplementation(() => {});
 
 const baseProps = {
   open: true,
   onOpenChange: vi.fn(),
   roundName: "Fall 2024",
+  roundVersion: "v2",
   subjectName: "Henry Zhang",
   subjectRole: "mentee",
   partnerName: "Sarah Lee",
@@ -14,7 +18,21 @@ const baseProps = {
   meetings: [],
   loading: false,
   error: false,
+  onSave: vi.fn().mockResolvedValue(),
 };
+
+/** A single valid meeting fixture for tests that only need meetings.length > 0. */
+function makeMeeting(overrides = {}) {
+  return {
+    meetingId: "gm-80-1",
+    startDatetime: "2024-03-01T23:30:00Z",
+    endDatetime: "2024-03-02T00:30:00Z",
+    isCompleted: true,
+    note: [],
+    createDatetime: "2024-03-01T15:30:00Z",
+    ...overrides,
+  };
+}
 
 describe("MeetingLogDialog", () => {
   it("renders the title from row data regardless of fetch state", () => {
@@ -47,6 +65,27 @@ describe("MeetingLogDialog", () => {
     expect(screen.getByText("No meetings recorded yet.")).toBeInTheDocument();
   });
 
+  it("renders Time Range and Create Datetime column headers", () => {
+    render(
+      <MeetingLogDialog
+        {...baseProps}
+        meetings={[
+          {
+            meetingId: "gm-80-1",
+            startDatetime: "2024-03-01T23:30:00Z",
+            endDatetime: "2024-03-02T00:30:00Z",
+            isCompleted: true,
+            note: [],
+            createDatetime: "2024-03-01T15:30:00Z",
+          },
+        ]}
+      />,
+    );
+    expect(screen.getByText("Time Range")).toBeInTheDocument();
+    expect(screen.getByText("Create Datetime")).toBeInTheDocument();
+    expect(screen.queryByText("Datetime")).not.toBeInTheDocument();
+  });
+
   it("renders one row per meeting with derived numbering, datetime and status", () => {
     render(
       <MeetingLogDialog
@@ -76,6 +115,7 @@ describe("MeetingLogDialog", () => {
     expect(screen.getByText("2")).toBeInTheDocument();
     expect(screen.getByText("2024-03-01 · 15:30 – 16:30")).toBeInTheDocument();
     expect(screen.getByText("2024-03-08 · 15:30 – 16:30")).toBeInTheDocument();
+    expect(screen.getByText("2024-03-01 · 07:30")).toBeInTheDocument();
     expect(screen.getByText("Completed")).toBeInTheDocument();
     expect(screen.getByText("Incomplete")).toBeInTheDocument();
   });
@@ -197,5 +237,442 @@ describe("MeetingLogDialog", () => {
   it("renders nothing when closed", () => {
     render(<MeetingLogDialog {...baseProps} open={false} />);
     expect(screen.queryByText(/Meeting Log —/)).not.toBeInTheDocument();
+  });
+
+  it("shows the Edit button only for a non-empty v2 round", () => {
+    const { rerender } = render(
+      <MeetingLogDialog
+        {...baseProps}
+        roundVersion="v1"
+        meetings={[makeMeeting()]}
+      />,
+    );
+    expect(
+      screen.queryByRole("button", { name: "Edit" }),
+    ).not.toBeInTheDocument();
+
+    rerender(
+      <MeetingLogDialog {...baseProps} roundVersion="v2" meetings={[]} />,
+    );
+    expect(
+      screen.queryByRole("button", { name: "Edit" }),
+    ).not.toBeInTheDocument();
+
+    rerender(
+      <MeetingLogDialog
+        {...baseProps}
+        roundVersion="v2"
+        meetings={[makeMeeting()]}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Edit" })).toBeInTheDocument();
+  });
+
+  it("clicking Edit replaces the Edit button with Cancel/Delete/Update; clicking Cancel restores it", async () => {
+    render(
+      <MeetingLogDialog
+        {...baseProps}
+        roundVersion="v2"
+        meetings={[makeMeeting()]}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Edit" }));
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Delete (0)" })).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Update (0)" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Update (0)" })).toBeDisabled();
+    expect(
+      screen.queryByRole("button", { name: "Edit" }),
+    ).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.getByRole("button", { name: "Edit" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /^Update/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("in edit mode, shows a Complete Status select and Note checkboxes reflecting the meeting's current values", async () => {
+    render(
+      <MeetingLogDialog
+        {...baseProps}
+        roundVersion="v2"
+        meetings={[
+          makeMeeting({
+            meetingId: "gm-1",
+            isCompleted: false,
+            note: ["mentor_absent"],
+          }),
+        ]}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Edit" }));
+
+    expect(
+      screen.getByRole("combobox", { name: "Complete Status" }),
+    ).toHaveTextContent("Incomplete");
+    // partner is mentor ("Sarah Lee") per baseProps
+    expect(screen.getByRole("button", { name: "Note" })).toHaveTextContent(
+      "Sarah Lee absent",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Note" }));
+    expect(
+      screen.getByRole("checkbox", { name: "Sarah Lee absent" }),
+    ).toBeChecked();
+  });
+
+  it("changing Complete Status and toggling a Note checkbox updates what's displayed", async () => {
+    render(
+      <MeetingLogDialog
+        {...baseProps}
+        roundVersion="v2"
+        meetings={[makeMeeting({ meetingId: "gm-1", isCompleted: false })]}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Edit" }));
+    await userEvent.click(
+      screen.getByRole("combobox", { name: "Complete Status" }),
+    );
+    await userEvent.click(screen.getByRole("option", { name: "Completed" }));
+    expect(
+      screen.getByRole("combobox", { name: "Complete Status" }),
+    ).toHaveTextContent("Completed");
+
+    expect(screen.getByRole("button", { name: "Note" })).toHaveTextContent(
+      "Select",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Note" }));
+    await userEvent.click(
+      screen.getByRole("checkbox", { name: "Sarah Lee absent" }),
+    );
+    expect(screen.getByRole("button", { name: "Note" })).toHaveTextContent(
+      "Sarah Lee absent",
+    );
+  });
+
+  it("changing a field back to its original value disables Update again", async () => {
+    render(
+      <MeetingLogDialog
+        {...baseProps}
+        roundVersion="v2"
+        meetings={[makeMeeting({ meetingId: "gm-1", isCompleted: false })]}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Edit" }));
+    await userEvent.click(
+      screen.getByRole("combobox", { name: "Complete Status" }),
+    );
+    await userEvent.click(screen.getByRole("option", { name: "Completed" }));
+    expect(screen.getByRole("button", { name: "Update (1)" })).toBeEnabled();
+
+    await userEvent.click(
+      screen.getByRole("combobox", { name: "Complete Status" }),
+    );
+    await userEvent.click(screen.getByRole("option", { name: "Incomplete" }));
+
+    expect(screen.getByRole("button", { name: "Update (0)" })).toBeDisabled();
+  });
+
+  it("disables incompatible Note checkboxes once one is checked, per the mutual-exclusion rules", async () => {
+    render(
+      <MeetingLogDialog
+        {...baseProps}
+        roundVersion="v2"
+        meetings={[makeMeeting({ meetingId: "gm-1", isCompleted: false })]}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Edit" }));
+    await userEvent.click(screen.getByRole("button", { name: "Note" }));
+    await userEvent.click(
+      screen.getByRole("checkbox", { name: "Sarah Lee absent" }),
+    );
+
+    expect(
+      screen.getByRole("checkbox", { name: "Unknown absence" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("checkbox", { name: "Henry Zhang absent" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("checkbox", { name: "Unknown late arrival" }),
+    ).toBeEnabled();
+  });
+
+  it("checking a row's checkbox immediately locks its cells to read-only; unchecking it restores them", async () => {
+    render(
+      <MeetingLogDialog
+        {...baseProps}
+        roundVersion="v2"
+        meetings={[
+          makeMeeting({ meetingId: "gm-1" }),
+          makeMeeting({ meetingId: "gm-2" }),
+        ]}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Edit" }));
+    expect(
+      screen.getAllByRole("combobox", { name: "Complete Status" }),
+    ).toHaveLength(2);
+    expect(screen.getByRole("button", { name: "Delete (0)" })).toBeDisabled();
+
+    await userEvent.click(
+      screen.getByRole("checkbox", { name: "Select meeting 1 for deletion" }),
+    );
+    expect(
+      screen.getByRole("checkbox", { name: "Select meeting 1 for deletion" }),
+    ).toBeChecked();
+    // gm-1 locked to read-only cells; only gm-2 remains editable.
+    expect(
+      screen.getAllByRole("combobox", { name: "Complete Status" }),
+    ).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "Delete (1)" })).toBeEnabled();
+
+    await userEvent.click(
+      screen.getByRole("checkbox", { name: "Select meeting 1 for deletion" }),
+    );
+    expect(
+      screen.getByRole("checkbox", { name: "Select meeting 1 for deletion" }),
+    ).not.toBeChecked();
+    expect(
+      screen.getAllByRole("combobox", { name: "Complete Status" }),
+    ).toHaveLength(2);
+    expect(screen.getByRole("button", { name: "Delete (0)" })).toBeDisabled();
+  });
+
+  it("checking then unchecking a row for deletion doesn't affect an edit made to it beforehand", async () => {
+    render(
+      <MeetingLogDialog
+        {...baseProps}
+        roundVersion="v2"
+        meetings={[makeMeeting({ meetingId: "gm-1", isCompleted: true })]}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Edit" }));
+    await userEvent.click(
+      screen.getByRole("combobox", { name: "Complete Status" }),
+    );
+    await userEvent.click(screen.getByRole("option", { name: "Incomplete" }));
+    await userEvent.click(
+      screen.getByRole("checkbox", { name: "Select meeting 1 for deletion" }),
+    );
+    // The row's edit is hidden while checked, so it shouldn't count toward Update.
+    expect(screen.getByRole("button", { name: "Update (0)" })).toBeDisabled();
+
+    await userEvent.click(
+      screen.getByRole("checkbox", { name: "Select meeting 1 for deletion" }),
+    );
+
+    expect(
+      screen.getByRole("combobox", { name: "Complete Status" }),
+    ).toHaveTextContent("Incomplete");
+    expect(screen.getByRole("button", { name: "Update (1)" })).toBeEnabled();
+  });
+
+  it("selecting all via the header checkbox checks every row", async () => {
+    render(
+      <MeetingLogDialog
+        {...baseProps}
+        roundVersion="v2"
+        meetings={[
+          makeMeeting({ meetingId: "gm-1" }),
+          makeMeeting({ meetingId: "gm-2" }),
+        ]}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Edit" }));
+    await userEvent.click(
+      screen.getByRole("checkbox", {
+        name: "Select all meetings for deletion",
+      }),
+    );
+
+    expect(
+      screen.getByRole("checkbox", { name: "Select meeting 1 for deletion" }),
+    ).toBeChecked();
+    expect(
+      screen.getByRole("checkbox", { name: "Select meeting 2 for deletion" }),
+    ).toBeChecked();
+    expect(screen.getByRole("button", { name: "Delete (2)" })).toBeEnabled();
+
+    await userEvent.click(
+      screen.getByRole("checkbox", {
+        name: "Select all meetings for deletion",
+      }),
+    );
+    expect(
+      screen.getByRole("checkbox", { name: "Select meeting 1 for deletion" }),
+    ).not.toBeChecked();
+    expect(
+      screen.getByRole("checkbox", { name: "Select meeting 2 for deletion" }),
+    ).not.toBeChecked();
+  });
+
+  it("Cancel discards checked rows and edited fields", async () => {
+    render(
+      <MeetingLogDialog
+        {...baseProps}
+        roundVersion="v2"
+        meetings={[makeMeeting({ meetingId: "gm-1" })]}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Edit" }));
+    await userEvent.click(
+      screen.getByRole("checkbox", { name: "Select meeting 1 for deletion" }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    await userEvent.click(screen.getByRole("button", { name: "Edit" }));
+    expect(
+      screen.getByRole("checkbox", { name: "Select meeting 1 for deletion" }),
+    ).not.toBeChecked();
+  });
+
+  it("clicking Update opens a confirmation for just the pending edits; Confirm changes sends only updates and exits back to the read-only view", async () => {
+    const onSave = vi.fn().mockResolvedValue();
+    render(
+      <MeetingLogDialog
+        {...baseProps}
+        roundVersion="v2"
+        onSave={onSave}
+        meetings={[makeMeeting({ meetingId: "gm-1", isCompleted: false })]}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Edit" }));
+    await userEvent.click(
+      screen.getByRole("combobox", { name: "Complete Status" }),
+    );
+    await userEvent.click(screen.getByRole("option", { name: "Completed" }));
+    await userEvent.click(screen.getByRole("button", { name: "Update (1)" }));
+
+    expect(screen.getByText("Save changes?")).toBeInTheDocument();
+    expect(screen.getByText("Updates: 1")).toBeInTheDocument();
+    expect(screen.queryByText(/^Deletes:/)).not.toBeInTheDocument();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Confirm changes" }),
+    );
+
+    expect(onSave).toHaveBeenCalledWith({
+      updates: [{ meetingId: "gm-1", isCompleted: true }],
+      deletes: [],
+    });
+    // The dialog itself never closes, but edit mode exits back to read-only.
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Edit" })).toBeInTheDocument(),
+    );
+    expect(
+      screen.queryByRole("combobox", { name: "Complete Status" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("clicking Delete opens a confirmation for just the checked rows; Confirm changes sends only deletes and exits back to the read-only view", async () => {
+    const onSave = vi.fn().mockResolvedValue();
+    render(
+      <MeetingLogDialog
+        {...baseProps}
+        roundVersion="v2"
+        onSave={onSave}
+        meetings={[makeMeeting({ meetingId: "gm-1" })]}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Edit" }));
+    await userEvent.click(
+      screen.getByRole("checkbox", { name: "Select meeting 1 for deletion" }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Delete (1)" }));
+
+    expect(screen.getByText("Delete meetings?")).toBeInTheDocument();
+    expect(screen.getByText("Deletes: 1")).toBeInTheDocument();
+    expect(screen.queryByText(/^Updates:/)).not.toBeInTheDocument();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Confirm changes" }),
+    );
+
+    expect(onSave).toHaveBeenCalledWith({
+      updates: [],
+      deletes: ["gm-1"],
+    });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Edit" })).toBeInTheDocument(),
+    );
+    expect(
+      screen.queryByRole("checkbox", { name: "Select meeting 1 for deletion" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("on save failure, shows an error toast and keeps edit-mode state so the admin can retry", async () => {
+    const onSave = vi.fn().mockRejectedValue({ message: "network error" });
+    render(
+      <MeetingLogDialog
+        {...baseProps}
+        roundVersion="v2"
+        onSave={onSave}
+        meetings={[makeMeeting({ meetingId: "gm-1", isCompleted: false })]}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Edit" }));
+    await userEvent.click(
+      screen.getByRole("combobox", { name: "Complete Status" }),
+    );
+    await userEvent.click(screen.getByRole("option", { name: "Completed" }));
+    await userEvent.click(screen.getByRole("button", { name: "Update (1)" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Confirm changes" }),
+    );
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith("network error"),
+    );
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("combobox", { name: "Complete Status" }),
+    ).toHaveTextContent("Completed");
+  });
+
+  it("closing and reopening the dialog resets edit mode back to the read-only view", async () => {
+    const { rerender } = render(
+      <MeetingLogDialog
+        {...baseProps}
+        roundVersion="v2"
+        meetings={[makeMeeting({ meetingId: "gm-1" })]}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Edit" }));
+    await userEvent.click(
+      screen.getByRole("checkbox", { name: "Select meeting 1 for deletion" }),
+    );
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
+
+    // The parent never unmounts MeetingLogDialog; it only flips `open`.
+    rerender(
+      <MeetingLogDialog
+        {...baseProps}
+        open={false}
+        roundVersion="v2"
+        meetings={[makeMeeting({ meetingId: "gm-1" })]}
+      />,
+    );
+    rerender(
+      <MeetingLogDialog
+        {...baseProps}
+        open
+        roundVersion="v2"
+        meetings={[makeMeeting({ meetingId: "gm-1" })]}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Edit" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Cancel" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /^Update/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("checkbox", { name: "Select meeting 1 for deletion" }),
+    ).not.toBeInTheDocument();
   });
 });

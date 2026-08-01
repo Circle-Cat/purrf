@@ -165,6 +165,52 @@ describe("useParticipantSearch", () => {
     );
   });
 
+  it("refetch re-runs the search with the same committed query, offset, and sort", async () => {
+    const { result } = renderHook(() => useParticipantSearch("participant"));
+    act(() => result.current.setName("Alice"));
+    act(() => result.current.submitSearch());
+    await waitFor(() => expect(searchParticipants).toHaveBeenCalledTimes(1));
+    act(() => result.current.toggleSort("user_id"));
+    await waitFor(() => expect(searchParticipants).toHaveBeenCalledTimes(2));
+
+    await act(async () => {
+      await result.current.refetch();
+    });
+
+    await waitFor(() => expect(searchParticipants).toHaveBeenCalledTimes(3));
+    expect(searchParticipants).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        name: "Alice",
+        sortBy: "user_id",
+        order: "asc",
+        offset: 0,
+      }),
+    );
+  });
+
+  it("refetch runs silently, so it doesn't toggle loading while in flight", async () => {
+    const { result } = renderHook(() => useParticipantSearch("participant"));
+    act(() => result.current.submitSearch());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    let resolveFetch;
+    searchParticipants.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveFetch = resolve;
+        }),
+    );
+    act(() => {
+      result.current.refetch();
+    });
+
+    expect(result.current.loading).toBe(false);
+
+    await act(async () => {
+      resolveFetch(page());
+    });
+  });
+
   it("ignores a superseded query's late response", async () => {
     const resolvers = [];
     searchParticipants.mockImplementation(

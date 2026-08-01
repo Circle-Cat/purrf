@@ -171,3 +171,15 @@ export const getParticipantExportUrl = ({
  */
 export const getMeetingLog = (pairId) =>
   request.get(API_ENDPOINTS.MENTORSHIP_ADMIN_PAIR_MEETINGS(pairId));
+
+/**
+ * Apply batch updates and deletes to a pair's v2 meeting log entries.
+ * @param {number} pairId - The mentorship pair's id.
+ * @param {{
+ *   updates: Array<{meetingId: string, isCompleted?: boolean, note?: string[]}>,
+ *   deletes: string[],
+ * }} body - Only the fields present on an update entry are changed; omit a
+ *   field to leave it untouched rather than sending its current value.
+ */
+export const updateMeetingLog = (pairId, body) =>
+  request.patch(API_ENDPOINTS.MENTORSHIP_ADMIN_PAIR_MEETINGS(pairId), body);

@@ -118,33 +118,21 @@ function subjectDisplayName(row) {
 }
 
 /**
- * Self-contained trigger and dialog for a matched participant's meeting log.
- * Owns its open state and only fetches meeting data once the dialog is opened.
+ * Presentational trigger cell displaying a participant's meeting progress.
  *
  * @param {{
  *   pairId: number|null,
  *   completedMeetingCount: number|null,
  *   requiredMeetings: number|null,
- *   roundName: string,
- *   subjectName: string,
- *   subjectRole: string,
- *   partnerName: string|null,
- *   partnerRole: string,
+ *   onClick: () => void,
  * }} props
  */
 function MeetingsCell({
   pairId,
   completedMeetingCount,
   requiredMeetings,
-  roundName,
-  subjectName,
-  subjectRole,
-  partnerName,
-  partnerRole,
+  onClick,
 }) {
-  const [open, setOpen] = useState(false);
-  const { meetings, loading, error } = useMeetingLog(pairId, open);
-
   if (
     pairId == null ||
     completedMeetingCount == null ||
@@ -154,27 +142,13 @@ function MeetingsCell({
   }
 
   return (
-    <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="text-primary underline hover:opacity-80"
-      >
-        {completedMeetingCount}/{requiredMeetings}
-      </button>
-      <MeetingLogDialog
-        open={open}
-        onOpenChange={setOpen}
-        roundName={roundName}
-        subjectName={subjectName}
-        subjectRole={subjectRole}
-        partnerName={partnerName}
-        partnerRole={partnerRole}
-        meetings={meetings}
-        loading={loading}
-        error={error}
-      />
-    </>
+    <button
+      type="button"
+      onClick={onClick}
+      className="text-primary underline hover:opacity-80"
+    >
+      {completedMeetingCount}/{requiredMeetings}
+    </button>
   );
 }
 
@@ -224,6 +198,7 @@ const ParticipantSearchTab = ({ participationStatus, rounds }) => {
     onboardingStatus,
     setOnboardingStatus,
     submitSearch,
+    refetch,
     offset,
     limit,
     nextPage,
@@ -235,6 +210,36 @@ const ParticipantSearchTab = ({ participationStatus, rounds }) => {
 
   const hasPrev = offset > 0;
   const hasNext = offset + limit < total;
+
+  // Snapshot of which pair's dialog is open; drives useMeetingLog and the dialog's display props.
+  const [activePair, setActivePair] = useState(null);
+
+  const openMeetingsDialog = (row) => {
+    setActivePair({
+      pairId: row.pairId,
+      roundName: row.roundName,
+      subjectName: subjectDisplayName(row),
+      subjectRole: row.participantRole,
+      partnerName: row.matchedUser ? partnerDisplayName(row.matchedUser) : null,
+      partnerRole:
+        row.participantRole === MentorshipParticipantRoles.MENTEE
+          ? MentorshipParticipantRoles.MENTOR
+          : MentorshipParticipantRoles.MENTEE,
+    });
+  };
+
+  const {
+    meetings: activeMeetings,
+    roundVersion: activeRoundVersion,
+    loading: meetingLoading,
+    error: meetingError,
+    saveMeetingBatch,
+  } = useMeetingLog(activePair?.pairId ?? null, activePair != null);
+
+  const handleMeetingSave = async (batch) => {
+    await saveMeetingBatch(batch);
+    refetch();
+  };
 
   // Reverse-lookup: find the accessor whose mapped backend field matches sortBy.
   const activeSortAccessor = sortBy
@@ -292,17 +297,7 @@ const ParticipantSearchTab = ({ participationStatus, rounds }) => {
               pairId={row.pairId}
               completedMeetingCount={row.completedMeetingCount}
               requiredMeetings={row.requiredMeetings}
-              roundName={row.roundName}
-              subjectName={subjectDisplayName(row)}
-              subjectRole={row.participantRole}
-              partnerName={
-                row.matchedUser ? partnerDisplayName(row.matchedUser) : null
-              }
-              partnerRole={
-                row.participantRole === MentorshipParticipantRoles.MENTEE
-                  ? MentorshipParticipantRoles.MENTOR
-                  : MentorshipParticipantRoles.MENTEE
-              }
+              onClick={() => openMeetingsDialog(row)}
             />
           ),
         }),
@@ -516,6 +511,25 @@ const ParticipantSearchTab = ({ participationStatus, rounds }) => {
           </div>
         </>
       )}
+
+      <MeetingLogDialog
+        open={activePair != null}
+        onOpenChange={(open) => !open && setActivePair(null)}
+        roundName={activePair?.roundName ?? ""}
+        subjectName={activePair?.subjectName ?? ""}
+        subjectRole={
+          activePair?.subjectRole ?? MentorshipParticipantRoles.MENTOR
+        }
+        partnerName={activePair?.partnerName ?? null}
+        partnerRole={
+          activePair?.partnerRole ?? MentorshipParticipantRoles.MENTEE
+        }
+        meetings={activeMeetings}
+        loading={meetingLoading}
+        error={meetingError}
+        roundVersion={activeRoundVersion}
+        onSave={handleMeetingSave}
+      />
     </div>
   );
 };

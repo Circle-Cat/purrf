@@ -10,6 +10,7 @@ import {
   postMyMentorshipMeetingLog,
   searchParticipants,
   getMeetingLog,
+  updateMeetingLog,
   getParticipantExportUrl,
 } from "@/api/mentorshipApi";
 import { API_ENDPOINTS } from "@/constants/ApiEndpoints";
@@ -19,11 +20,11 @@ vi.mock("@/utils/request", () => {
     default: {
       get: vi.fn(),
       post: vi.fn(),
+      patch: vi.fn(),
       defaults: { baseURL: "/api" },
     },
   };
 });
-
 describe("Mentorship Service API", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -285,6 +286,24 @@ describe("Mentorship Service API", () => {
 
     expect(request.get).toHaveBeenCalledWith(
       API_ENDPOINTS.MENTORSHIP_ADMIN_PAIR_MEETINGS(pairId),
+    );
+    expect(result).toEqual(mockData);
+  });
+
+  it("updateMeetingLog should PATCH the correct endpoint with the batch body", async () => {
+    const pairId = 80;
+    const body = {
+      updates: [{ meetingId: "gm-1", isCompleted: true }],
+      deletes: ["gm-2"],
+    };
+    const mockData = { roundVersion: "v2", meetings: [] };
+    request.patch.mockResolvedValue(mockData);
+
+    const result = await updateMeetingLog(pairId, body);
+
+    expect(request.patch).toHaveBeenCalledWith(
+      API_ENDPOINTS.MENTORSHIP_ADMIN_PAIR_MEETINGS(pairId),
+      body,
     );
     expect(result).toEqual(mockData);
   });
