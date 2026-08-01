@@ -293,11 +293,12 @@ class MeetAttendanceService:
                     else:
                         summary["meetings_no_show"] += 1
                         self.logger.info(
-                            "[MeetAttendanceService] meeting_id=%s pair_id=%s: "
-                            "no-show -- no conference record ever appeared in "
-                            "[%s, %s]",
+                            "[MeetAttendanceService] meeting_id=%s pair_id=%s "
+                            "code=%s: no-show -- no conference record ever "
+                            "appeared in [%s, %s]",
                             meeting.meeting_id,
                             pair.pair_id,
+                            meeting.google_meeting_code,
                             window_start,
                             window_end,
                         )

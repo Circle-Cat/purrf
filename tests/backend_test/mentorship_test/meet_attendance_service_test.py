@@ -306,7 +306,7 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.service.logger.info.call_count, 1)
         self.assertEqual(result["meetings_completed"], 0)
 
-    async def test_logs_one_info_line_when_a_selected_meeting_has_no_conference(self):
+    async def test_not_yet_due_meeting_logs_only_the_closing_info_line(self):
         """The other empty-handed run: a meeting WAS selected, Meet simply had
         no record for it yet. That path skips the early return, so its single
         INFO line has to come from the closing summary instead.
@@ -392,8 +392,18 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
             [],
             0,
         )
+        # Frozen so which bucket the empty conf_list falls into does not
+        # silently depend on the calendar date this test happens to run on --
+        # not asserted here, but the classification code still runs.
+        frozen_now = datetime(2026, 4, 7, 12, 0, tzinfo=timezone.utc)
 
-        await self.service.sync_attendance(session=self.mock_session, lookback_hours=4)
+        with patch(
+            "backend.mentorship.meet_attendance_service.datetime"
+        ) as mock_datetime:
+            mock_datetime.now.return_value = frozen_now
+            await self.service.sync_attendance(
+                session=self.mock_session, lookback_hours=4
+            )
 
         call = self.mock_google_service.list_conferences_by_meeting_code.call_args
         self.assertEqual(call.args[0], "abc-defg-hij")
@@ -536,10 +546,17 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
     async def test_in_progress_conference_wins_over_no_show_past_window_end(self):
         """A conference still running (no end_time, so it never reaches the
         ended-conferences list) must classify as meetings_in_progress even
-        when window_end has ALREADY passed. The in_progress check has to run
-        BEFORE the grace-period-expired check -- an implementation that
-        checked `now >= window_end` first would misfile a still-running
-        conference as a no-show instead."""
+        when window_end has ALREADY passed -- it must not be caught by an
+        explicit `if now >= window_end: no_show` check hoisted above the
+        in_progress check.
+
+        This does NOT by itself pin in_progress ahead of not_yet_due in the
+        if/elif chain: window_end has already passed here, so
+        `now < window_end` is False regardless of which branch is checked
+        first, and swapping the two conditions' order would not change the
+        outcome. That ordering is pinned by the sibling test right below,
+        which freezes `now` INSIDE the grace period so both conditions are
+        true simultaneously."""
         self.mock_round_repo.get_running_round_id.return_value = self.round_id
         pair, meeting = self._make_active_pair_and_meeting(
             start="2026-04-07T10:00:00+00:00",
@@ -569,6 +586,45 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["meetings_in_progress"], 1)
         self.assertEqual(result["meetings_no_show"], 0)
         self.assertEqual(result["meetings_not_yet_due"], 0)
+        # in_progress stays at DEBUG -- only the closing summary logs INFO.
+        self.assertEqual(self.service.logger.info.call_count, 1)
+
+    async def test_in_progress_wins_over_not_yet_due_during_live_conference(self):
+        """The ordinary in-progress case: a live conference (in_progress_count
+        > 0) while the grace period is STILL open (now < window_end) -- both
+        branch conditions are true at once. This is what actually pins
+        in_progress being checked before not_yet_due in the if/elif chain: if
+        the two were swapped, `now < window_end` would fire first and this
+        meeting would be misfiled as not_yet_due instead."""
+        self.mock_round_repo.get_running_round_id.return_value = self.round_id
+        pair, meeting = self._make_active_pair_and_meeting(
+            start="2026-04-07T10:00:00+00:00",
+            end="2026-04-07T11:00:00+00:00",
+        )
+        self.mock_pairs_repo.get_active_pairs_by_round.return_value = [pair]
+        self.mock_meeting_repo.get_pending_google_meetings_in_window.return_value = [
+            meeting
+        ]
+        self.mock_users_repo.get_all_by_ids.return_value = [self.mentor, self.mentee]
+        # No ended conferences, but one still-running record.
+        self.mock_google_service.list_conferences_by_meeting_code.return_value = (
+            [],
+            1,
+        )
+        # Inside the 10:00-11:00 slot; window_end (14:00) is still hours away.
+        frozen_now = datetime(2026, 4, 7, 10, 30, tzinfo=timezone.utc)
+
+        with patch(
+            "backend.mentorship.meet_attendance_service.datetime"
+        ) as mock_datetime:
+            mock_datetime.now.return_value = frozen_now
+            result = await self.service.sync_attendance(
+                session=self.mock_session, lookback_hours=2
+            )
+
+        self.assertEqual(result["meetings_in_progress"], 1)
+        self.assertEqual(result["meetings_not_yet_due"], 0)
+        self.assertEqual(result["meetings_no_show"], 0)
         # in_progress stays at DEBUG -- only the closing summary logs INFO.
         self.assertEqual(self.service.logger.info.call_count, 1)
 
@@ -1200,10 +1256,18 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
         ]
         self.mock_users_repo.get_all_by_ids.return_value = [self.mentor, self.mentee]
         self.mock_google_service.list_conferences_by_meeting_code.return_value = ([], 0)
+        # Frozen so which bucket the empty conf_list falls into does not
+        # silently depend on the calendar date this test happens to run on --
+        # not asserted here, but the classification code still runs.
+        frozen_now = datetime(2026, 4, 7, 12, 0, tzinfo=timezone.utc)
 
-        result = await self.service.sync_attendance(
-            session=self.mock_session, lookback_hours=2
-        )
+        with patch(
+            "backend.mentorship.meet_attendance_service.datetime"
+        ) as mock_datetime:
+            mock_datetime.now.return_value = frozen_now
+            result = await self.service.sync_attendance(
+                session=self.mock_session, lookback_hours=2
+            )
 
         selection_kwargs = self.mock_meeting_repo.get_pending_google_meetings_in_window.call_args.kwargs
         self.assertEqual(selection_kwargs["pair_ids"], [active_pair.pair_id])
