@@ -140,6 +140,21 @@ cronjobs:
     # chance at each meeting, not just two. What actually constrains
     # lookback + 3h is how late a conference may end relative to its
     # scheduled slot; raise lookback only if that horizon proves too short.
+    #
+    # That band only decides WHEN a meeting is looked at. Whether it is looked
+    # at at all is decided first by its round: only meetings STARTING inside
+    # the round's own meeting window (match notification through the
+    # meetings-completion deadline) are ever swept. Meetings a pair arranges
+    # after the deadline are private and stay untracked, whatever the band says.
+    #
+    # Conversely, a round does not stop being swept the instant its deadline
+    # passes. It remains selectable for lookback + 3h + the longest bookable
+    # meeting (= 8.5h at lookback_hours=4), so a meeting held just before the
+    # deadline still gets reconciled afterwards; the round's window itself is
+    # NOT widened by that allowance. Raising lookback_hours lengthens this tail
+    # too. Every round selectable in a given run is swept, each against its own
+    # window -- during the tail an ending round and a starting one legitimately
+    # overlap, and dropping either would lose meetings at the seam.
     concurrencyPolicy: Forbid
     # A busy run makes one serial Meet list call per selected meeting, plus
     # one participants call per matched conference, and can exceed the

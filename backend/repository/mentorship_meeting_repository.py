@@ -125,6 +125,8 @@ class MentorshipMeetingRepository:
         pair_ids: list[int],
         ends_after: datetime,
         starts_before: datetime,
+        round_window_start: datetime,
+        round_window_end: datetime,
     ) -> list[MentorshipMeetingEntity]:
         """GOOGLE meetings awaiting attendance whose slot is worth checking now.
 
@@ -144,6 +146,16 @@ class MentorshipMeetingRepository:
         end. The caller derives both values -- see
         ``MeetAttendanceService.sync_attendance``.
 
+        Separately, ``round_window_start``/``round_window_end`` answer a
+        different question: does this meeting belong to the round at all?
+        Mentees may schedule as many meetings as they like, but only ones
+        landing inside the round's own meeting window (from match
+        notification through the completion deadline) are Purrf's to sync --
+        anything after the deadline is a private arrangement. This pair is
+        fixed for the whole round, while ``ends_after``/``starts_before``
+        slide with ``now`` and the lookback on every run; the two pairs are
+        not interchangeable and must not be merged into one.
+
         Args:
             session (AsyncSession): The active DB session.
             pair_ids (list[int]): The pairs to search across.
@@ -151,14 +163,20 @@ class MentorshipMeetingRepository:
                 after this. Inclusive.
             starts_before (datetime): Keep rows whose ``start_datetime`` is at
                 or before this. Inclusive.
+            round_window_start (datetime): Keep rows whose ``start_datetime``
+                is at or after this round's window start (typically the match
+                notification instant). Inclusive.
+            round_window_end (datetime): Keep rows whose ``start_datetime`` is
+                at or before this round's meeting-completion deadline.
+                Inclusive.
 
         Returns:
             list[MentorshipMeetingEntity]: Rows with ``source='google'``,
                 ``is_completed=False``, a non-null ``google_meeting_code``, and
-                a slot inside the bounds, ordered like every other read here
-                (``start_datetime`` ascending, then ``created_datetime``, then
-                ``meeting_id``). Empty for empty input, without touching the
-                database.
+                a slot inside both the sweep bounds and the round window,
+                ordered like every other read here (``start_datetime``
+                ascending, then ``created_datetime``, then ``meeting_id``).
+                Empty for empty input, without touching the database.
         """
         if not pair_ids:
             return []
@@ -176,6 +194,8 @@ class MentorshipMeetingRepository:
                 MentorshipMeetingEntity.google_meeting_code.is_not(None),
                 MentorshipMeetingEntity.end_datetime >= ends_after,
                 MentorshipMeetingEntity.start_datetime <= starts_before,
+                MentorshipMeetingEntity.start_datetime >= round_window_start,
+                MentorshipMeetingEntity.start_datetime <= round_window_end,
             )
             .order_by(*_MEETING_ORDER_BY)
         )

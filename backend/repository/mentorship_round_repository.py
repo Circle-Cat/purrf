@@ -1,7 +1,31 @@
 from backend.entity.mentorship_round_entity import MentorshipRoundEntity
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from typing import NamedTuple
 from sqlalchemy import TIMESTAMP, cast, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+
+
+class RunningRoundWindow(NamedTuple):
+    """A round whose meeting window is open, with that window's own bounds.
+
+    ``window_start`` / ``window_end`` are the round's OWN meeting window --
+    ``match_notification_at`` and ``meetings_completion_deadline_at`` -- NOT
+    widened by the grace period. The grace only decides whether the round is
+    still returned at all; meetings are filtered against the unwidened window,
+    or a meeting scheduled after the deadline would be swept in by the very
+    allowance meant to catch meetings scheduled before it.
+
+    Both are timezone-aware: they are cast to TIMESTAMP(timezone=True) in SQL
+    rather than parsed in Python, because the two writers of these JSONB
+    fields disagree on format -- one emits ISO with an offset, the other a
+    bare YYYY-MM-DD date. Postgres accepts both; ``isoparse`` returns a naive
+    datetime for the latter, which would raise on any comparison with an aware
+    one. Do not parse these strings in Python anywhere.
+    """
+
+    round_id: int
+    window_start: datetime
+    window_end: datetime
 
 
 class MentorshipRoundRepository:
@@ -53,37 +77,51 @@ class MentorshipRoundRepository:
 
         return result.scalar_one_or_none()
 
-    async def get_running_round_id(self, session: AsyncSession) -> int | None:
-        """
-        Return the round_id of the round whose meeting window is currently open, or None.
+    async def get_running_rounds(
+        self, session: AsyncSession, grace: timedelta
+    ) -> list[RunningRoundWindow]:
+        """Rounds whose meeting window is open now, with their own bounds.
 
-        The meeting window spans from match_notification_at through
-        meetings_completion_deadline_at (inclusive), stored as ISO date strings in
-        the description JSONB field.
+        Replaces ``get_running_round_id``, which returned only an id and used
+        ``.first()`` with no ORDER BY -- so when two windows overlapped
+        Postgres picked one arbitrarily and the other round went unsynced
+        without a trace. Returning every match in a fixed order buys the
+        caller a stable processing order across runs, not just a complete one.
 
         Args:
-            session (AsyncSession): The active async database session.
+            session (AsyncSession): The active DB session.
+            grace (timedelta): How long past ``meetings_completion_deadline_at``
+                a round stays selectable, so a meeting held just before the
+                deadline can still be reconciled afterwards. It widens ONLY
+                the selection test -- the returned ``window_end`` is the
+                un-widened deadline.
 
-        Returns: The running round ID or None.
+        Returns:
+            list[RunningRoundWindow]: Matching rounds ordered by round_id
+                ascending. Empty when no window is open.
         """
         now_utc = datetime.now(timezone.utc)
-        result = await session.execute(
-            select(MentorshipRoundEntity.round_id).where(
-                cast(
-                    MentorshipRoundEntity.description["match_notification_at"].astext,
-                    TIMESTAMP(timezone=True),
-                )
-                <= now_utc,
-                cast(
-                    MentorshipRoundEntity.description[
-                        "meetings_completion_deadline_at"
-                    ].astext,
-                    TIMESTAMP(timezone=True),
-                )
-                >= now_utc,
-            )
+        # Equivalent to `window_end + grace >= now_utc`, computed as a
+        # subtraction of two plain Python datetimes instead: adding `grace`
+        # to the cast SQL column loses its TIMESTAMP WITH TIME ZONE typing
+        # under asyncpg, which then binds `now_utc` as a naive TIMESTAMP and
+        # raises on the tz-aware/naive comparison. This is arithmetic on our
+        # own `now_utc` and `grace` values, not parsing of the JSONB fields.
+        selection_cutoff = now_utc - grace
+        window_start = cast(
+            MentorshipRoundEntity.description["match_notification_at"].astext,
+            TIMESTAMP(timezone=True),
         )
-        return result.scalars().first()
+        window_end = cast(
+            MentorshipRoundEntity.description["meetings_completion_deadline_at"].astext,
+            TIMESTAMP(timezone=True),
+        )
+        result = await session.execute(
+            select(MentorshipRoundEntity.round_id, window_start, window_end)
+            .where(window_start <= now_utc, window_end >= selection_cutoff)
+            .order_by(MentorshipRoundEntity.round_id.asc())
+        )
+        return [RunningRoundWindow(*row) for row in result.all()]
 
     async def update_mentee_average_score(
         self, session: AsyncSession, round_id: int, value: float | None

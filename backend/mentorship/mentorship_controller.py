@@ -189,6 +189,21 @@ class MentorshipController:
                 ``sync-meet-attendance``) always passes 4, giving a latest
                 possible reconciliation of ``lookback + 3h`` = 7h after a
                 meeting's scheduled end, versus 5h at this default of 2.
+
+                Two further bounds sit on top of that band, and neither is
+                controlled by this parameter alone:
+
+                * Meetings are clamped to their round's own meeting window --
+                  only those STARTING between the round's match notification
+                  and its meetings-completion deadline are ever swept. A pair
+                  may keep meeting after the deadline; Purrf does not track it.
+                * A round stays selectable for ``lookback + 3h + the longest
+                  bookable meeting`` past its deadline (8.5h at the deployed
+                  ``lookback_hours=4``), so a meeting held just before the
+                  deadline can still be reconciled after it. That allowance
+                  widens only which ROUNDS a run considers, never the window
+                  meetings are clamped to. Every round selectable in a run is
+                  swept, each against its own window.
         """
         async with self.database.session() as session:
             result = await self.meet_attendance_sync_service.sync_attendance(
