@@ -218,8 +218,20 @@ class MentorshipMeetingRepository:
         this is safe to call for any pair -- excluding them would zero out a
         number nothing could rebuild.
 
+        Flushes first. The count comes from a scalar subquery evaluated inside
+        the UPDATE, so it sees the database, never the session -- and
+        production sessions are built with ``autoflush=False``
+        (``backend/common/database.py``), so a caller that just set
+        ``is_completed`` on a loaded row has written nothing yet. Both the
+        attendance sweep and the admin meeting batch do exactly that before
+        calling this. Flushing here rather than at each call site keeps the
+        method's contract honest -- "recompute from this pair's meetings"
+        means all of them, including the ones still pending in this session --
+        and stops the next caller from having to rediscover the ordering.
+
         Args:
-            session (AsyncSession): The active DB session.
+            session (AsyncSession): The active DB session. Pending changes on
+                it are flushed before the count is taken.
             pair_id (int): The pair to recompute.
 
         Returns:
@@ -232,6 +244,7 @@ class MentorshipMeetingRepository:
                 converted into a softer failure, so callers must not pass an
                 unverified pair_id.
         """
+        await session.flush()
         count_subquery = (
             select(func.count())
             .select_from(MentorshipMeetingEntity)

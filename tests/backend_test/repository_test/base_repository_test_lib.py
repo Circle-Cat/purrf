@@ -24,9 +24,16 @@ class BaseRepositoryTestLib(unittest.IsolatedAsyncioTestCase):
         # 3. Begin outer transaction (rolled back after each test)
         self.trans = await self.connection.begin()
 
-        # 4. Bind sessionmaker to this specific connection
+        # 4. Bind sessionmaker to this specific connection.
+        # autoflush/expire_on_commit mirror Database's own session factory
+        # (backend/common/database.py) on purpose. autoflush defaults to True,
+        # and leaving it that way made these tests flush dirty ORM objects at
+        # points where production never would -- so a repository method that
+        # only works because something flushed for it would pass here and fail
+        # in production. Keep this in step with Database if it ever changes.
         self.session_maker = async_sessionmaker(
             bind=self.connection,
+            autoflush=False,
             expire_on_commit=False,
             join_transaction_mode="create_savepoint",  # Key: prevents commit from persisting
             class_=AsyncSession,

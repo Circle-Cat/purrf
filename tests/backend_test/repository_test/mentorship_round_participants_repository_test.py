@@ -975,51 +975,6 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
         self.assertEqual(row.mentor_id, self.user.user_id)
         self.assertEqual(row.mentee_id, user2.user_id)
 
-    async def test_iter_search_participants_for_admin_no_meeting_log_by_default(self):
-        """need_meeting_log=False (the default) leaves meeting_log unset on every row."""
-        rows = await self.repo.iter_search_participants_for_admin(
-            self.session, ParticipantSearchFilterDto()
-        )
-        self.assertTrue(rows)
-        for row in rows:
-            self.assertIsNone(row.meeting_log)
-
-    async def test_iter_search_participants_for_admin_includes_meeting_log_when_requested(
-        self,
-    ):
-        """need_meeting_log=True populates meeting_log for rows with a pair."""
-        mentee_user = self._make_user(
-            first_name="Mia", last_name="Mentee", email="mia@example.com"
-        )
-        await self.insert_entities([mentee_user])
-        await self.insert_entities([
-            MentorshipRoundParticipantsEntity(
-                user_id=self.user.user_id,
-                round_id=self.rounds[0].round_id,
-            ),
-        ])
-        pair = MentorshipPairsEntity(
-            round_id=self.rounds[0].round_id,
-            mentor_id=self.user.user_id,
-            mentee_id=mentee_user.user_id,
-            status=PairStatus.ACTIVE,
-            completed_count=1,
-            mentor_action_status=MentorActionStatus.CONFIRMED,
-            mentee_action_status=MenteeActionStatus.CONFIRMED,
-            recommendation_reason="test",
-            meeting_log={"google_meetings": [{"meeting_id": "m1"}]},
-        )
-        await self.insert_entities([pair])
-
-        rows = await self.repo.iter_search_participants_for_admin(
-            self.session, ParticipantSearchFilterDto(), need_meeting_log=True
-        )
-        matching = [r for r in rows if r.pair_id == pair.pair_id]
-        self.assertEqual(len(matching), 1)
-        self.assertEqual(
-            matching[0].meeting_log, {"google_meetings": [{"meeting_id": "m1"}]}
-        )
-
     async def test_iter_search_participants_for_admin_respects_limit_and_offset(self):
         """limit/offset paginate the same way search_participants_for_admin does."""
         second_user = self._make_user(

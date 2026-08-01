@@ -33,6 +33,7 @@ from backend.common.environment_constants import (
 @patch("backend.utils.app_dependency_builder.ParticipationService")
 @patch("backend.utils.app_dependency_builder.RoundsService")
 @patch("backend.utils.app_dependency_builder.PreferencesRepository")
+@patch("backend.utils.app_dependency_builder.MentorshipMeetingRepository")
 @patch("backend.utils.app_dependency_builder.MentorshipPairsRepository")
 @patch("backend.utils.app_dependency_builder.MentorshipRoundRepository")
 @patch("backend.utils.app_dependency_builder.MentorshipRoundParticipantsRepository")
@@ -158,6 +159,7 @@ class TestAppDependencyBuilder(TestCase):
         mock_mentorship_round_participants_repo_cls,
         mock_mentorship_round_repository_cls,
         mock_mentorship_pairs_repo_cls,
+        mock_mentorship_meeting_repo_cls,
         mock_preferences_repo_cls,
         mock_rounds_service_cls,
         mock_participation_service_cls,
@@ -510,6 +512,7 @@ class TestAppDependencyBuilder(TestCase):
             users_repository=mock_users_repo_cls.return_value,
             user_identities_repository=mock_user_identities_repo_cls.return_value,
             user_emails_repository=mock_user_emails_repo_cls.return_value,
+            mentorship_meeting_repository=mock_mentorship_meeting_repo_cls.return_value,
         )
         mock_mentorship_controller_cls.assert_called_once_with(
             rounds_service=mock_rounds_service_cls.return_value,
@@ -530,6 +533,7 @@ class TestAppDependencyBuilder(TestCase):
             date_time_util=mock_date_time_util_cls.return_value,
             database=mock_database_cls.return_value,
             logger=mock_logger,
+            mentorship_meeting_repository=mock_mentorship_meeting_repo_cls.return_value,
         )
         mock_mentorship_admin_controller_cls.assert_called_once_with(
             mentorship_admin_service=mock_mentorship_admin_service_cls.return_value,
@@ -571,6 +575,7 @@ class TestAppDependencyBuilder(TestCase):
             users_repository=mock_users_repo_cls.return_value,
             meeting_scheduling_service=mock_meeting_scheduling_service_cls.return_value,
             mentorship_calendar_id="cal-mentorship",
+            mentorship_meeting_repository=mock_mentorship_meeting_repo_cls.return_value,
         )
 
         mock_fast_app_factory_cls.assert_called_once_with(

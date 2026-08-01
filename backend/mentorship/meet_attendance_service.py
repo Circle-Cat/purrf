@@ -4,10 +4,9 @@ from dateutil.parser import isoparse
 from intervaltree import Interval, IntervalTree
 from itertools import combinations
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm.attributes import flag_modified
 from backend.dto.google_meeting_detail_dto import GoogleMeetingDetailDto
 from backend.entity.users_entity import UsersEntity
-from backend.entity.mentorship_pairs_entity import MentorshipPairsEntity
+from backend.entity.mentorship_meeting_entity import MentorshipMeetingEntity
 
 # Configuration Constants
 LATE_THRESHOLD = timedelta(minutes=5)
@@ -44,6 +43,7 @@ class MeetAttendanceService:
         users_repository,
         user_identities_repository,
         user_emails_repository,
+        mentorship_meeting_repository,
     ):
         """
         Args:
@@ -57,6 +57,11 @@ class MeetAttendanceService:
             user_emails_repository: Repository for user email rows, used to match
                 participants against a mentor/mentee's alternative (non-primary)
                 emails.
+            mentorship_meeting_repository: Data access for individual
+                mentorship meeting rows (``mentorship_meeting`` table). The
+                sweep reads pending GOOGLE rows through this and writes its
+                findings directly onto them, instead of rewriting
+                ``mentorship_pairs.meeting_log``.
         """
         self.logger = logger
         self.google_service = google_service
@@ -65,6 +70,7 @@ class MeetAttendanceService:
         self.users_repository = users_repository
         self.user_identities_repository = user_identities_repository
         self.user_emails_repository = user_emails_repository
+        self.mentorship_meeting_repository = mentorship_meeting_repository
 
     async def sync_attendance(self, session: AsyncSession, lookback_hours: int) -> dict:
         """
@@ -122,13 +128,19 @@ class MeetAttendanceService:
             "meetings_absent": 0,
             "meetings_skipped": 0,
         }
-        changed_pairs = {}
 
-        # Load active pairs and build a lookup map based on meeting_code
+        # Load active pairs, then batch-fetch every pending GOOGLE meeting row
+        # across all of them in a single call -- looping per pair here would
+        # reintroduce the N+1 that get_pending_google_meetings_by_pairs exists
+        # to avoid (this was flagged as untested in PR A's review).
         pairs = await self.mentorship_pairs_repository.get_active_pairs_by_round(
             session, round_id
         )
-        pair_lookup = self._build_pair_lookup(pairs)
+        pair_by_id = {p.pair_id: p for p in pairs}
+        pending_meetings = await self.mentorship_meeting_repository.get_pending_google_meetings_by_pairs(
+            session=session, pair_ids=[p.pair_id for p in pairs]
+        )
+        pair_lookup = self._build_pair_lookup(pending_meetings)
         self.logger.debug(
             "[MeetAttendanceService] Pair lookup built: %d entries", len(pair_lookup)
         )
@@ -144,8 +156,11 @@ class MeetAttendanceService:
         # Pre-load user entities to reduce database queries
         active_uids = {
             uid
-            for pair, _ in pair_lookup.values()
-            for uid in (pair.mentor_id, pair.mentee_id)
+            for meeting in pending_meetings
+            for uid in (
+                pair_by_id[meeting.pair_id].mentor_id,
+                pair_by_id[meeting.pair_id].mentee_id,
+            )
         }
         users = await self.users_repository.get_all_by_ids(session, list(active_uids))
         user_by_id = {u.user_id: u for u in users}
@@ -168,6 +183,12 @@ class MeetAttendanceService:
             "[MeetAttendanceService] Processing %d spaces", len(space_to_confs)
         )
 
+        # Pairs whose meeting row was actually written to below -- used both
+        # for the pairs_updated count and to recompute completed_count exactly
+        # once per pair afterward, regardless of how many of that pair's
+        # meetings were touched in this run.
+        touched_pair_ids = set()
+
         for space, conf_list in space_to_confs.items():
             try:
                 meeting_code = await self.google_service.get_meeting_code_for_space(
@@ -182,30 +203,24 @@ class MeetAttendanceService:
                     summary["meetings_skipped"] += 1
                     continue
 
-                pair, gm_index = pair_lookup[meeting_code]
+                meeting = pair_lookup[meeting_code]
+                pair = pair_by_id[meeting.pair_id]
                 self.logger.debug(
-                    "[MeetAttendanceService] Space %s: matched pair_id=%s, mentor_id=%s, mentee_id=%s, gm_index=%s",
+                    "[MeetAttendanceService] Space %s: matched pair_id=%s, mentor_id=%s, mentee_id=%s, meeting_id=%s",
                     space,
                     pair.pair_id,
                     pair.mentor_id,
                     pair.mentee_id,
-                    gm_index,
+                    meeting.meeting_id,
                 )
                 mentor = user_by_id.get(pair.mentor_id)
                 mentee = user_by_id.get(pair.mentee_id)
 
-                google_meetings = list(pair.meeting_log["google_meetings"])
-                gm = google_meetings[gm_index]
-
-                if gm.get("is_completed"):
-                    self.logger.debug(
-                        "[MeetAttendanceService] Space %s: gm already completed, skipping",
-                        space,
-                    )
-                    continue
-
-                scheduled_start = isoparse(gm["start_datetime"])
-                scheduled_end = isoparse(gm["end_datetime"])
+                # get_pending_google_meetings_by_pairs already restricts to
+                # is_completed=False rows -- no "already completed" re-check
+                # is needed (or wanted) here.
+                scheduled_start = meeting.start_datetime
+                scheduled_end = meeting.end_datetime
 
                 # Define the valid attendance window: 3h before scheduled start to 3h after scheduled end
                 window_start = scheduled_start - ATTENDANCE_WINDOW_DELTA
@@ -271,8 +286,25 @@ class MeetAttendanceService:
                     list(anon_trees.keys()),
                 )
 
-                # Core attendance logic
-                meet_detail = GoogleMeetingDetailDto(**gm)
+                # Core attendance logic. _analyze_attendance's contract is a
+                # GoogleMeetingDetailDto (ISO-string datetimes) -- build one
+                # from this row rather than changing that method's signature
+                # or the matching algorithm it implements.
+                meet_detail = GoogleMeetingDetailDto(
+                    meeting_id=meeting.meeting_id,
+                    meet_link=meeting.meet_link,
+                    start_datetime=scheduled_start.isoformat(),
+                    end_datetime=scheduled_end.isoformat(),
+                    created_datetime=meeting.created_datetime.isoformat(),
+                    is_completed=meeting.is_completed,
+                    entry_points=meeting.entry_points or [],
+                    conference_id=meeting.google_meeting_code,
+                    has_unknown_absent=meeting.has_unknown_absent,
+                    absent_user_id=meeting.absent_user_id,
+                    late_user_id=meeting.late_user_ids,
+                    has_unknown_late=meeting.has_unknown_late,
+                    has_insufficient_duration=meeting.has_insufficient_duration,
+                )
                 result = self._analyze_attendance(
                     role_trees,
                     anon_trees,
@@ -287,46 +319,51 @@ class MeetAttendanceService:
                     result.model_dump(),
                 )
 
-                # Update the meeting log metadata
-                gm.update({
-                    "is_completed": result.is_completed,
-                    "absent_user_id": result.absent_user_id,
-                    "late_user_id": result.late_user_id,
-                    "has_unknown_absent": result.has_unknown_absent,
-                    "has_unknown_late": result.has_unknown_late,
-                    "has_insufficient_duration": result.has_insufficient_duration,
-                    "last_sync_at": now.isoformat(),
-                })
+                # Write the reconciled result onto this meeting row directly.
+                # `late_user_ids` is a plain ARRAY(Integer) column, not a
+                # MutableList -- assigning the whole new list here (never
+                # `.append`ing to whatever was already there) is what the unit
+                # of work actually notices; see the caution on
+                # MentorshipMeetingRepository.
+                meeting.is_completed = result.is_completed
+                meeting.absent_user_id = result.absent_user_id
+                meeting.late_user_ids = result.late_user_id
+                meeting.has_unknown_absent = result.has_unknown_absent
+                meeting.has_unknown_late = result.has_unknown_late
+                meeting.has_insufficient_duration = result.has_insufficient_duration
+                meeting.last_sync_at = now
 
                 if result.is_completed:
-                    pair.completed_count = (pair.completed_count or 0) + 1
                     summary["meetings_completed"] += 1
                 if result.absent_user_id or result.has_unknown_absent:
                     summary["meetings_absent"] += 1
 
-                google_meetings[gm_index] = gm
-                pair.meeting_log = {
-                    **pair.meeting_log,
-                    "google_meetings": google_meetings,
-                }
-                flag_modified(pair, "meeting_log")
-                changed_pairs[pair.pair_id] = pair
+                touched_pair_ids.add(pair.pair_id)
             except Exception as e:
                 self.logger.error(
                     "[MeetAttendanceService] Failed to process space %s: %s", space, e
                 )
                 summary["meetings_skipped"] += 1
 
-        if changed_pairs:
-            await self.mentorship_pairs_repository.upsert_pairs_batch(
-                session, list(changed_pairs.values())
-            )
-            self.logger.debug(
-                "[MeetAttendanceService] changed_pairs.values(): %s",
-                changed_pairs.values(),
-            )
+        if touched_pair_ids:
+            for pair_id in touched_pair_ids:
+                # Assigned directly rather than left for the ORM to refresh --
+                # same rationale as MeetingService.upsert_meetings: the UPDATE
+                # issued here sets completed_count from a scalar subquery,
+                # which falls back to the "fetch" synchronize strategy and
+                # EXPIRES completed_count on the loaded pair instead of
+                # repopulating it; a later read would raise MissingGreenlet
+                # under async.
+                pair_by_id[
+                    pair_id
+                ].completed_count = await self.mentorship_meeting_repository.recalculate_completed_count(
+                    session=session, pair_id=pair_id
+                )
             await session.commit()
-            summary["pairs_updated"] = len(changed_pairs)
+            summary["pairs_updated"] = len(touched_pair_ids)
+            self.logger.debug(
+                "[MeetAttendanceService] touched_pair_ids: %s", touched_pair_ids
+            )
 
         self.logger.info("[MeetAttendanceService] Sync complete: %s", summary)
         return summary
@@ -841,25 +878,24 @@ class MeetAttendanceService:
         return total
 
     def _build_pair_lookup(
-        self, pairs: list[MentorshipPairsEntity]
-    ) -> dict[str, tuple]:
+        self, meetings: list[MentorshipMeetingEntity]
+    ) -> dict[str, MentorshipMeetingEntity]:
         """
-        Builds a lookup map from conference ID to (pair entity, meeting index).
+        Builds a lookup map from Google Meet meeting code to its pending meeting row.
 
-        Only includes meetings that have a conference_id and are not yet completed.
+        The rows passed in are expected to already be filtered to GOOGLE-source,
+        not-yet-completed meetings with a non-null google_meeting_code (see
+        MentorshipMeetingRepository.get_pending_google_meetings_by_pairs) --
+        this method indexes that set, it does not re-filter or widen it.
 
         Args:
-            pairs: List of mentorship pair ORM objects with a meeting_log attribute.
+            meetings: Pending GOOGLE meeting rows across the active pairs
+                being processed.
 
         Returns:
-            A dict mapping conference_id strings to (pair, gm_index) tuples.
+            A dict mapping google_meeting_code to its MentorshipMeetingEntity row.
         """
-        return {
-            gm["conference_id"]: (p, i)
-            for p in pairs
-            for i, gm in enumerate((p.meeting_log or {}).get("google_meetings", []))
-            if gm.get("conference_id") and not gm.get("is_completed")
-        }
+        return {m.google_meeting_code: m for m in meetings}
 
     def _get_user_emails(
         self, user: UsersEntity | None, emails_by_id: dict[int, list[str]]
