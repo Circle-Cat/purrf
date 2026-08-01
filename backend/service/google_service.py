@@ -604,66 +604,103 @@ class GoogleService:
                 f"Unable to update Meet space access type: {space_name}"
             ) from e
 
-    async def list_ended_conferences(
-        self, end_time_after: str, end_time_before: str
-    ) -> list[dict]:
+    async def list_conferences_by_meeting_code(
+        self, meeting_code: str, start_time_after: str, start_time_before: str
+    ) -> tuple[list[dict], int]:
         """
-        Lists conference records that ended within the given time window.
+        Lists conference records for one Meet space, by its meeting code.
+
+        Instead of pulling every conference the service account can see and
+        discarding the ones that are not ours, this asks for exactly one
+        meeting's records. ``ListConferenceRecordsRequest.filter`` supports
+        ``space.meeting_code`` (named explicitly in the proto), and the code
+        we store on a meeting row is that same value.
+
+        The window is filtered on ``start_time`` rather than ``end_time``: a
+        conference is attributed to a scheduled meeting by when it STARTED
+        relative to that meeting's slot, which is the rule the caller's
+        3-hour affinity window encodes.
 
         Args:
-            end_time_after (str): ISO 8601 lower bound for the conference end time (inclusive).
-            end_time_before (str): ISO 8601 upper bound for the conference end time (inclusive).
+            meeting_code (str): The Meet meeting code (e.g. "abc-defg-hij").
+            start_time_after (str): ISO 8601 lower bound for the conference
+                start time (inclusive).
+            start_time_before (str): ISO 8601 upper bound for the conference
+                start time (inclusive).
+
+        Records for conferences that are still in progress are dropped here.
+        Filtering on ``start_time`` (rather than ``end_time``) means an
+        unfinished conference can come back from the API, and a live one has
+        no ``endTime`` at all. Dropping it at this boundary keeps the "ended
+        conferences only" guarantee callers already relied on -- the
+        attendance sweep in particular parses ``end_time`` unconditionally,
+        and selects meetings up to three hours ahead of now, so it meets
+        live conferences routinely.
 
         Returns:
-            list[dict]: A list of conference records, each containing:
-                - name (str): Resource name (e.g., "conferenceRecords/xxx").
-                - start_time (str): Start time in ISO 8601 format, or "" if unavailable.
-                - end_time (str): End time in ISO 8601 format, or "" if unavailable.
-                - space (str): Meet space resource name (e.g., "spaces/abc-defg-hij").
+            tuple[list[dict], int]: A pair of
+                (ended_conferences, in_progress_count).
+
+                ``ended_conferences`` holds ENDED conference records
+                containing name / space / start_time / end_time, so they feed
+                ``fetch_participants_for_record`` directly.
+
+                ``in_progress_count`` is how many records were dropped above
+                because they have no ``end_time`` yet. It is surfaced rather
+                than swallowed because an empty ``ended_conferences`` list is
+                ambiguous on its own: a caller cannot otherwise tell "this
+                meeting is happening right now" (a live conference exists,
+                just not one this method can hand back) apart from "nobody
+                ever joined" (no conference exists at all) -- and only the
+                latter is something an operator can act on.
         """
         self.logger.debug(
-            "[GoogleService] list_ended_conferences: after=%s, before=%s",
-            end_time_after,
-            end_time_before,
+            "[GoogleService] list_conferences_by_meeting_code: code=%s, after=%s, before=%s",
+            meeting_code,
+            start_time_after,
+            start_time_before,
         )
         conferences = []
         request = meet_v2.ListConferenceRecordsRequest(
-            filter=f'end_time>="{end_time_after}" AND end_time<="{end_time_before}"',
+            filter=(
+                f'space.meeting_code="{meeting_code}" '
+                f'AND start_time>="{start_time_after}" '
+                f'AND start_time<="{start_time_before}"'
+            ),
         )
         pager = await self.meet_conference_records_client.list_conference_records(
             request=request
         )
+        skipped_in_progress = 0
         async for record in pager:
+            # No endTime means the conference is still running. Never emit it:
+            # it would reach the caller as end_time="" and blow up the first
+            # isoparse that touches it.
+            if not record.end_time:
+                skipped_in_progress += 1
+                self.logger.debug(
+                    "[GoogleService] list_conferences_by_meeting_code: code=%s, "
+                    "skipping still-running record %s",
+                    meeting_code,
+                    record.name,
+                )
+                continue
             conferences.append({
                 "name": record.name,
                 "space": record.space,
                 "start_time": record.start_time.isoformat()
                 if record.start_time
                 else "",
-                "end_time": record.end_time.isoformat() if record.end_time else "",
+                "end_time": record.end_time.isoformat(),
             })
         self.logger.debug(
-            "[GoogleService] list_ended_conferences: fetched %d records",
+            "[GoogleService] list_conferences_by_meeting_code: code=%s fetched %d "
+            "ended records, skipped %d still running",
+            meeting_code,
             len(conferences),
+            skipped_in_progress,
         )
-        return conferences
-
-    async def get_meeting_code_for_space(self, space_name: str) -> str:
-        """
-        Fetches the canonical meeting code for a Meet space.
-
-        Args:
-            space_name (str): The Meet space resource name (e.g., "spaces/abc-defg-hij").
-
-        Returns:
-            str: The human-readable meeting code (e.g., "abc-defg-hij").
-        """
-        self.logger.debug(
-            "[GoogleService] get_meeting_code_for_space: space_name=%s", space_name
-        )
-        request = meet_v2.GetSpaceRequest(name=space_name)
-        space = await self.meet_spaces_client.get_space(request=request)
-        return space.meeting_code
+        return conferences, skipped_in_progress
 
     async def fetch_participants_for_record(self, record_name: str) -> list[dict]:
         """
