@@ -1025,6 +1025,22 @@ class TestGoogleServiceMeetConferenceRecords(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result, [])
 
+    async def test_list_conferences_by_meeting_code_api_error_propagates(self):
+        """This method has no try/except of its own -- an error from the
+        Meet client must reach the caller unwrapped, not be swallowed."""
+        self.mock_meet_conference_records_client.list_conference_records.side_effect = (
+            Exception("API error")
+        )
+
+        with self.assertRaises(Exception) as cm:
+            await self.service.list_conferences_by_meeting_code(
+                "abc-defg-hij",
+                "2026-04-07T07:00:00+00:00",
+                "2026-04-07T14:00:00+00:00",
+            )
+
+        self.assertEqual(str(cm.exception), "API error")
+
     async def test_list_conferences_by_meeting_code_drops_still_running_records(self):
         """A conference in progress has no endTime. This method filters on
         start_time, so it CAN be handed one -- and the attendance sweep,

@@ -698,36 +698,6 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(meeting.absent_user_id)
         self.assertIsNone(meeting.has_unknown_absent)
 
-    async def test_completed_meeting_is_not_reprocessed(self):
-        """A meeting row already is_completed=True must never even be returned by
-        get_pending_google_meetings_in_window (that's the repository's contract, not
-        re-checked here) -- so it is never selected, never costs a Meet call, and
-        its fields are left alone."""
-        self.mock_round_repo.get_running_round_id.return_value = self.round_id
-        self.mock_google_service.list_conferences_by_meeting_code.return_value = [
-            self._make_conference()
-        ]
-        pair = _make_pair(
-            pair_id=101, mentor_id=self.mentor.user_id, mentee_id=self.mentee.user_id
-        )
-        completed_meeting = _make_meeting(
-            google_meeting_code="abc-xxxx-xyz", is_completed=True
-        )
-        self.mock_pairs_repo.get_active_pairs_by_round.return_value = [pair]
-        # The repository already excludes completed rows -- simulated here by
-        # simply not returning this meeting at all.
-        self.mock_meeting_repo.get_pending_google_meetings_in_window.return_value = []
-        self.mock_users_repo.get_all_by_ids.return_value = [self.mentor, self.mentee]
-
-        result = await self.service.sync_attendance(
-            session=self.mock_session, lookback_hours=2
-        )
-
-        self.assertEqual(result["pairs_updated"], 0)
-        self.mock_meeting_repo.recalculate_completed_count.assert_not_called()
-        # untouched
-        self.assertTrue(completed_meeting.is_completed)
-
     async def test_mentee_arrives_late_sets_late_user_id(self):
         """Mentee joins >5 min after mentor → late_user_ids = [mentee]."""
         self.mock_round_repo.get_running_round_id.return_value = self.round_id

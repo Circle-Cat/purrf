@@ -476,6 +476,46 @@ class TestMentorshipMeetingRepository(BaseRepositoryTestLib):
 
         self.assertEqual([r.google_meeting_code for r in rows], ["mine-aaaa"])
 
+    async def test_in_window_orders_by_start_datetime_ascending(self):
+        """The docstring promises _MEETING_ORDER_BY; seed three in-window rows
+        out of start_datetime order and assert the query itself sorts them,
+        rather than relying on insertion order or a test-side sort."""
+        pair = await self._seed_pair()
+        base = datetime(2026, 4, 7, 10, 0, tzinfo=timezone.utc)
+        middle = self._google_meeting(
+            pair.pair_id,
+            start_datetime=base,
+            end_datetime=base + timedelta(hours=1),
+            google_meeting_code="mid-aaaaa",
+        )
+        earliest = self._google_meeting(
+            pair.pair_id,
+            start_datetime=base - timedelta(hours=1),
+            end_datetime=base,
+            google_meeting_code="ear-aaaaa",
+        )
+        latest = self._google_meeting(
+            pair.pair_id,
+            start_datetime=base + timedelta(hours=1),
+            end_datetime=base + timedelta(hours=2),
+            google_meeting_code="lat-aaaaa",
+        )
+        # Inserted out of expected order on purpose.
+        await self.insert_entities([middle, latest, earliest])
+        repo = MentorshipMeetingRepository()
+
+        rows = await repo.get_pending_google_meetings_in_window(
+            session=self.session,
+            pair_ids=[pair.pair_id],
+            ends_after=base - timedelta(hours=7),
+            starts_before=base + timedelta(hours=3),
+        )
+
+        self.assertEqual(
+            [r.google_meeting_code for r in rows],
+            ["ear-aaaaa", "mid-aaaaa", "lat-aaaaa"],
+        )
+
     # --- insert_meeting ---
 
     async def test_insert_meeting_manual_without_google_columns_succeeds(self):
