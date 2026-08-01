@@ -1066,9 +1066,7 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
             session=self.mock_session, lookback_hours=2
         )
 
-        selection_kwargs = (
-            self.mock_meeting_repo.get_pending_google_meetings_in_window.call_args.kwargs
-        )
+        selection_kwargs = self.mock_meeting_repo.get_pending_google_meetings_in_window.call_args.kwargs
         self.assertEqual(selection_kwargs["pair_ids"], [active_pair.pair_id])
         self.assertNotIn(past_pair.pair_id, selection_kwargs["pair_ids"])
         queried_codes = [
@@ -1270,9 +1268,7 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             self.mock_google_service.list_conferences_by_meeting_code.await_count, 100
         )
-        called_kwargs = (
-            self.mock_meeting_repo.get_pending_google_meetings_in_window.call_args.kwargs
-        )
+        called_kwargs = self.mock_meeting_repo.get_pending_google_meetings_in_window.call_args.kwargs
         self.assertCountEqual(called_kwargs["pair_ids"], [p.pair_id for p in pairs])
         # completed_count is recomputed per touched pair, never incremented in memory.
         self.assertEqual(

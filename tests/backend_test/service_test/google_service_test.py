@@ -1010,7 +1010,9 @@ class TestGoogleServiceMeetConferenceRecords(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result[0]["name"], "conferenceRecords/rec1")
         self.assertEqual(result[0]["space"], "spaces/abc-defg-hij")
 
-    async def test_list_conferences_by_meeting_code_empty_pager_returns_empty_list(self):
+    async def test_list_conferences_by_meeting_code_empty_pager_returns_empty_list(
+        self,
+    ):
         async def _pager():
             return
             yield
