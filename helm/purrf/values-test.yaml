@@ -7,7 +7,7 @@ fullnameOverride: purrf-test
 
 image:
   repository: us-docker.pkg.dev/k8s-dev-437501/purrf/purrf
-  tag: "20260516-021842"
+  tag: "20260612-092111"
 
 envFrom:
   - secretRef:
