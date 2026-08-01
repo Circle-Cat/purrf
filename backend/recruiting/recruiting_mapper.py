@@ -3,7 +3,7 @@ from backend.entity.application_interview_entity import ApplicationInterviewEnti
 from backend.entity.job_entity import JobEntity
 from backend.entity.job_review_entity import JobReviewEntity
 from backend.entity.users_entity import UsersEntity
-from backend.dto.board_dto import BoardCardDto
+from backend.dto.board_dto import BoardApplicantHitDto, BoardCardDto
 from backend.dto.interview_dto import InterviewDto
 from backend.dto.job_dto import JobDto, PublicJobDto, PublicJobSummaryDto
 from backend.dto.job_review_dto import ApproverDto, JobReviewDto
@@ -165,6 +165,41 @@ class RecruitingMapper:
             round=application.current_round,
             is_blocked=bool(user.is_blocked),
             reviewer_name=reviewer_name,
+        )
+
+    def to_board_applicant_hit_dto(
+        self,
+        application: ApplicationEntity,
+        user: UsersEntity,
+        job: JobEntity,
+        applicant_email: str = "",
+    ) -> BoardApplicantHitDto:
+        """Map an application + its applicant + its job to a search hit.
+
+        ``applied_at`` comes from ``created_datetime``, the same source
+        ``to_board_card_dto`` uses, so a hit and its card agree on the date.
+
+        Args:
+            application (ApplicationEntity): The matched application.
+            user (UsersEntity): The applicant, joined by user_id.
+            job (JobEntity): The posting the application belongs to.
+            applicant_email (str): The applicant's contact address from
+                user_emails; empty when they have none. Note this is the
+                DISPLAY address, which need not be the address the search
+                term matched.
+
+        Returns:
+            BoardApplicantHitDto: The search-result projection.
+        """
+        return BoardApplicantHitDto(
+            application_id=application.application_id,
+            applicant_name=f"{user.first_name} {user.last_name}".strip(),
+            applicant_email=applicant_email,
+            job_id=job.job_id,
+            job_title=job.title,
+            job_kind=job.kind,
+            stage=application.stage,
+            applied_at=application.created_datetime,
         )
 
     def to_application_dto(self, application, current_submission=None, editable=False):

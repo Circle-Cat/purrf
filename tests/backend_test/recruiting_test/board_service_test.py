@@ -4,7 +4,11 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, call, create_autospec
 
 from backend.recruiting.application_access import ApplicationAccess
-from backend.recruiting.board_service import TERMINAL_STAGES, BoardService
+from backend.recruiting.board_service import (
+    SEARCH_RESULT_LIMIT,
+    TERMINAL_STAGES,
+    BoardService,
+)
 from backend.recruiting.interview_scheduling_service import InterviewSchedulingService
 from backend.mentorship.onboarding_training_service import OnboardingTrainingService
 from backend.recruiting.notification_dispatcher import NotificationDispatcher
@@ -725,6 +729,157 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         result = await self.service.list_my_jobs(self.session, ctx)
 
         self.assertEqual({j.id for j in result}, {1, 2})
+
+    # -- search_applicants --
+
+    def _hit_row(self, application_id=10, job_id=1, user_id=5, created=None):
+        """One (application, user) pair as the repository would return it."""
+        application = ApplicationEntity(
+            job_id=job_id, user_id=user_id, stage=ApplicationStage.APPLIED
+        )
+        application.application_id = application_id
+        application.current_round = 1
+        application.created_datetime = created or datetime(
+            2026, 1, 1, tzinfo=timezone.utc
+        )
+        user = UsersEntity(first_name="Zhang", last_name="Wei")
+        user.user_id = user_id
+        return (application, user)
+
+    async def test_search_applicants_rejects_a_job_outside_the_visible_set(self):
+        self.job_repo.list_all = AsyncMock(return_value=[self._job(job_id=1, owner_ids=(9,))])
+
+        with self.assertRaises(ValueError):
+            await self.service.search_applicants(
+                self.session, self._ctx(user_id=2), "zhang", job_id=1
+            )
+
+        self.app_repo.search_latest_by_jobs.assert_not_called()
+
+    async def test_search_applicants_scopes_to_one_job_when_given(self):
+        job_a = self._job(job_id=1, owner_ids=(2,))
+        job_b = self._job(job_id=2, owner_ids=(2,))
+        self.job_repo.list_all = AsyncMock(return_value=[job_a, job_b])
+        self.app_repo.search_latest_by_jobs = AsyncMock(return_value=[])
+
+        await self.service.search_applicants(
+            self.session, self._ctx(user_id=2), "zhang", job_id=1
+        )
+
+        self.assertEqual(
+            self.app_repo.search_latest_by_jobs.await_args.args[1], [1]
+        )
+
+    async def test_search_applicants_spans_the_whole_visible_set_without_a_job_id(self):
+        job_a = self._job(job_id=1, owner_ids=(2,))
+        job_b = self._job(job_id=2, owner_ids=(2,))
+        job_c = self._job(job_id=3, owner_ids=(9,))
+        self.job_repo.list_all = AsyncMock(return_value=[job_a, job_b, job_c])
+        self.app_repo.search_latest_by_jobs = AsyncMock(return_value=[])
+
+        await self.service.search_applicants(
+            self.session, self._ctx(user_id=2), "zhang", job_id=None
+        )
+
+        self.assertEqual(
+            self.app_repo.search_latest_by_jobs.await_args.args[1], [1, 2]
+        )
+
+    async def test_search_applicants_returns_nothing_when_no_jobs_are_visible(self):
+        self.job_repo.list_all = AsyncMock(return_value=[self._job(job_id=1, owner_ids=(9,))])
+        self.app_repo.search_latest_by_jobs = AsyncMock(return_value=[])
+
+        result = await self.service.search_applicants(
+            self.session, self._ctx(user_id=2), "zhang", job_id=None
+        )
+
+        self.assertEqual(result, {"hits": [], "truncated": False})
+        self.app_repo.search_latest_by_jobs.assert_not_called()
+
+    async def test_search_applicants_returns_nothing_for_a_blank_term(self):
+        self.job_repo.list_all = AsyncMock(return_value=[self._job(job_id=1, owner_ids=(2,))])
+        self.app_repo.search_latest_by_jobs = AsyncMock(return_value=[])
+
+        result = await self.service.search_applicants(
+            self.session, self._ctx(user_id=2), "   ", job_id=None
+        )
+
+        self.assertEqual(result, {"hits": [], "truncated": False})
+        self.app_repo.search_latest_by_jobs.assert_not_called()
+
+    async def test_search_applicants_projects_job_title_kind_and_contact_email(self):
+        job = self._job(job_id=1, owner_ids=(2,), kind=JobKind.ACTIVITY)
+        self.job_repo.list_all = AsyncMock(return_value=[job])
+        self.app_repo.search_latest_by_jobs = AsyncMock(
+            return_value=[self._hit_row(application_id=10, job_id=1, user_id=5)]
+        )
+        self.user_emails_repo.get_contact_emails_by_user_ids = AsyncMock(
+            return_value={5: "zw@example.com"}
+        )
+
+        result = await self.service.search_applicants(
+            self.session, self._ctx(user_id=2), "zhang", job_id=1
+        )
+
+        hit = result["hits"][0]
+        self.assertEqual(hit.application_id, 10)
+        self.assertEqual(hit.applicant_name, "Zhang Wei")
+        self.assertEqual(hit.applicant_email, "zw@example.com")
+        self.assertEqual(hit.job_id, 1)
+        self.assertEqual(hit.job_title, "Job 1")
+        self.assertEqual(hit.job_kind, JobKind.ACTIVITY)
+        self.assertFalse(result["truncated"])
+
+    async def test_search_applicants_leaves_email_blank_when_the_applicant_has_none(self):
+        self.job_repo.list_all = AsyncMock(return_value=[self._job(job_id=1, owner_ids=(2,))])
+        self.app_repo.search_latest_by_jobs = AsyncMock(
+            return_value=[self._hit_row(application_id=10, job_id=1, user_id=5)]
+        )
+        self.user_emails_repo.get_contact_emails_by_user_ids = AsyncMock(return_value={})
+
+        result = await self.service.search_applicants(
+            self.session, self._ctx(user_id=2), "zhang", job_id=1
+        )
+
+        self.assertEqual(result["hits"][0].applicant_email, "")
+
+    async def test_search_applicants_asks_for_one_row_past_the_cap_and_flags_truncation(self):
+        self.job_repo.list_all = AsyncMock(return_value=[self._job(job_id=1, owner_ids=(2,))])
+        rows = [
+            self._hit_row(application_id=i, job_id=1, user_id=i)
+            for i in range(SEARCH_RESULT_LIMIT + 1)
+        ]
+        self.app_repo.search_latest_by_jobs = AsyncMock(return_value=rows)
+
+        result = await self.service.search_applicants(
+            self.session, self._ctx(user_id=2), "zhang", job_id=1
+        )
+
+        self.assertEqual(
+            self.app_repo.search_latest_by_jobs.await_args.kwargs["limit"],
+            SEARCH_RESULT_LIMIT + 1,
+        )
+        self.assertEqual(len(result["hits"]), SEARCH_RESULT_LIMIT)
+        self.assertTrue(result["truncated"])
+
+    async def test_search_applicants_floats_current_job_hits_to_the_front(self):
+        job_a = self._job(job_id=1, owner_ids=(2,))
+        job_b = self._job(job_id=2, owner_ids=(2,))
+        self.job_repo.list_all = AsyncMock(return_value=[job_a, job_b])
+        # Repository order: other job, current job, other job.
+        self.app_repo.search_latest_by_jobs = AsyncMock(
+            return_value=[
+                self._hit_row(application_id=10, job_id=2, user_id=5),
+                self._hit_row(application_id=11, job_id=1, user_id=6),
+                self._hit_row(application_id=12, job_id=2, user_id=7),
+            ]
+        )
+
+        result = await self.service.search_applicants(
+            self.session, self._ctx(user_id=2), "zhang", current_job_id=1, job_id=None
+        )
+
+        self.assertEqual([h.application_id for h in result["hits"]], [11, 10, 12])
 
     # -- _require_owner / get_board --
 

@@ -67,6 +67,28 @@ class BoardCardDto(BaseDto):
     reviewer_name: str | None = None
 
 
+class BoardApplicantHitDto(BaseDto):
+    """One hit in the board's applicant search.
+
+    Deliberately NOT a ``BoardCardDto``: that projection carries ``tags``,
+    ``is_blocked`` and ``reviewer_name``, each costing extra queries in
+    ``BoardService._cards_for_rows``, and a search result row renders none of
+    them. It carries ``job_title``/``job_kind`` instead, which a card doesn't
+    need (the board already knows its job) but a cross-posting result list
+    does — ``job_kind`` is what lets the frontend label an activity job's
+    ``hired`` as "Admitted".
+    """
+
+    application_id: int
+    applicant_name: str
+    applicant_email: str
+    job_id: int
+    job_title: str
+    job_kind: JobKind
+    stage: ApplicationStage
+    applied_at: datetime | None = None
+
+
 class ApplicationDetailDto(BaseDto):
     """Owner-facing full view of one application."""
 

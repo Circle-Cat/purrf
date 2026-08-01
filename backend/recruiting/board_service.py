@@ -60,6 +60,11 @@ INTERVIEW_STAGES = {
 TERMINAL_PAGE_SIZE = 20
 TERMINAL_STAGES = (ApplicationStage.REJECTED, ApplicationStage.HIRED)
 
+# Max applicant-search hits returned to the board. Search is navigation, not
+# browsing: needing a second page means the term should be narrower, so the
+# response carries a `truncated` flag instead of an offset.
+SEARCH_RESULT_LIMIT = 20
+
 # Per-event-type map of (raw assignee id field in `details`) -> (resolved
 # name field to add). get_application_activity uses this to know which
 # fields to look up and inject, without hardcoding each event type inline.
@@ -335,6 +340,89 @@ class BoardService:
             )
             for job in await self._visible_jobs(session, current_user)
         ]
+
+    async def search_applicants(
+        self,
+        session: AsyncSession,
+        current_user: UserContextDto,
+        q: str,
+        *,
+        job_id: int | None = None,
+        current_job_id: int | None = None,
+    ) -> dict:
+        """Find applicants by name or email across the caller's boards.
+
+        Scoped to ``_visible_jobs`` — the same set the job switcher shows —
+        so search can never surface a posting the caller cannot already
+        open. Within that set, ``job_id`` narrows to one posting; omitting it
+        searches all of them.
+
+        Only each (job, user) pair's LATEST application is considered, so
+        every hit corresponds to a card the board can show.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            current_user (UserContextDto): The authenticated caller.
+            q (str): The search term. Blank (or whitespace-only) returns no
+                hits without touching the database.
+            job_id (int | None): Narrow the search to this posting. None
+                searches every visible posting.
+            current_job_id (int | None): The posting currently open on the
+                board. Affects ORDERING only — its hits float to the front —
+                never which rows are returned.
+
+        Returns:
+            dict: ``{"hits": [BoardApplicantHitDto], "truncated": bool}``.
+                ``truncated`` is a flag, not a count: an exact total would
+                cost a second COUNT for a number the UI uses only to decide
+                whether to print one line of text.
+
+        Raises:
+            ValueError: If ``job_id`` is given and is not a posting the
+                caller may open.
+        """
+        jobs = await self._visible_jobs(session, current_user)
+        jobs_by_id = {job.job_id: job for job in jobs}
+        if job_id is not None:
+            if job_id not in jobs_by_id:
+                raise ValueError("you are not an owner of this job")
+            search_ids = [job_id]
+        else:
+            search_ids = list(jobs_by_id)
+
+        term = q.strip()
+        if not term or not search_ids:
+            return {"hits": [], "truncated": False}
+
+        # One row past the cap is how truncation is detected without a COUNT.
+        rows = await self.application_repository.search_latest_by_jobs(
+            session, search_ids, term, limit=SEARCH_RESULT_LIMIT + 1
+        )
+        truncated = len(rows) > SEARCH_RESULT_LIMIT
+        rows = rows[:SEARCH_RESULT_LIMIT]
+
+        contact_by_user_id = (
+            await self.user_emails_repository.get_contact_emails_by_user_ids(
+                session, [user.user_id for _, user in rows]
+            )
+        )
+        hits = [
+            self.recruiting_mapper.to_board_applicant_hit_dto(
+                application,
+                user,
+                jobs_by_id[application.job_id],
+                applicant_email=contact_by_user_id.get(user.user_id, ""),
+            )
+            for application, user in rows
+        ]
+        # Presentation-only reordering, applied AFTER the cap: floating the
+        # open posting's hits to the front must never change WHICH rows
+        # survive, or an older current-job hit could be hidden behind newer
+        # ones from other postings. `sorted` is stable, so within each group
+        # the repository's recency order is preserved.
+        if current_job_id is not None:
+            hits.sort(key=lambda hit: hit.job_id != current_job_id)
+        return {"hits": hits, "truncated": truncated}
 
     async def _require_owner(
         self,
