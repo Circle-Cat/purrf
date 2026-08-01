@@ -606,7 +606,7 @@ class GoogleService:
 
     async def list_conferences_by_meeting_code(
         self, meeting_code: str, start_time_after: str, start_time_before: str
-    ) -> list[dict]:
+    ) -> tuple[list[dict], int]:
         """
         Lists conference records for one Meet space, by its meeting code.
 
@@ -638,9 +638,21 @@ class GoogleService:
         live conferences routinely.
 
         Returns:
-            list[dict]: ENDED conference records containing name / space /
-                start_time / end_time, so they feed
+            tuple[list[dict], int]: A pair of
+                (ended_conferences, in_progress_count).
+
+                ``ended_conferences`` holds ENDED conference records
+                containing name / space / start_time / end_time, so they feed
                 ``fetch_participants_for_record`` directly.
+
+                ``in_progress_count`` is how many records were dropped above
+                because they have no ``end_time`` yet. It is surfaced rather
+                than swallowed because an empty ``ended_conferences`` list is
+                ambiguous on its own: a caller cannot otherwise tell "this
+                meeting is happening right now" (a live conference exists,
+                just not one this method can hand back) apart from "nobody
+                ever joined" (no conference exists at all) -- and only the
+                latter is something an operator can act on.
         """
         self.logger.debug(
             "[GoogleService] list_conferences_by_meeting_code: code=%s, after=%s, before=%s",
@@ -688,7 +700,7 @@ class GoogleService:
             len(conferences),
             skipped_in_progress,
         )
-        return conferences
+        return conferences, skipped_in_progress
 
     async def fetch_participants_for_record(self, record_name: str) -> list[dict]:
         """

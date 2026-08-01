@@ -1006,9 +1006,11 @@ class TestGoogleServiceMeetConferenceRecords(unittest.IsolatedAsyncioTestCase):
         self.assertIn('space.meeting_code="abc-defg-hij"', request.filter)
         self.assertIn('start_time>="2026-04-07T07:00:00+00:00"', request.filter)
         self.assertIn('start_time<="2026-04-07T14:00:00+00:00"', request.filter)
-        self.assertEqual(len(result), 1)
-        self.assertEqual(result[0]["name"], "conferenceRecords/rec1")
-        self.assertEqual(result[0]["space"], "spaces/abc-defg-hij")
+        conferences, in_progress_count = result
+        self.assertEqual(len(conferences), 1)
+        self.assertEqual(conferences[0]["name"], "conferenceRecords/rec1")
+        self.assertEqual(conferences[0]["space"], "spaces/abc-defg-hij")
+        self.assertEqual(in_progress_count, 0)
 
     async def test_list_conferences_by_meeting_code_empty_pager_returns_empty_list(
         self,
@@ -1023,7 +1025,7 @@ class TestGoogleServiceMeetConferenceRecords(unittest.IsolatedAsyncioTestCase):
             "abc-defg-hij", "2026-04-07T07:00:00+00:00", "2026-04-07T14:00:00+00:00"
         )
 
-        self.assertEqual(result, [])
+        self.assertEqual(result, ([], 0))
 
     async def test_list_conferences_by_meeting_code_api_error_propagates(self):
         """This method has no try/except of its own -- an error from the
@@ -1047,7 +1049,9 @@ class TestGoogleServiceMeetConferenceRecords(unittest.IsolatedAsyncioTestCase):
         which selects meetings up to three hours ahead of now, meets them
         routinely. Emitting it as end_time="" would
         blow up the first isoparse downstream, so it is dropped here. The ended
-        record sitting alongside it must still come through."""
+        record sitting alongside it must still come through, and the dropped
+        record must be counted (not merely logged) so the caller can tell
+        "in progress" apart from "nobody ever joined"."""
         ended = MagicMock()
         ended.name = "conferenceRecords/ended"
         ended.space = "spaces/abc-defg-hij"
@@ -1070,11 +1074,14 @@ class TestGoogleServiceMeetConferenceRecords(unittest.IsolatedAsyncioTestCase):
             "abc-defg-hij", "2026-04-07T07:00:00+00:00", "2026-04-07T14:00:00+00:00"
         )
 
-        self.assertEqual(len(result), 1)
-        self.assertEqual(result[0]["name"], "conferenceRecords/ended")
-        self.assertEqual(result[0]["end_time"], "2026-04-07T11:00:00+00:00")
+        conferences, in_progress_count = result
+        self.assertEqual(len(conferences), 1)
+        self.assertEqual(conferences[0]["name"], "conferenceRecords/ended")
+        self.assertEqual(conferences[0]["end_time"], "2026-04-07T11:00:00+00:00")
         # Never emitted with a blank end_time -- excluded outright.
-        self.assertNotIn("", [c["end_time"] for c in result])
+        self.assertNotIn("", [c["end_time"] for c in conferences])
+        # The dropped still-running record must show up here instead.
+        self.assertEqual(in_progress_count, 1)
 
     async def test_list_conferences_by_meeting_code_null_start_time_falls_back_to_empty_string(
         self,
@@ -1096,9 +1103,11 @@ class TestGoogleServiceMeetConferenceRecords(unittest.IsolatedAsyncioTestCase):
             "abc-defg-hij", "2026-04-07T07:00:00+00:00", "2026-04-07T14:00:00+00:00"
         )
 
-        self.assertEqual(len(result), 1)
-        self.assertEqual(result[0]["start_time"], "")
-        self.assertEqual(result[0]["end_time"], "2026-04-07T11:00:00+00:00")
+        conferences, in_progress_count = result
+        self.assertEqual(len(conferences), 1)
+        self.assertEqual(conferences[0]["start_time"], "")
+        self.assertEqual(conferences[0]["end_time"], "2026-04-07T11:00:00+00:00")
+        self.assertEqual(in_progress_count, 0)
 
     async def test_fetch_participants_signed_in_user(self):
         """Returns signedin_user_id and display_name from a signed-in participant."""

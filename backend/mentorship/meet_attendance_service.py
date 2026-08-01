@@ -97,14 +97,26 @@ class MeetAttendanceService:
                 - pairs_updated (int): Number of pairs whose completed_count was
                   recomputed and committed.
                 - meetings_selected (int): Number of pending meetings this run
-                  picked up. Equals reconciled + no_conference + failed.
+                  picked up. Equals reconciled + not_yet_due + in_progress +
+                  no_show + failed.
                 - meetings_reconciled (int): Number of meetings that had a
                   conference record and were written back.
                 - meetings_completed (int): Of those, how many came out
                   successfully completed.
                 - meetings_absent (int): Of those, how many recorded an absence.
-                - meetings_no_conference (int): Number of meetings Meet had no
-                  record for -- nobody joined, or not yet.
+                - meetings_not_yet_due (int): Meetings with no conference
+                  record yet, but whose 3-hour grace period has not closed --
+                  a conference may still appear on a later run. Pure noise,
+                  since every upcoming meeting is selected up to
+                  ATTENDANCE_WINDOW_DELTA ahead of now.
+                - meetings_in_progress (int): Meetings with a conference
+                  record right now, just not one Meet will hand back yet
+                  because it has no end_time. Also noise -- it resolves
+                  itself once the call ends.
+                - meetings_no_show (int): Meetings whose slot and full grace
+                  period have both passed with no conference ever recorded --
+                  nobody joined. This is the only actionable count; it is
+                  also logged at INFO per meeting.
                 - meetings_failed (int): Number of meetings that raised while
                   being processed.
             Returns an empty dict if not currently in a meeting window.
@@ -130,7 +142,9 @@ class MeetAttendanceService:
             "meetings_reconciled": 0,
             "meetings_completed": 0,
             "meetings_absent": 0,
-            "meetings_no_conference": 0,
+            "meetings_not_yet_due": 0,
+            "meetings_in_progress": 0,
+            "meetings_no_show": 0,
             "meetings_failed": 0,
         }
 
@@ -234,21 +248,59 @@ class MeetAttendanceService:
                 # list_conferences_by_meeting_code drops those at its own
                 # boundary instead, so everything reaching the interval-tree
                 # code below is guaranteed to have a parseable end_time.
-                conf_list = await self.google_service.list_conferences_by_meeting_code(
+                (
+                    conf_list,
+                    in_progress_count,
+                ) = await self.google_service.list_conferences_by_meeting_code(
                     meeting.google_meeting_code,
                     window_start.isoformat(),
                     window_end.isoformat(),
                 )
                 if not conf_list:
-                    self.logger.debug(
-                        "[MeetAttendanceService] meeting_id=%s code=%s: no conference "
-                        "record in [%s, %s]",
-                        meeting.meeting_id,
-                        meeting.google_meeting_code,
-                        window_start,
-                        window_end,
-                    )
-                    summary["meetings_no_conference"] += 1
+                    # An empty ended-conference list is ambiguous by itself,
+                    # so it is split three ways instead of being lumped into
+                    # one counter nobody could alert on:
+                    #   - in_progress: Meet has a live conference for this
+                    #     code right now (it just has no end_time yet). Check
+                    #     this FIRST -- a conference still running past
+                    #     window_end is still in progress, not a no-show.
+                    #   - not_yet_due: the 3h grace period hasn't closed, so a
+                    #     conference may still show up later. Pure noise --
+                    #     every upcoming meeting is selected this way.
+                    #   - no_show: the slot and its full grace period are
+                    #     both behind us and Meet never saw a conference.
+                    #     This is the only one an operator can act on; do not
+                    #     re-merge these back together.
+                    if in_progress_count > 0:
+                        summary["meetings_in_progress"] += 1
+                        self.logger.debug(
+                            "[MeetAttendanceService] meeting_id=%s code=%s: "
+                            "conference in progress in [%s, %s]",
+                            meeting.meeting_id,
+                            meeting.google_meeting_code,
+                            window_start,
+                            window_end,
+                        )
+                    elif now < window_end:
+                        summary["meetings_not_yet_due"] += 1
+                        self.logger.debug(
+                            "[MeetAttendanceService] meeting_id=%s code=%s: no "
+                            "conference record yet, grace period open until %s",
+                            meeting.meeting_id,
+                            meeting.google_meeting_code,
+                            window_end,
+                        )
+                    else:
+                        summary["meetings_no_show"] += 1
+                        self.logger.info(
+                            "[MeetAttendanceService] meeting_id=%s pair_id=%s: "
+                            "no-show -- no conference record ever appeared in "
+                            "[%s, %s]",
+                            meeting.meeting_id,
+                            pair.pair_id,
+                            window_start,
+                            window_end,
+                        )
                     continue
 
                 # Fetch and resolve identities for this meeting's conferences
