@@ -1070,4 +1070,51 @@ describe("BoardPage", () => {
 
     await waitFor(() => expect(card.className).not.toContain("ring-2"));
   });
+
+  it("renders the applicant search once the jobs have loaded", async () => {
+    api.listBoardJobs.mockResolvedValue({ data: [jobA] });
+    api.getJobBoard.mockResolvedValue({ data: {} });
+    renderPage();
+
+    expect(
+      await screen.findByPlaceholderText("Search by name or email"),
+    ).toBeInTheDocument();
+  });
+
+  it("navigates to the detail page when a search hit is chosen", async () => {
+    const user = userEvent.setup();
+    api.listBoardJobs.mockResolvedValue({ data: [jobA] });
+    api.getJobBoard.mockResolvedValue({ data: {} });
+    api.searchBoardApplicants.mockResolvedValue({
+      data: {
+        hits: [
+          {
+            applicationId: 77,
+            applicantName: "Zhang Wei",
+            applicantEmail: "zw@example.com",
+            jobId: 1,
+            jobTitle: "Backend Engineer",
+            jobKind: "employment",
+            stage: "tech",
+            appliedAt: "2026-01-01T00:00:00Z",
+          },
+        ],
+        truncated: false,
+      },
+    });
+    const { router } = renderPage();
+
+    await user.type(
+      await screen.findByPlaceholderText("Search by name or email"),
+      "zhang",
+    );
+    await user.click(screen.getByRole("button", { name: "Search" }));
+    await user.click(await screen.findByRole("option"));
+
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe(
+        "/recruiting/applications/77",
+      );
+    });
+  });
 });

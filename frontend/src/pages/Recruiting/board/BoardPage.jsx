@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import LoadGate from "@/pages/Recruiting/components/LoadGate";
 import ApplicantCard from "@/pages/Recruiting/board/ApplicantCard";
+import ApplicantSearch from "@/pages/Recruiting/board/ApplicantSearch";
 import {
   Select,
   SelectContent,
@@ -349,6 +350,10 @@ const BoardPage = () => {
               ))}
             </SelectContent>
           </Select>
+          <ApplicantSearch
+            selectedJobId={selectedJobId}
+            onSelect={handleOpen}
+          />
         </div>
         <HowItWorksDialog {...APPLICATIONS_BOARD_GUIDE} />
       </div>
