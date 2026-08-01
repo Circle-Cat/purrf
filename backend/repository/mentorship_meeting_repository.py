@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from sqlalchemy import delete, func, nullslast, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -117,57 +119,68 @@ class MentorshipMeetingRepository:
             grouped.setdefault(meeting.pair_id, []).append(meeting)
         return grouped
 
-    async def get_pending_google_meetings_by_pairs(
-        self, session: AsyncSession, pair_ids: list[int]
+    async def get_pending_google_meetings_in_window(
+        self,
+        session: AsyncSession,
+        pair_ids: list[int],
+        ends_after: datetime,
+        starts_before: datetime,
     ) -> list[MentorshipMeetingEntity]:
-        """GOOGLE meetings still awaiting completion, across a batch of pairs.
+        """GOOGLE meetings awaiting attendance whose slot is worth checking now.
+
+        Each returned row costs one Meet API call, so the set has to be
+        bounded at BOTH ends:
+
+        - Bounded below, because a meeting nobody joined produces no conference
+          record and therefore never completes. Without a lower bound those
+          dead rows accumulate for the whole round and are re-queried forever.
+        - Bounded above, because a meeting that has not happened yet has
+          nothing to reconcile.
+
+        The two bounds land on different columns on purpose, which is what the
+        parameter names say: a meeting is in scope when its own attendance
+        affinity window overlaps the caller's lookback interval, and two
+        intervals overlap when each one's start is no later than the other's
+        end. The caller derives both values -- see
+        ``MeetAttendanceService.sync_attendance``.
 
         Args:
             session (AsyncSession): The active DB session.
             pair_ids (list[int]): The pairs to search across.
+            ends_after (datetime): Keep rows whose ``end_datetime`` is at or
+                after this. Inclusive.
+            starts_before (datetime): Keep rows whose ``start_datetime`` is at
+                or before this. Inclusive.
 
         Returns:
             list[MentorshipMeetingEntity]: Rows with ``source='google'``,
-                ``is_completed=False``, and a non-null
-                ``google_meeting_code``. Empty for empty input.
+                ``is_completed=False``, a non-null ``google_meeting_code``, and
+                a slot inside the bounds, ordered like every other read here
+                (``start_datetime`` ascending, then ``created_datetime``, then
+                ``meeting_id``). Empty for empty input, without touching the
+                database.
         """
         if not pair_ids:
             return []
-        result = await session.execute(
-            select(MentorshipMeetingEntity).where(
+        stmt = (
+            select(MentorshipMeetingEntity)
+            .where(
                 MentorshipMeetingEntity.pair_id.in_(pair_ids),
                 MentorshipMeetingEntity.source == MeetingSource.GOOGLE,
-                # ix_mentorship_meeting_pending has predicate
-                # `is_completed = false`; Postgres cannot prove `IS false`
-                # implies `= false`, so the `.is_(False)` form (which compiles
-                # to `IS false`) makes the planner skip this index entirely.
-                # The `== False` form is required to match the predicate.
-                # A later PR copies this pattern into the attendance sweep --
-                # do not "correct" it back to `.is_(False)`.
+                # `== False` rather than `.is_(False)` so the planner can match
+                # ix_mentorship_meeting_pending's `is_completed = false`
+                # predicate; Postgres cannot prove `IS false` implies
+                # `= false`, so `.is_(False)` would make it skip the index.
+                # Do not "correct" this back to `.is_(False)`.
                 MentorshipMeetingEntity.is_completed == False,  # noqa: E712
                 MentorshipMeetingEntity.google_meeting_code.is_not(None),
+                MentorshipMeetingEntity.end_datetime >= ends_after,
+                MentorshipMeetingEntity.start_datetime <= starts_before,
             )
+            .order_by(*_MEETING_ORDER_BY)
         )
+        result = await session.execute(stmt)
         return list(result.scalars().all())
-
-    async def get_meeting_by_google_meeting_code(
-        self, session: AsyncSession, code: str
-    ) -> MentorshipMeetingEntity | None:
-        """The meeting whose Google Meet code matches, if any.
-
-        Args:
-            session (AsyncSession): The active DB session.
-            code (str): The Meet meeting code to look up.
-
-        Returns:
-            MentorshipMeetingEntity | None: The matching row, or None.
-        """
-        result = await session.execute(
-            select(MentorshipMeetingEntity).where(
-                MentorshipMeetingEntity.google_meeting_code == code
-            )
-        )
-        return result.scalars().first()
 
     async def insert_meeting(
         self, session: AsyncSession, meeting: MentorshipMeetingEntity
