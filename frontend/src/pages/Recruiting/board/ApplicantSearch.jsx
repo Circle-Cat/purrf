@@ -147,7 +147,9 @@ const ApplicantSearch = ({ selectedJobId, onSelect }) => {
       {result && (
         <div className="absolute left-0 top-11 z-20 w-96 rounded-lg border border-border bg-white shadow-lg">
           {result.hits.length === 0 ? (
-            <p className="px-3 py-2 text-sm text-muted-foreground">No matches</p>
+            <p className="px-3 py-2 text-sm text-muted-foreground">
+              No matches
+            </p>
           ) : (
             // No <ul>/<li> wrappers: an element with role="option" must be a
             // direct child of the role="listbox", and a <li> in between

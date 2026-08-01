@@ -345,7 +345,9 @@ describe("ApplicantSearch keyboard and dismissal", () => {
     await user.keyboard("{Escape}");
 
     expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
-    expect(screen.getByPlaceholderText("Search by name or email")).toHaveFocus();
+    expect(
+      screen.getByPlaceholderText("Search by name or email"),
+    ).toHaveFocus();
   });
 
   it("closes the panel when clicking outside it", async () => {
