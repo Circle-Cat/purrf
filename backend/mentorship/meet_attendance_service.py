@@ -98,8 +98,9 @@ class MeetAttendanceService:
         after the deadline is a private arrangement Purrf does not track.
 
         Rounds are still not supposed to overlap, and more than one selectable
-        round is still reported at WARNING -- but every one of them is synced,
-        each against its own window. Syncing only one would silently strand the
+        round is still reported -- at INFO now, since every one of them is
+        synced, each against its own window, so it is routine rather than an
+        anomaly. Syncing only one would silently strand the
         others' meetings: a round stays selectable for ``grace`` past its
         deadline, so a round starting the moment another ends is selectable
         alongside it, and a meeting at the very start of the newer window would
@@ -178,12 +179,13 @@ class MeetAttendanceService:
             )
             return {}
         if len(running_rounds) > 1:
-            # Still a WARNING: rounds are not supposed to be selectable at the
-            # same time. It no longer reports anything being dropped, though --
-            # all of them are synced. Naming them keeps the situation
+            # INFO, not WARNING: now that every selectable round is synced,
+            # more than one being selectable at once is routine -- it happens
+            # at every round boundary during the post-deadline grace below --
+            # not an anomaly to flag. Naming them keeps the situation
             # diagnosable, and note a round can be selectable while its meeting
             # window is already shut, sitting out its post-deadline grace.
-            self.logger.warning(
+            self.logger.info(
                 "[MeetAttendanceService] %d rounds are selectable at once "
                 "(overlapping timelines, or one still inside its post-deadline "
                 "grace); syncing all of them: %s",
@@ -202,9 +204,10 @@ class MeetAttendanceService:
         lookback = timedelta(hours=lookback_hours)
 
         summary = {
-            # Appended as each round is entered rather than precomputed from
-            # `running_rounds`, so the key reports what the run actually
-            # touched instead of what it intended to.
+            # Appended as each round is entered, unconditionally and before
+            # that round's own try -- so this is every round this run
+            # selected, whether or not it went on to raise. `rounds_failed`
+            # is what distinguishes the ones that died.
             "round_ids": [],
             "pairs_updated": 0,
             "meetings_selected": 0,
@@ -494,12 +497,12 @@ class MeetAttendanceService:
 
                         touched_pair_ids.add(pair.pair_id)
                     except Exception as e:
+                        summary["meetings_failed"] += 1
                         self.logger.error(
                             "[MeetAttendanceService] Failed to process meeting_id=%s: %s",
                             meeting.meeting_id,
                             e,
                         )
-                        summary["meetings_failed"] += 1
                     finally:
                         # Every path through the meeting body above lands in
                         # exactly one bucket, including the `continue`s, so
@@ -507,8 +510,13 @@ class MeetAttendanceService:
                         # for. The round-level handler charges the difference.
                         round_accounted += 1
             except Exception as e:
-                # One bad round must not abort the others, the same way one bad
-                # meeting does not abort its round. Anything this round had
+                # This isolates the round only for failures that do not poison
+                # the session -- a Meet API error, a bad payload. There is no
+                # session.rollback() here, so a DATABASE failure (the pair
+                # fetch, the selection query) leaves the session in
+                # pending-rollback: every later round's query fails the same
+                # way, and the unguarded commit at the end of sync_attendance
+                # raises, taking the whole run down. Anything this round had
                 # already selected but not yet classified is charged to
                 # meetings_failed -- it is counted in meetings_selected and
                 # nothing else will ever account for it, so this is what keeps

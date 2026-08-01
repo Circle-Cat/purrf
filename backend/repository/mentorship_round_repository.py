@@ -85,8 +85,8 @@ class MentorshipRoundRepository:
         Replaces ``get_running_round_id``, which returned only an id and used
         ``.first()`` with no ORDER BY -- so when two windows overlapped
         Postgres picked one arbitrarily and the other round went unsynced
-        without a trace. Returning every match in a fixed order lets the
-        caller both behave deterministically and say what it skipped.
+        without a trace. Returning every match in a fixed order buys the
+        caller a stable processing order across runs, not just a complete one.
 
         Args:
             session (AsyncSession): The active DB session.

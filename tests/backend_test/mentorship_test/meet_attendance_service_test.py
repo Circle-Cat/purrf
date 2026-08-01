@@ -293,10 +293,11 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(kwargs["round_window_start"], window_start)
         self.assertEqual(kwargs["round_window_end"], window_end)
 
-    async def test_overlapping_rounds_are_all_synced_and_warned(self):
-        """More than one selectable round is still a WARNING -- rounds are not
-        supposed to overlap -- but nothing is skipped any more, so the line has
-        to say every one of them is being synced and name them all."""
+    async def test_overlapping_rounds_are_all_synced_and_logged(self):
+        """More than one selectable round is now routine -- it happens at
+        every round boundary during the post-deadline grace -- so the line is
+        INFO, not WARNING. Nothing is skipped any more, so the line has to say
+        every one of them is being synced and name them all."""
         first = RunningRoundWindow(
             7,
             datetime(2026, 4, 1, tzinfo=timezone.utc),
@@ -316,14 +317,24 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(result["round_ids"], [7, 9])
-        self.service.logger.warning.assert_called_once()
+        self.service.logger.warning.assert_not_called()
+        # Four INFO lines for this run: the multi-round notice, one
+        # "nothing to do" per round (both have no pairs), and the closing
+        # "Sync complete" summary. Pinning the count catches a stray log line
+        # as surely as it catches a level regression.
+        self.assertEqual(self.service.logger.info.call_count, 4)
+        multi_round_call = next(
+            c
+            for c in self.service.logger.info.call_args_list
+            if "selectable at once" in c.args[0]
+        )
         # Render the lazy-% message rather than inspecting call_args: the
         # rendered text is what an operator reads, and it is the entire
         # deliverable of the overlap half of this change. Asserting on the raw
         # call_args string cannot tell "[7, 9]" from "[9]" -- and a line that
         # named only one round would send someone hunting for an unsynced
         # round that was in fact synced.
-        fmt, *fmt_args = self.service.logger.warning.call_args.args
+        fmt, *fmt_args = multi_round_call.args
         rendered = fmt % tuple(fmt_args)
         self.assertIn("syncing all of them: [7, 9]", rendered)
         # Nothing is skipped now, and "open meeting window" is wrong for a
