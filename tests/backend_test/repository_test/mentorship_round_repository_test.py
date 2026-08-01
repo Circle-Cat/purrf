@@ -504,8 +504,19 @@ class TestMentorShipRoundRepository(BaseRepositoryTestLib):
         self.assertIsNotNone(rows[0].window_start.tzinfo)
 
     async def test_running_rounds_orders_overlapping_rounds_deterministically(self):
-        """Two rounds covering `now` must come back in a fixed order, so the
-        caller always picks the same one and can report the other."""
+        """Two rounds covering `now` must come back in ascending round_id, so
+        the caller processes and reports them in a fixed order.
+
+        The first round is UPDATEd after both are seeded, and that touch is
+        what gives this test teeth. Under MVCC an UPDATE writes a NEW row
+        version at the end of the heap and marks the old one dead, so an
+        unordered SELECT hands the pair back with the updated row LAST -- i.e.
+        out of insertion order, and out of round_id order. Seed-only, both rows
+        sit in insertion order and the heap order coincides with the expected
+        ascending order, so dropping `.order_by(...)` entirely -- exactly the
+        pre-branch bug this test is named for -- used to pass here unnoticed;
+        only a reversal to `.desc()` was caught.
+        """
         first = await self._seed_round(
             match_notification_at="2026-04-01T00:00:00+00:00",
             meetings_completion_deadline_at="2026-04-30T00:00:00+00:00",
@@ -515,6 +526,13 @@ class TestMentorShipRoundRepository(BaseRepositoryTestLib):
             meetings_completion_deadline_at="2026-05-10T00:00:00+00:00",
         )
         repo = MentorshipRoundRepository()
+        # Rewrite the LOWER-id row so the heap now yields it second. Any UPDATE
+        # to that row would do; this one is the cheapest column to disturb and
+        # is not read by get_running_rounds.
+        await repo.update_mentee_average_score(
+            self.session, round_id=first.round_id, value=4.2
+        )
+        self.assertLess(first.round_id, second.round_id)
 
         with patch(
             "backend.repository.mentorship_round_repository.datetime"
