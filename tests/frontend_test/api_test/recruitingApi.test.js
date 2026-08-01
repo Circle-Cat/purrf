@@ -24,6 +24,7 @@ import {
   listMyApplications,
   listPublicJobs,
   listBoardJobs,
+  searchBoardApplicants,
   getJobBoard,
   getApplicationDetail,
   changeApplicationStage,
@@ -253,6 +254,30 @@ describe("recruitingApi", () => {
     request.get.mockResolvedValue({ data: [] });
     await listBoardJobs();
     expect(request.get).toHaveBeenCalledWith("/recruiting/board/jobs");
+  });
+
+  it("searchBoardApplicants GETs with both job_id and current_job_id", async () => {
+    request.get.mockResolvedValue({ data: { hits: [], truncated: false } });
+    await searchBoardApplicants("zhang", { jobId: 5, currentJobId: 9 });
+    expect(request.get).toHaveBeenCalledWith("/recruiting/board/applicants", {
+      params: { q: "zhang", job_id: 5, current_job_id: 9 },
+    });
+  });
+
+  it("searchBoardApplicants omits job_id when jobId is null (All postings mode)", async () => {
+    request.get.mockResolvedValue({ data: { hits: [], truncated: false } });
+    await searchBoardApplicants("zhang", { jobId: null, currentJobId: 9 });
+    expect(request.get).toHaveBeenCalledWith("/recruiting/board/applicants", {
+      params: { q: "zhang", current_job_id: 9 },
+    });
+  });
+
+  it("searchBoardApplicants omits current_job_id when currentJobId is null", async () => {
+    request.get.mockResolvedValue({ data: { hits: [], truncated: false } });
+    await searchBoardApplicants("zhang", { jobId: 5, currentJobId: null });
+    expect(request.get).toHaveBeenCalledWith("/recruiting/board/applicants", {
+      params: { q: "zhang", job_id: 5 },
+    });
   });
 
   it("getJobBoard GETs the job board endpoint", async () => {
