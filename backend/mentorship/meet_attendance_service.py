@@ -6,7 +6,6 @@ from itertools import combinations
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.dto.google_meeting_detail_dto import GoogleMeetingDetailDto
 from backend.entity.users_entity import UsersEntity
-from backend.entity.mentorship_meeting_entity import MentorshipMeetingEntity
 
 # Configuration Constants
 LATE_THRESHOLD = timedelta(minutes=5)
@@ -74,22 +73,41 @@ class MeetAttendanceService:
 
     async def sync_attendance(self, session: AsyncSession, lookback_hours: int) -> dict:
         """
-        Fetches ended Google Meet conferences within a lookback window and reconciles
-        them against scheduled mentorship meetings. Applies a 3-hour proximity filter
-        to match actual conferences with their corresponding scheduled slots.
+        Reconciles this round's pending Google meetings against Meet.
+
+        The sweep starts from OUR rows, not from Google's: it selects the
+        active round's pending GOOGLE meetings whose slot is worth checking
+        now, then asks Meet for each one by the meeting code already stored on
+        that row. It no longer lists every conference the service account can
+        see -- that enumerated other teams' interviews too, cost a second API
+        call per space just to learn its meeting code, and threw nearly all of
+        that away. Each selected meeting now costs exactly one Meet call, and
+        the 3-hour affinity window travels to Google as a filter instead of
+        being applied to a wider result set here.
 
         Args:
             session: SQLAlchemy database session for transactional operations.
-            lookback_hours: Number of hours back from now to search for ended conferences.
+            lookback_hours: How far back from now this run reaches. A meeting is
+                selected when its own affinity window overlaps that interval, so
+                the selection bounds are wider than the lookback on both sides.
 
         Returns:
             A summary dict with the following keys:
                 - round_id (int): ID of the processed round.
-                - pairs_updated (int): Number of pair records written to the database.
-                - meetings_completed (int): Number of meetings marked as successfully completed.
-                - meetings_absent (int): Number of meetings where an absence was recorded.
-                - meetings_skipped (int): Number of conference records that could not be matched.
-            Returns an empty dict if not currently in the meeting window or no conferences were found.
+                - pairs_updated (int): Number of pairs whose completed_count was
+                  recomputed and committed.
+                - meetings_selected (int): Number of pending meetings this run
+                  picked up. Equals reconciled + no_conference + failed.
+                - meetings_reconciled (int): Number of meetings that had a
+                  conference record and were written back.
+                - meetings_completed (int): Of those, how many came out
+                  successfully completed.
+                - meetings_absent (int): Of those, how many recorded an absence.
+                - meetings_no_conference (int): Number of meetings Meet had no
+                  record for -- nobody joined, or not yet.
+                - meetings_failed (int): Number of meetings that raised while
+                  being processed.
+            Returns an empty dict if not currently in a meeting window.
         """
         round_id = await self.mentorship_round_repository.get_running_round_id(session)
         if not round_id:
@@ -104,54 +122,55 @@ class MeetAttendanceService:
         )
 
         now = datetime.now(timezone.utc)
-        # Fetch conferences ending within the lookback window
-        conferences = await self.google_service.list_ended_conferences(
-            end_time_after=(now - timedelta(hours=lookback_hours)).isoformat(),
-            end_time_before=now.isoformat(),
-        )
-        if not conferences:
-            self.logger.info(
-                "[MeetAttendanceService] sync_attendance: round_id=%s, no conferences "
-                "ended in the last %sh, nothing to reconcile",
-                round_id,
-                lookback_hours,
-            )
-            return {}
-        self.logger.debug(
-            "[MeetAttendanceService] Fetched %d conferences", len(conferences)
-        )
 
         summary = {
             "round_id": round_id,
             "pairs_updated": 0,
+            "meetings_selected": 0,
+            "meetings_reconciled": 0,
             "meetings_completed": 0,
             "meetings_absent": 0,
-            "meetings_skipped": 0,
+            "meetings_no_conference": 0,
+            "meetings_failed": 0,
         }
 
         # Load active pairs, then batch-fetch every pending GOOGLE meeting row
         # across all of them in a single call -- looping per pair here would
-        # reintroduce the N+1 that get_pending_google_meetings_by_pairs exists
+        # reintroduce the N+1 that get_pending_google_meetings_in_window exists
         # to avoid (this was flagged as untested in PR A's review).
         pairs = await self.mentorship_pairs_repository.get_active_pairs_by_round(
             session, round_id
         )
         pair_by_id = {p.pair_id: p for p in pairs}
-        pending_meetings = await self.mentorship_meeting_repository.get_pending_google_meetings_by_pairs(
-            session=session, pair_ids=[p.pair_id for p in pairs]
+
+        # A meeting is in scope when its own attendance affinity window
+        # [start - 3h, end + 3h] overlaps this run's lookback interval
+        # [now - lookback, now]. Two intervals overlap when each one's start is
+        # no later than the other's end, which is exactly these two bounds. The
+        # lower bound is what stops a meeting nobody joined -- it never
+        # completes, so it would otherwise be re-queried for the whole round --
+        # from accumulating; the upper bound keeps meetings that have not
+        # happened yet out.
+        lookback = timedelta(hours=lookback_hours)
+        pending_meetings = await self.mentorship_meeting_repository.get_pending_google_meetings_in_window(
+            session=session,
+            pair_ids=[p.pair_id for p in pairs],
+            ends_after=now - lookback - ATTENDANCE_WINDOW_DELTA,
+            starts_before=now + ATTENDANCE_WINDOW_DELTA,
         )
-        pair_lookup = self._build_pair_lookup(pending_meetings)
-        self.logger.debug(
-            "[MeetAttendanceService] Pair lookup built: %d entries", len(pair_lookup)
-        )
-        if not pair_lookup:
+        summary["meetings_selected"] = len(pending_meetings)
+        if not pending_meetings:
             self.logger.info(
-                "[MeetAttendanceService] sync_attendance: round_id=%s, %d conference(s) "
-                "found but no pair has an unsynced Google meeting, nothing to reconcile",
+                "[MeetAttendanceService] sync_attendance: round_id=%s, no meeting in "
+                "the reconciliation window, nothing to do",
                 round_id,
-                len(conferences),
             )
             return summary
+        self.logger.debug(
+            "[MeetAttendanceService] Selected %d pending meeting(s) across %d pair(s)",
+            len(pending_meetings),
+            len(pairs),
+        )
 
         # Pre-load user entities to reduce database queries
         active_uids = {
@@ -175,48 +194,27 @@ class MeetAttendanceService:
             len(active_uids),
         )
 
-        # Group conference records by space
-        space_to_confs = {}
-        for c in conferences:
-            space_to_confs.setdefault(c.get("space"), []).append(c)
-        self.logger.debug(
-            "[MeetAttendanceService] Processing %d spaces", len(space_to_confs)
-        )
-
         # Pairs whose meeting row was actually written to below -- used both
         # for the pairs_updated count and to recompute completed_count exactly
         # once per pair afterward, regardless of how many of that pair's
         # meetings were touched in this run.
         touched_pair_ids = set()
 
-        for space, conf_list in space_to_confs.items():
+        for meeting in pending_meetings:
             try:
-                meeting_code = await self.google_service.get_meeting_code_for_space(
-                    space
-                )
-                if meeting_code not in pair_lookup:
-                    self.logger.debug(
-                        "[MeetAttendanceService] Space %s: meeting_code=%s not in pair_lookup, skipping",
-                        space,
-                        meeting_code,
-                    )
-                    summary["meetings_skipped"] += 1
-                    continue
-
-                meeting = pair_lookup[meeting_code]
                 pair = pair_by_id[meeting.pair_id]
                 self.logger.debug(
-                    "[MeetAttendanceService] Space %s: matched pair_id=%s, mentor_id=%s, mentee_id=%s, meeting_id=%s",
-                    space,
+                    "[MeetAttendanceService] meeting_id=%s: pair_id=%s, mentor_id=%s, mentee_id=%s, code=%s",
+                    meeting.meeting_id,
                     pair.pair_id,
                     pair.mentor_id,
                     pair.mentee_id,
-                    meeting.meeting_id,
+                    meeting.google_meeting_code,
                 )
                 mentor = user_by_id.get(pair.mentor_id)
                 mentee = user_by_id.get(pair.mentee_id)
 
-                # get_pending_google_meetings_by_pairs already restricts to
+                # get_pending_google_meetings_in_window already restricts to
                 # is_completed=False rows -- no "already completed" re-check
                 # is needed (or wanted) here.
                 scheduled_start = meeting.start_datetime
@@ -226,30 +224,30 @@ class MeetAttendanceService:
                 window_start = scheduled_start - ATTENDANCE_WINDOW_DELTA
                 window_end = scheduled_end + ATTENDANCE_WINDOW_DELTA
 
-                filtered_conf_list = []
-                for c in conf_list:
-                    c_start = isoparse(c["start_time"])
-                    # Only include conference instances that started within the window
-                    # (excludes test calls or unrelated early/late instances)
-                    if window_start <= c_start <= window_end:
-                        filtered_conf_list.append(c)
-                    else:
-                        self.logger.debug(
-                            "[MeetAttendanceService] Space %s: Ignoring instance started at %s (outside 3h window)",
-                            space,
-                            c_start,
-                        )
-
-                if not filtered_conf_list:
+                # The affinity window goes to Meet as a filter instead of being
+                # applied to a wider result set in Python. Same predicate as the
+                # old `window_start <= c_start <= window_end` loop, evaluated
+                # server-side -- which is why there is no second filter here.
+                conf_list = await self.google_service.list_conferences_by_meeting_code(
+                    meeting.google_meeting_code,
+                    window_start.isoformat(),
+                    window_end.isoformat(),
+                )
+                if not conf_list:
                     self.logger.debug(
-                        "[MeetAttendanceService] Space %s: No instances found within the 3h affinity window",
-                        space,
+                        "[MeetAttendanceService] meeting_id=%s code=%s: no conference "
+                        "record in [%s, %s]",
+                        meeting.meeting_id,
+                        meeting.google_meeting_code,
+                        window_start,
+                        window_end,
                     )
+                    summary["meetings_no_conference"] += 1
                     continue
 
-                # Fetch and resolve identities for the filtered conferences
+                # Fetch and resolve identities for this meeting's conferences
                 raw_by_conf = {}
-                for c in filtered_conf_list:
+                for c in conf_list:
                     raw_by_conf[
                         c["name"]
                     ] = await self.google_service.fetch_participants_for_record(
@@ -262,8 +260,8 @@ class MeetAttendanceService:
 
                 target_secs = max((scheduled_end - scheduled_start).total_seconds(), 60)
                 self.logger.debug(
-                    "[MeetAttendanceService] Space %s: scheduled=%s to %s, target_secs=%.0f",
-                    space,
+                    "[MeetAttendanceService] meeting_id=%s: scheduled=%s to %s, target_secs=%.0f",
+                    meeting.meeting_id,
                     scheduled_start,
                     scheduled_end,
                     target_secs,
@@ -271,7 +269,7 @@ class MeetAttendanceService:
 
                 # Map participant logs into Time Interval Trees for overlap calculation
                 role_trees, anon_trees = self._build_attendee_interval_trees(
-                    filtered_conf_list,
+                    conf_list,
                     raw_by_conf,
                     identity_map,
                     mentor,
@@ -279,8 +277,8 @@ class MeetAttendanceService:
                     emails_by_id,
                 )
                 self.logger.debug(
-                    "[MeetAttendanceService] Space %s: mentor_intervals=%d, mentee_intervals=%d, anon_keys=%s",
-                    space,
+                    "[MeetAttendanceService] meeting_id=%s: mentor_intervals=%d, mentee_intervals=%d, anon_keys=%s",
+                    meeting.meeting_id,
                     len(role_trees["mentor"]),
                     len(role_trees["mentee"]),
                     list(anon_trees.keys()),
@@ -314,8 +312,8 @@ class MeetAttendanceService:
                     meet_detail,
                 )
                 self.logger.debug(
-                    "[MeetAttendanceService] Space %s: result=%s",
-                    space,
+                    "[MeetAttendanceService] meeting_id=%s: result=%s",
+                    meeting.meeting_id,
                     result.model_dump(),
                 )
 
@@ -333,6 +331,7 @@ class MeetAttendanceService:
                 meeting.has_insufficient_duration = result.has_insufficient_duration
                 meeting.last_sync_at = now
 
+                summary["meetings_reconciled"] += 1
                 if result.is_completed:
                     summary["meetings_completed"] += 1
                 if result.absent_user_id or result.has_unknown_absent:
@@ -341,9 +340,11 @@ class MeetAttendanceService:
                 touched_pair_ids.add(pair.pair_id)
             except Exception as e:
                 self.logger.error(
-                    "[MeetAttendanceService] Failed to process space %s: %s", space, e
+                    "[MeetAttendanceService] Failed to process meeting_id=%s: %s",
+                    meeting.meeting_id,
+                    e,
                 )
-                summary["meetings_skipped"] += 1
+                summary["meetings_failed"] += 1
 
         if touched_pair_ids:
             for pair_id in touched_pair_ids:
@@ -876,26 +877,6 @@ class MeetAttendanceService:
                     min(iv_a.end, iv_b.end) - max(iv_a.begin, iv_b.begin)
                 ).total_seconds()
         return total
-
-    def _build_pair_lookup(
-        self, meetings: list[MentorshipMeetingEntity]
-    ) -> dict[str, MentorshipMeetingEntity]:
-        """
-        Builds a lookup map from Google Meet meeting code to its pending meeting row.
-
-        The rows passed in are expected to already be filtered to GOOGLE-source,
-        not-yet-completed meetings with a non-null google_meeting_code (see
-        MentorshipMeetingRepository.get_pending_google_meetings_by_pairs) --
-        this method indexes that set, it does not re-filter or widen it.
-
-        Args:
-            meetings: Pending GOOGLE meeting rows across the active pairs
-                being processed.
-
-        Returns:
-            A dict mapping google_meeting_code to its MentorshipMeetingEntity row.
-        """
-        return {m.google_meeting_code: m for m in meetings}
 
     def _get_user_emails(
         self, user: UsersEntity | None, emails_by_id: dict[int, list[str]]
