@@ -1,5 +1,6 @@
 import unittest
 from datetime import datetime, timezone, timedelta
+from unittest.mock import patch
 from backend.entity.mentorship_round_entity import MentorshipRoundEntity
 from backend.repository.mentorship_round_repository import MentorshipRoundRepository
 from tests.backend_test.repository_test.base_repository_test_lib import (
@@ -154,6 +155,26 @@ class TestMentorShipRoundRepository(BaseRepositoryTestLib):
         self.assertEqual(updated_mentorship_round.name, "2025-spring-updated")
         self.assertEqual(updated_mentorship_round.mentee_average_score, 4.4)
         self.assertEqual(updated_mentorship_round.required_meetings, 7)
+
+    async def _seed_round(
+        self, match_notification_at=None, meetings_completion_deadline_at=None
+    ):
+        """Insert a MentorshipRoundEntity with the given timeline strings.
+
+        Reused by both the get_running_round_id tests (which pass full ISO
+        timestamps) and the get_running_rounds tests (which also exercise a
+        bare YYYY-MM-DD form).
+        """
+        round_entity = MentorshipRoundEntity(
+            name="seeded-round",
+            description={
+                "match_notification_at": match_notification_at,
+                "meetings_completion_deadline_at": meetings_completion_deadline_at,
+            },
+            required_meetings=5,
+        )
+        await self.insert_entities([round_entity])
+        return round_entity
 
     async def test_get_running_round_id_within_window(self):
         """Test returns round_id when now falls within the meeting window."""
@@ -336,6 +357,118 @@ class TestMentorShipRoundRepository(BaseRepositoryTestLib):
         result = await self.repo.get_running_round_id(self.session)
 
         self.assertIsNone(result)
+
+    # --- get_running_rounds ---
+
+    async def test_running_rounds_returns_the_window_bounds(self):
+        round_ = await self._seed_round(
+            match_notification_at="2026-04-01T00:00:00+00:00",
+            meetings_completion_deadline_at="2026-04-30T00:00:00+00:00",
+        )
+        repo = MentorshipRoundRepository()
+
+        with patch(
+            "backend.repository.mentorship_round_repository.datetime"
+        ) as mock_datetime:
+            mock_datetime.now.return_value = datetime(
+                2026, 4, 15, tzinfo=timezone.utc
+            )
+            rows = await repo.get_running_rounds(self.session, timedelta(hours=8))
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].round_id, round_.round_id)
+        self.assertEqual(
+            rows[0].window_start, datetime(2026, 4, 1, tzinfo=timezone.utc)
+        )
+        self.assertEqual(
+            rows[0].window_end, datetime(2026, 4, 30, tzinfo=timezone.utc)
+        )
+
+    async def test_running_rounds_grace_extends_only_the_selection(self):
+        """Inside the grace the round is still returned, and window_end is
+        still the un-widened deadline -- the grace must not leak into the
+        bounds meetings get filtered against."""
+        await self._seed_round(
+            match_notification_at="2026-04-01T00:00:00+00:00",
+            meetings_completion_deadline_at="2026-04-30T00:00:00+00:00",
+        )
+        repo = MentorshipRoundRepository()
+
+        with patch(
+            "backend.repository.mentorship_round_repository.datetime"
+        ) as mock_datetime:
+            mock_datetime.now.return_value = datetime(
+                2026, 4, 30, 6, 0, tzinfo=timezone.utc  # deadline + 6h
+            )
+            rows = await repo.get_running_rounds(self.session, timedelta(hours=8))
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(
+            rows[0].window_end, datetime(2026, 4, 30, tzinfo=timezone.utc)
+        )
+
+    async def test_running_rounds_past_the_grace_returns_nothing(self):
+        await self._seed_round(
+            match_notification_at="2026-04-01T00:00:00+00:00",
+            meetings_completion_deadline_at="2026-04-30T00:00:00+00:00",
+        )
+        repo = MentorshipRoundRepository()
+
+        with patch(
+            "backend.repository.mentorship_round_repository.datetime"
+        ) as mock_datetime:
+            mock_datetime.now.return_value = datetime(
+                2026, 4, 30, 10, 0, tzinfo=timezone.utc  # deadline + 10h > 8h grace
+            )
+            rows = await repo.get_running_rounds(self.session, timedelta(hours=8))
+
+        self.assertEqual(rows, [])
+
+    async def test_running_rounds_tolerates_a_bare_date_timeline(self):
+        """backfill writes YYYY-MM-DD while rounds_service writes ISO with an
+        offset. The cast happens in SQL precisely so both work; isoparse would
+        return a naive datetime for the bare form and raise on comparison."""
+        round_ = await self._seed_round(
+            match_notification_at="2026-04-01",
+            meetings_completion_deadline_at="2026-04-30",
+        )
+        repo = MentorshipRoundRepository()
+
+        with patch(
+            "backend.repository.mentorship_round_repository.datetime"
+        ) as mock_datetime:
+            mock_datetime.now.return_value = datetime(
+                2026, 4, 15, tzinfo=timezone.utc
+            )
+            rows = await repo.get_running_rounds(self.session, timedelta(hours=8))
+
+        self.assertEqual([r.round_id for r in rows], [round_.round_id])
+        self.assertIsNotNone(rows[0].window_start.tzinfo)
+
+    async def test_running_rounds_orders_overlapping_rounds_deterministically(self):
+        """Two rounds covering `now` must come back in a fixed order, so the
+        caller always picks the same one and can report the other."""
+        first = await self._seed_round(
+            match_notification_at="2026-04-01T00:00:00+00:00",
+            meetings_completion_deadline_at="2026-04-30T00:00:00+00:00",
+        )
+        second = await self._seed_round(
+            match_notification_at="2026-04-10T00:00:00+00:00",
+            meetings_completion_deadline_at="2026-05-10T00:00:00+00:00",
+        )
+        repo = MentorshipRoundRepository()
+
+        with patch(
+            "backend.repository.mentorship_round_repository.datetime"
+        ) as mock_datetime:
+            mock_datetime.now.return_value = datetime(
+                2026, 4, 15, tzinfo=timezone.utc
+            )
+            rows = await repo.get_running_rounds(self.session, timedelta(hours=8))
+
+        self.assertEqual(
+            [r.round_id for r in rows], sorted([first.round_id, second.round_id])
+        )
 
 
 if __name__ == "__main__":
