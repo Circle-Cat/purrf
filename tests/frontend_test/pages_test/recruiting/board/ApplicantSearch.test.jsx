@@ -267,6 +267,26 @@ describe("ApplicantSearch", () => {
     expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
   });
 
+  it("closes an open results panel when a subsequent search fails", async () => {
+    const user = userEvent.setup();
+    api.searchBoardApplicants.mockResolvedValueOnce({
+      data: { hits: [hit()], truncated: false },
+    });
+    renderSearch();
+
+    await typeTerm(user, "zhang");
+    await user.click(screen.getByRole("button", { name: "Search" }));
+    expect(await screen.findByRole("option")).toBeInTheDocument();
+
+    api.searchBoardApplicants.mockRejectedValueOnce(new Error("boom"));
+    await user.click(screen.getByRole("button", { name: "Search" }));
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith("boom");
+    });
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+  });
+
   it("clears results when the job changes", async () => {
     const user = userEvent.setup();
     api.searchBoardApplicants.mockResolvedValue({

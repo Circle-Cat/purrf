@@ -44,6 +44,11 @@ const ApplicantSearch = ({ selectedJobId, onSelect }) => {
     setResult(null);
   }, [selectedJobId]);
 
+  const closePanel = useCallback(() => {
+    setResult(null);
+    setActiveIndex(-1);
+  }, []);
+
   const runSearch = useCallback(async () => {
     if (!canSearch) return;
     setSearching(true);
@@ -55,16 +60,15 @@ const ApplicantSearch = ({ selectedJobId, onSelect }) => {
       setResult({ hits: data?.hits ?? [], truncated: !!data?.truncated });
       setActiveIndex(-1);
     } catch (e) {
+      // A failed search must never leave a previous term's results on
+      // screen behind the error toast — that reads as a match for the
+      // term just submitted and invites clicking the wrong person.
+      closePanel();
       toast.error(e.message);
     } finally {
       setSearching(false);
     }
-  }, [canSearch, term, allPostings, selectedJobId]);
-
-  const closePanel = useCallback(() => {
-    setResult(null);
-    setActiveIndex(-1);
-  }, []);
+  }, [canSearch, term, allPostings, selectedJobId, closePanel]);
 
   const handleKeyDown = useCallback(
     (e) => {
