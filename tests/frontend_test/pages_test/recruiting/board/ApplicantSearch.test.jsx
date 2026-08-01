@@ -286,3 +286,81 @@ describe("ApplicantSearch", () => {
     );
   });
 });
+
+describe("ApplicantSearch keyboard and dismissal", () => {
+  const openPanelWithTwoHits = async (user, onSelect = vi.fn()) => {
+    api.searchBoardApplicants.mockResolvedValue({
+      data: {
+        hits: [hit({ applicationId: 10 }), hit({ applicationId: 11 })],
+        truncated: false,
+      },
+    });
+    render(
+      <div>
+        <ApplicantSearch selectedJobId={1} onSelect={onSelect} />
+        <button type="button">outside</button>
+      </div>,
+    );
+    await typeTerm(user, "zhang");
+    await user.click(screen.getByRole("button", { name: "Search" }));
+    await screen.findAllByRole("option");
+    return onSelect;
+  };
+
+  it("opens the highlighted row on Enter after ArrowDown", async () => {
+    const user = userEvent.setup();
+    const onSelect = await openPanelWithTwoHits(user);
+
+    await user.keyboard("{ArrowDown}{ArrowDown}{Enter}");
+
+    expect(onSelect).toHaveBeenCalledWith(11);
+  });
+
+  it("wraps ArrowUp from the top to the last row", async () => {
+    const user = userEvent.setup();
+    const onSelect = await openPanelWithTwoHits(user);
+
+    await user.keyboard("{ArrowUp}{Enter}");
+
+    expect(onSelect).toHaveBeenCalledWith(11);
+  });
+
+  it("Enter re-runs the search when no row is highlighted", async () => {
+    const user = userEvent.setup();
+    await openPanelWithTwoHits(user);
+
+    await user.keyboard("{Enter}");
+
+    await waitFor(() => {
+      expect(api.searchBoardApplicants).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it("closes the panel on Escape and returns focus to the input", async () => {
+    const user = userEvent.setup();
+    await openPanelWithTwoHits(user);
+
+    await user.keyboard("{Escape}");
+
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Search by name or email")).toHaveFocus();
+  });
+
+  it("closes the panel when clicking outside it", async () => {
+    const user = userEvent.setup();
+    await openPanelWithTwoHits(user);
+
+    await user.click(screen.getByRole("button", { name: "outside" }));
+
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+  });
+
+  it("closes the panel when the input is cleared", async () => {
+    const user = userEvent.setup();
+    await openPanelWithTwoHits(user);
+
+    await user.clear(screen.getByPlaceholderText("Search by name or email"));
+
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+  });
+});

@@ -32,6 +32,9 @@ const ApplicantSearch = ({ selectedJobId, onSelect }) => {
   const [result, setResult] = useState(null);
   const [searching, setSearching] = useState(false);
   const inputRef = useRef(null);
+  const containerRef = useRef(null);
+  /** Index into `result.hits`, or -1 when nothing is highlighted. */
+  const [activeIndex, setActiveIndex] = useState(-1);
 
   const canSearch = term.trim().length > 0 && !searching;
 
@@ -50,6 +53,7 @@ const ApplicantSearch = ({ selectedJobId, onSelect }) => {
         currentJobId: selectedJobId,
       });
       setResult({ hits: data?.hits ?? [], truncated: !!data?.truncated });
+      setActiveIndex(-1);
     } catch (e) {
       toast.error(e.message);
     } finally {
@@ -57,28 +61,68 @@ const ApplicantSearch = ({ selectedJobId, onSelect }) => {
     }
   }, [canSearch, term, allPostings, selectedJobId]);
 
+  const closePanel = useCallback(() => {
+    setResult(null);
+    setActiveIndex(-1);
+  }, []);
+
   const handleKeyDown = useCallback(
     (e) => {
-      if (e.key === "Enter") {
+      const hits = result?.hits ?? [];
+      if (e.key === "ArrowDown" && hits.length) {
         e.preventDefault();
-        runSearch();
+        setActiveIndex((i) => (i + 1) % hits.length);
+      } else if (e.key === "ArrowUp" && hits.length) {
+        e.preventDefault();
+        setActiveIndex((i) => (i <= 0 ? hits.length - 1 : i - 1));
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        closePanel();
+        inputRef.current?.focus();
+      } else if (e.key === "Enter") {
+        // preventDefault also suppresses the native activation of whichever
+        // button currently has focus, so Enter can't both open a row and
+        // re-trigger Search.
+        e.preventDefault();
+        // Enter means "open the row I'm on" only while a row is highlighted;
+        // otherwise it still means "search".
+        if (activeIndex >= 0 && hits[activeIndex]) {
+          onSelect(hits[activeIndex].applicationId);
+        } else {
+          runSearch();
+        }
       }
     },
-    [runSearch],
+    [result, activeIndex, closePanel, onSelect, runSearch],
   );
+
+  // mousedown, not blur: blur fires before a result row's click and would
+  // unmount the row out from under the pointer, swallowing the selection.
+  useEffect(() => {
+    if (!result) return;
+    const onMouseDown = (e) => {
+      if (!containerRef.current?.contains(e.target)) closePanel();
+    };
+    document.addEventListener("mousedown", onMouseDown);
+    return () => document.removeEventListener("mousedown", onMouseDown);
+  }, [result, closePanel]);
 
   return (
     // The key handler sits on the container, not the input: after clicking
     // Search the focus is on the button, and Enter/arrows/Escape must keep
     // working from there. Events from every control bubble up to here.
-    <div className="relative" onKeyDown={handleKeyDown}>
+    <div className="relative" ref={containerRef} onKeyDown={handleKeyDown}>
       <div className="flex items-center gap-2">
         <input
           ref={inputRef}
           type="text"
           value={term}
           placeholder="Search by name or email"
-          onChange={(e) => setTerm(e.target.value)}
+          onChange={(e) => {
+            setTerm(e.target.value);
+            // Clearing the box is a dismissal, not an edit.
+            if (e.target.value.trim() === "") closePanel();
+          }}
           className="h-9 w-64 rounded-md border border-border px-3 text-sm"
         />
         <button
@@ -109,15 +153,17 @@ const ApplicantSearch = ({ selectedJobId, onSelect }) => {
             // direct child of the role="listbox", and a <li> in between
             // breaks that relationship.
             <div role="listbox" className="max-h-80 overflow-y-auto py-1">
-              {result.hits.map((h) => (
+              {result.hits.map((h, index) => (
                 <button
                   key={h.applicationId}
                   type="button"
                   role="option"
-                  aria-selected="false"
+                  aria-selected={index === activeIndex}
                   data-application-id={String(h.applicationId)}
                   onClick={() => onSelect(h.applicationId)}
-                  className="w-full px-3 py-2 text-left hover:bg-slate-50"
+                  className={`w-full px-3 py-2 text-left hover:bg-slate-50 ${
+                    index === activeIndex ? "bg-slate-100" : ""
+                  }`}
                 >
                   <p className="text-sm font-medium text-slate-900">
                     {h.applicantName}
