@@ -265,17 +265,49 @@ class BoardService:
         self.interview_scheduling_service = interview_scheduling_service
         self.onboarding_training_service = onboarding_training_service
 
+    async def _visible_jobs(
+        self, session: AsyncSession, current_user: UserContextDto
+    ) -> list[JobEntity]:
+        """Every job the caller may open the board for.
+
+        The single definition of "the caller's boards", shared by the job
+        switcher (``list_my_jobs``) and applicant search
+        (``search_applicants``). Keeping one definition is the point: if the
+        two drifted, search could surface a job the switcher cannot select.
+
+        Fetches every job via the same list-all repository call
+        ``JobService.list_all_jobs`` uses and filters in Python: a caller who
+        holds ``Permission.RECRUITING_APPLICATION_READ_ALL`` gets every job;
+        everyone else gets only the jobs they're a configured owner of.
+        That's fine at dogfood scale (a handful of postings); an
+        owner-indexed query would be worth adding if the job table grows.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            current_user (UserContextDto): The authenticated caller.
+
+        Returns:
+            list[JobEntity]: Jobs the caller may open the board for, in the
+                repository's order.
+        """
+        jobs = await self.job_repository.list_all(session)
+        has_read_all = current_user.has_permission(
+            Permission.RECRUITING_APPLICATION_READ_ALL
+        )
+        return [
+            job
+            for job in jobs
+            if has_read_all
+            or current_user.user_id in normalized_owner_ids(job.pipeline_config)
+        ]
+
     async def list_my_jobs(
         self, session: AsyncSession, current_user: UserContextDto
     ) -> list[BoardJobDto]:
         """List jobs the caller may open the board for, for the job switcher.
 
-        Fetches every job via the same list-all repository call
-        ``JobService.list_all_jobs`` uses, and filters in Python: a caller
-        who holds ``Permission.RECRUITING_APPLICATION_READ_ALL`` gets every
-        job; everyone else gets only the jobs they're a configured owner
-        of. That's fine at dogfood scale (a handful of postings); an
-        owner-indexed query would be worth adding if the job table grows.
+        The visible set comes from ``_visible_jobs``, shared with applicant
+        search; this method only projects it for the switcher.
 
         Args:
             session (AsyncSession): Active database async session.
@@ -286,10 +318,6 @@ class BoardService:
                 with its configured pipeline stages (and each stage's
                 configured round count) in global order.
         """
-        jobs = await self.job_repository.list_all(session)
-        has_read_all = current_user.has_permission(
-            Permission.RECRUITING_APPLICATION_READ_ALL
-        )
         return [
             BoardJobDto(
                 id=job.job_id,
@@ -305,9 +333,7 @@ class BoardService:
                     for stage in stage_machine.configured_stages(job.pipeline_config)
                 ],
             )
-            for job in jobs
-            if has_read_all
-            or current_user.user_id in normalized_owner_ids(job.pipeline_config)
+            for job in await self._visible_jobs(session, current_user)
         ]
 
     async def _require_owner(
