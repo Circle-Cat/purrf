@@ -611,8 +611,10 @@ class TestMentorshipMeetingRepository(BaseRepositoryTestLib):
 
     async def test_in_window_round_bounds_and_sweep_bounds_are_independent(self):
         """A meeting inside the round window but outside this run's sweep
-        window is still excluded, and vice versa -- the two filters are not
-        interchangeable."""
+        window is excluded by the sweep bound; a meeting inside the sweep
+        window but outside the round window is excluded by the round bound.
+        Each direction needs its own fixture -- neither filter can be dropped
+        and have the other one pick up the slack."""
         pair = await self._seed_pair()
         in_round_out_of_sweep = self._google_meeting(
             pair.pair_id,
@@ -620,25 +622,64 @@ class TestMentorshipMeetingRepository(BaseRepositoryTestLib):
             end_datetime=datetime(2026, 4, 2, 11, 0, tzinfo=timezone.utc),
             google_meeting_code="round-only",
         )
+        in_sweep_out_of_round = self._google_meeting(
+            pair.pair_id,
+            start_datetime=datetime(2026, 5, 5, 10, 0, tzinfo=timezone.utc),
+            end_datetime=datetime(2026, 5, 5, 11, 0, tzinfo=timezone.utc),
+            google_meeting_code="sweep-only",
+        )
         keeper = self._google_meeting(
             pair.pair_id,
             start_datetime=datetime(2026, 4, 20, 10, 0, tzinfo=timezone.utc),
             end_datetime=datetime(2026, 4, 20, 11, 0, tzinfo=timezone.utc),
             google_meeting_code="both-okay",
         )
-        await self.insert_entities([in_round_out_of_sweep, keeper])
+        await self.insert_entities(
+            [in_round_out_of_sweep, in_sweep_out_of_round, keeper]
+        )
         repo = MentorshipMeetingRepository()
 
         rows = await repo.get_pending_google_meetings_in_window(
             session=self.session,
             pair_ids=[pair.pair_id],
+            # Sweep window widened to 2026-05-10 so in_sweep_out_of_round
+            # (2026-05-05) is inside the sweep bounds; only the round bound
+            # (ending 2026-04-30) can exclude it.
             ends_after=datetime(2026, 4, 19, tzinfo=timezone.utc),
-            starts_before=datetime(2026, 4, 21, tzinfo=timezone.utc),
+            starts_before=datetime(2026, 5, 10, tzinfo=timezone.utc),
             round_window_start=datetime(2026, 4, 1, tzinfo=timezone.utc),
             round_window_end=datetime(2026, 4, 30, tzinfo=timezone.utc),
         )
 
         self.assertEqual([r.google_meeting_code for r in rows], ["both-okay"])
+
+    async def test_in_window_round_bound_is_on_start_datetime_not_end_datetime(self):
+        """The round window governs when a meeting STARTS, not when it ends.
+        This meeting starts just before the round deadline and runs past it
+        -- it is inside the round. If the round bound were checked against
+        end_datetime instead of start_datetime, this meeting would be wrongly
+        excluded. Do not move the round predicates to end_datetime."""
+        pair = await self._seed_pair()
+        round_window_end = datetime(2026, 4, 30, tzinfo=timezone.utc)
+        straddles_deadline = self._google_meeting(
+            pair.pair_id,
+            start_datetime=round_window_end - timedelta(minutes=10),
+            end_datetime=round_window_end + timedelta(minutes=10),
+            google_meeting_code="straddle-a",
+        )
+        await self.insert_entities([straddles_deadline])
+        repo = MentorshipMeetingRepository()
+
+        rows = await repo.get_pending_google_meetings_in_window(
+            session=self.session,
+            pair_ids=[pair.pair_id],
+            ends_after=datetime(2026, 3, 1, tzinfo=timezone.utc),
+            starts_before=datetime(2026, 6, 1, tzinfo=timezone.utc),
+            round_window_start=datetime(2026, 4, 1, tzinfo=timezone.utc),
+            round_window_end=round_window_end,
+        )
+
+        self.assertEqual([r.google_meeting_code for r in rows], ["straddle-a"])
 
     # --- insert_meeting ---
 
