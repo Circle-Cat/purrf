@@ -322,7 +322,9 @@ describe("ApplicantSearch", () => {
     const listbox = await screen.findByRole("listbox");
 
     const input = screen.getByPlaceholderText("Search by name or email");
-    expect(input.getAttribute("aria-controls")).toBe(listbox.getAttribute("id"));
+    expect(input.getAttribute("aria-controls")).toBe(
+      listbox.getAttribute("id"),
+    );
   });
 
   it("sets aria-activedescendant to the highlighted option's id, and clears it when nothing is highlighted", async () => {
