@@ -161,9 +161,8 @@ class TestMentorShipRoundRepository(BaseRepositoryTestLib):
     ):
         """Insert a MentorshipRoundEntity with the given timeline strings.
 
-        Reused by both the get_running_round_id tests (which pass full ISO
-        timestamps) and the get_running_rounds tests (which also exercise a
-        bare YYYY-MM-DD form).
+        Reused across the get_running_rounds tests: some pass full ISO
+        timestamps, others a bare YYYY-MM-DD form.
         """
         round_entity = MentorshipRoundEntity(
             name="seeded-round",
@@ -176,9 +175,20 @@ class TestMentorShipRoundRepository(BaseRepositoryTestLib):
         await self.insert_entities([round_entity])
         return round_entity
 
-    async def test_get_running_round_id_within_window(self):
-        """Test returns round_id when now falls within the meeting window."""
-        now = datetime.now(timezone.utc)
+    # A fixed reference instant, deliberately outside the shared test
+    # database's known residue window (rounds with a wide-open window
+    # spanning 2026-07-24 through 2026-12-01). The old tests below used the
+    # real wall-clock `datetime.now(timezone.utc)`, which -- on any day that
+    # falls inside that residue window, i.e. right now -- makes a leftover
+    # residue round match right along with the one each test seeds. Mocking
+    # `datetime.now` to this fixed instant, the same way the other
+    # get_running_rounds tests already do, keeps these tests deterministic
+    # and independent of both the wall clock and the residue.
+    _FIXED_NOW = datetime(2026, 4, 15, tzinfo=timezone.utc)
+
+    async def test_running_rounds_within_window(self):
+        """Test returns the round when now falls within the meeting window."""
+        now = self._FIXED_NOW
         round_entity = MentorshipRoundEntity(
             name="active-round",
             description={
@@ -191,13 +201,17 @@ class TestMentorShipRoundRepository(BaseRepositoryTestLib):
         )
         await self.insert_entities([round_entity])
 
-        result = await self.repo.get_running_round_id(self.session)
+        with patch(
+            "backend.repository.mentorship_round_repository.datetime"
+        ) as mock_datetime:
+            mock_datetime.now.return_value = now
+            rows = await self.repo.get_running_rounds(self.session, timedelta(0))
 
-        self.assertEqual(result, round_entity.round_id)
+        self.assertEqual([r.round_id for r in rows], [round_entity.round_id])
 
-    async def test_get_running_round_id_on_start_boundary(self):
-        """Test returns round_id when match_notification_at is just before now (inclusive)."""
-        now = datetime.now(timezone.utc)
+    async def test_running_rounds_on_start_boundary(self):
+        """Test returns the round when match_notification_at is just before now (inclusive)."""
+        now = self._FIXED_NOW
         round_entity = MentorshipRoundEntity(
             name="start-boundary-round",
             description={
@@ -210,32 +224,40 @@ class TestMentorShipRoundRepository(BaseRepositoryTestLib):
         )
         await self.insert_entities([round_entity])
 
-        result = await self.repo.get_running_round_id(self.session)
+        with patch(
+            "backend.repository.mentorship_round_repository.datetime"
+        ) as mock_datetime:
+            mock_datetime.now.return_value = now
+            rows = await self.repo.get_running_rounds(self.session, timedelta(0))
 
-        self.assertEqual(result, round_entity.round_id)
+        self.assertEqual([r.round_id for r in rows], [round_entity.round_id])
 
-    async def test_get_running_round_id_on_end_boundary(self):
-        """Test returns round_id when meetings_completion_deadline_at is just after now (inclusive)."""
-        now = datetime.now(timezone.utc)
+    async def test_running_rounds_on_end_boundary(self):
+        """Test returns the round when now is exactly meetings_completion_deadline_at
+        (inclusive), with zero grace -- so the inclusive boundary is on the
+        deadline itself, not on an approximation of it."""
+        deadline = self._FIXED_NOW
         round_entity = MentorshipRoundEntity(
             name="end-boundary-round",
             description={
-                "match_notification_at": (now - timedelta(days=7)).isoformat(),
-                "meetings_completion_deadline_at": (
-                    now + timedelta(seconds=1)
-                ).isoformat(),
+                "match_notification_at": (deadline - timedelta(days=7)).isoformat(),
+                "meetings_completion_deadline_at": deadline.isoformat(),
             },
             required_meetings=5,
         )
         await self.insert_entities([round_entity])
 
-        result = await self.repo.get_running_round_id(self.session)
+        with patch(
+            "backend.repository.mentorship_round_repository.datetime"
+        ) as mock_datetime:
+            mock_datetime.now.return_value = deadline
+            rows = await self.repo.get_running_rounds(self.session, timedelta(0))
 
-        self.assertEqual(result, round_entity.round_id)
+        self.assertEqual([r.round_id for r in rows], [round_entity.round_id])
 
-    async def test_get_running_round_id_before_window(self):
-        """Test returns None when now is before match_notification_at."""
-        now = datetime.now(timezone.utc)
+    async def test_running_rounds_before_window(self):
+        """Test returns nothing when now is before match_notification_at."""
+        now = self._FIXED_NOW
         round_entity = MentorshipRoundEntity(
             name="future-round",
             description={
@@ -248,13 +270,24 @@ class TestMentorShipRoundRepository(BaseRepositoryTestLib):
         )
         await self.insert_entities([round_entity])
 
-        result = await self.repo.get_running_round_id(self.session)
+        with patch(
+            "backend.repository.mentorship_round_repository.datetime"
+        ) as mock_datetime:
+            mock_datetime.now.return_value = now
+            rows = await self.repo.get_running_rounds(self.session, timedelta(0))
 
-        self.assertIsNone(result)
+        self.assertEqual(rows, [])
 
-    async def test_get_running_round_id_after_window(self):
-        """Test returns None when now is past meetings_completion_deadline_at."""
-        now = datetime.now(timezone.utc)
+    async def test_running_rounds_after_window_with_no_grace_returns_nothing(self):
+        """Test returns nothing when now is well past meetings_completion_deadline_at
+        and there is no grace to extend the selection.
+
+        The old ``after_window`` case's other half -- past the deadline but
+        still inside the grace period -- is covered by
+        ``test_running_rounds_grace_extends_only_the_selection``, which
+        asserts the round is still returned in that situation.
+        """
+        now = self._FIXED_NOW
         round_entity = MentorshipRoundEntity(
             name="past-round",
             description={
@@ -267,18 +300,27 @@ class TestMentorShipRoundRepository(BaseRepositoryTestLib):
         )
         await self.insert_entities([round_entity])
 
-        result = await self.repo.get_running_round_id(self.session)
+        with patch(
+            "backend.repository.mentorship_round_repository.datetime"
+        ) as mock_datetime:
+            mock_datetime.now.return_value = now
+            rows = await self.repo.get_running_rounds(self.session, timedelta(0))
 
-        self.assertIsNone(result)
+        self.assertEqual(rows, [])
 
-    async def test_get_running_round_id_no_rounds(self):
-        """Test returns None when no rounds exist."""
-        result = await self.repo.get_running_round_id(self.session)
+    async def test_running_rounds_no_rounds(self):
+        """Test returns an empty list when no rounds exist."""
+        with patch(
+            "backend.repository.mentorship_round_repository.datetime"
+        ) as mock_datetime:
+            mock_datetime.now.return_value = self._FIXED_NOW
+            rows = await self.repo.get_running_rounds(self.session, timedelta(0))
 
-        self.assertIsNone(result)
+        self.assertEqual(rows, [])
 
-    async def test_get_running_round_id_missing_date_fields(self):
-        """Test returns None when description lacks the required date keys."""
+    async def test_running_rounds_missing_date_fields(self):
+        """Test returns an empty list (not an error) when description lacks
+        the required date keys."""
         round_entity = MentorshipRoundEntity(
             name="no-dates-round",
             description={"goal": "no dates here"},
@@ -286,12 +328,17 @@ class TestMentorShipRoundRepository(BaseRepositoryTestLib):
         )
         await self.insert_entities([round_entity])
 
-        result = await self.repo.get_running_round_id(self.session)
+        with patch(
+            "backend.repository.mentorship_round_repository.datetime"
+        ) as mock_datetime:
+            mock_datetime.now.return_value = self._FIXED_NOW
+            rows = await self.repo.get_running_rounds(self.session, timedelta(0))
 
-        self.assertIsNone(result)
+        self.assertEqual(rows, [])
 
-    async def test_get_running_round_id_null_date_values(self):
-        """Test returns None when date keys exist but their values are JSON null."""
+    async def test_running_rounds_null_date_values(self):
+        """Test returns an empty list (not an error) when date keys exist but
+        their values are JSON null."""
         round_entity = MentorshipRoundEntity(
             name="null-dates-round",
             description={
@@ -302,9 +349,13 @@ class TestMentorShipRoundRepository(BaseRepositoryTestLib):
         )
         await self.insert_entities([round_entity])
 
-        result = await self.repo.get_running_round_id(self.session)
+        with patch(
+            "backend.repository.mentorship_round_repository.datetime"
+        ) as mock_datetime:
+            mock_datetime.now.return_value = self._FIXED_NOW
+            rows = await self.repo.get_running_rounds(self.session, timedelta(0))
 
-        self.assertIsNone(result)
+        self.assertEqual(rows, [])
 
     async def test_update_mentee_average_score(self):
         """Updates mentee_average_score while leaving mentor_average_score unchanged."""
@@ -345,8 +396,9 @@ class TestMentorShipRoundRepository(BaseRepositoryTestLib):
         result = await self.repo.get_by_round_id(self.session, self.rounds[0].round_id)
         self.assertIsNone(result.mentee_average_score)
 
-    async def test_get_running_round_id_null_description(self):
-        """Test returns None when description is null."""
+    async def test_running_rounds_null_description(self):
+        """Test returns an empty list (not an error) when description itself
+        is null."""
         round_entity = MentorshipRoundEntity(
             name="null-description-round",
             description=None,
@@ -354,9 +406,13 @@ class TestMentorShipRoundRepository(BaseRepositoryTestLib):
         )
         await self.insert_entities([round_entity])
 
-        result = await self.repo.get_running_round_id(self.session)
+        with patch(
+            "backend.repository.mentorship_round_repository.datetime"
+        ) as mock_datetime:
+            mock_datetime.now.return_value = self._FIXED_NOW
+            rows = await self.repo.get_running_rounds(self.session, timedelta(0))
 
-        self.assertIsNone(result)
+        self.assertEqual(rows, [])
 
     # --- get_running_rounds ---
 
