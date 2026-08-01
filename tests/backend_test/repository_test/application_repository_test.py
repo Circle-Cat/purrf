@@ -7,6 +7,7 @@ from backend.entity.application_entity import ApplicationEntity
 from backend.entity.application_submission_entity import ApplicationSubmissionEntity
 from backend.entity.email_thread_entity import EmailThreadEntity
 from backend.entity.job_entity import JobEntity
+from backend.entity.user_emails_entity import UserEmailsEntity
 from backend.entity.users_entity import UsersEntity
 from backend.common.communication_enums import ContextType
 from backend.common.recruiting_enums import ApplicationStage, JobKind, JobStatus
@@ -992,6 +993,162 @@ class TestApplicationRepository(BaseRepositoryTestLib):
             [a.application_id for a in with_default],
             [a.application_id for a in with_explicit_none],
         )
+
+    # ---- search_latest_by_jobs -----------------------------------------
+
+    async def _seed_applicant(self, job, first_name, last_name, emails=()):
+        """Create a user with the given email rows and one application to
+        `job`. `emails` is a tuple of (address, is_primary, otp_confirmed)."""
+        user = _make_user(first_name, last_name, "unused@example.com")
+        await self.insert_entities([user])
+        await self.session.flush()
+        for address, is_primary, confirmed in emails:
+            await self.insert_entities([
+                UserEmailsEntity(
+                    user_id=user.user_id,
+                    email=address,
+                    is_primary=is_primary,
+                    otp_confirmed=confirmed,
+                )
+            ])
+        await self.session.flush()
+        application = await self.repo.create(
+            self.session,
+            ApplicationEntity(
+                job_id=job.job_id,
+                user_id=user.user_id,
+                stage=ApplicationStage.APPLIED,
+            ),
+        )
+        return user, application
+
+    async def _seed_job(self, title="T"):
+        job = JobEntity(kind=JobKind.ACTIVITY, title=title, status=JobStatus.PUBLISHED)
+        await self.insert_entities([job])
+        await self.session.flush()
+        return job
+
+    async def test_search_matches_across_first_and_last_name(self):
+        job = await self._seed_job()
+        _, wanted = await self._seed_applicant(job, "Zhang", "Wei")
+        await self._seed_applicant(job, "Li", "Ming")
+
+        rows = await self.repo.search_latest_by_jobs(
+            self.session, [job.job_id], "zhang w", limit=20
+        )
+
+        self.assertEqual([a.application_id for a, _ in rows], [wanted.application_id])
+
+    async def test_search_matches_any_email_row_not_just_the_contact_one(self):
+        job = await self._seed_job()
+        _, wanted = await self._seed_applicant(
+            job,
+            "Zhang",
+            "Wei",
+            emails=(
+                ("primary@example.com", True, True),
+                ("side@example.com", False, False),
+            ),
+        )
+
+        rows = await self.repo.search_latest_by_jobs(
+            self.session, [job.job_id], "side@", limit=20
+        )
+
+        self.assertEqual([a.application_id for a, _ in rows], [wanted.application_id])
+
+    async def test_search_returns_one_row_per_application_despite_many_emails(self):
+        job = await self._seed_job()
+        _, wanted = await self._seed_applicant(
+            job,
+            "Zhang",
+            "Wei",
+            emails=(
+                ("a@example.com", True, True),
+                ("b@example.com", False, True),
+                ("c@example.com", False, True),
+            ),
+        )
+
+        rows = await self.repo.search_latest_by_jobs(
+            self.session, [job.job_id], "example.com", limit=20
+        )
+
+        self.assertEqual([a.application_id for a, _ in rows], [wanted.application_id])
+
+    async def test_search_escapes_sql_wildcards_in_the_term(self):
+        job = await self._seed_job()
+        await self._seed_applicant(job, "Zhang", "Wei")
+        _, literal = await self._seed_applicant(job, "A_B", "Underscore")
+
+        rows = await self.repo.search_latest_by_jobs(
+            self.session, [job.job_id], "a_b", limit=20
+        )
+
+        self.assertEqual([a.application_id for a, _ in rows], [literal.application_id])
+
+    async def test_search_finds_applicant_with_no_email_rows_by_name(self):
+        job = await self._seed_job()
+        _, wanted = await self._seed_applicant(job, "Zhang", "Wei")
+
+        rows = await self.repo.search_latest_by_jobs(
+            self.session, [job.job_id], "zhang", limit=20
+        )
+
+        self.assertEqual([a.application_id for a, _ in rows], [wanted.application_id])
+
+    async def test_search_returns_only_the_latest_attempt_per_job_and_user(self):
+        job = await self._seed_job()
+        user, older = await self._seed_applicant(job, "Zhang", "Wei")
+        older.stage = ApplicationStage.REJECTED
+        await self.session.flush()
+        newer = await self.repo.create(
+            self.session,
+            ApplicationEntity(
+                job_id=job.job_id,
+                user_id=user.user_id,
+                stage=ApplicationStage.APPLIED,
+            ),
+        )
+
+        rows = await self.repo.search_latest_by_jobs(
+            self.session, [job.job_id], "zhang", limit=20
+        )
+
+        self.assertEqual([a.application_id for a, _ in rows], [newer.application_id])
+
+    async def test_search_spans_several_jobs_and_ignores_jobs_not_listed(self):
+        job_a = await self._seed_job("A")
+        job_b = await self._seed_job("B")
+        job_c = await self._seed_job("C")
+        _, in_a = await self._seed_applicant(job_a, "Zhang", "Wei")
+        _, in_b = await self._seed_applicant(job_b, "Zhang", "Min")
+        await self._seed_applicant(job_c, "Zhang", "Hidden")
+
+        rows = await self.repo.search_latest_by_jobs(
+            self.session, [job_a.job_id, job_b.job_id], "zhang", limit=20
+        )
+
+        self.assertEqual(
+            {a.application_id for a, _ in rows},
+            {in_a.application_id, in_b.application_id},
+        )
+
+    async def test_search_returns_nothing_for_empty_job_ids(self):
+        rows = await self.repo.search_latest_by_jobs(self.session, [], "zhang", limit=20)
+
+        self.assertEqual(rows, [])
+
+    async def test_search_honours_the_limit(self):
+        job = await self._seed_job()
+        for i in range(3):
+            await self._seed_applicant(job, "Zhang", f"N{i}")
+
+        rows = await self.repo.search_latest_by_jobs(
+            self.session, [job.job_id], "zhang", limit=2
+        )
+
+        self.assertEqual(len(rows), 2)
 
 
 if __name__ == "__main__":
