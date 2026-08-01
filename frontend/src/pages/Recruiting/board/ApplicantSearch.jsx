@@ -189,7 +189,7 @@ const ApplicantSearch = ({ selectedJobId, onSelect }) => {
           )}
           {result.truncated && (
             <p className="border-t border-border px-3 py-2 text-xs text-muted-foreground">
-              Showing first 20 matches — refine your search
+              Showing first {result.hits.length} matches — refine your search
             </p>
           )}
         </div>

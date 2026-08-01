@@ -238,18 +238,24 @@ describe("ApplicantSearch", () => {
     expect(await screen.findByText("No matches")).toBeInTheDocument();
   });
 
-  it("shows the truncation notice when the backend flags it", async () => {
+  it("shows the truncation notice derived from the actual number of hits rendered", async () => {
     const user = userEvent.setup();
+    // 7 hits, not 1: proves the count tracks result.hits.length rather than
+    // a hardcoded cap that happens to still read "20" today.
+    const hits = Array.from({ length: 7 }, (_, i) =>
+      hit({ applicationId: i + 1 }),
+    );
     api.searchBoardApplicants.mockResolvedValue({
-      data: { hits: [hit()], truncated: true },
+      data: { hits, truncated: true },
     });
     renderSearch();
 
     await typeTerm(user, "zhang");
     await user.click(screen.getByRole("button", { name: "Search" }));
 
+    expect(await screen.findAllByRole("option")).toHaveLength(7);
     expect(
-      await screen.findByText("Showing first 20 matches — refine your search"),
+      screen.getByText("Showing first 7 matches — refine your search"),
     ).toBeInTheDocument();
   });
 
