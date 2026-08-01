@@ -60,6 +60,11 @@ INTERVIEW_STAGES = {
 TERMINAL_PAGE_SIZE = 20
 TERMINAL_STAGES = (ApplicationStage.REJECTED, ApplicationStage.HIRED)
 
+# Max applicant-search hits returned to the board. Search is navigation, not
+# browsing: needing a second page means the term should be narrower, so the
+# response carries a `truncated` flag instead of an offset.
+SEARCH_RESULT_LIMIT = 20
+
 # Per-event-type map of (raw assignee id field in `details`) -> (resolved
 # name field to add). get_application_activity uses this to know which
 # fields to look up and inject, without hardcoding each event type inline.
@@ -265,17 +270,49 @@ class BoardService:
         self.interview_scheduling_service = interview_scheduling_service
         self.onboarding_training_service = onboarding_training_service
 
+    async def _visible_jobs(
+        self, session: AsyncSession, current_user: UserContextDto
+    ) -> list[JobEntity]:
+        """Every job the caller may open the board for.
+
+        The single definition of "the caller's boards", shared by the job
+        switcher (``list_my_jobs``) and applicant search
+        (``search_applicants``). Keeping one definition is the point: if the
+        two drifted, search could surface a job the switcher cannot select.
+
+        Fetches every job via the same list-all repository call
+        ``JobService.list_all_jobs`` uses and filters in Python: a caller who
+        holds ``Permission.RECRUITING_APPLICATION_READ_ALL`` gets every job;
+        everyone else gets only the jobs they're a configured owner of.
+        That's fine at dogfood scale (a handful of postings); an
+        owner-indexed query would be worth adding if the job table grows.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            current_user (UserContextDto): The authenticated caller.
+
+        Returns:
+            list[JobEntity]: Jobs the caller may open the board for, in the
+                repository's order.
+        """
+        jobs = await self.job_repository.list_all(session)
+        has_read_all = current_user.has_permission(
+            Permission.RECRUITING_APPLICATION_READ_ALL
+        )
+        return [
+            job
+            for job in jobs
+            if has_read_all
+            or current_user.user_id in normalized_owner_ids(job.pipeline_config)
+        ]
+
     async def list_my_jobs(
         self, session: AsyncSession, current_user: UserContextDto
     ) -> list[BoardJobDto]:
         """List jobs the caller may open the board for, for the job switcher.
 
-        Fetches every job via the same list-all repository call
-        ``JobService.list_all_jobs`` uses, and filters in Python: a caller
-        who holds ``Permission.RECRUITING_APPLICATION_READ_ALL`` gets every
-        job; everyone else gets only the jobs they're a configured owner
-        of. That's fine at dogfood scale (a handful of postings); an
-        owner-indexed query would be worth adding if the job table grows.
+        The visible set comes from ``_visible_jobs``, shared with applicant
+        search; this method only projects it for the switcher.
 
         Args:
             session (AsyncSession): Active database async session.
@@ -286,10 +323,6 @@ class BoardService:
                 with its configured pipeline stages (and each stage's
                 configured round count) in global order.
         """
-        jobs = await self.job_repository.list_all(session)
-        has_read_all = current_user.has_permission(
-            Permission.RECRUITING_APPLICATION_READ_ALL
-        )
         return [
             BoardJobDto(
                 id=job.job_id,
@@ -305,10 +338,91 @@ class BoardService:
                     for stage in stage_machine.configured_stages(job.pipeline_config)
                 ],
             )
-            for job in jobs
-            if has_read_all
-            or current_user.user_id in normalized_owner_ids(job.pipeline_config)
+            for job in await self._visible_jobs(session, current_user)
         ]
+
+    async def search_applicants(
+        self,
+        session: AsyncSession,
+        current_user: UserContextDto,
+        q: str,
+        *,
+        job_id: int | None = None,
+        current_job_id: int | None = None,
+    ) -> dict:
+        """Find applicants by name or email across the caller's boards.
+
+        Scoped to ``_visible_jobs`` — the same set the job switcher shows —
+        so search can never surface a posting the caller cannot already
+        open. Within that set, ``job_id`` narrows to one posting; omitting it
+        searches all of them.
+
+        Only each (job, user) pair's LATEST application is considered, so
+        every hit corresponds to a card the board can show.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            current_user (UserContextDto): The authenticated caller.
+            q (str): The search term. Blank (or whitespace-only) returns no
+                hits without touching the database.
+            job_id (int | None): Narrow the search to this posting. None
+                searches every visible posting.
+            current_job_id (int | None): The posting currently open on the
+                board. Affects ORDERING only — its hits float to the front —
+                never which rows are returned.
+
+        Returns:
+            dict: ``{"hits": [BoardApplicantHitDto], "truncated": bool}``.
+                ``truncated`` is a flag, not a count: an exact total would
+                cost a second COUNT for a number the UI uses only to decide
+                whether to print one line of text.
+
+        Raises:
+            ValueError: If ``job_id`` is given and is not a posting the
+                caller may open.
+        """
+        jobs = await self._visible_jobs(session, current_user)
+        jobs_by_id = {job.job_id: job for job in jobs}
+        if job_id is not None:
+            if job_id not in jobs_by_id:
+                raise ValueError("you are not an owner of this job")
+            search_ids = [job_id]
+        else:
+            search_ids = list(jobs_by_id)
+
+        term = q.strip()
+        if not term or not search_ids:
+            return {"hits": [], "truncated": False}
+
+        # One row past the cap is how truncation is detected without a COUNT.
+        rows = await self.application_repository.search_latest_by_jobs(
+            session, search_ids, term, limit=SEARCH_RESULT_LIMIT + 1
+        )
+        truncated = len(rows) > SEARCH_RESULT_LIMIT
+        rows = rows[:SEARCH_RESULT_LIMIT]
+
+        contact_by_user_id = (
+            await self.user_emails_repository.get_contact_emails_by_user_ids(
+                session, [user.user_id for _, user in rows]
+            )
+        )
+        hits = [
+            self.recruiting_mapper.to_board_applicant_hit_dto(
+                application,
+                user,
+                jobs_by_id[application.job_id],
+                applicant_email=contact_by_user_id.get(user.user_id, ""),
+            )
+            for application, user in rows
+        ]
+        # Presentation-only reordering, applied AFTER the cap: floating the
+        # open posting's hits to the front must never change WHICH rows
+        # survive, or an older current-job hit could be hidden behind newer
+        # ones from other postings. `sorted` is stable, so within each group
+        # the repository's recency order is preserved.
+        if current_job_id is not None:
+            hits.sort(key=lambda hit: hit.job_id != current_job_id)
+        return {"hits": hits, "truncated": truncated}
 
     async def _require_owner(
         self,

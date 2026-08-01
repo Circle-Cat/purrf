@@ -6,6 +6,7 @@ from backend.common.recruiting_enums import ApplicationStage, JobKind
 from backend.entity.application_entity import ApplicationEntity
 from backend.entity.email_thread_entity import EmailThreadEntity
 from backend.entity.job_entity import JobEntity
+from backend.entity.user_emails_entity import UserEmailsEntity
 from backend.entity.users_entity import UsersEntity
 from sqlalchemy import Date, and_, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -105,6 +106,75 @@ class ApplicationRepository:
             )
             .limit(limit)
             .offset(offset)
+        )
+        return [tuple(row) for row in result.all()]
+
+    async def search_latest_by_jobs(
+        self,
+        session: AsyncSession,
+        job_ids: list[int],
+        term: str,
+        limit: int,
+    ) -> list[tuple[ApplicationEntity, UsersEntity]]:
+        """Search several jobs' latest-per-(job, user) applications by
+        applicant name or any of the applicant's email addresses.
+
+        Latest-per-(job, user) mirrors ``list_by_job``, so every hit
+        corresponds to a card the board can actually show — an older rejected
+        attempt is history on the detail page and never surfaces here.
+
+        The email predicate is an EXISTS subquery, not a join: a user may
+        hold several rows in ``user_emails``, and a join would multiply the
+        result rows. It deliberately matches addresses the board never
+        DISPLAYS — a card shows only the contact address picked by
+        ``UserEmailsRepository.get_contact_emails_by_user_ids`` — because a
+        searcher cannot know which of someone's addresses is primary. It also
+        does not filter on ``otp_confirmed``: the display path doesn't
+        either, and a search narrower than the display would leave visible
+        addresses unsearchable.
+
+        Args:
+            session (AsyncSession): The active DB session.
+            job_ids (list[int]): Jobs to search within. Empty returns [] with
+                no query.
+            term (str): Case-insensitive substring. SQL wildcards inside it
+                are escaped, so a literal ``%`` or ``_`` matches itself.
+            limit (int): Max rows to return.
+
+        Returns:
+            list[tuple[ApplicationEntity, UsersEntity]]: (application, user)
+                pairs ordered by created_datetime desc, application_id desc.
+        """
+        if not job_ids:
+            return []
+        latest_ids = (
+            select(func.max(ApplicationEntity.application_id))
+            .where(ApplicationEntity.job_id.in_(job_ids))
+            .group_by(ApplicationEntity.job_id, ApplicationEntity.user_id)
+        )
+        pattern = term.lower()
+        full_name = func.lower(UsersEntity.first_name + " " + UsersEntity.last_name)
+        email_match = (
+            select(UserEmailsEntity.email_id)
+            .where(
+                UserEmailsEntity.user_id == UsersEntity.user_id,
+                func.lower(UserEmailsEntity.email).contains(pattern, autoescape=True),
+            )
+            .exists()
+        )
+        result = await session.execute(
+            select(ApplicationEntity, UsersEntity)
+            .join(UsersEntity, ApplicationEntity.user_id == UsersEntity.user_id)
+            .where(
+                ApplicationEntity.job_id.in_(job_ids),
+                ApplicationEntity.application_id.in_(latest_ids),
+                or_(full_name.contains(pattern, autoescape=True), email_match),
+            )
+            .order_by(
+                ApplicationEntity.created_datetime.desc(),
+                ApplicationEntity.application_id.desc(),
+            )
+            .limit(limit)
         )
         return [tuple(row) for row in result.all()]
 
