@@ -328,41 +328,6 @@ class TestMentorshipMeetingRepository(BaseRepositoryTestLib):
 
         self.assertEqual(len(statements), 1)
 
-    # --- get_pending_google_meetings_by_pairs ---
-
-    async def test_get_pending_google_meetings_by_pairs_filters_correctly(self):
-        pair = await self._seed_pair()
-        pending_google = self._google_meeting(pair.pair_id, is_completed=False)
-        completed_google = self._google_meeting(pair.pair_id, is_completed=True)
-        pending_manual = self._manual_meeting(pair.pair_id, is_completed=False)
-        pending_legacy = self._legacy_meeting(pair.pair_id, is_completed=False)
-        google_no_code = self._google_meeting(
-            pair.pair_id, is_completed=False, google_meeting_code=None
-        )
-        await self.insert_entities([
-            pending_google,
-            completed_google,
-            pending_manual,
-            pending_legacy,
-            google_no_code,
-        ])
-        repo = MentorshipMeetingRepository()
-
-        result = await repo.get_pending_google_meetings_by_pairs(
-            self.session, [pair.pair_id]
-        )
-
-        self.assertEqual([m.meeting_id for m in result], [pending_google.meeting_id])
-
-    async def test_get_pending_google_meetings_by_pairs_empty_input_returns_empty_list(
-        self,
-    ):
-        repo = MentorshipMeetingRepository()
-
-        result = await repo.get_pending_google_meetings_by_pairs(self.session, [])
-
-        self.assertEqual(result, [])
-
     # --- get_pending_google_meetings_in_window ---
 
     async def test_in_window_selects_only_overlapping_pending_google_rows(self):
@@ -510,28 +475,6 @@ class TestMentorshipMeetingRepository(BaseRepositoryTestLib):
         )
 
         self.assertEqual([r.google_meeting_code for r in rows], ["mine-aaaa"])
-
-    # --- get_meeting_by_google_meeting_code ---
-
-    async def test_get_meeting_by_google_meeting_code_hit(self):
-        pair = await self._seed_pair()
-        meeting = self._google_meeting(pair.pair_id, google_meeting_code="code-123")
-        await self.insert_entities([meeting])
-        repo = MentorshipMeetingRepository()
-
-        result = await repo.get_meeting_by_google_meeting_code(self.session, "code-123")
-
-        self.assertIsNotNone(result)
-        self.assertEqual(result.meeting_id, meeting.meeting_id)
-
-    async def test_get_meeting_by_google_meeting_code_miss(self):
-        repo = MentorshipMeetingRepository()
-
-        result = await repo.get_meeting_by_google_meeting_code(
-            self.session, "does-not-exist"
-        )
-
-        self.assertIsNone(result)
 
     # --- insert_meeting ---
 

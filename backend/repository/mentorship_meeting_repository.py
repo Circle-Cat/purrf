@@ -119,39 +119,6 @@ class MentorshipMeetingRepository:
             grouped.setdefault(meeting.pair_id, []).append(meeting)
         return grouped
 
-    async def get_pending_google_meetings_by_pairs(
-        self, session: AsyncSession, pair_ids: list[int]
-    ) -> list[MentorshipMeetingEntity]:
-        """GOOGLE meetings still awaiting completion, across a batch of pairs.
-
-        Args:
-            session (AsyncSession): The active DB session.
-            pair_ids (list[int]): The pairs to search across.
-
-        Returns:
-            list[MentorshipMeetingEntity]: Rows with ``source='google'``,
-                ``is_completed=False``, and a non-null
-                ``google_meeting_code``. Empty for empty input.
-        """
-        if not pair_ids:
-            return []
-        result = await session.execute(
-            select(MentorshipMeetingEntity).where(
-                MentorshipMeetingEntity.pair_id.in_(pair_ids),
-                MentorshipMeetingEntity.source == MeetingSource.GOOGLE,
-                # ix_mentorship_meeting_pending has predicate
-                # `is_completed = false`; Postgres cannot prove `IS false`
-                # implies `= false`, so the `.is_(False)` form (which compiles
-                # to `IS false`) makes the planner skip this index entirely.
-                # The `== False` form is required to match the predicate.
-                # A later PR copies this pattern into the attendance sweep --
-                # do not "correct" it back to `.is_(False)`.
-                MentorshipMeetingEntity.is_completed == False,  # noqa: E712
-                MentorshipMeetingEntity.google_meeting_code.is_not(None),
-            )
-        )
-        return list(result.scalars().all())
-
     async def get_pending_google_meetings_in_window(
         self,
         session: AsyncSession,
@@ -161,11 +128,8 @@ class MentorshipMeetingRepository:
     ) -> list[MentorshipMeetingEntity]:
         """GOOGLE meetings awaiting attendance whose slot is worth checking now.
 
-        The time-bounded sibling of ``get_pending_google_meetings_by_pairs``.
-        That one returns every pending row for a pair, which is right when the
-        caller already holds the set of conferences to match against. This one
-        is for the reverse direction, where each returned row costs one Meet
-        API call -- so the set has to be bounded at BOTH ends:
+        Each returned row costs one Meet API call, so the set has to be
+        bounded at BOTH ends:
 
         - Bounded below, because a meeting nobody joined produces no conference
           record and therefore never completes. Without a lower bound those
@@ -205,8 +169,9 @@ class MentorshipMeetingRepository:
                 MentorshipMeetingEntity.source == MeetingSource.GOOGLE,
                 # `== False` rather than `.is_(False)` so the planner can match
                 # ix_mentorship_meeting_pending's `is_completed = false`
-                # predicate -- same reason as
-                # get_pending_google_meetings_by_pairs. Do not "correct" it.
+                # predicate; Postgres cannot prove `IS false` implies
+                # `= false`, so `.is_(False)` would make it skip the index.
+                # Do not "correct" this back to `.is_(False)`.
                 MentorshipMeetingEntity.is_completed == False,  # noqa: E712
                 MentorshipMeetingEntity.google_meeting_code.is_not(None),
                 MentorshipMeetingEntity.end_datetime >= ends_after,
@@ -216,25 +181,6 @@ class MentorshipMeetingRepository:
         )
         result = await session.execute(stmt)
         return list(result.scalars().all())
-
-    async def get_meeting_by_google_meeting_code(
-        self, session: AsyncSession, code: str
-    ) -> MentorshipMeetingEntity | None:
-        """The meeting whose Google Meet code matches, if any.
-
-        Args:
-            session (AsyncSession): The active DB session.
-            code (str): The Meet meeting code to look up.
-
-        Returns:
-            MentorshipMeetingEntity | None: The matching row, or None.
-        """
-        result = await session.execute(
-            select(MentorshipMeetingEntity).where(
-                MentorshipMeetingEntity.google_meeting_code == code
-            )
-        )
-        return result.scalars().first()
 
     async def insert_meeting(
         self, session: AsyncSession, meeting: MentorshipMeetingEntity

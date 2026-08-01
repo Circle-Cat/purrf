@@ -604,62 +604,17 @@ class GoogleService:
                 f"Unable to update Meet space access type: {space_name}"
             ) from e
 
-    async def list_ended_conferences(
-        self, end_time_after: str, end_time_before: str
-    ) -> list[dict]:
-        """
-        Lists conference records that ended within the given time window.
-
-        Args:
-            end_time_after (str): ISO 8601 lower bound for the conference end time (inclusive).
-            end_time_before (str): ISO 8601 upper bound for the conference end time (inclusive).
-
-        Returns:
-            list[dict]: A list of conference records, each containing:
-                - name (str): Resource name (e.g., "conferenceRecords/xxx").
-                - start_time (str): Start time in ISO 8601 format, or "" if unavailable.
-                - end_time (str): End time in ISO 8601 format, or "" if unavailable.
-                - space (str): Meet space resource name (e.g., "spaces/abc-defg-hij").
-        """
-        self.logger.debug(
-            "[GoogleService] list_ended_conferences: after=%s, before=%s",
-            end_time_after,
-            end_time_before,
-        )
-        conferences = []
-        request = meet_v2.ListConferenceRecordsRequest(
-            filter=f'end_time>="{end_time_after}" AND end_time<="{end_time_before}"',
-        )
-        pager = await self.meet_conference_records_client.list_conference_records(
-            request=request
-        )
-        async for record in pager:
-            conferences.append({
-                "name": record.name,
-                "space": record.space,
-                "start_time": record.start_time.isoformat()
-                if record.start_time
-                else "",
-                "end_time": record.end_time.isoformat() if record.end_time else "",
-            })
-        self.logger.debug(
-            "[GoogleService] list_ended_conferences: fetched %d records",
-            len(conferences),
-        )
-        return conferences
-
     async def list_conferences_by_meeting_code(
         self, meeting_code: str, start_time_after: str, start_time_before: str
     ) -> list[dict]:
         """
         Lists conference records for one Meet space, by its meeting code.
 
-        The reverse of ``list_ended_conferences``: instead of pulling every
-        conference the service account can see and discarding the ones that
-        are not ours, this asks for exactly one meeting's records.
-        ``ListConferenceRecordsRequest.filter`` supports ``space.meeting_code``
-        (named explicitly in the proto), and the code we store on a meeting row
-        is that same value.
+        Instead of pulling every conference the service account can see and
+        discarding the ones that are not ours, this asks for exactly one
+        meeting's records. ``ListConferenceRecordsRequest.filter`` supports
+        ``space.meeting_code`` (named explicitly in the proto), and the code
+        we store on a meeting row is that same value.
 
         The window is filtered on ``start_time`` rather than ``end_time``: a
         conference is attributed to a scheduled meeting by when it STARTED
@@ -674,19 +629,18 @@ class GoogleService:
                 start time (inclusive).
 
         Records for conferences that are still in progress are dropped here.
-        ``list_ended_conferences`` filtered on ``end_time``, so an unfinished
-        conference could never come back from it; filtering on ``start_time``
-        means it can, and a live one has no ``endTime`` at all. Dropping it at
-        this boundary keeps the "ended conferences only" guarantee callers
-        already relied on -- the attendance sweep in particular parses
-        ``end_time`` unconditionally, and selects meetings up to three hours
-        ahead of now, so it meets live conferences routinely.
+        Filtering on ``start_time`` (rather than ``end_time``) means an
+        unfinished conference can come back from the API, and a live one has
+        no ``endTime`` at all. Dropping it at this boundary keeps the "ended
+        conferences only" guarantee callers already relied on -- the
+        attendance sweep in particular parses ``end_time`` unconditionally,
+        and selects meetings up to three hours ahead of now, so it meets
+        live conferences routinely.
 
         Returns:
-            list[dict]: ENDED conference records in the same shape
-                ``list_ended_conferences`` returns -- name / space /
-                start_time / end_time -- so both feed
-                ``fetch_participants_for_record`` identically.
+            list[dict]: ENDED conference records containing name / space /
+                start_time / end_time, so they feed
+                ``fetch_participants_for_record`` directly.
         """
         self.logger.debug(
             "[GoogleService] list_conferences_by_meeting_code: code=%s, after=%s, before=%s",
@@ -735,23 +689,6 @@ class GoogleService:
             skipped_in_progress,
         )
         return conferences
-
-    async def get_meeting_code_for_space(self, space_name: str) -> str:
-        """
-        Fetches the canonical meeting code for a Meet space.
-
-        Args:
-            space_name (str): The Meet space resource name (e.g., "spaces/abc-defg-hij").
-
-        Returns:
-            str: The human-readable meeting code (e.g., "abc-defg-hij").
-        """
-        self.logger.debug(
-            "[GoogleService] get_meeting_code_for_space: space_name=%s", space_name
-        )
-        request = meet_v2.GetSpaceRequest(name=space_name)
-        space = await self.meet_spaces_client.get_space(request=request)
-        return space.meeting_code
 
     async def fetch_participants_for_record(self, record_name: str) -> list[dict]:
         """

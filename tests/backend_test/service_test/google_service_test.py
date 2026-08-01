@@ -981,67 +981,6 @@ class TestGoogleServiceMeetConferenceRecords(unittest.IsolatedAsyncioTestCase):
             meet_conference_records_client=self.mock_meet_conference_records_client,
         )
 
-    async def test_list_ended_conferences_returns_conference_list(self):
-        """Returns a list of dicts for each conference record yielded by the pager."""
-        mock_record = MagicMock()
-        mock_record.name = "conferenceRecords/abc123"
-        mock_record.space = "spaces/xyz"
-        mock_record.start_time.isoformat.return_value = "2024-01-01T10:00:00+00:00"
-        mock_record.end_time.isoformat.return_value = "2024-01-01T11:00:00+00:00"
-
-        async def _pager():
-            yield mock_record
-
-        self.mock_meet_conference_records_client.list_conference_records.return_value = _pager()
-
-        result = await self.service.list_ended_conferences(
-            end_time_after="2024-01-01T09:00:00Z",
-            end_time_before="2024-01-01T12:00:00Z",
-        )
-
-        self.assertEqual(len(result), 1)
-        self.assertEqual(result[0]["name"], "conferenceRecords/abc123")
-        self.assertEqual(result[0]["space"], "spaces/xyz")
-        self.assertEqual(result[0]["start_time"], "2024-01-01T10:00:00+00:00")
-        self.assertEqual(result[0]["end_time"], "2024-01-01T11:00:00+00:00")
-
-    async def test_list_ended_conferences_empty_pager_returns_empty_list(self):
-        """Returns an empty list when there are no conference records in the window."""
-
-        async def _pager():
-            return
-            yield
-
-        self.mock_meet_conference_records_client.list_conference_records.return_value = _pager()
-
-        result = await self.service.list_ended_conferences(
-            end_time_after="2024-01-01T09:00:00Z",
-            end_time_before="2024-01-01T12:00:00Z",
-        )
-
-        self.assertEqual(result, [])
-
-    async def test_list_ended_conferences_null_times_fall_back_to_empty_string(self):
-        """start_time and end_time fall back to empty string when the field is falsy."""
-        mock_record = MagicMock()
-        mock_record.name = "conferenceRecords/no-times"
-        mock_record.space = "spaces/xyz"
-        mock_record.start_time = None
-        mock_record.end_time = None
-
-        async def _pager():
-            yield mock_record
-
-        self.mock_meet_conference_records_client.list_conference_records.return_value = _pager()
-
-        result = await self.service.list_ended_conferences(
-            end_time_after="2024-01-01T09:00:00Z",
-            end_time_before="2024-01-01T12:00:00Z",
-        )
-
-        self.assertEqual(result[0]["start_time"], "")
-        self.assertEqual(result[0]["end_time"], "")
-
     async def test_list_conferences_by_meeting_code_filters_on_code_and_window(self):
         """The code and both window bounds all reach the Meet filter string."""
         mock_record = MagicMock()
@@ -1086,9 +1025,9 @@ class TestGoogleServiceMeetConferenceRecords(unittest.IsolatedAsyncioTestCase):
 
     async def test_list_conferences_by_meeting_code_drops_still_running_records(self):
         """A conference in progress has no endTime. This method filters on
-        start_time, so unlike list_ended_conferences it CAN be handed one --
-        and the attendance sweep, which selects meetings up to three hours
-        ahead of now, meets them routinely. Emitting it as end_time="" would
+        start_time, so it CAN be handed one -- and the attendance sweep,
+        which selects meetings up to three hours ahead of now, meets them
+        routinely. Emitting it as end_time="" would
         blow up the first isoparse downstream, so it is dropped here. The ended
         record sitting alongside it must still come through."""
         ended = MagicMock()
@@ -1142,26 +1081,6 @@ class TestGoogleServiceMeetConferenceRecords(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0]["start_time"], "")
         self.assertEqual(result[0]["end_time"], "2026-04-07T11:00:00+00:00")
-
-    async def test_get_meeting_code_for_space_returns_code(self):
-        """Returns the meeting code for the given space resource name."""
-        mock_space = MagicMock()
-        mock_space.meeting_code = "abc-defg-hij"
-        self.mock_meet_spaces_client.get_space.return_value = mock_space
-
-        result = await self.service.get_meeting_code_for_space("spaces/INTERNALID")
-
-        self.assertEqual(result, "abc-defg-hij")
-        self.mock_meet_spaces_client.get_space.assert_called_once()
-
-    async def test_get_meeting_code_for_space_api_error_propagates(self):
-        """Exceptions raised by the Meet Spaces API are propagated to the caller."""
-        self.mock_meet_spaces_client.get_space.side_effect = Exception(
-            "503 Service Unavailable"
-        )
-
-        with self.assertRaises(Exception):
-            await self.service.get_meeting_code_for_space("spaces/INTERNALID")
 
     async def test_fetch_participants_signed_in_user(self):
         """Returns signedin_user_id and display_name from a signed-in participant."""

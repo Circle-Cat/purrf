@@ -178,8 +178,13 @@ class MentorshipController:
         -- and the operational switch is the CronJob's own `suspend` field.
 
         Args:
-            lookback_hours: Number of hours to look back when querying the
-                Meet API for ended conferences. Defaults to 2.
+            lookback_hours: How far back from now this run reaches when
+                selecting pending meetings from the database (not a Meet API
+                query parameter). A meeting is selected when its own 3-hour
+                attendance affinity window (``ATTENDANCE_WINDOW_DELTA``)
+                overlaps the lookback interval, so the effective selection
+                window is 3 hours wider than the raw lookback on each side.
+                Defaults to 2.
         """
         async with self.database.session() as session:
             result = await self.meet_attendance_sync_service.sync_attendance(
