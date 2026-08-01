@@ -307,13 +307,15 @@ describe("ApplicantSearch keyboard and dismissal", () => {
     return onSelect;
   };
 
-  it("opens the highlighted row on Enter after ArrowDown", async () => {
+  it("wraps ArrowDown from the last row back to the top", async () => {
     const user = userEvent.setup();
     const onSelect = await openPanelWithTwoHits(user);
 
-    await user.keyboard("{ArrowDown}{ArrowDown}{Enter}");
+    // Three presses over two hits: 0, 1, wrap back to 0. A clamp instead of
+    // a modulo would stall at index 1 (id 11) instead of wrapping to id 10.
+    await user.keyboard("{ArrowDown}{ArrowDown}{ArrowDown}{Enter}");
 
-    expect(onSelect).toHaveBeenCalledWith(11);
+    expect(onSelect).toHaveBeenCalledWith(10);
   });
 
   it("wraps ArrowUp from the top to the last row", async () => {
