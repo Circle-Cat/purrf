@@ -548,12 +548,16 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(inserted_meeting.pair_id, self.mock_pair.pair_id)
         self.assertEqual(inserted_meeting.source, MeetingSource.GOOGLE)
         self.assertEqual(inserted_meeting.meeting_id, "google_event_123")
-        self.assertEqual(inserted_meeting.meet_link, "https://meet.google.com/abc-def-ghi")
+        self.assertEqual(
+            inserted_meeting.meet_link, "https://meet.google.com/abc-def-ghi"
+        )
         # `conference_id` is the scheduling service's key name for what this
         # column calls `google_meeting_code` -- a deliberate rename, not a
         # bug, at the boundary between the two.
         self.assertEqual(inserted_meeting.google_meeting_code, "abc-def-ghi")
-        self.assertEqual(inserted_meeting.entry_points, self.scheduled_meeting["entry_points"])
+        self.assertEqual(
+            inserted_meeting.entry_points, self.scheduled_meeting["entry_points"]
+        )
         self.assertFalse(inserted_meeting.is_completed)
         self.assertEqual(inserted_meeting.start_datetime, self.start_dt)
         self.assertEqual(inserted_meeting.end_datetime, self.end_dt)
@@ -812,7 +816,9 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
         the completed count, and commits. The Calendar-side call is
         untouched -- it is still handed the bare meeting_id (the Calendar
         event id for a GOOGLE row)."""
-        pair = MagicMock(spec=MentorshipPairsEntity, pair_id=77, mentor_id=2, mentee_id=1)
+        pair = MagicMock(
+            spec=MentorshipPairsEntity, pair_id=77, mentor_id=2, mentee_id=1
+        )
         self.mock_pairs_repo.get_pairs_by_user_and_round.return_value = [pair]
         existing_google_row = MagicMock(
             spec=MentorshipMeetingEntity,
@@ -872,7 +878,9 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
         """Raises ValueError when the requested meeting id is not among this
         pair's GOOGLE rows -- the existence check now queries the table
         instead of the JSONB log."""
-        pair = MagicMock(spec=MentorshipPairsEntity, pair_id=77, mentor_id=2, mentee_id=1)
+        pair = MagicMock(
+            spec=MentorshipPairsEntity, pair_id=77, mentor_id=2, mentee_id=1
+        )
         self.mock_pairs_repo.get_pairs_by_user_and_round.return_value = [pair]
         self.mock_meeting_repo.get_meetings_by_pair.return_value = []
 
@@ -919,8 +927,12 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
         called with exactly ITS OWN ids -- never the union across pairs,
         since `delete_meetings` silently ignores ids for any other pair (an
         authorization boundary, not just tidiness)."""
-        pair_a = MagicMock(spec=MentorshipPairsEntity, pair_id=77, mentor_id=2, mentee_id=1)
-        pair_b = MagicMock(spec=MentorshipPairsEntity, pair_id=88, mentor_id=3, mentee_id=1)
+        pair_a = MagicMock(
+            spec=MentorshipPairsEntity, pair_id=77, mentor_id=2, mentee_id=1
+        )
+        pair_b = MagicMock(
+            spec=MentorshipPairsEntity, pair_id=88, mentor_id=3, mentee_id=1
+        )
         # Both deletions are in round_id=1, so both calls to
         # get_pairs_by_user_and_round resolve from this same pair list; this
         # method's own filtering (partner_id in (mentor_id, mentee_id)) is
@@ -1000,8 +1012,12 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
         must not have `recalculate_completed_count` called at all -- that
         pair's data never changed, so recomputing its count would be at best
         wasted work and at worst a race with a concurrent write."""
-        pair_a = MagicMock(spec=MentorshipPairsEntity, pair_id=77, mentor_id=2, mentee_id=1)
-        pair_b = MagicMock(spec=MentorshipPairsEntity, pair_id=88, mentor_id=3, mentee_id=1)
+        pair_a = MagicMock(
+            spec=MentorshipPairsEntity, pair_id=77, mentor_id=2, mentee_id=1
+        )
+        pair_b = MagicMock(
+            spec=MentorshipPairsEntity, pair_id=88, mentor_id=3, mentee_id=1
+        )
         self.mock_pairs_repo.get_pairs_by_user_and_round.return_value = [pair_a, pair_b]
 
         def get_meetings_by_pair_side_effect(session, pair_id):

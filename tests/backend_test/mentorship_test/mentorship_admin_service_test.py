@@ -111,9 +111,7 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
         self.mock_meeting_repo.get_meetings_by_pair = AsyncMock(return_value=[])
         self.mock_meeting_repo.get_meetings_by_pairs = AsyncMock(return_value={})
         self.mock_meeting_repo.delete_meetings = AsyncMock(return_value=0)
-        self.mock_meeting_repo.recalculate_completed_count = AsyncMock(
-            return_value=0
-        )
+        self.mock_meeting_repo.recalculate_completed_count = AsyncMock(return_value=0)
 
         self.mock_mapper = MagicMock()
         self.mock_mapper.map_to_admin_meeting_dto.side_effect = (
@@ -922,7 +920,10 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
         self.mock_users_repo.get_users_and_emails_by_ids.return_value = (
             {
                 uid: MagicMock(
-                    user_id=uid, first_name=f"User{uid}", last_name="X", preferred_name=None
+                    user_id=uid,
+                    first_name=f"User{uid}",
+                    last_name="X",
+                    preferred_name=None,
                 )
                 for uid in (1, 2, 3)
             },

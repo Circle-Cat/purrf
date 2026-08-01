@@ -137,10 +137,8 @@ class MeetAttendanceService:
             session, round_id
         )
         pair_by_id = {p.pair_id: p for p in pairs}
-        pending_meetings = (
-            await self.mentorship_meeting_repository.get_pending_google_meetings_by_pairs(
-                session=session, pair_ids=[p.pair_id for p in pairs]
-            )
+        pending_meetings = await self.mentorship_meeting_repository.get_pending_google_meetings_by_pairs(
+            session=session, pair_ids=[p.pair_id for p in pairs]
         )
         pair_lookup = self._build_pair_lookup(pending_meetings)
         self.logger.debug(
@@ -356,10 +354,10 @@ class MeetAttendanceService:
                 # EXPIRES completed_count on the loaded pair instead of
                 # repopulating it; a later read would raise MissingGreenlet
                 # under async.
-                pair_by_id[pair_id].completed_count = (
-                    await self.mentorship_meeting_repository.recalculate_completed_count(
-                        session=session, pair_id=pair_id
-                    )
+                pair_by_id[
+                    pair_id
+                ].completed_count = await self.mentorship_meeting_repository.recalculate_completed_count(
+                    session=session, pair_id=pair_id
                 )
             await session.commit()
             summary["pairs_updated"] = len(touched_pair_ids)

@@ -118,9 +118,7 @@ class MeetingService:
         # LEGACY) rows must stay invisible here; map_to_meeting_v2_dto is the
         # path that merges both generations.
         meetings_by_pair = {
-            pair_id: [
-                m for m in meetings if m.source == MeetingSource.MANUAL
-            ]
+            pair_id: [m for m in meetings if m.source == MeetingSource.MANUAL]
             for pair_id, meetings in meetings_by_pair_id.items()
         }
 
@@ -176,8 +174,10 @@ class MeetingService:
         # `meeting_time_list` and never against `google_meetings`. GOOGLE rows
         # are excluded here on purpose, not merely because
         # `get_meetings_by_pair` defaults to excluding LEGACY.
-        existing_meetings = await self.mentorship_meeting_repository.get_meetings_by_pair(
-            session=session, pair_id=pair_entity.pair_id
+        existing_meetings = (
+            await self.mentorship_meeting_repository.get_meetings_by_pair(
+                session=session, pair_id=pair_entity.pair_id
+            )
         )
         existing_manual_meetings = [
             m for m in existing_meetings if m.source == MeetingSource.MANUAL
@@ -224,8 +224,10 @@ class MeetingService:
             )
         )
 
-        updated_meetings = await self.mentorship_meeting_repository.get_meetings_by_pair(
-            session=session, pair_id=pair_entity.pair_id
+        updated_meetings = (
+            await self.mentorship_meeting_repository.get_meetings_by_pair(
+                session=session, pair_id=pair_entity.pair_id
+            )
         )
         # Same v1 MANUAL-only contract as the read path above.
         updated_manual_meetings = [

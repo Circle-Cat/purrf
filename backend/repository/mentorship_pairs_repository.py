@@ -302,4 +302,3 @@ class MentorshipPairsRepository:
         )
 
         return result.scalars().all()
-

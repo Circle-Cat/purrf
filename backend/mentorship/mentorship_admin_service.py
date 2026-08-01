@@ -620,9 +620,7 @@ class MentorshipAdminService:
             self.mentorship_mapper.map_to_admin_meeting_dto(
                 self._meeting_row_to_admin_dict(m),
                 is_completed=m.is_completed,
-                note_tags=self._resolve_meeting_notes_from_row(
-                    m, mentor_id, mentee_id
-                ),
+                note_tags=self._resolve_meeting_notes_from_row(m, mentor_id, mentee_id),
             )
             for m in meetings
         ]
@@ -661,9 +659,7 @@ class MentorshipAdminService:
         an in-place append would not be seen by the unit of work and would
         silently fail to persist.
         """
-        meeting.has_insufficient_duration = (
-            MeetingNoteTag.INSUFFICIENT_DURATION in note
-        )
+        meeting.has_insufficient_duration = MeetingNoteTag.INSUFFICIENT_DURATION in note
         meeting.has_unknown_absent = MeetingNoteTag.UNKNOWN_ABSENT in note
         if MeetingNoteTag.MENTOR_ABSENT in note:
             meeting.absent_user_id = mentor_id

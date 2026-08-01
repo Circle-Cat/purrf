@@ -45,7 +45,9 @@ def _make_meeting(
     )
 
 
-def _make_pair(pair_id=101, mentor_id=10, mentee_id=20, completed_count=0, meeting_log=None):
+def _make_pair(
+    pair_id=101, mentor_id=10, mentee_id=20, completed_count=0, meeting_log=None
+):
     pair = MagicMock()
     pair.pair_id = pair_id
     pair.mentor_id = mentor_id
@@ -559,7 +561,9 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
                 end="2026-04-07T11:00:00+00:00",
             )
         ]
-        pair = _make_pair(pair_id=101, mentor_id=self.mentor.user_id, mentee_id=self.mentee.user_id)
+        pair = _make_pair(
+            pair_id=101, mentor_id=self.mentor.user_id, mentee_id=self.mentee.user_id
+        )
         meeting = _make_meeting(
             pair_id=101,
             google_meeting_code="abc-xxxx-xyz",
@@ -604,7 +608,9 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
         self.mock_google_service.list_ended_conferences.return_value = [
             self._make_conference()
         ]
-        pair = _make_pair(pair_id=101, mentor_id=self.mentor.user_id, mentee_id=self.mentee.user_id)
+        pair = _make_pair(
+            pair_id=101, mentor_id=self.mentor.user_id, mentee_id=self.mentee.user_id
+        )
         completed_meeting = _make_meeting(
             google_meeting_code="abc-xxxx-xyz", is_completed=True
         )
