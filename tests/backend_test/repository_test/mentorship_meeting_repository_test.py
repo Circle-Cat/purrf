@@ -503,6 +503,32 @@ class TestMentorshipMeetingRepository(BaseRepositoryTestLib):
         await self.session.refresh(refreshed, ["completed_count"])
         self.assertEqual(refreshed.completed_count, 3)
 
+    async def test_recalculate_completed_count_sees_unflushed_orm_change(self):
+        """The count must include an is_completed a caller set on a loaded row
+        but has not flushed.
+
+        Production sessions are built with ``autoflush=False``
+        (``backend/common/database.py``), so nothing writes a dirty ORM object
+        out before the next statement runs. The count here is computed by a
+        scalar subquery inside an UPDATE -- it executes in the database and
+        cannot see session state -- so without an explicit flush this returns
+        the pre-change count. Both the attendance sweep and the admin meeting
+        batch mutate rows exactly this way before calling this method.
+        """
+        pair = await self._seed_pair(completed_count=0)
+        meeting = self._google_meeting(pair.pair_id, is_completed=False)
+        await self.insert_entities([meeting])
+        repo = MentorshipMeetingRepository()
+
+        rows = await repo.get_meetings_by_pair(self.session, pair.pair_id)
+        rows[0].is_completed = True
+        new_count = await repo.recalculate_completed_count(self.session, pair.pair_id)
+
+        self.assertEqual(new_count, 1)
+        refreshed = await self.session.get(MentorshipPairsEntity, pair.pair_id)
+        await self.session.refresh(refreshed, ["completed_count"])
+        self.assertEqual(refreshed.completed_count, 1)
+
     async def test_recalculate_completed_count_nonexistent_pair_raises(self):
         """Pins the documented (surprising) behavior: there is no existence
         check, so an unknown pair_id raises NoResultFound rather than
