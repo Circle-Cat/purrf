@@ -267,7 +267,9 @@ describe("BoardPage", () => {
     );
     expect(api.getJobBoard).toHaveBeenCalledWith(1);
 
-    await user.click(screen.getByRole("combobox"));
+    // Named: the search box is now also role="combobox" (Fix 4's ARIA
+    // wiring), so an unnamed query would be ambiguous between the two.
+    await user.click(screen.getByRole("combobox", { name: "Job" }));
     await user.click(await screen.findByText("Mentor"));
 
     await waitFor(() => expect(api.getJobBoard).toHaveBeenCalledWith(2));
@@ -844,7 +846,9 @@ describe("BoardPage", () => {
     await waitFor(() => expect(api.getJobBoard).toHaveBeenCalledWith(1));
     expect(router.state.historyAction).toBe("POP");
 
-    await user.click(screen.getByRole("combobox"));
+    // Named: the search box is now also role="combobox" (Fix 4's ARIA
+    // wiring), so an unnamed query would be ambiguous between the two.
+    await user.click(screen.getByRole("combobox", { name: "Job" }));
     await user.click(await screen.findByText("Mentor"));
 
     await waitFor(() => expect(router.state.location.search).toBe("?jobId=2"));

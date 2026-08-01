@@ -293,6 +293,64 @@ describe("ApplicantSearch", () => {
     expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
   });
 
+  it("reflects aria-expanded on the input before and after a search opens the panel", async () => {
+    const user = userEvent.setup();
+    api.searchBoardApplicants.mockResolvedValue({
+      data: { hits: [hit()], truncated: false },
+    });
+    renderSearch();
+
+    const input = screen.getByPlaceholderText("Search by name or email");
+    expect(input).toHaveAttribute("aria-expanded", "false");
+
+    await typeTerm(user, "zhang");
+    await user.click(screen.getByRole("button", { name: "Search" }));
+    await screen.findByRole("option");
+
+    expect(input).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("points aria-controls at the listbox's actual id", async () => {
+    const user = userEvent.setup();
+    api.searchBoardApplicants.mockResolvedValue({
+      data: { hits: [hit()], truncated: false },
+    });
+    renderSearch();
+
+    await typeTerm(user, "zhang");
+    await user.click(screen.getByRole("button", { name: "Search" }));
+    const listbox = await screen.findByRole("listbox");
+
+    const input = screen.getByPlaceholderText("Search by name or email");
+    expect(input.getAttribute("aria-controls")).toBe(listbox.getAttribute("id"));
+  });
+
+  it("sets aria-activedescendant to the highlighted option's id, and clears it when nothing is highlighted", async () => {
+    const user = userEvent.setup();
+    api.searchBoardApplicants.mockResolvedValue({
+      data: {
+        hits: [hit({ applicationId: 10 }), hit({ applicationId: 11 })],
+        truncated: false,
+      },
+    });
+    renderSearch();
+
+    await typeTerm(user, "zhang");
+    await user.click(screen.getByRole("button", { name: "Search" }));
+    const options = await screen.findAllByRole("option");
+
+    const input = screen.getByPlaceholderText("Search by name or email");
+    // Nothing highlighted yet: the attribute must be absent, not merely
+    // an empty string.
+    expect(input).not.toHaveAttribute("aria-activedescendant");
+
+    await user.keyboard("{ArrowDown}");
+
+    expect(input.getAttribute("aria-activedescendant")).toBe(
+      options[0].getAttribute("id"),
+    );
+  });
+
   it("clears results when the job changes", async () => {
     const user = userEvent.setup();
     api.searchBoardApplicants.mockResolvedValue({

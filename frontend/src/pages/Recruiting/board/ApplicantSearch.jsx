@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { toast } from "sonner";
 import { searchBoardApplicants } from "@/api/recruitingApi";
 import { stageLabel } from "@/pages/Recruiting/board/stageFormat";
@@ -35,6 +35,13 @@ const ApplicantSearch = ({ selectedJobId, onSelect }) => {
   const containerRef = useRef(null);
   /** Index into `result.hits`, or -1 when nothing is highlighted. */
   const [activeIndex, setActiveIndex] = useState(-1);
+  /** Unique per mount (not a hardcoded string), so the combobox wiring below
+   * stays correct even if this component is ever mounted twice on one page. */
+  const baseId = useId();
+  const listboxId = `${baseId}-listbox`;
+  const optionId = (applicationId) => `${baseId}-option-${applicationId}`;
+  const activeHit =
+    activeIndex >= 0 ? (result?.hits?.[activeIndex] ?? null) : null;
 
   const canSearch = term.trim().length > 0 && !searching;
 
@@ -120,6 +127,13 @@ const ApplicantSearch = ({ selectedJobId, onSelect }) => {
         <input
           ref={inputRef}
           type="text"
+          role="combobox"
+          aria-autocomplete="list"
+          aria-expanded={!!result}
+          aria-controls={listboxId}
+          aria-activedescendant={
+            activeHit ? optionId(activeHit.applicationId) : undefined
+          }
           value={term}
           placeholder="Search by name or email"
           onChange={(e) => {
@@ -158,10 +172,15 @@ const ApplicantSearch = ({ selectedJobId, onSelect }) => {
             // No <ul>/<li> wrappers: an element with role="option" must be a
             // direct child of the role="listbox", and a <li> in between
             // breaks that relationship.
-            <div role="listbox" className="max-h-80 overflow-y-auto py-1">
+            <div
+              role="listbox"
+              id={listboxId}
+              className="max-h-80 overflow-y-auto py-1"
+            >
               {result.hits.map((h, index) => (
                 <button
                   key={h.applicationId}
+                  id={optionId(h.applicationId)}
                   type="button"
                   role="option"
                   aria-selected={index === activeIndex}
