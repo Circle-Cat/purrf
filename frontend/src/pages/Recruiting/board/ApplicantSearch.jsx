@@ -168,24 +168,18 @@ const ApplicantSearch = ({ selectedJobId, onSelect }) => {
               aria-controls on the input always names an element that
               actually exists in the DOM. "No matches" is a sibling, never a
               child: role="listbox" children must be options, and arbitrary
-              text in there would trade one ARIA problem for another. An
-              empty listbox with no padding/border renders nothing visible. */}
-          {/* No <ul>/<li> wrappers: an element with role="option" must be a
-              direct child of the role="listbox", and a <li> in between
-              breaks that relationship. */}
-          {/* Rendered whenever the panel is open, hits or not, so
-              aria-controls on the input always names an element that
-              actually exists in the DOM. "No matches" is a sibling, never a
-              child: role="listbox" children must be options, and arbitrary
-              text in there would trade one ARIA problem for another. An
-              empty listbox with no padding/border renders nothing visible. */}
+              text in there would trade one ARIA problem for another. When
+              empty, py-1 is dropped so the listbox contributes no height —
+              otherwise it would render as blank space above "No matches". */}
           {/* No <ul>/<li> wrappers: an element with role="option" must be a
               direct child of the role="listbox", and a <li> in between
               breaks that relationship. */}
           <div
             role="listbox"
             id={listboxId}
-            className="max-h-80 overflow-y-auto py-1"
+            className={`max-h-80 overflow-y-auto ${
+              result.hits.length > 0 ? "py-1" : ""
+            }`}
           >
             {result.hits.map((h, index) => (
               <button
@@ -216,7 +210,10 @@ const ApplicantSearch = ({ selectedJobId, onSelect }) => {
             ))}
           </div>
           {result.hits.length === 0 && (
-            <p role="status" className="px-3 py-2 text-sm text-muted-foreground">
+            <p
+              role="status"
+              className="px-3 py-2 text-sm text-muted-foreground"
+            >
               No matches
             </p>
           )}
