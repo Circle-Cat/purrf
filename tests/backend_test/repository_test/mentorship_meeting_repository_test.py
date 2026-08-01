@@ -634,9 +634,11 @@ class TestMentorshipMeetingRepository(BaseRepositoryTestLib):
             end_datetime=datetime(2026, 4, 20, 11, 0, tzinfo=timezone.utc),
             google_meeting_code="both-okay",
         )
-        await self.insert_entities(
-            [in_round_out_of_sweep, in_sweep_out_of_round, keeper]
-        )
+        await self.insert_entities([
+            in_round_out_of_sweep,
+            in_sweep_out_of_round,
+            keeper,
+        ])
         repo = MentorshipMeetingRepository()
 
         rows = await repo.get_pending_google_meetings_in_window(

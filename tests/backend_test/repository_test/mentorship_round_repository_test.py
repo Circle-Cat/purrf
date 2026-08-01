@@ -426,9 +426,7 @@ class TestMentorShipRoundRepository(BaseRepositoryTestLib):
         with patch(
             "backend.repository.mentorship_round_repository.datetime"
         ) as mock_datetime:
-            mock_datetime.now.return_value = datetime(
-                2026, 4, 15, tzinfo=timezone.utc
-            )
+            mock_datetime.now.return_value = datetime(2026, 4, 15, tzinfo=timezone.utc)
             rows = await repo.get_running_rounds(self.session, timedelta(hours=8))
 
         self.assertEqual(len(rows), 1)
@@ -436,9 +434,7 @@ class TestMentorShipRoundRepository(BaseRepositoryTestLib):
         self.assertEqual(
             rows[0].window_start, datetime(2026, 4, 1, tzinfo=timezone.utc)
         )
-        self.assertEqual(
-            rows[0].window_end, datetime(2026, 4, 30, tzinfo=timezone.utc)
-        )
+        self.assertEqual(rows[0].window_end, datetime(2026, 4, 30, tzinfo=timezone.utc))
 
     async def test_running_rounds_grace_extends_only_the_selection(self):
         """Inside the grace the round is still returned, and window_end is
@@ -454,14 +450,17 @@ class TestMentorShipRoundRepository(BaseRepositoryTestLib):
             "backend.repository.mentorship_round_repository.datetime"
         ) as mock_datetime:
             mock_datetime.now.return_value = datetime(
-                2026, 4, 30, 6, 0, tzinfo=timezone.utc  # deadline + 6h
+                2026,
+                4,
+                30,
+                6,
+                0,
+                tzinfo=timezone.utc,  # deadline + 6h
             )
             rows = await repo.get_running_rounds(self.session, timedelta(hours=8))
 
         self.assertEqual(len(rows), 1)
-        self.assertEqual(
-            rows[0].window_end, datetime(2026, 4, 30, tzinfo=timezone.utc)
-        )
+        self.assertEqual(rows[0].window_end, datetime(2026, 4, 30, tzinfo=timezone.utc))
 
     async def test_running_rounds_past_the_grace_returns_nothing(self):
         await self._seed_round(
@@ -474,7 +473,12 @@ class TestMentorShipRoundRepository(BaseRepositoryTestLib):
             "backend.repository.mentorship_round_repository.datetime"
         ) as mock_datetime:
             mock_datetime.now.return_value = datetime(
-                2026, 4, 30, 10, 0, tzinfo=timezone.utc  # deadline + 10h > 8h grace
+                2026,
+                4,
+                30,
+                10,
+                0,
+                tzinfo=timezone.utc,  # deadline + 10h > 8h grace
             )
             rows = await repo.get_running_rounds(self.session, timedelta(hours=8))
 
@@ -493,9 +497,7 @@ class TestMentorShipRoundRepository(BaseRepositoryTestLib):
         with patch(
             "backend.repository.mentorship_round_repository.datetime"
         ) as mock_datetime:
-            mock_datetime.now.return_value = datetime(
-                2026, 4, 15, tzinfo=timezone.utc
-            )
+            mock_datetime.now.return_value = datetime(2026, 4, 15, tzinfo=timezone.utc)
             rows = await repo.get_running_rounds(self.session, timedelta(hours=8))
 
         self.assertEqual([r.round_id for r in rows], [round_.round_id])
@@ -517,9 +519,7 @@ class TestMentorShipRoundRepository(BaseRepositoryTestLib):
         with patch(
             "backend.repository.mentorship_round_repository.datetime"
         ) as mock_datetime:
-            mock_datetime.now.return_value = datetime(
-                2026, 4, 15, tzinfo=timezone.utc
-            )
+            mock_datetime.now.return_value = datetime(2026, 4, 15, tzinfo=timezone.utc)
             rows = await repo.get_running_rounds(self.session, timedelta(hours=8))
 
         self.assertEqual(
