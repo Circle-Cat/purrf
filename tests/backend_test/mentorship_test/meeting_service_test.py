@@ -1,4 +1,6 @@
+import copy
 import unittest
+import uuid
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, AsyncMock
 
@@ -11,7 +13,8 @@ from backend.dto.google_meeting_response_detail_dto import (
 )
 from backend.entity.users_entity import UsersEntity
 from backend.entity.mentorship_pairs_entity import MentorshipPairsEntity
-from backend.common.mentorship_enums import PairStatus
+from backend.entity.mentorship_meeting_entity import MentorshipMeetingEntity
+from backend.common.mentorship_enums import MeetingSource, PairStatus
 from backend.common.permissions import Permission
 
 
@@ -28,6 +31,12 @@ class TestMeetingServiceV1(unittest.IsolatedAsyncioTestCase):
         self.mock_users_repo.get_user_by_user_id = AsyncMock()
         self.mock_session = AsyncMock()
 
+        self.mock_meeting_repo = MagicMock()
+        self.mock_meeting_repo.get_meetings_by_pair = AsyncMock()
+        self.mock_meeting_repo.get_meetings_by_pairs = AsyncMock()
+        self.mock_meeting_repo.insert_meeting = AsyncMock()
+        self.mock_meeting_repo.recalculate_completed_count = AsyncMock()
+
         self.mock_meeting_scheduling_service = AsyncMock()
         self.meeting_service = MeetingService(
             logger=self.mock_logger,
@@ -36,11 +45,13 @@ class TestMeetingServiceV1(unittest.IsolatedAsyncioTestCase):
             users_repository=self.mock_users_repo,
             meeting_scheduling_service=self.mock_meeting_scheduling_service,
             mentorship_calendar_id="cal-mentorship",
+            mentorship_meeting_repository=self.mock_meeting_repo,
         )
 
         self.user_id = 1
         self.round_id = 10
         self.partner_id = 100
+        self.pair_id = 55
         self.user_context = MagicMock(
             spec=UserContextDto,
             sub="sub-123",
@@ -51,22 +62,53 @@ class TestMeetingServiceV1(unittest.IsolatedAsyncioTestCase):
         self.mock_current_user.timezone = "America/New_York"
         self.mock_users_repo.get_user_by_user_id.return_value = self.mock_current_user
 
+        # meeting_log is a deliberately stale JSONB snapshot -- this generation's
+        # code must never read or write it. Kept around only so a regression
+        # (writing to it) would show up as a mutation the tests can catch.
+        self.original_meeting_log = {
+            "meeting_time_list": [
+                {
+                    "meeting_id": "m-1",
+                    "start_datetime": "2025-10-01T10:00:00Z",
+                    "end_datetime": "2025-10-01T11:00:00Z",
+                    "is_completed": True,
+                    "created_datetime": "2025-09-30T09:00:00Z",
+                }
+            ],
+        }
         self.mock_pair_entity = MagicMock(
             spec=MentorshipPairsEntity,
+            pair_id=self.pair_id,
             mentor_id=self.partner_id,
             mentee_id=self.user_id,
             completed_count=3,
-            meeting_log={
-                "meeting_time_list": [
-                    {
-                        "meeting_id": "m-1",
-                        "start_datetime": "2025-10-01T10:00:00Z",
-                        "end_datetime": "2025-10-01T11:00:00Z",
-                        "is_completed": True,
-                        "created_datetime": "2025-09-30T09:00:00Z",
-                    }
-                ],
-            },
+            # Deep copy is deliberate, not defensive boilerplate: a shallow
+            # `dict(...)` here would leave `meeting_time_list` as the SAME
+            # list object as `self.original_meeting_log`'s, so an in-place
+            # `.append()` regression on the inner list would go undetected by
+            # any `assertEqual` snapshot comparison below.
+            meeting_log=copy.deepcopy(self.original_meeting_log),
+        )
+
+        self.existing_manual_meeting = MagicMock(
+            spec=MentorshipMeetingEntity,
+            meeting_id="m-1",
+            pair_id=self.pair_id,
+            source=MeetingSource.MANUAL,
+            start_datetime=datetime(2025, 10, 1, 10, 0, tzinfo=timezone.utc),
+            end_datetime=datetime(2025, 10, 1, 11, 0, tzinfo=timezone.utc),
+            is_completed=True,
+            created_datetime=datetime(2025, 9, 30, 9, 0, tzinfo=timezone.utc),
+        )
+        self.existing_google_meeting = MagicMock(
+            spec=MentorshipMeetingEntity,
+            meeting_id="evt-1",
+            pair_id=self.pair_id,
+            source=MeetingSource.GOOGLE,
+            start_datetime=datetime(2025, 10, 3, 10, 0, tzinfo=timezone.utc),
+            end_datetime=datetime(2025, 10, 3, 11, 0, tzinfo=timezone.utc),
+            is_completed=False,
+            created_datetime=datetime(2025, 10, 1, 9, 0, tzinfo=timezone.utc),
         )
 
     async def test_get_meetings_by_user_and_round_success(self):
@@ -74,6 +116,9 @@ class TestMeetingServiceV1(unittest.IsolatedAsyncioTestCase):
         self.mock_pairs_repo.get_pairs_by_user_and_round.return_value = [
             self.mock_pair_entity
         ]
+        self.mock_meeting_repo.get_meetings_by_pairs.return_value = {
+            self.pair_id: [self.existing_manual_meeting]
+        }
         stub_dto = MagicMock(spec=MeetingDto)
         self.mock_mapper.map_to_meeting_dto.return_value = stub_dto
 
@@ -85,10 +130,43 @@ class TestMeetingServiceV1(unittest.IsolatedAsyncioTestCase):
         self.mock_pairs_repo.get_pairs_by_user_and_round.assert_awaited_once_with(
             session=self.mock_session, user_id=self.user_id, round_id=self.round_id
         )
+        self.mock_meeting_repo.get_meetings_by_pairs.assert_awaited_once_with(
+            session=self.mock_session, pair_ids=[self.pair_id]
+        )
         self.mock_mapper.map_to_meeting_dto.assert_called_once_with(
             round_id=self.round_id,
             user_timezone=self.mock_current_user.timezone,
             grouped_pairs=[(self.mock_pair_entity, self.partner_id)],
+            meetings_by_pair={self.pair_id: [self.existing_manual_meeting]},
+        )
+
+    async def test_get_meetings_by_user_and_round_v1_read_is_manual_only(self):
+        """IMPORTANT 2 pin: the v1 read must keep its old MANUAL-only contract.
+
+        `get_meetings_by_pairs` returns both MANUAL and GOOGLE rows for a pair
+        (only LEGACY is excluded by the repository itself); this method must
+        filter GOOGLE back out before handing anything to the mapper, or a
+        pair whose round switched from v1 to v2 would suddenly show its
+        Google meetings on a dashboard that never displayed them before.
+        """
+        self.mock_pairs_repo.get_pairs_by_user_and_round.return_value = [
+            self.mock_pair_entity
+        ]
+        self.mock_meeting_repo.get_meetings_by_pairs.return_value = {
+            self.pair_id: [self.existing_manual_meeting, self.existing_google_meeting]
+        }
+        stub_dto = MagicMock(spec=MeetingDto)
+        self.mock_mapper.map_to_meeting_dto.return_value = stub_dto
+
+        await self.meeting_service.get_meetings_by_user_and_round(
+            self.mock_session, self.user_context, self.round_id
+        )
+
+        passed_meetings_by_pair = self.mock_mapper.map_to_meeting_dto.call_args.kwargs[
+            "meetings_by_pair"
+        ]
+        self.assertEqual(
+            passed_meetings_by_pair, {self.pair_id: [self.existing_manual_meeting]}
         )
 
     async def test_get_meetings_by_user_and_round_no_pair_found(self):
@@ -107,11 +185,18 @@ class TestMeetingServiceV1(unittest.IsolatedAsyncioTestCase):
         self.mock_mapper.map_to_meeting_dto.assert_not_called()
 
     async def test_upsert_meetings_success(self):
-        """Test new meeting slots are successfully validated and persisted."""
+        """New meeting slots are validated, inserted as a row, and counted via
+        the repository -- not by rewriting meeting_log."""
         self.mock_pairs_repo.get_pair_by_mentee_and_round.return_value = (
             self.mock_pair_entity
         )
-        self.mock_pairs_repo.upsert_pairs.return_value = self.mock_pair_entity
+        # First call: pre-insert conflict check finds no overlap. Second call:
+        # post-insert read used to build the response DTO.
+        self.mock_meeting_repo.get_meetings_by_pair.side_effect = [
+            [],
+            [self.existing_manual_meeting],
+        ]
+        self.mock_meeting_repo.recalculate_completed_count.return_value = 4
 
         payload = MeetingCreateDto(
             round_id=self.round_id,
@@ -124,26 +209,41 @@ class TestMeetingServiceV1(unittest.IsolatedAsyncioTestCase):
             self.mock_session, self.user_context, payload
         )
 
-        self.mock_pairs_repo.upsert_pairs.assert_awaited_once()
+        self.mock_meeting_repo.insert_meeting.assert_awaited_once()
+        inserted_meeting = self.mock_meeting_repo.insert_meeting.await_args.kwargs[
+            "meeting"
+        ]
+        self.assertIsInstance(inserted_meeting, MentorshipMeetingEntity)
+        self.assertEqual(inserted_meeting.pair_id, self.pair_id)
+        self.assertEqual(inserted_meeting.source, MeetingSource.MANUAL)
+        self.assertEqual(inserted_meeting.start_datetime, payload.start_datetime)
+        self.assertEqual(inserted_meeting.end_datetime, payload.end_datetime)
+        self.assertTrue(inserted_meeting.is_completed)
+        # assertEqual(...version, 4) rather than assertTrue(uuid.UUID(x)):
+        # the latter only proves the string parses as *some* UUID (it would
+        # pass for a uuid1 too), not specifically the uuid4 the code asks for.
+        self.assertEqual(uuid.UUID(inserted_meeting.meeting_id).version, 4)
+
+        self.mock_meeting_repo.recalculate_completed_count.assert_awaited_once_with(
+            session=self.mock_session, pair_id=self.pair_id
+        )
+        self.assertEqual(self.mock_pair_entity.completed_count, 4)
+
+        # The single most important assertion in this slice: switching to the
+        # table must not also keep writing the JSONB column.
+        self.mock_pairs_repo.upsert_pairs.assert_not_awaited()
+        self.assertEqual(self.mock_pair_entity.meeting_log, self.original_meeting_log)
+
         self.mock_session.commit.assert_awaited_once()
-
-        meeting_list = self.mock_pair_entity.meeting_log["meeting_time_list"]
-        self.assertEqual(len(meeting_list), 2)
-
-        new_meeting = meeting_list[-1]
-
-        self.assertIn("created_datetime", new_meeting)
-        self.assertIsInstance(new_meeting["created_datetime"], str)
-        self.assertTrue(new_meeting["created_datetime"].endswith("Z"))
-        self.assertTrue(len(new_meeting["created_datetime"]) > 0)
-
-        self.assertEqual(self.mock_pair_entity.completed_count, 2)
 
     async def test_upsert_meetings_conflict(self):
         """Test overlapping meeting times trigger a validation error."""
         self.mock_pairs_repo.get_pair_by_mentee_and_round.return_value = (
             self.mock_pair_entity
         )
+        self.mock_meeting_repo.get_meetings_by_pair.return_value = [
+            self.existing_manual_meeting
+        ]
         payload = MeetingCreateDto(
             round_id=self.round_id,
             start_datetime=datetime(2025, 10, 1, 10, 30, tzinfo=timezone.utc),
@@ -156,11 +256,50 @@ class TestMeetingServiceV1(unittest.IsolatedAsyncioTestCase):
                 self.mock_session, self.user_context, payload
             )
 
+        self.mock_meeting_repo.insert_meeting.assert_not_awaited()
+        self.mock_meeting_repo.recalculate_completed_count.assert_not_awaited()
         self.mock_pairs_repo.upsert_pairs.assert_not_awaited()
         self.mock_session.commit.assert_not_awaited()
 
-    async def test_upsert_meetings_preserves_other_keys(self):
-        """The write must merge into meeting_log, not replace it wholesale."""
+    async def test_upsert_meetings_ignores_google_meetings_for_conflict(self):
+        """Conflict-checking must only compare against MANUAL rows, matching
+        the old behavior of comparing only against `meeting_time_list` and
+        never `google_meetings`."""
+        google_meeting = MagicMock(
+            spec=MentorshipMeetingEntity,
+            meeting_id="evt-1",
+            pair_id=self.pair_id,
+            source=MeetingSource.GOOGLE,
+            start_datetime=datetime(2025, 10, 1, 14, 0, tzinfo=timezone.utc),
+            end_datetime=datetime(2025, 10, 1, 15, 0, tzinfo=timezone.utc),
+            is_completed=False,
+        )
+        self.mock_pairs_repo.get_pair_by_mentee_and_round.return_value = (
+            self.mock_pair_entity
+        )
+        self.mock_meeting_repo.get_meetings_by_pair.side_effect = [
+            [google_meeting],
+            [google_meeting],
+        ]
+        self.mock_meeting_repo.recalculate_completed_count.return_value = 4
+
+        # Exactly overlaps the GOOGLE meeting above; must NOT raise.
+        payload = MeetingCreateDto(
+            round_id=self.round_id,
+            start_datetime=datetime(2025, 10, 1, 14, 0, tzinfo=timezone.utc),
+            end_datetime=datetime(2025, 10, 1, 15, 0, tzinfo=timezone.utc),
+            is_completed=True,
+        )
+
+        await self.meeting_service.upsert_meetings(
+            self.mock_session, self.user_context, payload
+        )
+
+        self.mock_meeting_repo.insert_meeting.assert_awaited_once()
+
+    async def test_upsert_meetings_does_not_modify_meeting_log(self):
+        """Dedicated pin: upsert_meetings must not touch meeting_log at all,
+        even when the pair already has both generations recorded there."""
         self.mock_pair_entity.meeting_log = {
             "meeting_time_list": [],
             "google_meetings": [
@@ -173,10 +312,15 @@ class TestMeetingServiceV1(unittest.IsolatedAsyncioTestCase):
                 }
             ],
         }
+        # Deep copy for the same reason as the setUp fixture above -- a
+        # shallow copy would share the inner lists with the live entity and
+        # miss an in-place `.append()` regression.
+        untouched_snapshot = copy.deepcopy(self.mock_pair_entity.meeting_log)
         self.mock_pairs_repo.get_pair_by_mentee_and_round.return_value = (
             self.mock_pair_entity
         )
-        self.mock_pairs_repo.upsert_pairs.return_value = self.mock_pair_entity
+        self.mock_meeting_repo.get_meetings_by_pair.side_effect = [[], []]
+        self.mock_meeting_repo.recalculate_completed_count.return_value = 1
 
         payload = MeetingCreateDto(
             round_id=self.round_id,
@@ -189,17 +333,8 @@ class TestMeetingServiceV1(unittest.IsolatedAsyncioTestCase):
             self.mock_session, self.user_context, payload
         )
 
-        self.assertEqual(
-            len(self.mock_pair_entity.meeting_log["google_meetings"]),
-            1,
-            "manual submit must not drop the other generation's entries",
-        )
-        self.assertEqual(len(self.mock_pair_entity.meeting_log["meeting_time_list"]), 1)
-        self.assertEqual(
-            self.mock_pair_entity.completed_count,
-            2,
-            "completed_count must sum both generations",
-        )
+        self.assertEqual(self.mock_pair_entity.meeting_log, untouched_snapshot)
+        self.mock_pairs_repo.upsert_pairs.assert_not_awaited()
 
 
 class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
@@ -236,6 +371,13 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
         )
         self.mock_meeting_scheduling_service.cancel = AsyncMock(return_value=([], []))
 
+        self.mock_meeting_repo = MagicMock()
+        self.mock_meeting_repo.insert_meeting = AsyncMock()
+        self.mock_meeting_repo.get_meetings_by_pair = AsyncMock(return_value=[])
+        self.mock_meeting_repo.get_meetings_by_pairs = AsyncMock(return_value={})
+        self.mock_meeting_repo.delete_meetings = AsyncMock()
+        self.mock_meeting_repo.recalculate_completed_count = AsyncMock()
+
         self.service = MeetingService(
             logger=self.mock_logger,
             mentorship_pairs_repository=self.mock_mentorship_pairs_repository,
@@ -243,6 +385,7 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
             users_repository=self.mock_users_repository,
             meeting_scheduling_service=self.mock_meeting_scheduling_service,
             mentorship_calendar_id="cal-mentorship",
+            mentorship_meeting_repository=self.mock_meeting_repo,
         )
 
         self.mock_current_user = MagicMock()
@@ -288,6 +431,7 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
             users_repository=self.mock_users_repository,
             meeting_scheduling_service=self.mock_meeting_scheduling_service,
             mentorship_calendar_id="cal-mentorship",
+            mentorship_meeting_repository=self.mock_meeting_repo,
         )
 
         self.user_id = 1
@@ -376,8 +520,9 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
         # only guard against silently falling back to the shared calendar.
         self.assertEqual(call_kwargs["calendar_id"], "cal-mentorship")
 
-    async def test_create_google_meeting_persists_meeting_log(self):
-        """Test that meeting result is persisted to meeting_log."""
+    async def test_create_google_meeting_persists_meeting_row(self):
+        """Test that meeting result is persisted as a mentorship_meeting row,
+        not appended to meeting_log."""
         await self.service.create_google_meeting(
             session=self.mock_session,
             user_context=self.user_context,
@@ -395,13 +540,140 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
             status=PairStatus.ACTIVE,
             with_lock=True,
         )
-        call_kwargs = (
-            self.mock_mentorship_pairs_repository.append_google_meeting.call_args.kwargs
+        self.mock_meeting_repo.insert_meeting.assert_awaited_once()
+        inserted_meeting = self.mock_meeting_repo.insert_meeting.await_args.kwargs[
+            "meeting"
+        ]
+        self.assertIsInstance(inserted_meeting, MentorshipMeetingEntity)
+        self.assertEqual(inserted_meeting.pair_id, self.mock_pair.pair_id)
+        self.assertEqual(inserted_meeting.source, MeetingSource.GOOGLE)
+        self.assertEqual(inserted_meeting.meeting_id, "google_event_123")
+        self.assertEqual(
+            inserted_meeting.meet_link, "https://meet.google.com/abc-def-ghi"
         )
-        self.assertEqual(call_kwargs["pair_id"], self.mock_pair.pair_id)
-        self.assertEqual(call_kwargs["meeting_entry"]["meeting_id"], "google_event_123")
-        self.assertFalse(call_kwargs["meeting_entry"]["is_completed"])
+        # `conference_id` is the scheduling service's key name for what this
+        # column calls `google_meeting_code` -- a deliberate rename, not a
+        # bug, at the boundary between the two.
+        self.assertEqual(inserted_meeting.google_meeting_code, "abc-def-ghi")
+        self.assertEqual(
+            inserted_meeting.entry_points, self.scheduled_meeting["entry_points"]
+        )
+        self.assertFalse(inserted_meeting.is_completed)
+        self.assertEqual(inserted_meeting.start_datetime, self.start_dt)
+        self.assertEqual(inserted_meeting.end_datetime, self.end_dt)
+
+        self.mock_mentorship_pairs_repository.append_google_meeting.assert_not_called()
         self.mock_session.commit.assert_awaited_once()
+
+    async def test_create_google_meeting_does_not_modify_meeting_log(self):
+        """Pin: creating a Google meeting must write ONLY the table -- the
+        pair's `meeting_log` JSONB column must stay byte-for-byte the same.
+
+        `copy.deepcopy` is deliberate, not defensive boilerplate: a shallow
+        copy here would leave the inner lists as the SAME objects as the
+        live entity's, so an in-place mutation regression would go
+        undetected by `assertEqual` below.
+        """
+        self.mock_pair.meeting_log = {
+            "meeting_time_list": [
+                {
+                    "meeting_id": "m-1",
+                    "start_datetime": "2025-10-01T10:00:00Z",
+                    "end_datetime": "2025-10-01T11:00:00Z",
+                    "is_completed": True,
+                    "created_datetime": "2025-09-30T09:00:00Z",
+                }
+            ],
+            "google_meetings": [],
+        }
+        original_meeting_log = copy.deepcopy(self.mock_pair.meeting_log)
+
+        await self.service.create_google_meeting(
+            session=self.mock_session,
+            user_context=self.user_context,
+            partner_id=2,
+            round_id=1,
+            start_datetime=self.start_dt,
+            end_datetime=self.end_dt,
+        )
+
+        self.assertEqual(self.mock_pair.meeting_log, original_meeting_log)
+        self.mock_mentorship_pairs_repository.append_google_meeting.assert_not_called()
+
+    async def test_create_google_meeting_uses_google_created_timestamp(self):
+        """When Calendar reports a `created` timestamp, the row's
+        `created_datetime` must carry Google's value, not the moment this
+        code happens to run -- it is exposed via the API and is the
+        `_MEETING_ORDER_BY` tiebreaker when two meetings share a
+        start_datetime. Getting this wrong matters most exactly on a DB-write
+        retry: Calendar's insert is idempotent on the client-minted event id,
+        so a retry must still record the meeting's original creation time,
+        not the retry's."""
+        self.mock_meeting_scheduling_service.schedule.return_value = {
+            **self.scheduled_meeting,
+            "created": "2025-01-01T10:00:00.000Z",
+        }
+
+        await self.service.create_google_meeting(
+            session=self.mock_session,
+            user_context=self.user_context,
+            partner_id=2,
+            round_id=1,
+            start_datetime=self.start_dt,
+            end_datetime=self.end_dt,
+        )
+
+        inserted_meeting = self.mock_meeting_repo.insert_meeting.await_args.kwargs[
+            "meeting"
+        ]
+        self.assertEqual(
+            inserted_meeting.created_datetime,
+            datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc),
+        )
+
+    async def test_create_google_meeting_omits_created_datetime_when_google_omits_it(
+        self,
+    ):
+        """When Calendar's `created` is missing/empty, `created_datetime` must
+        be left UNSET on the entity -- not explicitly assigned None -- so the
+        column's NOT NULL `server_default` fills it in at insert time.
+        SQLAlchemy only omits a column from the INSERT when the attribute was
+        never assigned at all; explicitly assigning None would insert NULL
+        and raise NotNullViolation.
+
+        Checking `vars(...)` rather than the attribute's *value* is
+        deliberate and is the point of this test: a naive
+        `getattr(..., "created_datetime") is None` check would pass equally
+        well for the buggy `created_datetime=None` case, since an unset
+        InstrumentedAttribute also reads back as None through a normal
+        attribute access -- it would not have caught the NotNullViolation
+        this pins against. Inspecting the instance's `__dict__` is what
+        actually distinguishes "never set" (key absent, so
+        `mapper._collect_insert_commands`-style unit-of-work logic leaves the
+        column out of the INSERT and the server_default applies) from
+        "explicitly set to None" (key present with value None, which DOES
+        get sent as an explicit NULL) -- i.e. it exercises the same
+        attribute-presence check the real INSERT path relies on, without
+        needing a live database.
+        """
+        self.mock_meeting_scheduling_service.schedule.return_value = {
+            **self.scheduled_meeting,
+            "created": "",
+        }
+
+        await self.service.create_google_meeting(
+            session=self.mock_session,
+            user_context=self.user_context,
+            partner_id=2,
+            round_id=1,
+            start_datetime=self.start_dt,
+            end_datetime=self.end_dt,
+        )
+
+        inserted_meeting = self.mock_meeting_repo.insert_meeting.await_args.kwargs[
+            "meeting"
+        ]
+        self.assertNotIn("created_datetime", vars(inserted_meeting))
 
     async def test_create_google_meeting_partner_not_found(self):
         """Test that ValueError is raised when pair does not exist."""
@@ -419,6 +691,7 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
 
         self.assertIn("No mentorship pair found", str(ctx.exception))
         self.mock_meeting_scheduling_service.schedule.assert_not_awaited()
+        self.mock_meeting_repo.insert_meeting.assert_not_awaited()
 
     async def test_create_google_meeting_uses_full_name_when_no_preferred_name(self):
         """Test fallback to the full 'first last' name when preferred_name is None."""
@@ -445,10 +718,23 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_get_meetings_by_user_and_round_v2_success(self):
-        """Test retrieved and mapped meeting logs for a matched user correctly in v2."""
+        """Test retrieved and mapped meeting logs for a matched user correctly in v2.
+
+        Unlike v1, the v2 read must NOT filter the fetched rows down to
+        MANUAL -- both MANUAL and GOOGLE rows from
+        `get_meetings_by_pairs` are handed to the mapper as-is; merging both
+        generations is `map_to_meeting_v2_dto`'s job.
+        """
         self.mock_pairs_repo.get_pairs_by_user_and_round.return_value = [
             self.mock_pair_entity
         ]
+        meetings_by_pair = {
+            self.mock_pair_entity.pair_id: [
+                MagicMock(spec=MentorshipMeetingEntity, source=MeetingSource.MANUAL),
+                MagicMock(spec=MentorshipMeetingEntity, source=MeetingSource.GOOGLE),
+            ]
+        }
+        self.mock_meeting_repo.get_meetings_by_pairs.return_value = meetings_by_pair
 
         self.user_context.has_permission.return_value = True
         stub_dto = MagicMock(spec=MeetingDto)
@@ -467,10 +753,14 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
             user_id=self.user_id,
             round_id=self.round_id,
         )
+        self.mock_meeting_repo.get_meetings_by_pairs.assert_awaited_once_with(
+            session=self.mock_session, pair_ids=[self.mock_pair_entity.pair_id]
+        )
         self.mock_mapper.map_to_meeting_v2_dto.assert_called_once_with(
             round_id=self.round_id,
             user_timezone=self.mock_current_user.timezone,
             grouped_pairs=[(self.mock_pair_entity, self.partner_id)],
+            meetings_by_pair=meetings_by_pair,
             include_details=True,
         )
         self.user_context.has_permission.assert_called_once_with(
@@ -517,17 +807,27 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
             round_id=self.round_id,
             user_timezone=self.mock_current_user.timezone,
             grouped_pairs=[(self.mock_pair_entity, self.partner_id)],
+            meetings_by_pair={},
             include_details=False,
         )
 
     async def test_delete_google_meetings_success(self):
-        """Verify successful deletion removes Google-deleted meetings from DB and commits."""
-        self.mock_mentorship_pairs_repository.do_google_meetings_exist_in_log = (
-            AsyncMock(return_value=True)
+        """Verify successful deletion removes rows from the table, recomputes
+        the completed count, and commits. The Calendar-side call is
+        untouched -- it is still handed the bare meeting_id (the Calendar
+        event id for a GOOGLE row)."""
+        pair = MagicMock(
+            spec=MentorshipPairsEntity, pair_id=77, mentor_id=2, mentee_id=1
         )
-        self.mock_mentorship_pairs_repository.remove_meetings_from_log = AsyncMock(
-            return_value=[1]
+        self.mock_pairs_repo.get_pairs_by_user_and_round.return_value = [pair]
+        existing_google_row = MagicMock(
+            spec=MentorshipMeetingEntity,
+            meeting_id="abc",
+            source=MeetingSource.GOOGLE,
         )
+        self.mock_meeting_repo.get_meetings_by_pair.return_value = [existing_google_row]
+        self.mock_meeting_repo.delete_meetings.return_value = 1
+        self.mock_meeting_repo.recalculate_completed_count.return_value = 5
         self.mock_meeting_scheduling_service.cancel.return_value = (
             ["abc"],
             [],
@@ -545,14 +845,20 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
             ],
         )
 
-        self.mock_mentorship_pairs_repository.do_google_meetings_exist_in_log.assert_awaited_once()
+        self.mock_pairs_repo.get_pairs_by_user_and_round.assert_awaited_once_with(
+            session=self.mock_session, user_id=self.user_id, round_id=1
+        )
+        self.mock_meeting_repo.get_meetings_by_pair.assert_awaited_once_with(
+            session=self.mock_session, pair_id=77
+        )
         self.mock_meeting_scheduling_service.cancel.assert_awaited_once_with(
             ["abc"], calendar_id="cal-mentorship"
         )
-        self.mock_mentorship_pairs_repository.remove_meetings_from_log.assert_awaited_once_with(
-            session=self.mock_session,
-            user_id=self.user_id,
-            meeting_ids=["abc"],
+        self.mock_meeting_repo.delete_meetings.assert_awaited_once_with(
+            session=self.mock_session, pair_id=77, meeting_ids=["abc"]
+        )
+        self.mock_meeting_repo.recalculate_completed_count.assert_awaited_once_with(
+            session=self.mock_session, pair_id=77
         )
         self.mock_session.commit.assert_awaited_once()
 
@@ -569,11 +875,14 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
             )
 
     async def test_delete_google_meetings_not_found(self):
-        """Raises ValueError when meetings do not exist in log."""
-
-        self.mock_mentorship_pairs_repository.do_google_meetings_exist_in_log = (
-            AsyncMock(return_value=False)
+        """Raises ValueError when the requested meeting id is not among this
+        pair's GOOGLE rows -- the existence check now queries the table
+        instead of the JSONB log."""
+        pair = MagicMock(
+            spec=MentorshipPairsEntity, pair_id=77, mentor_id=2, mentee_id=1
         )
+        self.mock_pairs_repo.get_pairs_by_user_and_round.return_value = [pair]
+        self.mock_meeting_repo.get_meetings_by_pair.return_value = []
 
         with self.assertRaises(ValueError):
             await self.service.delete_google_meetings(
@@ -587,6 +896,180 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
                     }
                 ],
             )
+
+        self.mock_meeting_scheduling_service.cancel.assert_not_awaited()
+        self.mock_meeting_repo.delete_meetings.assert_not_awaited()
+
+    async def test_delete_google_meetings_pair_not_found(self):
+        """Raises ValueError when no pair matches round_id/partner_id at all."""
+        self.mock_pairs_repo.get_pairs_by_user_and_round.return_value = []
+
+        with self.assertRaises(ValueError):
+            await self.service.delete_google_meetings(
+                session=self.mock_session,
+                user_context=self.user_context,
+                deletions=[
+                    {
+                        "round_id": 1,
+                        "partner_id": 2,
+                        "meeting_ids": ["abc"],
+                    }
+                ],
+            )
+
+        self.mock_meeting_repo.get_meetings_by_pair.assert_not_awaited()
+        self.mock_meeting_scheduling_service.cancel.assert_not_awaited()
+
+    async def test_delete_google_meetings_multi_pair_batch_regroups_by_pair(self):
+        """A single request can span multiple pairs (the batch-delete
+        endpoint sends one `deletions` entry per pair). `delete_meetings` and
+        `recalculate_completed_count` are pair-scoped, so each pair must get
+        called with exactly ITS OWN ids -- never the union across pairs,
+        since `delete_meetings` silently ignores ids for any other pair (an
+        authorization boundary, not just tidiness)."""
+        pair_a = MagicMock(
+            spec=MentorshipPairsEntity, pair_id=77, mentor_id=2, mentee_id=1
+        )
+        pair_b = MagicMock(
+            spec=MentorshipPairsEntity, pair_id=88, mentor_id=3, mentee_id=1
+        )
+        # Both deletions are in round_id=1, so both calls to
+        # get_pairs_by_user_and_round resolve from this same pair list; this
+        # method's own filtering (partner_id in (mentor_id, mentee_id)) is
+        # what picks the right one per deletion.
+        self.mock_pairs_repo.get_pairs_by_user_and_round.return_value = [pair_a, pair_b]
+
+        def get_meetings_by_pair_side_effect(session, pair_id):
+            if pair_id == 77:
+                return [
+                    MagicMock(
+                        spec=MentorshipMeetingEntity,
+                        meeting_id="abc",
+                        source=MeetingSource.GOOGLE,
+                    )
+                ]
+            if pair_id == 88:
+                return [
+                    MagicMock(
+                        spec=MentorshipMeetingEntity,
+                        meeting_id="def",
+                        source=MeetingSource.GOOGLE,
+                    ),
+                    MagicMock(
+                        spec=MentorshipMeetingEntity,
+                        meeting_id="ghi",
+                        source=MeetingSource.GOOGLE,
+                    ),
+                ]
+            return []
+
+        self.mock_meeting_repo.get_meetings_by_pair.side_effect = (
+            get_meetings_by_pair_side_effect
+        )
+        # Everything succeeds on the Calendar side -- this test is purely
+        # about the DB-side regrouping, not partial failure (see the
+        # dedicated partial-success test below).
+        self.mock_meeting_scheduling_service.cancel.return_value = (
+            ["abc", "def", "ghi"],
+            [],
+        )
+        self.mock_meeting_repo.recalculate_completed_count.return_value = 1
+
+        await self.service.delete_google_meetings(
+            session=self.mock_session,
+            user_context=self.user_context,
+            deletions=[
+                {"round_id": 1, "partner_id": 2, "meeting_ids": ["abc"]},
+                {"round_id": 1, "partner_id": 3, "meeting_ids": ["def", "ghi"]},
+            ],
+        )
+
+        # Load-bearing: if the code instead passed the union of all
+        # succeeded ids to every pair, this call would be
+        # meeting_ids=["abc", "def", "ghi"] instead of just ["abc"], and
+        # assert_any_call would fail to find it.
+        self.mock_meeting_repo.delete_meetings.assert_any_call(
+            session=self.mock_session, pair_id=77, meeting_ids=["abc"]
+        )
+        self.mock_meeting_repo.delete_meetings.assert_any_call(
+            session=self.mock_session, pair_id=88, meeting_ids=["def", "ghi"]
+        )
+        self.assertEqual(self.mock_meeting_repo.delete_meetings.await_count, 2)
+
+        self.mock_meeting_repo.recalculate_completed_count.assert_any_call(
+            session=self.mock_session, pair_id=77
+        )
+        self.mock_meeting_repo.recalculate_completed_count.assert_any_call(
+            session=self.mock_session, pair_id=88
+        )
+        self.assertEqual(
+            self.mock_meeting_repo.recalculate_completed_count.await_count, 2
+        )
+
+    async def test_delete_google_meetings_partial_cancel_skips_failed_pair(self):
+        """When Calendar cancels some ids but not others, only the succeeded
+        ids may be deleted from the table, and a pair whose ids ALL failed
+        must not have `recalculate_completed_count` called at all -- that
+        pair's data never changed, so recomputing its count would be at best
+        wasted work and at worst a race with a concurrent write."""
+        pair_a = MagicMock(
+            spec=MentorshipPairsEntity, pair_id=77, mentor_id=2, mentee_id=1
+        )
+        pair_b = MagicMock(
+            spec=MentorshipPairsEntity, pair_id=88, mentor_id=3, mentee_id=1
+        )
+        self.mock_pairs_repo.get_pairs_by_user_and_round.return_value = [pair_a, pair_b]
+
+        def get_meetings_by_pair_side_effect(session, pair_id):
+            if pair_id == 77:
+                return [
+                    MagicMock(
+                        spec=MentorshipMeetingEntity,
+                        meeting_id="abc",
+                        source=MeetingSource.GOOGLE,
+                    )
+                ]
+            if pair_id == 88:
+                return [
+                    MagicMock(
+                        spec=MentorshipMeetingEntity,
+                        meeting_id="def",
+                        source=MeetingSource.GOOGLE,
+                    )
+                ]
+            return []
+
+        self.mock_meeting_repo.get_meetings_by_pair.side_effect = (
+            get_meetings_by_pair_side_effect
+        )
+        # "abc" (pair_a) succeeds; "def" (pair_b) fails outright.
+        self.mock_meeting_scheduling_service.cancel.return_value = (["abc"], ["def"])
+        self.mock_meeting_repo.recalculate_completed_count.return_value = 1
+
+        result = await self.service.delete_google_meetings(
+            session=self.mock_session,
+            user_context=self.user_context,
+            deletions=[
+                {"round_id": 1, "partner_id": 2, "meeting_ids": ["abc"]},
+                {"round_id": 1, "partner_id": 3, "meeting_ids": ["def"]},
+            ],
+        )
+
+        # Load-bearing: if the code deleted failed ids too, this would
+        # either be called with meeting_ids including "def", or called a
+        # second time for pair_id=88 -- either way assert_called_once_with
+        # below would fail.
+        self.mock_meeting_repo.delete_meetings.assert_awaited_once_with(
+            session=self.mock_session, pair_id=77, meeting_ids=["abc"]
+        )
+        self.mock_meeting_repo.recalculate_completed_count.assert_awaited_once_with(
+            session=self.mock_session, pair_id=77
+        )
+        for call in self.mock_meeting_repo.recalculate_completed_count.await_args_list:
+            self.assertNotEqual(call.kwargs.get("pair_id"), 88)
+
+        self.assertEqual(result.succeeded_meeting_ids, ["abc"])
+        self.assertEqual(result.failed_meeting_ids, ["def"])
 
     async def test_create_google_meetings_batch_single_success(self):
         """count=1: converts wall-clock to UTC and returns one created entry."""

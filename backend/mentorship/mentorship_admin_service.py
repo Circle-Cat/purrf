@@ -12,10 +12,12 @@ from backend.common.exceptions import ConflictError
 from backend.common.mentorship_enums import (
     MENTORSHIP_ONBOARDING_CATEGORIES,
     MeetingNoteTag,
+    MeetingSource,
     ParticipantRole,
     TrainingCategory,
 )
 from backend.common.name_utils import partner_display_name
+from backend.entity.mentorship_meeting_entity import MentorshipMeetingEntity
 
 _EXPORT_BATCH_SIZE = 500
 _UTF8_BOM = "\ufeff".encode("utf-8")
@@ -95,6 +97,7 @@ class MentorshipAdminService:
         date_time_util,
         database,
         logger,
+        mentorship_meeting_repository,
     ) -> None:
         self.users_repository = users_repository
         self.participants_repository = participants_repository
@@ -105,6 +108,7 @@ class MentorshipAdminService:
         self.date_time_util = date_time_util
         self.database = database
         self.logger = logger
+        self.mentorship_meeting_repository = mentorship_meeting_repository
 
     def _extract_emails(self, emails: list) -> tuple[str | None, list[str]]:
         """
@@ -294,49 +298,48 @@ class MentorshipAdminService:
         ]
 
     def _extract_meetings_for_row(
-        self, row: ParticipantSearchRow
+        self,
+        row: ParticipantSearchRow,
+        meetings: list[MentorshipMeetingEntity],
     ) -> list[AdminMeetingDto]:
         """
-        Extract a row's meetings from its preloaded meeting log.
+        Build a row's meetings from its pair's pre-fetched `mentorship_meeting`
+        rows.
 
-        Reuses the same v1/v2 mapping logic as get_meeting_log(), operating on
-        the meeting_log already loaded with the search result instead of querying
-        the pair again.
+        `meetings` is expected to already be this row's pair's slice of a
+        batched `MentorshipMeetingRepository.get_meetings_by_pairs` result
+        (the caller looks it up per row, keyed by pair_id, from one page-wide
+        call) -- this method itself issues no query and does not re-sort:
+        it trusts the repository's own order (`start_datetime` ascending,
+        then `created_datetime`, then `meeting_id`), the same order
+        `_build_meeting_log_dto` now trusts. That is a deliberate change from
+        this method's old JSONB-era created_datetime sort, made so the two
+        read paths agree.
+
+        MANUAL and GOOGLE rows are shown together in whatever order they
+        arrive in -- there is no priority branch that hides one generation
+        in favor of the other. LEGACY rows (NULL times) are expected to
+        already be excluded by the caller's `get_meetings_by_pairs` call.
 
         Args:
-            row (ParticipantSearchRow): A row fetched with need_meeting_log=True.
+            row (ParticipantSearchRow): The row meetings are being extracted
+                for (used only for mentor_id/mentee_id to resolve note tags).
+            meetings (list[MentorshipMeetingEntity]): This row's pair's
+                meeting rows, already ordered.
 
         Returns:
-            list[AdminMeetingDto]: This row's meetings, oldest first.
+            list[AdminMeetingDto]: This row's meetings, in the given order.
         """
-        meeting_log = row.meeting_log or {}
-        google_meetings = meeting_log.get("google_meetings") or []
-        meeting_time_list = meeting_log.get("meeting_time_list") or []
-
-        # A pair should hold only one generation's entries: which one a user is
-        # on is decided by feature flag, and the two flags are never enabled for
-        # the same person. That is an operational guarantee with no enforcement
-        # in code -- if it is ever broken, this priority order silently hides the
-        # manual entries rather than showing both.
-        if google_meetings:
-            return [
-                self.mentorship_mapper.map_to_admin_meeting_dto(
-                    m,
-                    is_completed=m["is_completed"],
-                    note_tags=self._resolve_meeting_notes(
-                        m, row.mentor_id, row.mentee_id
-                    ),
-                )
-                for m in sorted(google_meetings, key=lambda m: m["created_datetime"])
-            ]
-        if meeting_time_list:
-            return [
-                self.mentorship_mapper.map_to_admin_meeting_dto(
-                    m, is_completed=True, note_tags=[]
-                )
-                for m in sorted(meeting_time_list, key=lambda m: m["created_datetime"])
-            ]
-        return []
+        return [
+            self.mentorship_mapper.map_to_admin_meeting_dto(
+                self._meeting_row_to_admin_dict(m),
+                is_completed=m.is_completed,
+                note_tags=self._resolve_meeting_notes_from_row(
+                    m, row.mentor_id, row.mentee_id
+                ),
+            )
+            for m in meetings
+        ]
 
     def _get_required_meetings(
         self, row: ParticipantSearchRow, rounds_map: dict
@@ -449,8 +452,13 @@ class MentorshipAdminService:
         """
         Resolve note tags for a meeting based on its duration, absence, and lateness flags.
 
+        Manual (v1) entries never carry these keys at all, so `.get()`
+        returning None for each of them is what naturally yields an empty
+        note list rather than a separate branch for that generation.
+
         Args:
-            meeting (dict): A single Google meeting record from the pair's meeting_log.
+            meeting (dict): A single meeting record (Google or manual) from
+                the pair's meeting_log.
             mentor_id (int): User ID of the pair's mentor.
             mentee_id (int): User ID of the pair's mentee.
 
@@ -477,6 +485,75 @@ class MentorshipAdminService:
                 notes.append(MeetingNoteTag.MENTEE_LATE)
         return notes
 
+    def _resolve_meeting_notes_from_row(
+        self,
+        meeting: MentorshipMeetingEntity,
+        mentor_id: int,
+        mentee_id: int,
+    ) -> list[MeetingNoteTag]:
+        """
+        Resolve note tags for a `mentorship_meeting` row's attendance columns.
+
+        The entity-row twin of `_resolve_meeting_notes`, used by the read path
+        that has switched from the JSONB column to querying
+        `MentorshipMeetingRepository` directly. MANUAL rows always have these
+        columns NULL (the `google_fields` CHECK constraint enforces it), so
+        this naturally yields an empty list for them without a separate
+        branch, same as the dict-based version does via missing keys.
+
+        Args:
+            meeting (MentorshipMeetingEntity): A single meeting row.
+            mentor_id (int): User ID of the pair's mentor.
+            mentee_id (int): User ID of the pair's mentee.
+
+        Returns:
+            list[MeetingNoteTag]: Note tags applicable to the meeting.
+        """
+        notes = []
+        if meeting.has_insufficient_duration:
+            notes.append(MeetingNoteTag.INSUFFICIENT_DURATION)
+        if meeting.has_unknown_absent:
+            notes.append(MeetingNoteTag.UNKNOWN_ABSENT)
+        elif meeting.absent_user_id:
+            if meeting.absent_user_id == mentor_id:
+                notes.append(MeetingNoteTag.MENTOR_ABSENT)
+            elif meeting.absent_user_id == mentee_id:
+                notes.append(MeetingNoteTag.MENTEE_ABSENT)
+        if meeting.has_unknown_late:
+            notes.append(MeetingNoteTag.UNKNOWN_LATE)
+        else:
+            late_user_ids = meeting.late_user_ids or []
+            if mentor_id in late_user_ids:
+                notes.append(MeetingNoteTag.MENTOR_LATE)
+            if mentee_id in late_user_ids:
+                notes.append(MeetingNoteTag.MENTEE_LATE)
+        return notes
+
+    def _meeting_row_to_admin_dict(self, meeting: MentorshipMeetingEntity) -> dict:
+        """
+        Bridge a `MentorshipMeetingEntity` row into the dict shape
+        `map_to_admin_meeting_dto` expects (the same shape a JSONB entry used
+        to have), converting its datetime columns to the ISO strings
+        `AdminMeetingDto`'s fields are typed as.
+
+        Only called for MANUAL/GOOGLE rows, whose `start_datetime` /
+        `end_datetime` / `created_datetime` are never NULL (only LEGACY rows
+        have NULL times, and callers must exclude those before reaching here).
+
+        Args:
+            meeting (MentorshipMeetingEntity): A single meeting row.
+
+        Returns:
+            dict: meeting_id/start_datetime/end_datetime/created_datetime,
+                with the datetimes as ISO strings.
+        """
+        return {
+            "meeting_id": meeting.meeting_id,
+            "start_datetime": meeting.start_datetime.isoformat(),
+            "end_datetime": meeting.end_datetime.isoformat(),
+            "created_datetime": meeting.created_datetime.isoformat(),
+        }
+
     async def get_meeting_log(
         self, session: AsyncSession, pair_id: int
     ) -> AdminMeetingLogDto | None:
@@ -494,58 +571,61 @@ class MentorshipAdminService:
         pair = await self.pairs_repository.get_pair_by_id(session, pair_id)
         if pair is None:
             return None
-        return self._build_meeting_log_dto(pair)
+        return await self._build_meeting_log_dto(session, pair)
 
-    def _build_meeting_log_dto(self, pair) -> AdminMeetingLogDto:
+    async def _build_meeting_log_dto(
+        self, session: AsyncSession, pair
+    ) -> AdminMeetingLogDto:
         """
-        Maps an already-loaded pair's meeting_log into an AdminMeetingLogDto.
+        Builds an AdminMeetingLogDto from a pair's `mentorship_meeting` rows.
 
-        google_meetings and meeting_time_list are meant to be mutually
-        exclusive as an operational guarantee, not a property this code
-        enforces (see the comment below on what happens when that guarantee
-        is broken); a pair with neither populated defaults to round_version
-        "v2" with an empty meetings list.
+        Reads MANUAL and GOOGLE rows for the pair in one query (LEGACY rows
+        are excluded -- they carry no times and have nothing to show in this
+        list). There is no separate priority branch per generation: a pair
+        holding both generations shows both, in the order the repository
+        already returned them, instead of one silently hiding the other.
+
+        Ordering decision: this method trusts
+        `MentorshipMeetingRepository.get_meetings_by_pair`'s own order
+        (`start_datetime` ascending, then `created_datetime`, then
+        `meeting_id`) rather than re-sorting by `created_datetime` to match
+        this admin log's old JSONB-era order. See the PR report for the
+        rationale; it is a deliberate, user-visible change, pinned by a test.
+
+        round_version is derived from what the rows actually are rather than
+        assumed: any GOOGLE row present means "v2"; only MANUAL rows means
+        "v1"; no rows at all keeps the "v2" default.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            pair: The pair to build a meeting log for. Must have `pair_id`,
+                `mentor_id`, and `mentee_id` populated.
+
+        Returns:
+            AdminMeetingLogDto: The pair's meeting log built from rows.
         """
-        meeting_log = pair.meeting_log or {}
-        google_meetings = meeting_log.get("google_meetings") or []
-        meeting_time_list = meeting_log.get("meeting_time_list") or []
-
-        # A pair should hold only one generation's entries: which one a user is
-        # on is decided by feature flag, and the two flags are never enabled for
-        # the same person. That is an operational guarantee with no enforcement
-        # in code -- if it is ever broken, this priority order silently hides the
-        # manual entries rather than showing both. Worse, it also disagrees with
-        # apply_v2_meeting_batch, which classifies a pair as v1 by checking
-        # meeting_time_list directly and raises ConflictError("Cannot edit a v1
-        # (read-only) meeting log.") for it. So a pair holding both would be
-        # reported here as an editable v2 log, while every edit attempt against
-        # it fails in apply_v2_meeting_batch with a message claiming it's v1
-        # read-only history.
-        if google_meetings:
+        meetings = await self.mentorship_meeting_repository.get_meetings_by_pair(
+            session, pair.pair_id
+        )
+        if not meetings:
             round_version = "v2"
-            mentor_id = pair.mentor_id
-            mentee_id = pair.mentee_id
-            meetings = [
-                self.mentorship_mapper.map_to_admin_meeting_dto(
-                    m,
-                    is_completed=m["is_completed"],
-                    note_tags=self._resolve_meeting_notes(m, mentor_id, mentee_id),
-                )
-                for m in sorted(google_meetings, key=lambda m: m["created_datetime"])
-            ]
-        elif meeting_time_list:
-            round_version = "v1"
-            meetings = [
-                self.mentorship_mapper.map_to_admin_meeting_dto(
-                    m, is_completed=True, note_tags=[]
-                )
-                for m in sorted(meeting_time_list, key=lambda m: m["created_datetime"])
-            ]
+        elif any(m.source == MeetingSource.GOOGLE for m in meetings):
+            round_version = "v2"
         else:
-            round_version = "v2"
-            meetings = []
+            round_version = "v1"
 
-        return AdminMeetingLogDto(round_version=round_version, meetings=meetings)
+        mentor_id = pair.mentor_id
+        mentee_id = pair.mentee_id
+        meeting_dtos = [
+            self.mentorship_mapper.map_to_admin_meeting_dto(
+                self._meeting_row_to_admin_dict(m),
+                is_completed=m.is_completed,
+                note_tags=self._resolve_meeting_notes_from_row(m, mentor_id, mentee_id),
+            )
+            for m in meetings
+        ]
+
+        return AdminMeetingLogDto(round_version=round_version, meetings=meeting_dtos)
 
     def _validate_note_tags(self, note: list[MeetingNoteTag] | None) -> None:
         """
@@ -566,29 +646,34 @@ class MentorshipAdminService:
 
     def _apply_note_tags(
         self,
-        meeting: dict,
+        meeting: MentorshipMeetingEntity,
         note: list[MeetingNoteTag],
         mentor_id: int,
         mentee_id: int,
     ) -> None:
-        """Writes note's tags into meeting's persisted fields, in place."""
-        meeting["has_insufficient_duration"] = (
-            MeetingNoteTag.INSUFFICIENT_DURATION in note
-        )
-        meeting["has_unknown_absent"] = MeetingNoteTag.UNKNOWN_ABSENT in note
+        """
+        Writes note's tags onto a meeting row's persisted attributes.
+
+        `late_user_ids` (`ARRAY(Integer)`) is not `Mutable`-wrapped, so it is
+        always assigned a whole new list here, never appended to in place --
+        an in-place append would not be seen by the unit of work and would
+        silently fail to persist.
+        """
+        meeting.has_insufficient_duration = MeetingNoteTag.INSUFFICIENT_DURATION in note
+        meeting.has_unknown_absent = MeetingNoteTag.UNKNOWN_ABSENT in note
         if MeetingNoteTag.MENTOR_ABSENT in note:
-            meeting["absent_user_id"] = mentor_id
+            meeting.absent_user_id = mentor_id
         elif MeetingNoteTag.MENTEE_ABSENT in note:
-            meeting["absent_user_id"] = mentee_id
+            meeting.absent_user_id = mentee_id
         else:
-            meeting["absent_user_id"] = None
-        meeting["has_unknown_late"] = MeetingNoteTag.UNKNOWN_LATE in note
-        late_user_id = []
+            meeting.absent_user_id = None
+        meeting.has_unknown_late = MeetingNoteTag.UNKNOWN_LATE in note
+        late_user_ids = []
         if MeetingNoteTag.MENTOR_LATE in note:
-            late_user_id.append(mentor_id)
+            late_user_ids.append(mentor_id)
         if MeetingNoteTag.MENTEE_LATE in note:
-            late_user_id.append(mentee_id)
-        meeting["late_user_id"] = late_user_id
+            late_user_ids.append(mentee_id)
+        meeting.late_user_ids = late_user_ids
 
     async def apply_v2_meeting_batch(
         self,
@@ -614,9 +699,13 @@ class MentorshipAdminService:
 
         Raises:
             ValueError: updates and deletes are both empty; the same
-                meeting_id appears in both; a meeting_id doesn't exist in
-                this pair's log; or the pair itself doesn't exist.
-            ConflictError: The pair's meeting log is v1 (read-only history).
+                meeting_id appears in both; a meeting_id doesn't exist among
+                this pair's rows; or the pair itself doesn't exist.
+            ConflictError: Any targeted meeting_id (update or delete) belongs
+                to a MANUAL row (v1, read-only history). The check is
+                per-row, not per-pair -- a pair holding both MANUAL and
+                GOOGLE rows may still have its GOOGLE rows edited freely;
+                only a targeted row that is itself MANUAL is rejected.
         """
         if not batch.updates and not batch.deletes:
             raise ValueError("updates and deletes must not both be empty.")
@@ -637,32 +726,48 @@ class MentorshipAdminService:
         if pair is None:
             raise ValueError(f"Mentorship pair {pair_id} not found.")
 
-        meeting_log = pair.meeting_log or {}
-        if meeting_log.get("meeting_time_list"):
-            raise ConflictError("Cannot edit a v1 (read-only) meeting log.")
-
-        meetings = list(meeting_log.get("google_meetings") or [])
-        by_id = {m["meeting_id"]: m for m in meetings}
-        missing = (update_ids | delete_ids) - by_id.keys()
+        meetings = await self.mentorship_meeting_repository.get_meetings_by_pair(
+            session, pair_id
+        )
+        by_id = {m.meeting_id: m for m in meetings}
+        target_ids = update_ids | delete_ids
+        missing = target_ids - by_id.keys()
         if missing:
             raise ValueError(
                 f"meeting_id(s) not found for this pair: {sorted(missing)}"
             )
 
-        meetings = [m for m in meetings if m["meeting_id"] not in delete_ids]
+        manual_targets = {
+            mid for mid in target_ids if by_id[mid].source == MeetingSource.MANUAL
+        }
+        if manual_targets:
+            raise ConflictError("Cannot edit a v1 (read-only) meeting log.")
+
+        if delete_ids:
+            await self.mentorship_meeting_repository.delete_meetings(
+                session, pair_id, list(delete_ids)
+            )
         for item in batch.updates:
             meeting = by_id[item.meeting_id]
             if item.is_completed is not None:
-                meeting["is_completed"] = item.is_completed
+                meeting.is_completed = item.is_completed
             if item.note is not None:
                 self._apply_note_tags(
                     meeting, item.note, pair.mentor_id, pair.mentee_id
                 )
 
-        pair.meeting_log = {**meeting_log, "google_meetings": meetings}
-        pair.completed_count = sum(1 for m in meetings if m.get("is_completed"))
+        # Assigned directly rather than left for the ORM to refresh -- same
+        # rationale as MeetingService.upsert_meetings: the UPDATE issued here
+        # sets completed_count from a scalar subquery, which falls back to the
+        # "fetch" synchronize strategy and EXPIRES completed_count on this
+        # loaded pair rather than repopulating it; reading it after commit()
+        # without reassigning would raise MissingGreenlet under async.
+        pair.completed_count = (
+            await self.mentorship_meeting_repository.recalculate_completed_count(
+                session, pair_id
+            )
+        )
 
-        await self.pairs_repository.upsert_pairs(session, pair)
         await session.commit()
 
         self.logger.info(
@@ -672,7 +777,7 @@ class MentorshipAdminService:
             len(delete_ids),
         )
 
-        return self._build_meeting_log_dto(pair)
+        return await self._build_meeting_log_dto(session, pair)
 
     async def stream_export_csv(
         self,
@@ -689,6 +794,12 @@ class MentorshipAdminService:
         aborting the stream. When expanding meetings, a pair's meeting rows
         are built before writing to avoid partially exporting a participant
         when one meeting fails.
+
+        When expand_meetings needs meeting data, it is fetched with exactly
+        one `mentorship_meeting_repository.get_meetings_by_pairs` call per
+        page (grouped by pair_id, up to _EXPORT_BATCH_SIZE pairs), not one
+        query per row -- the same batching this method already applies to
+        users/emails/trainings via `_fetch_batch_relations`.
 
         Args:
             filters (ParticipantSearchFilterDto): Same filters as the search
@@ -709,7 +820,7 @@ class MentorshipAdminService:
         if filters.participation_status is None:
             raise ValueError("filters.participation_status is required for CSV export.")
         is_participant = filters.participation_status == "participant"
-        need_meeting_log = is_participant and expand_meetings
+        need_meetings = is_participant and expand_meetings
         buffer = io.StringIO()
         writer = csv.writer(buffer)
 
@@ -742,7 +853,6 @@ class MentorshipAdminService:
                 rows = await self.participants_repository.iter_search_participants_for_admin(
                     session,
                     filters,
-                    need_meeting_log=need_meeting_log,
                     limit=_EXPORT_BATCH_SIZE,
                     offset=offset,
                 )
@@ -754,6 +864,19 @@ class MentorshipAdminService:
                     emails_map,
                     trainings_map,
                 ) = await self._fetch_batch_relations(session, rows)
+
+                # One batched call for the whole page instead of a per-row
+                # query -- get_meetings_by_pairs excludes LEGACY rows (NULL
+                # times) by default, which must never reach a meeting column
+                # that expects a real datetime.
+                meetings_by_pair: dict[int, list[MentorshipMeetingEntity]] = {}
+                if need_meetings:
+                    pair_ids = [row.pair_id for row in rows if row.pair_id is not None]
+                    meetings_by_pair = (
+                        await self.mentorship_meeting_repository.get_meetings_by_pairs(
+                            session=session, pair_ids=pair_ids
+                        )
+                    )
 
                 for row in rows:
                     try:
@@ -774,7 +897,9 @@ class MentorshipAdminService:
                                     ]
                                 ]
                             else:
-                                meetings = self._extract_meetings_for_row(row)
+                                meetings = self._extract_meetings_for_row(
+                                    row, meetings_by_pair.get(row.pair_id, [])
+                                )
                                 if meetings:
                                     csv_rows = [
                                         common
