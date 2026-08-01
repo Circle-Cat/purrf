@@ -648,6 +648,70 @@ class GoogleService:
         )
         return conferences
 
+    async def list_conferences_by_meeting_code(
+        self, meeting_code: str, start_time_after: str, start_time_before: str
+    ) -> list[dict]:
+        """
+        Lists conference records for one Meet space, by its meeting code.
+
+        The reverse of ``list_ended_conferences``: instead of pulling every
+        conference the service account can see and discarding the ones that
+        are not ours, this asks for exactly one meeting's records.
+        ``ListConferenceRecordsRequest.filter`` supports ``space.meeting_code``
+        (named explicitly in the proto), and the code we store on a meeting row
+        is that same value.
+
+        The window is filtered on ``start_time`` rather than ``end_time``: a
+        conference is attributed to a scheduled meeting by when it STARTED
+        relative to that meeting's slot, which is the rule the caller's
+        3-hour affinity window encodes.
+
+        Args:
+            meeting_code (str): The Meet meeting code (e.g. "abc-defg-hij").
+            start_time_after (str): ISO 8601 lower bound for the conference
+                start time (inclusive).
+            start_time_before (str): ISO 8601 upper bound for the conference
+                start time (inclusive).
+
+        Returns:
+            list[dict]: Conference records in the same shape
+                ``list_ended_conferences`` returns -- name / space /
+                start_time / end_time -- so both feed
+                ``fetch_participants_for_record`` identically.
+        """
+        self.logger.debug(
+            "[GoogleService] list_conferences_by_meeting_code: code=%s, after=%s, before=%s",
+            meeting_code,
+            start_time_after,
+            start_time_before,
+        )
+        conferences = []
+        request = meet_v2.ListConferenceRecordsRequest(
+            filter=(
+                f'space.meeting_code="{meeting_code}" '
+                f'AND start_time>="{start_time_after}" '
+                f'AND start_time<="{start_time_before}"'
+            ),
+        )
+        pager = await self.meet_conference_records_client.list_conference_records(
+            request=request
+        )
+        async for record in pager:
+            conferences.append({
+                "name": record.name,
+                "space": record.space,
+                "start_time": record.start_time.isoformat()
+                if record.start_time
+                else "",
+                "end_time": record.end_time.isoformat() if record.end_time else "",
+            })
+        self.logger.debug(
+            "[GoogleService] list_conferences_by_meeting_code: code=%s fetched %d records",
+            meeting_code,
+            len(conferences),
+        )
+        return conferences
+
     async def get_meeting_code_for_space(self, space_name: str) -> str:
         """
         Fetches the canonical meeting code for a Meet space.

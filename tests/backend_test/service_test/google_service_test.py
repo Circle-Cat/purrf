@@ -1042,6 +1042,69 @@ class TestGoogleServiceMeetConferenceRecords(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result[0]["start_time"], "")
         self.assertEqual(result[0]["end_time"], "")
 
+    async def test_list_conferences_by_meeting_code_filters_on_code_and_window(self):
+        """The code and both window bounds all reach the Meet filter string."""
+        mock_record = MagicMock()
+        mock_record.name = "conferenceRecords/rec1"
+        mock_record.space = "spaces/abc-defg-hij"
+        mock_record.start_time.isoformat.return_value = "2026-04-07T10:05:00+00:00"
+        mock_record.end_time.isoformat.return_value = "2026-04-07T11:00:00+00:00"
+
+        async def _pager():
+            yield mock_record
+
+        self.mock_meet_conference_records_client.list_conference_records.return_value = _pager()
+
+        result = await self.service.list_conferences_by_meeting_code(
+            "abc-defg-hij",
+            "2026-04-07T07:00:00+00:00",
+            "2026-04-07T14:00:00+00:00",
+        )
+
+        request = (
+            self.mock_meet_conference_records_client.list_conference_records.call_args
+        ).kwargs["request"]
+        self.assertIn('space.meeting_code="abc-defg-hij"', request.filter)
+        self.assertIn('start_time>="2026-04-07T07:00:00+00:00"', request.filter)
+        self.assertIn('start_time<="2026-04-07T14:00:00+00:00"', request.filter)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["name"], "conferenceRecords/rec1")
+        self.assertEqual(result[0]["space"], "spaces/abc-defg-hij")
+
+    async def test_list_conferences_by_meeting_code_empty_pager_returns_empty_list(self):
+        async def _pager():
+            return
+            yield
+
+        self.mock_meet_conference_records_client.list_conference_records.return_value = _pager()
+
+        result = await self.service.list_conferences_by_meeting_code(
+            "abc-defg-hij", "2026-04-07T07:00:00+00:00", "2026-04-07T14:00:00+00:00"
+        )
+
+        self.assertEqual(result, [])
+
+    async def test_list_conferences_by_meeting_code_null_times_fall_back_to_empty_string(
+        self,
+    ):
+        mock_record = MagicMock()
+        mock_record.name = "conferenceRecords/no-times"
+        mock_record.space = "spaces/abc-defg-hij"
+        mock_record.start_time = None
+        mock_record.end_time = None
+
+        async def _pager():
+            yield mock_record
+
+        self.mock_meet_conference_records_client.list_conference_records.return_value = _pager()
+
+        result = await self.service.list_conferences_by_meeting_code(
+            "abc-defg-hij", "2026-04-07T07:00:00+00:00", "2026-04-07T14:00:00+00:00"
+        )
+
+        self.assertEqual(result[0]["start_time"], "")
+        self.assertEqual(result[0]["end_time"], "")
+
     async def test_get_meeting_code_for_space_returns_code(self):
         """Returns the meeting code for the given space resource name."""
         mock_space = MagicMock()
