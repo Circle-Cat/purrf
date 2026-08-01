@@ -397,14 +397,17 @@ class TestBoardController(unittest.IsolatedAsyncioTestCase):
             return_value={"hits": [], "truncated": False}
         )
 
+        # job_id and current_job_id are deliberately DIFFERENT values here:
+        # if they were equal, a handler bug that swapped the two kwargs would
+        # go undetected (both assertions would still pass).
         await self.controller.search_applicants(
-            self.ctx, q="zhang", job_id=1, current_job_id=1
+            self.ctx, q="zhang", job_id=1, current_job_id=2
         )
 
         self.board_service.search_applicants.assert_awaited_once()
         kwargs = self.board_service.search_applicants.await_args.kwargs
         self.assertEqual(kwargs["job_id"], 1)
-        self.assertEqual(kwargs["current_job_id"], 1)
+        self.assertEqual(kwargs["current_job_id"], 2)
 
     async def test_search_applicants_omits_job_id_for_all_postings_mode(self):
         self.board_service.search_applicants = AsyncMock(

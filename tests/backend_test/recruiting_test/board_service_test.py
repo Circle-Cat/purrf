@@ -893,6 +893,40 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual([h.application_id for h in result["hits"]], [11, 10, 12])
 
+    async def test_search_applicants_cap_applies_before_current_job_reorder(self):
+        # Pin the ORDER of operations: the cap must be applied BEFORE the
+        # current-job-first reorder, so floating the open posting's hits to
+        # the front can never change which rows survive the cap.
+        job_a = self._job(job_id=1, owner_ids=(2,))
+        job_b = self._job(job_id=2, owner_ids=(2,))
+        self.job_repo.list_all = AsyncMock(return_value=[job_a, job_b])
+        # SEARCH_RESULT_LIMIT + 1 rows from the repository, in recency order.
+        # Every row belongs to job 2 except the very LAST one, which belongs
+        # to job 1 -- the currently-open posting. Under the broken ordering
+        # (sort, then slice) that last row would float to the front and
+        # survive the cap; under the correct ordering (slice, then sort) it
+        # is already cut before reordering ever sees it.
+        rows = [
+            self._hit_row(application_id=i, job_id=2, user_id=i)
+            for i in range(SEARCH_RESULT_LIMIT)
+        ] + [
+            self._hit_row(
+                application_id=SEARCH_RESULT_LIMIT,
+                job_id=1,
+                user_id=SEARCH_RESULT_LIMIT,
+            )
+        ]
+        self.app_repo.search_latest_by_jobs = AsyncMock(return_value=rows)
+
+        result = await self.service.search_applicants(
+            self.session, self._ctx(user_id=2), "zhang", current_job_id=1, job_id=None
+        )
+
+        self.assertNotIn(
+            SEARCH_RESULT_LIMIT, [h.application_id for h in result["hits"]]
+        )
+        self.assertTrue(result["truncated"])
+
     # -- _require_owner / get_board --
 
     async def test_get_board_groups_by_stage(self):
