@@ -333,7 +333,7 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
         capable of seeing, so a wrong delta (one hour a side, or the delta
         applied to only one end) has to fail here."""
         self.mock_round_repo.get_running_round_id.return_value = self.round_id
-        pair, meeting = self._make_active_pair_and_meeting()
+        pair, _ = self._make_active_pair_and_meeting()
         self.mock_pairs_repo.get_active_pairs_by_round.return_value = [pair]
         self.mock_meeting_repo.get_pending_google_meetings_in_window.return_value = []
         frozen_now = datetime(2026, 4, 7, 12, 0, tzinfo=timezone.utc)
