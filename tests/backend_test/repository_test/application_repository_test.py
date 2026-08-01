@@ -1076,16 +1076,37 @@ class TestApplicationRepository(BaseRepositoryTestLib):
 
         self.assertEqual([a.application_id for a, _ in rows], [wanted.application_id])
 
-    async def test_search_escapes_sql_wildcards_in_the_term(self):
+    async def test_search_escapes_underscore_wildcard_in_the_term(self):
+        # Unescaped, "_" is a single-character SQL wildcard, so "AXB Wildcard"
+        # would match "%a_b%" too (a, any one char, b). Only the literal
+        # "A_B Underscore" applicant must come back for the term "a_b".
         job = await self._seed_job()
-        await self._seed_applicant(job, "Zhang", "Wei")
+        _, decoy = await self._seed_applicant(job, "AXB", "Wildcard")
         _, literal = await self._seed_applicant(job, "A_B", "Underscore")
 
         rows = await self.repo.search_latest_by_jobs(
             self.session, [job.job_id], "a_b", limit=20
         )
 
-        self.assertEqual([a.application_id for a, _ in rows], [literal.application_id])
+        ids = [a.application_id for a, _ in rows]
+        self.assertEqual(ids, [literal.application_id])
+        self.assertNotIn(decoy.application_id, ids)
+
+    async def test_search_escapes_percent_wildcard_in_the_term(self):
+        # Unescaped, "%" matches any run of characters (including none), so
+        # "AZZZB Wildcard" would match "%a%b%" too (a, anything, b). Only the
+        # literal "A%B Percent" applicant must come back for the term "a%b".
+        job = await self._seed_job()
+        _, decoy = await self._seed_applicant(job, "AZZZB", "Wildcard")
+        _, literal = await self._seed_applicant(job, "A%B", "Percent")
+
+        rows = await self.repo.search_latest_by_jobs(
+            self.session, [job.job_id], "a%b", limit=20
+        )
+
+        ids = [a.application_id for a, _ in rows]
+        self.assertEqual(ids, [literal.application_id])
+        self.assertNotIn(decoy.application_id, ids)
 
     async def test_search_finds_applicant_with_no_email_rows_by_name(self):
         job = await self._seed_job()
@@ -1134,10 +1155,107 @@ class TestApplicationRepository(BaseRepositoryTestLib):
             {in_a.application_id, in_b.application_id},
         )
 
+    async def test_search_groups_by_job_and_user_so_every_job_survives(self):
+        # A user with applications to two searched jobs must surface BOTH.
+        # Grouping the "latest per user" subquery by user_id alone (as
+        # list_by_job does, but with job_id fixed there) would collapse this
+        # to a single MAX(application_id) across both jobs and silently drop
+        # whichever application has the lower id.
+        job_a = await self._seed_job("A")
+        job_b = await self._seed_job("B")
+        user = _make_user("Multi", "Job", "unused@example.com")
+        await self.insert_entities([user])
+        await self.session.flush()
+        app_a = await self.repo.create(
+            self.session,
+            ApplicationEntity(
+                job_id=job_a.job_id, user_id=user.user_id, stage=ApplicationStage.APPLIED
+            ),
+        )
+        app_b = await self.repo.create(
+            self.session,
+            ApplicationEntity(
+                job_id=job_b.job_id, user_id=user.user_id, stage=ApplicationStage.APPLIED
+            ),
+        )
+
+        rows = await self.repo.search_latest_by_jobs(
+            self.session, [job_a.job_id, job_b.job_id], "multi", limit=20
+        )
+
+        self.assertEqual(
+            {a.application_id for a, _ in rows},
+            {app_a.application_id, app_b.application_id},
+        )
+
     async def test_search_returns_nothing_for_empty_job_ids(self):
         rows = await self.repo.search_latest_by_jobs(self.session, [], "zhang", limit=20)
 
         self.assertEqual(rows, [])
+
+    async def test_search_matches_email_case_insensitively(self):
+        job = await self._seed_job()
+        _, wanted = await self._seed_applicant(
+            job,
+            "Zhang",
+            "Wei",
+            emails=(("MixedCase@Example.com", True, True),),
+        )
+
+        rows = await self.repo.search_latest_by_jobs(
+            self.session, [job.job_id], "MIXEDCASE@example.COM", limit=20
+        )
+
+        self.assertEqual([a.application_id for a, _ in rows], [wanted.application_id])
+
+    async def test_search_orders_by_created_datetime_desc_then_id_desc(self):
+        job = await self._seed_job()
+        user_1 = _make_user("Zhang", "One", "unused@example.com")
+        user_2 = _make_user("Zhang", "Two", "unused@example.com")
+        user_3 = _make_user("Zhang", "Three", "unused@example.com")
+        await self.insert_entities([user_1, user_2, user_3])
+        await self.session.flush()
+
+        # Inserted oldest-first (so ascending application_id) but with
+        # explicit created_datetime values in the OPPOSITE order, so a test
+        # that passed by accident under "order by application_id" would
+        # fail here.
+        app_1 = await self.repo.create(
+            self.session,
+            ApplicationEntity(
+                job_id=job.job_id,
+                user_id=user_1.user_id,
+                stage=ApplicationStage.APPLIED,
+                created_datetime=datetime(2026, 1, 3, tzinfo=timezone.utc),
+            ),
+        )
+        app_2 = await self.repo.create(
+            self.session,
+            ApplicationEntity(
+                job_id=job.job_id,
+                user_id=user_2.user_id,
+                stage=ApplicationStage.APPLIED,
+                created_datetime=datetime(2026, 1, 2, tzinfo=timezone.utc),
+            ),
+        )
+        app_3 = await self.repo.create(
+            self.session,
+            ApplicationEntity(
+                job_id=job.job_id,
+                user_id=user_3.user_id,
+                stage=ApplicationStage.APPLIED,
+                created_datetime=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            ),
+        )
+
+        rows = await self.repo.search_latest_by_jobs(
+            self.session, [job.job_id], "zhang", limit=20
+        )
+
+        self.assertEqual(
+            [a.application_id for a, _ in rows],
+            [app_1.application_id, app_2.application_id, app_3.application_id],
+        )
 
     async def test_search_honours_the_limit(self):
         job = await self._seed_job()
