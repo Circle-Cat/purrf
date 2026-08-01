@@ -267,7 +267,9 @@ describe("BoardPage", () => {
     );
     expect(api.getJobBoard).toHaveBeenCalledWith(1);
 
-    await user.click(screen.getByRole("combobox"));
+    // Named: the search box is now also role="combobox" (Fix 4's ARIA
+    // wiring), so an unnamed query would be ambiguous between the two.
+    await user.click(screen.getByRole("combobox", { name: "Job" }));
     await user.click(await screen.findByText("Mentor"));
 
     await waitFor(() => expect(api.getJobBoard).toHaveBeenCalledWith(2));
@@ -844,7 +846,9 @@ describe("BoardPage", () => {
     await waitFor(() => expect(api.getJobBoard).toHaveBeenCalledWith(1));
     expect(router.state.historyAction).toBe("POP");
 
-    await user.click(screen.getByRole("combobox"));
+    // Named: the search box is now also role="combobox" (Fix 4's ARIA
+    // wiring), so an unnamed query would be ambiguous between the two.
+    await user.click(screen.getByRole("combobox", { name: "Job" }));
     await user.click(await screen.findByText("Mentor"));
 
     await waitFor(() => expect(router.state.location.search).toBe("?jobId=2"));
@@ -1069,5 +1073,140 @@ describe("BoardPage", () => {
     });
 
     await waitFor(() => expect(card.className).not.toContain("ring-2"));
+  });
+
+  it("renders the applicant search once the jobs have loaded", async () => {
+    api.listBoardJobs.mockResolvedValue({ data: [jobA] });
+    api.getJobBoard.mockResolvedValue({ data: {} });
+    renderPage();
+
+    expect(
+      await screen.findByPlaceholderText("Search by name or email"),
+    ).toBeInTheDocument();
+  });
+
+  it("scopes the focus hunt to the lanes, not a search result row sharing the same data-application-id", async () => {
+    // ApplicantSearch's rows carry the same `data-application-id` attribute
+    // as cards, and sit earlier in the DOM. A document-wide lookup would
+    // match this row instead of the real card. The board fetch is held open
+    // so the search row can be placed on screen (the search box is mounted
+    // as soon as jobs load, independent of the board) before the focus-hunt
+    // effect ever runs against a resolved board.
+    const scrolled = [];
+    scrollIntoViewSpy = vi
+      .spyOn(Element.prototype, "scrollIntoView")
+      .mockImplementation(function captureTarget() {
+        scrolled.push(this);
+      });
+
+    const user = userEvent.setup();
+    api.listBoardJobs.mockResolvedValue({ data: [jobA] });
+    let resolveBoard;
+    api.getJobBoard.mockReturnValue(
+      new Promise((resolve) => {
+        resolveBoard = resolve;
+      }),
+    );
+    api.searchBoardApplicants.mockResolvedValue({
+      data: {
+        hits: [
+          {
+            applicationId: 777,
+            applicantName: "Just Rejected",
+            applicantEmail: "jr@example.com",
+            jobId: 1,
+            jobTitle: "Backend Engineer",
+            jobKind: "employment",
+            stage: "rejected",
+            appliedAt: "2026-06-01T00:00:00Z",
+          },
+        ],
+        truncated: false,
+      },
+    });
+
+    renderPage("?jobId=1&focus=777");
+
+    // Put a search result row bearing the same data-application-id on
+    // screen while the board (and therefore the focus hunt) is still
+    // pending.
+    await user.type(
+      await screen.findByPlaceholderText("Search by name or email"),
+      "just",
+    );
+    await user.click(screen.getByRole("button", { name: "Search" }));
+    const searchRow = await screen.findByRole("option");
+    expect(searchRow).toHaveAttribute("data-application-id", "777");
+
+    // Now let the board (and the real card) land, with the search row
+    // already in the DOM ahead of it.
+    resolveBoard({
+      data: {
+        stages: {
+          rejected: {
+            items: [
+              {
+                id: 777,
+                applicantName: "Just Rejected",
+                applicantEmail: "jr@example.com",
+                stage: "rejected",
+                subStatus: null,
+                tags: null,
+                appliedAt: "2026-06-01T00:00:00Z",
+              },
+            ],
+            total: 1,
+            has_more: false,
+          },
+        },
+      },
+    });
+
+    const card = await screen.findByRole("button", { name: /Just Rejected/ });
+
+    await waitFor(() => expect(scrolled).toHaveLength(1));
+    // The real card, not the earlier-in-the-DOM search row, is what got
+    // scrolled and rung.
+    expect(scrolled[0]).toBe(card);
+    expect(scrolled[0]).not.toBe(searchRow);
+    await waitFor(() => expect(card.className).toContain("ring-2"));
+    expect(searchRow.className).not.toContain("ring-2");
+  });
+
+  it("navigates to the detail page when a search hit is chosen", async () => {
+    const user = userEvent.setup();
+    api.listBoardJobs.mockResolvedValue({ data: [jobA] });
+    api.getJobBoard.mockResolvedValue({ data: {} });
+    api.searchBoardApplicants.mockResolvedValue({
+      data: {
+        hits: [
+          {
+            applicationId: 77,
+            applicantName: "Zhang Wei",
+            applicantEmail: "zw@example.com",
+            jobId: 1,
+            jobTitle: "Backend Engineer",
+            jobKind: "employment",
+            stage: "tech",
+            appliedAt: "2026-01-01T00:00:00Z",
+          },
+        ],
+        truncated: false,
+      },
+    });
+    const { router } = renderPage();
+
+    await user.type(
+      await screen.findByPlaceholderText("Search by name or email"),
+      "zhang",
+    );
+    await user.click(screen.getByRole("button", { name: "Search" }));
+    await user.click(await screen.findByRole("option"));
+
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe(
+        "/recruiting/applications/77",
+      );
+    });
   });
 });
