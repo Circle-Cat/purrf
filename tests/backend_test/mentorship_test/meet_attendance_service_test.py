@@ -1,7 +1,7 @@
 import copy
 import unittest
-from datetime import timedelta
-from unittest.mock import MagicMock, AsyncMock
+from datetime import datetime, timedelta, timezone
+from unittest.mock import MagicMock, AsyncMock, patch
 
 from dateutil.parser import isoparse
 
@@ -326,18 +326,39 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
     async def test_selection_window_is_wider_than_lookback_on_both_sides(self):
         """The selection bounds must be derived from the affinity window, not
         from lookback alone -- a conference may start up to ATTENDANCE_WINDOW_DELTA
-        after a meeting's scheduled end, and those must not be missed."""
+        after a meeting's scheduled end, and those must not be missed.
+
+        Pinned to the exact instants against a frozen clock rather than to a
+        span range: this arithmetic decides which meetings the sweep is even
+        capable of seeing, so a wrong delta (one hour a side, or the delta
+        applied to only one end) has to fail here."""
         self.mock_round_repo.get_running_round_id.return_value = self.round_id
         pair, meeting = self._make_active_pair_and_meeting()
         self.mock_pairs_repo.get_active_pairs_by_round.return_value = [pair]
         self.mock_meeting_repo.get_pending_google_meetings_in_window.return_value = []
+        frozen_now = datetime(2026, 4, 7, 12, 0, tzinfo=timezone.utc)
 
-        await self.service.sync_attendance(session=self.mock_session, lookback_hours=4)
+        with patch(
+            "backend.mentorship.meet_attendance_service.datetime"
+        ) as mock_datetime:
+            mock_datetime.now.return_value = frozen_now
+            await self.service.sync_attendance(
+                session=self.mock_session, lookback_hours=4
+            )
 
         kwargs = self.mock_meeting_repo.get_pending_google_meetings_in_window.call_args.kwargs
-        span = kwargs["starts_before"] - kwargs["ends_after"]
-        self.assertGreater(span, timedelta(hours=4))
-        self.assertLess(span, timedelta(days=1))
+        # now - 4h lookback - 3h affinity delta
+        self.assertEqual(
+            kwargs["ends_after"], datetime(2026, 4, 7, 5, 0, tzinfo=timezone.utc)
+        )
+        # now + 3h affinity delta (NOT clamped to now -- a conference may start
+        # early, before its meeting's scheduled slot)
+        self.assertEqual(
+            kwargs["starts_before"], datetime(2026, 4, 7, 15, 0, tzinfo=timezone.utc)
+        )
+        self.assertEqual(
+            kwargs["starts_before"] - kwargs["ends_after"], timedelta(hours=10)
+        )
 
     async def test_meet_is_queried_with_each_meeting_own_affinity_window(self):
         self.mock_round_repo.get_running_round_id.return_value = self.round_id
@@ -383,7 +404,11 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
     async def test_summary_counts_are_additive(self):
         """selected == reconciled + no_conference + failed, so the cron's own
         report can be trusted. This is the invariant the old meetings_skipped
-        did not hold."""
+        did not hold.
+
+        The raising meeting is deliberately FIRST: a failure must not abandon
+        the meetings queued behind it, so the second one still has to be
+        queried and counted."""
         self.mock_round_repo.get_running_round_id.return_value = self.round_id
         pair_a, meeting_a = self._make_active_pair_and_meeting(conf_id="aaa-aaaa-aaa")
         pair_b, meeting_b = self._make_active_pair_and_meeting(
@@ -396,8 +421,8 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
         ]
         self.mock_users_repo.get_all_by_ids.return_value = [self.mentor, self.mentee]
         self.mock_google_service.list_conferences_by_meeting_code.side_effect = [
-            [],
             RuntimeError("Meet exploded"),
+            [],
         ]
 
         result = await self.service.sync_attendance(
@@ -411,6 +436,11 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
             + result["meetings_failed"],
         )
         self.assertEqual(result["meetings_failed"], 1)
+        # The meeting queued behind the failure was still processed.
+        self.assertEqual(result["meetings_no_conference"], 1)
+        self.assertEqual(
+            self.mock_google_service.list_conferences_by_meeting_code.await_count, 2
+        )
 
     async def test_two_signed_in_meeting_completed(self):
         """Both mentor and mentee signed in, meeting duration >= 80% → is_completed=True."""

@@ -673,8 +673,17 @@ class GoogleService:
             start_time_before (str): ISO 8601 upper bound for the conference
                 start time (inclusive).
 
+        Records for conferences that are still in progress are dropped here.
+        ``list_ended_conferences`` filtered on ``end_time``, so an unfinished
+        conference could never come back from it; filtering on ``start_time``
+        means it can, and a live one has no ``endTime`` at all. Dropping it at
+        this boundary keeps the "ended conferences only" guarantee callers
+        already relied on -- the attendance sweep in particular parses
+        ``end_time`` unconditionally, and selects meetings up to three hours
+        ahead of now, so it meets live conferences routinely.
+
         Returns:
-            list[dict]: Conference records in the same shape
+            list[dict]: ENDED conference records in the same shape
                 ``list_ended_conferences`` returns -- name / space /
                 start_time / end_time -- so both feed
                 ``fetch_participants_for_record`` identically.
@@ -696,19 +705,34 @@ class GoogleService:
         pager = await self.meet_conference_records_client.list_conference_records(
             request=request
         )
+        skipped_in_progress = 0
         async for record in pager:
+            # No endTime means the conference is still running. Never emit it:
+            # it would reach the caller as end_time="" and blow up the first
+            # isoparse that touches it.
+            if not record.end_time:
+                skipped_in_progress += 1
+                self.logger.debug(
+                    "[GoogleService] list_conferences_by_meeting_code: code=%s, "
+                    "skipping still-running record %s",
+                    meeting_code,
+                    record.name,
+                )
+                continue
             conferences.append({
                 "name": record.name,
                 "space": record.space,
                 "start_time": record.start_time.isoformat()
                 if record.start_time
                 else "",
-                "end_time": record.end_time.isoformat() if record.end_time else "",
+                "end_time": record.end_time.isoformat(),
             })
         self.logger.debug(
-            "[GoogleService] list_conferences_by_meeting_code: code=%s fetched %d records",
+            "[GoogleService] list_conferences_by_meeting_code: code=%s fetched %d "
+            "ended records, skipped %d still running",
             meeting_code,
             len(conferences),
+            skipped_in_progress,
         )
         return conferences
 

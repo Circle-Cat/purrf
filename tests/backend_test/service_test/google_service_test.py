@@ -1084,14 +1084,51 @@ class TestGoogleServiceMeetConferenceRecords(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result, [])
 
-    async def test_list_conferences_by_meeting_code_null_times_fall_back_to_empty_string(
+    async def test_list_conferences_by_meeting_code_drops_still_running_records(self):
+        """A conference in progress has no endTime. This method filters on
+        start_time, so unlike list_ended_conferences it CAN be handed one --
+        and the attendance sweep, which selects meetings up to three hours
+        ahead of now, meets them routinely. Emitting it as end_time="" would
+        blow up the first isoparse downstream, so it is dropped here. The ended
+        record sitting alongside it must still come through."""
+        ended = MagicMock()
+        ended.name = "conferenceRecords/ended"
+        ended.space = "spaces/abc-defg-hij"
+        ended.start_time.isoformat.return_value = "2026-04-07T10:05:00+00:00"
+        ended.end_time.isoformat.return_value = "2026-04-07T11:00:00+00:00"
+
+        running = MagicMock()
+        running.name = "conferenceRecords/running"
+        running.space = "spaces/abc-defg-hij"
+        running.start_time.isoformat.return_value = "2026-04-07T13:00:00+00:00"
+        running.end_time = None
+
+        async def _pager():
+            yield ended
+            yield running
+
+        self.mock_meet_conference_records_client.list_conference_records.return_value = _pager()
+
+        result = await self.service.list_conferences_by_meeting_code(
+            "abc-defg-hij", "2026-04-07T07:00:00+00:00", "2026-04-07T14:00:00+00:00"
+        )
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["name"], "conferenceRecords/ended")
+        self.assertEqual(result[0]["end_time"], "2026-04-07T11:00:00+00:00")
+        # Never emitted with a blank end_time -- excluded outright.
+        self.assertNotIn("", [c["end_time"] for c in result])
+
+    async def test_list_conferences_by_meeting_code_null_start_time_falls_back_to_empty_string(
         self,
     ):
+        """end_time is what gates inclusion; a missing start_time still falls
+        back to "" so the returned shape keeps all four keys."""
         mock_record = MagicMock()
-        mock_record.name = "conferenceRecords/no-times"
+        mock_record.name = "conferenceRecords/no-start"
         mock_record.space = "spaces/abc-defg-hij"
         mock_record.start_time = None
-        mock_record.end_time = None
+        mock_record.end_time.isoformat.return_value = "2026-04-07T11:00:00+00:00"
 
         async def _pager():
             yield mock_record
@@ -1102,8 +1139,9 @@ class TestGoogleServiceMeetConferenceRecords(unittest.IsolatedAsyncioTestCase):
             "abc-defg-hij", "2026-04-07T07:00:00+00:00", "2026-04-07T14:00:00+00:00"
         )
 
+        self.assertEqual(len(result), 1)
         self.assertEqual(result[0]["start_time"], "")
-        self.assertEqual(result[0]["end_time"], "")
+        self.assertEqual(result[0]["end_time"], "2026-04-07T11:00:00+00:00")
 
     async def test_get_meeting_code_for_space_returns_code(self):
         """Returns the meeting code for the given space resource name."""

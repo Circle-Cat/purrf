@@ -228,6 +228,12 @@ class MeetAttendanceService:
                 # applied to a wider result set in Python. Same predicate as the
                 # old `window_start <= c_start <= window_end` loop, evaluated
                 # server-side -- which is why there is no second filter here.
+                # The old pipeline ALSO carried an end_time bound, inherited
+                # from list_ended_conferences' own filter; this one does not,
+                # and that bound was what kept still-running conferences out.
+                # list_conferences_by_meeting_code drops those at its own
+                # boundary instead, so everything reaching the interval-tree
+                # code below is guaranteed to have a parseable end_time.
                 conf_list = await self.google_service.list_conferences_by_meeting_code(
                     meeting.google_meeting_code,
                     window_start.isoformat(),
