@@ -20,6 +20,7 @@ from backend.common.api_endpoints import (
     RECRUITING_APPLICATION_EMAIL_TEMPLATES_ENDPOINT,
     RECRUITING_APPLICATION_INTERVIEW_ENDPOINT,
     RECRUITING_BOARD_JOBS_ENDPOINT,
+    RECRUITING_BOARD_APPLICANTS_ENDPOINT,
     RECRUITING_JOB_BOARD_ENDPOINT,
     RECRUITING_JOB_BOARD_STAGE_ENDPOINT,
     RECRUITING_APPLICATION_ENDPOINT,
@@ -75,6 +76,12 @@ class BoardController:
         self.router.add_api_route(
             RECRUITING_BOARD_JOBS_ENDPOINT,
             endpoint=authenticate()(self.list_my_jobs),
+            methods=["GET"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            RECRUITING_BOARD_APPLICANTS_ENDPOINT,
+            endpoint=authenticate()(self.search_applicants),
             methods=["GET"],
             response_model=None,
         )
@@ -228,6 +235,28 @@ class BoardController:
         async with self.database.session() as session:
             result = await self.board_service.list_my_jobs(session, current_user)
         return api_response(message="Jobs fetched.", data=result)
+
+    async def search_applicants(
+        self,
+        current_user: UserContextDto,
+        q: str,
+        job_id: int | None = None,
+        current_job_id: int | None = None,
+    ):
+        """Find applicants by name or email across the caller's boards.
+
+        ``job_id`` omitted means "all postings I can open". ``current_job_id``
+        only floats the open posting's hits to the front.
+        """
+        async with self.database.session() as session:
+            result = await self.board_service.search_applicants(
+                session,
+                current_user,
+                q,
+                job_id=job_id,
+                current_job_id=current_job_id,
+            )
+        return api_response(message="Applicants searched.", data=result)
 
     async def get_board(self, current_user: UserContextDto, job_id: int):
         """Return a job's applications grouped by stage, for the board columns."""

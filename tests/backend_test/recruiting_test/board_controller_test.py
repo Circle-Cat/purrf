@@ -392,6 +392,33 @@ class TestBoardController(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(forwarded_limit, 1)
 
+    async def test_search_applicants_passes_scope_and_current_job_through(self):
+        self.board_service.search_applicants = AsyncMock(
+            return_value={"hits": [], "truncated": False}
+        )
+
+        await self.controller.search_applicants(
+            self.ctx, q="zhang", job_id=1, current_job_id=1
+        )
+
+        self.board_service.search_applicants.assert_awaited_once()
+        kwargs = self.board_service.search_applicants.await_args.kwargs
+        self.assertEqual(kwargs["job_id"], 1)
+        self.assertEqual(kwargs["current_job_id"], 1)
+
+    async def test_search_applicants_omits_job_id_for_all_postings_mode(self):
+        self.board_service.search_applicants = AsyncMock(
+            return_value={"hits": [], "truncated": False}
+        )
+
+        await self.controller.search_applicants(
+            self.ctx, q="zhang", job_id=None, current_job_id=3
+        )
+
+        kwargs = self.board_service.search_applicants.await_args.kwargs
+        self.assertIsNone(kwargs["job_id"])
+        self.assertEqual(kwargs["current_job_id"], 3)
+
     # -- interview scheduling: delegation --
 
     async def test_schedule_interview_delegates(self):
