@@ -314,8 +314,16 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result["round_id"], 7)
         self.service.logger.warning.assert_called_once()
-        warned = str(self.service.logger.warning.call_args)
-        self.assertIn("9", warned)
+        # Render the lazy-% message rather than inspecting call_args: the
+        # rendered text is what an operator reads, and it is the entire
+        # deliverable of the overlap half of this change. Asserting on the raw
+        # call_args string cannot tell "SKIPPING [9]" from "SKIPPING [7, 9]" --
+        # the latter sends someone hunting for an unsynced round that was in
+        # fact synced, while result["round_id"] stays correct and hides it.
+        fmt, *fmt_args = self.service.logger.warning.call_args.args
+        rendered = fmt % tuple(fmt_args)
+        self.assertIn("round_id=7", rendered)
+        self.assertIn("SKIPPING [9]", rendered)
 
     async def test_no_running_round_returns_empty_dict(self):
         """Unchanged behaviour, re-pinned against the new repository method."""
