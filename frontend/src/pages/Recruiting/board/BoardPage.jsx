@@ -64,6 +64,11 @@ const BoardPage = () => {
   const [loadingMore, setLoadingMore] = useState(() => new Set());
   /** The card wearing the relocation ring, if any. */
   const [highlightedId, setHighlightedId] = useState(null);
+  /** Wraps the lane list so the focus hunt's card lookup can be scoped to
+   * it — `ApplicantSearch`'s result rows carry the same `data-application-id`
+   * attribute and sit earlier in the DOM, so a document-wide query can match
+   * a dropdown row instead of the card. */
+  const lanesRef = useRef(null);
   /** Rounds of paging already spent on the current board's focus hunt. */
   const focusRounds = useRef(0);
   /** Terminal lanes whose paging failed during a focus hunt. A failed page
@@ -202,7 +207,11 @@ const BoardPage = () => {
    *
    * The card is found by DOM attribute rather than by a ref, because cards
    * are rendered by a `map` inside each lane and threading refs back out
-   * would couple the two components for nothing.
+   * would couple the two components for nothing. The lookup is scoped to the
+   * lanes container, not `document`: `ApplicantSearch`'s result rows carry
+   * this same `data-application-id` attribute (deliberately shared) and sit
+   * earlier in the DOM, so a document-wide query can match a search result
+   * row instead of the card while both are on screen.
    *
    * A just-rejected applicant can sit past a terminal lane's first page (that
    * lane orders by `stage_entered_at DESC` with no NULLS LAST, and the column
@@ -212,7 +221,9 @@ const BoardPage = () => {
   useEffect(() => {
     if (focusId == null || !board) return;
 
-    const el = document.querySelector(`[data-application-id="${focusId}"]`);
+    const el = lanesRef.current?.querySelector(
+      `[data-application-id="${focusId}"]`,
+    );
     if (el) {
       el.scrollIntoView({ block: "nearest", inline: "center" });
       setHighlightedId(focusId);
@@ -365,7 +376,7 @@ const BoardPage = () => {
           onRetry={() => loadBoard(selectedJobId)}
         />
       ) : (
-        <div className="flex flex-1 gap-4 overflow-x-auto pb-4">
+        <div ref={lanesRef} className="flex flex-1 gap-4 overflow-x-auto pb-4">
           {lanes.map((lane) => {
             const cardsForStage = board[lane.stage]?.items ?? [];
             // A stage's configured rounds can shrink after applicants are
