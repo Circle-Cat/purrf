@@ -33,7 +33,7 @@ class EvaluationDto(BaseDto):
 
 
 class MyEvaluationDto(BaseDto):
-    """One row in the caller's 'My Evaluations' list."""
+    """One row in the caller's 'My Interview Evaluations' list."""
 
     application_id: int
     job_title: str

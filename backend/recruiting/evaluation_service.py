@@ -38,9 +38,9 @@ class EvaluationService:
                 Assignment data access.
             evaluation_repository (EvaluationRepository): Scorecard data access.
             job_repository (JobRepository): Posting data access, for job titles
-                in "My Evaluations".
+                in "My Interview Evaluations".
             users_repository (UsersRepository): Applicant lookups, for
-                applicant names in "My Evaluations".
+                applicant names in "My Interview Evaluations".
             application_activity_repository (ApplicationActivityRepository):
                 Append-only audit log; ``submit`` writes an
                 ``"evaluation_confirmed"`` entry when ``dto.confirm`` is set.

@@ -7,7 +7,7 @@ import { ROUTE_PATHS } from "@/constants/RoutePaths";
  * came from.
  *
  * Three outcomes, in order:
- * - In evaluate mode the viewer arrived from My Evaluations, and may not own
+ * - In evaluate mode the viewer arrived from My Interview Evaluations, and may not own
  *   the posting at all, so that's where they go back to.
  * - A viewer with `canView` (an owner, or a `read.all` holder) goes back to
  *   the board, carrying the job so their selection survives and the
@@ -36,7 +36,7 @@ const BackToBoardLink = ({ jobId, applicationId, evaluatorMode, canView }) => {
     return (
       <Link to={ROUTE_PATHS.RECRUITING_MY_EVALUATIONS} className={className}>
         <ArrowLeft className="h-4 w-4" aria-hidden />
-        My Evaluations
+        My Interview Evaluations
       </Link>
     );
   }

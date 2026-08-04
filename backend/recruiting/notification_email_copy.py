@@ -11,6 +11,13 @@ Emails carry no links (decided 2026-07-30), so each body has to stand on
 its own: what happened, who and which posting it concerns, and where in
 Purrf to act on it.
 
+That last part is a promise about the UI, so the destination has to be
+the sidebar label the recipient will actually see -- verbatim, from
+``navItems`` in ``frontend/src/components/layout/Sidebar.jsx``. The
+sidebar is one flat list with no groups, so a body must never spell a
+path like "Recruiting -> Postings": there is nothing called Recruiting to
+open, and a reader who goes looking for it finds no such menu.
+
 ``NotificationDto.actor_name`` carries a three-way distinction that must
 not be collapsed by a truthiness check: ``None`` means ``actor_user_id``
 was NULL (the row was written by the system, e.g. a stage's default
@@ -92,7 +99,7 @@ def _assigned_to_evaluate(dto, stage):
         f"<p>{opening}</p>"
         f"<p>Stage: {stage_label(stage, dto.job_kind)}"
         f"{_round_suffix(dto.round)}.</p>"
-        "<p>Open Recruiting &rarr; My Evaluations in Purrf to submit your "
+        "<p>Open My Interview Evaluations in Purrf to submit your "
         "evaluation.</p>",
     )
 
@@ -115,8 +122,7 @@ def _job_review_requested(dto, stage):
         f"Posting review requested: {dto.job_title}",
         f'<p>{actor} submitted the posting "{dto.job_title}" for your '
         "review. It is waiting on your decision.</p>"
-        "<p>Open Recruiting &rarr; Reviews in Purrf to approve or reject "
-        "it.</p>",
+        "<p>Open My Posting Reviews in Purrf to approve or reject it.</p>",
     )
 
 
@@ -126,8 +132,7 @@ def _job_review_approved(dto, stage):
         f"Posting approved: {dto.job_title}",
         f"<p>{actor} approved your submission for the posting "
         f'"{dto.job_title}".</p>'
-        "<p>Open Recruiting &rarr; Postings in Purrf to see its current "
-        "state.</p>",
+        "<p>Open Job Postings in Purrf to see its current state.</p>",
     )
 
 
@@ -137,8 +142,8 @@ def _job_review_rejected(dto, stage):
         f"Posting rejected: {dto.job_title}",
         f"<p>{actor} rejected your submission for the posting "
         f'"{dto.job_title}".</p>'
-        "<p>Open Recruiting &rarr; Postings in Purrf to see the outcome and "
-        "any comment the reviewer left.</p>",
+        "<p>Open Job Postings in Purrf to see the outcome and any comment "
+        "the reviewer left.</p>",
     )
 
 
@@ -149,8 +154,8 @@ def _application_submitted(dto, stage):
         f"<p>{applicant} applied to {dto.job_title}. The application is "
         f"waiting for review at the {stage_label(stage, dto.job_kind)} "
         "stage.</p>"
-        "<p>You're receiving this because you own this posting. Open "
-        "Recruiting &rarr; Board in Purrf to review it.</p>",
+        "<p>You're receiving this because you own this posting. Open the "
+        "Applications Board in Purrf to review it.</p>",
     )
 
 
